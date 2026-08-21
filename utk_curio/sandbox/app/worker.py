@@ -87,6 +87,7 @@ def _worker_init():
         save_to_duckdb,
         detect_kind,
         checkIOType,
+        save_dataset_parquet,
     )
 
     _globals_cache = {
@@ -106,6 +107,7 @@ def _worker_init():
         'save_to_duckdb': save_to_duckdb,
         'detect_kind': detect_kind,
         'checkIOType': checkIOType,
+        'save_dataset_parquet': save_dataset_parquet,
     }
 
 
@@ -156,7 +158,7 @@ def _expand_outputs_wrapper(input_data, session_id=None):
     return input_data
 
 
-def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None):
+def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
     """
     Execute user code in-process using pre-loaded library globals.
 
@@ -177,6 +179,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
     checkIOType      = _globals_cache['checkIOType']
+    save_dataset_parquet = _globals_cache['save_dataset_parquet']
 
     # _exec_lock serializes sys.stdout mutation and os.chdir.
     with _exec_lock:
@@ -258,7 +261,14 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
                 # Save output to DuckDB, tagged with the session that produced it.
                 result_path = save_to_duckdb(output, node_id=node_type, session_id=session_id)
+
+                dataset_file = None
+                if save_dataset:
+                    dataset_file = save_dataset_parquet(output, out_kind)
+
                 result = {'path': result_path, 'dataType': out_kind}
+                if dataset_file:
+                    result['dataset'] = dataset_file
                 t_save = time.perf_counter()
 
         except BaseException:
@@ -266,6 +276,18 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
         finally:
             os.chdir(original_dir)
+            # Drop the sandbox write lock so the backend can open read-only
+            # DuckDB (catalog, auto-install) as soon as this request returns.
+            #
+            # NOTE: this teardown-per-exec is REQUIRED, not wasteful — DuckDB
+            # allows only a single cross-process writer, so the sandbox cannot
+            # hold the R/W handle open between requests or the backend's
+            # read-only opens would fail. The reopen is lazy (``get_connection``
+            # only runs when the next exec actually touches DuckDB), so an exec
+            # that never loads/saves pays nothing. Do not "optimize" by keeping
+            # the connection alive across execs.
+            from utk_curio.sandbox.util.db import release_connection
+            release_connection()
             t1 = time.perf_counter()
             print(
                 f"[exec] load={t_load-t0:.3f}s  code={t_code-t_load:.3f}s"
@@ -309,7 +331,29 @@ def _to_js_value(obj):
     return str(obj)
 
 
-def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None):
+def _js_value_to_saveable_frame(value):
+    """Best-effort convert a JS node's JSON result into a ``(kind, frame)`` pair
+    for :func:`save_dataset_parquet`, or ``(None, None)`` when it isn't tabular.
+
+    JS nodes return plain JSON, so — mirroring how ``parseInput`` reconstructs
+    tabular inputs — a GeoJSON ``FeatureCollection`` becomes a GeoDataFrame and a
+    non-empty list of record objects becomes a DataFrame. Anything else (scalars,
+    plain dicts, lists of scalars) is not a dataset and yields ``(None, None)``.
+    """
+    from utk_curio.sandbox.util.parsers import parse_dataframe, parse_geodataframe
+
+    if (
+        isinstance(value, dict)
+        and value.get('type') == 'FeatureCollection'
+        and isinstance(value.get('features'), list)
+    ):
+        return 'geodataframe', parse_geodataframe(value)
+    if isinstance(value, list) and value and all(isinstance(row, dict) for row in value):
+        return 'dataframe', parse_dataframe(value)
+    return None, None
+
+
+def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
     """
     Execute user JavaScript code in an isolated Node.js subprocess.
 
@@ -330,7 +374,9 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
     import time
     import traceback
 
-    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb, detect_kind
+    from utk_curio.sandbox.util.parsers import (
+        load_from_duckdb, save_to_duckdb, detect_kind, save_dataset_parquet,
+    )
 
     t0 = time.perf_counter()
     cwd = launch_dir or os.getcwd()
@@ -542,10 +588,26 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         result_artifact = save_to_duckdb(raw_value, node_id=node_type, session_id=session_id)
         out_kind = detect_kind(raw_value)
 
+        output = {'path': result_artifact, 'dataType': out_kind}
+
+        # Persist a named dataset (catalog parquet + auto-install) when the JS
+        # node opted in and produced tabular/geo data — parity with the Python
+        # path, which emits output['dataset'] for the backend to auto-install.
+        if save_dataset:
+            try:
+                ds_kind, frame = _js_value_to_saveable_frame(raw_value)
+                if frame is not None:
+                    dataset_file = save_dataset_parquet(frame, ds_kind)
+                    if dataset_file:
+                        output['dataset'] = dataset_file
+            except Exception:  # noqa: BLE001 - dataset save is best-effort
+                print(f"[execJs] save_dataset failed for node={node_type}",
+                      file=_sys.stderr, flush=True)
+
         return {
             'stdout': run_result.get('logs', []),
             'stderr': stderr_text,
-            'output': {'path': result_artifact, 'dataType': out_kind},
+            'output': output,
         }
 
     except subprocess.TimeoutExpired:
@@ -556,3 +618,6 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
                 'output': {'path': '', 'dataType': 'str'}}
     except Exception:
         return {'stdout': [], 'stderr': traceback.format_exc(), 'output': {'path': '', 'dataType': 'str'}}
+    finally:
+        from utk_curio.sandbox.util.db import release_connection
+        release_connection()

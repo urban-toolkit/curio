@@ -71,9 +71,11 @@ import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
 import { NodeCatalogDrawerProvider } from "./providers/NodeCatalogDrawerProvider";
+import { DatasetCatalogDrawerProvider } from "./providers/datasetCatalog";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
 import { PackagePaletteProvider } from "./providers/PackagePaletteContext";
+import { DatasetPaletteProvider } from "./providers/DatasetPaletteContext";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
 import LLMProvider from "./providers/LLMProvider";
@@ -82,7 +84,11 @@ import { RequireAuth } from "./components/RequireAuth";
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
 import ProjectsList from "./pages/projects/ProjectsList";
-import CatalogPage from "./pages/catalog/CatalogPage";
+import CatalogMasterPage from "./pages/catalog/CatalogMasterPage";
+import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
+import DataCatalogBrowse from "./pages/dataHub/DataCatalogBrowse";
+import DataCatalogDetail from "./pages/dataHub/DataCatalogDetail";
+import DataHubPage from "./pages/dataHub/DataHubPage";
 import { ProjectLoader } from "./components/ProjectLoader";
 
 const MainCanvasRoute: React.FC = () => (
@@ -102,13 +108,17 @@ const MainCanvasRoute: React.FC = () => (
             components (UpMenu, PackagesPaletteDropdown), so scoping it here
             doesn't reduce reach. */}
         <NodeCatalogDrawerProvider>
-          <StarterProvider>
-            <ProjectLoader>
-              <PackagePaletteProvider>
-                <MainCanvas />
-              </PackagePaletteProvider>
-            </ProjectLoader>
-          </StarterProvider>
+          <DatasetCatalogDrawerProvider>
+            <StarterProvider>
+              <ProjectLoader>
+                <PackagePaletteProvider>
+                  <DatasetPaletteProvider>
+                    <MainCanvas />
+                  </DatasetPaletteProvider>
+                </PackagePaletteProvider>
+              </ProjectLoader>
+            </StarterProvider>
+          </DatasetCatalogDrawerProvider>
         </NodeCatalogDrawerProvider>
       </FlowProvider>
     </CollaborationProvider>
@@ -167,7 +177,20 @@ const App: React.FC = () => {
                       path="/catalog"
                       element={
                         <RequireAuth>
-                          <CatalogPage />
+                          <CatalogMasterPage />
+                        </RequireAuth>
+                      }
+                    >
+                      <Route index element={<Navigate to="nodes" replace />} />
+                      <Route path="nodes" element={<NodeCatalogBrowse />} />
+                      <Route path="data" element={<DataCatalogBrowse />} />
+                      <Route path="data/:datasetId" element={<DataCatalogDetail />} />
+                    </Route>
+                    <Route
+                      path="/data-hub/:datasetId?"
+                      element={
+                        <RequireAuth>
+                          <DataHubPage />
                         </RequireAuth>
                       }
                     />

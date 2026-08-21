@@ -1,17 +1,18 @@
-"""Shared fixtures for auth tests."""
+"""Shared fixtures for auth tests.
 
+Reuses the common ``TestConfig``/``client``/``db`` fixtures from
+``utk_curio.backend.tests._unit_fixtures``. Auth tests run on a bare in-memory
+DB with no temp workspace, so ``app`` is defined locally here.
+"""
 import pytest
 
 from utk_curio.backend.app import create_app
 from utk_curio.backend.extensions import db as _db
-
-
-class TestConfig:
-    TESTING = True
-    SQLALCHEMY_DATABASE_URI = "sqlite://"
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SECRET_KEY = "test-secret"
-    WTF_CSRF_ENABLED = False
+from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
+    TestConfig,
+    client,
+    db,
+)
 
 
 @pytest.fixture()
@@ -22,13 +23,3 @@ def app():
         yield application
         _db.session.remove()
         _db.drop_all()
-
-
-@pytest.fixture()
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture()
-def db(app):
-    return _db

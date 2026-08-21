@@ -16,6 +16,16 @@ def _slugify(name: str) -> str:
 class OutputRef:
     node_id: str
     filename: str
+    # Sandbox ``dataType`` (e.g. raster, dataframe) for extensionless DuckDB paths.
+    data_type: Optional[str] = None
+    # Producing node's friendly display label, resolved client-side. The save-time
+    # installer titles the computed dataset with it instead of the raw generated
+    # filename (see ``_auto_install_computed_outputs``).
+    node_name: Optional[str] = None
+    # Producing node's type slug (e.g. ``curio.builtin/autk-grammar``), attached
+    # client-side so the computed dataset's manifest records producer lineage even
+    # when the spec node lookup can't resolve it.
+    node_type: Optional[str] = None
 
 
 @dataclass
@@ -73,6 +83,10 @@ class ProjectDetail(ProjectSummary):
     folder_path: str = ""
     spec: Optional[dict] = None
     outputs: List[OutputRef] = field(default_factory=list)
+    # Computed outputs that could NOT be auto-installed on this save (e.g. the
+    # artifact was missing at save time). Response-only, never persisted — lets
+    # the client warn the user about a silently-skipped dataset.
+    dataset_install_warnings: List[dict] = field(default_factory=list)
 
 
 @dataclass

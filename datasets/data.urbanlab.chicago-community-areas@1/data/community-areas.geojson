@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "community": "Loop", "area_numbe": 32 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-87.64, 41.88], [-87.62, 41.88], [-87.62, 41.86], [-87.64, 41.86], [-87.64, 41.88]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "community": "Hyde Park", "area_numbe": 41 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-87.60, 41.80], [-87.58, 41.80], [-87.58, 41.78], [-87.60, 41.78], [-87.60, 41.80]]]
+      }
+    }
+  ]
+}

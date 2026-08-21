@@ -1,23 +1,36 @@
 import React from "react";
 import { PackagePayload } from "../../../api/packagesApi";
+import {
+  CatalogCategoryBadge,
+  CatalogItemRowHeader,
+  CatalogKindIcon,
+} from "../../catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../CatalogPublishPill";
-import { packageInitial, primaryCategory } from "./packageUtils";
+import { packageInitial,primaryCategory } from "./packageUtils";
 import styles from "./PackageCard.module.css";
 
-/** CSS class variants cycled deterministically per package dirName. */
-const CARD_ICON_VARIANTS = [
-  styles.cardIconWarm,
-  styles.cardIconCool,
-  styles.cardIconViolet,
-] as const;
+/** Accent keys cycled deterministically per package dirName. */
+const PACK_ACCENT_KEYS = ["warm", "cool", "violet"] as const;
+type PackAccentKey = (typeof PACK_ACCENT_KEYS)[number];
 
-function iconVariantForPack(dirName: string): string {
+const CARD_ICON_VARIANTS: Record<PackAccentKey, string> = {
+  warm: styles.cardIconWarm,
+  cool: styles.cardIconCool,
+  violet: styles.cardIconViolet,
+};
+
+function packAccentKey(dirName: string): PackAccentKey {
   let hash = 0;
   for (let i = 0; i < dirName.length; i++) {
-    hash = (hash + dirName.charCodeAt(i)) % CARD_ICON_VARIANTS.length;
+    hash = (hash + dirName.charCodeAt(i)) % PACK_ACCENT_KEYS.length;
   }
-  return CARD_ICON_VARIANTS[hash]!;
+  return PACK_ACCENT_KEYS[hash]!;
 }
+
+function iconVariantForPack(dirName: string): string {
+  return CARD_ICON_VARIANTS[packAccentKey(dirName)];
+}
+
 
 export interface PackageCardProps {
   pkg: PackagePayload;
@@ -78,13 +91,28 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   //     package isn't read-only — show the "Publish" button.
   const showPublishPill = isPublished === true || showPublishButton;
 
+  const cat = primaryCategory(pkg);
+
   return (
     <article className={styles.card}>
-      <div className={`${styles.cardIcon} ${iconVariantForPack(pkg.dirName)}`}>
-        {packageInitial(pkg.name)}
+      <div className={`${styles.cardIcon}`}>
+        <CatalogKindIcon
+          className={`${styles.cardIcon} ${styles.cardIconPackage} ${iconVariantForPack(pkg.dirName)} `}
+          kind="package" 
+          size="md"
+          title="Node package" 
+        >
+          <span className={styles.cardIconText}>
+            {packageInitial(pkg.name)}
+          </span>
+        </CatalogKindIcon>
       </div>
 
       <div className={styles.cardBody}>
+        <CatalogItemRowHeader
+          kind="package"
+          badge={<CatalogCategoryBadge label={cat} accentKey={packAccentKey(pkg.dirName)} />}
+        />
         <h3 className={styles.cardTitle}>{pkg.name}</h3>
         <p className={styles.cardMeta}>
           {pkg.publisher || pkg.packageId} · v{pkg.version}
@@ -94,7 +122,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
           <span className={styles.tag}>
             {pkg.templates.length} node{pkg.templates.length === 1 ? "" : "s"}
           </span>
-          <span className={styles.tag}>{primaryCategory(pkg)}</span>
+          <span className={styles.tag}>{cat}</span>
           {(pkg.channel ?? "stable") !== "stable" ? (
             <span className={`${styles.tag} ${styles.tagChannel}`} title={`Release channel: ${pkg.channel}`}>
               {pkg.channel}
@@ -107,7 +135,8 @@ export const PackageCard: React.FC<PackageCardProps> = ({
           ) : null}
         </div>
       </div>
-
+      
+      {/* Actions */}
       <div className={styles.cardAction}>
         {!isInstalled ? (
           <button

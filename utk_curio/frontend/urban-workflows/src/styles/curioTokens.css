@@ -63,4 +63,17 @@
   --curio-accent-mint-fg:  #2F8F4A;
   --curio-accent-lilac-bg: #EADCFB;
   --curio-accent-lilac-fg: #7A4BD1;
+
+  /* ── Overlay / layering scale ──────────────────────────────────────────
+     Single source of truth for the high stacking band. Higher sits in
+     front. Toasts sit ABOVE the entire overlay band so dataset action
+     feedback (import / install / publish, errors) stays visible while a
+     drawer, modal, or dialog is open. When adding a new overlay, slot it
+     into this scale instead of hard-coding a bare z-index literal. */
+  --curio-z-node-drawer: 10040;
+  --curio-z-dataset-drawer: 10045;
+  --curio-z-modal-backdrop: 10054;
+  --curio-z-modal: 10055;
+  --curio-z-dialog: 10060;
+  --curio-z-toast: 10070;
 }

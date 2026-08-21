@@ -39,8 +39,15 @@
     color: var(--curio-text-on-dark);
 }
 
-.drawerTitle {
+.drawerTitleRow {
     flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.drawerTitle {
     margin: 0;
     font-size: var(--curio-font-size-lg);
     font-weight: 600;

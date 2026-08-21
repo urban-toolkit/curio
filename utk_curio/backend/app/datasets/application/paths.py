@@ -1,0 +1,234 @@
+"""Path resolution for catalog items (computed outputs, user store, hub)."""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+from utk_curio.backend.app.common.safe_paths import is_within
+from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
+from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
+from utk_curio.backend.app.datasets.repositories.registry import DatasetRegistryRepository
+
+
+class PathResolver:
+    """Resolves catalog-item filesystem paths against the user store, hub, and
+    shared-output directories.
+
+    A composed collaborator (not a mixin): the catalog service builds one and
+    injects it into listing and mutations, replacing the former shared-``self``
+    ``CatalogPathMixin`` state.
+    """
+
+    def __init__(
+        self,
+        *,
+        user: Any | None,
+        registry: DatasetRegistryRepository,
+        installed: InstalledDatasetRepository,
+    ):
+        self.user = user
+        self.registry = registry
+        self.installed = installed
+
+    def _user_key(self) -> str:
+        if self.user is None:
+            raise DatasetCatalogError("Authorization required", 401)
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return _user_dir_key(self.user)
+
+    def _resolve_computed_output_path(self, item: dict[str, Any]) -> str | None:
+        """Resolve a ``curio://outputs/{filename}`` URI to an absolute filesystem path.
+
+        Computed datasets live in the shared-data directory written by node
+        execution.  This helper maps the virtual URI to the real file so that
+        preview and install can both work without any special-casing at call
+        sites.
+
+        Falls back to checking the ``artifacts/`` subdirectory for legacy
+        DuckDB artifact IDs (bare name, no extension) that were stored in
+        project specs before the named-parquet dataset system was introduced.
+        """
+        uri = item.get("uri") or ""
+        if not uri.startswith("curio://outputs/"):
+            return None
+        filename = uri[len("curio://outputs/"):]
+        if not filename:
+            return None
+        from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
+
+        resolved = resolve_shared_output_path(filename)
+        return resolved.as_posix() if resolved is not None else None
+
+    def _mark_user_store_computed_installs(
+        self,
+        items: list[dict[str, Any]],
+        user_key: str,
+        installed_computed_filenames: dict[str, str],
+    ) -> None:
+        """Mark computed rows installed when ``computed.<node>@1`` exists on disk."""
+        from utk_curio.backend.app.datasets.install.installer import (
+            InstallerError,
+            resolve_installed_data_path,
+            sanitize_node_id_segment,
+        )
+        from utk_curio.backend.app.datasets.domain.manifest import ManifestError, load_dataset_manifest
+        from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+
+        for item in items:
+            if item.get("origin") != "computed":
+                continue
+            producer = item.get("producerNodeId")
+            if not producer:
+                continue
+
+            dir_name = f"computed.{sanitize_node_id_segment(producer)}@1"
+            try:
+                installed_dir = dataset_dir(user_key, dir_name)
+                manifest = load_dataset_manifest(installed_dir)
+                data_path = resolve_installed_data_path(user_key, manifest)
+            except (InstallerError, ManifestError, OSError, ValueError):
+                continue
+
+            live_name = ""
+            uri = item.get("uri") or ""
+            if uri.startswith("curio://outputs/"):
+                live_name = Path(uri[len("curio://outputs/"):]).name
+
+            item["installed"] = True
+            item["dirName"] = dir_name
+            item["path"] = data_path.as_posix()
+            item["uri"] = f"curio://datasets/{dir_name}"
+            item["loaderSnippet"] = loader_snippet(item["format"], data_path.as_posix())
+            if live_name and live_name != data_path.name:
+                item["needsReinstall"] = True
+            elif producer in installed_computed_filenames:
+                installed_name = installed_computed_filenames[producer]
+                if live_name and installed_name and live_name != installed_name:
+                    item["needsReinstall"] = True
+
+    def _allowed_read_roots(self) -> list[Path]:
+        """Trusted base directories under which a catalog data file may live.
+
+        Any *concrete* filesystem path that :meth:`_resolve_item_path` hands
+        back is consumed unsafely downstream — preview opens it and download
+        streams it via ``send_file``. The ``path`` on a catalog item is not
+        trustworthy: a malicious ``liveOutputs`` entry has its ``filename``
+        copied verbatim into ``item["path"]`` (see
+        ``ComputedDatasetIndexer.list_items``), so an entry like
+        ``{"filename": "/etc/passwd"}`` would otherwise be streamed straight
+        back to the client. Confining every concrete return to these roots is
+        the single chokepoint that closes that arbitrary-file-read.
+        """
+        from utk_curio.backend.app.datasets.repositories.local import data_root_dirs
+        from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root, user_datasets_dir
+        from utk_curio.backend.app.projects.storage import _shared_data_dir
+
+        roots = [_shared_data_dir(), catalog_root(), *data_root_dirs()]
+        if self.user is not None:
+            # Installed/published datasets live in the *current* user's store.
+            roots.append(user_datasets_dir(self._user_key()))
+        return roots
+
+    def _contained_path(self, path_value: str) -> str | None:
+        """Return ``path_value`` iff it resolves inside an allowed read root.
+
+        Last line of defence for a path taken from an item field (which may be
+        attacker-controlled). Returns ``None`` — logged — when the path escapes
+        every trusted root, so the caller treats the dataset as unavailable
+        rather than reading a file outside Curio's sandbox.
+        """
+        candidate = Path(path_value)
+        if any(is_within(candidate, root) for root in self._allowed_read_roots()):
+            return path_value
+        logger.warning(
+            "Refusing catalog item path outside allowed data roots: %r", path_value
+        )
+        return None
+
+    def _resolve_item_path(self, item: dict[str, Any]) -> str | None:
+        # ── Computed datasets must be resolved via the shared-data directory
+        # first, regardless of what the ``path`` field says (it is just the
+        # bare filename, not an absolute path).
+        if item.get("origin") == "computed":
+            resolved = self._resolve_computed_output_path(item)
+            if resolved:
+                return resolved
+            # Installed/published computed datasets carry an absolute path into
+            # the user dataset store and a ``curio://datasets/{dir}`` URI (not
+            # ``curio://outputs/``), so the shared-data resolver above can't see
+            # them.  Fall back to the concrete path when it points at a real
+            # file so export works regardless of whether the computed dataset
+            # has been installed or published.
+            path_value = item.get("path")
+            if (
+                path_value
+                and not str(path_value).startswith("curio://")
+                and Path(str(path_value)).is_file()
+            ):
+                return self._contained_path(str(path_value))
+            return None
+
+        path_value = item.get("path")
+        uri_value = item.get("uri") or ""
+
+        # Resolve curio://outputs/ for items that carry that URI scheme (legacy
+        # fat refs stored before the origin field existed use this URI even
+        # when origin is "imported").  Check the item URI, not just the path,
+        # because the path may be a bare artifact ID with no curio:// prefix.
+        if uri_value.startswith("curio://outputs/"):
+            resolved = self._resolve_computed_output_path(item)
+            if resolved:
+                return resolved
+            return None  # artifact gone – caller will show unsupported preview
+
+        if path_value and not str(path_value).startswith("curio://"):
+            return self._contained_path(str(path_value))
+
+        dir_name = item.get("dirName")
+        if not dir_name:
+            catalog_dir = self.registry.get_catalog_dir(item.get("id", ""))
+            if catalog_dir is not None:
+                dir_name = catalog_dir.name
+            else:
+                return None
+
+        from utk_curio.backend.app.datasets.install.installer import resolve_installed_data_path
+        from utk_curio.backend.app.datasets.domain.manifest import ManifestError, load_dataset_manifest
+        from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root, dataset_dir
+
+        if self.user is not None:
+            user_key = self._user_key()
+            user_root = dataset_dir(user_key, dir_name)
+            if (user_root / "manifest.json").is_file():
+                try:
+                    manifest = load_dataset_manifest(user_root)
+                    return resolve_installed_data_path(user_key, manifest).as_posix()
+                except (ManifestError, Exception):
+                    logger.debug(
+                        "Could not resolve installed path for %s in user store",
+                        dir_name,
+                        exc_info=True,
+                    )
+
+        catalog_root_dir = catalog_root() / dir_name
+        if (catalog_root_dir / "manifest.json").is_file():
+            try:
+                manifest = load_dataset_manifest(catalog_root_dir)
+                candidate = catalog_root_dir / manifest.data_file
+                if candidate.is_file():
+                    return candidate.as_posix()
+            except ManifestError:
+                return None
+        return None
+
+    def _project_manifest(self, dataflow_id: str | None) -> dict[str, Any]:
+        if not dataflow_id:
+            return {}
+        _spec, manifest = self.installed._project_spec_and_manifest(dataflow_id)
+        return manifest

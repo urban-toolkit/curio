@@ -7,8 +7,8 @@ import styles from "./ModalShell.module.css";
 interface ModalShellProps {
   onClose: () => void;
   children: React.ReactNode;
-  size?: "default" | "large";
-  /** Stack above canvas dock / catalog overlays (z-index ~10055). */
+  size?: "default" | "large" | "xlarge";
+  /** Stack above canvas dock / catalog overlays (--curio-z-modal). */
   layer?: "default" | "overlay";
   /** Keep the packages palette dock open while this modal is interacted with. */
   preservePackagePaletteOpen?: boolean;
@@ -36,7 +36,9 @@ export default function ModalShell({
       <div
         className={`${styles.modal} nowheel nodrag nopan${
           size === "large" ? ` ${styles.large}` : ""
-        }${layer === "overlay" ? ` ${styles.modalOverlay}` : ""}`}
+        }${size === "xlarge" ? ` ${styles.xlarge}` : ""}${
+          layer === "overlay" ? ` ${styles.modalOverlay}` : ""
+        }${size === "xlarge" && layer === "overlay" ? ` ${styles.xlargeOverlay}` : ""}`}
         {...packagePaletteActionAttr}
       >
         <button className={styles.closeX} onClick={onClose} aria-label="Close">

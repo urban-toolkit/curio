@@ -43,8 +43,8 @@ Package state in Curio lives in four places. Knowing which one each user action 
 |---|---|---|
 | **Shared catalog** — the source every user browses from | `<repo_root>/packages/<packageId>@<major>/` | **Publish** (gated by `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`; see *Operator notes*). Otherwise read-only. |
 | **Per-user package store** — implementations on disk | `.curio/users/<user-key>/packages/<packageId>@<major>/` | Managed implicitly. Install copies in; uninstall (via the drawer) prunes when no project still references the package. No direct UI action writes or deletes here. |
-| **Per-user defaults** — what auto-seeds into new projects | `.curio/users/<user-key>/default-packages.json` | The `/catalog` page's **Install** adds an entry; the auto-prune sweep removes it when the last project drops the dep. |
-| **Per-project lockfile** — the source of truth for what a project needs | `spec.trill.json` → `dataflow.packages: string[]` (inside each project's `spec.trill.json`) | The canvas drawer's **Install** adds an entry for the open project; **Uninstall** removes it. The `/catalog` page's **Install** also walks every existing project and patches its lockfile. |
+| **Per-user defaults** — what auto-seeds into new projects | `.curio/users/<user-key>/default-packages.json` | The **Nodes** tab on `/catalog` (**Install**) adds an entry; the auto-prune sweep removes it when the last project drops the dep. |
+| **Per-project lockfile** — the source of truth for what a project needs | `spec.trill.json` → `dataflow.packages: string[]` (inside each project's `spec.trill.json`) | The canvas drawer's **Install** adds an entry for the open project; **Uninstall** removes it. The **Nodes** tab on `/catalog` (**Install**) also walks every existing project and patches its lockfile. |
 
 The canvas palette reads from the per-project lockfile (intersected with the user store), so two projects open in different tabs see different palettes even though they share one user store.
 
@@ -71,9 +71,9 @@ ai.urbanlab.uhvi/uhvi-load@1
 There are exactly two places you manage packages:
 
 - **The drawer** (inside the canvas): per-project. Open it from the **Packages** dropdown in the left-edge Tools panel → **Get more packages +**. Installs and uninstalls here affect *only* the open project's lockfile (plus the user-store copy when needed).
-- **The `/catalog` page** (linked from the **Catalog** button in the top nav of `/projects`): global. Installs here apply to every existing project of yours AND auto-seed into any new project. There is no Uninstall affordance — see the workflows below for why.
+- **The `/catalog` master page** (linked from **Catalog** on `/projects`): opens on the **Nodes** tab (`/catalog/nodes`). Installs there apply to every existing project of yours AND auto-seed into any new project. There is no Uninstall affordance — see the workflows below for why. Use the **Data** tab (`/catalog/data`) for the Data Catalog browser (formerly `/data-hub`).
 
-The drawer has just two tabs — **Browse** and **Installed** — with an *Update available* badge surfacing on cards that have a newer catalog version. The `/catalog` page is a single list with **All / Installed / Updates** filter chips.
+The drawer has just two tabs — **Browse** and **Installed** — with an *Update available* badge surfacing on cards that have a newer catalog version. The **Nodes** tab on `/catalog` uses a Data Catalog–style layout with status and category filters plus a preview drawer.
 
 ### Action matrix
 

@@ -6,6 +6,11 @@
     align-items: flex-start;
     gap: 8px;
     flex-shrink: 0;
+    pointer-events: none;
+}
+
+.packagePaletteRoot > * {
+    pointer-events: auto;
 }
 
 .packagePaletteColumn {
@@ -466,7 +471,6 @@
     border-radius: 4px;
     padding: 2px 6px;
     line-height: 1;
-    align-self: flex-start;
 }
 
 .packageAddSectionRow {

@@ -33,6 +33,8 @@ shutdown_flag = threading.Event()
 processes = []
 file_logger = None
 verbosity = 1
+logger = logging.getLogger(__name__)
+
 
 def setup_logging():
     log_dir = Path(".curio")
@@ -93,7 +95,7 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=True, catalog_root=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -102,6 +104,9 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["CURIO_SEED_EXAMPLES"] = "1" if (with_examples or deploy) else "0"
     os.environ["CURIO_RESEED_PACKAGES"] = "1" if reseed else "0"
     os.environ["CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"] = "1" if allow_publish else "0"
+    os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1" if save_node_outputs else "0"
+    if catalog_root:
+        os.environ["CURIO_CATALOG_ROOT"] = str(Path(catalog_root).expanduser().resolve())
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
     # harness can point the backend at a dedicated workspace (see
     # utk_curio/backend/tests/conftest.py). Only fall back to cwd otherwise.
@@ -135,6 +140,9 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_SEED_EXAMPLES={os.environ['CURIO_SEED_EXAMPLES']}")
     log_always(f"CURIO_RESEED_PACKAGES={os.environ['CURIO_RESEED_PACKAGES']}")
     log_always(f"CURIO_ALLOW_FACTORY_CATALOG_PUBLISH={os.environ['CURIO_ALLOW_FACTORY_CATALOG_PUBLISH']}")
+    log_always(f"CURIO_DEFAULT_SAVE_NODE_OUTPUT={os.environ['CURIO_DEFAULT_SAVE_NODE_OUTPUT']}")
+    if catalog_root:
+        log_always(f"CURIO_CATALOG_ROOT={os.environ['CURIO_CATALOG_ROOT']}")
     log_always(f"ENABLE_COLLAB={os.environ['ENABLE_COLLAB']}")
 
 def logger():
@@ -450,11 +458,56 @@ def _kill_port(port: int) -> None:
             out = subprocess.check_output(
                 ["lsof", "-t", f"-i:{port}"], text=True, stderr=subprocess.DEVNULL
             )
+            pids = []
             for pid_str in out.strip().splitlines():
                 pid = int(pid_str.strip())
                 if pid:
                     log_warning(f"[Backend] Port {port} in use by PID {pid}. Terminating stale process.")
-                    os.kill(pid, _signal.SIGTERM)
+                    try:
+                        os.kill(pid, _signal.SIGTERM)
+                        pids.append(pid)
+                    except ProcessLookupError:
+                        # PID exited between lsof and SIGTERM; nothing to wait for.
+                        logger.debug(
+                            "PID %s exited before SIGTERM on port %s; skipping wait list",
+                            pid,
+                            port,
+                            exc_info=True,
+                        )
+
+            # Wait up to 3 s for the processes to exit; escalate to SIGKILL if needed.
+            if pids:
+                deadline = time.time() + 3.0
+                remaining = list(pids)
+                while remaining and time.time() < deadline:
+                    time.sleep(0.1)
+                    still_alive = []
+                    for pid in remaining:
+                        try:
+                            os.kill(pid, 0)   # 0 = probe only
+                            still_alive.append(pid)
+                        except ProcessLookupError:
+                            # PID exited between checks; treat as no longer alive.
+                            logger.debug(
+                                "PID %s no longer alive while waiting for port %s",
+                                pid,
+                                port,
+                                exc_info=True,
+                            )
+                    remaining = still_alive
+                for pid in remaining:
+                    try:
+                        log_warning(f"[Backend] PID {pid} still alive after SIGTERM; sending SIGKILL.")
+                        os.kill(pid, _signal.SIGKILL)
+                    except ProcessLookupError:
+                        logger.debug(
+                            "PID %s exited before SIGKILL on port %s",
+                            pid,
+                            port,
+                            exc_info=True,
+                        )
+                # Brief pause to let the kernel release the port after SIGKILL.
+                time.sleep(0.2)
     except subprocess.CalledProcessError:
         pass
     except Exception as e:
@@ -839,6 +892,24 @@ def main():
         ),
     )
     parser.add_argument(
+        "--save-node-outputs", action=argparse.BooleanOptionalAction, default=True,
+        help=(
+            "Persist every node run's output as a Computed dataset in the "
+            "account Data Catalog (sets CURIO_DEFAULT_SAVE_NODE_OUTPUT=1, the "
+            "default). Pass --no-save-node-outputs to make saving opt-in per "
+            "node (via each node's Save output toggle)."
+        ),
+    )
+    parser.add_argument(
+        "--catalog-root", default=None, metavar="PATH",
+        help=(
+            "Directory for the shared Data Catalog (hub read + publish "
+            "target; sets CURIO_CATALOG_ROOT). Defaults to "
+            "<repo_root>/datasets/. Point it at a writable, persistent path "
+            "for pip/Docker deployments."
+        ),
+    )
+    parser.add_argument(
         "--collab", action="store_true", default=False,
         help=(
             "Enable real-time collaborative editing (sets ENABLE_COLLAB=1). "
@@ -877,6 +948,8 @@ def main():
         reseed=args.reseed,
         allow_publish=args.allow_publish,
         collab=args.collab,
+        save_node_outputs=args.save_node_outputs,
+        catalog_root=args.catalog_root,
     )
 
     # if os.getenv("CURIO_DEV") != "1":

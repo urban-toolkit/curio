@@ -49,6 +49,10 @@ CURIO_PROJECT_EXEC_CACHE = _env_flag("CURIO_PROJECT_EXEC_CACHE", False)
 CURIO_ALLOW_FACTORY_CATALOG_PUBLISH = _env_flag(
     "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", True
 )
+# Default for catalog parquet + auto-install when the client omits saveOutputDataset.
+# ON by default so a node's output persists as a Computed dataset and survives
+# reloads without the user having to opt in per node; disable with =0/false/no/off.
+CURIO_DEFAULT_SAVE_NODE_OUTPUT = _env_flag("CURIO_DEFAULT_SAVE_NODE_OUTPUT", True)
 # Force re-seeding catalog packages into the guest user's package store at
 # startup, even when the per-user seed-state marker would normally skip them.
 CURIO_RESEED_PACKAGES = _env_flag("CURIO_RESEED_PACKAGES", False)

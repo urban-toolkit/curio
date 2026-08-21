@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-    DatasetsWindow,
     PackageManagerWindow,
     TrillProvenanceWindow,
 } from "components/menus";
@@ -41,6 +40,9 @@ import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
+import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
+import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
+import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 
 export default function UpMenu({
     setDashBoardMode,
@@ -56,7 +58,6 @@ export default function UpMenu({
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
     const [tutorialOpen, setTutorialOpen] = useState(false);
-    const [datasetsOpen, setDatasetsOpen] = useState(false);
     const [packagesOpen, setPackagesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
@@ -100,6 +101,7 @@ export default function UpMenu({
     const { showToast } = useToastContext();
     const ensureWorkflowDeps = useEnsureWorkflowDeps();
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
+    const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -111,15 +113,6 @@ export default function UpMenu({
 
     const openTrillProvenanceModal = () => {
         setTrillProvenanceOpen(true);
-        setActiveMenu(null);
-    };
-
-    const closeDatasetsModal = () => {
-        setDatasetsOpen(false);
-    };
-
-    const openDatasetsModal = () => {
-        setDatasetsOpen(true);
         setActiveMenu(null);
     };
 
@@ -212,7 +205,7 @@ export default function UpMenu({
             edges,
             workflowNameRef.current,
             "",
-            packages,
+            getCurrentProjectPackagesList(),
         );
         const content = JSON.stringify(trillSpec, null, 2);
         const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
@@ -514,6 +507,25 @@ export default function UpMenu({
                             </div>
                             <div
                                 className={styles.dropDownRow}
+                                onMouseEnter={() => {
+                                    if (projectId) {
+                                        prefetchDatasetCatalog({
+                                            dataflowId: projectId,
+                                            includeHub: true,
+                                            sort: "recent",
+                                        });
+                                    }
+                                }}
+                                onClick={() => {
+                                    openDatasetCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />
+                                <button className={styles.noStyleButton}>Data Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
                                 onClick={() => {
                                     setPackagesOpen(true);
                                     setActiveMenu(null);
@@ -521,10 +533,6 @@ export default function UpMenu({
                             >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faCubes} />
                                 <button className={styles.noStyleButton}>Installed libraries</button>
-                            </div>
-                            <div className={styles.dropDownRow} onClick={openDatasetsModal}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />
-                                <button className={styles.noStyleButton}>Datasets</button>
                             </div>
                         </div>
                     )}
@@ -677,7 +685,6 @@ export default function UpMenu({
                 closeModal={closeTrillProvenanceModal}
                 workflowName={workflowNameRef.current}
             />
-            <DatasetsWindow open={datasetsOpen} closeModal={closeDatasetsModal} />
             <PackageManagerWindow
                 open={packagesOpen}
                 closeModal={() => setPackagesOpen(false)}

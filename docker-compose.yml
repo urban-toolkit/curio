@@ -11,12 +11,22 @@ services:
     stdin_open: true
     environment:
       - PYTHONUNBUFFERED=1
+      # The container runs the backend from source baked into the image, so the
+      # Werkzeug auto-reloader provides no value here and only causes spurious
+      # mid-run restarts when runtime files are written (e.g. Data Catalog
+      # dataset bundles), dropping in-flight requests. The local e2e harness
+      # disables it for the same reason (FLASK_USE_RELOADER=0 in fixtures).
+      - FLASK_USE_RELOADER=0
     ports:
       - "${CURIO_PORT_2000:-2000}:2000"
       - "${CURIO_PORT_5002:-5002}:5002"
       - "${CURIO_PORT_8080:-8080}:8080"
     volumes:
       - ./packages:/app/packages
+      # Publish target for the Data Catalog (catalog_root() -> <repo_root>/datasets,
+      # like packages/ above). Without this bind mount, datasets published inside
+      # the container are lost on every recreate/rebuild.
+      - ./datasets:/app/datasets
       # Share sandbox .data files with the host so Playwright (runs on host in CI) can read them
       - ./.curio:/app/.curio
       # Persist the Flask SQLite DB (users, projects, sessions) across container recreates

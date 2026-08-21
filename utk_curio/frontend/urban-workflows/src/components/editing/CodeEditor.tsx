@@ -17,6 +17,8 @@ function unversionedNodeType(nodeType: string): string {
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { resolveSaveOutputDataset } from "../../utils/saveOutputDataset";
+import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { ICodeData } from "../../types";
@@ -49,7 +51,14 @@ function CodeEditor({
     const [code, setCode] = useState<string>(""); // code with all original markers
     const [execCount, setExecCount] = useState<number>(0);
 
-    const { workflowNameRef, markNodeExecuted, markNodeStale, signalNodeExecDone } = useFlowContext();
+    const {
+        workflowNameRef,
+        markNodeExecuted,
+        markNodeStale,
+        signalNodeExecDone,
+        projectId,
+        defaultSaveOutputDataset,
+    } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
 
@@ -167,6 +176,8 @@ function CodeEditor({
             }
             outputContent += (outputContent ? "\n" : "") + "Saved to file: " + result.output.path;
             setOutputCallback({ code: "success", content: outputContent });
+            // outputCallback → applyNewOutput, which centrally auto-installs +
+            // surfaces the produced dataset (no manual disk-icon save needed).
             data.outputCallback(data.nodeId, result.output);
             markNodeExecuted(data.nodeId);
         } else {
@@ -202,7 +213,10 @@ function CodeEditor({
             nodeType,
             data.nodeId,
             workflowNameRef.current,
-            nodeExecProv
+            nodeExecProv,
+            projectId,
+            resolveSaveOutputDataset(data, defaultSaveOutputDataset),
+            resolveNodeDisplayLabel(data),
         );
     }, [replacedCodeDirty]);
 

@@ -45,12 +45,14 @@ def test_metadata_only_update_preserves_spec_and_outputs(
         outputs=[OutputRef(node_id="n1", filename="kept.data")],
     )
     detail = services.save_project(user, original)
+    # save_project auto-installs outputs and adds lean dataset refs to the spec.
+    saved_spec = detail.spec
 
     updated = services.update_project(user, detail.id, ProjectUpdate(name="Renamed"))
     loaded = services.load_project(user, detail.id)
 
     assert updated.name == "Renamed"
-    assert loaded["spec"] == _make_spec("keep-me")
+    assert loaded["spec"] == saved_spec
     assert loaded["outputs"] == [{"node_id": "n1", "filename": "kept.data"}]
 
 
@@ -166,3 +168,102 @@ def test_non_guest_can_save_and_update(app, db, user_and_token, tmp_curio):
 
     updated = services.update_project(user, detail.id, ProjectUpdate(name="Renamed"))
     assert updated.name == "Renamed"
+
+
+def test_auto_install_computed_outputs_saves_account_level_no_ref(app, tmp_curio):
+    """Computed outputs are saved to the account store with NO project ref, and a
+    non-dict entry in client-supplied dataflow.datasets is left untouched (never
+    iterated), so it can't 500 the save (review finding B3)."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+
+    shared = storage._shared_data_dir()
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "b3_out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+
+    spec = {"dataflow": {"datasets": ["junk", None, 123]}}
+    refs = [OutputRef(node_id="b3node", filename="b3_out.csv")]
+
+    result = services._auto_install_computed_outputs("1", refs, spec)
+
+    # The spec's datasets are returned unchanged — no ref written, junk preserved.
+    assert result["dataflow"]["datasets"] == ["junk", None, 123]
+    # The output was saved to the account store (un-namespaced here: no dataflow_id).
+    assert (dataset_dir("1", "computed.b3node@1") / "manifest.json").is_file()
+
+
+def test_prune_sink_node_dataset_refs(app, tmp_curio):
+    """Dataset refs keyed on a visualization/sink node are pruned on save and
+    their orphaned user-store dir is removed; the real producer's ref stays."""
+    from utk_curio.backend.app.datasets.install.installer import install_computed_file_for_node
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+
+    # Install two computed datasets: a transform (producer) and a vis node
+    # (passthrough duplicate, same data).
+    install_computed_file_for_node("1", b"a,b\n1,2\n", "out.csv", "csv", node_id="transform-x")
+    install_computed_file_for_node("1", b"a,b\n1,2\n", "out.csv", "csv", node_id="visnode-y")
+    vis_dir = dataset_dir("1", "computed.visnode-y@1")
+    assert vis_dir.exists()
+
+    spec = {
+        "dataflow": {
+            "nodes": [
+                {"id": "transform-x", "type": "curio.builtin/data-transformation"},
+                {"id": "visnode-y", "type": "curio.builtin/vis-vega"},
+            ],
+            "datasets": [
+                {"datasetId": "computed.transform-x", "dirName": "computed.transform-x@1",
+                 "origin": "computed", "producerNodeId": "transform-x"},
+                {"datasetId": "computed.visnode-y", "dirName": "computed.visnode-y@1",
+                 "origin": "computed", "producerNodeId": "visnode-y"},
+            ],
+        }
+    }
+
+    pruned = services._prune_sink_node_dataset_refs("1", spec)
+
+    ds = pruned["dataflow"]["datasets"]
+    producers = {r["producerNodeId"] for r in ds}
+    assert producers == {"transform-x"}, producers       # vis ref pruned
+    assert not vis_dir.exists()                            # orphaned dir removed
+    assert spec["dataflow"]["datasets"] != ds              # original not mutated in place
+
+
+def test_prune_sink_node_dataset_refs_noop_without_sink(app, tmp_curio):
+    """No sink nodes → spec returned unchanged (same object)."""
+    spec = {"dataflow": {
+        "nodes": [{"id": "t", "type": "curio.builtin/data-transformation"}],
+        "datasets": [{"datasetId": "computed.t", "producerNodeId": "t", "dirName": "computed.t@1"}],
+    }}
+    assert services._prune_sink_node_dataset_refs("1", spec) is spec
+
+
+def test_save_drops_non_persisted_output_from_manifest(
+    app, db, user_and_token, tmp_curio
+):
+    """#144: an output whose source can't be installed must not be recorded as a
+    phantom in the manifest (it would silently vanish on reload)."""
+    user, _ = user_and_token
+    shared = storage._shared_data_dir()
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "good.data").write_bytes(b"payload")
+    # "ghost.data" is intentionally absent -> install_node_output returns None.
+
+    data = ProjectCreate(
+        name="Phantom",
+        spec=_make_spec(),
+        outputs=[
+            OutputRef(node_id="n1", filename="good.data"),
+            OutputRef(node_id="n2", filename="ghost.data"),
+        ],
+    )
+    detail = services.save_project(user, data)
+
+    ukey = services._user_dir_key(user)
+    manifest = storage.read_manifest(ukey, detail.id)
+    names = {o["filename"] for o in manifest["outputs"]}
+    assert names == {"good.data"}, "ghost output must not be persisted as a phantom"
+
+    # The save response and a fresh load both reflect only the durable output.
+    assert {o["filename"] for o in (services.load_project(user, detail.id)["outputs"])} == {
+        "good.data"
+    }

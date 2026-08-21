@@ -6,6 +6,8 @@ import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { groupPalettePackages } from "../../menus/nodes/toolsMenuPackagePalette/model";
 import { useStarterContext } from "../../../providers/StarterProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
+import { useFlowContext } from "../../../providers/FlowProvider";
+import { setCurrentProjectPackages } from "../../../registry/projectPackagesStore";
 import {
   SAVE_AS_NEW_PACK,
   buildFactoryInstallEnvelope,
@@ -49,6 +51,7 @@ export function NodeSaveAsModal({
   const { getNodes, setNodes } = useReactFlow();
   const { getStarters } = useStarterContext();
   const { showToast } = useToastContext();
+  const { projectId } = useFlowContext();
   const [targetKey, setTargetKey] = useState<string>(SAVE_AS_NEW_PACK);
   const [newPackageName, setNewPackageName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -138,6 +141,14 @@ export function NodeSaveAsModal({
       }
 
       const result = await packagesApi.factoryInstall(buildFactoryInstallEnvelope(draft, replace));
+      // When creating a brand-new package via Save As, the package is only in
+      // the user store after factoryInstall. refreshPackageRegistry filters
+      // by the project lockfile, so the new descriptor would be invisible.
+      // Add it to the project lockfile first so the descriptor gets registered.
+      if (targetKey === SAVE_AS_NEW_PACK && projectId) {
+        const projResult = await packagesApi.installToProject(projectId, result.package.dirName);
+        setCurrentProjectPackages(projResult.packages);
+      }
       await refreshPackageRegistry();
       // Rebind the canvas node to the new/updated kind so re-opening Settings
       // resolves to the new descriptor (e.g. its readOnly flag), not the
@@ -177,7 +188,7 @@ export function NodeSaveAsModal({
     } finally {
       setBusy(false);
     }
-  }, [busy, canvasNode, getStarters, newPackageName, nodeId, nodeLabel, onClose, setNodes, showToast, targetKey]);
+  }, [busy, canvasNode, getStarters, newPackageName, nodeId, nodeLabel, onClose, projectId, setNodes, showToast, targetKey]);
 
   if (!show) return null;
 

@@ -5,6 +5,9 @@
 # boots with auth + projects enabled (CURIO_NO_AUTH=0, CURIO_NO_PROJECT=0).
 services:
   curio:
+    # Bring the container back up automatically after a host reboot or daemon
+    # restart, but respect a manual `docker stop`.
+    restart: unless-stopped
     command:
       - python
       - curio.py

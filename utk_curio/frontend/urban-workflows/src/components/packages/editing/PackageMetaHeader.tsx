@@ -10,6 +10,7 @@ export interface PackageMetaHeaderProps {
   package: NodePackageMeta;
   category: NodeCategory;
   suggestionActive: boolean;
+  pkg?: NodePackageMeta;
 }
 
 /**
@@ -40,10 +41,7 @@ export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMe
   const packageBadgeClick = useHeaderIconDragClick(focusPackageInPalette);
 
   return (
-    <div
-      className={styles.pills}
-      style={suggestionActive ? { pointerEvents: "none" } : undefined}
-    >
+    <div className={styles.pills} style={suggestionActive ? { pointerEvents: "none" } : undefined}>
       <span className={styles.categoryBadge} title={NODE_CATEGORY_SHORT_LABEL[category]}>
         {NODE_CATEGORY_SHORT_LABEL[category]}
       </span>

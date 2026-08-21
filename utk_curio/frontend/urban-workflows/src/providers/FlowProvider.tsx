@@ -23,20 +23,33 @@ import {
     NodeRemoveChange,
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
+import type { InstalledDatasetPayload } from "../services/datasetCatalog/datasetCatalogApi";
+import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import { NodeType, EdgeType } from "../constants";
 import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
 import { applyDashboardLayout } from "../utils/dashboardLayout";
-import { ensureMergeArrays, parseHandleIndex, setMergeSlot, clearMergeSlot } from "../utils/mergeFlowUtils";
+import {
+    ensureMergeArrays,
+    parseHandleIndex,
+    setMergeSlot,
+    clearMergeSlot,
+    mergeSlotsForSource,
+} from "../utils/mergeFlowUtils";
 import { useWorkflowOperations } from "../hook/useWorkflowOperations";
 import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { pythonInterpreter, jsInterpreter } from "../hook/useCode";
+import { normalizeFlowInput } from "../utils/flowOutputRef";
+import { DEFAULT_SAVE_OUTPUT_DATASET, resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
+import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
+import { authApi } from "../utils/authApi";
 
 
 export interface IOutput {
     nodeId: string;
-    output: string;
+    output: unknown;
 }
 
 export interface IInteraction {
@@ -59,16 +72,28 @@ interface PlayAllState {
     pending: Set<string>;
 }
 
+// Play All advances level-by-level only once every node in the active level
+// reports it finished. If a node never does — the backend never returns, its
+// output never reaches success/error, or a node type forgets to signal — the run
+// would wedge forever and every downstream level (and the datasets those nodes
+// produce) would never run. This watchdog bounds that: if NO node in the active
+// level makes progress for this long, the run force-advances past the stuck
+// node(s) with a warning. The timer resets on every completion, so a level full
+// of legitimately-slow nodes is fine as long as they keep finishing. Sized to
+// the client execution ceiling so a single genuinely-running node isn't cut off.
+const PLAY_ALL_STALL_TIMEOUT_MS = 600_000;
+
 interface FlowContextProps {
     nodes: Node[];
     edges: Edge[];
+    outputs: IOutput[];
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
     setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
     addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
     onNodesChange: (changes: NodeChange[]) => void;
     onEdgesChange: (changes: EdgeChange[]) => void;
-    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean) => void;
+    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => void;
     isValidConnection: (connection: Connection) => boolean;
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
@@ -98,11 +123,16 @@ interface FlowContextProps {
     loading: boolean;
 
     applyRemoveChanges: (changes: NodeRemoveChange[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[]) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
     removePackage: (pkg: string) => void;
+    dataflowDatasets: any[];
+    setDataflowDatasets: React.Dispatch<React.SetStateAction<any[]>>;
+    pendingInstalls: PendingInstall[];
+    beginPendingInstall: (entry: Omit<PendingInstall, "startedAt">) => void;
+    endPendingInstall: (key: string) => void;
     updateDataNode: (nodeId: string, newData: any) => void;
     updateWarnings: (trill_spec: any) => void;
     updateDefaultCode: (nodeId: string, content: string) => void;
@@ -124,6 +154,9 @@ interface FlowContextProps {
     // Project operations
     saveCurrentProject: (nameOverride?: string) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
+    ensureProjectId: () => Promise<string | null>;
+    persistInstalledDataset: (inst: InstalledDatasetPayload | null | undefined) => Promise<void>;
+    persistDataflowForInstall: () => Promise<void>;
     loadProject: (id: string) => Promise<any>;
     loadSharedProject: (id: string) => Promise<any>;
     discardProject: () => void;
@@ -133,6 +166,8 @@ interface FlowContextProps {
     playAllNodes: () => void;
     playNodesUpTo: (targetNodeId: string) => void;
     signalNodeExecDone: (nodeId: string) => void;
+    defaultSaveOutputDataset: boolean;
+    setDefaultSaveOutputDataset: (value: boolean) => void;
 }
 
 // Stable context for NodeContainer — only updates when goal/minimized change, NOT on node drag
@@ -173,6 +208,7 @@ export const useNodeActionsContext = () => useContext(NodeActionsContext);
 export const FlowContext = createContext<FlowContextProps>({
     nodes: [],
     edges: [],
+    outputs: [],
     setOutputs: () => { },
     setInteractions: () => { },
     applyNewPropagation: () => { },
@@ -223,6 +259,11 @@ export const FlowContext = createContext<FlowContextProps>({
     setPackages: () => {},
     addPackage: () => {},
     removePackage: () => {},
+    dataflowDatasets: [],
+    setDataflowDatasets: () => {},
+    pendingInstalls: [],
+    beginPendingInstall: () => {},
+    endPendingInstall: () => {},
 
     // Project defaults
     projectId: null,
@@ -233,6 +274,9 @@ export const FlowContext = createContext<FlowContextProps>({
     viewerMode: "owner",
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
+    ensureProjectId: async () => null,
+    persistInstalledDataset: async () => {},
+    persistDataflowForInstall: async () => {},
     loadProject: async () => {},
     loadSharedProject: async () => {},
     discardProject: () => {},
@@ -242,6 +286,8 @@ export const FlowContext = createContext<FlowContextProps>({
     playAllNodes: () => {},
     playNodesUpTo: () => {},
     signalNodeExecDone: () => {},
+    defaultSaveOutputDataset: false,
+    setDefaultSaveOutputDataset: () => {},
 });
 
 function computeTopologicalLevels(nodes: Node[], edges: Edge[]): string[][] {
@@ -298,6 +344,39 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
+    // Set after workflowOps exists; called from applyNewOutput (a genuine runtime
+    // output, NOT project load — load writes outputs via setOutputs directly) to
+    // auto-install + surface a produced dataset without a manual disk-icon save.
+    const scheduleInstallSyncRef = useRef<(nodeId: string) => void>(() => {});
+    // Forces the debounced install-save to run NOW (assigned below, next to
+    // scheduleInstallSyncRef). The Play-All runner calls it on completion and the
+    // provider calls it on unmount so the final burst is never lost to the timer.
+    const flushInstallSyncRef = useRef<() => void>(() => {});
+    const [defaultSaveOutputDataset, setDefaultSaveOutputDataset] = useState(
+        DEFAULT_SAVE_OUTPUT_DATASET,
+    );
+
+    // The backend (CURIO_DEFAULT_SAVE_NODE_OUTPUT) is the authoritative source
+    // for the workflow-wide default. Read it once from /api/config/public so
+    // the per-node "Save output dataset" default (and the save-time gate in
+    // buildOutputRefs) matches the deployment's runtime setting rather than the
+    // build-time env baked into the bundle. Mirrors CollaborationProvider.
+    useEffect(() => {
+        let cancelled = false;
+        authApi
+            .getPublicConfig()
+            .then((cfg) => {
+                if (!cancelled && typeof cfg?.default_save_node_output === "boolean") {
+                    setDefaultSaveOutputDataset(cfg.default_save_node_output);
+                }
+            })
+            .catch(() => {
+                /* keep build-time DEFAULT_SAVE_OUTPUT_DATASET fallback */
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     // Collaboration broadcasters. The provider may be a no-op (when
     // --collab is off or no project is loaded), in which case every
@@ -480,6 +559,49 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         [setNodes]
     );
 
+    // Push a source node's cached output to every direct downstream consumer.
+    const propagateDownstreamInputs = (sourceId: string, rawOutput: unknown) => {
+        const currentEdges = reactFlow.getEdges();
+        const nodesAffected: string[] = [];
+        for (const edge of currentEdges) {
+            if (edge.sourceHandle == "in/out" && edge.targetHandle == "in/out") continue;
+            if (sourceId == edge.source) {
+                nodesAffected.push(edge.target);
+            }
+        }
+        if (!nodesAffected.length) return;
+
+        const normalized = normalizeFlowInput(rawOutput);
+        const inputPayload = normalized === "" ? "" : normalized;
+
+        setNodes((nds: any) =>
+            nds.map((node: any) => {
+                if (!nodesAffected.includes(node.id)) return node;
+
+                if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
+                    const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
+                    // Fill EVERY slot this source feeds — one source can be wired
+                    // to multiple slots of the same merge node.
+                    const sourceIndices = mergeSlotsForSource(
+                        currentEdges,
+                        node.id,
+                        sourceId,
+                        sourceList,
+                    );
+                    for (const sourceIndex of sourceIndices) {
+                        setMergeSlot(inputList, sourceList, sourceIndex, inputPayload, sourceId);
+                    }
+                    return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
+                }
+
+                if (inputPayload === "") {
+                    return { ...node, data: { ...node.data, input: "", source: "" } };
+                }
+                return { ...node, data: { ...node.data, input: inputPayload, source: sourceId } };
+            })
+        );
+    };
+
     // updates a single box with the new input (new connections)
     const applyOutput = (
         inNodeType: NodeType,
@@ -497,8 +619,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         // wrote an empty data.input, then setOutputs ran and mutated
         // `output` after no one was reading it. Read synchronously from
         // outputsRef instead.
-        const sourceEntry = outputsRef.current.find((opt: any) => opt.nodeId === outId);
-        const output = sourceEntry?.output ?? "";
+        const entry = outputsRef.current.find((opt: any) => opt.nodeId === outId);
+        const raw = entry?.output;
+        const normalized =
+            raw != null && raw !== "" ? normalizeFlowInput(raw) : "";
 
         setNodes((nds: any) =>
             nds.map((node: any) => {
@@ -508,12 +632,12 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                     const handleIndex = parseHandleIndex(targetHandle);
                     if (handleIndex >= 0) {
-                        setMergeSlot(inputList, sourceList, handleIndex, output, outId);
+                        setMergeSlot(inputList, sourceList, handleIndex, normalized, outId);
                     }
                     return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
                 }
 
-                return { ...node, data: { ...node.data, input: output, source: outId } };
+                return { ...node, data: { ...node.data, input: normalized, source: outId } };
             })
         );
     };
@@ -599,7 +723,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     );
 
     const onConnect = useCallback(
-        (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean) => {
+        (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => {
             console.log(
                 "onConnect triggered:",
                 connection.source,
@@ -674,15 +798,24 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     }
                 }
 
-                let allowConnection = ConnectionValidator.checkBoxCompatibility(
-                    outNodeType,
-                    inNodeType
-                );
+                // Edges reconstructed when loading a saved dataflow were already
+                // validated when the user created them. Re-running the type check
+                // here is wrong on load: the node-descriptor registry may not be
+                // populated yet (package bootstrap is async), so
+                // ``checkBoxCompatibility`` would return false and silently drop a
+                // valid edge — and the toast would fire mid-render (setState on
+                // ToastProvider during FlowProvider render). Trust persisted edges.
+                let allowConnection = skipValidation
+                    ? true
+                    : ConnectionValidator.checkBoxCompatibility(outNodeType, inNodeType);
 
                 if (!allowConnection) {
                     showToast("Input and output types of these boxes are not compatible", "warning");
                 }
 
+                // Resolve merge target handle before validation / applyOutput. Imported
+                // trills set `in_0`/`in_1` explicitly; manual drags may omit it.
+                let resolvedConnection: Connection = connection;
                 if (inNodeType === NodeType.MERGE_FLOW && allowConnection) {
                     const availableHandles = Array(5).fill(1).map((_, i) => `in_${i}`);
                     const usedHandles = new Set(
@@ -694,13 +827,35 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             .map((edge: Edge) => edge.targetHandle)
                     );
 
+                    let targetHandle = connection.targetHandle;
+                    if (!targetHandle || targetHandle === "in" || parseHandleIndex(targetHandle) < 0) {
+                        const nextFree = availableHandles.find((h) => !usedHandles.has(h));
+                        if (!nextFree) {
+                            showToast(
+                                "Connection limit reached. Merge nodes can only accept up to 5 input connections.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        } else {
+                            targetHandle = nextFree;
+                            resolvedConnection = { ...connection, targetHandle };
+                        }
+                    }
 
-                    if (usedHandles.size > 7) {
-                        showToast("Connection limit reached. Merge nodes can only accept up to 7 input connections.", "warning");
-                        allowConnection = false;
-                    } else if (usedHandles.has(connection.targetHandle)) {
-                        showToast("This input already has a connection. Each input handle can only accept one connection.", "warning");
-                        allowConnection = false;
+                    if (allowConnection) {
+                        if (usedHandles.size >= availableHandles.length) {
+                            showToast(
+                                "Connection limit reached. Merge nodes can only accept up to 5 input connections.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        } else if (usedHandles.has(resolvedConnection.targetHandle)) {
+                            showToast(
+                                "This input already has a connection. Each input handle can only accept one connection.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        }
                     }
                 }
 
@@ -717,18 +872,19 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 }
 
                 if (allowConnection) {
-                    markNodeStaleRef.current(connection.target as string);
+                    const conn = inNodeType === NodeType.MERGE_FLOW ? resolvedConnection : connection;
+                    markNodeStaleRef.current(conn.target as string);
                     applyOutput(
                         inNodeType as NodeType,
-                        connection.target as string,
-                        connection.source as string,
-                        connection.sourceHandle as string,
-                        connection.targetHandle as string
+                        conn.target as string,
+                        conn.source as string,
+                        conn.sourceHandle as string,
+                        conn.targetHandle as string
                     );
 
                     setEdges((eds) => {
                         let customConnection: any = {
-                            ...connection,
+                            ...conn,
                             markerEnd: { type: MarkerType.ArrowClosed },
                         };
 
@@ -736,15 +892,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         // connections arrive as Connection (no id); addEdge assigns one later
                         // but addNewVersionProvenance is called before that.
                         if (!customConnection.id) {
-                            customConnection.id = `reactflow__edge-${connection.source}${connection.sourceHandle || ''}-${connection.target}${connection.targetHandle || ''}`;
+                            customConnection.id = `reactflow__edge-${conn.source}${conn.sourceHandle || ''}-${conn.target}${conn.targetHandle || ''}`;
                         }
 
                         if (customConnection.data == undefined)
                             customConnection.data = {};
 
                         if (
-                            connection.sourceHandle == "in/out" &&
-                            connection.targetHandle == "in/out"
+                            conn.sourceHandle == "in/out" &&
+                            conn.targetHandle == "in/out"
                         ) {
                             customConnection.markerStart = {
                                 type: MarkerType.ArrowClosed,
@@ -767,7 +923,17 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             edge: customConnection,
                         });
 
-                        return addEdge(customConnection, eds);
+                        const nextEdges = addEdge(customConnection, eds);
+                        const sourceId = conn.source as string;
+                        const cached = outputsRef.current.find((o) => o.nodeId === sourceId);
+                        if (cached?.output != null && cached.output !== "") {
+                            // Edge is in the graph now — fan out to all downstream nodes
+                            // (merge slots, multiple pools) using the live edge list.
+                            queueMicrotask(() => {
+                                propagateDownstreamInputs(sourceId, cached.output);
+                            });
+                        }
+                        return nextEdges;
                     });
                 }
             }
@@ -783,13 +949,59 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         [reactFlow.getNodes, reactFlow.getEdges]
     );
 
+    const playAllStallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearPlayAllStallTimer = () => {
+        if (playAllStallTimerRef.current) {
+            clearTimeout(playAllStallTimerRef.current);
+            playAllStallTimerRef.current = null;
+        }
+    };
+
+    // End the run: stop the watchdog, drop the state, and persist the final burst
+    // immediately so the last level's datasets can't be lost to the install-save
+    // debounce window (see flushInstallSyncRef / scheduleInstallSyncRef).
+    function finishPlayAll() {
+        clearPlayAllStallTimer();
+        playAllStateRef.current = null;
+        flushInstallSyncRef.current();
+    }
+
+    function advancePlayAll(state: PlayAllState) {
+        const next = state.currentLevel + 1;
+        if (next < state.levels.length) triggerLevel(next);
+        else finishPlayAll();
+    }
+
+    // (Re)arm the stall watchdog for the active level. Armed when a level is
+    // triggered and reset on every node completion, so it fires only after a
+    // genuine no-progress stall — never while nodes are still finishing.
+    function armPlayAllStallTimer() {
+        clearPlayAllStallTimer();
+        playAllStallTimerRef.current = setTimeout(() => {
+            playAllStallTimerRef.current = null;
+            const state = playAllStateRef.current;
+            if (!state) return;
+            const stuck = state.pending.size;
+            if (stuck > 0) {
+                showToast(
+                    `${stuck} node(s) didn't finish in time — continuing with the rest of the run`,
+                    "warning",
+                );
+            }
+            state.pending = new Set();
+            advancePlayAll(state);
+        }, PLAY_ALL_STALL_TIMEOUT_MS);
+    }
+
     function triggerLevel(levelIndex: number) {
         const state = playAllStateRef.current;
         if (!state) return;
         const levelNodeIds = state.levels[levelIndex];
-        if (!levelNodeIds?.length) { playAllStateRef.current = null; return; }
+        if (!levelNodeIds?.length) { finishPlayAll(); return; }
         state.pending = new Set(levelNodeIds);
         state.currentLevel = levelIndex;
+        armPlayAllStallTimer();
         setNodes((nds: Node[]) =>
             nds.map((node: Node) =>
                 levelNodeIds.includes(node.id)
@@ -802,11 +1014,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const signalNodeExecDone = useCallback((nodeId: string) => {
         const state = playAllStateRef.current;
         if (!state) return;
-        state.pending.delete(nodeId);
+        // Ignore signals from nodes that aren't part of the active level (e.g. a
+        // straggler/duplicate from an earlier level) — they must not drain the
+        // pending set or reset the watchdog.
+        if (!state.pending.delete(nodeId)) return;
         if (state.pending.size === 0) {
-            const next = state.currentLevel + 1;
-            if (next < state.levels.length) triggerLevel(next);
-            else playAllStateRef.current = null;
+            advancePlayAll(state);
+        } else {
+            // Progress made — reset the watchdog so slow-but-alive levels survive.
+            armPlayAllStallTimer();
         }
     }, [setNodes]);
 
@@ -871,41 +1087,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     // a box generated a new output. Propagate it to directly connected boxes
     const applyNewOutput = (newOutput: IOutput) => {
-        const currentEdges = reactFlow.getEdges();
-
-        // Find which nodes are directly downstream of the output source
-        const nodesAffected: string[] = [];
-        for (const edge of currentEdges) {
-            if (edge.sourceHandle == "in/out" && edge.targetHandle == "in/out") continue;
-            if (newOutput.nodeId == edge.source) {
-                nodesAffected.push(edge.target);
-            }
-        }
-
-        // Skip setNodes entirely when nothing downstream needs updating — an
-        // empty map still returns a new array reference which causes every node
-        // component to re-render (Data Pool table, autk-grammar, etc.).
-        if (nodesAffected.length > 0) {
-            setNodes((nds: any) =>
-                nds.map((node: any) => {
-                    if (!nodesAffected.includes(node.id)) return node;
-
-                    if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
-                        const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
-                        const sourceIndex = sourceList.findIndex((s: any) => s === newOutput.nodeId);
-                        if (sourceIndex >= 0) {
-                            inputList[sourceIndex] = newOutput.output;
-                        }
-                        return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
-                    }
-
-                    if (newOutput.output == undefined) {
-                        return { ...node, data: { ...node.data, input: "", source: "" } };
-                    }
-                    return { ...node, data: { ...node.data, input: newOutput.output, source: newOutput.nodeId } };
-                })
-            );
-        }
+        propagateDownstreamInputs(newOutput.nodeId, newOutput.output);
 
         setOutputs((opts: any) => {
             let added = false;
@@ -921,6 +1103,12 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         });
 
         markNodeExecutedRef.current(newOutput.nodeId);
+        // Schedule the install BEFORE signaling done: when this is the last node of
+        // the run, signalNodeExecDone → finishPlayAll flushes the debounce, and we
+        // need this node already queued so its dataset is included in that flush.
+        // Auto-install + surface the produced dataset (debounced, gated to saver
+        // producer nodes inside the handler) without a manual save.
+        scheduleInstallSyncRef.current(newOutput.nodeId);
         signalNodeExecDone(newOutput.nodeId);
     };
 
@@ -1222,11 +1410,86 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         workflowDescriptionRef,
         onEdgesDelete, onNodesDelete, onNodesChange,
         onConnect, addNode,
+        defaultSaveOutputDataset,
     });
 
     markNodeExecutedRef.current = workflowOps.markNodeExecuted;
     markNodeStaleRef.current = workflowOps.markNodeStale;
     markDirtyRef.current = workflowOps.markDirty;
+
+    // ── Auto-surface produced datasets without a manual disk-icon save ─────────
+    // A dataset is installed when its producing node's output is persisted: for
+    // tabular outputs the backend installs during execution, but for many node
+    // types (raster, merge, spatial-join, etc.) the install happens only at SAVE
+    // time via _auto_install_computed_outputs over the saved output refs. Only
+    // CodeEditor previously triggered that, so datasets from other node types
+    // stayed invisible until the user clicked Save. Centralize here: applyNewOutput
+    // (reached by EVERY producing node, and only on a genuine runtime output — not
+    // project load) calls scheduleInstallSyncRef → this runs the same save the disk
+    // icon does (install + syncDatasetsFromSavedSpec resync) so the open palette /
+    // drawer refresh live. Debounced so a "play all" burst collapses into one save.
+    const installSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const installSyncPendingIdsRef = useRef<Set<string>>(new Set());
+    scheduleInstallSyncRef.current = (nodeId: string) => {
+        const node = reactFlow.getNode(nodeId);
+        if (!node) return;
+        const canonical = getFlowNodeCanonicalType(node);
+        // Sinks / interaction surfaces pass their input through — never a NEW
+        // dataset — so excluding them keeps e.g. a Data Pool's per-brush re-emit
+        // from triggering saves.
+        if (
+            canonical === NodeType.VIS_VEGA ||
+            canonical === NodeType.VIS_SIMPLE ||
+            canonical === NodeType.DATA_POOL
+        ) {
+            return;
+        }
+        if (isDatasetPaletteNode(node.data)) return;
+        if (!resolveSaveOutputDataset(node.data, defaultSaveOutputDataset)) return;
+
+        installSyncPendingIdsRef.current.add(nodeId);
+        workflowOps.beginPendingInstall({
+            key: nodeId,
+            producerNodeId: nodeId,
+            label: resolveNodeDisplayLabel(node.data),
+        });
+
+        // Debounce: one save covers every producer that landed in this window. The
+        // save fires after outputs have committed, so buildOutputRefs sees them.
+        if (installSyncTimerRef.current) clearTimeout(installSyncTimerRef.current);
+        installSyncTimerRef.current = setTimeout(() => runInstallSyncNow(), 500);
+    };
+
+    // Run the pending install-save immediately. Shared by the debounce timer and
+    // by flushInstallSyncRef so a forced flush takes the exact same path.
+    const runInstallSyncNow = () => {
+        if (installSyncTimerRef.current) {
+            clearTimeout(installSyncTimerRef.current);
+            installSyncTimerRef.current = null;
+        }
+        const ids = Array.from(installSyncPendingIdsRef.current);
+        if (ids.length === 0) return;
+        installSyncPendingIdsRef.current = new Set();
+        void workflowOps
+            .persistDataflowForInstall()
+            .finally(() => ids.forEach((id) => workflowOps.endPendingInstall(id)));
+    };
+
+    // Force any pending install-save to run now. Called when Play All completes
+    // (finishPlayAll) and on unmount so the last burst's datasets are never lost
+    // to the 500ms debounce window (Vector 2 in the flakiness investigation).
+    flushInstallSyncRef.current = () => {
+        if (installSyncTimerRef.current) runInstallSyncNow();
+    };
+
+    useEffect(
+        () => () => {
+            // Flush (not just clear) on unmount: a dataflow switch / navigation
+            // inside the debounce window would otherwise drop the pending save.
+            flushInstallSyncRef.current();
+        },
+        [],
+    );
 
     const nodeActionsValue = useMemo<NodeActionsContextProps>(() => ({
         workflowNameRef,
@@ -1264,6 +1527,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             value={{
                 nodes,
                 edges,
+                outputs,
                 setOutputs,
                 setInteractions,
                 applyNewPropagation,
@@ -1296,6 +1560,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 loading,
 
                 ...workflowOps,
+                defaultSaveOutputDataset,
+                setDefaultSaveOutputDataset,
 
             }}
         >

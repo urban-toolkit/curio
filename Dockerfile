@@ -23,6 +23,7 @@ RUN npm ci --no-audit --no-fund
 COPY requirements.txt curio.py ./
 COPY scripts/ scripts/
 COPY packages/ packages/
+COPY datasets/ datasets/
 COPY docs/examples/ docs/examples/
 COPY docs/schemas/ docs/schemas/
 COPY utk_curio/ utk_curio/

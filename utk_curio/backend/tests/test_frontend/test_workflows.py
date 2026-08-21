@@ -102,6 +102,16 @@ class TestWorkflowCanvas:
         """Return a Playwright ``Locator`` for a ReactFlow node element."""
         return self.page.locator(f'.react-flow__node[data-id="{node.id}"]')
 
+    # WebGPU (AUTK_GRAMMAR) workflows render maps/shadows on the GPU, which is
+    # non-deterministic across GPU, driver, anti-aliasing and run (the
+    # shadow-study canvas can differ ~20-25% run-to-run). They need a looser
+    # screenshot pixel-diff tolerance than the deterministic Vega/data
+    # workflows; AUTK *correctness* is independently guarded by the per-node
+    # "Done" check and ``_assert_hardware_webgpu``, so the screenshot here is
+    # only a coarse layout/regression guard.
+    _WEBGPU_SCREENSHOT_MAX_DIFF_RATIO = 0.35
+    _DEFAULT_SCREENSHOT_MAX_DIFF_RATIO = 0.20
+
     def _save_screenshot(self, request):
         """Persist canvas screenshot (see ``save_workflow_test_screenshot``)
         and dump the captured browser console/pageerror log alongside it.
@@ -111,10 +121,16 @@ class TestWorkflowCanvas:
         calling ``console.error``), so we always write it — not just on
         failure — while we're debugging the rendering issue.
         """
+        is_webgpu = any(n.type in self._WEBGPU_DIAGNOSTIC_TYPES for n in self.spec.nodes)
         save_workflow_test_screenshot(
             self.page,
             self.spec.filepath,
             test_name=request.function.__name__,
+            max_diff_ratio=(
+                self._WEBGPU_SCREENSHOT_MAX_DIFF_RATIO
+                if is_webgpu
+                else self._DEFAULT_SCREENSHOT_MAX_DIFF_RATIO
+            ),
         )
         log_entries = getattr(self.page, "_curio_browser_log", None) or []
         autk_errors = getattr(self.__class__, "_autk_error_texts", None) or {}
