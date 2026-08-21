@@ -44,7 +44,7 @@
     "react-dom": "^18.3.1",
     "react-draggable": "^4.5.0",
     "react-markdown": "^10.1.0",
-    "react-router-dom": "^6.30.3",
+    "react-router-dom": "^7.18.2",
     "reactflow": "^11.11.4",
     "socket.io-client": "^4.8.1",
     "uuid": "^14.0.0",
