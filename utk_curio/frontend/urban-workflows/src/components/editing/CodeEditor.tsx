@@ -18,6 +18,7 @@ import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft"
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
+import { usePackageBackendRun } from "../../hook/usePackageBackendRun";
 import { ICodeData } from "../../types";
 
 type CodeEditorProps = {
@@ -58,6 +59,8 @@ function CodeEditor({
     } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
+    // dev/91: non-null exactly when this template declares a backendHandler.
+    const backendRun = usePackageBackendRun(nodeType);
 
     const replacedCodeDirtyBypass = useRef(false);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -196,6 +199,21 @@ function CodeEditor({
         if (output.code !== "exec") return;
         if (replacedCode === "") {
             setOutputCallback({ code: "error", content: "No code to execute" });
+            return;
+        }
+        if (backendRun) {
+            // dev/91: a backendHandler template Runs through the package
+            // backend sandbox — registry-driven dispatch, never another
+            // hardcoded template-id literal.
+            void backendRun({ content: replacedCode, input: data.input }).then((outcome) => {
+                if (outcome.ok) {
+                    setOutputCallback({ code: "success", content: outcome.content });
+                    markNodeExecuted(data.nodeId);
+                } else {
+                    setOutputCallback({ code: "error", content: outcome.content });
+                    signalNodeExecDone(data.nodeId);
+                }
+            });
             return;
         }
         const isJsNode = unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION;

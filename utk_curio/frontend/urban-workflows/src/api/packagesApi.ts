@@ -61,7 +61,11 @@ export interface PackageTemplatePayload {
   hasProvenance: boolean | null;
   /** Anchor id for the in-app tutorial system. */
   tutorialId: string | null;
+  /** dev/91: declared backend handler this template's Run invokes through
+   * the package backend sandbox (null/absent = ordinary execution). */
+  backendHandler?: string | null;
 }
+
 
 /** Package-relative coordinate (`packageId` + compatibility major). */
 export interface PackageLineageCoordPayload {
@@ -545,3 +549,4 @@ export const packagesApi = {
 };
 
 export { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
+

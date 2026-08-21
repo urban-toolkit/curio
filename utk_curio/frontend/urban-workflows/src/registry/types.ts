@@ -228,6 +228,9 @@ export interface NodeDescriptor {
   hasProvenance?: boolean;
   adapter: NodeAdapter;
   tutorialId?: string;
+  /** dev/91: name of the declared package backend handler this template's
+   * Run invokes through the sandbox route (absent = ordinary execution). */
+  backendHandler?: string;
   /**
    * Origin of the descriptor. Omitted = `'core'` for backwards compatibility
    * with the built-in registrations in `registry/descriptors.ts`.

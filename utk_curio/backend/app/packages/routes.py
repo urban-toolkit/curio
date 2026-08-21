@@ -143,6 +143,9 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
                 "containerStyle": tpl.container_style,
                 "hasProvenance": tpl.has_provenance,
                 "tutorialId": tpl.tutorial_id,
+                # dev/91: the declared backend handler this template's Run
+                # invokes through the package backend sandbox (null = none).
+                "backendHandler": tpl.backend_handler,
             }
         )
     payload = {
