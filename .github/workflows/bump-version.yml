@@ -7,10 +7,18 @@ on:
       - 'utk_curio/**'
       - 'docs/examples/**'
   workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type (minor = feature release)"
+        type: choice
+        options:
+          - patch
+          - minor
+        default: patch
+        required: true
 
 permissions:
   contents: write
-  models: read
 
 jobs:
   bump:
@@ -28,84 +36,20 @@ jobs:
             echo "SKIP=true" >> $GITHUB_ENV
           fi
 
-      - name: Classify bump type via GitHub Models
+      - name: Decide bump type
         if: env.SKIP != 'true'
         run: |
-          # Use the previous bump commit as the boundary instead of a git
-          # tag — bump-version doesn't (and shouldn't) create tags, so an
-          # ancient v* tag would otherwise drag old commits into every run's
-          # classification window.
-          LAST_BUMP=$(git log --author="github-actions\[bot\]" \
-                              --grep="^chore: bump version to " \
-                              -n 1 --format="%H")
-          if [ -z "$LAST_BUMP" ]; then
-            RANGE="HEAD"
+          # GitHub Models (which used to classify the release as minor/patch)
+          # was retired on 2026-07-30, so the bump type is now explicit:
+          # pushes to main bump PATCH, and a feature release is cut
+          # deliberately via Run workflow -> bump: minor.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BUMP="${{ inputs.bump }}"
           else
-            RANGE="${LAST_BUMP}..HEAD"
-          fi
-          COMMITS=$(git log $RANGE --format="- %s" -- utk_curio docs/examples | grep -v "^- chore: bump version" || true)
-
-          if [ -z "$COMMITS" ]; then
-            echo "BUMP=patch" >> $GITHUB_ENV
-            exit 0
-          fi
-
-          PROMPT="Curio is a dataflow visual analytics tool with example workflows under docs/examples/. The commit list below represents ONE upcoming release. Classify the release as a whole — not each commit individually — as MINOR or PATCH.
-
-          MINOR if ANY commit introduces:
-          - A new user-visible feature, node type, widget, or capability
-          - New example workflows, templates, or datasets
-
-          PATCH otherwise (bugfixes, refactors, dep bumps, docs, tests, CI, regenerated fixtures).
-
-          Reply with EXACTLY ONE JSON object — never a list — of shape {\"decision\": \"minor\" or \"patch\", \"reason\": \"<one short sentence summarising the release>\"}.
-
-          Commits in this release:
-          $COMMITS"
-
-          PAYLOAD=$(jq -n \
-            --arg prompt "$PROMPT" \
-            '{model: "openai/gpt-4o-mini", max_tokens: 250, response_format: {type: "json_object"}, messages: [{role: "user", content: $prompt}]}')
-
-          HTTP_CODE=$(curl -sS -o /tmp/models_response.json -w "%{http_code}" \
-            https://models.github.ai/inference/chat/completions \
-            -H "Authorization: Bearer ${{ github.token }}" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD")
-
-          if [[ "$HTTP_CODE" != "200" ]]; then
-            echo "::error::GitHub Models API returned HTTP $HTTP_CODE"
-            echo "Response body:"
-            cat /tmp/models_response.json
-            exit 1
-          fi
-          RESPONSE=$(cat /tmp/models_response.json)
-
-          CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content')
-          FINISH=$(echo "$RESPONSE" | jq -r '.choices[0].finish_reason // ""')
-          if [[ "$FINISH" == "length" ]]; then
-            echo "::warning::Model reply was truncated (finish_reason=length); reason field may be unparseable"
-          fi
-          # Tolerate malformed JSON: a truncated reason string makes the whole
-          # content unparseable, but we only need .decision to proceed.
-          DECISION=$(echo "$CONTENT" | jq -r '.decision // empty' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-          REASON=$(echo "$CONTENT" | jq -r '.reason // ""' 2>/dev/null || true)
-
-          echo "Model decision: '$DECISION'"
-          echo "Model reason: $REASON"
-
-          if [[ "$DECISION" == "minor" ]]; then
-            BUMP="minor"
-          elif [[ "$DECISION" == "patch" ]]; then
             BUMP="patch"
-          else
-            echo "::error::GitHub Models returned unexpected decision: '$DECISION'"
-            echo "Raw content: $CONTENT"
-            echo "Raw response: $RESPONSE"
-            exit 1
           fi
           echo "BUMP=$BUMP" >> $GITHUB_ENV
-          echo "GitHub Models decided: $BUMP ($REASON)"
+          echo "Bump type: $BUMP (trigger: ${{ github.event_name }})"
 
       - name: Bump version
         if: env.SKIP != 'true'
