@@ -102,6 +102,40 @@
       "description": "Node templates this package defines. Each entry becomes a draggable node in the canvas palette.",
       "minItems": 1,
       "items": { "$ref": "#/$defs/template" }
+    },
+    "backend": {
+      "type": "object",
+      "description": "Optional server-side surface (memo dev/91): one Python entry file under backend/ exposing 'def handle(payload)', plus the declared handler names the package backend sandbox will accept. Requires the 'server-code' permission ('server-network' additionally when handlers use the network). Executed only in per-invocation sandboxed workers — never imported by the Curio host process.",
+      "required": ["entry", "handlers"],
+      "properties": {
+        "entry": {
+          "type": "string",
+          "pattern": "^backend/.+\\.py$",
+          "description": "Package-relative path of the handler entry file, e.g. 'backend/handler.py'."
+        },
+        "handlers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,63}$",
+                "description": "Handler name — the sandbox routes POST /api/packages/<dir>/backend/<name> to it."
+              },
+              "timeoutClass": {
+                "type": "string",
+                "enum": ["quick", "standard"],
+                "description": "Worker-limit tier (the build workspace's LIMITS_BY_TIMEOUT_CLASS). Default: standard."
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     }
   },
   "$defs": {
@@ -212,6 +246,11 @@
         "tutorialId": {
           "type": "string",
           "description": "Anchor id this kind exposes to the in-app tutorial system (`step-loading`, `step-vega`, ...)."
+        },
+        "backendHandler": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$",
+          "description": "Name of a declared backend handler this template's Run invokes through the package backend sandbox (memo dev/91). Must appear in the package's backend.handlers."
         }
       },
       "additionalProperties": true

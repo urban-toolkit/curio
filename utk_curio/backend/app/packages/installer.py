@@ -117,7 +117,9 @@ _ALLOWED_TOP_FILES: frozenset[str] = frozenset({
     "manifest.json", "README.md", "LICENSE", "LICENSE.md", "LICENSE.txt",
 })
 _ALLOWED_TOP_DIRS: frozenset[str] = frozenset({
-    "sources", "starters", "grammars", "widgets", "icons", "scripts",
+    # "backend" (memo dev/91): the package's declared server-side entry —
+    # inert on disk like sources/; executed ONLY by the backend sandbox.
+    "sources", "starters", "grammars", "widgets", "icons", "scripts", "backend",
 })
 
 # A safe path segment matches the existing safe-paths charset, with the
