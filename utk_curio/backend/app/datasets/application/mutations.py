@@ -659,6 +659,38 @@ class CatalogMutations:
         except Exception:  # noqa: BLE001
             pass
 
+    def _assert_is_publisher(self, catalog_dir: "Path", dataset_id: str) -> None:
+        """Raise 403 unless the caller published *catalog_dir*.
+
+        The shared catalog is a global tree; removal must be restricted to the
+        recorded publisher (``str(user)`` at publish time). Manifests published
+        without a user (factory seeds: ``publisher == "Data Catalog"``) are not
+        removable through this API by a regular user. Fail closed on a
+        missing/corrupt manifest.
+        """
+        from utk_curio.backend.app.datasets.domain.manifest import (
+            ManifestError,
+            load_dataset_manifest_from_dir,
+        )
+
+        # No manifest.json => not a properly published dataset (publish always
+        # writes one), so there is no recorded owner to protect and nothing to
+        # exfiltrate; skip the gate so corrupt/legacy leftovers stay removable.
+        if not (catalog_dir / "manifest.json").is_file():
+            return
+        caller = str(self.user) if self.user is not None else None
+        try:
+            publisher = load_dataset_manifest_from_dir(catalog_dir).publisher
+        except (ManifestError, OSError, ValueError):
+            # Present but unreadable manifest is suspicious -> fail closed.
+            publisher = None
+        if not caller or publisher != caller:
+            raise DatasetCatalogError(
+                f"You can only unpublish or delete datasets you published "
+                f"('{dataset_id}' was published by someone else).",
+                403,
+            )
+
     def unpublish_dataset(self, dataset_id: str, *, dataflow_id: str | None = None) -> dict[str, Any]:
         """Remove a dataset from the local Data Catalog directory.
 
@@ -684,6 +716,14 @@ class CatalogMutations:
             raise DatasetCatalogError(f"Dataset '{dataset_id}' is not in the Data Catalog", 404)
 
         dir_name = catalog_dir.name
+
+        # Ownership gate (security): only the user who published this dataset may
+        # remove it from the SHARED catalog tree. Without this, any authenticated
+        # user could delete — and, via the store-copy step below, silently copy —
+        # another user's published dataset. The published manifest records
+        # ``publisher=str(user)`` (see publish_dataset); compare against the same
+        # expression. Fail closed if the manifest is missing/unreadable.
+        self._assert_is_publisher(catalog_dir, dataset_id)
 
         # Before removing the catalog folder, ensure the user's own dataset store has
         # a copy so that the spec ref's dirName continues to resolve after unpublish.
@@ -749,8 +789,14 @@ class CatalogMutations:
         # unpublish restores the manifest into the store, which step 3 then removes.
         try:
             self.unpublish_dataset(dataset_id)
-        except DatasetCatalogError:
-            pass  # not published — nothing to unpublish
+        except DatasetCatalogError as exc:
+            # A 403 (caller is not the publisher) must abort the whole delete —
+            # otherwise a non-owner would fall through to the ref-removal and
+            # store-delete steps below. A 404 (not published / not in the shared
+            # catalog, e.g. a purely computed account asset) is expected: there
+            # is nothing to unpublish, so continue to the account-store delete.
+            if getattr(exc, "status", 400) == 403:
+                raise
 
         # 2. Remove the dataset's ref from every dataflow that references it, so
         #    no project is left pointing at a deleted asset.

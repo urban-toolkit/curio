@@ -93,7 +93,13 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   // Delete permanently removes an account-level computed dataset from the Data
   // Catalog (distinct from Uninstall, which only detaches it from this project).
   const isComputedAsset = dataset.origin === "computed" || Boolean(dataset.producerNodeId);
-  const showDelete = onDelete != null && isComputedAsset;
+  // Never offer Delete on a pure hub row: hub rows now carry producerNodeId, so
+  // a viewer browsing someone else's published dataset would otherwise see a
+  // Delete button that the backend (correctly) 403s. The owner sees their own
+  // asset as the merged origin="computed" row (account copy wins the dedup), so
+  // their Delete affordance is unaffected. The backend publisher check is the
+  // real gate; this just hides an action the user cannot perform.
+  const showDelete = onDelete != null && isComputedAsset && dataset.origin !== "hub";
   const showPublishButton = onPublish != null && publishAllowed && !isPublished;
   const showPublishPill = isPublished || showPublishButton;
 
