@@ -27,15 +27,27 @@ Set ``CURIO_RESEED_PACKAGES=1`` to force re-seeding even when the marker
 heuristic does not flag a refresh — useful after a ``git checkout``
 that preserves mtimes, and as an escape hatch for the dev who *does*
 want a tombstoned package back.
+
+Two properties this module must keep (memo dev/93 D1, which is where they
+were lost): a pass is **serialized** per user and each package lands
+**atomically**. The seeder is not only a startup path — four request
+handlers call it, and the frontend fires several of them around canvas
+mount — so passes overlap routinely. Before dev/93 the built-in package was
+re-copied on every one of those calls by deleting the live directory and
+rebuilding it in place, which left readers seeing a store whose templates
+had silently vanished, and left one observed store holding a single file.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
+import tempfile
 from pathlib import Path
 
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.packages import seed_state
 from utk_curio.backend.app.packages.storage import (
     PACKAGE_DIR_RE,
@@ -44,6 +56,20 @@ from utk_curio.backend.app.packages.storage import (
 from utk_curio.backend.config import CURIO_RESEED_PACKAGES, CURIO_SEED_EXAMPLES
 
 log = logging.getLogger(__name__)
+
+# One seeding pass per user at a time (memo dev/93 D1). Four request handlers
+# call the seeder (``GET /api/packages``, ``/catalog``, ``/defaults``, and the
+# defaults POST), and the frontend fires several of them around canvas mount —
+# so concurrent passes are the normal case, not a corner one.
+_SEED_LOCK_FILENAME = ".seed.lock"
+_SEED_LOCK_NAMESPACE = "package-seed"
+
+# Staging lives INSIDE the package store so the swap rename is guaranteed
+# same-filesystem. The prefix deliberately matches neither ``PACKAGE_DIR_RE``
+# (so ``list_user_packageages`` ignores it) nor the installer's ``.staging-*``
+# / ``.stage-*`` sweep patterns (so a concurrent install cannot delete a
+# seeding pass's half-built tree).
+_SEED_STAGING_PREFIX = ".seed-staging-"
 
 
 def _catalog_root() -> Path:
@@ -130,6 +156,118 @@ def _max_mtime(root: Path) -> float:
     return newest
 
 
+def _package_is_healthy(dest: Path) -> bool:
+    """True when the store copy at *dest* is complete enough to serve nodes.
+
+    The gate is the manifest, because that is what the rest of the system
+    reads: ``available_templates`` skips any package whose manifest will not
+    load, and it skips it *silently*, so an incomplete copy vanishes from
+    every roster with no diagnostic — an agent is then told the node type it
+    was just offered "is not an available template for this project" (memo
+    dev/93 D1/D2). When ``integrity.json`` is present we additionally require
+    every file it names, which catches a copy that kept its manifest but lost
+    other shipped files.
+
+    Deviation from the memo (§3.1c): a *missing* ``integrity.json`` is NOT
+    treated as unhealthy. Marking it so would re-seed on every request for
+    any package that ships without one — reinstating the per-request
+    destruction this whole change exists to remove.
+    """
+    if not dest.is_dir():
+        return False
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+
+    try:
+        load_packageage_manifest(dest)
+    except (ManifestError, OSError):
+        return False
+    integrity = dest / "integrity.json"
+    if not integrity.is_file():
+        return True
+    try:
+        raw = json.loads(integrity.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    listed = raw.get("sha256") if isinstance(raw, dict) else None
+    if not isinstance(listed, dict):
+        return False
+    for rel in listed:
+        # Only membership is checked here, not content: hashing every file on
+        # a request path is what ``CURIO_VERIFY_PACKAGES`` would be for.
+        if not isinstance(rel, str) or not rel or ".." in Path(rel).parts:
+            return False
+        if not (dest / rel).is_file():
+            return False
+    return True
+
+
+def _sweep_seed_staging(dest_base: Path) -> None:
+    """Remove staging trees left by a swap that was killed mid-flight.
+
+    Safe to do unconditionally because the caller holds the per-user seed
+    lock, so no live pass owns one of these directories.
+    """
+    if not dest_base.is_dir():
+        return
+    for entry in dest_base.iterdir():
+        if entry.is_dir() and entry.name.startswith(_SEED_STAGING_PREFIX):
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def _swap_in_package(src: Path, dest: Path, dest_base: Path) -> bool:
+    """Put a fresh copy of *src* at *dest*, atomically. Returns success.
+
+    The previous ``rmtree(dest)`` then ``copytree(src, dest)`` mutated the
+    LIVE directory: for the whole copy the package was missing or truncated,
+    and every reader in that window (``available_templates`` walks these
+    manifests on four request paths) saw a store that had silently lost its
+    templates. Worse, a copy that raced a peer raised, was swallowed as a
+    warning, and left the partial tree in place — which is exactly the state
+    observed on 2026-08-21: a built-in package holding only ``integrity.json``.
+
+    Instead: build the new tree in a staging sibling, move the old tree aside,
+    then rename the new one in. Both renames are same-filesystem (staging is
+    inside *dest_base*), so **a reader never sees a partially-built package**.
+
+    What remains is a gap of two renames during which the directory is
+    momentarily ABSENT: POSIX ``rename`` cannot replace a non-empty directory,
+    so one atomic swap is not available. That state is microseconds long,
+    happens only on an actual refresh (a healthy, current package is not
+    re-copied at all now), and self-corrects — unlike the truncated tree the
+    old path could leave behind permanently. Readers that must not observe
+    even that gap would have to take the seed lock, the way dev/92's
+    ``target_locks`` made invocation reads wait out a promote.
+    """
+    staging = Path(tempfile.mkdtemp(prefix=_SEED_STAGING_PREFIX, dir=str(dest_base)))
+    new_tree = staging / src.name
+    displaced = staging / f"{src.name}.displaced"
+    try:
+        shutil.copytree(src, new_tree)
+        moved_aside = False
+        if dest.exists():
+            os.replace(dest, displaced)
+            moved_aside = True
+        try:
+            os.replace(new_tree, dest)
+        except OSError:
+            # Put the old tree back rather than leaving the user with no
+            # package at all — a failed refresh must not become a deletion.
+            if moved_aside:
+                os.replace(displaced, dest)
+            raise
+        return True
+    except (OSError, shutil.Error) as exc:
+        # ``shutil.Error`` (a partial copytree) is not an OSError, and it must
+        # not escape into a request handler or backend startup.
+        log.warning("Failed to seed fixture package %s -> %s: %s", src, dest, exc)
+        return False
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
     """Copy every fixture package into ``<user_key>``'s package store.
 
@@ -137,6 +275,10 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
     refreshed (empty if nothing was copied). Safe to call repeatedly —
     the per-user state file in :mod:`.seed_state` makes the decision
     idempotent and respects explicit user uninstalls.
+
+    Concurrency-safe as of memo dev/93: the pass holds an exclusive per-user
+    lock and each package is swapped into place atomically, so the four
+    request handlers that call this can overlap freely.
     """
     src_root = _catalog_root()
     if not src_root.is_dir():
@@ -157,6 +299,18 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
         _purge_stale_staging(user_key)
     except Exception:  # noqa: BLE001 — cleanup must never crash startup
         log.warning("Stale-staging sweep failed", exc_info=True)
+
+    with exclusive_lock(
+        dest_base / _SEED_LOCK_FILENAME,
+        namespace=_SEED_LOCK_NAMESPACE,
+        key=user_key,
+    ):
+        return _seed_locked(user_key, src_root, dest_base)
+
+
+def _seed_locked(user_key: str, src_root: Path, dest_base: Path) -> list[str]:
+    """One seeding pass, holding the per-user seed lock."""
+    _sweep_seed_staging(dest_base)
 
     force = CURIO_RESEED_PACKAGES
     records = seed_state.load(user_key)
@@ -205,8 +359,28 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
         fixture_mtime = _max_mtime(src)
         record = records.get(src.name)
         is_builtin = src.name == keep_builtin_name
-        if force or is_builtin:
-            do_seed, reason = True, "forced-builtin" if is_builtin else "forced-by-env"
+        if force:
+            do_seed, reason = True, "forced-by-env"
+        elif is_builtin and not dest.exists():
+            # The user cannot opt out of the default node kinds, so a
+            # tombstone must never suppress the built-in. (Nothing can
+            # tombstone it through the UI either — ``uninstall`` refuses it —
+            # but an older build could have left one behind.)
+            do_seed, reason = True, "builtin-missing"
+        elif is_builtin and not _package_is_healthy(dest):
+            # Self-heal, replacing the old unconditional force (memo dev/93
+            # D1). Forcing the built-in on EVERY call re-copied its whole tree
+            # per package request, and because the copy went straight into the
+            # live directory it opened the window that left this store holding
+            # only ``integrity.json`` — templates silently gone. Re-seeding
+            # only a *broken* copy keeps the guarantee while letting a healthy
+            # one fall through to the ordinary mtime check, which still picks
+            # up a genuine fixture refresh.
+            do_seed, reason = True, "builtin-unhealthy"
+            log.warning(
+                "Built-in package %s at %s is incomplete or unreadable — re-seeding",
+                src.name, dest,
+            )
         else:
             do_seed, reason = seed_state.should_seed(
                 record,
@@ -223,16 +397,7 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
             if reason == "untracked-existing-copy":
                 seed_state.mark_seeded(user_key, src.name, fixture_mtime)
             continue
-        if dest.exists():
-            try:
-                shutil.rmtree(dest)
-            except OSError as exc:
-                log.warning("Failed to remove stale runtime package %s: %s", dest, exc)
-                continue
-        try:
-            shutil.copytree(src, dest)
-        except OSError as exc:
-            log.warning("Failed to seed fixture package %s -> %s: %s", src, dest, exc)
+        if not _swap_in_package(src, dest, dest_base):
             continue
         seed_state.mark_seeded(user_key, src.name, fixture_mtime)
         seeded.append(src.name)

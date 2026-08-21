@@ -13,39 +13,17 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
-try:  # POSIX advisory file locking; unavailable on Windows.
-    import fcntl
-except ImportError:  # pragma: no cover - non-POSIX fallback
-    fcntl = None
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 
-try:  # Windows mandatory file locking; unavailable on POSIX.
-    import msvcrt
-except ImportError:  # pragma: no cover - non-Windows fallback
-    msvcrt = None
-
-
-# Per-(user, project) in-process locks. flock guards cross-PROCESS contention but
-# is a no-op on Windows; this threading lock serializes same-process threads
-# (the common Flask-threaded case) on every platform, so a concurrent spec
-# read-modify-write doesn't lost-update even where fcntl is absent.
-_spec_locks: "Dict[str, threading.Lock]" = {}
-_spec_locks_guard = threading.Lock()
-
-
-def _spec_thread_lock(user_key: str, project_id: str) -> "threading.Lock":
-    key = f"{user_key}/{project_id}"
-    with _spec_locks_guard:
-        lock = _spec_locks.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            _spec_locks[key] = lock
-        return lock
+# The two-layer lock (in-process threading lock + cross-process flock) lives in
+# ``common.file_locks``; the package seeder needs the identical dance, and one
+# implementation means a platform quirk is fixed in one place.
+_SPEC_LOCK_NAMESPACE = "spec"
 
 from utk_curio.backend.app.common.safe_paths import (
     PathTraversalError,
@@ -146,60 +124,14 @@ def spec_write_lock(user_key: str, project_id: str):
     Serialization has two layers: an in-process threading lock (all platforms,
     same-process threads) and a cross-process file lock (POSIX ``flock`` or, on
     Windows, ``msvcrt.locking``). Only a platform with neither falls back to the
-    in-process layer alone.
+    in-process layer alone. Both live in ``common.file_locks``.
     """
     d = ensure_project_dir(user_key, project_id)
-    lock_path = d / ".spec.lock"
-    thread_lock = _spec_thread_lock(user_key, project_id)
-    thread_lock.acquire()
-    try:
-        with _interprocess_spec_lock(lock_path):
-            yield
-    finally:
-        thread_lock.release()
-
-
-@contextmanager
-def _interprocess_spec_lock(lock_path: Path):
-    """Best-effort exclusive cross-process lock on *lock_path*.
-
-    POSIX uses ``fcntl.flock``; Windows uses ``msvcrt.locking`` (the previous
-    fcntl-only path skipped Windows entirely, leaving multi-process Windows
-    saves racing). On the rare platform with neither, the caller's in-process
-    threading lock is the only guard and this is a no-op.
-    """
-    if fcntl is not None:
-        with open(lock_path, "w") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
-    elif msvcrt is not None:  # pragma: no cover - exercised only on Windows
-        # Lock a 1-byte region at offset 0 to get a cross-process mutex like
-        # flock(LOCK_EX). Unlike flock, ``LK_LOCK`` only retries internally for
-        # ~10s and then raises OSError; under sustained contention (e.g. a
-        # Play-All install racing a save) that uncaught OSError would propagate
-        # out to an HTTP 500. Re-issue the blocking lock until it is acquired so
-        # the waiter blocks indefinitely like the POSIX path instead of failing
-        # the save (#144).
-        with open(lock_path, "a+") as handle:
-            while True:
-                handle.seek(0)
-                try:
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-                    break
-                except OSError:
-                    # The ~10s window elapsed without the region freeing; the
-                    # call already blocked, so loop straight back into another
-                    # blocking attempt (no busy-spin).
-                    continue
-            try:
-                yield
-            finally:
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-    else:  # pragma: no cover - neither POSIX nor Windows locking available
+    with exclusive_lock(
+        d / ".spec.lock",
+        namespace=_SPEC_LOCK_NAMESPACE,
+        key=f"{user_key}/{project_id}",
+    ):
         yield
 
 

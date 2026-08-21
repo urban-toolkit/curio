@@ -2,6 +2,7 @@
 import json
 import pytest
 
+from utk_curio.backend.app.common import file_locks
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.projects.schemas import OutputRef
 
@@ -302,8 +303,8 @@ def test_spec_write_lock_uses_msvcrt_when_fcntl_absent(tmp_curio, monkeypatch):
     """#144: on Windows (no fcntl) the lock must still take a cross-process
     msvcrt lock, not silently degrade to the in-process layer only."""
     fake = _FakeMsvcrt()
-    monkeypatch.setattr(storage, "fcntl", None)
-    monkeypatch.setattr(storage, "msvcrt", fake)
+    monkeypatch.setattr(file_locks, "fcntl", None)
+    monkeypatch.setattr(file_locks, "msvcrt", fake)
 
     with storage.spec_write_lock("1", "proj-win"):
         pass
@@ -322,8 +323,8 @@ def test_spec_write_lock_msvcrt_blocks_through_contention(tmp_curio, monkeypatch
     OSError after its ~10s window — must be retried until the region frees, not
     surfaced as an uncaught OSError (HTTP 500) out of the save."""
     fake = _FakeMsvcrt(fail_times=3)
-    monkeypatch.setattr(storage, "fcntl", None)
-    monkeypatch.setattr(storage, "msvcrt", fake)
+    monkeypatch.setattr(file_locks, "fcntl", None)
+    monkeypatch.setattr(file_locks, "msvcrt", fake)
 
     # Must NOT raise despite three timeouts before the region becomes free.
     with storage.spec_write_lock("1", "proj-win-contended"):
