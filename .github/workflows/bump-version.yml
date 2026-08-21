@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   bump:
@@ -77,3 +78,21 @@ jobs:
           git add utk_curio/__init__.py
           git commit -m "chore: bump version to $NEW_VERSION"
           git push
+
+      - name: Tag and deploy minor releases
+        if: env.SKIP != 'true' && env.BUMP == 'minor'
+        run: |
+          # A minor release is already a deliberate act (workflow_dispatch),
+          # so ship it: tag the bump commit and dispatch the Deploy workflow
+          # to deploy that tag to the stable stack (deploy-dev tracks along).
+          # Pushes made with GITHUB_TOKEN never trigger workflows, but
+          # workflow_dispatch events are exempt from that recursion guard,
+          # so this needs no PAT. Patch bumps deploy nothing.
+          git tag "v${NEW_VERSION}"
+          git push origin "v${NEW_VERSION}"
+          curl -sS -f -X POST \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy.yml/dispatches" \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            -d "{\"ref\":\"main\",\"inputs\":{\"ref\":\"v${NEW_VERSION}\"}}"
+          echo "Tagged v${NEW_VERSION} and dispatched Deploy (stable + dev)."
