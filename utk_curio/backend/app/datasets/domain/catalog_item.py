@@ -60,7 +60,16 @@ def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
     # Windows opens forward-slash paths fine, and as_posix() is a no-op for
     # paths that already are. Normalizing HERE (the single chokepoint) covers
     # every call site — some already pre-convert, listing.py did not.
-    dataset_path = Path(path).as_posix() if path else "<dataset-path>"
+    #
+    # Guard against non-filesystem values legacy fat refs can carry: a
+    # URI-shaped string (curio://, s3://) must NOT go through as_posix() (it
+    # collapses // -> / and corrupts the scheme), and a non-str path must not
+    # raise TypeError here and 500 the whole listing.
+    if path is None:
+        dataset_path = "<dataset-path>"
+    else:
+        _p = str(path)
+        dataset_path = _p if "://" in _p else Path(_p).as_posix()
     if fmt == "csv":
         return {
             "language": "python",
