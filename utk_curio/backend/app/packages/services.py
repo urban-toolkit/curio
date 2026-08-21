@@ -127,6 +127,13 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> None:
     except InstallerError as exc:
         raise PackageServiceError(str(exc)) from exc
 
+    # memo dev/91: the catalog path is an install authority too — pin (or
+    # clear) the backend entry digest so promote-less installs stay
+    # verifiable and a reinstall never trips a stale pin.
+    from utk_curio.backend.app.packages.backend_runtime import record_entry_pin
+
+    record_entry_pin(user_key, dir_name)
+
     py_deps = dict(result.manifest.python_deps or {})
     if not py_deps:
         return

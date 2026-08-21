@@ -217,6 +217,16 @@ def promote(
         _record_step(journal, "installed")
         _save_journal(user_key, journal)
 
+        # memo dev/91: pin the backend entry digest at the install authority —
+        # invocation-time verify-on-read checks THIS truth (409 + reinstall on
+        # drift). A backend-less install clears any stale pin.
+        from utk_curio.backend.app.packages.backend_runtime import record_entry_pin
+
+        pinned = record_entry_pin(user_key, target)
+        if pinned is not None:
+            journal["backendEntryDigest"] = pinned
+            _save_journal(user_key, journal)
+
         # Python deps install at Apply — the reviewed installer step the
         # build phase deliberately never ran (dev/89 §3.4). A pip failure
         # compensates immediately.

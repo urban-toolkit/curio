@@ -185,6 +185,7 @@ def finalize_build(
     bundle: bytes | None,
     toolchain_version: str = "",
     preview: dict[str, Any] | None = None,
+    backend: dict[str, Any] | None = None,
     logs: tuple[str, ...] = (),
 ) -> PackageBuildResult:
     """Assemble → validate → stage → provenance (dev/89 §3.8).
@@ -224,6 +225,7 @@ def finalize_build(
         },
         policy_findings=_finding_strings(report),
         preview=preview,
+        backend=backend,
         archive_size=len(archive),
         logs=logs,
     )

@@ -133,6 +133,64 @@ def _append_ledger(user_key: str, dir_name: str, row: Mapping[str, Any]) -> None
                     user_key, dir_name, exc_info=True)
 
 
+_PINS_FILENAME = "package-backend-pins.json"
+
+
+def _pins_path(user_key: str) -> Path:
+    return _user_root(user_key) / _PINS_FILENAME
+
+
+def record_entry_pin(user_key: str, dir_name: str) -> str | None:
+    """Pin the installed package's backend entry digest (memo dev/91 §3.1) —
+    called by both install authorities (build promotion and the catalog
+    install) right after files land, so invocation-time verify-on-read has a
+    truth to check. Returns the recorded digest, or None (and clears any
+    stale pin) when the package declares no backend."""
+    try:
+        pkg_path = package_dir(user_key, dir_name)
+        manifest = load_packageage_manifest(pkg_path)
+    except Exception:  # noqa: BLE001 — pinning never breaks an install
+        log.warning("backend pin: could not read %s/%s", user_key, dir_name, exc_info=True)
+        return None
+    pins_path = _pins_path(user_key)
+    try:
+        pins = json.loads(pins_path.read_text(encoding="utf-8"))
+        if not isinstance(pins, dict):
+            pins = {}
+    except (OSError, ValueError):
+        pins = {}
+    digest: str | None = None
+    if manifest.backend is None:
+        pins.pop(dir_name, None)  # a backend-less reinstall clears stale pins
+    else:
+        entry_path = (pkg_path / manifest.backend.entry).resolve()
+        if not is_within(entry_path, pkg_path.resolve()) or not entry_path.is_file():
+            log.warning("backend pin: %s missing declared entry %s",
+                        dir_name, manifest.backend.entry)
+            return None
+        digest = entry_digest(entry_path.read_bytes())
+        pins[dir_name] = digest
+    try:
+        pins_path.parent.mkdir(parents=True, exist_ok=True)
+        pins_path.write_text(json.dumps(pins, indent=2, sort_keys=True) + "\n",
+                             encoding="utf-8")
+    except OSError:
+        log.warning("backend pin: could not persist %s", pins_path, exc_info=True)
+        return None
+    return digest
+
+
+def pinned_entry_digest(user_key: str, dir_name: str) -> str | None:
+    """The promote/install-time pin for verify-on-read; None = unpinned
+    (a hand-placed dev package — invocation still digests and records)."""
+    try:
+        pins = json.loads(_pins_path(user_key).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    value = pins.get(dir_name) if isinstance(pins, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
 def _harness_files() -> dict[str, bytes]:
     """The Curio-owned files every worker gets: harness + the ONE contract
     module (copied fresh per invocation — never taken from the package)."""

@@ -39,7 +39,7 @@ from utk_curio.backend.app.packages.build_models import (
 from utk_curio.backend.app.packages.build_workspace import sanitize_diagnostic
 
 PHASE_ORDER = (
-    "queued", "resolving", "compiling", "validating", "previewing",
+    "queued", "resolving", "compiling", "validating", "probing", "previewing",
     "packaging", "ready",
 )
 TERMINAL_PHASES = ("ready", "failed", "cancelled", "expired")

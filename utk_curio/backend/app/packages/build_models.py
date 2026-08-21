@@ -527,6 +527,9 @@ class PackageBuildResult:
     dependencies: dict[str, Any] = field(default_factory=dict)
     policy_findings: tuple[str, ...] = ()
     preview: dict[str, Any] | None = None
+    # memo dev/91: the backend surface's build provenance — declared entry +
+    # handlers, static-scan findings, and per-handler probe outcomes.
+    backend: dict[str, Any] | None = None
     archive_size: int = 0
     warnings: tuple[str, ...] = ()
     logs: tuple[str, ...] = ()
@@ -544,6 +547,7 @@ class PackageBuildResult:
             "dependencies": self.dependencies,
             "policyFindings": list(self.policy_findings),
             "preview": self.preview,
+            "backend": self.backend,
             "archiveSize": self.archive_size,
             "warnings": list(self.warnings),
             "logs": list(self.logs),
@@ -589,6 +593,9 @@ def parse_build_result(raw: Any) -> PackageBuildResult:
         raise BuildRequestError("result diff and dependencies must be objects")
     if preview is not None and not isinstance(preview, dict):
         raise BuildRequestError("result preview must be an object when present")
+    backend = raw.get("backend")
+    if backend is not None and not isinstance(backend, dict):
+        raise BuildRequestError("result backend must be an object when present")
     builder_version = raw.get("builderVersion", "")
     if not isinstance(builder_version, str):
         raise BuildRequestError("result builderVersion must be a string")
@@ -602,6 +609,7 @@ def parse_build_result(raw: Any) -> PackageBuildResult:
         dependencies=dependencies,
         policy_findings=_str_tuple("policyFindings"),
         preview=preview,
+        backend=backend,
         archive_size=archive_size,
         warnings=_str_tuple("warnings"),
         logs=_str_tuple("logs"),
