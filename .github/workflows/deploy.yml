@@ -73,12 +73,21 @@ on:
         description: 'Git ref to deploy (branch, tag, or SHA). Leave empty to deploy the latest v* tag.'
         required: false
         default: ''
+      target:
+        description: 'Which stack(s) to deploy'
+        type: choice
+        options:
+          - both
+          - dev
+          - stable
+        default: both
+        required: true
 
 jobs:
   deploy-dev:
-    # Runs on every push (matching the paths filter) AND alongside deploy-stable
-    # whenever the workflow is manually dispatched, so dev tracks stable.
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Runs on every push (matching the paths filter) AND on dispatches unless
+    # target is stable-only, so dev tracks stable on full releases.
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.target == 'both' || inputs.target == 'dev'))
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-dev
@@ -127,7 +136,7 @@ jobs:
           EOF
 
   deploy-stable:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && (inputs.target == 'both' || inputs.target == 'stable')
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-stable

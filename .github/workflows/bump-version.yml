@@ -9,11 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump type (minor = feature release)"
+        description: "Version bump type (minor/major = release: tags and deploys to stable)"
         type: choice
         options:
           - patch
           - minor
+          - major
         default: patch
         required: true
 
@@ -42,8 +43,8 @@ jobs:
         run: |
           # GitHub Models (which used to classify the release as minor/patch)
           # was retired on 2026-07-30, so the bump type is now explicit:
-          # pushes to main bump PATCH, and a feature release is cut
-          # deliberately via Run workflow -> bump: minor.
+          # pushes to main bump PATCH, and a minor/major release is cut
+          # deliberately via Run workflow -> bump: minor|major.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             BUMP="${{ inputs.bump }}"
           else
@@ -61,7 +62,11 @@ jobs:
           text = p.read_text()
           current = re.search(r'__version__\s*=\s*["\'](.+?)["\']', text).group(1)
           parts = list(map(int, current.split('.')))
-          if os.environ['BUMP'] == 'minor':
+          if os.environ['BUMP'] == 'major':
+              parts[0] += 1
+              parts[1] = 0
+              parts[2] = 0
+          elif os.environ['BUMP'] == 'minor':
               parts[1] += 1
               parts[2] = 0
           else:
@@ -79,20 +84,32 @@ jobs:
           git commit -m "chore: bump version to $NEW_VERSION"
           git push
 
-      - name: Tag and deploy minor releases
-        if: env.SKIP != 'true' && env.BUMP == 'minor'
+      - name: Tag and deploy minor/major releases
+        if: env.SKIP != 'true' && (env.BUMP == 'minor' || env.BUMP == 'major')
         run: |
-          # A minor release is already a deliberate act (workflow_dispatch),
-          # so ship it: tag the bump commit and dispatch the Deploy workflow
-          # to deploy that tag to the stable stack (deploy-dev tracks along).
-          # Pushes made with GITHUB_TOKEN never trigger workflows, but
-          # workflow_dispatch events are exempt from that recursion guard,
-          # so this needs no PAT. Patch bumps deploy nothing.
+          # A minor/major release is already a deliberate act
+          # (workflow_dispatch), so ship it: tag the bump commit and dispatch
+          # the Deploy workflow to deploy that tag to both stacks. Pushes made
+          # with GITHUB_TOKEN never trigger workflows, but workflow_dispatch
+          # events are exempt from that recursion guard, so this needs no PAT.
           git tag "v${NEW_VERSION}"
           git push origin "v${NEW_VERSION}"
           curl -sS -f -X POST \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy.yml/dispatches" \
             -H "Authorization: Bearer ${{ github.token }}" \
             -H "Accept: application/vnd.github+json" \
-            -d "{\"ref\":\"main\",\"inputs\":{\"ref\":\"v${NEW_VERSION}\"}}"
+            -d "{\"ref\":\"main\",\"inputs\":{\"ref\":\"v${NEW_VERSION}\",\"target\":\"both\"}}"
           echo "Tagged v${NEW_VERSION} and dispatched Deploy (stable + dev)."
+
+      - name: Redeploy dev on patch bumps
+        if: env.SKIP != 'true' && env.BUMP == 'patch'
+        run: |
+          # Keep curio-dev on the exact released version: the patch-bump
+          # commit is pushed with GITHUB_TOKEN (which triggers no workflows),
+          # so dispatch a dev-only Deploy explicitly. Stable is untouched.
+          curl -sS -f -X POST \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy.yml/dispatches" \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"ref":"main","inputs":{"ref":"main","target":"dev"}}'
+          echo "Dispatched dev-only Deploy for the patch bump."
