@@ -1,6 +1,6 @@
 # dev/91 — Package backend sandbox (dev/89 Follow-up A): on-demand, process-isolated execution of agent-generated server-side package code
 
-**Status: APPROVED (owner, 2026-08-21) — §0.1 Option 3 adopted (venv deferred, interpreter/overlay parameterized seam). Implementation in progress.**
+**Status: IMPLEMENTED (2026-08-21) — commits 1–6 landed (`1f4fca57`, `2adf412a`, `a68ed44a`, `664bc8c4`, `6059c151`, + docs); DEC-061 minted; BL-P5-20260821-34. §0.1 Option 3 adopted (venv deferred, interpreter/overlay parameterized seam).**
 Prereqs: dev/89 (build service, DEC-059) and dev/90 (prompt-driven authoring, DEC-060) are complete and live-verified through A16. This memo takes the explicit Follow-up A commitment: *"a permissioned, process-isolated runtime for generated server-side package code — never imported into Curio's host backend process."*
 
 ---

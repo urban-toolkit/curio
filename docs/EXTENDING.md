@@ -516,6 +516,25 @@ color via `data.appearance.backgroundColor` with derived ink; self-contained, no
 scenario — e.g. the Researcher's post-it notes — lives in the CALLING agent's instruction as
 requirements, and two runs may legitimately generate different code for the same look.
 
-Generated **backend** code (blueprints, endpoints) remains out of scope until the package
-backend sandbox (dev/89 Follow-up A) and activation lifecycle (Follow-up B) exist — the build
-service refuses it rather than loading generated code into this process.
+**Generated backend code runs in the package backend sandbox** (dev/91 — Follow-up A
+delivered): a package may declare `backend: { entry: "backend/<file>.py", handlers:
+[{ name, timeoutClass }] }` plus the `server-code` permission (`server-network` too when its
+code reaches the network — both are shown to the user at review), and link a template's Run
+to a handler via `backendHandler`. The entry exposes `def handle(payload)` (or a `HANDLERS`
+dict); a node run delivers `{"content": <editor text>, "input": <upstream JSON or null>}`
+through `POST /api/packages/<dir>/backend/<handler>` — the ONLY caller surface. The code
+never runs inside Curio's host process: each invocation spawns a short-lived worker with a
+scrubbed from-scratch env (no secrets exist to steal), rlimits, wall-clock kill, and capped
+I/O, speaking the versioned `curio.pkgbackend.v1` envelope; a capped persistent directory
+rides `CURIO_PKG_DATA_DIR`. At build time a policy scan blocks the escape-hatch families
+(subprocess/ctypes/dynamic code/resident frameworks; undeclared network) and a **probing
+phase** loads every declared handler in a real sandbox worker — a failed probe blocks Apply
+exactly as a failed preview. Both install authorities pin the entry's digest; invocation
+verify-on-read refuses drift with reinstall guidance. Every invocation appends an audit row
+(sizes and outcomes, never payloads) under `package-backend-ledger/`, archived by the
+operator's `packageBackend.ledgerArchiveAfterDays` retention declaration (`docs/RETENTION.md`).
+Operator seams: `CURIO_BACKEND_SANDBOX_PYTHON` pins the worker interpreter (the dev/91 §0.1
+Option-3 parameter — per-package dependency overlays land later as parameter values).
+**Resident services, background jobs, and secret mediation remain out of scope** until the
+activation lifecycle (dev/89 Follow-up B) — a draft needing them is refused with a finding
+naming it.

@@ -5638,7 +5638,15 @@ _BUILD_REQUEST_CONTRACT: dict = {
                 "hasGrammar": False,
                 "inputPorts": [],
                 "outputPorts": [],
+                "backendHandler": ("<declared backend handler name this "
+                                   "template's Run invokes — backend "
+                                   "templates only>"),
             }],
+            "backend": {
+                "entry": "backend/handler.py",
+                "handlers": [{"name": "<a-z0-9- name>",
+                              "timeoutClass": "quick | standard"}],
+            },
         },
         "files": {"sources/<name>.tsx": {"text": "<complete file body>"}},
         "behaviorEntries": ["sources/<name>.tsx"],
@@ -5667,6 +5675,25 @@ _BUILD_REQUEST_CONTRACT: dict = {
         "{title, content, color} into nodes[] VERBATIM — never invent "
         "placeholder content, never leave content empty when the caller "
         "supplied findings (the runtime enforces this reconciliation)",
+        # memo dev/91: the backend authoring contract, stated where the
+        # delegate can see it (the A8 lesson — nobody invents a schema they
+        # were shown).
+        "server-side compute (dev/91): declare manifest.backend "
+        "{entry: 'backend/<file>.py', handlers: [{name, timeoutClass}]} plus "
+        "the 'server-code' permission in manifest.permissions ('server-network' "
+        "too if and only if the code reaches the network); the entry exposes "
+        "def handle(payload) (or a HANDLERS dict {name: callable}); a node run "
+        "delivers payload {'content': <editor text>, 'input': <upstream JSON "
+        "or null>} and the returned value must be JSON-serializable",
+        "backend code is pure Python + declared python dependencies, executed "
+        "in a per-invocation sandboxed worker with strict limits: NO "
+        "subprocess/multiprocessing/ctypes, NO eval/exec/compile/__import__/"
+        "importlib, NO flask/blueprints/resident servers (the build's policy "
+        "scan blocks these and the probe phase must pass before review); a "
+        "capped persistent dir rides CURIO_PKG_DATA_DIR; no secrets and no "
+        "dataset store exist in the worker — a need beyond this contract "
+        "(resident service, credentials) is a FINDING naming dev/89 "
+        "Follow-up B, never smuggled code",
     ],
 }
 
