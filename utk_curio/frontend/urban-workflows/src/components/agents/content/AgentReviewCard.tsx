@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import type { AgentProposalPart } from "../../../api/agentsApi";
+import { describePackagePermission } from "../../../utils/packagePermissions";
 import styles from "./AgentReviewCard.module.css";
 
 /** dev/67-5/67-8/71: the per-node review state (mirror + builderSession). */
@@ -192,6 +193,8 @@ const EFFECT_LINE: Record<string, string> = {
     "Applying installs only this dataset into the project's Data Catalog — no agent is installed.",
   "package.install":
     "Applying opens the package install review (permissions, dependencies, conflicts) — nothing installs until you confirm there.",
+  "package.draft.apply":
+    "Applying installs the exact reviewed artifact and creates its requested nodes — nothing else changes.",
 };
 
 /** dev/52 (+dev/59): the plan card's effect line — dynamic and honest about
@@ -317,6 +320,39 @@ export const AgentReviewCard: React.FC<{
                   : " — empty"}
               </li>
             ))}
+          </ul>
+        </div>
+      ) : null}
+      {part.tool === "package.draft.apply" && part.backend ? (
+        // dev/91 §5: the trust edge is stated ON the card, before Apply —
+        // server-side handlers + declared permissions, impossible to miss.
+        <div
+          className={styles.removals}
+          role="group"
+          aria-label="Server-side code this package runs"
+        >
+          <div className={styles.removalsTitle}>
+            Runs server-side code in the package sandbox
+            {part.backend.network
+              ? " — may reach the network (server-network declared)"
+              : " — no network access"}
+          </div>
+          <ul className={styles.removalsList}>
+            {part.backend.handlers.map((h) => (
+              <li key={`handler:${h.name}`}>
+                handler {h.name}
+                {h.timeoutClass ? ` · ${h.timeoutClass} limits` : ""}
+              </li>
+            ))}
+            {part.backend.permissions.map((perm) => {
+              const meaning = describePackagePermission(perm);
+              return (
+                <li key={`perm:${perm}`}>
+                  permission {perm}
+                  {meaning ? ` — ${meaning}` : ""}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

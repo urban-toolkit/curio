@@ -1240,6 +1240,53 @@ def list_libraries_route():
     }), 200
 
 
+# ---------------------------------------------------------------------------
+# POST /api/packages/<dir_name>/backend/<handler> — the package backend sandbox
+# ---------------------------------------------------------------------------
+
+@packages_bp.route("/<dir_name>/backend/<handler>", methods=["POST"])
+@require_auth
+def invoke_packageage_backend(dir_name: str, handler: str):
+    """Invoke one declared backend handler (memo dev/91 §3) — the ONLY
+    caller surface for package server code. Body: ``{"payload": <JSON>}``.
+
+    The handler runs in a per-invocation sandboxed worker (never in this
+    process); the promote/install-time entry pin gates verify-on-read. The
+    memo's §6 status matrix: 404 unknown package/backend/handler, 403 is
+    impossible here by construction (an undeclared-permission backend cannot
+    install — the manifest loader refuses it), 409 digest drift, 413/422
+    payload bounds, 503 no worker slot, 507 data dir over cap, 502 honest
+    sanitized worker/contract failure. A well-formed ``ok: false`` reply
+    (handler-error) returns 200 — the envelope IS the diagnosis."""
+    from utk_curio.backend.app.packages import backend_contract as bc
+    from utk_curio.backend.app.packages import backend_runtime
+
+    if request.content_length and request.content_length > bc.PAYLOAD_MAX_BYTES + 4096:
+        return _error(
+            f"payload exceeds the {bc.PAYLOAD_MAX_BYTES // (1024 * 1024)} MiB "
+            "request bound", 413,
+        )
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or "payload" not in body:
+        return _error('body must be a JSON object with a "payload" member', 422)
+    user_key = _user_dir_key(g.user)
+    pin = backend_runtime.pinned_entry_digest(user_key, dir_name)
+    try:
+        out = backend_runtime.invoke_handler(
+            user_key, dir_name, handler, body["payload"],
+            expected_entry_digest=pin,
+        )
+    except backend_runtime.BackendRuntimeError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({
+        "reply": out["reply"],
+        "invocationId": out["invocationId"],
+        "durationMs": out["durationMs"],
+        "limitsApplied": out["limitsApplied"],
+        "entryDigest": out["entryDigest"],
+    }), 200
+
+
 @packages_bp.route("/libraries", methods=["POST"])
 @require_auth
 def add_library_route():

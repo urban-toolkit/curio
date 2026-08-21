@@ -6619,3 +6619,118 @@ class TestPackageBuilderTargetErgonomics:
         refusal = calls[1][-1]["content"]
         assert "reverse-DNS" in refusal
         assert "curio.notes" in refusal  # the fix is IN the refusal
+
+
+class TestBackendDraftEndToEnd:
+    """dev/91 commit 4 — a backend-bearing draft through the WHOLE lane:
+    mint (build + policy scan + real-worker probe) → the card states the
+    trust edge → Apply promotes + pins the entry digest → the new
+    /api/packages/<dir>/backend/<handler> route computes through a sandboxed
+    worker → tampering refuses with reinstall guidance."""
+
+    TARGET = "ai.agent.wordcount@1"
+
+    def _backend_draft_params(self):
+        return {
+            "mode": "create",
+            "manifest": {
+                "id": "ai.agent.wordcount",
+                "version": "1.0.0",
+                "name": "Word Count",
+                "publisher": "Agent",
+                "description": "Server-side word counting",
+                "license": "MIT",
+                "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+                "permissions": ["server-code"],
+                "dependencies": {"packages": {}, "python": {}, "js": {}},
+                "backend": {
+                    "entry": "backend/handler.py",
+                    "handlers": [{"name": "word-count", "timeoutClass": "quick"}],
+                },
+                "templates": [{
+                    "id": "word-count-kind", "label": "Word count",
+                    "category": "computation", "engine": "python",
+                    "editor": "none", "hasCode": False, "hasWidgets": False,
+                    "hasGrammar": False, "inputPorts": [],
+                    "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+                    "backendHandler": "word-count",
+                }],
+            },
+            "files": {
+                "backend/handler.py": {
+                    "text": "def handle(payload):\n"
+                            "    return {'words': len(str(payload.get('text', '')).split())}\n",
+                },
+            },
+        }
+
+    @pytest.fixture(autouse=True)
+    def _fresh_build_jobs(self):
+        from utk_curio.backend.app.packages import build_jobs
+
+        build_jobs.reset_registry()
+        yield
+        build_jobs.reset_registry()
+
+    def test_full_lane_mint_apply_invoke_tamper(self, client, user_and_token,
+                                                tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.packages import backend_runtime
+        from utk_curio.backend.app.packages.storage import package_dir
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        helper = TestPackageBuilderTools()
+        att_id, _ = helper._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[helper._draft_tail(self._backend_draft_params()),
+                     "Proposed — review above."],
+        )
+        run = helper._run(client, token, alice_project, att_id,
+                          message="build a word counter with a backend")
+        assert run.status_code == 200, run.get_data(as_text=True)
+        proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
+        # dev/91 §5: the trust edge is ON the card before Apply.
+        assert proposal["backend"] == {
+            "handlers": [{"name": "word-count", "timeoutClass": "quick"}],
+            "permissions": ["server-code"],
+            "network": False,
+        }
+        assert "server-side code" in proposal["preview"]
+        assert "word-count" in proposal["preview"]
+
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        # The install authority pinned the entry digest.
+        pinned = backend_runtime.pinned_entry_digest(user_key, self.TARGET)
+        assert pinned is not None and len(pinned) == 64
+
+        # The route computes through a sandboxed worker.
+        invoke = client.post(
+            f"/api/packages/{self.TARGET}/backend/word-count",
+            json={"payload": {"text": "one two three"}},
+            headers=_auth(token),
+        )
+        assert invoke.status_code == 200, invoke.get_data(as_text=True)
+        body = invoke.get_json()
+        assert body["reply"] == {"contract": "curio.pkgbackend.v1", "ok": True,
+                                 "result": {"words": 3}}
+        assert body["entryDigest"] == pinned
+
+        # Post-install tampering refuses with reinstall guidance (§6.1).
+        entry = package_dir(user_key, self.TARGET) / "backend" / "handler.py"
+        entry.chmod(0o644)
+        entry.write_text("def handle(payload):\n    return {'tampered': True}\n",
+                         encoding="utf-8")
+        tampered = client.post(
+            f"/api/packages/{self.TARGET}/backend/word-count",
+            json={"payload": {}}, headers=_auth(token),
+        )
+        assert tampered.status_code == 409
+        assert "reinstall" in tampered.get_json()["error"]

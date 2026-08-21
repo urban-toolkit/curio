@@ -243,6 +243,13 @@ export interface AgentProposalPart {
   status: AgentProposalStatus;
   /** node.template.create only (dev/48 §3.2b): the model's written reasoning — what the user judges. */
   justification?: string;
+  /** package.draft.apply only (dev/91 §5): the backend trust edge stated on
+   * the card — declared handlers, permission strings, and network posture. */
+  backend?: {
+    handlers: Array<{ name: string; timeoutClass?: string }>;
+    permissions: string[];
+    network: boolean;
+  };
   /** node.template.create only: the proposed type definition summary. */
   template?: { label: string; engine: string; description?: string };
   /** dev/67-7: the validation verdict riding a validated content proposal. */

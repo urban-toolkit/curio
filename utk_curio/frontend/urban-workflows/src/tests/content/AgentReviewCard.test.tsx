@@ -584,3 +584,49 @@ describe("AgentReviewCard — dev/72 review-chip icon-link to the node agent", (
     expect(screen.queryByRole("button", { name: /open the node agent/i })).toBeNull();
   });
 });
+
+describe("AgentReviewCard backend trust edge (memo dev/91 §5)", () => {
+  const backendPart = (network = false): AgentProposalPart => ({
+    type: "proposal",
+    proposalId: "p9",
+    tool: "package.draft.apply",
+    summary: "Build package · Word Count",
+    preview: "1 added / 0 modified / 0 preserved files; 0 node(s) after install",
+    pins: { artifactDigest: "d".repeat(64), target: "ai.agent.wordcount@1" },
+    status: "pending",
+    backend: {
+      handlers: [{ name: "word-count", timeoutClass: "quick" }],
+      permissions: network ? ["server-code", "server-network"] : ["server-code"],
+      network,
+    },
+  });
+
+  it("states the server-code edge, handlers, and permission meanings before Apply", () => {
+    render(<AgentReviewCard part={backendPart()} onApply={jest.fn()} />);
+    const block = screen.getByRole("group", {
+      name: "Server-side code this package runs",
+    });
+    expect(block).toHaveTextContent("Runs server-side code in the package sandbox");
+    expect(block).toHaveTextContent("no network access");
+    expect(block).toHaveTextContent("handler word-count · quick limits");
+    expect(block).toHaveTextContent("permission server-code");
+    expect(block).toHaveTextContent("never inside Curio itself");
+  });
+
+  it("a declared server-network permission is impossible to miss", () => {
+    render(<AgentReviewCard part={backendPart(true)} onApply={jest.fn()} />);
+    const block = screen.getByRole("group", {
+      name: "Server-side code this package runs",
+    });
+    expect(block).toHaveTextContent("may reach the network (server-network declared)");
+    expect(block).toHaveTextContent("permission server-network");
+  });
+
+  it("a backend-less draft renders no server-code block", () => {
+    const plain = { ...backendPart(), backend: undefined };
+    render(<AgentReviewCard part={plain} onApply={jest.fn()} />);
+    expect(
+      screen.queryByRole("group", { name: "Server-side code this package runs" }),
+    ).toBeNull();
+  });
+});

@@ -2397,6 +2397,25 @@ def _mint_package_draft_apply(
         f"{len(files_diff.get('preserved') or [])} preserved files; "
         f"{len(request.nodes)} node(s) after install"
     )
+    # memo dev/91 §5: the trust edge is stated ON the card, before Apply —
+    # a backend-bearing draft names its handlers and declared permissions.
+    backend_card = None
+    if result.backend is not None:
+        permissions = [
+            p for p in (request.manifest.get("permissions") or [])
+            if isinstance(p, str)
+        ]
+        backend_card = {
+            "handlers": list(result.backend.get("handlers") or []),
+            "permissions": permissions,
+            "network": "server-network" in permissions,
+        }
+        names = ", ".join(h.get("name", "?") for h in backend_card["handlers"])
+        preview_line += (
+            f"; runs server-side code in the package sandbox — handlers: {names}"
+            + ("; may reach the network (server-network declared)"
+               if backend_card["network"] else "")
+        )
     proposal_id = uuid.uuid4().hex
     part = content.make_proposal_part(
         proposal_id=proposal_id,
@@ -2405,6 +2424,8 @@ def _mint_package_draft_apply(
         preview=preview_line,
         pins={"artifactDigest": result.artifact_digest, "target": request.target},
     )
+    if backend_card is not None:
+        part["backend"] = backend_card
     _store_proposal(
         user_key,
         project_id,
@@ -2422,6 +2443,9 @@ def _mint_package_draft_apply(
             "diff": diff,
             "policyFindings": list(result.policy_findings),
             "preview": result.preview,
+            # dev/91: full backend provenance (probe rows, scan findings)
+            # persists with the proposal for reload and the apply record.
+            "backend": result.backend,
             "requestedNodes": [n.to_payload() for n in request.nodes],
             "summary": summary,
             "status": "pending",
