@@ -127,7 +127,7 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
   ];
   const wiredCanvas = { ...canvas, edges };
 
-  it("Dataflow Builder composes mission + full graph + installed templates", () => {
+  it("Dataflow Builder composes mission + full graph, and NO client template roster", () => {
     const att = attachment({
       coord: "agent.dataflow-builder@1.0.0",
       target: { kind: "canvas" },
@@ -140,7 +140,16 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
     // The full graph, edges included — the exact 67-0 complaint.
     expect(context).toContain('"source":"n1"');
     expect(context).toContain("n2-unsaved");
-    expect(context).toContain("Installed node templates:");
+    // The client-composed roster is RETIRED (memo dev/93 commit 4): the server
+    // appends the authoritative "Available node templates" list to the same
+    // run, and this one contradicted it — versioned ids against the server's
+    // unversioned ones, and palette templates the project cannot instantiate.
+    // A Dataflow Builder quoted an id from this list and was refused by the
+    // plan validator. The declared read stays; it simply composes nothing.
+    expect(context).not.toContain("Installed node templates:");
+    // The other declared reads still compose, so dropping one fragment did not
+    // take its neighbours with it.
+    expect(context).toContain("Mission:");
   });
 
   it("Node Builder on a canvas target composes the whole graph as targetContext", () => {

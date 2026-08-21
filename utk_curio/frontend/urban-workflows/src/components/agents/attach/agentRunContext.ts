@@ -1,5 +1,4 @@
 import { TrillGenerator } from "../../../TrillGenerator";
-import { getPaletteNodeTypes } from "../../../registry/nodeRegistry";
 import type { AgentAttachment } from "../../../api/agentsApi";
 
 /**
@@ -122,12 +121,20 @@ function readFragment(
       ].filter((p): p is string => p != null);
       return parts.length ? parts.join("\n") : null;
     }
-    case "installedTemplates": {
-      // The client registry's palette — the model plans only in installable
-      // vocabulary (the server re-validates against available_templates).
-      const rows = getPaletteNodeTypes().map((d) => `- ${d.id} — ${d.label}`);
-      return rows.length ? "Installed node templates:\n" + rows.join("\n") : null;
-    }
+    case "installedTemplates":
+      // RETIRED (memo dev/93 D3/commit 4). This used to compose "Installed
+      // node templates" from the client registry's palette — and the server
+      // already appends the authoritative "Available node templates" roster to
+      // the same run. Two lists, two headings, two spellings (the client keys
+      // descriptors VERSIONED, the server's roster is unversioned) and two
+      // scopes: the palette can name templates this PROJECT cannot
+      // instantiate. A Dataflow Builder quoted `curio.builtin/data-loading@1`
+      // from this list, was refused by the plan validator, and looped. The
+      // server block is now gated on every grant that declares this read, so
+      // dropping the producer removes the contradiction without leaving any
+      // agent roster-less. The declared read stays on the manifests (no
+      // manifest churn); it simply composes nothing.
+      return null;
     case "nodeIntent": {
       const node = findTrillNode(liveTrill(canvas), nodeId);
       return node?.goal ? "Node intent: " + node.goal : null;

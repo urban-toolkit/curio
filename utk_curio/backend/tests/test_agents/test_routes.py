@@ -3959,6 +3959,77 @@ class TestDataflowPlanMint:
         assert any(p["type"] == "dataflowPlan" for p in body["content"])
 
 
+class TestRosterGrantCoverage:
+    """dev/93 commit 4 — every agent that declares `installedTemplates` gets
+    the SERVER roster, which is what let the client-composed one be retired.
+
+    The client's list was the direct cause of the reported loop: it spelled ids
+    VERSIONED while the server's roster spelled them unversioned, under a
+    different heading, and it could name palette templates this project cannot
+    instantiate. Dropping it is only safe if nobody who declared that read is
+    left roster-less — so this pins the coverage rather than trusting it.
+    """
+
+    def test_every_installed_templates_reader_earns_the_roster(self):
+        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.services import _ROSTER_GRANTS
+
+        readers = [
+            spec for spec in builtin.BUILTIN_AGENTS
+            if "installedTemplates" in (spec.reads or ())
+        ]
+        assert readers, "the roster read must still exist on some built-in"
+        for spec in readers:
+            assert not _ROSTER_GRANTS.isdisjoint(spec.tools or ()), (
+                f"{spec.agent_id} declares installedTemplates but holds none of "
+                f"{sorted(_ROSTER_GRANTS)} — retiring the client roster would "
+                "leave it with no template vocabulary at all"
+            )
+
+    def test_package_recommendation_run_carries_the_roster(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """It holds package.install and no node.create, so before commit 4 it
+        was the agent that would have been stranded."""
+        helper = TestDataflowPlanMint()
+        user, token = user_and_token
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["noted"], coord="agent.package-recommendation@1.0.0",
+        )
+        helper._run(client, token, alice_project, att_id)
+        assert "Available node templates" in calls[0][0]["content"]
+
+    def test_package_builder_run_carries_the_roster(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """An AUTHORING agent especially needs to see what already exists —
+        not seeing it is how one weather question produced two near-identical
+        note packages."""
+        helper = TestDataflowPlanMint()
+        user, token = user_and_token
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["noted"], coord="agent.package-builder@1.0.0",
+        )
+        helper._run(client, token, alice_project, att_id)
+        assert "Available node templates" in calls[0][0]["content"]
+
+    def test_an_agent_with_no_roster_grant_still_gets_none(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """The gate widened, it did not dissolve: the chat agent proposes
+        nothing and needs no template vocabulary."""
+        helper = TestDataflowPlanMint()
+        user, token = user_and_token
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["chatting"], coord="agent.chat-agent@1.0.0",
+        )
+        helper._run(client, token, alice_project, att_id)
+        assert "Available node templates" not in calls[0][0]["content"]
+
+
 class TestPlanTemplateSpellings:
     """dev/93 D3 — the reported loop, and the regression that had never been
     written: no test had ever fed a VERSIONED nodeType into a dataflowPlan.

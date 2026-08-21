@@ -4739,11 +4739,17 @@ def _prepare_run(
     system_content = (
         f"{system_content}\n\n{content.tail_instruction(tools.grant_descriptions(granted))}"
     )
-    # Reuse-first (dev/48; plans too, dev/52): a node.create or
-    # dataflow.plan.write grant carries the live template roster, composed
-    # fresh per run from the packages registry — the prompt bytes never bake
-    # in template ids, and the model is never left to guess.
-    if "node.create" in granted or "dataflow.plan.write" in granted:
+    # Reuse-first (dev/48; plans too, dev/52): a grant that can put a template
+    # on the canvas, into the project, or author a new one carries the live
+    # template roster, composed fresh per run from the packages registry — the
+    # prompt bytes never bake in template ids, and the model is never left to
+    # guess. dev/93 commit 4 widened this from node.create/dataflow.plan.write
+    # to package.install and package.draft.apply so it covers every agent that
+    # declares the `installedTemplates` read, which let the duplicate
+    # client-side roster be retired: an authoring agent especially needs to see
+    # what already exists, since not seeing it is how one weather question
+    # produced two near-identical note packages.
+    if not _ROSTER_GRANTS.isdisjoint(granted):
         templates_block = _available_templates_block(user_key, project_id)
         if templates_block:
             system_content = f"{system_content}\n\n{templates_block}"
@@ -4817,6 +4823,18 @@ def _prepare_run(
 # project, small enough to never crowd the context.
 _TEMPLATES_BLOCK_MAX_ENTRIES = 60
 _TEMPLATES_BLOCK_DESC_CHARS = 140
+
+# The grants that earn the run-time template roster: putting a template on the
+# canvas (node.create), planning one (dataflow.plan.write), enlisting a package
+# that provides one (package.install), or authoring a new one
+# (package.draft.apply). This set covers every built-in that declares the
+# `installedTemplates` read, which is what let dev/93 commit 4 retire the
+# duplicate client-composed roster — the one that spelled ids VERSIONED while
+# this one spelled them unversioned, and listed palette templates the project
+# could not actually instantiate.
+_ROSTER_GRANTS = frozenset({
+    "node.create", "dataflow.plan.write", "package.install", "package.draft.apply",
+})
 
 
 def _template_line(entry: dict, *, suffix: str = "") -> str:
