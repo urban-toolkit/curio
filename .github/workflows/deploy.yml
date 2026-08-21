@@ -65,6 +65,7 @@ on:
       - 'docs/**'
       - 'Dockerfile'
       - 'docker-compose.yml'
+      - 'docker-compose.deploy.yml'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
