@@ -202,17 +202,30 @@ class TestDelegateDraftMint:
 
     def test_unparseable_child_reply_is_recoverable_data(
             self, client, user_and_token, tmp_curio, monkeypatch):
+        """dev/93 D5: still recoverable data, but now the parent is told WHAT
+        was wrong and told not to rename the package. The old message ("refine
+        the delegation inputs and try again") carried no parse error, so the
+        parent's "refinement" was to re-delegate under a different package id
+        — which is how one weather question produced two packages."""
         _, token = user_and_token
         pid = _project(client, token)
         att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
             _delegate_tail(),
             "I sketched an approach but produced no draft.",
-            "Understood — I'll refine the requirements.",
+            "Understood — I'll tell the user.",
         ])
         run = _run(client, token, pid, att_id)
         parts = run.get_json()["content"]
         assert all(p["type"] != "proposal" for p in parts)
-        assert "no parseable package draft" in calls[2][-1]["content"]
+        # The parent's next turn carries the real reason and the guardrail.
+        handed_back = calls[-1][-1]["content"]
+        assert "no JSON build request found" in handed_back
+        assert "different package name" in handed_back
+        # And the delegation card reports the OUTCOME, not just that the child
+        # ran: "ok" beside "produced no draft" is what taught the parent
+        # nothing (content.py derives the label from what we pass here).
+        card = next(p for p in parts if p["type"] == "delegation")
+        assert card["status"] == "failed"
 
     def test_invalid_draft_refuses_via_the_one_mint_path(
             self, client, user_and_token, tmp_curio, monkeypatch):
@@ -551,3 +564,122 @@ class TestFindingsReconciliation:
         assert "runtime-reconciled" not in calls[2][-1]["content"]
         notes = self._apply_and_read_notes(client, user, token, pid, att_id, proposal)
         assert notes[0]["content"] == "# Findings"  # the draft's own node
+
+
+class TestDraftCorrectionRounds:
+    """dev/93 D5 — the delegated package draft was the ONE mutation lane with
+    no correction rounds.
+
+    The live failure: the Researcher's first ``node.kind.author`` delegation
+    came back unparseable, the runtime discarded it and said "refine the
+    delegation inputs and try again" with no parse error attached, and the
+    parent's idea of refining was to re-delegate under a DIFFERENT package id
+    — so one question about the weather in Paris produced ``curio.notes`` and
+    then ``curio.postits``, near-identical, in a single run. Plans have had
+    correction rounds since dev/54 and generated node content since dev/67;
+    this closes the gap.
+    """
+
+    def test_second_attempt_parses_and_mints_exactly_one_proposal(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        """The regression for the duplicate package: a first reply that does
+        not parse must be CORRECTED, not abandoned — one proposal, one package,
+        no second authoring attempt."""
+        _, token = user_and_token
+        pid = _project(client, token)
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(),
+            # The realistic weak-model failure: a bare JSON body containing an
+            # embedded source file, cut off mid-string by the output cap.
+            '{"mode": "create", "manifest": {"id": "ai.agent.notes", "templ',
+            json.dumps({"packageDraft": _draft()}),          # the correction
+            "Proposed — review it above.",
+        ])
+        run = _run(client, token, pid, att_id)
+        parts = run.get_json()["content"]
+        proposals = [p for p in parts if p["type"] == "proposal"]
+        assert len(proposals) == 1, "exactly one draft proposal, never two"
+        assert proposals[0]["tool"] == "package.draft.apply"
+        # The delegate was actually re-run with the real error to fix.
+        retry = next(
+            (c for c in calls if any("validationError" in str(m.get("content", ""))
+                                     for m in c)),
+            None,
+        )
+        assert retry is not None, "the delegate must be re-run with the error"
+        sent = " ".join(str(m.get("content", "")) for m in retry)
+        assert "previousAttempt" in sent
+        # The error is the real one, not a vague "try again".
+        assert "did not parse" in sent
+        assert "cut off" in sent
+        card = next(p for p in parts if p["type"] == "delegation")
+        assert card["status"] == "ok"
+
+    def test_a_rename_mid_correction_is_a_failed_correction_not_a_new_package(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        """Edge case 33/35: the package id from the first parseable draft is
+        pinned. A delegate that renames instead of fixing is failing the
+        correction — renaming is precisely the move that created duplicates."""
+        _, token = user_and_token
+        pid = _project(client, token)
+        bad = _draft(color="rgb(1,2,3)")           # the appearance utility refuses
+        renamed = _draft()
+        renamed["manifest"] = {**renamed["manifest"], "id": "ai.agent.notes2"}
+        renamed["target"] = "ai.agent.notes2@1"
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(),
+            json.dumps({"packageDraft": bad}),
+            json.dumps({"packageDraft": renamed}),
+            "I'll report the failure.",
+        ])
+        run = _run(client, token, pid, att_id)
+        parts = run.get_json()["content"]
+        assert all(p["type"] != "proposal" for p in parts), (
+            "a renamed package must not sneak through as a fresh draft"
+        )
+        # The rename was named as the problem and fed back to the delegate
+        # that did it, rather than being accepted as a second package.
+        everything = " ".join(
+            str(m.get("content", "")) for c in calls for m in c
+        )
+        assert "changed the package id" in everything
+        assert "duplicate package" in everything
+        # And the parent is told not to solve this by renaming either.
+        assert "different package name" in calls[-1][-1]["content"]
+
+    def test_a_terminal_refusal_is_not_retried(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        """Edge case 31/37: a policy or permission verdict is the build
+        service's answer, not a typo. Retrying would spend the parent's rounds
+        arriving at the same refusal."""
+        from utk_curio.backend.app.agents import services as services_mod
+
+        assert not services_mod._draft_refusal_is_correctable(
+            "backend policy blocked: subprocess is not permitted"
+        )
+        assert not services_mod._draft_refusal_is_correctable(
+            "package ai.agent.notes@1 is already installed in this project"
+        )
+        # A malformed draft or a failed probe is exactly what a model can fix.
+        assert services_mod._draft_refusal_is_correctable(
+            "invalid build request: manifest.templates[0].id is required"
+        )
+        assert services_mod._draft_refusal_is_correctable(
+            "the handler probe failed for handler.py"
+        )
+
+    def test_verbose_extractor_explains_each_failure_shape(self):
+        from utk_curio.backend.app.agents.services import (
+            _extract_draft_params_verbose,
+        )
+
+        _, why = _extract_draft_params_verbose("I could not author it.")
+        assert "no JSON build request found" in why
+        _, why = _extract_draft_params_verbose('{"mode": "create", ')
+        assert "did not parse" in why and "cut off" in why
+        _, why = _extract_draft_params_verbose(json.dumps({"answer": 42}))
+        assert "not a build request" in why and "answer" in why
+        _, why = _extract_draft_params_verbose("")
+        assert "no text at all" in why
+        params, why = _extract_draft_params_verbose(json.dumps(_draft()))
+        assert params is not None and why == ""

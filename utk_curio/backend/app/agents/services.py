@@ -5780,6 +5780,16 @@ _BUILD_REQUEST_CONTRACT: dict = {
 def _extract_draft_params(child_text: str) -> dict | None:
     """The child reply's build-request payload, or None.
 
+    Thin wrapper over :func:`_extract_draft_params_verbose` — see there for
+    the accepted shapes and for why the failure reason matters.
+    """
+    params, _ = _extract_draft_params_verbose(child_text)
+    return params
+
+
+def _extract_draft_params_verbose(child_text: str) -> tuple[dict | None, str]:
+    """The child reply's build-request payload, or ``(None, why_not)``.
+
     Accepted shapes (the reply is already bounded by
     ``delegation.DELEGATE_RESULT_MAX_CHARS``): the whole reply as one JSON
     object, or one fenced ```/```json/```curio.v1 block containing it; the
@@ -5790,12 +5800,22 @@ def _extract_draft_params(child_text: str) -> dict | None:
     emits exactly that; the payload is unwrapped, never executed as a tool).
     A candidate must carry ``mode`` + ``manifest`` to count — arbitrary JSON
     in a chatty reply never parses as a draft by accident.
+
+    The REASON is the point (memo dev/93 D5). Returning a bare ``None`` made
+    this a dead end for the parent: the runtime discarded the reply and said
+    "refine the delegation inputs and try again" with no parse error, no
+    offending fragment, and no line number — so the parent's "refinement" was
+    to re-delegate under a DIFFERENT package id, which is how one weather
+    question produced two near-identical note packages in a single run. A
+    correction round needs something to correct against; the shape here
+    mirrors ``_parse_dataflow_plan_verbose``, which plans have had since
+    dev/54.
     """
     import json as _json
     import re as _re2
 
     if not isinstance(child_text, str) or not child_text.strip():
-        return None
+        return None, "the delegate replied with no text at all"
     candidates: list[str] = []
     stripped = child_text.strip()
     if stripped.startswith("{"):
@@ -5803,12 +5823,22 @@ def _extract_draft_params(child_text: str) -> dict | None:
     for match in _re2.finditer(
             r"```(?:json|curio\.v1)?\s*\n(.*?)```", child_text, _re2.DOTALL):
         candidates.append(match.group(1).strip())
+    if not candidates:
+        return None, (
+            "no JSON build request found in the reply: it must be ONE JSON "
+            "object, either the whole reply or a single ```json fenced block. "
+            "Prose describing the package is not a build request"
+        )
+    decode_errors: list[str] = []
+    shape_errors: list[str] = []
     for candidate in candidates:
         try:
             payload = _json.loads(candidate)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
+            decode_errors.append(str(exc))
             continue
         if not isinstance(payload, dict):
+            shape_errors.append(f"the JSON is a {type(payload).__name__}, not an object")
             continue
         tool_req = payload.get("toolRequest")
         if (isinstance(tool_req, dict)
@@ -5819,8 +5849,23 @@ def _extract_draft_params(child_text: str) -> dict | None:
         inner = wrapped if isinstance(wrapped, dict) else payload
         if (isinstance(inner, dict) and inner.get("mode") in ("create", "extend")
                 and isinstance(inner.get("manifest"), dict)):
-            return inner
-    return None
+            return inner, ""
+        keys = ", ".join(sorted(k for k in inner if isinstance(k, str))[:12]) or "none"
+        shape_errors.append(
+            "the JSON parsed but is not a build request — it must carry "
+            f"\"mode\" ('create' or 'extend') and a \"manifest\" object (top-level "
+            f"keys were: {keys})"
+        )
+    if decode_errors and not shape_errors:
+        # The overwhelmingly common weak-model failure: a long body containing
+        # an embedded source file, cut off mid-string. Say so explicitly —
+        # "invalid JSON" alone does not tell the model what to do differently.
+        return None, (
+            f"the JSON did not parse ({decode_errors[0]}). If the reply was cut "
+            "off mid-object, re-emit the COMPLETE build request and keep the "
+            "file bodies short enough to finish"
+        )
+    return None, (shape_errors or decode_errors)[0]
 
 
 def _notes_from_delegate_inputs(inputs: dict) -> list[dict] | None:
@@ -5886,10 +5931,20 @@ def _reconcile_draft_notes(params: dict, notes: list[dict]) -> bool:
     return True
 
 
+# How many extra attempts a delegated draft gets, mirroring the node-content
+# path's ``_VALIDATE_CORRECTION_ROUNDS``. Plans have had correction rounds
+# since dev/54 and generated node content since dev/67; the delegated package
+# draft was the ONE mutation lane with none, and a weak local model emitting a
+# long JSON body containing an embedded source file gets it slightly wrong as
+# the NORMAL case, not the exception (memo dev/93 D5).
+_DRAFT_CORRECTION_ROUNDS = 2
+
+
 def _mint_package_draft_from_delegate(
     user_key: str, project_id: str, loop_ctx: dict, child_text: str,
     delegate_inputs: dict | None = None,
-) -> tuple[dict | None, str]:
+    redelegate=None,
+) -> tuple[dict | None, str, str]:
     """dev/90: the dev/73 one-mint-policy extended to package drafts.
 
     A successful package-authoring delegation whose bounded child reply
@@ -5902,36 +5957,149 @@ def _mint_package_draft_from_delegate(
     service refuses are all data the parent recovers from in chat — never a
     silent drop, never an unreviewed mutation.
 
-    Returns ``(proposal_part | None, text_for_model)``.
+    dev/93 D5 adds the CORRECTION ROUNDS every other mutation lane already
+    had. ``redelegate(inputs) -> (status, text)`` re-runs the SAME delegate
+    with ``previousAttempt`` + ``validationError`` appended to its inputs, so
+    the model that made the mistake is the one that fixes it, against the real
+    error. The package id from the first parseable draft is PINNED across
+    rounds: a delegate that renames its package mid-correction is failing the
+    correction, not authoring a new package — renaming is exactly what
+    happened when the parent had no error to act on (curio.notes, then
+    curio.postits, in one run).
+
+    Returns ``(proposal_part | None, text_for_model, outcome)`` where outcome
+    is ``"ok"`` only when a proposal was minted. The caller passes that to the
+    delegation part instead of the child RUN's status, so a card can never
+    read "Delegated task · ok" beside a summary saying nothing was produced.
     """
     if "package.draft.apply" not in (loop_ctx.get("granted") or []):
         return None, (
             "the delegate produced a package draft but this agent is not "
             "granted package.draft.apply — the draft was kept as text only"
-        )
-    params = _extract_draft_params(child_text)
-    if params is None:
-        return None, (
-            "the authoring delegate returned no parseable package draft "
-            "(expected one JSON build request); its reply was kept as text — "
-            "refine the delegation inputs and try again"
-        )
-    # dev/90 A12: the parent's findings override the draft's nodes — the
-    # reference contract is "the agent's answer IS the note", and the live
-    # failures were child-invented filler / empty notes.
-    reconciled = False
+        ), "failed"
+
     notes = _notes_from_delegate_inputs(delegate_inputs or {})
-    if notes:
-        reconciled = _reconcile_draft_notes(params, notes)
-    status, text, part = _mint_package_draft_apply(
-        user_key, project_id, loop_ctx, {"params": params}
-    )
-    if status == "proposed" and reconciled:
-        text += (
-            f" (the draft's {len(notes)} note(s) carry the caller's findings "
-            "verbatim — runtime-reconciled from the delegation inputs)"
+    pinned_package_id: str | None = None
+    attempt_text = child_text
+    last_error = ""
+    rounds = 1 + (_DRAFT_CORRECTION_ROUNDS if redelegate is not None else 0)
+
+    for round_index in range(rounds):
+        params, parse_error = _extract_draft_params_verbose(attempt_text)
+        if params is not None:
+            draft_id = (params.get("manifest") or {}).get("id")
+            if pinned_package_id is None and isinstance(draft_id, str):
+                pinned_package_id = draft_id
+            if (pinned_package_id is not None and isinstance(draft_id, str)
+                    and draft_id != pinned_package_id):
+                parse_error = (
+                    f"this correction changed the package id from "
+                    f"{pinned_package_id!r} to {draft_id!r}. Fix the SAME "
+                    "package — a rename does not resolve the error, it just "
+                    "creates a duplicate package"
+                )
+                params = None
+        if params is not None:
+            # dev/90 A12: the parent's findings override the draft's nodes —
+            # the reference contract is "the agent's answer IS the note", and
+            # the live failures were child-invented filler / empty notes.
+            reconciled = _reconcile_draft_notes(params, notes) if notes else False
+            status, text, part = _mint_package_draft_apply(
+                user_key, project_id, loop_ctx, {"params": params}
+            )
+            if status == "proposed":
+                if reconciled:
+                    text += (
+                        f" (the draft's {len(notes)} note(s) carry the caller's "
+                        "findings verbatim — runtime-reconciled from the "
+                        "delegation inputs)"
+                    )
+                if round_index:
+                    text += f" (after {round_index} correction round(s))"
+                return part, text, "ok"
+            # The build service refused. Some refusals cannot improve by
+            # re-authoring (a policy or permission verdict); retrying those
+            # would burn the parent's rounds to reach the same answer.
+            last_error = text
+            if not _draft_refusal_is_correctable(text):
+                return None, text, "failed"
+        else:
+            last_error = parse_error
+
+        if redelegate is None or round_index == rounds - 1:
+            break
+        status, attempt_text = redelegate({
+            "previousAttempt": (attempt_text or "")[:6000],
+            "validationError": last_error[:2000],
+        })
+        if status != "ok":
+            return None, (
+                "the authoring delegate could not be re-run to correct its "
+                f"draft ({attempt_text or 'no reply'}); the last error was: "
+                f"{last_error}"
+            ), "failed"
+
+    spent = f" after {rounds} attempt(s)" if rounds > 1 else ""
+    return None, (
+        f"the authoring delegate produced no usable package draft{spent}. The "
+        f"last error was: {last_error} — fix THAT and keep the same package id, "
+        "or tell the user plainly that authoring failed. Do NOT re-delegate "
+        "under a different package name, and if a package that already does "
+        "this job is listed as installed, use it instead of authoring one"
+    ), "failed"
+
+
+def _draft_corrector(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict, resolution,
+    config, execution_id: str, delegations: list,
+):
+    """A ``redelegate(extra_inputs) -> (status, text)`` for the draft loop.
+
+    Re-runs the SAME delegate, at the same coordinate and capability, with the
+    original inputs plus ``previousAttempt``/``validationError`` — the shape
+    the node-content path has used since dev/67, so a delegate that already
+    understands self-correction there needs no new teaching here. Every
+    attempt is traced: its execution record joins ``delegations`` exactly like
+    the first, so the rounds are visible in the transcript rather than being
+    an invisible retry.
+    """
+    def _redelegate(extra: dict) -> tuple[str, str]:
+        inputs = dict(req.get("inputs") or {})
+        inputs.update(extra)
+        status, text, child, _home = _run_delegate_traced(
+            user_key,
+            project_id,
+            resolution.coord,
+            req["capability"],
+            _enriched_delegate_inputs(
+                user_key, project_id, loop_ctx, req["capability"], inputs,
+            ),
+            config,
+            parent_execution_id=execution_id,
+            parent_coord=loop_ctx["coord"],
+            attachment_id=loop_ctx.get("attachment_id"),
+            parent_name=getattr(loop_ctx.get("manifest"), "name", None),
         )
-    return (part if status == "proposed" else None), text
+        delegations.append(child)
+        return status, text
+
+    return _redelegate
+
+
+def _draft_refusal_is_correctable(refusal: str) -> bool:
+    """Whether re-authoring could plausibly fix a build-service refusal.
+
+    A malformed manifest, a bad file, a failed probe: the model can fix those.
+    A permission or policy verdict is the build service's answer, not a typo —
+    re-running the delegate would spend the parent's rounds arriving at the
+    same refusal (memo dev/93 edge cases 31/37).
+    """
+    text = (refusal or "").lower()
+    terminal = (
+        "policy blocked", "permission", "not granted", "conflict",
+        "is built-in", "already installed",
+    )
+    return not any(marker in text for marker in terminal)
 
 
 def _enriched_delegate_inputs(
@@ -6146,9 +6314,13 @@ def run_attachment(
                         # dev/90: authoring success ⇒ the reviewed draft
                         # EXISTS — runtime-minted from the child's payload,
                         # never the model's second step.
-                        draft_part, text = _mint_package_draft_from_delegate(
+                        draft_part, text, draft_outcome = _mint_package_draft_from_delegate(
                             user_key, project_id, loop_ctx, text,
                             delegate_inputs=req.get("inputs") or {},
+                            redelegate=_draft_corrector(
+                                user_key, project_id, loop_ctx, req, resolution,
+                                config, execution_id, delegations,
+                            ),
                         )
                         delegate_summary = text
                         if draft_part is not None:
@@ -6156,6 +6328,10 @@ def run_attachment(
                             delegate_summary = (
                                 "reviewed package draft proposed — awaits Apply"
                             )
+                        # dev/93 D5: the delegation card reports the OUTCOME,
+                        # not merely that the child ran — "ok" beside "returned
+                        # no parseable draft" is how the parent learned nothing.
+                        status = draft_outcome
                     # dev/72: the parent keeps the compact, linkable entry.
                     minted.append(_delegation_part_for(
                         resolution, req["capability"], status, delegate_summary, home_att
@@ -6476,9 +6652,13 @@ def stream_attachment(
                             # dev/90: authoring success ⇒ the reviewed draft
                             # EXISTS — runtime-minted from the child's
                             # payload, never the model's second step.
-                            draft_part, text = _mint_package_draft_from_delegate(
+                            draft_part, text, draft_outcome = _mint_package_draft_from_delegate(
                                 user_key, project_id, loop_ctx, text,
                                 delegate_inputs=req.get("inputs") or {},
+                                redelegate=_draft_corrector(
+                                    user_key, project_id, loop_ctx, req, resolution,
+                                    config, execution_id, delegations,
+                                ),
                             )
                             delegate_summary = text
                             if draft_part is not None:
@@ -6486,6 +6666,9 @@ def stream_attachment(
                                 delegate_summary = (
                                     "reviewed package draft proposed — awaits Apply"
                                 )
+                            # dev/93 D5: the card reports the OUTCOME (see the
+                            # non-streaming path).
+                            status = draft_outcome
                         # dev/72: the parent keeps the compact, linkable entry.
                         minted.append(_delegation_part_for(
                             resolution, req["capability"], status, delegate_summary, home_att
