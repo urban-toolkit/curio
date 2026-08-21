@@ -1384,15 +1384,18 @@ def _mint_dataflow_plan(
         available = {t["id"]: t for t in packages_services.available_templates(user_key, project_id)}
     except Exception as exc:
         return "refused", f"the node template registry is unavailable: {exc}", None
+    # dev/93 D3: the ONE availability gate, shared with node.create — a plan
+    # may name any available template (a plan places a typed PLACEHOLDER whose
+    # content arrives later from Solve), hence require_authorable=False. The
+    # nodeType is already canonical here (canonicalised at the parse boundary),
+    # so this used to be an exact-match dict lookup that refused the versioned
+    # spelling the model was handed by its own run context.
     for node in plan["nodes"]:
-        entry = available.get(node["nodeType"])
+        entry, err = packages_services.resolve_template(
+            user_key, project_id, node["nodeType"], require_authorable=False
+        )
         if entry is None:
-            return (
-                "refused",
-                f"plan node {node['ref']!r} uses {node['nodeType']!r}, which is not an "
-                "available template for this project",
-                None,
-            )
+            return "refused", f"plan node {node['ref']!r}: {err}", None
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None
@@ -1718,7 +1721,11 @@ def apply_plan_node(
             user_key, project_id, proposal_id, spec, proposal, session_id,
             f"the node template registry is unavailable: {exc}",
         ) from exc
-    if plan_node["nodeType"] not in available:
+    # dev/93 D3: canonicalise the COMPARISON, never the stored value — a
+    # proposal minted before the parse-boundary change may hold a raw
+    # versioned string whose shape digest was computed over exactly that
+    # string, so rewriting it here would mark an in-flight proposal stale.
+    if packages_services.canonical_template_id(plan_node["nodeType"]) not in available:
         raise _mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
             f"node type {plan_node['nodeType']!r} is no longer available — "
@@ -2554,7 +2561,12 @@ def _apply_dataflow_plan(
             user_key, project_id, proposal_id, spec, proposal, session_id,
             f"the node template registry is unavailable: {exc}",
         ) from exc
-    missing = [n["nodeType"] for n in plan.get("nodes", []) if n["nodeType"] not in available]
+    # Canonicalised comparison, stored value untouched — see the per-node
+    # apply above for why (dev/93 D3, in-flight proposals keep their digest).
+    missing = [
+        n["nodeType"] for n in plan.get("nodes", [])
+        if packages_services.canonical_template_id(n["nodeType"]) not in available
+    ]
     if missing:
         raise _mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
@@ -5152,39 +5164,20 @@ def _mint_node_content_write(
 
 
 def _available_template(user_key: str, project_id: str, node_type: object) -> tuple[dict | None, str]:
-    """Resolve ``node_type`` against the packages-domain availability helper
+    """Resolve ``node_type`` for node.create against the packages-domain gate
     (dev/48 reuse-first: the agents module owns no template knowledge).
+
+    Thin wrapper over ``resolve_template`` since dev/93 D3 — the versioned
+    tolerance added here for dev/90 A14 lived ONLY here, which is why the plan
+    path kept refusing ids the model was handed. One gate now serves both;
+    node.create is the caller that needs authored content, so it is the one
+    that asks for ``require_authorable``.
     Returns ``(entry | None, error_text)``."""
     from utk_curio.backend.app.packages import services as packages_services
 
-    if not isinstance(node_type, str) or not node_type:
-        return None, "params.nodeType must be a non-empty template id string"
-    try:
-        templates = packages_services.available_templates(user_key, project_id)
-    except Exception as exc:  # unavailable registry is data, not a run error
-        return None, f"the node template registry is unavailable: {exc}"
-    entry = next((t for t in templates if t["id"] == node_type), None)
-    if entry is None and _re.match(r"^.+@\d+$", node_type):
-        # dev/90 A14: the ecosystem speaks BOTH canonical forms — the spec
-        # and applied nodes carry the VERSIONED id (pkg/tpl@major) while
-        # this listing is UNVERSIONED; a live agent looped on 'refused
-        # despite appearing in the list' over exactly this. Accept the
-        # versioned form by stripping the major (the entry's unversioned id
-        # stays the pinned nodeType).
-        unversioned = node_type.rsplit("@", 1)[0]
-        entry = next((t for t in templates if t["id"] == unversioned), None)
-    if entry is None:
-        return None, (
-            f"nodeType {node_type!r} is not an available template for this project — "
-            "choose an id from the Available node templates list (the versioned "
-            "form '<packageId>/<templateId>@<major>' is also accepted)"
-        )
-    if not entry.get("authorable"):
-        return None, (
-            f"template {node_type!r} does not hold authored content — choose an "
-            "authorable template from the Available node templates list"
-        )
-    return entry, ""
+    return packages_services.resolve_template(
+        user_key, project_id, node_type, require_authorable=True
+    )
 
 
 def _mint_node_create(

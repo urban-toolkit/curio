@@ -3959,6 +3959,204 @@ class TestDataflowPlanMint:
         assert any(p["type"] == "dataflowPlan" for p in body["content"])
 
 
+class TestPlanTemplateSpellings:
+    """dev/93 D3 — the reported loop, and the regression that had never been
+    written: no test had ever fed a VERSIONED nodeType into a dataflowPlan.
+
+    The live failure: the Dataflow Builder quoted curio.builtin/data-loading@1
+    from the "Installed node templates" list its own run context supplied, was
+    refused, fell back to the legacy enum name DATA_LOADING, was refused
+    again, and burned 33.1k tokens over four correction rounds. Both spellings
+    are ones the system itself produces — the client registry keys descriptors
+    versioned, and the runtime prints versioned ids in its own proposal
+    previews — so refusing them manufactured an unfixable-looking error.
+    """
+
+    def _mint(self, client, user_and_token, alice_project, monkeypatch, nodes, edges=None):
+        helper = TestDataflowPlanMint()
+        user, token = user_and_token
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["plan.\n" + helper._plan_tail(nodes=nodes, edges=edges or [])],
+        )
+        return helper._run(client, token, alice_project, att_id).get_json(), att_id, token
+
+    def test_versioned_node_types_are_proposable(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        body, _, _ = self._mint(
+            client, user_and_token, alice_project, monkeypatch,
+            nodes=[{"ref": "a", "nodeType": "curio.builtin/computation-analysis@1",
+                    "title": "Load", "intent": "load"}],
+        )
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        # Proposed, AND the stored plan pins the canonical unversioned id
+        # rather than whatever spelling the model happened to send.
+        assert proposal["plan"]["nodes"][0]["nodeType"] == (
+            "curio.builtin/computation-analysis"
+        )
+
+    def test_legacy_enum_node_types_are_proposable(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        body, _, _ = self._mint(
+            client, user_and_token, alice_project, monkeypatch,
+            nodes=[{"ref": "a", "nodeType": "COMPUTATION_ANALYSIS",
+                    "title": "Load", "intent": "load"}],
+        )
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert proposal["plan"]["nodes"][0]["nodeType"] == (
+            "curio.builtin/computation-analysis"
+        )
+
+    def test_mixed_spellings_in_one_plan_all_canonicalise(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """A confused model mixes spellings across nodes — likely, given it was
+        told three different things. Each canonicalises independently."""
+        body, _, _ = self._mint(
+            client, user_and_token, alice_project, monkeypatch,
+            nodes=[
+                {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+                 "title": "One", "intent": "i"},
+                {"ref": "b", "nodeType": "curio.builtin/computation-analysis@1",
+                 "title": "Two", "intent": "i"},
+                {"ref": "c", "nodeType": "COMPUTATION_ANALYSIS",
+                 "title": "Three", "intent": "i"},
+            ],
+            edges=[{"from": "a", "to": "b"}],
+        )
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert {n["nodeType"] for n in proposal["plan"]["nodes"]} == {
+            "curio.builtin/computation-analysis"
+        }
+
+    def test_a_plan_may_use_a_non_authorable_template(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """The one intended difference from node.create: a plan places a typed
+        PLACEHOLDER and its content arrives later from Solve, so a template
+        that holds no authored content is legal here and refused there."""
+        body, _, _ = self._mint(
+            client, user_and_token, alice_project, monkeypatch,
+            nodes=[{"ref": "a", "nodeType": "curio.builtin/data-pool@1",
+                    "title": "Pool", "intent": "hold data"}],
+        )
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert proposal["plan"]["nodes"][0]["nodeType"] == "curio.builtin/data-pool"
+
+    def test_unknown_type_still_refuses_and_names_the_spellings(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        body, _, _ = self._mint(
+            client, user_and_token, alice_project, monkeypatch,
+            nodes=[{"ref": "a", "nodeType": "curio.builtin/not-a-thing@1",
+                    "title": "Load", "intent": "load"}],
+        )
+        assert all(p["type"] != "proposal" for p in body["content"])
+        card = next(p for p in body["content"] if p["type"] == "card")
+        assert card["title"] == "Plan not proposable"
+        line = " ".join(card["lines"])
+        assert "not-a-thing" in line
+        # The refusal must name the accepted spellings so a weak local model
+        # can self-correct from the message alone.
+        assert "@<major>" in line
+
+    def test_bare_slug_stays_ambiguous(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """'data-loading' names no package. Resolving it by guessing a package
+        would be worse than refusing, so the refusal stays."""
+        body, _, _ = self._mint(
+            client, user_and_token, alice_project, monkeypatch,
+            nodes=[{"ref": "a", "nodeType": "computation-analysis",
+                    "title": "Load", "intent": "load"}],
+        )
+        assert all(p["type"] != "proposal" for p in body["content"])
+
+    def test_versioned_plan_applies_end_to_end(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """Nothing may be proposable-but-unappliable: the whole-plan apply
+        re-check used to exact-match the same way the mint did."""
+        body, att_id, token = self._mint(
+            client, user_and_token, alice_project, monkeypatch,
+            nodes=[{"ref": "a", "nodeType": "curio.builtin/computation-analysis@1",
+                    "title": "Load", "intent": "load"}],
+        )
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        applied = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert applied.status_code == 200, applied.get_json()
+        user, _ = user_and_token
+        nodes = TestNodeCreate()._spec_nodes(user, alice_project)
+        created = [n for n in nodes if n.get("id") != "n1"]
+        assert created, "the plan's node must exist on the canvas"
+
+    def test_apply_tolerates_a_pre_change_proposal_holding_a_raw_versioned_id(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """Edge case 18: a proposal minted BEFORE parse-boundary
+        canonicalisation stores a raw versioned nodeType, and its shape digest
+        was computed over exactly that string. The apply must canonicalise the
+        COMPARISON, not the stored value, or an in-flight proposal goes stale
+        on deploy day."""
+        from utk_curio.backend.app.agents import attachments
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        body, att_id, token = self._mint(
+            client, user_and_token, alice_project, monkeypatch,
+            nodes=[{"ref": "a", "nodeType": "curio.builtin/computation-analysis@1",
+                    "title": "Load", "intent": "load"}],
+        )
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        user, _ = user_and_token
+        key = _user_dir_key(user)
+
+        # Rewind the stored proposal to what an older build would have written.
+        spec = projects_storage.read_spec(key, alice_project)
+        stored = attachments.find_proposal(spec, att_id, proposal["proposalId"])
+        stored["plan"]["nodes"][0]["nodeType"] = "curio.builtin/computation-analysis@1"
+        projects_storage.write_spec(key, alice_project, spec)
+
+        applied = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert applied.status_code == 200, applied.get_json()
+
+    def test_removal_only_plan_still_applies(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """The one plan path that always worked — it carries zero nodes, so the
+        availability loop never ran, which is why "clear nodes" succeeded at
+        12:08 while every node-bearing plan failed. The refactor must not
+        break it."""
+        import json as _json
+
+        helper = TestDataflowPlanMint()
+        user, token = user_and_token
+        plan = {"goal": "clear the canvas", "removeNodes": ["n1"]}
+        tail = f"```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch, replies=["clearing.\n" + tail],
+        )
+        body = helper._run(client, token, alice_project, att_id).get_json()
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        applied = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert applied.status_code == 200, applied.get_json()
+        assert TestNodeCreate()._spec_nodes(user, alice_project) == []
+
+
 class TestDataflowPlanApply:
     """dev/52 — the atomic, ADDITIVE plan apply: whole-graph digest safety,
     server ids, topological placement, builder-session phases."""

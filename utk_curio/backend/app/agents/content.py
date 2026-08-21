@@ -353,6 +353,10 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     endpoints may name existing nodes). The loop feeds errors back so an
     imperfect first attempt self-corrects.
     Returns ``(plan, [])`` on success or ``(None, errors)``."""
+    # Local import: this module is otherwise dependency-free (json + re), and
+    # the packages domain owns all template knowledge (`ADR-AG-007`).
+    from utk_curio.backend.app.packages import services as packages_services
+
     errors: list[str] = []
     if not isinstance(raw, dict):
         return None, ["dataflowPlan must be an object"]
@@ -405,7 +409,18 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         refs.add(ref)
         node = {
             "ref": ref,
-            "nodeType": str(node_raw["nodeType"]).strip(),
+            # Canonicalise at the BOUNDARY (memo dev/93 D3). A node type has
+            # three legal spellings and the model is handed the versioned one
+            # by its own run context, its graph, and the runtime's proposal
+            # previews; normalising here — the single place a plan is first
+            # read — means the stored proposal, its pinned shape digest, and
+            # BOTH apply-time re-checks compare canonical to canonical by
+            # construction. Adding @-stripping at each call site instead would
+            # leave the next one for the next person to find, which is exactly
+            # how the dev/90 A14 fix missed this path.
+            "nodeType": packages_services.canonical_template_id(
+                node_raw["nodeType"]
+            ),
             "title": str(node_raw["title"]).strip(),
             "intent": str(node_raw["intent"]).strip(),
         }
