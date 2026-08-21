@@ -302,3 +302,191 @@ class TestCatalogOverviewIncludesStorePackages:
         }
         # ``installed`` keeps meaning the CURRENT project's lockfile (dev/84).
         assert rows["curio.notes@1"]["installed"] is True
+
+
+class TestCanonicalTemplateId:
+    """dev/93 D3 — one value, three legal spellings, one canonical form.
+
+    The dev/90 A14 family: the canonical id is UNVERSIONED, but the client
+    registry keys descriptors VERSIONED (so the run context, the canvas graph,
+    and the runtime's own proposal previews all speak that form) and legacy
+    trill files carry the pre-package enum names. A model quoting an id from
+    its own context must not be refused for the spelling the system gave it.
+    """
+
+    def test_unversioned_is_returned_unchanged(self):
+        assert packages_services.canonical_template_id(
+            "curio.builtin/data-loading"
+        ) == "curio.builtin/data-loading"
+
+    def test_versioned_loses_only_the_major(self):
+        assert packages_services.canonical_template_id(
+            "curio.builtin/data-loading@1"
+        ) == "curio.builtin/data-loading"
+        assert packages_services.canonical_template_id(
+            "curio.postits/post-it-note@1"
+        ) == "curio.postits/post-it-note"
+        # A major that is not installed still canonicalises; availability is
+        # resolve_template's job, and the registry is unversioned anyway.
+        assert packages_services.canonical_template_id(
+            "curio.builtin/data-loading@99"
+        ) == "curio.builtin/data-loading"
+
+    def test_legacy_enum_names_resolve_to_builtin_ids(self):
+        assert packages_services.canonical_template_id(
+            "DATA_LOADING"
+        ) == "curio.builtin/data-loading"
+        assert packages_services.canonical_template_id(
+            "JS_COMPUTATION"
+        ) == "curio.builtin/js-computation"
+        # Derived, not tabulated: a built-in template that never got an enum
+        # member is covered too.
+        assert packages_services.canonical_template_id(
+            "SPATIAL_JOIN"
+        ) == "curio.builtin/spatial-join"
+
+    def test_ambiguous_and_odd_spellings_are_left_alone(self):
+        # A bare slug names no package: deliberately still ambiguous, so it
+        # refuses rather than silently resolving to some package's template.
+        assert packages_services.canonical_template_id("data-loading") == "data-loading"
+        # Ids are case-sensitive by contract — no case folding (memo §6.14).
+        assert packages_services.canonical_template_id(
+            "Curio.Builtin/Data-Loading"
+        ) == "Curio.Builtin/Data-Loading"
+        assert packages_services.canonical_template_id("  DATA_LOADING  ") == (
+            "curio.builtin/data-loading"
+        )
+        assert packages_services.canonical_template_id("") == ""
+        assert packages_services.canonical_template_id(None) == ""
+        assert packages_services.canonical_template_id(17) == ""
+
+    def test_every_frontend_nodetype_member_round_trips(self):
+        """Drift guard, read from the frontend source itself.
+
+        The legacy aliases are derived from the enum KEY (upper-snake of the
+        template id), so this asserts the frontend cannot add a member whose
+        key breaks that rule without failing here — which is stronger than
+        checking a hand-maintained table for staleness, since the table is
+        what would have gone stale.
+        """
+        import re
+        from pathlib import Path
+
+        # tests/test_packages/<this>  ->  utk_curio/
+        constants = (
+            Path(__file__).resolve().parents[3]
+            / "frontend" / "urban-workflows" / "src" / "constants.ts"
+        )
+        assert constants.is_file(), f"missing {constants}"
+        text = constants.read_text(encoding="utf-8")
+        block = text.split("export enum NodeType {", 1)[1].split("}", 1)[0]
+        members = re.findall(r'^\s*([A-Z0-9_]+)\s*=\s*"([^"]+)"', block, re.M)
+        assert len(members) >= 11, f"expected the NodeType roster, parsed {members}"
+        for key, value in members:
+            assert packages_services.canonical_template_id(key) == value, (
+                f"NodeType.{key} = {value!r} does not follow the upper-snake rule "
+                "the backend derives legacy aliases from"
+            )
+            # And the value itself is already canonical.
+            assert packages_services.canonical_template_id(value) == value
+
+
+class TestResolveTemplate:
+    """The single availability gate shared by plans and node.create."""
+
+    def _project(self, user_and_token, alice_project):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.builtin", 1, [
+            _template("data-loading", "Data Loading"),
+            _template("data-pool", "Data Pool", editor="none", has_code=False),
+        ])
+        return key, alice_project
+
+    def test_accepts_every_spelling_of_an_available_template(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        key, pid = self._project(user_and_token, alice_project)
+        for spelling in (
+            "curio.builtin/data-loading",
+            "curio.builtin/data-loading@1",
+            "DATA_LOADING",
+        ):
+            entry, err = packages_services.resolve_template(key, pid, spelling)
+            assert err == "", f"{spelling} refused: {err}"
+            # The CANONICAL id comes back, never what the caller typed.
+            assert entry["id"] == "curio.builtin/data-loading"
+
+    def test_require_authorable_is_the_only_difference_between_callers(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        key, pid = self._project(user_and_token, alice_project)
+        # A plan places a typed placeholder; content arrives later from Solve.
+        entry, err = packages_services.resolve_template(
+            key, pid, "curio.builtin/data-pool"
+        )
+        assert entry is not None and err == ""
+        # node.create writes content, so it needs a template that holds it.
+        entry, err = packages_services.resolve_template(
+            key, pid, "curio.builtin/data-pool", require_authorable=True
+        )
+        assert entry is None
+        assert "does not hold authored content" in err
+
+    def test_unknown_and_ambiguous_ids_point_at_the_roster(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        key, pid = self._project(user_and_token, alice_project)
+        for spelling in ("curio.builtin/nope", "data-loading", "NOPE_KIND"):
+            entry, err = packages_services.resolve_template(key, pid, spelling)
+            assert entry is None
+            assert "not an available template for this project" in err
+            # The message must name the accepted spellings so a weak model can
+            # self-correct from the refusal alone.
+            assert "Available node templates" in err
+            assert "@<major>" in err
+
+    def test_empty_node_type_is_refused_with_its_own_message(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        key, pid = self._project(user_and_token, alice_project)
+        for bad in (None, "", "   ", 42):
+            entry, err = packages_services.resolve_template(key, pid, bad)
+            assert entry is None
+            assert "non-empty template id string" in err
+
+    def test_degraded_store_is_reported_as_such_not_blamed_on_the_id(
+        self, user_and_token, alice_project, tmp_curio, caplog
+    ):
+        """dev/93 D2: a truncated package store used to surface as "that
+        template is not available", which sent a model into correction rounds
+        over an id that was never the problem."""
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.builtin", 1, [], broken=True)
+
+        with caplog.at_level("WARNING"):
+            report = packages_services.available_templates_report(key, alice_project)
+        assert report["templates"] == []
+        assert report["skipped"] == ["curio.builtin@1"]
+        assert "curio.builtin@1" in caplog.text, "a silent skip is the bug"
+
+        entry, err = packages_services.resolve_template(
+            key, alice_project, "curio.builtin/data-loading@1"
+        )
+        assert entry is None
+        assert "package store is degraded" in err
+        assert "curio.builtin@1" in err
+        assert "Report this" in err
+
+    def test_registry_failure_is_data_not_an_exception(
+        self, user_and_token, alice_project, tmp_curio, monkeypatch
+    ):
+        key, pid = self._project(user_and_token, alice_project)
+        monkeypatch.setattr(
+            packages_services, "available_templates_report",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk on fire")),
+        )
+        entry, err = packages_services.resolve_template(key, pid, "curio.builtin/data-loading")
+        assert entry is None
+        assert "registry is unavailable" in err and "disk on fire" in err

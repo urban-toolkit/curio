@@ -22,6 +22,7 @@ land there only through ``factory/publish-catalog`` in
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -221,6 +222,109 @@ def _input_arity(canonical: str, template) -> tuple[list[dict], int]:
     return inputs, max_incoming
 
 
+# One value, three legal spellings (memo dev/93 D3; the dev/90 A14 family).
+# The canonical form is UNVERSIONED ``<packageId>/<templateId>`` — what
+# ``available_templates`` returns and what a spec pins — but the ecosystem
+# hands models the other two constantly: the client registry keys descriptors
+# VERSIONED (``<packageId>/<templateId>@<major>``, so the run context, the
+# canvas graph, and the runtime's own proposal previews all speak it), and
+# legacy trill files carry the pre-package ENUM names (``DATA_LOADING``).
+# A model quoting an id from its own context must never be refused for
+# quoting it in a spelling the system itself produced.
+_VERSIONED_TEMPLATE_RE = re.compile(r"^(?P<base>.+/.+)@(?P<major>0|[1-9][0-9]{0,3})$")
+_LEGACY_ENUM_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$")
+
+
+def canonical_template_id(node_type: object) -> str:
+    """Any legal spelling of a node type → the canonical unversioned id.
+
+    Shape only: no filesystem access, no availability check — availability is
+    :func:`resolve_template`'s job, and keeping this pure lets it run at the
+    parse boundary where a plan is first read.
+
+    The legacy enum names are DERIVED rather than tabulated: every member of
+    the frontend's ``NodeType`` enum is its template id upper-snake-cased
+    (``DATA_LOADING`` ↔ ``curio.builtin/data-loading``), so the rule cannot
+    drift out of sync with a hand-maintained list the way a table would, and
+    it covers built-in templates that never got an enum member (spatial-join)
+    for free. A bogus ALL-CAPS token maps to a canonical id that simply is not
+    available, which refuses with the ordinary message.
+
+    Anything unrecognised is returned unchanged — including a bare
+    ``data-loading`` with no package id, which stays ambiguous on purpose, and
+    a case variant, since template ids are case-sensitive by contract.
+    """
+    if not isinstance(node_type, str):
+        return ""
+    text = node_type.strip()
+    if not text:
+        return ""
+    versioned = _VERSIONED_TEMPLATE_RE.match(text)
+    if versioned:
+        return versioned.group("base")
+    if "/" not in text and _LEGACY_ENUM_RE.match(text):
+        return f"{BUILTIN_PACKAGE_ID}/{text.lower().replace('_', '-')}"
+    return text
+
+
+def resolve_template(
+    user_key: str,
+    project_id: str,
+    node_type: object,
+    *,
+    require_authorable: bool = False,
+) -> tuple[dict | None, str]:
+    """The ONE availability gate for a node type (memo dev/93 D3).
+
+    Accepts every spelling :func:`canonical_template_id` knows and returns
+    ``(entry | None, error_text)``, where ``entry`` is the
+    :func:`available_templates` row — so the caller pins the canonical id, not
+    whatever the model typed. Plans and ``node.create`` share this so they can
+    no longer disagree about what a template id is: before this, a plan naming
+    ``curio.builtin/data-loading@1`` was refused while ``node.create`` accepted
+    the very same string, and the model — quoting an id its own prompt had
+    given it — had no way to tell which spelling any given tool wanted.
+
+    ``require_authorable`` is the one intended difference between the callers
+    and is therefore explicit at both: ``node.create`` writes content, so it
+    needs a template that holds authored content; a PLAN places a typed
+    placeholder whose content arrives later from Solve, so it does not.
+
+    A degraded registry is reported as such rather than blamed on the id: an
+    unreadable package store used to surface as "that template is not
+    available", which is how a corrupted install (dev/93 D1) reached a model
+    as its own mistake.
+    """
+    if not isinstance(node_type, str) or not node_type.strip():
+        return None, "params.nodeType must be a non-empty template id string"
+    try:
+        report = available_templates_report(user_key, project_id)
+    except Exception as exc:  # unavailable registry is data, not a run error
+        return None, f"the node template registry is unavailable: {exc}"
+    canonical = canonical_template_id(node_type)
+    entry = next((t for t in report["templates"] if t["id"] == canonical), None)
+    if entry is None:
+        if report["skipped"]:
+            unreadable = ", ".join(sorted(report["skipped"]))
+            return None, (
+                f"nodeType {node_type!r} is not available AND this project's "
+                f"package store is degraded — {unreadable} could not be read, so "
+                "templates it provides are missing from the list. Report this "
+                "rather than choosing a different template"
+            )
+        return None, (
+            f"nodeType {node_type!r} is not an available template for this project — "
+            "choose an id from the Available node templates list (the versioned "
+            "form '<packageId>/<templateId>@<major>' is also accepted)"
+        )
+    if require_authorable and not entry.get("authorable"):
+        return None, (
+            f"template {node_type!r} does not hold authored content — choose an "
+            "authorable template from the Available node templates list"
+        )
+    return entry, ""
+
+
 def _template_entry(package_id: str, template) -> dict:
     """One roster row for a manifest template — the shape every template
     listing in this module returns (memo dev/48; arity per dev/67-3, DEC-051).
@@ -302,6 +406,26 @@ def available_templates(user_key: str, project_id: str) -> list[dict]:
     the agents module owns none of its own. Unreadable packages are skipped
     (they cannot provide working nodes); a project without a spec resolves
     to the builtin templates only.
+
+    See :func:`available_templates_report` when the caller needs to know
+    whether anything WAS skipped — silence about that is what let a
+    truncated package store reach a model as "that template is not
+    available" (memo dev/93 D2).
+    """
+    return available_templates_report(user_key, project_id)["templates"]
+
+
+def available_templates_report(user_key: str, project_id: str) -> dict:
+    """:func:`available_templates` plus what it could not read.
+
+    ``{"templates": [...], "skipped": [dirName, ...]}``. The skip list exists
+    because the bare ``except (ManifestError, OSError): continue`` this
+    function is built on is silent by nature: a package whose manifest will
+    not load simply vanishes from every roster, so a store that lost its
+    built-in manifest looked identical to a project that legitimately has few
+    templates — and the refusal three layers away blamed the node type. Each
+    skip is also logged at WARNING; an unreadable installed package is an
+    abnormal state, not routine.
     """
     from utk_curio.backend.app.packages.manifest import (
         ManifestError,
@@ -318,13 +442,22 @@ def available_templates(user_key: str, project_id: str) -> list[dict]:
     )
     out: list[dict] = []
     seen: set[str] = set()
+    skipped: list[str] = []
     for path in paths:
         pkg_id = path.name.split("@", 1)[0]
         if pkg_id != BUILTIN_PACKAGE_ID and path.name not in wanted:
             continue
         try:
             manifest = load_packageage_manifest(path)
-        except (ManifestError, OSError):
+        except (ManifestError, OSError) as exc:
+            # Loud, because the consequence is invisible: every template this
+            # package provides disappears from the roster (dev/93 D2).
+            log.warning(
+                "Package %s is installed but unreadable (%s) — its templates are "
+                "missing from this project's roster",
+                path.name, exc,
+            )
+            skipped.append(path.name)
             continue
         for t in manifest.templates:
             entry = _template_entry(manifest.package_id, t)
@@ -332,7 +465,10 @@ def available_templates(user_key: str, project_id: str) -> list[dict]:
                 continue
             seen.add(entry["id"])
             out.append(entry)
-    return sorted(out, key=lambda e: e["id"])
+    return {
+        "templates": sorted(out, key=lambda e: e["id"]),
+        "skipped": sorted(skipped),
+    }
 
 
 # Agent-drafted packages (memo dev/48 §3.2b) are namespaced so they can never
