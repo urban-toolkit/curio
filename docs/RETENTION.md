@@ -35,7 +35,8 @@ overridable with `CURIO_AGENT_RETENTION`):
 {
   "backups": "none",                       // or {"expiryDays": 30}; REQUIRED for production
   "ledger":  {"archiveAfterDays": 365},    // optional: archive (move) old day files
-  "closure": {"graceDays": 14}             // optional: account-closure grace window
+  "closure": {"graceDays": 14},            // optional: account-closure grace window
+  "packageBackend": {"ledgerArchiveAfterDays": 365}  // optional: dev/91 invocation-audit day files
 }
 ```
 
@@ -43,6 +44,10 @@ overridable with `CURIO_AGENT_RETENTION`):
 - A startup sweep enforces **only declared values**: ledger day files older than
   `archiveAfterDays` are moved to `ledger/archive/` byte-identically — archived,
   never rewritten. Nothing else is ever auto-purged.
+- `packageBackend.ledgerArchiveAfterDays` (memo dev/91) applies the same
+  move-never-rewrite archiving to the package backend sandbox's per-package
+  invocation-audit day files under `users/<key>/package-backend-ledger/<pkg>/`
+  (rows carry handler names, sizes, outcomes, and applied limits — never payloads).
 - Unknown keys are logged loudly and NOT applied — a rule nothing enforces is never
   silently accepted.
 - The declaration is served on `GET /api/config/public` (`retention`) and drives the

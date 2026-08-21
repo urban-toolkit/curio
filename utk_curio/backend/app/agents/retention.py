@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 RETENTION_ENV = "CURIO_AGENT_RETENTION"
 RETENTION_FILENAME = "agents-retention.json"
 
-_KNOWN_KEYS = {"backups", "ledger", "closure"}
+_KNOWN_KEYS = {"backups", "ledger", "closure", "packageBackend"}
 _LEDGER_DAY_FILE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})\.jsonl$")
 
 
@@ -102,6 +102,15 @@ def closure_grace_days(declaration: dict | None = None) -> int | None:
     return _positive_int(raw.get("graceDays")) if isinstance(raw, dict) else None
 
 
+def package_backend_ledger_archive_after_days(declaration: dict | None = None) -> int | None:
+    """memo dev/91: retention for the package-backend invocation ledger —
+    ``{"packageBackend": {"ledgerArchiveAfterDays": N}}``; None = undeclared
+    (no expiry, the DEC-057 default)."""
+    decl = load_declaration() if declaration is None else declaration
+    raw = decl.get("packageBackend")
+    return _positive_int(raw.get("ledgerArchiveAfterDays")) if isinstance(raw, dict) else None
+
+
 def public_declaration() -> dict:
     """The shape ``GET /api/config/public`` serves — ``null`` = undeclared,
     so the frontend's deletion copy can be honest about the gap."""
@@ -110,6 +119,7 @@ def public_declaration() -> dict:
         "backups": backup_posture(decl),
         "ledgerArchiveAfterDays": ledger_archive_after_days(decl),
         "closureGraceDays": closure_grace_days(decl),
+        "packageBackendLedgerDays": package_backend_ledger_archive_after_days(decl),
     }
 
 
@@ -122,23 +132,17 @@ def run_retention_sweep(today: date | None = None) -> dict:
     are logged per file and never raise — retention housekeeping must never
     take the server down.
 
-    Currently one declared class exists: ``ledger.archiveAfterDays`` moves
-    every user's ledger day files older than the age into ``ledger/archive/``
-    byte-identically (``shutil.move`` — archived, never rewritten). Returns
-    ``{"ledgerFilesArchived": n}``.
+    Two declared classes exist: ``ledger.archiveAfterDays`` moves every
+    user's ledger day files older than the age into ``ledger/archive/``
+    byte-identically (``shutil.move`` — archived, never rewritten), and
+    ``packageBackend.ledgerArchiveAfterDays`` (memo dev/91) does the same for
+    every per-package invocation-ledger dir under
+    ``users/<key>/package-backend-ledger/<pkg>/``. Returns
+    ``{"ledgerFilesArchived": n, "packageBackendLedgerFilesArchived": n}``.
     """
-    archived = 0
-    age_days = ledger_archive_after_days()
-    if age_days is None:
-        return {"ledgerFilesArchived": 0}
-    cutoff = (today or date.today()) - timedelta(days=age_days)
-    base = _users_base()
-    if not base.is_dir():
-        return {"ledgerFilesArchived": 0}
-    for user_dir in sorted(base.iterdir()):
-        ledger_dir = user_dir / "agents" / "ledger"
-        if not ledger_dir.is_dir():
-            continue
+
+    def _archive_day_files(ledger_dir: Path, cutoff: date) -> int:
+        count = 0
         for entry in sorted(ledger_dir.iterdir()):
             m = _LEDGER_DAY_FILE.match(entry.name)
             if m is None or not entry.is_file():
@@ -156,9 +160,33 @@ def run_retention_sweep(today: date | None = None) -> dict:
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(entry), str(target))
-                archived += 1
+                count += 1
             except OSError:
                 log.warning("retention sweep: could not archive %s", entry, exc_info=True)
-    if archived:
-        log.info("retention sweep archived %d ledger day file(s)", archived)
-    return {"ledgerFilesArchived": archived}
+        return count
+
+    archived = 0
+    pkg_archived = 0
+    base = _users_base()
+    age_days = ledger_archive_after_days()
+    if age_days is not None and base.is_dir():
+        cutoff = (today or date.today()) - timedelta(days=age_days)
+        for user_dir in sorted(base.iterdir()):
+            ledger_dir = user_dir / "agents" / "ledger"
+            if ledger_dir.is_dir():
+                archived += _archive_day_files(ledger_dir, cutoff)
+    pkg_age_days = package_backend_ledger_archive_after_days()
+    if pkg_age_days is not None and base.is_dir():
+        pkg_cutoff = (today or date.today()) - timedelta(days=pkg_age_days)
+        for user_dir in sorted(base.iterdir()):
+            root = user_dir / "package-backend-ledger"
+            if not root.is_dir():
+                continue
+            for pkg_dir in sorted(root.iterdir()):
+                if pkg_dir.is_dir():
+                    pkg_archived += _archive_day_files(pkg_dir, pkg_cutoff)
+    if archived or pkg_archived:
+        log.info("retention sweep archived %d ledger + %d package-backend day file(s)",
+                 archived, pkg_archived)
+    return {"ledgerFilesArchived": archived,
+            "packageBackendLedgerFilesArchived": pkg_archived}

@@ -31,6 +31,7 @@ class TestDeclaration:
             "backups": None,
             "ledgerArchiveAfterDays": None,
             "closureGraceDays": None,
+            "packageBackendLedgerDays": None,
         }
 
     def test_corrupt_file_reads_as_empty(self, tmp_curio):
@@ -48,6 +49,7 @@ class TestDeclaration:
             "backups": {"expiryDays": 30},
             "ledgerArchiveAfterDays": 365,
             "closureGraceDays": 14,
+            "packageBackendLedgerDays": None,
         }
         _write_declaration(tmp_curio, {"backups": "none"})
         assert retention.public_declaration()["backups"] == "none"
@@ -62,6 +64,7 @@ class TestDeclaration:
             "backups": None,
             "ledgerArchiveAfterDays": None,
             "closureGraceDays": None,
+            "packageBackendLedgerDays": None,
         }
 
     def test_unknown_keys_warn_loudly(self, tmp_curio, caplog):
@@ -82,7 +85,7 @@ class TestSweep:
     def test_no_declaration_moves_nothing(self, tmp_curio):
         self._seed_ledger(tmp_curio, "42", ["2020-01-01.jsonl"])
         result = retention.run_retention_sweep(today=date(2026, 8, 19))
-        assert result == {"ledgerFilesArchived": 0}
+        assert result == {"ledgerFilesArchived": 0, "packageBackendLedgerFilesArchived": 0}
         ledger = tmp_curio / ".curio" / "users" / "42" / "agents" / "ledger"
         assert (ledger / "2020-01-01.jsonl").is_file()
         assert not (ledger / "archive").exists()
@@ -100,7 +103,7 @@ class TestSweep:
 
         result = retention.run_retention_sweep(today=date(2026, 8, 19))
 
-        assert result == {"ledgerFilesArchived": 1}
+        assert result == {"ledgerFilesArchived": 1, "packageBackendLedgerFilesArchived": 0}
         assert not (ledger / "2026-01-01.jsonl").exists()
         assert (ledger / "archive" / "2026-01-01.jsonl").read_bytes() == old_bytes
         assert (ledger / "2026-08-10.jsonl").is_file()
@@ -117,14 +120,43 @@ class TestSweep:
         with caplog.at_level("WARNING"):
             result = retention.run_retention_sweep(today=date(2026, 8, 19))
 
-        assert result == {"ledgerFilesArchived": 0}
+        assert result == {"ledgerFilesArchived": 0, "packageBackendLedgerFilesArchived": 0}
         assert (ledger / "archive" / "2026-01-01.jsonl").read_text(encoding="utf-8") == "prior archive"
         assert (ledger / "2026-01-01.jsonl").is_file()  # left in place
         assert "never overwritten" in caplog.text
 
     def test_missing_users_dir_is_a_noop(self, tmp_curio):
         _write_declaration(tmp_curio, {"ledger": {"archiveAfterDays": 1}})
-        assert retention.run_retention_sweep() == {"ledgerFilesArchived": 0}
+        assert retention.run_retention_sweep() == {"ledgerFilesArchived": 0, "packageBackendLedgerFilesArchived": 0}
+
+    def test_package_backend_ledger_archives_under_its_own_declaration(self, tmp_curio):
+        # memo dev/91: the invocation ledger joins the DEC-057 declaration —
+        # its OWN key, enforced independently of the agents ledger's.
+        _write_declaration(tmp_curio, {"packageBackend": {"ledgerArchiveAfterDays": 30}})
+        pkg_ledger = (tmp_curio / ".curio" / "users" / "42" /
+                      "package-backend-ledger" / "curio.counter@1")
+        pkg_ledger.mkdir(parents=True)
+        (pkg_ledger / "2026-01-01.jsonl").write_text('{"status": "ok"}\n', encoding="utf-8")
+        (pkg_ledger / "2026-08-10.jsonl").write_text('{"status": "ok"}\n', encoding="utf-8")
+        # Agents ledger untouched — no "ledger" declaration.
+        self._seed_ledger(tmp_curio, "42", ["2020-01-01.jsonl"])
+
+        result = retention.run_retention_sweep(today=date(2026, 8, 19))
+
+        assert result == {"ledgerFilesArchived": 0, "packageBackendLedgerFilesArchived": 1}
+        assert not (pkg_ledger / "2026-01-01.jsonl").exists()
+        assert (pkg_ledger / "archive" / "2026-01-01.jsonl").is_file()
+        assert (pkg_ledger / "2026-08-10.jsonl").is_file()
+        agents_ledger = tmp_curio / ".curio" / "users" / "42" / "agents" / "ledger"
+        assert (agents_ledger / "2020-01-01.jsonl").is_file()
+
+    def test_package_backend_declaration_is_a_known_key(self, tmp_curio, caplog):
+        _write_declaration(tmp_curio, {"packageBackend": {"ledgerArchiveAfterDays": 7}})
+        with caplog.at_level("WARNING"):
+            decl = retention.load_declaration()
+        assert "NOT applied" not in caplog.text
+        assert retention.package_backend_ledger_archive_after_days(decl) == 7
+        assert retention.public_declaration()["packageBackendLedgerDays"] == 7
 
 
 class TestPublicConfigRoute:
@@ -135,4 +167,5 @@ class TestPublicConfigRoute:
             "backups": "none",
             "ledgerArchiveAfterDays": None,
             "closureGraceDays": None,
+            "packageBackendLedgerDays": None,
         }
