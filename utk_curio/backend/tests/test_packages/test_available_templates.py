@@ -197,3 +197,108 @@ class TestInputArity:
             {"types": ["GEODATAFRAME"], "min": 1, "max": 1},
             {"types": ["GEODATAFRAME"], "min": 1, "max": 1},
         ]
+
+
+class TestInstalledTemplatesNotInProject:
+    """The reuse-first counterpart (memo dev/93 D4).
+
+    Availability is *store ∩ lockfile*, so a package the user already owns is
+    invisible to a project that has not enlisted it — and an agent told to
+    reuse then reports that no such template exists and authors a duplicate.
+    This listing is what lets the roster say "you have this, enlist it".
+    """
+
+    def test_lists_store_only_templates_with_their_dir_name(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.builtin", 1, [_template("computation-analysis", "Computation")])
+        _write_package(key, "ai.test.locked", 1, [_template("locked-kind", "Locked")])
+        _write_package(key, "ai.test.storeonly", 1, [_template("store-kind", "StoreOnly")])
+        _lockfile_add(key, alice_project, "ai.test.locked@1")
+
+        rows = packages_services.installed_templates_not_in_project(key, alice_project)
+        # Exactly the complement of available_templates: not the builtin
+        # (always present) and not what the lockfile already names.
+        assert [(r["id"], r["dirName"]) for r in rows] == [
+            ("ai.test.storeonly/store-kind", "ai.test.storeonly@1"),
+        ]
+
+    def test_empty_when_everything_is_enlisted(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.builtin", 1, [_template("computation-analysis", "Computation")])
+        _write_package(key, "ai.test.locked", 1, [_template("locked-kind", "Locked")])
+        _lockfile_add(key, alice_project, "ai.test.locked@1")
+
+        assert packages_services.installed_templates_not_in_project(key, alice_project) == []
+
+    def test_unreadable_store_package_is_skipped(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "ai.test.broken", 1, [], broken=True)
+        _write_package(key, "ai.test.storeonly", 1, [_template("store-kind", "StoreOnly")])
+
+        ids = {r["id"] for r in packages_services.installed_templates_not_in_project(key, alice_project)}
+        assert ids == {"ai.test.storeonly/store-kind"}
+
+    def test_carries_the_same_row_shape_as_available(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "ai.test.storeonly", 1, [
+            _template("note-surface", "Note", editor="none", has_code=False,
+                      description="a note surface"),
+        ])
+        row = packages_services.installed_templates_not_in_project(key, alice_project)[0]
+        assert row["label"] == "Note"
+        assert row["description"] == "a note surface"
+        assert set(row) == {
+            "id", "label", "description", "authorable", "inputs",
+            "maxIncomingEdges", "dirName",
+        }
+
+
+class TestCatalogOverviewIncludesStorePackages:
+    """dev/93 D4: an agent-authored package never enters the committed
+    catalog, so before this it could not be enlisted into a second project at
+    all — ``package.install`` refused it as "not in the Nodes Catalog", which
+    left authoring a near-duplicate as the only move."""
+
+    def test_store_only_package_is_proposable(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.notes", 1, [
+            _template("note-surface", "Note", editor="none", has_code=False),
+        ])
+        rows = {
+            r["dirName"]: r
+            for r in packages_services.agent_catalog_overview(key, alice_project)
+        }
+        assert "curio.notes@1" in rows, "a store package must be enlistable"
+        assert rows["curio.notes@1"]["installed"] is False
+        assert rows["curio.notes@1"]["builtin"] is False
+
+    def test_enlisted_store_package_reads_as_installed(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.notes", 1, [
+            _template("note-surface", "Note", editor="none", has_code=False),
+        ])
+        _lockfile_add(key, alice_project, "curio.notes@1")
+        rows = {
+            r["dirName"]: r
+            for r in packages_services.agent_catalog_overview(key, alice_project)
+        }
+        # ``installed`` keeps meaning the CURRENT project's lockfile (dev/84).
+        assert rows["curio.notes@1"]["installed"] is True

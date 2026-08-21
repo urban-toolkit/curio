@@ -221,6 +221,74 @@ def _input_arity(canonical: str, template) -> tuple[list[dict], int]:
     return inputs, max_incoming
 
 
+def _template_entry(package_id: str, template) -> dict:
+    """One roster row for a manifest template — the shape every template
+    listing in this module returns (memo dev/48; arity per dev/67-3, DEC-051).
+    """
+    canonical = f"{package_id}/{template.template_id}"
+    inputs, max_incoming = _input_arity(canonical, template)
+    return {
+        "id": canonical,
+        "label": template.label,
+        "description": template.description,
+        # dev/90 A14: a PRESENTATION template (editor none + a custom
+        # behavior — the dev/89 post-it profile) holds authorable CONTENT
+        # (the note text its behavior renders) even though it has no code
+        # editor; without this, reuse-first note creation was impossible by
+        # construction (node.create refused every note template).
+        "authorable": bool(
+            template.has_code or template.has_grammar
+            or (template.behavior and template.editor == "none")
+        ),
+        "inputs": inputs,
+        "maxIncomingEdges": max_incoming,
+    }
+
+
+def installed_templates_not_in_project(user_key: str, project_id: str) -> list[dict]:
+    """Templates the user HAS installed that this project has not enlisted.
+
+    The reuse-first counterpart to :func:`available_templates` (memo dev/93
+    D4). Availability is *store ∩ project lockfile*, so a package the user
+    already owns is invisible to a project whose lockfile omits it — and an
+    agent told to "reuse an installed template" then concludes none exists
+    and authors a duplicate package instead. This listing is what makes the
+    distinction sayable: these templates exist and are one reviewed
+    ``package.install`` away from being usable here.
+
+    Each row is a :func:`_template_entry` plus ``dirName`` — the
+    ``<packageId>@<major>`` a ``package.install`` proposal takes. Built-ins
+    are excluded (always present, never proposable) and so is anything the
+    lockfile already names.
+    """
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+
+    try:
+        wanted = set(get_project_lockfile(user_key, project_id))
+    except PackageServiceError:
+        wanted = set()
+    out: list[dict] = []
+    seen: set[str] = set()
+    for path in sorted(list_user_packageages(user_key), key=lambda p: p.name):
+        pkg_id = path.name.split("@", 1)[0]
+        if pkg_id == BUILTIN_PACKAGE_ID or path.name in wanted:
+            continue
+        try:
+            manifest = load_packageage_manifest(path)
+        except (ManifestError, OSError):
+            continue
+        for t in manifest.templates:
+            entry = _template_entry(manifest.package_id, t)
+            if entry["id"] in seen:
+                continue
+            seen.add(entry["id"])
+            out.append({**entry, "dirName": path.name})
+    return sorted(out, key=lambda e: e["id"])
+
+
 def available_templates(user_key: str, project_id: str) -> list[dict]:
     """The node templates a project may instantiate (memo dev/48).
 
@@ -259,30 +327,11 @@ def available_templates(user_key: str, project_id: str) -> list[dict]:
         except (ManifestError, OSError):
             continue
         for t in manifest.templates:
-            canonical = f"{manifest.package_id}/{t.template_id}"
-            if canonical in seen:
+            entry = _template_entry(manifest.package_id, t)
+            if entry["id"] in seen:
                 continue
-            seen.add(canonical)
-            inputs, max_incoming = _input_arity(canonical, t)
-            out.append(
-                {
-                    "id": canonical,
-                    "label": t.label,
-                    "description": t.description,
-                    # dev/90 A14: a PRESENTATION template (editor none + a
-                    # custom behavior — the dev/89 post-it profile) holds
-                    # authorable CONTENT (the note text its behavior
-                    # renders) even though it has no code editor; without
-                    # this, reuse-first note creation was impossible by
-                    # construction (node.create refused every note template).
-                    "authorable": bool(
-                        t.has_code or t.has_grammar
-                        or (t.behavior and t.editor == "none")
-                    ),
-                    "inputs": inputs,
-                    "maxIncomingEdges": max_incoming,
-                }
-            )
+            seen.add(entry["id"])
+            out.append(entry)
     return sorted(out, key=lambda e: e["id"])
 
 
@@ -718,15 +767,36 @@ def agent_catalog_overview(user_key: str, project_id: str | None) -> list[dict]:
     ``installed`` means the CURRENT project's lockfile (what matters for a node
     running in this project — dev/84); ``builtin`` marks ``curio.builtin``,
     which is always present and never proposable.
+
+    Scope is the committed catalog PLUS whatever is already in this user's
+    package store (memo dev/93 D4). The store half matters because an
+    agent-authored package (``curio.agent``/``curio.notes``-style) never
+    enters the committed catalog: before this, such a package could not be
+    enlisted into a second project at all — ``package.install`` refused it as
+    "not in the Nodes Catalog" — so an agent asked to reuse it had no move
+    left except authoring yet another near-duplicate. A store manifest wins
+    over a catalog one of the same dirName: it is the copy an install would
+    actually enlist.
     """
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+
     lockfile: set[str] = set()
     if project_id:
         try:
             lockfile = get_project_lockfile(user_key, project_id)
         except Exception:  # noqa: BLE001 — an unreadable project reads as empty
             lockfile = set()
+    manifests: dict[str, "PackageManifest"] = dict(_catalog_manifests())
+    for path in list_user_packageages(user_key):
+        try:
+            manifests[path.name] = load_packageage_manifest(path)
+        except (ManifestError, OSError):
+            continue  # an unreadable store copy cannot provide working nodes
     rows: list[dict] = []
-    for dir_name, manifest in _catalog_manifests().items():
+    for dir_name, manifest in sorted(manifests.items()):
         builtin = manifest.package_id == BUILTIN_PACKAGE_ID
         rows.append(
             {

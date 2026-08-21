@@ -11,6 +11,7 @@ User-facing overview: ``docs/AGENTS.md``.
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 
@@ -41,6 +42,8 @@ from utk_curio.backend.app.agents.providers import (
     stream_chat_completion,
 )
 from utk_curio.backend.app.projects import storage as projects_storage
+
+log = logging.getLogger(__name__)
 
 
 class AgentServiceError(Exception):
@@ -4732,6 +4735,17 @@ def _prepare_run(
         templates_block = _available_templates_block(user_key, project_id)
         if templates_block:
             system_content = f"{system_content}\n\n{templates_block}"
+        # dev/93 D4: the second half of the roster — what the user owns but
+        # this project has not enlisted — goes only to a run that can act on
+        # it. Offering it without the grant would name a door the model
+        # cannot open, which is how the Researcher ended up authoring a
+        # duplicate package instead.
+        if "package.install" in granted:
+            enlistable = _enlistable_templates_block(
+                user_key, project_id, _TEMPLATES_BLOCK_MAX_ENTRIES
+            )
+            if enlistable:
+                system_content = f"{system_content}\n\n{enlistable}"
     # Delegation (dev/48, DEC-046): offered only when the manifest names
     # delegates that resolve to visible definitions — server-resolved, never
     # the manifest's raw list.
@@ -4793,27 +4807,81 @@ _TEMPLATES_BLOCK_MAX_ENTRIES = 60
 _TEMPLATES_BLOCK_DESC_CHARS = 140
 
 
+def _template_line(entry: dict, *, suffix: str = "") -> str:
+    desc = (entry.get("description") or "")[:_TEMPLATES_BLOCK_DESC_CHARS]
+    return f"- {entry['id']} — {entry['label']}" + (f": {desc}" if desc else "") + suffix
+
+
 def _available_templates_block(user_key: str, project_id: str) -> str | None:
-    """The grant-aware "Available node templates" listing appended to a
-    node.create run's system content — authorable templates only, composed
-    from the packages-domain helper so it is never stale (memo dev/48)."""
+    """The grant-aware node-template listing appended to a node.create or
+    dataflow.plan.write run's system content, composed from the
+    packages-domain helpers so it is never stale (memo dev/48).
+
+    Two sections, because one bucket could not express the difference that
+    matters (memo dev/93 D4). "Available" is what this project can
+    instantiate right now. "Installed but not enlisted" is what the user
+    already owns and could enlist with one reviewed ``package.install`` —
+    without it, a template the user has looks identical to a template that
+    does not exist anywhere, and an agent told to reuse concludes "there is
+    no installed notes template on your canvas" and authors a duplicate
+    package. The second section is offered only to a run that can act on it
+    (a ``package.install`` grant); everyone else sees the roster unchanged.
+    """
     from utk_curio.backend.app.packages import services as packages_services
 
     try:
         templates = packages_services.available_templates(user_key, project_id)
     except Exception:  # a broken registry degrades to no listing, not a 500
         return None
-    entries = [t for t in templates if t.get("authorable")][:_TEMPLATES_BLOCK_MAX_ENTRIES]
-    if not entries:
+    entries = [t for t in templates if t.get("authorable")]
+    shown = entries[:_TEMPLATES_BLOCK_MAX_ENTRIES]
+    if len(entries) > len(shown):
+        log.warning(
+            "Template roster truncated for project %s: %d of %d available "
+            "templates listed",
+            project_id, len(shown), len(entries),
+        )
+    if not shown:
         return None
-    lines = []
-    for t in entries:
-        desc = (t.get("description") or "")[:_TEMPLATES_BLOCK_DESC_CHARS]
-        suffix = f": {desc}" if desc else ""
-        lines.append(f"- {t['id']} — {t['label']}{suffix}")
     return (
-        "Available node templates (a node.create nodeType MUST be exactly one "
-        "of these ids):\n" + "\n".join(lines)
+        "Available node templates (a node.create nodeType or a plan nodeType "
+        "MUST be one of these ids; the versioned form "
+        "'<packageId>/<templateId>@<major>' is also accepted):\n"
+        + "\n".join(_template_line(t) for t in shown)
+    )
+
+
+def _enlistable_templates_block(user_key: str, project_id: str, budget: int) -> str | None:
+    """The "installed but not enlisted" half of the roster (memo dev/93 D4).
+
+    Separate function, one shared line format: the sections are composed
+    together but only this one is grant-gated, and it names the dirName the
+    ``package.install`` proposal takes so the model never has to guess it.
+    """
+    from utk_curio.backend.app.packages import services as packages_services
+
+    if budget <= 0:
+        return None
+    try:
+        rows = packages_services.installed_templates_not_in_project(user_key, project_id)
+    except Exception:  # same posture as the available half
+        return None
+    rows = [r for r in rows if r.get("authorable")]
+    shown = rows[:budget]
+    if len(rows) > len(shown):
+        log.warning(
+            "Enlistable roster truncated for project %s: %d of %d listed",
+            project_id, len(shown), len(rows),
+        )
+    if not shown:
+        return None
+    lines = [
+        _template_line(r, suffix=f" (package {r['dirName']})") for r in shown
+    ]
+    return (
+        "Installed but NOT enlisted in this project — you already have these; "
+        "propose package.install with the named package to use one, and do NOT "
+        "author a duplicate package:\n" + "\n".join(lines)
     )
 
 

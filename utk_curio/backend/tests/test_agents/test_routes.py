@@ -3301,6 +3301,182 @@ class TestNodeCreate:
         assert len(self._spec_nodes(user, alice_project)) == 1
 
 
+class TestReuseLadder:
+    """dev/93 D4 — the reuse ladder: reuse → ENLIST → author.
+
+    The live failure this class pins: a Researcher asked "what's the weather
+    in Paris?" reported "there is no installed notes template on your canvas"
+    and delegated package authoring TWICE in one run, producing two
+    near-duplicate packages — while a perfectly good notes package sat in the
+    user's store, invisible because this project's lockfile did not name it
+    and unreachable because the agent had no way to enlist it.
+    """
+
+    COORD = "agent.researcher@1.0.0"
+
+    def _write_store_package(self, user_key, dir_name, package_id, template_id, label):
+        """A package in the user's STORE but not in any project lockfile —
+        e.g. one a previous project's Package Builder authored."""
+        import json as _json
+
+        from utk_curio.backend.app.packages.storage import user_packageages_dir
+
+        d = user_packageages_dir(user_key) / dir_name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "manifest.json").write_text(_json.dumps({
+            "id": package_id,
+            "version": "1.0.0",
+            "name": "Simple Notes",
+            "publisher": "Package Builder",
+            "description": "Colored note surfaces.",
+            "license": "MIT",
+            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+            "permissions": [],
+            "dependencies": {"packages": {}, "python": {}, "js": {}},
+            "templates": [{
+                "id": template_id, "label": label,
+                "category": "visualization", "engine": "javascript",
+                "editor": "none", "behavior": "note-behavior",
+                "hasCode": False, "description": "A note surface.",
+                "inputPorts": [], "outputPorts": [],
+            }],
+            "createdAt": "2026-08-01T12:00:00Z",
+        }), encoding="utf-8")
+
+    def _write_builtin_package(self, user_key, templates=None):
+        return TestNodeCreate()._write_builtin_package(user_key, templates)
+
+    def _setup(self, client, user, token, project_id, monkeypatch, replies=None):
+        # Borrow the node-create harness but bind it to THIS class, so the
+        # attachment is the Researcher (the agent that holds package.install).
+        return TestNodeCreate()._setup.__func__(
+            self, client, user=user, token=token, project_id=project_id,
+            monkeypatch=monkeypatch, replies=replies,
+        )
+
+    def _run(self, client, token, project_id, att_id, message="what's the weather in Paris?"):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
+            json={"message": message}, headers=_auth(token),
+        )
+
+    def test_roster_offers_the_enlistable_package_with_its_dir_name(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        att_id, calls = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=["ok"],
+        )
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+        self._run(client, token, alice_project, att_id)
+        system = calls[0][0]["content"]
+
+        # The distinction the single-bucket roster could not express.
+        assert "Installed but NOT enlisted in this project" in system
+        assert "- curio.notes/note-surface — Note" in system
+        # The dirName a package.install proposal takes, so nothing is guessed.
+        assert "(package curio.notes@1)" in system
+        assert "do NOT" in system and "duplicate package" in system
+
+    def test_enlisted_package_leaves_the_not_enlisted_section(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        att_id, calls = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=["ok"],
+        )
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+        from utk_curio.backend.app.packages import services as packages_services
+        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+
+        self._run(client, token, alice_project, att_id)
+        system = calls[0][0]["content"]
+        # Now it is usable, so it belongs to the available half only. Assert on
+        # the roster's own marker — the dirName suffix only the enlist section
+        # emits — because the instruction text names that section by title.
+        assert "(package curio.notes@1)" not in system
+        assert "- curio.notes/note-surface — Note" in system
+
+    def test_enlist_then_create_places_a_note_on_the_reused_template(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """The whole rung, end to end: the store-only package is PROPOSABLE
+        (it used to refuse as "not in the Nodes Catalog"), applying it enlists
+        the package, and the template is then a legal node.create nodeType."""
+        import json as _json
+
+        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        install_tail = (
+            "```curio.v1\n"
+            + _json.dumps({"toolRequest": {"tool": "package.install", "params": {
+                "dirName": "curio.notes@1",
+                "reason": "the notes template this answer needs already exists",
+            }}})
+            + "\n```"
+        )
+        att_id, calls = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[install_tail, "Proposed — review it above."],
+        )
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+        assert "curio.notes/note-surface" not in {
+            t["id"] for t in packages_services.available_templates(key, alice_project)
+        }
+
+        resp = self._run(client, token, alice_project, att_id)
+        assert resp.status_code == 200
+        proposal = next(
+            p for p in resp.get_json()["content"] if p["type"] == "proposal"
+        )
+        assert proposal["tool"] == "package.install"
+        assert proposal["pins"]["dirName"] == "curio.notes@1"
+
+        applied = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert applied.status_code == 200, applied.get_json()
+
+        # Enlisted: the template the agent wanted to reuse is now instantiable.
+        assert "curio.notes/note-surface" in {
+            t["id"] for t in packages_services.available_templates(key, alice_project)
+        }
+
+    def test_run_without_the_install_grant_sees_no_enlist_section(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """The section names a door; only a run that can open it is shown one.
+        The Node Builder creates nodes but cannot enlist packages."""
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        helper = TestNodeCreate()
+        att_id, calls = helper._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=["ok"],
+        )
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+        helper._run(client, token, alice_project, att_id)
+        system = calls[0][0]["content"]
+        assert "Available node templates" in system
+        assert "Installed but NOT enlisted" not in system
+        assert "(package curio.notes@1)" not in system
+
+
 class TestNodeTemplateCreate:
     """dev/48 §3.2b — the justified creation fallback: reviewed, factory-
     backed, transactional (template + first node together or neither)."""

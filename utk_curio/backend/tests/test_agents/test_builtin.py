@@ -438,11 +438,15 @@ class TestResearcher:
         # dataflow.read grounds reuse-first; web.search/web.fetch gather the
         # findings (dev/90 A1 — the recording's question→web→post-it loop);
         # node.create carries notes onto an installed template;
-        # package.draft.apply authorizes the dev/90 delegate-draft MINT only —
-        # the draft content always comes from the Package Builder delegate.
+        # package.install is the dev/93 D4 middle rung — it enlists a package
+        # the user already owns, without which a notes package outside this
+        # project's lockfile was unreachable and authoring a near-duplicate
+        # was the only move left; package.draft.apply authorizes the dev/90
+        # delegate-draft MINT only — the draft content always comes from the
+        # Package Builder delegate.
         assert [t.id for t in m.tools] == [
             "dataflow.read", "web.search", "web.fetch",
-            "node.create", "package.draft.apply",
+            "node.create", "package.install", "package.draft.apply",
         ]
         assert m.provenance.trust == "built-in"
 
@@ -482,6 +486,14 @@ class TestResearcher:
         assert "reuse first" in low
         assert "node.create" in text
         assert "node.kind.author" in text
+        # dev/93 D4: the ladder has three rungs in order, and the middle one
+        # is what was missing — a package the user already owns is enlisted,
+        # not re-authored. "Reuse first" alone let the model jump straight to
+        # authoring the moment this project's roster came up empty.
+        assert "package.install" in text
+        assert "installed but not enlisted" in low
+        assert "last resort" in low
+        assert "never author a package whose job an already-installed one does" in low
         for color in ("yellow", "pink", "blue", "green", "orange", "lavender"):
             assert color in low
         assert "never raw html" in low

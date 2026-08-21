@@ -329,8 +329,17 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # web search → post-it reply. The dev/67-4 web contracts
                      # ride as-is (egress policy, ≤4 calls/run, honest
                      # not-configured error).
+                     # dev/93 D4: package.install is the MIDDLE rung of the
+                     # reuse ladder. Without it the Researcher could only
+                     # reuse a template this project already enlisted or
+                     # author a brand-new package — so a notes package the
+                     # user already owned was unreachable, and one weather
+                     # question produced two near-duplicate packages. The
+                     # reviewed install lane (dev/84) keeps the user in
+                     # control; nothing installs without their approval.
                      tools=("dataflow.read", "web.search", "web.fetch",
-                            "node.create", "package.draft.apply"),
+                            "node.create", "package.install",
+                            "package.draft.apply"),
                      delegates_to=("agent.package-builder", "agent.node-researcher"),
                      review_policy="review-before-apply"),
 )
