@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from copy import deepcopy
 from pathlib import Path
@@ -27,6 +28,8 @@ from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.infrastructure.file_meta import count_file, patch_manifest_file, write_file_meta
 from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
 from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_ID_RE
+
+logger = logging.getLogger(__name__)
 
 
 class CatalogMutations:
@@ -652,9 +655,11 @@ class CatalogMutations:
         """Delete an imported dataset's user-store folder when nothing else uses it.
 
         Best-effort: any failure (still-referenced, usage lookup error, or a
-        locked file) leaves the folder in place and never fails the uninstall."""
+        locked file) leaves the folder in place and never fails the uninstall.
+        Archived projects count as users — their refs must keep resolving when
+        the project is restored (#176)."""
         try:
-            still_used = self._owner.dataset_usage(dataset_id)
+            still_used = self._owner.dataset_usage(dataset_id, include_archived=True)
         except Exception:  # noqa: BLE001 – if usage can't be resolved, keep the folder
             return
         if still_used:
@@ -811,25 +816,29 @@ class CatalogMutations:
             if getattr(exc, "status", 400) == 403:
                 raise
 
-        # 2. Remove the dataset's ref from every dataflow that references it, so
-        #    no project is left pointing at a deleted asset.
+        # 2. Remove the dataset's references from every dataflow that holds any
+        #    (archived included, #176) — both the ``dataflow.datasets`` ref and
+        #    node-level ``metadata.datasetRefs`` bindings — so no project is
+        #    left pointing at a deleted asset.
         removed_from: list[str] = []
         try:
-            usages = self._owner.dataset_usage(dataset_id)
+            usages = self._owner.dataset_usage(dataset_id, include_archived=True)
         except Exception:  # noqa: BLE001 – best-effort; still delete the asset
             usages = []
         for usage in usages:
             df_id = usage.get("dataflowId") if isinstance(usage, dict) else None
             if not df_id:
                 continue
-            refs = self.installed.list_refs(df_id)
-            next_refs = [
-                r for r in refs
-                if r.get("datasetId") != dataset_id and r.get("id") != dataset_id
-            ]
-            if len(next_refs) != len(refs):
-                self.installed.replace_refs(df_id, next_refs)
-                removed_from.append(df_id)
+            # Per-dataflow isolation: one unreadable (possibly archived) spec
+            # must not abort the cascade for the others.
+            try:
+                if self.installed.remove_dataset_references(df_id, dataset_id):
+                    removed_from.append(df_id)
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "Could not strip references to %s from dataflow %s",
+                    dataset_id, df_id, exc_info=True,
+                )
 
         # 3. Delete the account-store folder(s) for this dataset id.
         deleted = False

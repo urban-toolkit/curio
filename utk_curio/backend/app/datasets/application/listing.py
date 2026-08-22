@@ -606,7 +606,9 @@ class CatalogListing:
             "path": resolved,
         }
 
-    def dataset_usage(self, dataset_id: str) -> list[dict[str, Any]]:
+    def dataset_usage(
+        self, dataset_id: str, *, include_archived: bool = False
+    ) -> list[dict[str, Any]]:
         """Dataflows across the user's projects that use *dataset_id*.
 
         Powers the standalone catalog detail page, which has no live canvas:
@@ -616,6 +618,12 @@ class CatalogListing:
         downstream nodes through edges). Returns
         ``[{dataflowId, dataflowName, nodeCount, nodes: [{nodeId, nodeType}]}]``
         sorted by name.
+
+        *include_archived* widens the scan to archived (soft-deleted) projects.
+        The public ``/usage`` endpoint stays active-only (archived rows would
+        reference un-openable projects in the UI), but destructive gates —
+        delete's ref strip and uninstall's orphan-dir check — must see archived
+        refs too, or they destroy data an archived project still uses (#176).
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
@@ -623,8 +631,9 @@ class CatalogListing:
         from utk_curio.backend.app.projects import storage as project_storage
 
         user_key = self._paths._user_key()
+        scope = "all" if include_archived else "mine"
         usages: list[dict[str, Any]] = []
-        for project in projects_repo.list_for_user(self.user.id):
+        for project in projects_repo.list_for_user(self.user.id, scope=scope):
             spec = project_storage.read_spec(user_key, project.id) or {}
             consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id, project.id)
             if consumers is None:

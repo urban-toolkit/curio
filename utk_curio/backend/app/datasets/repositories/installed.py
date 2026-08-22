@@ -129,6 +129,62 @@ class InstalledDatasetRepository:
             ))
         return items
 
+    def remove_dataset_references(self, dataflow_id: str, dataset_id: str) -> bool:
+        """Strip every reference to *dataset_id* from one dataflow's spec.
+
+        Removes the matching ``dataflow.datasets`` ref (preserving non-dict
+        junk) AND the id from each node's ``metadata.datasetRefs`` binding —
+        dropping the key when it empties — so a deleted dataset leaves no stale
+        canvas pill behind (#176). Persists via ``update_project`` like
+        :meth:`replace_refs`. Returns True when the spec changed.
+        """
+        if self.user is None:
+            raise DatasetCatalogError("Authorization required", 401)
+        from utk_curio.backend.app.projects.schemas import ProjectUpdate
+        from utk_curio.backend.app.projects import services as project_services
+
+        spec, _manifest = self._project_spec_and_manifest(dataflow_id)
+        dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+        if not isinstance(dataflow, dict):
+            return False
+
+        changed = False
+
+        refs = dataflow.get("datasets")
+        if isinstance(refs, list):
+            next_refs = [
+                r for r in refs
+                if not (isinstance(r, dict) and dataset_id in (r.get("datasetId"), r.get("id")))
+            ]
+            if len(next_refs) != len(refs):
+                dataflow["datasets"] = next_refs
+                changed = True
+
+        for node in dataflow.get("nodes") or []:
+            if not isinstance(node, dict):
+                continue
+            metadata = node.get("metadata")
+            if not isinstance(metadata, dict):
+                continue
+            bindings = metadata.get("datasetRefs")
+            if not isinstance(bindings, list) or dataset_id not in bindings:
+                continue
+            next_bindings = [b for b in bindings if b != dataset_id]
+            if next_bindings:
+                metadata["datasetRefs"] = next_bindings
+            else:
+                metadata.pop("datasetRefs", None)
+            changed = True
+
+        if not changed:
+            return False
+        project_services.update_project(
+            self.user,
+            dataflow_id,
+            ProjectUpdate(spec=spec, outputs=None, name=None, description=None, thumbnail_accent=None),
+        )
+        return True
+
     def replace_refs(self, dataflow_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
