@@ -118,7 +118,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   );
 
   // In-flight installs without a real installed row yet, rendered as
-  // "Installing…" placeholders above the installed rows.
+  // "Adding…" placeholders above the installed rows.
   const installingRows = useMemo(
     () => pendingInstallsNotYetListed(pendingInstalls, installedRows),
     [pendingInstalls, installedRows],
@@ -210,11 +210,11 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
             {catalog.loading && rows.length === 0 ? <div className={styles.empty}>Loading datasets...</div> : null}
             {!catalog.loading && !catalog.refreshing && total === 0 ? (
               <div className={styles.empty}>
-                Install, import, or compute a dataset to use it here.
+                Add, import, or compute a dataset to use it here.
               </div>
             ) : null}
             <PaletteAccordion
-              title="Installed datasets"
+              title="Datasets in dataflow"
               count={total}
               selected
               defaultOpen
@@ -231,10 +231,10 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
                         key === "importedAt" ? "installedAt" : "importedAt",
                       );
                     }}
-                    title="Toggle sort between import time and install time"
-                    aria-label={`Sort by ${sortKey === "importedAt" ? "import" : "install"} date; click to change`}
+                    title="Toggle sort between import time and time added"
+                    aria-label={`Sort by ${sortKey === "importedAt" ? "import" : "added"} date; click to change`}
                   >
-                    Sort: {sortKey === "importedAt" ? "Import date" : "Install date"}
+                    Sort: {sortKey === "importedAt" ? "Import date" : "Added date"}
                   </button>
                 ) : null
               }
@@ -254,7 +254,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
                   ),
                 )
               ) : installingRows.length === 0 ? (
-                <div className={styles.sectionEmpty}>No installed datasets yet.</div>
+                <div className={styles.sectionEmpty}>No datasets added yet.</div>
               ) : null}
             </PaletteAccordion>
           </div>

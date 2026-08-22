@@ -91,7 +91,7 @@ function DataCatalogBrowseDrawerContent({
           )}
           {dataset.installed && (
             <span className={`${styles.drawerFormatBadge} ${styles.dfmt_geojson}`}>
-              ✓ Installed
+              ✓ In dataflow
             </span>
           )}
         </div>

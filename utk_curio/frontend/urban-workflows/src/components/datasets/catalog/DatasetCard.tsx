@@ -185,7 +185,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
             disabled={cardBusy}
             onClick={() => onInstall(dataset)}
           >
-            Install
+            Add to dataflow
           </button>
         ) : null}
 
@@ -199,7 +199,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
                 title={`Remove ${dataset.title} from this dataflow`}
                 onClick={() => onUninstall(dataset)}
               >
-                Uninstall
+                Remove from dataflow
               </button>
             ) : null}
             {showUnpublish ? (

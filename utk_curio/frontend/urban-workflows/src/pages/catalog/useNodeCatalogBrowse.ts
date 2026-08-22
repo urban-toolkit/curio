@@ -177,16 +177,16 @@ export function useNodeCatalogBrowse() {
       const proj = result.projects.length;
       const summary =
         failed.length === 0
-          ? `Installed ${installCandidate.name} for ${proj} project${proj === 1 ? "" : "s"}` +
+          ? `Added ${installCandidate.name} to ${proj} project${proj === 1 ? "" : "s"}` +
             (proj === 0 ? " (no existing projects; will seed into new ones)" : "")
-          : `Installed for ${succeeded}/${proj} projects; ${failed.length} failed: ${failed.map((f) => f.id).join(", ")}`;
+          : `Added to ${succeeded}/${proj} projects; ${failed.length} failed: ${failed.map((f) => f.id).join(", ")}`;
       setLastInstallSummary(summary);
       await refreshPackageRegistry();
       await reload();
       setInstallCandidate(null);
       setConflictReport(null);
     } catch (err) {
-      reportError(`Couldn't install ${installCandidate.name}`, err);
+      reportError(`Couldn't add ${installCandidate.name}`, err);
     } finally {
       setBusy(false);
     }

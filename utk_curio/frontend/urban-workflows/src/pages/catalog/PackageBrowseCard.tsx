@@ -151,7 +151,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
                 onInstall(pkg);
               }}
             >
-              Install
+              Add to all projects
             </button>
           ) : hasUpdate ? (
             <button

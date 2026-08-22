@@ -196,12 +196,12 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         notifyDatasetCatalogRefresh();
         showToast(
           isGroup
-            ? `Installed ${installedItems.length} layers from ${dataset.title}.`
-            : `Installed ${dataset.title}.`,
+            ? `Added ${installedItems.length} layers from ${dataset.title} to this dataflow.`
+            : `Added ${dataset.title} to this dataflow.`,
           "success",
         );
       } catch (err) {
-        showToast((err as Error)?.message || "Could not install dataset.", "error");
+        showToast((err as Error)?.message || "Could not add dataset.", "error");
       } finally {
         endPendingInstall(dataset.id);
         setBusyId(null);
@@ -290,7 +290,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     async (dataset: DatasetCatalogItem) => {
       const title = datasetDisplayTitle(dataset);
       const confirmed = window.confirm(
-        `Unpublish ${title} from the Data Catalog?\n\nThis removes the catalog listing. Installed copies in dataflows are not removed.`,
+        `Unpublish ${title} from the Data Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`,
       );
       if (!confirmed) return;
       setBusyId(dataset.id);
@@ -346,7 +346,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         }
       }
       const confirmed = window.confirm(
-        `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just uninstalled from this project.${usageNote}`,
+        `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just removed from this dataflow.${usageNote}`,
       );
       if (!confirmed) return;
       setBusyId(dataset.id);

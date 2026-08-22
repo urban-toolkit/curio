@@ -38,7 +38,7 @@ export const DrawerTabs: React.FC<DrawerTabsProps> = ({
       className={`${styles.tab} ${tab === "installed" ? styles.tabActive : ""}`}
       onClick={() => onChange("installed")}
     >
-      Installed
+      In dataflow
       {installedCount > 0 ? (
         <span className={`${styles.tabBadge} ${styles.tabBadgeDark}`}>{installedCount}</span>
       ) : null}

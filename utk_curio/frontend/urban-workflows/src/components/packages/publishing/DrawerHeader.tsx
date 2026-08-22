@@ -29,7 +29,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
   kind = "package",
   title = "Node catalog",
   titleId = "node-catalog-drawer-title",
-  subtitle = "Discover and install nodes that extend Curio.",
+  subtitle = "Discover nodes that extend Curio.",
   closeAriaLabel = "Close node catalog drawer",
 }) => (
   <>

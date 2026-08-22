@@ -5,8 +5,8 @@ import type { PendingInstall } from "../../../services/datasetCatalog";
 import styles from "../../packages/publishing/PackageCard.module.css";
 
 /**
- * Non-interactive "Installing…" placeholder card for the Data Catalog drawer,
- * shown while a dataset install is in flight. Mirrors DatasetCard's shell with a
+ * Non-interactive "Adding…" placeholder card for the Data Catalog drawer, shown
+ * while a dataset install is in flight. Mirrors DatasetCard's shell with a
  * spinner avatar and no actions; replaced by the real DatasetCard once the
  * install lands.
  */
@@ -16,7 +16,7 @@ export const DatasetInstallingCard: React.FC<{ pending: PendingInstall }> = ({ p
       className={styles.card}
       role="status"
       aria-busy="true"
-      aria-label={`Installing ${pending.label}`}
+      aria-label={`Adding ${pending.label}`}
       style={{ opacity: 0.7 }}
     >
       <div className={styles.cardAccent} />
@@ -26,7 +26,7 @@ export const DatasetInstallingCard: React.FC<{ pending: PendingInstall }> = ({ p
       <div className={styles.cardBody}>
         <h3 className={styles.cardTitle}>{pending.label}</h3>
         <div className={styles.cardMetaRow}>
-          <span className={styles.cardMetaText}>Installing…</span>
+          <span className={styles.cardMetaText}>Adding…</span>
         </div>
       </div>
     </article>

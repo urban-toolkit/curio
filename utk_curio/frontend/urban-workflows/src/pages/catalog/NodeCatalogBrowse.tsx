@@ -109,7 +109,7 @@ export const NodeCatalogBrowse: React.FC = () => {
             <span className={browseStyles.titleCount}>{filtered.length}</span>
           </div>
           <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6B6B76", maxWidth: 720 }}>
-            Install packages for <strong>all your projects</strong>, present and future.
+            Add packages to <strong>all your projects</strong>, present and future.
             Removing a package from a single project can be done in that project&apos;s node catalog.
           </p>
           <div className={browseStyles.headerTools}>
@@ -295,6 +295,7 @@ export const NodeCatalogBrowse: React.FC = () => {
           busy={busy}
           onCancel={cancelInstall}
           onConfirm={() => void confirmInstall()}
+          confirmLabel="Add to all projects"
         />
       ) : null}
     </div>

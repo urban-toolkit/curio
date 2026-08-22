@@ -149,7 +149,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
               className={`${tabStyles.tab} ${tab === "installed" ? tabStyles.tabActive : ""}`}
               onClick={() => startUiTransition(() => setTab("installed"))}
             >
-              Installed
+              In dataflow
               {tabInstalledCount > 0 ? (
                 <span className={`${tabStyles.tabBadge} ${tabStyles.tabBadgeDark}`}>
                   {tabInstalledCount}
@@ -183,7 +183,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             ) : null}
             {tab === "installed" ? (
               !catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
-                <div className={styles.empty}>No datasets installed in this dataflow yet.</div>
+                <div className={styles.empty}>No datasets added to this dataflow yet.</div>
               ) : (
                 <InstalledDatasetsList
                   datasets={items}
@@ -203,7 +203,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 {!catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
                   <div className={styles.empty}>
                     {tab === "computed"
-                      ? "No computed datasets yet. Run a dataflow node that outputs a table — it is saved to your Data Catalog and can be installed into a project from here."
+                      ? "No computed datasets yet. Run a dataflow node that outputs a table — it is saved to your Data Catalog and can be added to a dataflow from here."
                       : "No datasets match the current filters."}
                   </div>
                 ) : null}

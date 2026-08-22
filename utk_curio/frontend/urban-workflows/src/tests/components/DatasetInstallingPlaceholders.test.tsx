@@ -12,13 +12,13 @@ const pending: PendingInstall = {
 };
 
 describe("DatasetInstallingRow (palette placeholder)", () => {
-  it("renders the label, an Installing… caption, and a status role", () => {
+  it("renders the label, an Adding… caption, and a status role", () => {
     render(<DatasetInstallingRow pending={pending} />);
     const status = screen.getByRole("status");
     expect(status).toHaveAttribute("aria-busy", "true");
-    expect(status).toHaveAttribute("aria-label", "Installing Clean Trips");
+    expect(status).toHaveAttribute("aria-label", "Adding Clean Trips");
     expect(screen.getByText("Clean Trips")).toBeInTheDocument();
-    expect(screen.getByText("Installing…")).toBeInTheDocument();
+    expect(screen.getByText("Adding…")).toBeInTheDocument();
   });
 
   it("is not draggable (non-interactive placeholder)", () => {
@@ -28,12 +28,12 @@ describe("DatasetInstallingRow (palette placeholder)", () => {
 });
 
 describe("DatasetInstallingCard (drawer placeholder)", () => {
-  it("renders the label, an Installing… caption, and a status role", () => {
+  it("renders the label, an Adding… caption, and a status role", () => {
     render(<DatasetInstallingCard pending={pending} />);
     const status = screen.getByRole("status");
     expect(status).toHaveAttribute("aria-busy", "true");
-    expect(status).toHaveAttribute("aria-label", "Installing Clean Trips");
+    expect(status).toHaveAttribute("aria-label", "Adding Clean Trips");
     expect(screen.getByText("Clean Trips")).toBeInTheDocument();
-    expect(screen.getByText("Installing…")).toBeInTheDocument();
+    expect(screen.getByText("Adding…")).toBeInTheDocument();
   });
 });

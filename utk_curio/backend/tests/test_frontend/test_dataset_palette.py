@@ -181,7 +181,7 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
     # Auto-retrying assertions ride out the async catalog fetch (the accordion
     # shows the empty hint until the request resolves).
     expect(panel.get_by_text(dataset_title, exact=False).first).to_be_visible(timeout=15000)
-    expect(panel.get_by_text("No installed datasets yet.")).to_have_count(0)
+    expect(panel.get_by_text("No datasets added yet.")).to_have_count(0)
 
     # 4. Persistence: another reload re-fetches the catalog from the backend; the
     #    saved computed dataset must still be there.

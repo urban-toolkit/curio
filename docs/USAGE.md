@@ -256,7 +256,7 @@ One Autark-specific note: an Autark node's spec references incoming data by name
 To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Node packages** dropdown (cube icon) and open it; the **Browse Node Catalog +** button sits in the dropdown's footer. From there you can:
 
 - Browse the catalog and install new packages.
-- See your installed packages grouped by fork family in the **Installed** tab.
+- See the packages added to this dataflow, grouped by fork family, in the **In dataflow** tab.
 - Import a `.curio.zip` archive from the footer.
 - Author your own package directly from the canvas: build the node, click the cog on its header, then **Save as package node…**. Edit per-package metadata later via the pencil button next to the export icon in the **Node packages** dropdown.
 

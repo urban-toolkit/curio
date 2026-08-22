@@ -51,18 +51,18 @@ The UI groups `hub`, `imported`, and `source_node` under a single **Imported** l
 
 ### The three storage layers
 
-Dataset state lives in three places. As with node packages, knowing which layer each action writes is the key to predicting what happens after an Install, an Uninstall, or a Delete:
+Dataset state lives in three places. As with node packages, knowing which layer each action writes is the key to predicting what happens after an **Add to dataflow**, a **Remove from dataflow**, or a **Delete**:
 
 | Layer | On disk | Who writes |
 |---|---|---|
 | **Shared catalog** (the "hub") — what every user browses | `<repo_root>/datasets/<datasetId>@<major>/`, or `$CURIO_CATALOG_ROOT` when set | **Publish** writes here; **Unpublish** removes. Read-only otherwise. The directory is *never created eagerly* — see *Operator notes*. |
-| **Per-user dataset store** — the actual bytes you can read | `<CURIO_LAUNCH_CWD>/.curio/users/<user-key>/datasets/<datasetId>@<major>/` | **Import**, **Install** (copying a hub dataset in), and the automatic save of node outputs. **Delete** removes it permanently. |
-| **Per-dataflow refs** — what one dataflow declares it needs | `spec.trill.json` → `dataflow.datasets: []` | The drawer's **Install** adds an entry for the open dataflow; **Uninstall** removes it. |
+| **Per-user dataset store** — the actual bytes you can read | `<CURIO_LAUNCH_CWD>/.curio/users/<user-key>/datasets/<datasetId>@<major>/` | **Import**, **Add to dataflow** (copying a hub dataset in), and the automatic save of node outputs. **Delete** removes it permanently. |
+| **Per-dataflow refs** — what one dataflow declares it needs | `spec.trill.json` → `dataflow.datasets: []` | The drawer's **Add to dataflow** adds an entry for the open dataflow; **Remove from dataflow** removes it. |
 
 > [!NOTE]
-> Unlike node packages, datasets have **no per-user "defaults" layer** — there is nothing that auto-seeds a dataset into every new dataflow, and correspondingly no "install everywhere" action. Dataset installs are always scoped to one dataflow.
+> Unlike node packages, datasets have **no per-user "defaults" layer** — there is nothing that auto-seeds a dataset into every new dataflow, and correspondingly no "add everywhere" action. Adding a dataset is always scoped to one dataflow.
 
-The most important consequence: **computed datasets are account-level assets, not project contents.** Running a node saves its output into your per-user store and writes *no* `dataflow.datasets` ref. It appears in the catalog immediately, but it is only "in" a dataflow once you install it there.
+The most important consequence: **computed datasets are account-level assets, not project contents.** Running a node saves its output into your per-user store and writes *no* `dataflow.datasets` ref. It appears in the catalog immediately, but it is only "in" a dataflow once you add it there.
 
 ### Dataset ids
 
@@ -106,34 +106,34 @@ Dataset manifests are validated in code ([`domain/manifest.py`](../utk_curio/bac
 
 There are three places you interact with datasets, and — unlike the Node Catalog — they are **not** interchangeable:
 
-- **The `/catalog/data` page** — a read-only library view. Reach it from `/projects` → **Catalog** in the top nav → the **Data** tab. You can browse, filter, preview, publish, and open a dataset's detail page. You **cannot install from here**, because installing is always relative to a dataflow and this page has none. (The legacy `/data-hub` URL redirects here.)
-- **The Data Catalog drawer** (inside the canvas) — the working surface. Open it from the top menu **Data ⏷ → Data Catalog**, or from the left Tools panel's **Data** dropdown → **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: Install, Uninstall, Import, Publish, Unpublish, Delete.
-- **The Data palette** (left Tools panel, the **Data** dropdown) — your installed datasets for this dataflow, ready to drag onto the canvas. It sits directly above the **Node packages** dropdown, mirroring it.
+- **The `/catalog/data` page** — a read-only library view. Reach it from `/projects` → **Catalog** in the top nav → the **Data** tab. You can browse, filter, preview, publish, and open a dataset's detail page. You **cannot add a dataset to a dataflow from here**, because adding is always relative to a dataflow and this page has none. (The legacy `/data-hub` URL redirects here.)
+- **The Data Catalog drawer** (inside the canvas) — the working surface. Open it from the top menu **Data ⏷ → Data Catalog**, or from the left Tools panel's **Data** dropdown → **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: Add to dataflow, Remove from dataflow, Import, Publish, Unpublish, Delete.
+- **The Data palette** (left Tools panel, the **Data** dropdown) — the datasets already added to this dataflow, ready to drag onto the canvas. It sits directly above the **Node packages** dropdown, mirroring it.
 
-The drawer has four tabs — **Featured** (published or already installed, capped at six), **Browse all** (the default), **Installed**, and **Computed**.
+The drawer has four tabs — **Featured** (published or already added, capped at six), **Browse all** (the default), **In dataflow**, and **Computed**.
 
 ### Action matrix
 
 | Action | Where | Endpoint | Layers it writes | What you see |
 |---|---|---|---|---|
-| **Install** | Drawer | `POST /api/dataflows/<id>/datasets/install` | per-dataflow refs (+ user store if the dataset came from the hub) | The dataset appears in this dataflow's **Data** palette, ready to drag. |
-| **Uninstall** | Drawer (**Uninstall**, or the trash icon in the Installed tab) | `DELETE /api/dataflows/<id>/datasets/<id>` | per-dataflow refs | It leaves this dataflow's palette. The account-level copy is **kept**. |
-| **Import** | Drawer footer (**Import dataset**) | `POST /api/datasets/import` | per-user store | The file is registered in your catalog. It is **not** attached to the open dataflow — install it afterwards. |
+| **Add to dataflow** | Drawer | `POST /api/dataflows/<id>/datasets/install` | per-dataflow refs (+ user store if the dataset came from the hub) | The dataset appears in this dataflow's **Data** palette, ready to drag. |
+| **Remove from dataflow** | Drawer (**Remove from dataflow**, or the trash icon in the **In dataflow** tab) | `DELETE /api/dataflows/<id>/datasets/<id>` | per-dataflow refs | It leaves this dataflow's palette. The account-level copy is **kept**. |
+| **Import** | Drawer footer (**Import dataset**) | `POST /api/datasets/import` | per-user store | The file is registered in your catalog. It is **not** attached to the open dataflow — add it afterwards. |
 | **Publish** | Drawer, `/catalog/data` cards, or the detail panel (**Publish to Catalog**) | `POST /api/datasets/publish` | shared catalog | The dataset becomes browsable by every user on this install. |
-| **Unpublish** | Drawer or detail panel | `DELETE /api/datasets/publish/<id>` | shared catalog | The listing goes away. Copies already installed in dataflows are untouched. |
+| **Unpublish** | Drawer or detail panel | `DELETE /api/datasets/publish/<id>` | shared catalog | The listing goes away. Copies already added to dataflows are untouched. |
 | **Delete** | Drawer (computed datasets only) | `DELETE /api/datasets/<id>` | per-user store (+ refs in every project) | The dataset is **permanently** removed from your account, and references to it are stripped from all your dataflows. |
 
-Only **Unpublish** and **Delete** ask for confirmation; Install, Uninstall, Publish, and Import act immediately.
+Only **Unpublish** and **Delete** ask for confirmation; Add to dataflow, Remove from dataflow, Publish, and Import act immediately.
 
 ### Workflows
 
-**I want to use a catalog dataset in my dataflow.** Open the dataflow, then **Data ⏷ → Data Catalog**. Find the dataset, click **Install**. It now appears in the left Tools panel's **Data** dropdown — drag it onto the canvas to get a Data Loading node wired to it ([part 3](#3-using-a-dataset-in-a-dataflow)).
+**I want to use a catalog dataset in my dataflow.** Open the dataflow, then **Data ⏷ → Data Catalog**. Find the dataset, click **Add to dataflow**. It now appears in the left Tools panel's **Data** dropdown — drag it onto the canvas to get a Data Loading node wired to it ([part 3](#3-using-a-dataset-in-a-dataflow)).
 
-**I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.shp`, `.pbf`). Import only *registers* the dataset in your account — switch to the **Installed** or **Browse all** tab and click **Install** to attach it to the open dataflow.
+**I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.shp`, `.pbf`). Import only *registers* the dataset in your account — switch to the **In dataflow** or **Browse all** tab and click **Add to dataflow** to attach it to the open dataflow.
 
-**I want to reuse a node's output as an input somewhere else.** You don't have to do anything to save it: as long as the node's save-output toggle is on (it is by default), running the node saves its output as a computed dataset. Open the drawer's **Computed** tab and click **Install** on it — in this dataflow or in a different one.
+**I want to reuse a node's output as an input somewhere else.** You don't have to do anything to save it: as long as the node's save-output toggle is on (it is by default), running the node saves its output as a computed dataset. Open the drawer's **Computed** tab and click **Add to dataflow** on it — in this dataflow or in a different one.
 
-**I want to remove a dataset from one dataflow but keep it.** Use **Uninstall** in the drawer. This only drops the `dataflow.datasets` ref; the bytes stay in your account store and the dataset stays in the catalog.
+**I want to remove a dataset from one dataflow but keep it.** Use **Remove from dataflow** in the drawer. This only drops the `dataflow.datasets` ref; the bytes stay in your account store and the dataset stays in the catalog.
 
 **I want a dataset gone for good.** Use **Delete** in the drawer (available on computed, non-hub datasets). This is the destructive one: it removes the stored copy and strips references from every dataflow that used it. The confirmation tells you how many nodes are affected.
 
@@ -146,7 +146,7 @@ Only **Unpublish** and **Delete** ask for confirmation; Install, Uninstall, Publ
 
 ## 3. Using a dataset in a dataflow
 
-Installing a dataset does not create anything on the canvas. You consume it by **dragging** it from the **Data** palette (or from a card in the drawer):
+Adding a dataset to a dataflow does not create anything on the canvas. You consume it by **dragging** it from the **Data** palette (or from a card in the drawer):
 
 - **Drop on empty canvas** → Curio creates a **Data Loading** node pre-filled with loader code for that dataset, and confirms with *"Created a Data Loading node for `<title>`."*
 - **Drop onto an existing node** → the loader code is merged into that node's existing code, under a `# Curio dataset loader: <title>` marker, and confirms with *"Applied `<title>` to this node."* If the node's code already ends in a `return`, the loader block is inserted before it and the return is rewritten.
@@ -189,13 +189,13 @@ Outputs appear in the catalog *before* the project is saved: the frontend passes
 
 ### Lineage
 
-Each computed dataset's manifest records where it came from — `producerNodeId`, `producerNodeType`, `producerDataflowId`, `producerDataflowName`, and `upstreamInputs` (the nodes and datasets feeding the producer). This is what keeps an account-level dataset connected to its workflow even after you uninstall it from every project.
+Each computed dataset's manifest records where it came from — `producerNodeId`, `producerNodeType`, `producerDataflowId`, `producerDataflowName`, and `upstreamInputs` (the nodes and datasets feeding the producer). This is what keeps an account-level dataset connected to its workflow even after you remove it from every dataflow.
 
 The detail view's **Lineage** tab renders this as **Generated by** / **Consumed by (N)**, with per-reference status pills (`Active`, `Stale`, `Missing`, `Unresolved`). `GET /api/datasets/<id>/usage` backs the *"Used in data flows"* list, scanning every project you own.
 
 Curio distinguishes *carriers* from *consumers*: the producing node and any Data Loading node merely carry the dataset, so the "N nodes consume" count reports the nodes genuinely downstream of them.
 
-If a node's output filename changes between runs, the installed copy is flagged `needsReinstall` in the catalog so you can refresh it.
+If a node's output filename changes between runs, the copy already in the dataflow is flagged `needsReinstall` in the catalog so you can refresh it.
 
 ### Bundles
 
@@ -243,7 +243,7 @@ This requires the geospatial extras (`geopandas`, `pyogrio`) and a GDAL build wi
 
 **Publish** copies the dataset folder into the shared catalog root. For a bundle, the whole `data/` tree is copied, not just the index.
 
-**Unpublish** removes the shared-catalog listing only. Installed copies in dataflows keep working — the confirmation says so explicitly.
+**Unpublish** removes the shared-catalog listing only. Copies already added to dataflows keep working — the confirmation says so explicitly.
 
 **Delete** is the account-level removal: it deletes the stored dataset and strips its references from every one of your dataflows. Only computed, non-hub datasets expose it.
 

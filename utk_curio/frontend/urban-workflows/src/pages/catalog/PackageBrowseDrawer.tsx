@@ -149,7 +149,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
             disabled={busy}
             onClick={() => onInstall(pkg)}
           >
-            Install to all projects
+            Add to all projects
           </button>
         ) : hasUpdate ? (
           <button

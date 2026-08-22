@@ -183,7 +183,7 @@ describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
       await result.current.onInstall(group as never);
     });
 
-    // Installed each real layer, never the synthetic group id.
+    // Added each real layer, never the synthetic group id.
     expect(installSpy).toHaveBeenCalledTimes(2);
     const installedIds = installSpy.mock.calls.map((c) => c[1]);
     expect(installedIds).toEqual(["imported.xaaa", "imported.xbbb"]);
@@ -191,7 +191,7 @@ describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
     // dataflowDatasets got the real per-layer refs (so a later save won't drop them).
     expect(mockSetDataflowDatasets).toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
-      "Installed 2 layers from back_bay.",
+      "Added 2 layers from back_bay to this dataflow.",
       "success",
     );
 

@@ -17,7 +17,7 @@ import styles from "./InstalledDatasetsList.module.css";
 
 export interface InstalledDatasetsListProps {
   datasets: DatasetCatalogItem[];
-  /** In-flight installs rendered as "Installing…" rows above the installed ones. */
+  /** In-flight installs rendered as "Adding…" rows above the installed ones. */
   installing?: PendingInstall[];
   busy?: boolean;
   publishAllowed?: boolean;
@@ -112,14 +112,14 @@ function InstalledDatasetRow({
   );
 }
 
-/** Compact "Installing…" placeholder row matching the installed-row layout. */
+/** Compact "Adding…" placeholder row matching the installed-row layout. */
 function InstalledInstallingRow({ pending }: { pending: PendingInstall }) {
   return (
     <div
       className={styles.installedRow}
       role="status"
       aria-busy="true"
-      aria-label={`Installing ${pending.label}`}
+      aria-label={`Adding ${pending.label}`}
       style={{ opacity: 0.7 }}
     >
       <div className={styles.installedBody}>
@@ -127,7 +127,7 @@ function InstalledInstallingRow({ pending }: { pending: PendingInstall }) {
           <FontAwesomeIcon icon={faSpinner} spin aria-hidden />
           <span className={styles.installedName}>{pending.label}</span>
         </div>
-        <span className={styles.installedMeta}>Installing…</span>
+        <span className={styles.installedMeta}>Adding…</span>
       </div>
     </div>
   );
@@ -149,7 +149,7 @@ export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
 }) => {
   if (datasets.length === 0 && installing.length === 0) return null;
 
-  const label = sectionLabel ?? `Your datasets · ${datasets.length} installed`;
+  const label = sectionLabel ?? `Your datasets · ${datasets.length} in dataflow`;
 
   return (
     <>

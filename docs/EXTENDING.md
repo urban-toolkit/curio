@@ -174,8 +174,8 @@ Accepted spec syntax: PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`, `!=2.0`
 
 #### How the install/uninstall flow handles them
 
-- **Catalog Install** copies the package files, then runs `pip install` (via [`utk_curio/backend/app/packages/pip_runner.py`](../utk_curio/backend/app/packages/pip_runner.py)) for every dep that isn't already importable. Already-satisfied deps are skipped — re-installs of the same package are near-instant. The install request blocks until pip finishes (v1 sync UX); the Install button stays busy.
-- **Uninstall** (when a package's user-store copy is being pruned) walks every other still-installed package's manifest, finds the python deps the pruned package declared that **no other package needs**, and pip-uninstalls those. Shared deps stay.
+- **Adding a package from the catalog** copies the package files, then runs `pip install` (via [`utk_curio/backend/app/packages/pip_runner.py`](../utk_curio/backend/app/packages/pip_runner.py)) for every dep that isn't already importable. Already-satisfied deps are skipped — re-adding the same package is near-instant. The request blocks until pip finishes (v1 sync UX); the confirm button stays busy.
+- **Removing a package** (when its user-store copy is being pruned) walks every other still-installed package's manifest, finds the python deps the pruned package declared that **no other package needs**, and pip-uninstalls those. Shared deps stay.
 - A failed pip install rolls back the package's user-store copy so the user can retry cleanly. The Flask response carries the tail of pip's stderr so the user knows what failed (network error, version conflict, missing wheel, etc.).
 
 #### When to still lazy-import

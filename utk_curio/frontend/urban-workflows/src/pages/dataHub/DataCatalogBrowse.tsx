@@ -164,8 +164,8 @@ export const DataCatalogBrowse: React.FC = () => {
             <span className={styles.titleCount}>{catalog.items.length}</span>
           </div>
           <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6B6B76", maxWidth: 720 }}>
-            View datasets available in the catalog library. Installing a dataset into a project can
-            be done in the project&apos;s data catalog.
+            View datasets available in the catalog library. Adding a dataset to a dataflow is done
+            in the project&apos;s data catalog.
           </p>
           <div className={styles.headerTools}>
             <span className={styles.hubStatusChip}>

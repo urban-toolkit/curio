@@ -37,14 +37,14 @@ You can install any number of additional packages — your own creations or arch
 
 ### The four storage layers
 
-Package state in Curio lives in four places. Knowing which one each user action writes to is the key to predicting what happens after an Install or Uninstall:
+Package state in Curio lives in four places. Knowing which one each user action writes to is the key to predicting what happens after an **Add to dataflow**, an **Add to all projects**, or a **Remove from dataflow**:
 
 | Layer | On disk | Who writes |
 |---|---|---|
 | **Shared catalog** — the source every user browses from | `<repo_root>/packages/<packageId>@<major>/` | **Publish** (gated by `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`; see *Operator notes*). Otherwise read-only. |
-| **Per-user package store** — implementations on disk | `.curio/users/<user-key>/packages/<packageId>@<major>/` | Managed implicitly. Install copies in; uninstall (via the drawer) prunes when no project still references the package. No direct UI action writes or deletes here. |
-| **Per-user defaults** — what auto-seeds into new projects | `.curio/users/<user-key>/default-packages.json` | The **Nodes** tab on `/catalog` (**Install**) adds an entry; the auto-prune sweep removes it when the last project drops the dep. |
-| **Per-project lockfile** — the source of truth for what a project needs | `spec.trill.json` → `dataflow.packages: string[]` (inside each project's `spec.trill.json`) | The canvas drawer's **Install** adds an entry for the open project; **Uninstall** removes it. The **Nodes** tab on `/catalog` (**Install**) also walks every existing project and patches its lockfile. |
+| **Per-user package store** — implementations on disk | `.curio/users/<user-key>/packages/<packageId>@<major>/` | Managed implicitly. Adding copies in; removing (via the drawer) prunes when no project still references the package. No direct UI action writes or deletes here. |
+| **Per-user defaults** — what auto-seeds into new projects | `.curio/users/<user-key>/default-packages.json` | The **Nodes** tab on `/catalog` (**Add to all projects**) adds an entry; the auto-prune sweep removes it when the last project drops the dep. |
+| **Per-project lockfile** — the source of truth for what a project needs | `spec.trill.json` → `dataflow.packages: string[]` (inside each project's `spec.trill.json`) | The canvas drawer's **Add to dataflow** adds an entry for the open project; **Remove from dataflow** removes it. The **Nodes** tab on `/catalog` (**Add to all projects**) also walks every existing project and patches its lockfile. |
 
 The canvas palette reads from the per-project lockfile (intersected with the user store), so two projects open in different tabs see different palettes even though they share one user store.
 
@@ -70,33 +70,33 @@ ai.urbanlab.uhvi/uhvi-load@1
 
 There are exactly two places you manage packages:
 
-- **The drawer** (inside the canvas): per-project. Open it from the **Node packages** dropdown in the left-edge Tools panel → **Browse Node Catalog +**. Installs and uninstalls here affect *only* the open project's lockfile (plus the user-store copy when needed).
-- **The `/catalog` master page** (linked from **Catalog** on `/projects`): opens on the **Nodes** tab (`/catalog/nodes`). Installs there apply to every existing project of yours AND auto-seed into any new project. There is no Uninstall affordance — see the workflows below for why. The sibling **Data** tab (`/catalog/data`) is the Data Catalog, which manages datasets rather than nodes — see [DATA-CATALOG.md](DATA-CATALOG.md).
+- **The drawer** (inside the canvas): per-project. Open it from the **Node packages** dropdown in the left-edge Tools panel → **Browse Node Catalog +**. Adding and removing here affect *only* the open project's lockfile (plus the user-store copy when needed) — hence the per-dataflow wording on its buttons.
+- **The `/catalog` master page** (linked from **Catalog** on `/projects`): opens on the **Nodes** tab (`/catalog/nodes`). Adding there applies to every existing project of yours AND auto-seeds into any new project — hence **Add to all projects** rather than the drawer's **Add to dataflow**. There is no removal affordance — see the workflows below for why. The sibling **Data** tab (`/catalog/data`) is the Data Catalog, which manages datasets rather than nodes — see [DATA-CATALOG.md](DATA-CATALOG.md).
 
-The drawer has just two tabs — **Browse** and **Installed** — with an *Update available* badge surfacing on cards that have a newer catalog version. The **Nodes** tab on `/catalog` uses a Data Catalog–style layout with status and category filters plus a preview drawer.
+The drawer has just two tabs — **Browse** and **In dataflow** — with an *Update available* badge surfacing on cards that have a newer catalog version. The **Nodes** tab on `/catalog` uses a Data Catalog–style layout with status and category filters plus a preview drawer.
 
 ### Action matrix
 
 | Action | Where | Endpoint | Layers it writes | What you see |
 |---|---|---|---|---|
-| **Install (one project)** | Drawer | `POST /api/packages/projects/<id>/install` | per-project lockfile (+ user store if missing) | Package shows in this project's palette only. |
-| **Install (all your projects)** | `/catalog` page | `POST /api/packages/defaults` | per-user defaults + every project's lockfile (+ user store if missing) | Package appears in every project's palette; future new projects auto-get it too. |
-| **Uninstall** | Drawer only | `DELETE /api/packages/projects/<id>/<dirName>` | per-project lockfile; auto-prune may also delete from user store and defaults | Package leaves this project's palette. If no other project still references it, the user-store copy is deleted and the defaults entry (if any) is removed too. |
+| **Add to dataflow** (one project) | Drawer | `POST /api/packages/projects/<id>/install` | per-project lockfile (+ user store if missing) | Package shows in this project's palette only. |
+| **Add to all projects** | `/catalog` page | `POST /api/packages/defaults` | per-user defaults + every project's lockfile (+ user store if missing) | Package appears in every project's palette; future new projects auto-get it too. |
+| **Remove from dataflow** | Drawer only | `DELETE /api/packages/projects/<id>/<dirName>` | per-project lockfile; auto-prune may also delete from user store and defaults | Package leaves this project's palette. If no other project still references it, the user-store copy is deleted and the defaults entry (if any) is removed too. |
 | **Publish** | Drawer or `/catalog` page | `POST /api/packages/factory/publish-catalog` | shared catalog | Package becomes browseable by every user on this install. Button is hidden entirely when the env gate is off (see *Operator notes*). |
 
 ### Workflows
 
-**I want to add a package to one project.** Open the project, click **Node packages → Browse Node Catalog +** to open the drawer, find the package, click **Install**. The package's nodes appear in this project's palette only. Other projects you have are unaffected.
+**I want to add a package to one project.** Open the project, click **Node packages → Browse Node Catalog +** to open the drawer, find the package, click **Add to dataflow**. The package's nodes appear in this project's palette only. Other projects you have are unaffected.
 
-**I want a package available across all my projects (present and future).** Go to `/projects`, click **Catalog** in the top nav, find the package, click **Install**. Curio adds it to your per-user defaults list AND walks every existing project to patch its lockfile, so the package appears in every project's palette immediately. New projects you create from then on auto-include it too.
+**I want a package available across all my projects (present and future).** Go to `/projects`, click **Catalog** in the top nav, find the package, click **Add to all projects**. Curio adds it to your per-user defaults list AND walks every existing project to patch its lockfile, so the package appears in every project's palette immediately. New projects you create from then on auto-include it too.
 
-**I want to remove a package.** There is *no* global Uninstall on the `/catalog` page — that's deliberate. Open the project (or each project, if it's installed in several) and use the drawer's **Uninstall** button. When you uninstall from the last project that references the package, Curio also deletes the user-store copy AND removes the package from your defaults list so it stops auto-seeding into new projects. (This is the most non-obvious rule in the catalog model — there's no "remove from defaults" button because that fall-through is the only mechanism that ever touches defaults.)
+**I want to remove a package.** There is *no* global removal on the `/catalog` page — that's deliberate. Open the project (or each project, if it was added to several) and use the drawer's **Remove from dataflow** button. When you remove it from the last project that references the package, Curio also deletes the user-store copy AND removes the package from your defaults list so it stops auto-seeding into new projects. (This is the most non-obvious rule in the catalog model — there's no "remove from defaults" button because that fall-through is the only mechanism that ever touches defaults.)
 
 **I want a package I just built to be installable by other users on this Curio install.** Build it via **Save as package node** (next section), then open the drawer or `/catalog` page and click **Publish** on the package. It writes into the shared catalog at `<repo_root>/packages/`. Note: the Publish button is hidden when the operator disabled catalog writes (see *Operator notes* below).
 
-**I want to make a package a default for new projects without installing it everywhere first.** Just install it once from the `/catalog` page. That's exactly what `/catalog` install does — adds to defaults. The drawer's per-project install does NOT add to defaults; it stays scoped to that one project.
+**I want to make a package a default for new projects without adding it everywhere first.** Just use **Add to all projects** once from the `/catalog` page. That's exactly what that action does — it adds to defaults. The drawer's **Add to dataflow** does NOT add to defaults; it stays scoped to that one project.
 
-**I want to stop a package from auto-seeding into new projects.** Uninstall it from every project that currently references it. After the last uninstall, Curio's auto-prune sweep removes the package from defaults. There's no separate "remove from defaults" action — by design, the system never leaves a "seed for new projects" entry that no current project actually uses.
+**I want to stop a package from auto-seeding into new projects.** Remove it from every project that currently references it. After the last removal, Curio's auto-prune sweep removes the package from defaults. There's no separate "remove from defaults" action — by design, the system never leaves a "seed for new projects" entry that no current project actually uses.
 
 ---
 
@@ -161,7 +161,7 @@ A package is portable: you can export it, send it, and the recipient can drop it
 
 ### Exporting
 
-In the catalog drawer, find your installed package under the **Installed** tab. Each row has a download icon — click it to save the package as `<packageId>@<major>.curio.zip` (a deterministic ZIP).
+In the catalog drawer, find your package under the **In dataflow** tab. Each row has a download icon — click it to save the package as `<packageId>@<major>.curio.zip` (a deterministic ZIP).
 
 The archive contains exactly what's on disk: `manifest.json`, the `sources/` directory, `README.md` and `LICENSE` if present. `integrity.json` is **not** shipped — the installer regenerates it on the recipient's machine.
 
@@ -173,7 +173,7 @@ To install someone else's archive:
 2. Click **Import package** in the footer.
 3. Pick the archive.
 
-The installer extracts into a tmp directory, validates the manifest, computes integrity hashes, then moves the result into your package store. If the package id collides with one you already have, the upload is rejected — uninstall the existing copy from the **Installed** tab first, then import again.
+The installer extracts into a tmp directory, validates the manifest, computes integrity hashes, then moves the result into your package store. If the package id collides with one you already have, the upload is rejected — remove the existing copy from the **In dataflow** tab first, then import again.
 
 ### Versioning, forks, and lineage
 

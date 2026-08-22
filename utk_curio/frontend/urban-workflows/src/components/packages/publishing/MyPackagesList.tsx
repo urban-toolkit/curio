@@ -189,7 +189,7 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
 
   return (
     <>
-      <p className={styles.sectionLabel}>Your packages · {installed.length} installed</p>
+      <p className={styles.sectionLabel}>Your packages · {installed.length} in dataflow</p>
       <div className={styles.installedList}>
         {rows.map((row) => {
           if (row.kind === "singleton") {

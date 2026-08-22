@@ -106,7 +106,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // so it's always the value from the most recent completed render).
     const dataflowDatasetsRef = useRef<any[]>([]);
     dataflowDatasetsRef.current = dataflowDatasets;
-    // In-flight dataset installs, surfaced as "Installing…" placeholders in the
+    // In-flight dataset installs, surfaced as "Adding…" placeholders in the
     // palette + drawer. Volatile/session-only — never serialized into the spec.
     // Mirrored in a ref so begin/clear from async callbacks never read a stale
     // closure, and a per-key timeout map backstops crashed/aborted installs.
@@ -745,7 +745,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 return (detail as { id?: string } | undefined)?.id || projectIdRef.current || null;
             } catch (err) {
                 showToast(
-                    (err as Error)?.message || "Save the dataflow before installing datasets.",
+                    (err as Error)?.message || "Save the dataflow before adding datasets.",
                     "error",
                 );
                 return null;

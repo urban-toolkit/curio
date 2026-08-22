@@ -60,7 +60,7 @@ export function DataCatalogBrowseCard({
           trailing={
             <>
               {dataset.installed ? (
-                <span className={styles.stripBadgePopular}>✓ INSTALLED</span>
+                <span className={styles.stripBadgePopular}>✓ IN DATAFLOW</span>
               ) : null}
               {selected ? <span className={styles.selectedDot} /> : null}
             </>

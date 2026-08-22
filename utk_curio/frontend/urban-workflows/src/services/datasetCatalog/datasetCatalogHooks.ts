@@ -170,7 +170,7 @@ export function useDatasetCatalog(query: UseDatasetCatalogOptions = {}) {
   const install = useCallback(
     async (dataset: DatasetCatalogItem) => {
       if (!stableQuery.dataflowId) {
-        throw new Error("Save the dataflow before installing datasets.");
+        throw new Error("Save the dataflow before adding datasets.");
       }
       const item = await datasetCatalogApi.installToDataflow(
         stableQuery.dataflowId,

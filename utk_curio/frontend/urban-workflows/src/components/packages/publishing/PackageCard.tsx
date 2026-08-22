@@ -145,7 +145,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
             disabled={cardBusy}
             onClick={() => onInstall(pkg)}
           >
-            Install
+            Add to dataflow
           </button>
         ) : hasUpdate ? (
           <button
@@ -165,10 +165,10 @@ export const PackageCard: React.FC<PackageCardProps> = ({
                 type="button"
                 className={styles.btnSecondary}
                 disabled={cardBusy}
-                title={`Remove ${pkg.name} from this project`}
+                title={`Remove ${pkg.name} from this dataflow`}
                 onClick={() => onUninstall(pkg)}
               >
-                Uninstall
+                Remove from dataflow
               </button>
             ) : null}
             {showUnpublish ? (

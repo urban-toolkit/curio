@@ -186,7 +186,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           const detail = await saveCurrentProject();
           savedProjectIdRef.current = (detail as { id?: string } | undefined)?.id ?? null;
         } catch (err) {
-          reportActionError("Couldn't save dataflow before install", err);
+          reportActionError("Couldn't save dataflow before adding", err);
           return;
         }
       } else {
@@ -228,7 +228,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       setInstallCandidate(null);
       setConflictReport(null);
     } catch (err) {
-      reportActionError(`Couldn't install ${installCandidate.name}`, err);
+      reportActionError(`Couldn't add ${installCandidate.name}`, err);
     } finally {
       setBusy(false);
     }
@@ -271,7 +271,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       await refreshPackageRegistry();
       await reload();
     } catch (err) {
-      reportActionError(`Couldn't uninstall ${pkg.name}`, err);
+      reportActionError(`Couldn't remove ${pkg.name}`, err);
     } finally {
       setCardActionDir(null);
     }
@@ -281,7 +281,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     async (pkg: PackagePayload) => {
       if (
         !window.confirm(
-          `Unpublish ${pkg.name} (${pkg.dirName}) from the shared catalog?\n\nThis removes the entry under packages/. Installed copies in projects are not removed.`,
+          `Unpublish ${pkg.name} (${pkg.dirName}) from the shared catalog?\n\nThis removes the entry under packages/. Copies already added to dataflows are not removed.`,
         )
       ) {
         return;
@@ -333,14 +333,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const tabLabel: Record<DrawerTab, string> = {
     featured: "Browse",  // legacy: collapsed Featured into Browse
     browse: "Browse",
-    installed: "Installed",
-    updates: "Installed",  // legacy: Updates badge shows on Installed
+    installed: "In dataflow",
+    updates: "In dataflow",  // legacy: Updates badge shows on In dataflow
   };
 
   const unsavedBanner = !projectId ? (
     <div className={styles.errorBanner} role="status">
       <span className={styles.errorBannerText}>
-        This dataflow isn't saved yet — installing will save it first.
+        This dataflow isn't saved yet — adding will save it first.
       </span>
     </div>
   ) : null;
@@ -407,7 +407,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
               filteredInstalled.length === 0 ? (
                 <div className={styles.empty}>
                   {projectInstalledDirs.size === 0
-                    ? "No packages installed in this project yet."
+                    ? "No packages added to this dataflow yet."
                     : "No packages match the current filter."}
                 </div>
               ) : (

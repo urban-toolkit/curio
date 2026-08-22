@@ -137,7 +137,7 @@ const UpstreamCards: React.FC<{
       </article>
       {isDatasetInstalledFromCatalog(dataset) ? (
         <div className={styles.hubSourceCard}>
-          <strong>Installed from Data Catalog</strong>
+          <strong>Added from Data Catalog</strong>
           <span>
             {dataset.sourceLabel || datasetProvenanceLabel(dataset.origin, dataset.format)} · v1
           </span>
@@ -322,7 +322,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   const handleUnpublish = async () => {
     if (publishBusy) return;
     const confirmed = window.confirm(
-      `Unpublish ${activeDataset.title} from the Data Catalog?\n\nThis removes the catalog listing. Installed copies in dataflows are not removed.`,
+      `Unpublish ${activeDataset.title} from the Data Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`,
     );
     if (!confirmed) return;
     setPublishBusy(true);
@@ -349,7 +349,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
         <div className={styles.breadcrumb}>
           {variant === "page" ? (
             <>
-              <span>DATA CATALOG</span><span>/</span><span>INSTALLED DATASETS</span><span>/</span>
+              <span>DATA CATALOG</span><span>/</span><span>DATASETS IN DATAFLOW</span><span>/</span>
             </>
           ) : (
             <>
@@ -371,7 +371,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               <div className={styles.inspectorMeta}>
                 <span className={styles.installedBadge}>
                   {dataset.installed
-                    ? "Installed"
+                    ? "In dataflow"
                     : datasetProvenanceLabel(dataset.origin, dataset.format)}
                 </span>
                 <span className={formatClass(dataset.format, styles)}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
@@ -484,7 +484,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               {dataset.schema?.crs ? (
                 <div><dt>CRS</dt><dd>{dataset.schema.crs}</dd></div>
               ) : null}
-              <div><dt>Availability</dt><dd><span className={styles.installedBadge}>{dataset.installed ? "Installed" : "Available"}</span></dd></div>
+              <div><dt>Availability</dt><dd><span className={styles.installedBadge}>{dataset.installed ? "In dataflow" : "Available"}</span></dd></div>
               <div><dt>Imported</dt><dd>{absoluteDate(dataset.createdAt ?? dataset.updatedAt)}</dd></div>
               {/*<div><dt>Last updated</dt><dd title={absoluteDate(dataset.updatedAt)}>{relativeTime(dataset.updatedAt)}</dd></div>*/}
               {dataset.sourceUpdatedAt ? (
