@@ -61,6 +61,32 @@ class TestDatasetPathResolver(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             resolver("d2")
 
+    def test_exec_route_threads_dataset_paths_through(self):
+        """POST /exec: the dataset_paths field reaches the injected resolver."""
+        from utk_curio.sandbox.app import app
+
+        client = app.test_client()
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = os.path.join(tmp, "table.csv")
+            with open(csv_path, "w", encoding="utf-8") as handle:
+                handle.write("a,b\n7,8\n")
+            response = client.post("/exec", json={
+                "code": (
+                    '    df = pd.read_csv(curio_dataset_path("imported.xhttp"))\n'
+                    '    return int(df["b"].iloc[0])\n'
+                ),
+                "file_path": "",
+                "nodeType": "PYTHON_COMPUTATION",
+                "dataType": "",
+                "session_id": None,
+                "save_dataset": False,
+                "dataset_paths": {"imported.xhttp": csv_path},
+            })
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data["stderr"], "")
+            self.assertEqual(data["output"]["dataType"], "int")
+
 
 if __name__ == "__main__":
     unittest.main()
