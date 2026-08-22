@@ -131,9 +131,10 @@ def computed_dataset_id(node_id: str, dataflow_id: str | None = None) -> str:
 
     Namespaced by the producing dataflow so the same node id reused in two
     dataflows yields two *distinct* account-level datasets
-    (``computed.<dataflowSeg>.<nodeSeg>``). When *dataflow_id* is absent
-    (unknown / legacy call site) falls back to the un-namespaced
-    ``computed.<nodeSeg>`` so old callers and stored dirs keep working.
+    (``computed.<dataflowSeg>.<nodeSeg>``). When *dataflow_id* is absent the
+    un-namespaced ``computed.<nodeSeg>`` form is returned — that form is for
+    DISPLAY/LOOKUP ONLY (transient live rows, legacy-dir matching); the
+    persistence installers refuse it so no new legacy dir is ever minted.
     """
     node_seg = _sanitize_node_id_segment(node_id)
     if dataflow_id:
@@ -243,7 +244,16 @@ def install_computed_file_for_node(
     Provide *source_path* to materialize the data file by hard-linking the
     on-disk artifact (no full-file copy / no read into memory); *file_bytes* is
     used otherwise. Exactly one must be supplied.
+
+    A *dataflow_id* is required: persisting without one would mint the legacy
+    un-namespaced ``computed.<node>`` id, which permanently duplicates the
+    namespaced dataset the dataflow save writes moments later (issue #166).
     """
+    if not dataflow_id:
+        raise InstallerError(
+            "Computed dataset install requires a dataflow id; "
+            "refusing to mint a legacy un-namespaced dataset dir."
+        )
     dataset_id = computed_dataset_id(node_id, dataflow_id)
     dir_name = f"{dataset_id}@1"
 

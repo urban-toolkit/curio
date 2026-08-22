@@ -65,13 +65,14 @@ def test_hydrate_outputs_from_user_dataset_store(tmp_curio):
         "hydrate_out.csv",
         "csv",
         node_id=node_id,
+        dataflow_id="proj-hydrate",
     )
 
     spec = {
         "dataflow": {
             "datasets": [{
-                "datasetId": "computed.node-hydrate",
-                "dirName": "computed.node-hydrate@1",
+                "datasetId": "computed.proj-hydrate.node-hydrate",
+                "dirName": "computed.proj-hydrate.node-hydrate@1",
                 "origin": "computed",
                 "producerNodeId": node_id,
             }],

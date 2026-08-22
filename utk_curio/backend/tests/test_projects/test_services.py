@@ -183,12 +183,31 @@ def test_auto_install_computed_outputs_saves_account_level_no_ref(app, tmp_curio
     spec = {"dataflow": {"datasets": ["junk", None, 123]}}
     refs = [OutputRef(node_id="b3node", filename="b3_out.csv")]
 
-    result = services._auto_install_computed_outputs("1", refs, spec)
+    result = services._auto_install_computed_outputs("1", refs, spec, dataflow_id="df-b3")
 
     # The spec's datasets are returned unchanged — no ref written, junk preserved.
     assert result["dataflow"]["datasets"] == ["junk", None, 123]
-    # The output was saved to the account store (un-namespaced here: no dataflow_id).
-    assert (dataset_dir("1", "computed.b3node@1") / "manifest.json").is_file()
+    # The output was saved to the account store, namespaced by the dataflow.
+    assert (dataset_dir("1", "computed.df-b3.b3node@1") / "manifest.json").is_file()
+
+
+def test_auto_install_without_dataflow_id_persists_nothing(app, tmp_curio):
+    """#166: no dataflow id → no legacy un-namespaced dir is ever written."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import list_user_datasets
+
+    shared = storage._shared_data_dir()
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "nodf_out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+
+    refs = [OutputRef(node_id="nodf", filename="nodf_out.csv")]
+    failures: list = []
+    result = services._auto_install_computed_outputs(
+        "1", refs, {"dataflow": {"datasets": []}}, failures
+    )
+
+    assert result["dataflow"]["datasets"] == []
+    assert not any(d.name.startswith("computed.nodf") for d in list_user_datasets("1"))
+    assert len(failures) == 1 and "dataflow id" in failures[0]["reason"]
 
 
 def test_prune_sink_node_dataset_refs(app, tmp_curio):
@@ -199,9 +218,13 @@ def test_prune_sink_node_dataset_refs(app, tmp_curio):
 
     # Install two computed datasets: a transform (producer) and a vis node
     # (passthrough duplicate, same data).
-    install_computed_file_for_node("1", b"a,b\n1,2\n", "out.csv", "csv", node_id="transform-x")
-    install_computed_file_for_node("1", b"a,b\n1,2\n", "out.csv", "csv", node_id="visnode-y")
-    vis_dir = dataset_dir("1", "computed.visnode-y@1")
+    install_computed_file_for_node(
+        "1", b"a,b\n1,2\n", "out.csv", "csv", node_id="transform-x", dataflow_id="df-p",
+    )
+    install_computed_file_for_node(
+        "1", b"a,b\n1,2\n", "out.csv", "csv", node_id="visnode-y", dataflow_id="df-p",
+    )
+    vis_dir = dataset_dir("1", "computed.df-p.visnode-y@1")
     assert vis_dir.exists()
 
     spec = {
@@ -211,9 +234,9 @@ def test_prune_sink_node_dataset_refs(app, tmp_curio):
                 {"id": "visnode-y", "type": "curio.builtin/vis-vega"},
             ],
             "datasets": [
-                {"datasetId": "computed.transform-x", "dirName": "computed.transform-x@1",
+                {"datasetId": "computed.df-p.transform-x", "dirName": "computed.df-p.transform-x@1",
                  "origin": "computed", "producerNodeId": "transform-x"},
-                {"datasetId": "computed.visnode-y", "dirName": "computed.visnode-y@1",
+                {"datasetId": "computed.df-p.visnode-y", "dirName": "computed.df-p.visnode-y@1",
                  "origin": "computed", "producerNodeId": "visnode-y"},
             ],
         }

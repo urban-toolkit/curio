@@ -37,6 +37,7 @@ from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
+    write_legacy_computed_dir,
 )
 
 
@@ -47,6 +48,28 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
 def test_computed_id_namespaced_and_legacy_forms():
     assert computed_dataset_id("n1") == "computed.n1"
     assert computed_dataset_id("n1", "flow-abc") == "computed.flow-abc.n1"
+
+
+def test_installers_require_dataflow_id(app, user_and_token):
+    """#166: persistence refuses to mint the legacy un-namespaced id."""
+    import pytest
+
+    from utk_curio.backend.app.datasets.install.bundle import (
+        install_computed_bundle_for_node,
+    )
+    from utk_curio.backend.app.datasets.install.installer import InstallerError
+
+    user, _ = user_and_token
+    with app.app_context():
+        user_key = _user_dir_key(user)
+        with pytest.raises(InstallerError, match="dataflow id"):
+            install_computed_file_for_node(
+                user_key, b"{}", "out.json", "json", node_id="n1",
+            )
+        with pytest.raises(InstallerError, match="dataflow id"):
+            install_computed_bundle_for_node(
+                user_key, [], node_id="n1", parent_artifact_id="a1",
+            )
 
 
 def test_segment_extraction_round_trips_both_forms():
@@ -147,12 +170,13 @@ def test_lineage_persisted_on_manifest(app, user_and_token):
 # --------------------------------------------------------------------------- #
 
 def _legacy_computed_dir(user_key: str, node_id: str) -> str:
-    """Create a legacy (un-namespaced) computed dir and return its id."""
-    result = install_computed_file_for_node(
-        user_key, b'{"v": 1}', "out.json", "json", node_id=node_id,
-    )
-    assert "." not in result.manifest.id[len("computed."):]  # legacy: one segment
-    return result.manifest.id
+    """Create a legacy (un-namespaced) computed dir and return its id.
+
+    Fabricated by hand: the installer refuses to mint the legacy form (#166).
+    """
+    legacy_id = write_legacy_computed_dir(user_key, node_id)
+    assert "." not in legacy_id[len("computed."):]  # legacy: one segment
+    return legacy_id
 
 
 def test_migration_renames_legacy_dir_and_rewrites_ref(client, app, user_and_token):

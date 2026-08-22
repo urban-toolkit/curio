@@ -84,6 +84,19 @@ def auto_install_node_output(
             reason=f"sink node ({node_type}) — output is not a dataset",
         )
 
+    # Persisting without a dataflow id would mint the legacy un-namespaced
+    # ``computed.<node>`` id, permanently duplicating the namespaced dataset the
+    # (auto-)save writes moments later (#166). The live output still appears in
+    # the catalog via the computed indexer; the next dataflow save persists it.
+    if not dataflow_id:
+        return _diagnostic(
+            "skipped", node_id=node_id, data_type=data_type,
+            reason=(
+                "dataflow not saved yet — the output will be saved as a "
+                "computed dataset on the next dataflow save"
+            ),
+        )
+
     #   * a bundle (``dataType == "outputs"``) is keyed by the parent artifact
     #     id in ``output['path']``.
     #   * otherwise prefer ``output['dataset']`` — the parquet a (geo)dataframe

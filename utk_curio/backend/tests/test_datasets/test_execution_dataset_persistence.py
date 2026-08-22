@@ -108,6 +108,41 @@ def test_no_output_artifact_skips_with_diagnostic(client, user_and_token, monkey
     assert body["datasetDiagnostic"]["status"] == "skipped"
 
 
+def test_exec_without_dataflow_id_skips_persistence(client, user_and_token, monkeypatch):
+    """#166: an unsaved dataflow (no dataflowId in the exec payload) must not
+    mint a legacy un-namespaced ``computed.<node>`` dir — the auto-save that
+    follows persists the namespaced dataset instead."""
+    user, token = user_and_token
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    artifact = "1790000000003_beadfeed.json"
+    (shared / artifact).write_text(json.dumps({"unsaved": True}), encoding="utf-8")
+
+    _mock_sandbox(monkeypatch, {"path": artifact, "dataType": "dict"})
+    resp = client.post(
+        "/processPythonCode",
+        data=json.dumps({
+            "code": "    return out\n",
+            "nodeType": "PYTHON_COMPUTATION",
+            "nodeId": "unsaved-node",
+            # no dataflowId: the frontend omits the key for unsaved dataflows
+            "input": {"path": "", "dataType": "str"},
+            "saveOutputDataset": True,
+        }),
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body.get("installedDataset") is None
+    diag = body.get("datasetDiagnostic", {})
+    assert diag.get("status") == "skipped"
+    assert "not saved yet" in (diag.get("reason") or "")
+
+    from utk_curio.backend.app.datasets.infrastructure.storage import list_user_datasets
+    assert not any(
+        d.name.startswith("computed.") for d in list_user_datasets(str(user.id))
+    )
+
+
 def test_dataframe_output_still_installs_via_dataset_key(client, user_and_token, monkeypatch):
     """Regression: a (geo)dataframe that saved a parquet still installs via the
     'dataset' key (the pre-existing path), unchanged."""

@@ -199,6 +199,16 @@ def _auto_install_computed_outputs(
         if failures is not None:
             failures.append({"node_id": node_id, "filename": filename, "reason": reason})
 
+    # Defensive: both call sites pass the project id, but persisting without it
+    # would mint legacy un-namespaced ``computed.<node>`` dirs (#166).
+    if not dataflow_id:
+        for ref in output_refs:
+            _record_failure(
+                ref.node_id, ref.filename,
+                "computed persistence requires a dataflow id",
+            )
+        return spec
+
     from utk_curio.backend.app.datasets.install.bundle import install_node_output
     from utk_curio.backend.app.datasets.application.export import resolve_upstream_inputs
 

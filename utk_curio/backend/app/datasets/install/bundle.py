@@ -189,9 +189,17 @@ def install_computed_bundle_for_node(
     upstream_inputs: list[dict] | None = None,
     title: str | None = None,
 ) -> Any:
-    """Materialize a tuple output as ``format: bundle`` in the user dataset store."""
+    """Materialize a tuple output as ``format: bundle`` in the user dataset store.
+
+    A *dataflow_id* is required — see ``install_computed_file_for_node`` (#166).
+    """
     from utk_curio.backend.app.datasets.install.installer import InstallResult
 
+    if not dataflow_id:
+        raise InstallerError(
+            "Computed dataset install requires a dataflow id; "
+            "refusing to mint a legacy un-namespaced dataset dir."
+        )
     if not parts:
         raise InstallerError("Bundle has no resolvable parts")
 

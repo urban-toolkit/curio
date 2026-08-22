@@ -103,6 +103,7 @@ def test_listing_backfills_friendly_title_from_user_store(app, user_and_token):
     with app.app_context():
         user_key = _user_dir_key(user)
         node_id = "whatif-data"
+        dataflow_id = "flow-titles"
         # User store copy carries the friendly node title (as the Play-All save
         # path would have written it).
         install_computed_file_for_node(
@@ -111,10 +112,11 @@ def test_listing_backfills_friendly_title_from_user_store(app, user_and_token):
             "1782840551478_b13ae490.json",
             "json",
             node_id=node_id,
+            dataflow_id=dataflow_id,
             title="Autark",
         )
 
-        dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+        dataset_id = computed_dataset_id(node_id, dataflow_id)
         dir_name = f"{dataset_id}@1"
         # A stale hub row for the same dataset, titled with the raw filename.
         stale_hub_item = {
@@ -138,9 +140,10 @@ def test_listing_leaves_friendly_titles_untouched(app, user_and_token):
         user_key = _user_dir_key(user)
         node_id = "whatif-baseline"
         install_computed_file_for_node(
-            user_key, b'{"a": 1}', "x.json", "json", node_id=node_id, title="Baseline",
+            user_key, b'{"a": 1}', "x.json", "json",
+            node_id=node_id, dataflow_id="flow-titles", title="Baseline",
         )
-        dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+        dataset_id = computed_dataset_id(node_id, "flow-titles")
         item = {
             "id": dataset_id,
             "origin": "hub",

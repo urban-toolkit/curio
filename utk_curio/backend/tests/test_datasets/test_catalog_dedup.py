@@ -56,7 +56,8 @@ def test_install_node_output_hardlinks_shared_artifact(app):
     src.write_bytes(b"PARQUET-BYTES")
 
     result = install_node_output(
-        "1", node_id="node-link", path_ref=name, data_type="dataframe"
+        "1", node_id="node-link", path_ref=name, data_type="dataframe",
+        dataflow_id="flow-link",
     )
     assert result is not None
 

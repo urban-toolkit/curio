@@ -35,7 +35,7 @@ def test_failed_install_is_recorded_not_silent():
         "utk_curio.backend.app.datasets.install.bundle.install_node_output",
         side_effect=side_effect,
     ):
-        new_spec = _auto_install_computed_outputs("u", refs, spec, failures)
+        new_spec = _auto_install_computed_outputs("u", refs, spec, failures, dataflow_id="df")
 
     # No project ref is written (account-level save only) — the spec is unchanged.
     assert new_spec["dataflow"]["datasets"] == []
@@ -56,7 +56,7 @@ def test_missing_artifact_is_recorded():
         "utk_curio.backend.app.datasets.install.bundle.install_node_output",
         side_effect=side_effect,
     ):
-        _auto_install_computed_outputs("u", refs, spec, failures)
+        _auto_install_computed_outputs("u", refs, spec, failures, dataflow_id="df")
 
     assert len(failures) == 1
     assert failures[0]["node_id"] == "n1"
@@ -76,7 +76,7 @@ def test_no_failures_when_all_install():
         "utk_curio.backend.app.datasets.install.bundle.install_node_output",
         side_effect=side_effect,
     ):
-        new_spec = _auto_install_computed_outputs("u", refs, spec, failures)
+        new_spec = _auto_install_computed_outputs("u", refs, spec, failures, dataflow_id="df")
 
     assert failures == []
     # Account-level save writes no project refs.
@@ -96,5 +96,26 @@ def test_failures_param_optional_back_compat():
         side_effect=side_effect,
     ):
         # Must not raise even without a failures list.
-        out = _auto_install_computed_outputs("u", refs, spec)
+        out = _auto_install_computed_outputs("u", refs, spec, dataflow_id="df")
     assert out == spec
+
+
+def test_missing_dataflow_id_records_failures_and_writes_nothing():
+    # Defensive guard (#166): without a dataflow id nothing may be persisted —
+    # a legacy un-namespaced dir would permanently duplicate the namespaced one.
+    called = []
+
+    refs = [OutputRef(node_id="n1", filename="a.parquet")]
+    spec = {"dataflow": {"datasets": []}}
+    failures: list = []
+
+    with mock.patch(
+        "utk_curio.backend.app.datasets.install.bundle.install_node_output",
+        side_effect=lambda *a, **k: called.append(1),
+    ):
+        out = _auto_install_computed_outputs("u", refs, spec, failures)
+
+    assert out is spec
+    assert called == []  # installer never invoked
+    assert len(failures) == 1
+    assert "dataflow id" in failures[0]["reason"]
