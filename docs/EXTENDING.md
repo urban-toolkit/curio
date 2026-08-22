@@ -230,11 +230,13 @@ A generic Spatial Join that takes points + polygons and tags each point with the
 
 This one belongs in `curio.builtin@1`, not `curio.streetvision@1`, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
-### 4.3 Four behavior hooks in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/)
+### 4.3 Four behavior hooks
 
-- [`streetViewFetcherBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/streetViewFetcherBehavior.tsx) — place picker + bbox preview + fetch button. Hits `/api/streetvision/data/streetview/{search_place,coverage,fetch}`, emits a GEODATAFRAME via `data.outputCallback`.
-- [`hfCvInferenceBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/hfCvInferenceBehavior.tsx) — reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5.
-- [`cvGalleryBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/cvGalleryBehavior.tsx) — pure frontend node. Gallery + per-image inspector + aggregate stats; re-emits the results as a GEODATAFRAME.
+The three Street Vision hooks ship inside the package itself, at [`packages/curio.streetvision@1/sources/`](../packages/curio.streetvision@1/sources/); the generic one lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/).
+
+- [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx) — place picker + bbox preview + fetch button. Hits `/api/streetvision/data/streetview/{search_place,coverage,fetch}`, emits a GEODATAFRAME via `data.outputCallback`.
+- [`hfCvInferenceBehavior.tsx`](../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx) — reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5.
+- [`cvGalleryBehavior.tsx`](../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx) — pure frontend node. Gallery + per-image inspector + aggregate stats; re-emits the results as a GEODATAFRAME.
 - [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx) — the only node here with two distinct input handles, mounted via `dynamicHandles` (the same mechanism Merge Flow uses). Worth reading if you ever need a 2-input node.
 
 Each is registered as a global behavior key in [`registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts):

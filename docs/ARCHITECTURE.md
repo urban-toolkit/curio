@@ -1,6 +1,6 @@
 # Curio Architecture
 
-This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how nodes and packages work — including how to add a new behavior hook or icon — see [CATALOG.md](CATALOG.md), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
+This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how nodes and packages work — including how to add a new behavior hook or icon — see [NODE-CATALOG.md](NODE-CATALOG.md), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
 
 ## Table of Contents
 
@@ -490,7 +490,7 @@ Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING
 
 ## Backend API Reference
 
-The backend is a Flask application in `utk_curio/backend/`. All routes are defined in `backend/app/api/routes.py`.
+The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: legacy sandbox/proxy endpoints in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
 
 ### Core Routes
 
@@ -518,6 +518,24 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `/api/packages/<dirName>/file/<path>` | GET | Serve a static file from the user's installed copy (behavior bundles, icons, …) |
 | `/api/packages/defaults` | GET/POST | Per-user "always installed" set (drives the catalog page's Installed badge) |
 | `/api/packages/libraries` | GET/POST/DELETE | Per-user "Installed libraries" surface — list / add / remove standalone pip libs alongside manifest-derived ones |
+
+### Dataset Routes
+
+Defined in `backend/app/datasets/routes.py`; all require authentication. See [DATA-CATALOG.md](DATA-CATALOG.md) for the user-facing model.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/datasets/catalog` | GET | List catalog items (`q`, `format`, `origin`, `sort`, `includeHub`, `groupOsm`, `dataflowId`, `liveOutputs`) |
+| `/api/datasets/<id>` | GET | Dataset detail, including resolved producer node for computed datasets |
+| `/api/datasets/<id>/preview` | GET | Paginated tabular/geo preview (`rowLimit` 1–500, default 50; `offset`; `part` for bundles) |
+| `/api/datasets/<id>/usage` | GET | Dataflows across the user's projects that reference this dataset |
+| `/api/datasets/<id>/download` | GET | Download the dataset file as an attachment |
+| `/api/datasets/import` | POST | Upload a local file into the user's catalog (multipart: `file`, `dataflowId`, `title`, `sourceUpdatedAt`) |
+| `/api/datasets/publish` | POST | Publish a dataset into the shared catalog |
+| `/api/datasets/publish/<id>` | DELETE | Unpublish (remove from the shared catalog) |
+| `/api/datasets/<id>` | DELETE | Permanently delete an account-level dataset from the user's catalog |
+| `/api/dataflows/<dataflowId>/datasets/install` | POST | Attach a dataset to one dataflow (`datasetId`, optional `sourceItem`, `nodeTitle`) |
+| `/api/dataflows/<dataflowId>/datasets/<id>` | DELETE | Detach a dataset from one dataflow (keeps the account asset) |
 
 ### Template Routes
 
@@ -575,6 +593,12 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `backend/app/packages/services.py` | Catalog install/uninstall orchestration; calls `pip_runner` on file-copy + prune |
 | `backend/app/packages/routes.py` | `/api/packages/*` endpoints (list, catalog, install, libraries, defaults) |
 | `backend/app/packages/libraries.py` | Per-user `.curio/users/<u>/installed-libraries.json` storage + aggregator |
+| `backend/app/datasets/service.py` | `DatasetCatalogService` — the façade every dataset route calls |
+| `backend/app/datasets/routes.py` | `/api/datasets/*` and `/api/dataflows/<id>/datasets/*` endpoints |
+| `backend/app/datasets/domain/` | Dataset manifest parsing, catalog items, computed-dataset identity, dedup, provenance |
+| `backend/app/datasets/application/` | Listing, preview, export, mutations, path resolution, auto-install, migrations |
+| `backend/app/datasets/install/` | Dataset installer, multi-part bundles, OSM/PBF layer extraction |
+| `backend/app/datasets/repositories/` | Installed / local / registry / user-store persistence for datasets |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |
 | `backend/extensions.py` | SQLAlchemy and Flask-Migrate initialization |
 

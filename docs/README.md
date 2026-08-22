@@ -4,7 +4,8 @@
 
 - [Installation and usage](USAGE.md)
 - [Quick start](QUICK-START.md)
-- [Node catalog](CATALOG.md)
+- [Node catalog](NODE-CATALOG.md)
+- [Data catalog](DATA-CATALOG.md)
 - [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
 

@@ -1,7 +1,9 @@
 # `ai.urbanlab.uhvi@1` — fixture package
 
 A minimal package used to exercise the Curio node-catalog integration end-to-end
-(see `docs/nodesfactory@docs/manifest_spec.md`, `docs/nodesfactory@docs/frontend.md`, and `docs/nodesfactory@docs/overview.md`).
+(see [`docs/NODE-CATALOG.md`](../../docs/NODE-CATALOG.md) for the user-facing guide,
+[`docs/EXTENDING.md`](../../docs/EXTENDING.md) for package authoring, and
+[`docs/schemas/node-package.v4.json`](../../docs/schemas/node-package.v4.json) for the manifest schema).
 
 It registers three kinds that together form a complete UHVI workflow:
 
