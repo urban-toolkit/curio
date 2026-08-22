@@ -712,7 +712,9 @@ def test_installed_bundle_loader_returns_tuple(client, user_and_token, monkeypat
     snippet = item.get("loaderSnippet") or {}
     assert snippet.get("returnVariable") == "bundle"
     assert "return tuple(items)" in (snippet.get("code") or "")
-    assert "bundle.json" in (snippet.get("code") or "")
+    # The location line is the portable id call (resolved to the bundle.json
+    # path at execution time), never a baked-in absolute path.
+    assert f'bundle_path = curio_dataset_path("{expected_id}")' in (snippet.get("code") or "")
 
 
 def test_published_computed_dataset_stays_installed_in_dataflow_catalog(

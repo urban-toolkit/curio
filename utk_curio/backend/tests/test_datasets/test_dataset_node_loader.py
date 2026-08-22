@@ -208,3 +208,62 @@ def test_bundle_loader_preserves_part_order(tmp_path):
 
     result = _run_loader(loader_snippet("bundle", str(bundle_path)))
     assert result == (100, 200)
+
+
+# --------------------------------------------------------------------------- #
+# Portable id form (curio_dataset_path)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize(
+    "fmt,path_variable",
+    [
+        ("csv", "dataset_path"),
+        ("geojson", "dataset_path"),
+        ("shp", "dataset_path"),
+        ("json", "dataset_path"),
+        ("geotiff", "dataset_path"),
+        ("parquet", "dataset_path"),
+        ("bundle", "bundle_path"),
+    ],
+)
+def test_snippet_uses_id_call_when_id_given(fmt, path_variable):
+    """With a dataset id the location line is the portable resolver call and the
+    generated code carries no machine-specific absolute path."""
+    snippet = loader_snippet(fmt, "C:/Users/someone/.curio/users/3/datasets/x@1/data/f", dataset_id="imported.xabc123")
+    assert f'{path_variable} = curio_dataset_path("imported.xabc123")' in snippet["code"]
+    assert "C:/Users" not in snippet["code"]
+    # The reader body and contract fields are unchanged by the id form.
+    assert snippet["pathVariable"] == path_variable
+
+
+def test_id_call_resolves_via_injected_resolver(tmp_path):
+    """The id-form snippet executes against the sandbox-injected resolver."""
+    pd = pytest.importorskip("pandas")
+
+    path = tmp_path / "table.parquet"
+    pd.DataFrame({"a": [1, 2]}).to_parquet(path)
+
+    snippet = loader_snippet("parquet", None, dataset_id="imported.xabc123")
+    namespace = {"curio_dataset_path": {"imported.xabc123": str(path)}.__getitem__}
+    code = "\n".join(snippet["imports"]) + "\n" + snippet["code"]
+    exec(code, namespace)  # noqa: S102 — exercising generated loader code on purpose
+    assert list(namespace[snippet["returnVariable"]]["a"]) == [1, 2]
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    [
+        None,
+        "",
+        'imported."); import os #',  # quote breaks out of the string literal
+        "back\\slash",
+        "-leading-hyphen",
+        "x" * 201,
+    ],
+)
+def test_unsafe_or_missing_id_falls_back_to_literal_path(bad_id):
+    """Ids can come from user-editable spec JSON; anything outside the whitelist
+    must never be interpolated into generated Python source."""
+    snippet = loader_snippet("csv", "/data/file.csv", dataset_id=bad_id)
+    assert "curio_dataset_path" not in snippet["code"]
+    assert 'dataset_path = "/data/file.csv"' in snippet["code"]
