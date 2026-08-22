@@ -542,23 +542,21 @@ class CatalogMutations:
 
         # Preserve the producer link across uninstall → reinstall. A computed
         # dataset encodes its producing node in its id/dirName
-        # (``computed.<sanitizedNodeId>``); on reinstall the item can arrive with
-        # producerNodeId dropped (the ref was deleted on uninstall, so the
-        # listing has nothing to carry it), which blanks the upstream connection
-        # badge in the catalog card/palette. Resolve the authoritative producer
-        # from the producing dataflow, falling back to the id-encoded segment, so
-        # the link — and the dataset's computed origin — is never lost.
-        seg = _producer_segment_from_computed_id(item.get("id"), item.get("dirName"))
-        if seg and not item.get("producerNodeId"):
-            from utk_curio.backend.app.datasets.install.installer import (
-                node_segment_from_computed_id,
-            )
+        # (``computed.[<dataflowSeg>.]<nodeSeg>``); on reinstall the item can
+        # arrive with producerNodeId dropped (the ref was deleted on uninstall,
+        # so the listing has nothing to carry it), which blanks the upstream
+        # connection badge in the catalog card/palette. Resolve the
+        # authoritative producer from the producing dataflow, falling back to
+        # the id-encoded NODE segment (never the full ``<dataflow>.<node>``
+        # pair), so the link — and the computed origin — is never lost.
+        from utk_curio.backend.app.datasets.install.installer import (
+            node_segment_from_computed_id,
+        )
 
+        node_seg = node_segment_from_computed_id(item.get("dirName") or item.get("id"))
+        if node_seg and not item.get("producerNodeId"):
             producer = self._owner.resolve_dataset_producer(item.get("id") or "")
-            # Fall back to the *node* segment (last dotted part), not the full
-            # namespaced ``<dataflow>.<node>`` segment.
-            node_seg = node_segment_from_computed_id(item.get("id")) or node_segment_from_computed_id(item.get("dirName"))
-            item["producerNodeId"] = producer["nodeId"] if producer else (node_seg or seg)
+            item["producerNodeId"] = producer["nodeId"] if producer else node_seg
             item["origin"] = "computed"
 
         refs = self.installed.list_refs(dataflow_id)
@@ -892,7 +890,9 @@ def _resolve_computed_install_title(
       2. the name on a still-present on-disk manifest (e.g. a user-store copy
          preserved across unpublish), when it isn't just the filename;
       3. the item's own ``title``, when it isn't the generated filename;
-      4. the store-folder name (``dirName`` / id-encoded segment);
+      4. the store-folder name with the dataflow segment stripped
+         (``display_folder_name`` — never the raw namespaced dirName, which
+         would leak the dataflow UUID into the title);
       5. ``None`` — the installer then derives a filename-based title, which the
          frontend renders as ``dirName`` via ``datasetDisplayTitle``.
     """
@@ -912,8 +912,10 @@ def _resolve_computed_install_title(
     if explicit:
         return explicit
 
-    seg = _producer_segment_from_computed_id(item.get("id"), item.get("dirName"))
-    dir_name = item.get("dirName") or (f"computed.{seg}@1" if seg else None)
+    item_id = (item.get("id") or "").strip()
+    dir_name = item.get("dirName") or (
+        f"{item_id}@1" if item_id.startswith("computed.") else None
+    )
 
     # 2. Name on a preserved on-disk manifest.
     if user_key and dir_name:
@@ -934,21 +936,9 @@ def _resolve_computed_install_title(
     if own_title:
         return own_title
 
-    # 4. Store-folder name; 5. None.
-    return dir_name or None
+    # 4. Store-folder name (dataflow segment stripped); 5. None.
+    if dir_name:
+        from utk_curio.backend.app.datasets.install.installer import display_folder_name
 
-
-def _producer_segment_from_computed_id(
-    dataset_id: str | None, dir_name: str | None
-) -> str | None:
-    """Producing node id encoded in a computed dataset's id/dirName
-    (``computed.<sanitizedNodeId>[@N]``), or ``None`` when it is not a computed
-    dataset. Mirrors the frontend ``producerNodeIdForDataset`` fallback so the
-    producer link can be recovered from the persisted id alone."""
-    import re
-
-    source = dir_name or dataset_id or ""
-    if not source.startswith("computed."):
-        return None
-    seg = re.sub(r"@\d+$", "", source[len("computed.") :])
-    return seg or None
+        return display_folder_name(dir_name)
+    return None

@@ -16,6 +16,7 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
     save_project_with_output,
+    write_legacy_computed_dir,
 )
 
 
@@ -147,6 +148,29 @@ def test_unmigrated_legacy_ref_marks_open_dataflows_dataset_installed(app, clien
     items = _catalog(client, token, dataflow_id=other)
     item = next(i for i in items if i["id"] == namespaced)
     assert item["installed"] is False
+
+
+def test_stale_legacy_dir_does_not_clobber_namespaced_row(app, client, user_and_token):
+    """#167: a leftover legacy ``computed.<node>@1`` dir must not overwrite the
+    namespaced row's dirName/path/uri or force installed=True (the old disk
+    probe did exactly that, cross-wiring the row to the stale copy)."""
+    user, token = user_and_token
+    df = create_project(client, token, name="Stale legacy flow")
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    (shared / "stale_out.csv").write_text("a\n1\n", encoding="utf-8")
+    save_project_with_output(client, token, df, "stale_out.csv", node_id="stale-node")
+
+    from utk_curio.backend.app.projects.services import _user_dir_key
+    with app.app_context():
+        user_key = _user_dir_key(user)
+    write_legacy_computed_dir(user_key, "stale-node", filename="old_out.csv", fmt="csv")
+
+    namespaced = computed_dataset_id("stale-node", df)
+    items = _catalog(client, token, dataflow_id=df)
+    item = next(i for i in items if i["id"] == namespaced)
+    assert item["dirName"] == f"{namespaced}@1"
+    assert item["installed"] is False
+    assert "computed.stale-node@" not in (item.get("uri") or "")
 
 
 def test_needs_reinstall_flagged_on_id_match_when_output_changed(app, client, user_and_token):

@@ -13,8 +13,8 @@ import json
 import os
 from pathlib import Path
 
-from utk_curio.backend.app.datasets.application.mutations import (
-    _producer_segment_from_computed_id,
+from utk_curio.backend.app.datasets.install.installer import (
+    node_segment_from_computed_id,
 )
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
@@ -23,17 +23,17 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
 )
 
 
-def test_producer_segment_from_computed_id():
-    assert _producer_segment_from_computed_id("computed.node-7", None) == "node-7"
-    assert (
-        _producer_segment_from_computed_id("computed.whatif-modified-map", "computed.whatif-modified-map@1")
-        == "whatif-modified-map"
-    )
-    # dirName takes precedence and strips the version.
-    assert _producer_segment_from_computed_id("computed.x", "computed.x@3") == "x"
+def test_producer_segment_recovery_uses_node_segment():
+    """#167 parser cleanup: recovery parses the NODE segment — never the full
+    ``<dataflow>.<node>`` pair a namespaced id carries."""
+    assert node_segment_from_computed_id("computed.node-7") == "node-7"
+    assert node_segment_from_computed_id("computed.whatif-modified-map@1") == "whatif-modified-map"
+    assert node_segment_from_computed_id("computed.x@3") == "x"
+    # Namespaced form: only the node segment comes back.
+    assert node_segment_from_computed_id("computed.flow-uuid.node-7@1") == "node-7"
     # Not a computed dataset.
-    assert _producer_segment_from_computed_id("it.urbanlab.example", None) is None
-    assert _producer_segment_from_computed_id(None, None) is None
+    assert node_segment_from_computed_id("it.urbanlab.example") is None
+    assert node_segment_from_computed_id(None) is None
 
 
 def test_reinstall_preserves_producer_node_id(client, user_and_token):

@@ -432,7 +432,9 @@ def test_reinstall_computed_dataset_without_node_title_never_uses_filename(clien
     assert resp.status_code == 200, resp.get_data(as_text=True)
     body = resp.get_json()
     assert body["title"] != filename_title, "reinstall must not title the dataset with the raw filename"
-    assert body["title"] == f"{dataset_id}@1"
+    # #167/#175: the folder-name fallback strips the dataflow segment so the
+    # dataflow UUID never leaks into the title.
+    assert body["title"] == f"computed.{sanitize_node_id_segment(node_id)}@1"
 
 
 def test_process_python_code_skips_auto_install_when_save_disabled(client, user_and_token, monkeypatch):
