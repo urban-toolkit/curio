@@ -683,3 +683,228 @@ class TestDraftCorrectionRounds:
         assert "no text at all" in why
         params, why = _extract_draft_params_verbose(json.dumps(_draft()))
         assert params is not None and why == ""
+
+
+def _ukey(client, user):
+    """The user's storage dir key (imported lazily, like the older tests)."""
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    with client.application.app_context():
+        return _user_dir_key(user)
+
+
+def _write_store_package(user_key, dir_name, package_id, name, template_ids,
+                         description="Colored note surfaces."):
+    """A package in the user's store — one a previous project's Package Builder
+    authored, which never enters the committed catalog."""
+    from utk_curio.backend.app.packages.storage import user_packageages_dir
+
+    d = user_packageages_dir(user_key) / dir_name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "manifest.json").write_text(json.dumps({
+        "id": package_id,
+        "version": "1.0.0",
+        "name": name,
+        "publisher": "Package Builder",
+        "description": description,
+        "license": "MIT",
+        "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+        "permissions": [],
+        "dependencies": {"packages": {}, "python": {}, "js": {}},
+        "templates": [{
+            "id": t, "label": t.replace("-", " ").title(),
+            "category": "visualization", "engine": "javascript",
+            "editor": "none", "behavior": "note-behavior",
+            "hasCode": False, "description": "A note surface.",
+            "inputPorts": [], "outputPorts": [],
+        } for t in template_ids],
+        "createdAt": "2026-08-01T12:00:00Z",
+    }), encoding="utf-8")
+    return d
+
+
+class TestAuthoringDelegateReuseEvidence:
+    """dev/94 — the Package Builder's instruction opens with "Reuse first.
+    Before authoring anything, read packages.catalog … never a duplicate
+    package", and it holds that tool only as a direct ATTACHMENT. As a DEC-046
+    delegate it runs structurally tool-less — which is the path packages are
+    actually authored on — so its first instruction was unexecutable and it had
+    no way to know. The runtime now serves the evidence, exactly as it already
+    serves the build-request contract (dev/90 A8) and verification results
+    (dev/67-4).
+    """
+
+    def _evidence(self, client, user, pid):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        key = _ukey(client, user)
+        return key, services_mod._authoring_reuse_evidence(key, pid)
+
+    def test_store_package_is_reported_with_its_dir_name_and_templates(
+            self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+
+        _, evidence = self._evidence(client, user, pid)
+        row = next(p for p in evidence["packages"] if p["dirName"] == "curio.notes@1")
+        # The dirName is what the caller would enlist; the template id is what
+        # a `mode: "extend"` draft would name.
+        assert row["name"] == "Simple Notes"
+        assert row["templates"] == ["curio.notes/note-surface"]
+        # Guidance, not an override of the delegate's own instruction.
+        assert "author nothing" in evidence["note"]
+
+    def test_installed_in_project_distinguishes_enlisted_from_store_only(
+            self, client, user_and_token, tmp_curio):
+        """Both answers are actionable and they differ: enlisted means "extend
+        or reuse it", store-only means "report it, the caller can enlist it".
+        Collapsing them would recreate the one-bucket mistake of dev/93 D4."""
+        from utk_curio.backend.app.packages import services as packages_services
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+        _write_store_package(key, "curio.tags@1", "curio.tags", "Tags",
+                             ["tag-surface"])
+        packages_services.install_to_project(key, pid, "curio.tags@1")
+
+        _, evidence = self._evidence(client, user, pid)
+        rows = {p["dirName"]: p for p in evidence["packages"]}
+        assert rows["curio.tags@1"]["installedInProject"] is True
+        assert rows["curio.notes@1"]["installedInProject"] is False
+
+    def test_authoring_delegate_inputs_carry_the_evidence(
+            self, client, user_and_token, tmp_curio):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+
+        enriched = services_mod._enriched_delegate_inputs(
+            key, pid, {}, "node.kind.author", {"look": "post-it"},
+        )
+        # The dev/90 A8 contract still rides along — this adds, never replaces.
+        assert "buildRequestContract" in enriched
+        assert enriched["look"] == "post-it"
+        assert "curio.notes@1" in json.dumps(enriched["existingPackages"])
+
+    def test_a_parent_supplied_view_is_never_overwritten(
+            self, client, user_and_token, tmp_curio):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+
+        enriched = services_mod._enriched_delegate_inputs(
+            key, pid, {}, "node.kind.author", {"existingPackages": "mine"},
+        )
+        assert enriched["existingPackages"] == "mine"
+
+    def test_non_authoring_capabilities_are_untouched(
+            self, client, user_and_token, tmp_curio):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+
+        enriched = services_mod._enriched_delegate_inputs(
+            key, pid, {}, "node.content.generate", {"nodeType": "x"},
+        )
+        assert "existingPackages" not in enriched
+
+    def test_payload_is_bounded_and_truncation_is_logged(
+            self, client, user_and_token, tmp_curio, caplog):
+        """delegation._frame_inputs bounds NOTHING (only the child's reply is
+        capped), so the payload has to bound itself — and a dropped row is
+        logged rather than silently vanishing."""
+        from utk_curio.backend.app.agents import services as services_mod
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        cap = services_mod._REUSE_EVIDENCE_MAX_PACKAGES
+        for i in range(cap + 3):
+            _write_store_package(
+                key, f"ai.test.p{i:03d}@1", f"ai.test.p{i:03d}", f"P{i}",
+                [f"t{j}" for j in range(services_mod._REUSE_EVIDENCE_MAX_TEMPLATES + 2)],
+                description="D" * (services_mod._REUSE_EVIDENCE_DESC_CHARS + 50),
+            )
+
+        with caplog.at_level("WARNING"):
+            evidence = services_mod._authoring_reuse_evidence(key, pid)
+        assert len(evidence["packages"]) == cap
+        assert "truncated" in caplog.text
+        for row in evidence["packages"]:
+            assert len(row["description"]) <= services_mod._REUSE_EVIDENCE_DESC_CHARS
+            assert len(row.get("templates", [])) <= (
+                services_mod._REUSE_EVIDENCE_MAX_TEMPLATES
+            )
+
+    def test_a_broken_registry_degrades_to_no_evidence(
+            self, client, user_and_token, tmp_curio, monkeypatch, caplog):
+        """Honest absence, and never an exception into the delegation path —
+        the same posture nodeContext and verification degrade with."""
+        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.packages import services as packages_services
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        monkeypatch.setattr(
+            packages_services, "agent_catalog_overview",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("registry down")),
+        )
+        with caplog.at_level("WARNING"):
+            assert services_mod._authoring_reuse_evidence(key, pid) is None
+        assert "reuse evidence" in caplog.text
+        # And the delegation still gets its contract and proceeds.
+        enriched = services_mod._enriched_delegate_inputs(
+            key, pid, {}, "node.kind.author", {"look": "x"},
+        )
+        assert "existingPackages" not in enriched
+        assert "buildRequestContract" in enriched
+
+    def test_the_delegate_actually_receives_it_in_its_framed_inputs(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        """The regression for the reported duplication, at its source: a
+        Researcher delegating node.kind.author while curio.notes@1 sits in the
+        store. Today the child's context could not contain that fact, so it
+        authored curio.notes and then curio.postits in one run."""
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(),
+            "curio.notes@1 already does this — I authored nothing.",
+            "You already have a notes package; I can enlist it.",
+        ])
+        _run(client, token, pid, att_id)
+
+        framed = " ".join(
+            str(m.get("content", "")) for c in calls for m in c
+            if "delegated task from" in str(m.get("content", ""))
+        )
+        assert framed, "the child must have received a framed task"
+        assert "curio.notes@1" in framed
+        assert "curio.notes/note-surface" in framed
+        # Nothing was authored, and nothing was minted.
+        assert all(
+            p["type"] != "proposal"
+            for p in _run(client, token, pid, att_id).get_json()["content"]
+        )

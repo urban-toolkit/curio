@@ -6102,6 +6102,91 @@ def _draft_refusal_is_correctable(refusal: str) -> bool:
     return not any(marker in text for marker in terminal)
 
 
+# Bounds for the authoring delegate's reuse evidence (memo dev/94). The payload
+# has to bound ITSELF: delegation._frame_inputs applies no size limit to the
+# inputs body (only the child's REPLY is capped), so an account with a large
+# package store would otherwise crowd the child's context.
+_REUSE_EVIDENCE_MAX_PACKAGES = 40
+_REUSE_EVIDENCE_MAX_TEMPLATES = 8
+_REUSE_EVIDENCE_DESC_CHARS = 200
+
+
+def _authoring_reuse_evidence(user_key: str, project_id: str) -> dict | None:
+    """What already exists, for a TOOL-LESS authoring delegate (memo dev/94).
+
+    The Package Builder's instruction opens with "Reuse first. Before authoring
+    anything, read packages.catalog … never a duplicate package" — and it holds
+    that tool only as a direct attachment. As a DEC-046 delegate it runs
+    structurally tool-less, which is the path packages are actually authored
+    on, so its first instruction was unexecutable and it had no way to know:
+    one weather question produced two near-identical note packages while a
+    usable one sat in the user's store. The runtime therefore serves the
+    evidence the instruction depends on, exactly as it already serves the
+    build-request contract (dev/90 A8) and verification results (dev/67-4).
+
+    ``installedInProject`` is CARRIED, not filtered on: both answers are
+    actionable and they differ — an enlisted package means "extend or reuse
+    it", an installed-but-not-enlisted one means "report it, the parent can
+    enlist it" (dev/93 D4's middle rung). Collapsing them would recreate the
+    one-bucket mistake that caused this.
+
+    Returns None when there is nothing to report (or the registry is
+    unreadable) — honest absence, and the delegation proceeds either way.
+    """
+    from utk_curio.backend.app.packages import services as packages_services
+
+    try:
+        rows = packages_services.agent_catalog_overview(user_key, project_id)
+        # Template ids make ``mode: "extend"`` followable rather than a guess.
+        # Both listings are canonical and unversioned; keyed by packageId so a
+        # row can name what it would be extending.
+        by_package: dict[str, list[str]] = {}
+        for entry in (
+            packages_services.available_templates(user_key, project_id)
+            + packages_services.installed_templates_not_in_project(user_key, project_id)
+        ):
+            package_id = str(entry["id"]).split("/", 1)[0]
+            ids = by_package.setdefault(package_id, [])
+            if entry["id"] not in ids:
+                ids.append(entry["id"])
+    except Exception:  # a broken registry degrades to no evidence, never a 500
+        log.warning(
+            "Could not compose reuse evidence for project %s — the authoring "
+            "delegate will run without it", project_id, exc_info=True,
+        )
+        return None
+
+    packages: list[dict] = []
+    for row in rows[:_REUSE_EVIDENCE_MAX_PACKAGES]:
+        item = {
+            "dirName": row["dirName"],
+            "name": row["name"],
+            "description": (row.get("description") or "")[:_REUSE_EVIDENCE_DESC_CHARS],
+            "installedInProject": bool(row.get("installed")),
+        }
+        templates = by_package.get(row["packageId"]) or []
+        if templates:
+            item["templates"] = templates[:_REUSE_EVIDENCE_MAX_TEMPLATES]
+        packages.append(item)
+    if len(rows) > len(packages):
+        log.warning(
+            "Reuse evidence truncated for project %s: %d of %d packages listed",
+            project_id, len(packages), len(rows),
+        )
+    if not packages:
+        return None
+    return {
+        "note": (
+            "Packages that already exist for this user. If one of these already "
+            "satisfies the requested need, say so and author nothing — name its "
+            "dirName so the caller can use it (installedInProject false means the "
+            "caller must enlist it first). Extend one by name instead of creating "
+            "a near-duplicate."
+        ),
+        "packages": packages,
+    }
+
+
 def _enriched_delegate_inputs(
     user_key: str, project_id: str, loop_ctx: dict, capability: str, inputs: dict
 ) -> dict:
@@ -6119,11 +6204,20 @@ def _enriched_delegate_inputs(
         if isinstance(url, str) and url.strip():
             return {**inputs, "verification": verify.verify_external_source(url)}
         return inputs
-    if capability in PACKAGE_AUTHORING_CAPABILITIES and "buildRequestContract" not in inputs:
+    if capability in PACKAGE_AUTHORING_CAPABILITIES:
         # dev/90 A8: tool-less authoring delegates get the build-request
         # contract server-side — the child answers to a schema it can SEE,
         # never a shape it has to invent (the model's own keys always win).
-        return {**inputs, "buildRequestContract": _BUILD_REQUEST_CONTRACT}
+        if "buildRequestContract" not in inputs:
+            inputs = {**inputs, "buildRequestContract": _BUILD_REQUEST_CONTRACT}
+        # dev/94: and the reuse evidence its instruction's first line depends
+        # on — "read packages.catalog before authoring" names a tool a
+        # delegate does not have.
+        if "existingPackages" not in inputs:
+            evidence = _authoring_reuse_evidence(user_key, project_id)
+            if evidence:
+                inputs = {**inputs, "existingPackages": evidence}
+        return inputs
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs
     node_id = inputs.get("nodeId")
