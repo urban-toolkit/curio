@@ -36,8 +36,36 @@ from utk_curio.backend.app.datasets.repositories.user_store import UserDatasetRe
 from utk_curio.backend.app.datasets.application.preview import DatasetPreviewService
 from utk_curio.backend.app.datasets.domain.provenance import catalog_item_is_computed_provenance
 from utk_curio.backend.app.datasets.repositories.registry import DatasetRegistryRepository
+from utk_curio.backend.app.datasets.install.installer import (
+    dataflow_segment_from_computed_id,
+    node_segment_from_computed_id,
+    sanitize_node_id_segment,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _legacy_installed_alias(
+    item_id: str | None, dataflow_id: str | None, installed_ids: set[str]
+) -> str | None:
+    """Match a computed item namespaced to the OPEN dataflow against a spec ref
+    that still carries the legacy un-namespaced ``computed.<node>`` id (written
+    before namespacing and not yet migrated).
+
+    Pre-namespacing installs were same-dataflow only, so the alias applies only
+    when the item's dataflow segment is the open dataflow's — never across
+    dataflows, and never on a bare producer-node match (#168).
+    """
+    if not item_id or not dataflow_id:
+        return None
+    df_seg = dataflow_segment_from_computed_id(item_id)
+    if df_seg is None or df_seg != sanitize_node_id_segment(dataflow_id):
+        return None
+    node_seg = node_segment_from_computed_id(item_id)
+    if not node_seg:
+        return None
+    legacy_id = f"computed.{node_seg}"
+    return legacy_id if legacy_id in installed_ids else None
 
 
 class CatalogListing:
@@ -126,32 +154,38 @@ class CatalogListing:
         inst_items = self.installed.list_items(dataflow_id)
         installed_ids = {item["id"] for item in inst_items if item.get("id")}
 
-        # Map producerNodeId → installed output basename for computed datasets.
-        # Used to determine whether the node has been re-executed since the last
-        # install: if the current output filename differs from the installed one
-        # the node was re-run and a "Reinstall" prompt is warranted.
+        # Map installed dataset id → installed output basename for computed
+        # datasets. Keyed on the FULL (namespaced) id — never the bare
+        # producerNodeId: node ids recur across dataflows (Duplicate Project,
+        # trill re-import), and a bare-node match falsely marks another
+        # dataflow's dataset as installed here (#168). The basename comparison
+        # detects that the node re-ran since the last install ("Reinstall").
         installed_computed_filenames: dict[str, str] = {}
         for inst_item in inst_items:
-            pid = inst_item.get("producerNodeId")
-            if pid and inst_item.get("origin") == "computed":
+            iid = inst_item.get("id")
+            if iid and inst_item.get("origin") == "computed":
                 inst_path = inst_item.get("path") or ""
-                installed_computed_filenames[pid] = Path(inst_path).name if inst_path else ""
+                installed_computed_filenames[iid] = Path(inst_path).name if inst_path else ""
 
         for item in items:
-            if item["id"] in installed_ids:
+            item_id = item.get("id")
+            matched_id: str | None = None
+            if item_id and item_id in installed_ids:
                 item["installed"] = True
+                matched_id = item_id
             elif item.get("origin") == "computed":
-                pid = item.get("producerNodeId")
-                if pid and pid in installed_computed_filenames:
+                matched_id = _legacy_installed_alias(item_id, dataflow_id, installed_ids)
+                if matched_id is not None:
                     item["installed"] = True
-                    # Only flag needsReinstall when the node produced a NEW output
-                    # file after the last install (filenames differ).  If the
-                    # filename is unchanged the node has not been re-executed and
-                    # the "Reinstall" button should not appear.
-                    current_filename = Path(item.get("path") or "").name
-                    installed_filename = installed_computed_filenames[pid]
-                    if current_filename and installed_filename and current_filename != installed_filename:
-                        item["needsReinstall"] = True
+            if matched_id is not None and item.get("origin") == "computed":
+                # Only flag needsReinstall when the node produced a NEW output
+                # file after the last install (filenames differ).  If the
+                # filename is unchanged the node has not been re-executed and
+                # the "Reinstall" button should not appear.
+                current_filename = Path(item.get("path") or "").name
+                installed_filename = installed_computed_filenames.get(matched_id) or ""
+                if current_filename and installed_filename and current_filename != installed_filename:
+                    item["needsReinstall"] = True
 
         # Post-execution auto-install writes to the user dataset store immediately;
         # reflect that in the catalog even before the next project save syncs spec refs.
