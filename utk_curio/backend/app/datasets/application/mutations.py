@@ -700,17 +700,21 @@ class CatalogMutations:
         """
         from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root
 
-        # Locate the catalog directory for this dataset.
+        # Locate the catalog directory for this dataset. The catalog root is
+        # never created eagerly (pip installs / CURIO_CATALOG_ROOT overrides
+        # start without one), so guard the scan — a missing root means the
+        # dataset is simply not published, i.e. the 404 below.
         root = catalog_root()
         catalog_dir: Path | None = None
-        for d in root.iterdir():
-            if not d.is_dir():
-                continue
-            # The dir_name is typically <catalog_id>@<major>
-            base = d.name.split("@")[0] if "@" in d.name else d.name
-            if base == dataset_id or d.name == dataset_id:
-                catalog_dir = d
-                break
+        if root.is_dir():
+            for d in root.iterdir():
+                if not d.is_dir():
+                    continue
+                # The dir_name is typically <catalog_id>@<major>
+                base = d.name.split("@")[0] if "@" in d.name else d.name
+                if base == dataset_id or d.name == dataset_id:
+                    catalog_dir = d
+                    break
 
         if catalog_dir is None:
             raise DatasetCatalogError(f"Dataset '{dataset_id}' is not in the Data Catalog", 404)
