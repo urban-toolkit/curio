@@ -106,6 +106,29 @@ def test_merge_does_not_resurrect_publishedtohub_after_unpublish():
         assert merged.get("publishedToHub") is False, merged
 
 
+def test_merge_carries_producer_lineage_from_loser():
+    """#170: lineage on the losing row must survive the merge — a lineage-less
+    hub-registry winner used to silently erase it from the listing."""
+    from utk_curio.backend.app.datasets.domain.dedup import merge_catalog_items
+
+    hub_row = {  # wins on rank: dirName (+8) + installed (+2)
+        "id": "computed.f.n", "origin": "hub", "installed": True,
+        "dirName": "computed.f.n@1",
+    }
+    store_row = {
+        "id": "computed.f.n", "origin": "computed", "producerNodeId": "n",
+        "producerNodeType": "curio.builtin/data-transformation",
+        "producerDataflowId": "f", "producerDataflowName": "My Flow",
+        "upstreamInputs": [{"nodeId": "up1"}],
+    }
+    for a, b in ((hub_row, store_row), (store_row, hub_row)):
+        merged = merge_catalog_items(a, b)
+        assert merged["producerNodeType"] == "curio.builtin/data-transformation"
+        assert merged["producerDataflowId"] == "f"
+        assert merged["producerDataflowName"] == "My Flow"
+        assert merged["upstreamInputs"] == [{"nodeId": "up1"}]
+
+
 def test_merge_still_marks_published_when_hub_row_present():
     """Without an explicit unpublish, a hub row still marks the row published."""
     from utk_curio.backend.app.datasets.domain.dedup import merge_catalog_items

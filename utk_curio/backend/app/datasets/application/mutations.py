@@ -300,6 +300,17 @@ class CatalogMutations:
             schema=item.get("schema"),
             created_at=item.get("updatedAt") or now,
             updated_at=now,
+            # Producer/upstream lineage travels with the published manifest —
+            # the committed catalog is the only copy other users / fresh
+            # checkouts see, so dropping it here loses it permanently (#170).
+            source_updated_at=item.get("sourceUpdatedAt"),
+            group_id=item.get("groupId"),
+            layer_name=item.get("layerName"),
+            producer_node_id=item.get("producerNodeId"),
+            producer_node_type=item.get("producerNodeType"),
+            producer_dataflow_id=item.get("producerDataflowId"),
+            producer_dataflow_name=item.get("producerDataflowName"),
+            upstream_inputs=item.get("upstreamInputs"),
         )
         write_manifest(manifest_obj, dest)
 

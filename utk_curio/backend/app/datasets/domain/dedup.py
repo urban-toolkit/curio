@@ -41,6 +41,17 @@ def merge_catalog_items(existing: dict[str, Any], incoming: dict[str, Any]) -> d
         merged["dirName"] = loser["dirName"]
     if not merged.get("producerNodeId") and loser.get("producerNodeId"):
         merged["producerNodeId"] = loser["producerNodeId"]
+    # Producer/upstream lineage may live on only one of the rows (e.g. the
+    # account-store copy but not an older hub-registry row). Never let a
+    # lineage-less winner erase it from the listing (#170).
+    for lineage_field in (
+        "producerNodeType",
+        "producerDataflowId",
+        "producerDataflowName",
+        "upstreamInputs",
+    ):
+        if not merged.get(lineage_field) and loser.get(lineage_field):
+            merged[lineage_field] = loser[lineage_field]
     if not merged.get("publishedToHub") and loser.get("publishedToHub"):
         merged["publishedToHub"] = loser["publishedToHub"]
     # Hub registry rows do not carry ``publishedToHub``; merge must still reflect
