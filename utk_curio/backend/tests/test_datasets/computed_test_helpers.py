@@ -2,10 +2,63 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 
 def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def write_legacy_computed_dir(
+    user_key: str,
+    node_id: str,
+    *,
+    file_bytes: bytes = b'{"v": 1}',
+    filename: str = "out.json",
+    fmt: str = "json",
+    major: int = 1,
+) -> str:
+    """Fabricate a pre-namespacing ``computed.<node>@<major>`` store dir.
+
+    The installer now refuses to mint the legacy un-namespaced form, so tests
+    that need one (migration, stale-dir handling) must write it by hand. Returns
+    the legacy dataset id.
+    """
+    from utk_curio.backend.app.datasets.domain.manifest import (
+        DatasetManifest,
+        write_manifest,
+    )
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+    from utk_curio.backend.app.datasets.install.installer import (
+        sanitize_node_id_segment,
+    )
+
+    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    dest = dataset_dir(user_key, f"{dataset_id}@{major}")
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "data").mkdir(exist_ok=True)
+    (dest / "data" / filename).write_bytes(file_bytes)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    write_manifest(
+        DatasetManifest(
+            id=dataset_id,
+            name=filename,
+            version="1.0.0",
+            format=fmt,
+            description=f"{fmt.upper()} dataset computed by a dataflow node.",
+            publisher="User",
+            license="",
+            tags=[fmt, "computed"],
+            data_file=f"data/{filename}",
+            major=major,
+            source_label="Computed",
+            created_at=now,
+            updated_at=now,
+            producer_node_id=node_id,
+        ),
+        dest,
+    )
+    return dataset_id
 
 
 def create_project(client, token, name="Computed test project"):

@@ -138,6 +138,21 @@ def browser_context_args(browser_context_args):
     }
 
 
+@pytest.fixture(autouse=True)
+def _reset_computed_id_migration_guard():
+    """Clear the per-process computed-id migration guard around every test.
+
+    ``migrations._migrated_users`` is module-level state and the in-memory
+    test DB restarts user ids at 1, so a stale entry from one test would
+    silently skip the migration for every later test in the same process.
+    """
+    from utk_curio.backend.app.datasets.application import migrations
+
+    migrations._migrated_users.clear()
+    yield
+    migrations._migrated_users.clear()
+
+
 def _find_system_chrome() -> str | None:
     """Locate the system-installed Google Chrome executable.
 
