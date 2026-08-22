@@ -163,6 +163,8 @@ The generated Python matches the format:
 | `bundle` | Rebuilds every part and returns a tuple → `bundle` |
 | OSM group | A `layers` dict of per-layer GeoParquet reads |
 
+The location line is written as a portable `curio_dataset_path("<datasetId>")` call that the sandbox resolves to a real filesystem path at execution time, so the generated code carries no machine-, user-, or mount-specific absolute path and stays valid when the dataflow is shared or moved. Curio falls back to embedding the literal path only when the dataset has no usable id.
+
 **Clicking** a palette row (rather than dragging it) does something different: it highlights every node on the canvas that uses that dataset. If none do, you get an info toast saying so.
 
 Nodes tied to a dataset show a small pill on their title bar: **DATASET** when the node reads one, **OUTPUT** when the node produced one. Clicking the pill reveals the dataset in the palette. Palette rows and drawer cards carry a **connection badge** like `1↑ 2↓` — one upstream producer, two downstream consumers — computed live from the current dataflows.
