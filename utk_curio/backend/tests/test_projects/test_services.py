@@ -211,8 +211,10 @@ def test_auto_install_without_dataflow_id_persists_nothing(app, tmp_curio):
 
 
 def test_prune_sink_node_dataset_refs(app, tmp_curio):
-    """Dataset refs keyed on a visualization/sink node are pruned on save and
-    their orphaned user-store dir is removed; the real producer's ref stays."""
+    """Dataset refs keyed on a visualization/sink node are pruned on save; the
+    real producer's ref stays. The account-store dir SURVIVES the prune (#174):
+    account-level assets are shared across dataflows, and only an explicit
+    delete_dataset may remove them."""
     from utk_curio.backend.app.datasets.install.installer import install_computed_file_for_node
     from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 
@@ -246,12 +248,12 @@ def test_prune_sink_node_dataset_refs(app, tmp_curio):
         }
     }
 
-    pruned = services._prune_sink_node_dataset_refs("1", spec)
+    pruned = services._prune_sink_node_dataset_refs(spec)
 
     ds = pruned["dataflow"]["datasets"]
     producers = {r["producerNodeId"] for r in ds}
-    assert producers == {"transform-x"}, producers       # vis ref pruned
-    assert not vis_dir.exists()                            # orphaned dir removed
+    assert producers == {"transform-x"}, producers       # vis refs pruned
+    assert vis_dir.exists()                                # shared dir KEPT (#174)
     assert spec["dataflow"]["datasets"] != ds              # original not mutated in place
 
 
@@ -261,7 +263,84 @@ def test_prune_sink_node_dataset_refs_noop_without_sink(app, tmp_curio):
         "nodes": [{"id": "t", "type": "curio.builtin/data-transformation"}],
         "datasets": [{"datasetId": "computed.t", "producerNodeId": "t", "dirName": "computed.t@1"}],
     }}
-    assert services._prune_sink_node_dataset_refs("1", spec) is spec
+    assert services._prune_sink_node_dataset_refs(spec) is spec
+
+
+def test_auto_install_skips_sink_node_outputs(app, tmp_curio):
+    """#174 prevention: a sink node's passthrough output is never persisted, so
+    no duplicate dir exists for the ref prune to worry about."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import list_user_datasets
+
+    shared = storage._shared_data_dir()
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "sink_out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    (shared / "prod_out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+
+    spec = {"dataflow": {
+        "nodes": [
+            {"id": "prod-n", "type": "curio.builtin/data-transformation"},
+            {"id": "sink-n", "type": "curio.builtin/vis-vega@1"},
+        ],
+        "datasets": [],
+    }}
+    refs = [
+        OutputRef(node_id="prod-n", filename="prod_out.csv"),
+        OutputRef(node_id="sink-n", filename="sink_out.csv"),
+    ]
+    failures: list = []
+    services._auto_install_computed_outputs("1", refs, spec, failures, dataflow_id="df-sink")
+
+    names = {d.name for d in list_user_datasets("1")}
+    assert "computed.df-sink.prod-n@1" in names
+    assert not any("sink-n" in n for n in names)
+    assert failures == []  # a skipped sink is intentional, not a failure
+
+
+def test_duplicate_project_does_not_delete_source_sink_dir(app, db, user_and_token, tmp_curio):
+    """#174: duplicating a project copies its refs verbatim — an inherited
+    sink-node ref must not rmtree the ORIGINAL project's account-store dir."""
+    from utk_curio.backend.app.datasets.install.installer import (
+        computed_dataset_id,
+        install_computed_file_for_node,
+    )
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+
+    user, _ = user_and_token
+    user_key = services._user_dir_key(user)
+
+    # Original project with a sink node; its store dir exists (legacy leftover
+    # from before the prevention landed).
+    original = services.save_project(
+        user,
+        ProjectCreate(name="Original", spec={"dataflow": {
+            "name": "Original",
+            "nodes": [{"id": "vis-1", "type": "curio.builtin/vis-vega"}],
+            "edges": [],
+        }}),
+    )
+    install_computed_file_for_node(
+        user_key, b"a\n1\n", "vis_out.csv", "csv",
+        node_id="vis-1", dataflow_id=original.id,
+    )
+    src_id = computed_dataset_id("vis-1", original.id)
+    src_dir = dataset_dir(user_key, f"{src_id}@1")
+    assert src_dir.exists()
+
+    # Wire the sink ref into the original's spec (the shape duplicate copies).
+    from utk_curio.backend.app.projects import storage as project_storage
+    spec = project_storage.read_spec(user_key, original.id)
+    spec["dataflow"]["datasets"] = [{
+        "datasetId": src_id,
+        "dirName": f"{src_id}@1",
+        "origin": "computed", "producerNodeId": "vis-1",
+    }]
+    project_storage.write_spec(user_key, original.id, spec)
+
+    services.duplicate_project(user, original.id)
+
+    # The copy's save pruned the inherited sink ref — but the ORIGINAL
+    # project's store dir must survive.
+    assert src_dir.exists()
 
 
 def test_save_drops_non_persisted_output_from_manifest(

@@ -49,13 +49,17 @@ def _is_sink_node_type(node_type) -> bool:
     return unversioned_node_type(node_type) in _SINK_NODE_TYPES
 
 
-def _prune_sink_node_dataset_refs(user_key: str, spec: Optional[dict]) -> Optional[dict]:
+def _prune_sink_node_dataset_refs(spec: Optional[dict]) -> Optional[dict]:
     """Drop ``dataflow.datasets`` refs whose producer is a visualization/sink node.
 
     Returns *spec* unchanged when there's nothing to prune; otherwise a new spec
-    dict with the offending refs removed. The orphaned user-store dataset dir for
-    each pruned ref is deleted best-effort so the duplicate doesn't linger or get
-    re-discovered on the next listing.
+    dict with the offending refs removed. Only the REF is removed — the
+    account-store folder is kept (#174): account-level datasets are shared
+    across dataflows and this runs on every save/ref write, so deleting here
+    destroyed shared assets (``duplicate_project`` copies refs verbatim, so an
+    inherited sink ref pointed at the ORIGINAL project's dir). Folder removal is
+    exclusively ``delete_dataset``'s job; ``_auto_install_computed_outputs``
+    prevents new sink dirs from being created in the first place.
     """
     if not isinstance(spec, dict):
         return spec
@@ -82,19 +86,6 @@ def _prune_sink_node_dataset_refs(user_key: str, spec: Optional[dict]) -> Option
 
     if not pruned:
         return spec
-
-    # Best-effort: remove the orphaned dataset dir for each pruned ref.
-    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
-    for ref in pruned:
-        dir_name = ref.get("dirName")
-        if not dir_name:
-            continue
-        try:
-            target = dataset_dir(user_key, dir_name)
-            if target.exists():
-                shutil.rmtree(target, ignore_errors=True)
-        except Exception:  # noqa: BLE001 - bad/crafted dirName must not block save
-            logger.debug("Could not remove pruned sink-node dataset dir %r", dir_name, exc_info=True)
 
     new_spec = dict(spec)
     new_spec["dataflow"] = {**dataflow, "datasets": kept}
@@ -224,10 +215,22 @@ def _auto_install_computed_outputs(
     if not isinstance(dataflow, dict):
         return spec
 
+    node_types: Dict[str, Optional[str]] = {
+        node["id"]: node.get("type")
+        for node in dataflow.get("nodes") or []
+        if isinstance(node, dict) and node.get("id")
+    }
+
     for ref in output_refs:
         filename = ref.filename
         node_id = ref.node_id
         data_type = getattr(ref, "data_type", None)
+
+        # Sink/visualization nodes pass their input through — persisting their
+        # output would create a duplicate of the upstream producer's dataset
+        # that the ref prune then has to clean up. Never create it (#174).
+        if _is_sink_node_type(node_types.get(node_id)):
+            continue
 
         try:
             result = install_node_output(
@@ -422,7 +425,7 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
         dataflow_id=project_id, dataflow_name=data.name,
     ) or data.spec
     # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
-    effective_spec = _prune_sink_node_dataset_refs(ukey, effective_spec)
+    effective_spec = _prune_sink_node_dataset_refs(effective_spec)
     if effective_spec is not data.spec:
         storage.write_spec(ukey, project_id, effective_spec)
     # Record only outputs the reload path can restore from a durable source
@@ -492,7 +495,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         # passthrough of their input, so the ref just duplicates the upstream
         # producer's dataset. Runs AFTER preserve so carried-forward stale refs
         # are cleaned too; may dirty the spec even on an outputs-only update.
-        pruned_spec = _prune_sink_node_dataset_refs(ukey, effective_spec)
+        pruned_spec = _prune_sink_node_dataset_refs(effective_spec)
         if pruned_spec is not effective_spec:
             effective_spec = pruned_spec
             spec_dirty = True
