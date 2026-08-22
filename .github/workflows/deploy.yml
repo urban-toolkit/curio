@@ -63,11 +63,20 @@ on:
     paths:
       - 'utk_curio/**'
       - 'docs/**'
-      - 'requirements.txt'
       - 'Dockerfile'
       - 'docker-compose.yml'
       - 'docker-compose.deploy.yml'
       - '.github/workflows/deploy.yml'
+      # Baked into the image (see Dockerfile runtime_base COPYs). Without
+      # these, a commit that only touches the package catalog never triggers
+      # a deploy and curio-dev keeps serving a stale `packages/` tree.
+      - 'requirements.txt'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'curio.py'
+      - 'scripts/**'
+      - 'packages/**'
+      - 'datasets/**'
   workflow_dispatch:
     inputs:
       ref:
@@ -121,6 +130,17 @@ jobs:
           ref="${1:-}"
           cd /srv/curio-dev
           git fetch --prune --tags origin
+          # Reset the package catalog before checking out. Earlier builds
+          # bind-mounted ./packages into the container, where
+          # publish-catalog rewrites entries in place -- so this checkout can
+          # hold container-authored edits. `git checkout --detach` carries
+          # those forward (it only writes paths that differ between HEAD and
+          # the target) and aborts outright when an incoming commit touches a
+          # locally-modified file. Scoped to packages/ on purpose: a bare
+          # `git clean -fd` here would delete .env, instance/, .curio/ and
+          # published datasets/, all untracked by design.
+          git checkout -- packages/ 2>/dev/null || true
+          git clean -fdq packages/ || true
           if [ -z "$ref" ]; then
             ref="main"
           fi
@@ -179,6 +199,17 @@ jobs:
           ref="${1:-}"
           cd /srv/curio
           git fetch --prune --tags origin
+          # Reset the package catalog before checking out. Earlier builds
+          # bind-mounted ./packages into the container, where
+          # publish-catalog rewrites entries in place -- so this checkout can
+          # hold container-authored edits. `git checkout --detach` carries
+          # those forward (it only writes paths that differ between HEAD and
+          # the target) and aborts outright when an incoming commit touches a
+          # locally-modified file. Scoped to packages/ on purpose: a bare
+          # `git clean -fd` here would delete .env, instance/, .curio/ and
+          # published datasets/, all untracked by design.
+          git checkout -- packages/ 2>/dev/null || true
+          git clean -fdq packages/ || true
           if [ -z "$ref" ]; then
             ref=$(git describe --tags --abbrev=0 --match 'v*' origin/main)
           fi

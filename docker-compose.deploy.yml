@@ -3,6 +3,12 @@
 #
 # Adds the --deploy flag to the runtime command so the deployed stack
 # boots with auth + projects enabled (CURIO_NO_AUTH=0, CURIO_NO_PROJECT=0).
+#
+# --no-allow-publish locks down the two author-only catalog mutators
+# (publish-catalog / delete-catalog). On a shared deployment the package
+# catalog lives inside the image (see the volumes note in docker-compose.yml),
+# so a publish would be discarded on the next recreate anyway -- and before
+# that it silently rewrote catalog entries for every other user.
 services:
   curio:
     # Bring the container back up automatically after a host reboot or daemon
@@ -14,6 +20,7 @@ services:
       - start
       - all
       - --deploy
+      - --no-allow-publish
       - --backend-host
       - 0.0.0.0
       - --backend-port

@@ -22,10 +22,18 @@ services:
       - "${CURIO_PORT_5002:-5002}:5002"
       - "${CURIO_PORT_8080:-8080}:8080"
     volumes:
-      - ./packages:/app/packages
-      # Publish target for the Data Catalog (catalog_root() -> <repo_root>/datasets,
-      # like packages/ above). Without this bind mount, datasets published inside
-      # the container are lost on every recreate/rebuild.
+      # NOTE: `packages/` is deliberately NOT bind-mounted. The package catalog
+      # (`_catalog_root()` -> /app/packages) is baked into the image by the
+      # Dockerfile COPY, so it always matches the deployed commit and is reset
+      # on every recreate. A bind mount here pointed the catalog at the host's
+      # git checkout, and `POST /api/packages/factory/publish-catalog` rewrites
+      # catalog entries in place (rmtree + replace) -- so one publish from the
+      # UI permanently mutated the deploy host's working tree and every
+      # subsequent install served the rewritten package.
+      # Publish target for the Data Catalog (catalog_root() -> <repo_root>/datasets).
+      # Unlike packages/ this one IS user data, so it must survive a recreate.
+      # Point --catalog-root at a path outside the git checkout to keep
+      # published datasets from dirtying it.
       - ./datasets:/app/datasets
       # Share sandbox .data files with the host so Playwright (runs on host in CI) can read them
       - ./.curio:/app/.curio
