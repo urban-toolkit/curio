@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -15,12 +17,55 @@ def format_for_path(path: Path) -> str | None:
     return SUPPORTED_SUFFIXES.get(path.suffix.lower())
 
 
+# Dataset ids are interpolated into generated Python source, so only ids matching
+# this whitelist may appear inside a ``curio_dataset_path("<id>")`` call. Ids can
+# come from user-editable spec JSON (legacy ref fallbacks), so an id with a quote
+# or backslash would otherwise break out of the string literal. Must stay in sync
+# with the scan regex in api/routes.py and SAFE_DATASET_ID_RE in the frontend
+# datasetLoaderSnippets.ts.
+_SAFE_DATASET_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$")
+
+
+def _safe_dataset_id(dataset_id: Any) -> str | None:
+    if not isinstance(dataset_id, str) or not _SAFE_DATASET_ID_RE.match(dataset_id):
+        return None
+    return dataset_id
+
+
+def _path_expr(path: str | None, dataset_id: str | None) -> str:
+    """Python expression for the location line of a loader snippet.
+
+    Preferred form is the portable ``curio_dataset_path("<id>")`` call — the
+    sandbox resolves it to a real filesystem path at execution time, so the
+    generated code carries no machine-, user-, or mount-specific absolute path.
+    Falls back to the historical literal path when no (safe) id is available,
+    which also keeps legacy fat refs and id-less items working unchanged.
+    """
+    safe_id = _safe_dataset_id(dataset_id)
+    if safe_id:
+        return f"curio_dataset_path({json.dumps(safe_id)})"
+    # Embed the path in POSIX form so the generated source parses on every
+    # platform: a raw Windows path ("C:\Users\...") inside a Python string
+    # literal forms escape sequences like \U and the snippet is a SyntaxError.
+    # Windows opens forward-slash paths fine, and as_posix() is a no-op for
+    # paths that already are.
+    #
+    # Guard against non-filesystem values legacy fat refs can carry: a
+    # URI-shaped string (curio://, s3://) must NOT go through as_posix() (it
+    # collapses // -> / and corrupts the scheme), and a non-str path must not
+    # raise TypeError here and 500 the whole listing.
+    if path is None:
+        return json.dumps("<dataset-path>")
+    _p = str(path)
+    return json.dumps(_p if "://" in _p else Path(_p).as_posix())
+
+
 # Loader body for ``format: bundle`` datasets (multi-output / tuple node results).
 # Reads ``data/bundle.json`` + ``data/parts/*`` and returns the parts as a tuple so
 # the sandbox re-detects the same ``outputs`` envelope the producing node emitted.
-# Note: the only ``{}`` here is the ``{bundle_path}`` placeholder (no dict literals),
-# so ``str.format`` is safe.
-_BUNDLE_LOADER_CODE = '''bundle_path = "{bundle_path}"
+# Note: the only ``{}`` here is the ``{bundle_path_expr}`` placeholder (no dict
+# literals), so ``str.format`` is safe.
+_BUNDLE_LOADER_CODE = '''bundle_path = {bundle_path_expr}
 def _curio_load_bundle(path):
     base = os.path.dirname(os.path.dirname(path))
     with open(path) as f:
@@ -53,29 +98,25 @@ def _curio_load_bundle(path):
 bundle = _curio_load_bundle(bundle_path)'''
 
 
-def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
-    # Embed the path in POSIX form so the generated source parses on every
-    # platform: a raw Windows path ("C:\Users\...") inside a Python string
-    # literal forms escape sequences like \U and the snippet is a SyntaxError.
-    # Windows opens forward-slash paths fine, and as_posix() is a no-op for
-    # paths that already are. Normalizing HERE (the single chokepoint) covers
-    # every call site — some already pre-convert, listing.py did not.
-    #
-    # Guard against non-filesystem values legacy fat refs can carry: a
-    # URI-shaped string (curio://, s3://) must NOT go through as_posix() (it
-    # collapses // -> / and corrupts the scheme), and a non-str path must not
-    # raise TypeError here and 500 the whole listing.
-    if path is None:
-        dataset_path = "<dataset-path>"
-    else:
-        _p = str(path)
-        dataset_path = _p if "://" in _p else Path(_p).as_posix()
+def loader_snippet(fmt: str, path: str | None, dataset_id: str | None = None) -> dict[str, Any]:
+    """Build the Python loader snippet for a dataset.
+
+    When a (safe) *dataset_id* is given, the location line is the portable
+    ``curio_dataset_path("<id>")`` call, resolved to a real path at execution
+    time by the sandbox (mapping supplied by ``/processPythonCode``). Without
+    one it falls back to embedding the literal path — see :func:`_path_expr`.
+
+    KEEP IN SYNC with the frontend generator
+    ``frontend/urban-workflows/src/services/datasetCatalog/datasetLoaderSnippets.ts``
+    (same call syntax) and the scan regex in ``backend/app/api/routes.py``.
+    """
+    expr = _path_expr(path, dataset_id)
     if fmt == "csv":
         return {
             "language": "python",
             "imports": ["import pandas as pd"],
             "pathVariable": "dataset_path",
-            "code": f'dataset_path = "{dataset_path}"\ndf = pd.read_csv(dataset_path)',
+            "code": f"dataset_path = {expr}\ndf = pd.read_csv(dataset_path)",
             "returnVariable": "df",
         }
     if fmt in {"geojson", "shp"}:
@@ -83,7 +124,7 @@ def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "language": "python",
             "imports": ["import geopandas as gpd"],
             "pathVariable": "dataset_path",
-            "code": f'dataset_path = "{dataset_path}"\ngdf = gpd.read_file(dataset_path)',
+            "code": f"dataset_path = {expr}\ngdf = gpd.read_file(dataset_path)",
             "returnVariable": "gdf",
         }
     if fmt == "parquet":
@@ -97,7 +138,7 @@ def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "imports": ["import os", "import json", "import pandas as pd", "import geopandas as gpd"],
             "pathVariable": "dataset_path",
             "code": (
-                f'dataset_path = "{dataset_path}"\n'
+                f"dataset_path = {expr}\n"
                 "try:\n"
                 "    df = gpd.read_parquet(dataset_path)\n"
                 "except Exception:\n"
@@ -119,7 +160,7 @@ def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "language": "python",
             "imports": ["import json"],
             "pathVariable": "dataset_path",
-            "code": f'dataset_path = "{dataset_path}"\nwith open(dataset_path) as f:\n    data = json.load(f)',
+            "code": f"dataset_path = {expr}\nwith open(dataset_path) as f:\n    data = json.load(f)",
             "returnVariable": "data",
         }
     if fmt == "geotiff":
@@ -127,7 +168,7 @@ def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "language": "python",
             "imports": ["import rasterio"],
             "pathVariable": "dataset_path",
-            "code": f'dataset_path = "{dataset_path}"\nsrc = rasterio.open(dataset_path)',
+            "code": f"dataset_path = {expr}\nsrc = rasterio.open(dataset_path)",
             "returnVariable": "src",
         }
     if fmt == "bundle":
@@ -145,14 +186,14 @@ def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
                 "import geopandas as gpd",
             ],
             "pathVariable": "bundle_path",
-            "code": _BUNDLE_LOADER_CODE.format(bundle_path=dataset_path),
+            "code": _BUNDLE_LOADER_CODE.format(bundle_path_expr=expr),
             "returnVariable": "bundle",
         }
     return {
         "language": "python",
         "imports": [],
         "pathVariable": "dataset_path",
-        "code": f'dataset_path = "{dataset_path}"',
+        "code": f"dataset_path = {expr}",
         "returnVariable": None,
     }
 
@@ -212,7 +253,9 @@ def base_item(**overrides: Any) -> dict[str, Any]:
     }
     item.update(overrides)
     if item["loaderSnippet"] is None:
-        item["loaderSnippet"] = loader_snippet(item["format"], item.get("path"))
+        item["loaderSnippet"] = loader_snippet(
+            item["format"], item.get("path"), dataset_id=item.get("id") or None
+        )
     return item
 
 

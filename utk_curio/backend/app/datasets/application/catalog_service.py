@@ -63,6 +63,9 @@ class DatasetCatalogService:
     def resolve_dataset_producer(self, *args: Any, **kwargs: Any) -> Any:
         return self._listing.resolve_dataset_producer(*args, **kwargs)
 
+    def resolve_execution_paths(self, *args: Any, **kwargs: Any) -> Any:
+        return self._listing.resolve_execution_paths(*args, **kwargs)
+
     def preview(self, *args: Any, **kwargs: Any) -> Any:
         return self._listing.preview(*args, **kwargs)
 

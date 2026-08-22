@@ -300,7 +300,9 @@ const bundleDataset: DatasetCatalogItem = {
 
 test("buildDatasetLoaderCode creates CSV imports and loader", () => {
   expect(buildDatasetLoaderCode(dataset)).toContain("import pandas as pd");
-  expect(buildDatasetLoaderCode(dataset)).toContain('dataset_path = "/tmp/blocks.csv"');
+  // Portable form: the id call resolves to a real path at execution time, so
+  // generated code carries no machine-specific absolute path.
+  expect(buildDatasetLoaderCode(dataset)).toContain('dataset_path = curio_dataset_path("file-123")');
   expect(buildDatasetLoaderCode(dataset)).toContain("pd.read_csv(dataset_path)");
 });
 
@@ -323,7 +325,7 @@ test("buildDatasetLoaderCode rebuilds a bundle into a tuple of parts", () => {
   const code = buildDatasetLoaderCode(bundleDataset);
   // Reads the bundle manifest and returns the parts as a tuple so the sandbox
   // re-detects the same `outputs` envelope the producing node emitted.
-  expect(code).toContain('bundle_path = "/data/computed.node_x@1/data/bundle.json"');
+  expect(code).toContain('bundle_path = curio_dataset_path("computed.node_x")');
   expect(code).toContain("spec.get(\"parts\", [])");
   expect(code).toContain("gpd.read_parquet(file_path)");
   expect(code).toContain("return tuple(items)");
@@ -395,8 +397,8 @@ test("dragging an OSM group builds a node that loads all layers via real member 
   expect(Object.keys(options.appliedDatasets)).toEqual(["loop.points", "loop.lines"]);
   expect(options.appliedDatasets["osm.x1"]).toBeUndefined();
   // The loader reads every layer into one `layers` dict (the full import).
-  expect(options.code).toContain('layers["points"] = _curio_read_layer("/store/loop.points@1/data/points.parquet")');
-  expect(options.code).toContain('layers["lines"] = _curio_read_layer("/store/loop.lines@1/data/lines.parquet")');
+  expect(options.code).toContain('layers["points"] = _curio_read_layer(curio_dataset_path("loop.points"))');
+  expect(options.code).toContain('layers["lines"] = _curio_read_layer(curio_dataset_path("loop.lines"))');
   expect(options.code).toContain("return layers");
   // The linkage marker still points at the group for palette↔canvas focus.
   expect(options.datasetSource.datasetId).toBe("osm.x1");
@@ -503,14 +505,18 @@ test("mergeDatasetLoaderCode indents the loader block to match an indented retur
 });
 
 test("mergeDatasetLoaderCode/buildDatasetLoaderCode escape backslashes and quotes in the path (B11)", () => {
+  // An UNSAFE id (quote inside) must never reach the generated source as a
+  // curio_dataset_path call — the snippet falls back to the literal path,
+  // which must stay a valid Python string literal: backslashes escaped, so no
+  // raw `\U`/`\b` escape and the literal isn't terminated early.
   const winDataset = makeDataset({
+    id: 'evil"id',
     format: "csv",
     path: "C:\\Users\\me\\data\\blocks.csv",
     uri: "file:///c/blocks.csv",
   });
   const code = buildDatasetLoaderCode(winDataset);
-  // The path must be a valid Python string literal: backslashes escaped, so no
-  // raw `\U`/`\b` escape and the literal isn't terminated early.
+  expect(code).not.toContain("curio_dataset_path");
   expect(code).toContain('dataset_path = "C:\\\\Users\\\\me\\\\data\\\\blocks.csv"');
 });
 

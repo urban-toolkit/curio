@@ -13,14 +13,45 @@ function datasetPath(dataset: DatasetLike): string {
 }
 
 /**
+ * Dataset ids are interpolated into generated Python source, so only ids
+ * matching this whitelist may appear inside a ``curio_dataset_path("<id>")``
+ * call — an id with a quote or backslash would break out of the string
+ * literal. KEEP IN SYNC with ``_SAFE_DATASET_ID_RE`` in the backend generator
+ * (``backend/app/datasets/domain/catalog_item.py``) and the scan regex in
+ * ``backend/app/api/routes.py``.
+ */
+const SAFE_DATASET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$/;
+
+function safeDatasetId(datasetId: string | null | undefined): string | null {
+  if (!datasetId || !SAFE_DATASET_ID_RE.test(datasetId)) return null;
+  return datasetId;
+}
+
+function idOf(dataset: DatasetLike): string | null {
+  return "datasetId" in dataset ? dataset.datasetId : dataset.id;
+}
+
+/**
+ * Python expression for the location line of a loader snippet. Preferred form
+ * is the portable ``curio_dataset_path("<id>")`` call — the sandbox resolves it
+ * to a real filesystem path at execution time, so generated code carries no
+ * machine-, user-, or mount-specific absolute path. Falls back to the literal
+ * path when no (safe) id is available.
+ */
+function pathExpr(path: string, datasetId?: string | null): string {
+  const safeId = safeDatasetId(datasetId);
+  return safeId ? `curio_dataset_path(${JSON.stringify(safeId)})` : JSON.stringify(path);
+}
+
+/**
  * Loader body for ``format: bundle`` datasets (multi-output / tuple node
  * results). Reads ``data/bundle.json`` + ``data/parts/*`` and returns the parts
  * as a tuple so the sandbox re-detects the same ``outputs`` envelope the
  * producing node emitted.
  */
-function bundleLoaderCode(path: string): string {
+function bundleLoaderCode(locationExpr: string): string {
   return [
-    `bundle_path = ${JSON.stringify(path)}`,
+    `bundle_path = ${locationExpr}`,
     "def _curio_load_bundle(path):",
     "    base = os.path.dirname(os.path.dirname(path))",
     "    with open(path) as f:",
@@ -66,7 +97,7 @@ export function osmGroupLoaderSnippet(
   const readerLines = layers.map((layer, index) => {
     const key = layer.layerName || layer.title || `layer_${index}`;
     const path = layer.path || layer.uri || "<dataset-path>";
-    return `layers[${JSON.stringify(key)}] = _curio_read_layer(${JSON.stringify(path)})`;
+    return `layers[${JSON.stringify(key)}] = _curio_read_layer(${pathExpr(path, layer.id)})`;
   });
   const code = [
     "def _curio_read_layer(path):",
@@ -87,13 +118,18 @@ export function osmGroupLoaderSnippet(
   };
 }
 
-function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSnippet {
+function snippetForFormat(
+  format: DatasetFormat,
+  path: string,
+  datasetId?: string | null,
+): DatasetLoaderSnippet {
+  const expr = pathExpr(path, datasetId);
   if (format === "csv") {
     return {
       language: "python",
       imports: ["import pandas as pd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${JSON.stringify(path)}\ndf = pd.read_csv(dataset_path)`,
+      code: `dataset_path = ${expr}\ndf = pd.read_csv(dataset_path)`,
       returnVariable: "df",
     };
   }
@@ -102,7 +138,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
       language: "python",
       imports: ["import geopandas as gpd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${JSON.stringify(path)}\ngdf = gpd.read_file(dataset_path)`,
+      code: `dataset_path = ${expr}\ngdf = gpd.read_file(dataset_path)`,
       returnVariable: "gdf",
     };
   }
@@ -111,7 +147,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
       language: "python",
       imports: ["import json"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${JSON.stringify(path)}\nwith open(dataset_path) as f:\n    data = json.load(f)`,
+      code: `dataset_path = ${expr}\nwith open(dataset_path) as f:\n    data = json.load(f)`,
       returnVariable: "data",
     };
   }
@@ -120,7 +156,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
       language: "python",
       imports: ["import rasterio"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${JSON.stringify(path)}\nsrc = rasterio.open(dataset_path)`,
+      code: `dataset_path = ${expr}\nsrc = rasterio.open(dataset_path)`,
       returnVariable: "src",
     };
   }
@@ -139,7 +175,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
         "import geopandas as gpd",
       ],
       pathVariable: "bundle_path",
-      code: bundleLoaderCode(path),
+      code: bundleLoaderCode(expr),
       returnVariable: "bundle",
     };
   }
@@ -153,7 +189,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
       language: "python",
       imports: ["import pandas as pd", "import geopandas as gpd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${JSON.stringify(path)}\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)`,
+      code: `dataset_path = ${expr}\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)`,
       returnVariable: "df",
     };
   }
@@ -161,14 +197,14 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
     language: "python",
     imports: [],
     pathVariable: "dataset_path",
-    code: `dataset_path = ${JSON.stringify(path)}`,
+    code: `dataset_path = ${expr}`,
     returnVariable: null,
   };
 }
 
 export function getDatasetLoaderSnippet(dataset: DatasetLike): DatasetLoaderSnippet {
   if (dataset.loaderSnippet) return dataset.loaderSnippet;
-  return snippetForFormat(dataset.format, datasetPath(dataset));
+  return snippetForFormat(dataset.format, datasetPath(dataset), idOf(dataset));
 }
 
 export function buildDatasetLoaderCode(dataset: DatasetLike): string {
@@ -194,7 +230,19 @@ export function mergeDatasetLoaderCode(currentCode: string | undefined, dataset:
     if (snippet.returnVariable) parts.push(`return ${snippet.returnVariable}`);
     return parts.filter(Boolean).join("\n");
   }
-  if (dataset.path && trimmed.includes(dataset.path)) {
+  // Already-applied check: id-form loader calls (per-layer for OSM groups), or
+  // the legacy literal path for nodes generated before id-based resolution.
+  const groupLayers =
+    "groupLayers" in dataset && dataset.groupLayers && dataset.groupLayers.length > 0
+      ? dataset.groupLayers
+      : null;
+  const idCalls = (groupLayers ? groupLayers.map((layer) => safeDatasetId(layer.id)) : [safeDatasetId(idOf(dataset))])
+    .filter((id): id is string => Boolean(id))
+    .map((id) => `curio_dataset_path(${JSON.stringify(id)})`);
+  const alreadyApplied =
+    (idCalls.length > 0 && idCalls.every((call) => trimmed.includes(call))) ||
+    (dataset.path ? trimmed.includes(dataset.path) : false);
+  if (alreadyApplied) {
     return trimmed;
   }
 

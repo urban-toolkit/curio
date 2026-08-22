@@ -158,13 +158,41 @@ def _expand_outputs_wrapper(input_data, session_id=None):
     return input_data
 
 
-def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
+def _make_curio_dataset_path(dataset_paths):
+    """Resolver injected into user code as ``curio_dataset_path(dataset_id)``.
+
+    Generated Data Loading nodes reference datasets by id instead of a baked-in
+    absolute path; the backend resolves the ids it finds in the code and passes
+    the mapping here. Missing ids raise with an actionable message rather than
+    surfacing a broken foreign path from another machine or user.
+    """
+    mapping = dict(dataset_paths or {})
+
+    def curio_dataset_path(dataset_id):
+        path = mapping.get(str(dataset_id))
+        if not path:
+            raise RuntimeError(
+                f"Dataset '{dataset_id}' is not available in this environment — "
+                "install it from the Data Catalog drawer (or re-import the "
+                "source file), then run this node again."
+            )
+        return path
+
+    return curio_dataset_path
+
+
+def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
+                 dataset_paths=None):
     """
     Execute user code in-process using pre-loaded library globals.
 
     session_id: Bearer token of the requesting session. Artifacts are stored and
                 loaded scoped to this session so concurrent sessions never share
                 execution state — even if they share the same user account.
+
+    dataset_paths: {datasetId: absolutePath} for the code's
+                curio_dataset_path("<id>") calls, resolved (auth-scoped and
+                containment-checked) by the backend.
 
     Returns {'stdout': [str, ...], 'stderr': str, 'output': {'path': str, 'dataType': str}}
     """
@@ -199,6 +227,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
                 # Fresh namespace per call — prevents name leakage between executions.
                 ns = dict(_globals_cache)
+                ns['curio_dataset_path'] = _make_curio_dataset_path(dataset_paths)
                 exec(f"def userCode(arg):\n{code}", ns)
 
                 # Load input from DuckDB.

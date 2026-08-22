@@ -140,7 +140,9 @@ class CatalogMutations:
         item = item_from_manifest(manifest, result.dest, origin="imported")
         item["path"] = data_path.as_posix()
         # Keep loaderSnippet in sync with the resolved path.
-        item["loaderSnippet"] = loader_snippet(item["format"], data_path.as_posix())
+        item["loaderSnippet"] = loader_snippet(
+            item["format"], data_path.as_posix(), dataset_id=item.get("id")
+        )
         item["sizeBytes"] = data_path.stat().st_size
         if row_count is not None:
             item["rowCount"] = row_count

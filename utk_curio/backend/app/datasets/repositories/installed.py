@@ -68,7 +68,9 @@ class InstalledDatasetRepository:
                     )
                     item["path"] = data_path.as_posix()
                     # Keep loaderSnippet in sync with the resolved path.
-                    item["loaderSnippet"] = loader_snippet(item["format"], data_path.as_posix())
+                    item["loaderSnippet"] = loader_snippet(
+                        item["format"], data_path.as_posix(), dataset_id=item.get("id")
+                    )
                     item["sizeBytes"] = data_path.stat().st_size
                     item["installed"] = True
                     # Persisted install time from the project ref — distinct from

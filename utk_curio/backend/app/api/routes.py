@@ -1,4 +1,5 @@
 from flask import request, abort, jsonify, g, Response, current_app
+import re
 import requests
 import json
 
@@ -374,6 +375,47 @@ def get_file_preview():
         return f'Error loading preview: {str(e)}', 500
 
 
+# Literal ``curio_dataset_path("<id>")`` calls in node code. The id charset must
+# stay in sync with _SAFE_DATASET_ID_RE in datasets/domain/catalog_item.py (the
+# backend snippet generator) and the frontend datasetLoaderSnippets.ts — the
+# generators only ever emit ids this scan can find. Single or double quotes are
+# accepted because users edit the generated code.
+_DATASET_PATH_CALL_RE = re.compile(
+    r"""curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+)
+# Bound the per-execution resolution work against pathological/generated code.
+MAX_EXEC_DATASET_IDS = 32
+
+
+def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
+    """Resolve the dataset ids referenced by *code* to absolute file paths.
+
+    Best-effort and fail-open: an empty mapping never blocks execution — the
+    sandbox's injected ``curio_dataset_path`` raises a clear per-id error for
+    anything missing. Only ids appearing as literal calls are found; a
+    dynamically built id simply won't be in the mapping.
+    """
+    if "curio_dataset_path" not in code:
+        return {}
+    ids: list[str] = []
+    for match in _DATASET_PATH_CALL_RE.finditer(code):
+        dataset_id = match.group(2)
+        if dataset_id not in ids:
+            ids.append(dataset_id)
+        if len(ids) >= MAX_EXEC_DATASET_IDS:
+            break
+    if not ids:
+        return {}
+    try:
+        from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+        service = DatasetCatalogService(getattr(g, "user", None))
+        return service.resolve_execution_paths(ids, dataflow_id=dataflow_id)
+    except Exception as e:  # noqa: BLE001 — resolution must never fail the execution
+        print(f"[processPythonCode] dataset path resolution failed: {e}", flush=True)
+        return {}
+
+
 @bp.route('/processPythonCode', methods=['POST'])
 @require_auth
 def process_python_code():
@@ -392,6 +434,9 @@ def process_python_code():
         save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
 
     session_id = get_current_token()
+    dataset_paths = _resolve_exec_dataset_paths(
+        code, request.json.get("dataflowId") or None,
+    )
     t1 = _time.perf_counter()
     response = _sandbox_call(
         'post', '/exec',
@@ -403,6 +448,7 @@ def process_python_code():
             "dataType": input['dataType'],
             "session_id": session_id,
             "save_dataset": bool(save_output_dataset),
+            "dataset_paths": dataset_paths,
         }),
         headers={"Content-Type": "application/json"},
     )

@@ -230,7 +230,9 @@ class CatalogListing:
                 path_val = item.get("path") or ""
                 contained = bool(path_val) and self._paths._contained_path(path_val) is not None
                 if path_val and contained and Path(path_val).is_file():
-                    item["loaderSnippet"] = loader_snippet(item["format"], path_val)
+                    item["loaderSnippet"] = loader_snippet(
+                        item["format"], path_val, dataset_id=item.get("id")
+                    )
                     continue
                 resolved = self._paths._resolve_computed_output_path(item)
                 if resolved:
@@ -241,7 +243,9 @@ class CatalogListing:
                     if resolved_ext in SUPPORTED_SUFFIXES:
                         item["format"] = SUPPORTED_SUFFIXES[resolved_ext]
                     item["path"] = resolved
-                    item["loaderSnippet"] = loader_snippet(item["format"], resolved)
+                    item["loaderSnippet"] = loader_snippet(
+                        item["format"], resolved, dataset_id=item.get("id")
+                    )
                 elif is_outputs_uri:
                     # The URI looks like an output but it didn't resolve to a
                     # real file in the shared dir. Drop a stale relative path,
@@ -254,7 +258,12 @@ class CatalogListing:
                     abs_uncontained = bool(path_val) and Path(path_val).is_absolute() and not contained
                     if not path_val or not Path(path_val).is_absolute() or not contained:
                         item["path"] = None
-                        item["loaderSnippet"] = loader_snippet(item["format"], None)
+                        # Emit the id call even with no resolvable path: the id
+                        # may still resolve at execution time (e.g. the file
+                        # reappears or another tier can serve it).
+                        item["loaderSnippet"] = loader_snippet(
+                            item["format"], None, dataset_id=item.get("id")
+                        )
                     if abs_uncontained:
                         # The same out-of-root absolute path is embedded verbatim
                         # in the ``curio://outputs/<filename>`` URI (the filename
@@ -441,6 +450,41 @@ class CatalogListing:
                     "dataflowName": project.name,
                 }
         return None
+
+    def resolve_execution_paths(
+        self, dataset_ids: list[str], *, dataflow_id: str | None = None
+    ) -> dict[str, str]:
+        """Resolve dataset ids to absolute data-file paths for code execution.
+
+        Powers the ``curio_dataset_path("<id>")`` calls in generated loader
+        nodes: ``/processPythonCode`` scans the code for id literals, resolves
+        them here, and forwards the mapping to the sandbox. One catalog listing
+        pass serves every id, and each path goes through the same
+        containment-guarded ``_resolve_item_path`` used by preview/download, so
+        the mapping can only ever contain paths the authenticated user may
+        read. Ids that don't resolve are omitted — the sandbox raises a clear
+        per-id error for those at call time.
+        """
+        if not dataset_ids:
+            return {}
+        result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
+        by_id = {item["id"]: item for item in result["items"] if item.get("id")}
+        resolved: dict[str, str] = {}
+        for dataset_id in dataset_ids:
+            item = by_id.get(dataset_id)
+            if item is None:
+                continue
+            try:
+                path = self._paths._resolve_item_path(item)
+            except Exception:  # noqa: BLE001 — one bad item must not drop the rest
+                logger.warning(
+                    "Could not resolve execution path for dataset %s", dataset_id,
+                    exc_info=True,
+                )
+                continue
+            if path and Path(path).is_file():
+                resolved[dataset_id] = path
+        return resolved
 
     def preview(
         self,

@@ -277,12 +277,24 @@ def exec():
     save_dataset = request.json.get('save_dataset', True)
     if isinstance(save_dataset, str):
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
+    # {datasetId: absolutePath} resolved by the backend for the code's
+    # curio_dataset_path("<id>") calls. Defensive re-shaping mirrors the
+    # backend's MAX_EXEC_DATASET_IDS cap.
+    dataset_paths = request.json.get('dataset_paths') or {}
+    if not isinstance(dataset_paths, dict):
+        dataset_paths = {}
+    dataset_paths = {
+        str(key): str(value)
+        for key, value in list(dataset_paths.items())[:32]
+        if value
+    }
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
     result = execute_code(
         code, str(file_path), str(node_type), str(data_type), launch_dir,
         session_id=session_id, save_dataset=bool(save_dataset),
+        dataset_paths=dataset_paths,
     )
 
     print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
