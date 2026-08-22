@@ -5691,6 +5691,21 @@ _BUILD_REQUEST_CONTRACT: dict = {
         "a ```json fence), nothing after it. Do NOT invent other keys — "
         "there is no 'package', 'behaviors', or 'behaviorKey' key."
     ),
+    # memo dev/94: the SECOND legal reply. "Reuse first" was previously a rule
+    # with no reachable outcome on this path — the delegate had no shape in
+    # which to say "one of these already does it", so the only reply the
+    # runtime recognised was a draft, and authoring was the only way to answer
+    # at all. Teaching the shape is the A8 lesson again: nobody emits a
+    # protocol they were never shown.
+    "insteadOfAuthoring": (
+        "When one of inputs.existingPackages already satisfies the need, "
+        "author NOTHING and reply with ONE JSON object of exactly this shape "
+        "instead of a draft: {\"reuseExisting\": {\"dirName\": \"<its "
+        "dirName>\", \"reason\": \"<one line: what it already does>\"}}. That "
+        "is a complete, successful answer — the caller acts on it (enlisting "
+        "the package if it is not yet in the project). Prefer extending an "
+        "existing package (mode 'extend') over creating a near-duplicate."
+    ),
     "shape": {
         "mode": "create | extend",
         "baseDigest": "<64-hex digest of the installed target — extend only>",
@@ -5775,6 +5790,77 @@ _BUILD_REQUEST_CONTRACT: dict = {
         "Follow-up B, never smuggled code",
     ],
 }
+
+
+def _extract_reuse_finding(child_text: str) -> dict | None:
+    """The child's "one of these already does it" answer, or None (dev/94).
+
+    Deterministic and schema-keyed, never a heuristic over prose: the contract
+    teaches exactly ``{"reuseExisting": {"dirName": …, "reason": …}}``, and
+    only that shape counts. Guessing at intent from free text would put model
+    wording in charge of control flow, which is precisely the mistake the
+    typed-tail protocol exists to avoid.
+    """
+    import json as _json
+    import re as _re2
+
+    if not isinstance(child_text, str) or not child_text.strip():
+        return None
+    candidates: list[str] = []
+    stripped = child_text.strip()
+    if stripped.startswith("{"):
+        candidates.append(stripped)
+    for match in _re2.finditer(
+            r"```(?:json|curio\.v1)?\s*\n(.*?)```", child_text, _re2.DOTALL):
+        candidates.append(match.group(1).strip())
+    for candidate in candidates:
+        try:
+            payload = _json.loads(candidate)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        finding = payload.get("reuseExisting")
+        if not isinstance(finding, dict):
+            continue
+        dir_name = finding.get("dirName")
+        if isinstance(dir_name, str) and dir_name.strip():
+            reason = finding.get("reason")
+            return {
+                "dirName": dir_name.strip()[:120],
+                "reason": reason.strip()[:300] if isinstance(reason, str) else "",
+            }
+    return None
+
+
+def _reuse_finding_text(user_key: str, project_id: str, finding: dict) -> str:
+    """What the parent is told when the delegate declines to author.
+
+    Names the package and, load-bearing for the parent's next move, whether
+    this project has it: an enlisted package can be used straight away, a
+    store-only one needs the reviewed ``package.install`` first (dev/93 D4's
+    middle rung). Unknown enlistment state simply omits the hint.
+    """
+    dir_name = finding["dirName"]
+    reason = f" — {finding['reason']}" if finding.get("reason") else ""
+    hint = ""
+    try:
+        from utk_curio.backend.app.packages import services as packages_services
+
+        enlisted = dir_name in packages_services.get_project_lockfile(user_key, project_id)
+        hint = (
+            " It is already in this project: use it directly."
+            if enlisted else
+            " It is installed but NOT in this project: propose package.install "
+            f"for {dir_name} first, then use its template."
+        )
+    except Exception:  # noqa: BLE001 — an unknown lockfile just omits the hint
+        pass
+    return (
+        f"the authoring delegate reports that {dir_name} already does this{reason}. "
+        f"Nothing was authored, which is the correct outcome.{hint} Do NOT ask for "
+        "a new package that duplicates it."
+    )
 
 
 def _extract_draft_params(child_text: str) -> dict | None:
@@ -5985,6 +6071,15 @@ def _mint_package_draft_from_delegate(
     rounds = 1 + (_DRAFT_CORRECTION_ROUNDS if redelegate is not None else 0)
 
     for round_index in range(rounds):
+        # dev/94: "one of these already does it" is a COMPLETE answer, checked
+        # before the draft parse — the doctrine is reuse-first, so a reply that
+        # names a reuse target is deliberately declining to author and must not
+        # be read as a failed draft. It spends NO correction rounds (nothing
+        # failed) and reports "ok": dev/93 D5's rule is that a run producing
+        # NOTHING must not claim success, and this run produced the answer.
+        finding = _extract_reuse_finding(attempt_text)
+        if finding is not None:
+            return None, _reuse_finding_text(user_key, project_id, finding), "ok"
         params, parse_error = _extract_draft_params_verbose(attempt_text)
         if params is not None:
             draft_id = (params.get("manifest") or {}).get("id")

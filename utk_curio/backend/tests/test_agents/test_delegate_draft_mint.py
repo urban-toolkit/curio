@@ -908,3 +908,153 @@ class TestAuthoringDelegateReuseEvidence:
             p["type"] != "proposal"
             for p in _run(client, token, pid, att_id).get_json()["content"]
         )
+
+
+class TestReuseInsteadOfAuthoring:
+    """dev/94 commit 2 — "one of these already does it" is a COMPLETE answer.
+
+    Commit 1 gave the delegate the facts; without this, saying so was still a
+    dead end: the only reply the runtime recognised was a draft, so under
+    dev/93 D5's honest-status rule a correct "you already have this" minted
+    nothing and therefore reported `failed` — punishing exactly the behaviour
+    the instruction asks for. The doctrine now has a reachable outcome.
+    """
+
+    def _reuse_reply(self, dir_name="curio.notes@1", reason="renders colored notes"):
+        return json.dumps({"reuseExisting": {"dirName": dir_name, "reason": reason}})
+
+    def test_a_reuse_finding_mints_nothing_and_reports_success(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(),
+            self._reuse_reply(),
+            "You already have a notes package — I can enlist it.",
+        ])
+        parts = _run(client, token, pid, att_id).get_json()["content"]
+
+        assert all(p["type"] != "proposal" for p in parts), "nothing may be authored"
+        card = next(p for p in parts if p["type"] == "delegation")
+        # Declining to author is a SUCCESS for the doctrine, not a failed draft.
+        assert card["status"] == "ok"
+        assert "curio.notes@1" in card["summary"]
+
+    def test_the_parent_is_told_whether_it_must_enlist_first(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        """The parent's next move differs: an enlisted package is usable now, a
+        store-only one needs the reviewed package.install first (dev/93 D4's
+        middle rung). The hand-back must say which."""
+        from utk_curio.backend.app.packages import services as packages_services
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(), self._reuse_reply(), "Noted.",
+        ])
+        _run(client, token, pid, att_id)
+        handed_back = calls[-1][-1]["content"]
+        assert "installed but NOT in this project" in handed_back
+        assert "package.install" in handed_back
+        assert "duplicate" in handed_back
+
+        # Same finding, but the package IS enlisted → use it directly.
+        packages_services.install_to_project(key, pid, "curio.notes@1")
+        att2, calls2 = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(), self._reuse_reply(), "Noted.",
+        ])
+        _run(client, token, pid, att2)
+        assert "already in this project" in calls2[-1][-1]["content"]
+
+    def test_a_reuse_finding_spends_no_correction_rounds(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        """Nothing failed, so the dev/93 commit-5 loop must not re-run the
+        delegate trying to 'fix' a correct answer."""
+        from utk_curio.backend.app.agents import services as services_mod
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+
+        calls = {"n": 0}
+
+        def _never(extra):
+            calls["n"] += 1
+            return "ok", "should not be called"
+
+        part, text, outcome = services_mod._mint_package_draft_from_delegate(
+            key, pid, {"granted": ["package.draft.apply"]}, self._reuse_reply(),
+            delegate_inputs={}, redelegate=_never,
+        )
+        assert part is None and outcome == "ok"
+        assert calls["n"] == 0, "a correct answer must not be 'corrected'"
+
+    def test_a_draft_still_wins_when_no_reuse_is_claimed(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        """The ordinary authoring path is untouched."""
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(),
+            json.dumps({"packageDraft": _draft()}),
+            "Proposed — review it above.",
+        ])
+        parts = _run(client, token, pid, att_id).get_json()["content"]
+        assert any(p["type"] == "proposal" for p in parts)
+
+    def test_a_malformed_reuse_claim_is_not_a_reuse_finding(self):
+        """Schema-keyed, never a heuristic over prose: model wording must not
+        drive control flow."""
+        from utk_curio.backend.app.agents.services import _extract_reuse_finding
+
+        assert _extract_reuse_finding(
+            json.dumps({"reuseExisting": {"dirName": "curio.notes@1"}})
+        ) == {"dirName": "curio.notes@1", "reason": ""}
+        # Prose that merely mentions reuse is NOT a finding.
+        assert _extract_reuse_finding(
+            "curio.notes@1 already does this, so I authored nothing."
+        ) is None
+        assert _extract_reuse_finding(json.dumps({"reuseExisting": {}})) is None
+        assert _extract_reuse_finding(json.dumps({"reuseExisting": "curio.notes@1"})) is None
+        assert _extract_reuse_finding("") is None
+        # A fenced finding is accepted, like every other typed reply shape.
+        fenced = "Here you go:\n```json\n" + json.dumps(
+            {"reuseExisting": {"dirName": "curio.notes@1", "reason": "notes"}}
+        ) + "\n```"
+        assert _extract_reuse_finding(fenced)["dirName"] == "curio.notes@1"
+
+
+def test_package_builder_instruction_is_executable_on_both_paths():
+    """A prompt-marker test (the repo's dev/91 pattern): the reuse-first rule
+    must name where the evidence comes from on BOTH paths, or it reverts to
+    describing a tool-only workflow the delegate cannot run."""
+    from utk_curio.backend.app.agents import builtin
+
+    text = builtin.read_prompt_text("agent.package-builder@1.0.0", "instruction")
+    assert text
+    assert "Reuse first" in text
+    # Both evidence paths, named.
+    assert "packages.catalog" in text
+    assert "existingPackages" in text
+    # The reachable outcome and the preferred alternative to duplicating.
+    assert "insteadOfAuthoring" in text
+    assert 'mode "extend"' in text
+    assert "never a duplicate package" in text
+
+
+def test_build_request_contract_teaches_the_reuse_reply():
+    """The A8 lesson: nobody emits a protocol they were never shown."""
+    from utk_curio.backend.app.agents.services import _BUILD_REQUEST_CONTRACT
+
+    taught = json.dumps(_BUILD_REQUEST_CONTRACT)
+    assert "insteadOfAuthoring" in _BUILD_REQUEST_CONTRACT
+    assert "reuseExisting" in taught
+    assert "dirName" in taught
