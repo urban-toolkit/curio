@@ -148,20 +148,24 @@ Here is a description of the available types of node:
 - DATA_EXPORT: used to save data. Process data.
 - DATA_TRANSFORMATION: used to transform or clean data. Process data.
 - COMPUTATION_ANALYSIS: used to generic computations over the data. Process data.
+- DATA_SUMMARY: computes descriptive statistics and schema information (shape, dtypes, missing values, describe) for a DataFrame.
+- JS_COMPUTATION: Run JavaScript via Node.js
 - VIS_VEGA: used to render vega-lite visualizations. Visualize data.
-- AUTK_MAP: used to render Autark urban 3D map layers (autk-map). Visualize geospatial data.
+- VIS_SIMPLE: displays incoming data automatically. Renders a table for DataFrames/GeoDataFrames, an image grid for DataFrames with an "image_content" column (Base64 images), or passes through other values. Users can click on images to interact with them; the interaction will be propagated to DATA_POOL if connected with an interaction edge. DO NOT CONNECT A MERGE_FLOW DIRECTLY TO THE INPUT OF VIS_VEGA, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
+- AUTK_GRAMMAR: Used to render Autark urban 3D map layers, write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec. Runs entirely in the browser via WebGPU + DuckDB-WASM.
 - MERGE_FLOW: used to merge two or more flows into a single flow. When nodes are connected into a MERGE_FLOW it will output it as a tuple. Edges that have a MERGE_FLOW node as its target should include "in_0", "in_1", "in_2", "in_3", "in_4" at the end of their id depending on the connection socket the edge is connected to.
 - DATA_POOL: used as a data repository for multiple visualizations. Is represented to the user as a table. Changes made to DATA_POOL are seen by all connected boxes. Useful to link interaction between visualizations.
-- VIS_SIMPLE: displays incoming data automatically. Renders a table for DataFrames/GeoDataFrames, an image grid for DataFrames with an "image_content" column (Base64 images), or passes through other values. Users can click on images to interact with them; the interaction will be propagated to DATA_POOL if connected with an interaction edge. DO NOT CONNECT A MERGE_FLOW DIRECTLY TO THE INPUT OF VIS_VEGA, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
 
-Nodes are uncontrollable, controllable through python code or controllable through grammar:
-
+Nodes are uncontrollable, controllable through python code, controllable through JavaScript code, or controllable through grammar:
 - DATA_LOADING: controllable through python code.
 - DATA_EXPORT: controllable through python code.
 - DATA_TRANSFORMATION: controllable through python code.
 - COMPUTATION_ANALYSIS: controllable through python code.
+- DATA_SUMMARY: controllable through python code
+- JS_COMPUTATION: controllable through JavaScript code
 - VIS_VEGA: controllable through grammar.
-- AUTK_MAP: controllable through JavaScript code.
+- VIS_SIMPLE: uncontrollable
+- AUTK_GRAMMAR: controllable through grammer
 - MERGE_FLOW: uncontrollable.
 - DATA_POOL: uncontrollable.
 
@@ -213,7 +217,7 @@ When generating the grammar for Vega-Lite do not include the data field. It will
   }
 }
 
-Autark is the visualization framework used by Curio for 2D and 3D urban map rendering. AUTK_MAP nodes receive a GeoDataFrame from the previous node (or a tuple of GeoDataFrames). The geometry column becomes the spatial presentation; any other column can be used to color the geometry (more than one column is allowed). An example of a node sending data to AUTK_MAP:
+Autark is the visualization framework used by Curio for 2D and 3D urban map rendering. AUTK_GRAMMAR nodes receive a GeoDataFrame from the previous node (or a tuple of GeoDataFrames). The geometry column becomes the spatial presentation; any other column can be used to color the geometry (more than one column is allowed). An example of a node sending data to AUTK_GRAMMAR:
 
 ```python
 import geopandas as gpd
@@ -232,7 +236,7 @@ filtered_gdf.metadata = {
 return filtered_gdf
 ```
 
-Notice that the GeoDataFrame needs to be annotated with metadata = {'name': 'layer_name'}. That is how AUTK_MAP differentiates multiple GeoDataFrames. Additionally the GeoDataFrame needs to use CRS 3395.
+Notice that the GeoDataFrame needs to be annotated with metadata = {'name': 'layer_name'}. That is how AUTK_GRAMMAR differentiates multiple GeoDataFrames. Additionally the GeoDataFrame needs to use CRS 3395.
 
 Visualization nodes 
 
@@ -244,8 +248,10 @@ Input supported:
 - DATA_EXPORT: DATAFRAME, GEODATAFRAME, RASTER
 - DATA_TRANSFORMATION: DATAFRAME, GEODATAFRAME, RASTER
 - COMPUTATION_ANALYSIS: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
+- DATA_SUMMARY: DATAFRAME, GEODATAFRAME
+- JS_COMPUTATION: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - VIS_VEGA: DATAFRAME
-- AUTK_MAP: GEODATAFRAME
+- AUTK_GRAMMAR: LIST, JSON, GEODATAFRAME, DATAFRAME
 - VIS_SIMPLE: DATAFRAME, GEODATAFRAME, VALUE
 - MERGE_FLOW: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - DATA_POOL: DATAFRAME, GEODATAFRAME
@@ -256,8 +262,10 @@ Output supported:
 - DATA_EXPORT: no output supported
 - DATA_TRANSFORMATION: DATAFRAME, GEODATAFRAME, RASTER
 - COMPUTATION_ANALYSIS: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
+- DATA_SUMMARY: JSON
+- JS_COMPUTATION: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - VIS_VEGA: DATAFRAME
-- AUTK_MAP: GEODATAFRAME
+- AUTK_GRAMMAR: LIST, JSON, GEODATAFRAME, DATAFRAME
 - VIS_SIMPLE: DATAFRAME, GEODATAFRAME, VALUE
 - MERGE_FLOW: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - DATA_POOL: DATAFRAME, GEODATAFRAME
@@ -269,8 +277,10 @@ Number of inputs possible for each node (it is not possible to connect multiple 
 - DATA_EXPORT: 1
 - DATA_TRANSFORMATION: [1,2]
 - COMPUTATION_ANALYSIS: [1,n]
+- DATA_SUMMARY: 1
+- JS_COMPUTATION: [0,1]
 - VIS_VEGA: 1
-- AUTK_MAP: [1,n]
+- AUTK_GRAMMAR: [0,1]
 - VIS_SIMPLE: 1
 - DATA_POOL: 1
 - MERGE_FLOW: [2,4]
@@ -280,8 +290,10 @@ Number of outputs possible for each node (if you want to output more than one da
 - DATA_LOADING: [1,n]
 - DATA_TRANSFORMATION: [1,2]
 - COMPUTATION_ANALYSIS: [1,n]
+- DATA_SUMMARY: 1
+- JS_COMPUTATION: [0,1]
 - VIS_VEGA: 1
-- AUTK_MAP: [1,n]
+- AUTK_GRAMMAR: [0,1]
 - VIS_SIMPLE: 1
 - DATA_POOL: 1
 
@@ -317,7 +329,7 @@ Visualizations can be connected to DATA_POOL with an edge of type: "Interaction"
 Nodes that can have interaction connection edge:
 
 - VIS_VEGA
-- AUTK_MAP
+- AUTK_GRAMMAR
 - VIS_SIMPLE
 - DATA_POOL
 

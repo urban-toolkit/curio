@@ -1243,44 +1243,45 @@ def list_libraries_route():
 @packages_bp.route("/libraries", methods=["POST"])
 @require_auth
 def add_library_route():
-    """Append a standalone library to the user's list and pip-install it.
-
-    Body: ``{"kind": "python"|"js", "spec": "<name><version>"}`` where
-    ``spec`` is a pip-install / npm-install argv entry (``numpy``,
-    ``scikit-learn==1.4.0``, ``lodash@^4.17``).
+    """Append one or more standalone libraries to the user's list and pip-install them.
+    Body: ``{"kind": "python"|"js", "specs": ["<name><version>", ...]}``
+    (or the legacy singular ``"spec": "<name><version>"`` for a single lib)
+    where each spec is a pip-install / npm-install argv entry
+    (``numpy``, ``scikit-learn==1.4.0``, ``lodash@^4.17``).
     """
     from utk_curio.backend.app.packages import libraries as libs
     from utk_curio.backend.app.packages.pip_runner import (
         PipInstallError, install_python_deps,
     )
-
     body = request.get_json(silent=True) or {}
     kind = body.get("kind")
-    spec = body.get("spec")
-    if not isinstance(spec, str) or not spec.strip():
-        return _error("body must include non-empty 'spec'")
+    # Accept either the new "specs" list or the legacy singular "spec".
+    specs = body.get("specs")
+    if specs is None:
+        single = body.get("spec")
+        specs = [single] if isinstance(single, str) else None
+    if not isinstance(specs, list) or not specs:
+        return _error("body must include non-empty 'specs' (list of strings)")
+    if not all(isinstance(s, str) and s.strip() for s in specs):
+        return _error("'specs' must be a list of non-empty strings")
     if kind not in ("python", "js"):
         return _error("kind must be 'python' or 'js'")
     if kind == "js":
-        # No JS install runner yet — the modal will still accept the
-        # entry as a declaration, but won't actually `npm install`. This
-        # keeps the data path consistent for a future js_runner module.
         return _error("JS library install is not yet supported; declare in a node package's manifest instead", 501)
-
     user_key = _user_dir_key(g.user)
-    # Spec parsing: split "<name><version>" → {name: version}. We let the
-    # pip_runner re-canonicalize the version spec.
-    name, version = _split_lib_spec(spec)
+    # Parse every spec into {name: version}; pip_runner re-canonicalizes each version.
+    deps: dict[str, str] = {}
+    for spec in specs:
+        name, version = _split_lib_spec(spec)
+        deps[name] = version
     try:
-        report = install_python_deps({name: version})
+        report = install_python_deps(deps)
     except PipInstallError as exc:
         return _error(f"pip install failed: {exc}", 502)
-    libs.add_library(user_key, kind, spec)
+    for spec in specs:
+        libs.add_library(user_key, kind, spec)
     return jsonify({
         "standalone": libs.list_standalone(user_key),
-        # ``skipped`` is non-empty when the lib was already importable —
-        # the frontend reads this to show "Already installed" instead of
-        # "Installed" so the user knows nothing was actually downloaded.
         "installed": list(report.installed),
         "skipped": list(report.skipped),
     }), 201

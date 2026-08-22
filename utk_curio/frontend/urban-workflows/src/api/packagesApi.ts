@@ -535,6 +535,17 @@ export const packagesApi = {
     });
   },
 
+  addMultipleLibraries(kind: "python" | "js", specs: string[]): Promise<{
+    standalone: { python: string[]; js: string[] };
+    installed: string[];
+    skipped: string[];
+  }> {
+    return apiFetch("/api/packages/libraries", {
+      method: "POST",
+      body: JSON.stringify({ kind, specs }),
+    });
+  },
+
   /** Drop a standalone library; backend pip-uninstalls only if no
    *  package still declares it. */
   removeLibrary(kind: "python" | "js", spec: string): Promise<{ standalone: { python: string[]; js: string[] } }> {

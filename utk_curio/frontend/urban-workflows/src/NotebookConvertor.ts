@@ -1,6 +1,13 @@
 import { v4 as uuid } from "uuid";
 import { NodeType } from "./constants";
+import { getToken } from "./utils/authApi";
 
+// ── Set up for LLM features ───────────────────────────────────────────
+
+const authHeader = (): Record<string, string> => {
+  const token = getToken();
+  return token ? { "Authorization": `Bearer ${token}` } : {};
+};
 // ── Trill types ──────────────────────────────────────────────────────────────
 
 interface TrillNode {
@@ -52,9 +59,19 @@ export interface Notebook {
 }
 
 // ── Node type inference ──────────────────────────────────────────────────────
+export interface Cell {
+  index: number
+  code: string
+}
 
 const DATA_LOADING_PATTERN =
   /\bpd\.read_\w+\s*\(|\bgpd\.read_\w+\s*\(|\bgeopandas\.read_\w+\s*\(|\bopen\s*\(|\brequests\.(get|post|put|delete|patch)\s*\(|\bsqlite3\.connect\s*\(|\bpsycopg2\.connect\s*\(|\bcreate_engine\s*\(|\bboto3\b/;
+
+const DATA_EXPORT_PATTERN =
+  /\bto_csv\s*\(|\bto_excel\s*\(|\bto_json\s*\(|\bto_parquet\s*\(|\bto_pickle\s*\(|\bto_sql\s*\(|\bto_feather\s*\(|\.to_file\s*\(|\bopen\s*\([^)]*['"]\s*[wa]b?\s*['"]|\bjson\.dump\s*\(|\bpickle\.dump\s*\(|\bnp\.save\w*\s*\(|\bplt\.savefig\s*\(|\bfig\.savefig\s*\(|\bfig\.write_\w+\s*\(|\.upload_file\s*\(|\.upload_fileobj\s*\(|\.put_object\s*\(/;
+
+const MERGE_FLOW_PATTERN = 
+  /^gqCoduV9YG0fYdjdPXmWdZAhSKJ5o6uQ$/;
 
 function isVegaLiteJson(text: string): boolean {
   try {
@@ -69,35 +86,168 @@ function isVegaLiteJson(text: string): boolean {
   return false;
 }
 
-function inferNodeType(code: string): NodeType {
-  if (DATA_LOADING_PATTERN.test(code)) return NodeType.DATA_LOADING;
-  if (isVegaLiteJson(code)) return NodeType.VIS_VEGA;
-  return NodeType.COMPUTATION_ANALYSIS;
+// Used to check if the LLM returned valid types
+function _validate_node(llm_type: string): NodeType {
+  // Change in the future as deemed fit
+  const valid_types: Record<string, NodeType> = {
+    "DATA_LOADING": NodeType.DATA_LOADING,
+    "DATA_EXPORT": NodeType.DATA_EXPORT,
+    "DATA_TRANSFORMATION": NodeType.DATA_TRANSFORMATION,
+    "COMPUTATION_ANALYSIS": NodeType.COMPUTATION_ANALYSIS,
+    "VIS_VEGA": NodeType.VIS_VEGA,
+  }
+
+  if(!(llm_type in valid_types)){
+    return NodeType.COMPUTATION_ANALYSIS
+  }
+  return valid_types[llm_type]
+}
+
+// Used to identify all cells whose types must be evaluated by the LLM
+function _type_is_ambiguous(code: string){
+  if (MERGE_FLOW_PATTERN.test(code)) return false;
+  if (DATA_LOADING_PATTERN.test(code)) return false;
+  if (DATA_EXPORT_PATTERN.test(code)) return false;
+  if (isVegaLiteJson(code)) return false;
+  return true;
+}
+
+// Export for testing purposes
+// Confers the cell types with the LLM
+export async function getLlmTypes(
+  ambiguousCells: Cell[],
+  backendUrl: string,
+): Promise<Record<number, string>> {
+  const llmTypes: Record<number, string> = {};
+  type Analysis = {
+    index: number,
+    codeType: string
+  }
+
+  // If there aren't any ambigious cells
+  if (ambiguousCells.length < 1){
+    return llmTypes
+  }
+
+  try{
+    // <---------------------------- Backend API calls----------------------------------------------------------------------------------------->
+    let message: any = {preamble: "default_preamble", prompt: "jupyter_notebook_prompt", text: JSON.stringify({ cells: ambiguousCells })};
+    const response_usage = await fetch(`${backendUrl}/llm/check`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeader(),
+      },
+      body: JSON.stringify(message),
+    });
+
+    if (!response_usage.ok) {
+      const body = await response_usage.json().catch(() => ({}));
+      throw new Error(body.description || body.error || "LLM request failed.");
+    }
+
+    const result_usage = await response_usage.json();
+
+    if(result_usage.result != "yes")
+      await new Promise(resolve => setTimeout(resolve, (result_usage.result + 15) * 1000));
+
+    const response = await fetch(`${backendUrl}/llm/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeader(),
+        },
+        body: JSON.stringify(message),
+    });
+
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.description || body.error || "LLM request failed.");
+    }
+    // <---------------------------- End of API call ------------------------------------------------------------------------------>
+    const rawData = await response.json()
+    const data: Analysis[]  = JSON.parse(rawData.result);
+
+    data.forEach((cell) => {
+      llmTypes[cell.index] = _validate_node(cell.codeType);
+    });
+  }catch(err){
+    console.log(`LLM fetch error: ${err}`)
+    // No fallback, return an empty dictionary
+  }
+  return llmTypes
 }
 
 // ── Import: Notebook → Trill ─────────────────────────────────────────────────
+// Export meant for testing
+export type CellEdge = { 
+  source: number; 
+  target: number;
+  // We added parentVar
+  parent_var?: string
+};
 
-type CellEdge = { source: number; target: number };
-
-function wireCode(
+// Export meant for testing
+export function wireCode(
   code: string,
   cellIdx: number,
-  lastVars: (string | null)[],
+  cellEdges: CellEdge[],
   hasOutgoing: Set<number>,
   incomingSources: Map<number, number[]>,
+  spec_set: Set<number>
 ): string {
   let out = code;
   const sources = incomingSources.get(cellIdx) ?? [];
+
   if (sources.length === 1) {
-    const srcVar = lastVars[sources[0]] ?? "arg";
-    out = `${srcVar} = arg\n${out}`;
-  } else if (sources.length > 1) {
-    out = `# multiple inputs available via arg\n${out}`;
+    const incomingEdge = cellEdges.find(e => e.source === sources[0] && e.target === cellIdx)
+    const parentVar = incomingEdge?.parent_var
+    if (!parentVar) {
+      // No parent_var means sources[0] is a merge node, not a normal cell.
+      // Unpack each of the merge node's own inputs from arg[i].
+      const mergeNodeIdx = sources[0];
+      const mergeSources = incomingSources.get(mergeNodeIdx) ?? [];
+
+      const unpackLines = mergeSources.map((srcIdx, i) => {
+        const srcEdge = cellEdges.find(e => e.source === srcIdx && e.target === mergeNodeIdx);
+        const srcVar = srcEdge?.parent_var ?? "arg";
+        return `${srcVar} = arg[${i}]["${srcVar}"]`;
+      });
+
+      out = `${unpackLines.join("\n")}\n${out}`;
+    } else {
+      out = `${parentVar} = arg["${parentVar}"]\n${out}`;
+    }
+  } 
+
+// ------ The hazard area in question ------ //
+  const outgoingEdges = cellEdges.filter(e => e.source === cellIdx);
+  const distinctVars = Array.from(new Set(outgoingEdges.map(e => e.parent_var).filter(Boolean)));
+
+  const specVars = Array.from(new Set(
+    outgoingEdges.filter(e => spec_set.has(e.target)).map(e => e.parent_var).filter(Boolean)
+  ));
+
+  if (specVars.length > 0) {
+    if (distinctVars.length > 1) {
+      console.warn(
+        `wireCode: cell ${cellIdx} has multiple distinct vars (${distinctVars.join(", ")}) feeding different cells. ` +
+        `Only "${specVars[0]}" will be returned; the others will be dropped. ` +
+        `Because variables entering vega-lite nodes must be returned in a very specific way, dictionaries cannot be used to return multiple distinct variables`
+      );
+    }
+    // A var feeding a spec cell can't be dict-wrapped — must be a raw return.
+    out = `${out}\nreturn ${specVars[0]}`;
+  } else if (hasOutgoing.has(cellIdx) && distinctVars.length > 0) {
+    const MULTIPLE_PARENTS_PATTERN = /,/;
+    const dictBody = distinctVars.map(v =>
+      MULTIPLE_PARENTS_PATTERN.test(v!) ?
+        `"${v}": (${v})` : `"${v}": ${v}`
+    ).join(", ");
+    out = `${out}\nreturn {${dictBody}}`;
   }
-  const lv = lastVars[cellIdx];
-  if (hasOutgoing.has(cellIdx) && lv) {
-    out = `${out}\nreturn ${lv}`;
-  }
+  // ------ The hazard area in question ------ //
+
   return out;
 }
 
@@ -121,8 +271,9 @@ function computeLayout(
 
 export async function notebookToTrill(
   notebook: Record<string, unknown>,
-  backendUrl: string
+  backendUrl: string,
 ): Promise<TrillSpec> {
+  // ── Step 1: Extract code cells ──────────────────────────────────────────
   const rawCells = Array.isArray(notebook.cells) ? notebook.cells : [];
 
   const codeCells = rawCells
@@ -133,6 +284,7 @@ export async function notebookToTrill(
       return Array.isArray(source) ? source.join("") : String(source ?? "");
     });
 
+
   // Call backend for AST-based dependency analysis + Altair spec extraction
   type CellAnalysis = {
     defined: string[];
@@ -141,8 +293,10 @@ export async function notebookToTrill(
     altair_spec: Record<string, unknown> | null;
   };
   let cellEdges: CellEdge[] = [];
-  let lastVars: (string | null)[] = [];
+  let parentVars: (string | null)[] = [];
   let altairSpecs: (Record<string, unknown> | null)[] = [];
+
+  // ── Step 2: Ask the backend for real dependency analysis ────────────────
   try {
     const response = await fetch(`${backendUrl}/api/analyzeNotebook`, {
       method: "POST",
@@ -155,7 +309,8 @@ export async function notebookToTrill(
         analysis: CellAnalysis[];
       };
       cellEdges = data.edges ?? [];
-      lastVars = (data.analysis ?? []).map((a) => a.last_var ?? null);
+      // Adding parentVars
+      parentVars = (data.edges ?? []).map((a) => a.parent_var ?? null);
       altairSpecs = (data.analysis ?? []).map((a) => a.altair_spec ?? null);
     }
   } catch {
@@ -164,16 +319,31 @@ export async function notebookToTrill(
     );
   }
 
-  // Linear fallback when backend returned no edges
-  if (cellEdges.length === 0 && codeCells.length > 1) {
-    for (let i = 0; i < codeCells.length - 1; i++) {
-      cellEdges.push({ source: i, target: i + 1 });
-    }
-    // No lastVars available — skip wiring in this path
-    lastVars = [];
+  // ── Step 3: Build quick-lookup structures from the edge list ────────────
+  // ── Step 3a: Raw incoming-edge grouping (just for merge detection) ──────
+  const rawIncoming = new Map<number, number[]>();
+  for (const { source, target } of cellEdges) {
+    if (!rawIncoming.has(target)) rawIncoming.set(target, []);
+    rawIncoming.get(target)!.push(source);
   }
 
-  // Build wiring sets
+  // ── Step 3b: Insert merge-flow cells for nodes with multiple inputs ─────
+  for (const [target, sources] of rawIncoming) {
+    if (sources.length <= 1) continue;
+
+    const mergeCellIdx = codeCells.length;
+    codeCells.push("gqCoduV9YG0fYdjdPXmWdZAhSKJ5o6uQ");
+
+    cellEdges = cellEdges.map((e) =>
+      sources.includes(e.source) && e.target === target
+        ? { ...e, target: mergeCellIdx }
+        : e
+    );
+
+    cellEdges.push({ source: mergeCellIdx, target});
+  }
+
+  // ── Step 3c: Build final quick-lookup structures (used by wireCode etc.) ─
   const hasOutgoing = new Set(cellEdges.map((e) => e.source));
   const incomingSources = new Map<number, number[]>();
   for (const { source, target } of cellEdges) {
@@ -181,18 +351,44 @@ export async function notebookToTrill(
     incomingSources.get(target)!.push(source);
   }
 
+  // ── Step 4: Compute visual layout ────────────────────────────────────────
   const positions = computeLayout(codeCells.length, cellEdges);
 
   const nodeIds = codeCells.map(() => uuid());
 
+  // ── Step 5: Build the actual TrillNode objects ──────────────────────────
+  
+  // Cells whose types cannot be determined deterministically 
+  const ambiguous: Cell[] = codeCells
+  .map((code, i) => ({ index: i, code: code}))
+  .filter((cell) => !altairSpecs[cell.index] && _type_is_ambiguous(cell.code))
+
+  // The result of the LLM analysis
+  const llm_types = await getLlmTypes(ambiguous, backendUrl)
+
+  // Contains a list of all cell indices that contain a spec
+  // To be used for wireCode
+  const spec_set = new Set<number>();
+  altairSpecs.forEach((spec, index) => {
+    if (spec) spec_set.add(index);
+  });
+
   const nodes: TrillNode[] = codeCells.map((code, index) => {
     const spec = altairSpecs[index] ?? null;
-    const nodeType = spec ? NodeType.VIS_VEGA : inferNodeType(code);
+    let nodeType;
+    if (spec) /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */{ nodeType = NodeType.VIS_VEGA; }
+    else if (isVegaLiteJson(code))                                              { nodeType = NodeType.VIS_VEGA; }
+    else if (MERGE_FLOW_PATTERN.test(code))/* - - - - - - - - - - - - - - - - */{ nodeType = NodeType.MERGE_FLOW }
+    else if (DATA_LOADING_PATTERN.test(code) && !incomingSources.has(index))    { nodeType = NodeType.DATA_LOADING; }
+    else if (DATA_EXPORT_PATTERN.test(code) && !hasOutgoing.has(index))/*- - -*/{ nodeType = NodeType.DATA_EXPORT; } 
+    else if (llm_types[index])                                                  { nodeType = llm_types[index] } 
+    else/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */{ nodeType = NodeType.COMPUTATION_ANALYSIS }
     const content = spec
       ? JSON.stringify(spec, null, 2)
-      : lastVars.length > 0
-        ? wireCode(code, index, lastVars, hasOutgoing, incomingSources)
+      : cellEdges.length > 0  // Changed lastVars.length > 0 to cellEdges.length > 0
+        ? wireCode(code, index, cellEdges, hasOutgoing, incomingSources, spec_set)
         : code;
+
     return {
       id: nodeIds[index],
       type: nodeType,
@@ -202,14 +398,30 @@ export async function notebookToTrill(
     };
   });
 
+  // ── Step 6: Build the edge list ──────────────────────────────────────────
+  const mergeInputCounters: Record<string, number> = {};
+  
   const edgeList: TrillEdge[] = cellEdges
     .filter(({ source, target }) => nodes[source] && nodes[target])
-    .map(({ source, target }) => ({
-      id: uuid(),
-      source: nodeIds[source],
-      target: nodeIds[target],
-    }));
+    .map(({ source, target }) => {
+      const targetNodeId = nodeIds[target];
+      const isMergeTarget = nodes[target]?.type === NodeType.MERGE_FLOW;
 
+      let edgeId = uuid();
+      if (isMergeTarget) {
+        const count = mergeInputCounters[targetNodeId] ?? 0;
+        edgeId = `${edgeId}-in_${count}`;
+        mergeInputCounters[targetNodeId] = count + 1;
+      }
+
+      return {
+        id: edgeId,
+        source: nodeIds[source],
+        target: targetNodeId,
+      };
+    });
+    
+    // ── Step 7: Assemble and return the final spec ──────────────────────────
   return {
     dataflow: {
       nodes,
