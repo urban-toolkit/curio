@@ -4,7 +4,7 @@ Implements the supported subset of the v2 manifest schema (canonical
 spec: ``docs/schemas/node-package.v4.json``). This is what the palette,
 installer, and resolver consume.
 
-User-facing overview: ``docs/CATALOG.md``.
+User-facing overview: ``docs/NODE-CATALOG.md``.
 """
 
 from __future__ import annotations

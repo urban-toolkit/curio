@@ -3,7 +3,7 @@
  *
  * The palette filters by intersection with this set so two projects open
  * in different tabs / sessions see different palettes even though they
- * share one user package store. See ``docs/CATALOG.md`` § "Per-project
+ * share one user package store. See ``docs/NODE-CATALOG.md`` § "Per-project
  * lockfile".
  *
  * Writers:

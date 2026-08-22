@@ -459,7 +459,7 @@ export const packagesApi = {
   },
 
   // --------------------------------------------------------------
-  // Per-project lockfile + per-user defaults (see docs/CATALOG.md)
+  // Per-project lockfile + per-user defaults (see docs/NODE-CATALOG.md)
   // --------------------------------------------------------------
 
   /** Read the project's current lockfile (sorted dirNames). */

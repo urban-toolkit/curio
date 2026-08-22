@@ -31,7 +31,7 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
         return (
             <span
                 className={badgeCls}
-                title={publishedTitle ?? "Listed in the package catalog (packages/)"}
+                title={publishedTitle ?? "Listed in the shared catalog (packages/)"}
             >
                 Published
             </span>
@@ -39,14 +39,14 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
     }
     // When the operator disabled publish (env var CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=0
     // or `--no-allow-publish` on the launcher), the button is hidden entirely
-    // rather than disabled — see docs/CATALOG.md § Operator notes.
+    // rather than disabled — see docs/NODE-CATALOG.md § Operator notes.
     if (!allowPublish) return null;
     return (
         <button
             type="button"
             className={pillCls}
             disabled={busy}
-            title={publishActionTitle ?? "Write this installed package into packages/ for the dev catalog"}
+            title={publishActionTitle ?? "Publish this installed package into the shared catalog (packages/)"}
             onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();

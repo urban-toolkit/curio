@@ -1,7 +1,7 @@
 """Per-project package install / uninstall orchestration.
 
 These services own the three-layer write protocol described in
-[docs/CATALOG.md]:
+[docs/NODE-CATALOG.md]:
 
   1. Shared catalog (read-only here)         — ``<repo_root>/packages/``
   2. Per-user package store (implementations) — ``.curio/users/<u>/packages/``

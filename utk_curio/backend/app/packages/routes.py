@@ -1118,7 +1118,7 @@ def install_workflow_deps():
 # ---------------------------------------------------------------------------
 #
 # These five endpoints implement the project-scoped install/uninstall and the
-# per-user defaults list from [docs/CATALOG.md]. The drawer in the canvas
+# per-user defaults list from [docs/NODE-CATALOG.md]. The drawer in the canvas
 # uses the `/projects/<id>/...` endpoints; the `/catalog` page uses
 # `/defaults`. There is deliberately no `DELETE /defaults/<dir>` — the only
 # way a package leaves the defaults list is via `prune_unreferenced_packages`,
