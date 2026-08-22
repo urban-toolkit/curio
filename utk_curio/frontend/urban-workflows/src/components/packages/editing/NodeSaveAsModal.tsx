@@ -195,13 +195,13 @@ export function NodeSaveAsModal({
   return (
     <ModalShell preservePackagePaletteOpen onClose={busy ? () => {} : onClose}>
       <div className={styles.content}>
-        <h2 className={styles.title}>Save As pkg node</h2>
+        <h2 className={styles.title}>Save as package node</h2>
         <p className={styles.subtitle}>
-          Save <strong>{nodeLabel}</strong> into an installed pkg or create a new one.
+          Save <strong>{nodeLabel}</strong> into an installed package or create a new one.
         </p>
 
         <label className={styles.fieldLabel} htmlFor="save-as-package-target">
-          Destination pkg
+          Destination package
         </label>
         <div className={styles.selectWrap}>
           <select
@@ -211,7 +211,7 @@ export function NodeSaveAsModal({
             disabled={busy}
             onChange={(e) => setTargetKey(e.target.value)}
           >
-            <option value={SAVE_AS_NEW_PACK}>New pkg…</option>
+            <option value={SAVE_AS_NEW_PACK}>New package…</option>
             {packageOptions.map((opt) => (
               <option key={opt.sectionKey} value={opt.sectionKey}>
                 {opt.displayName}
@@ -226,7 +226,7 @@ export function NodeSaveAsModal({
         {targetKey === SAVE_AS_NEW_PACK ? (
           <div className={styles.newPackageField}>
             <label className={styles.fieldLabel} htmlFor="save-as-new-package-name">
-              New pkg name
+              New package name
             </label>
             <input
               id="save-as-new-package-name"
@@ -244,7 +244,7 @@ export function NodeSaveAsModal({
             settings with this canvas node.
           </p>
         ) : (
-          <p className={styles.hint}>Adds this node as a new kind in the selected pkg.</p>
+          <p className={styles.hint}>Adds this node as a new kind in the selected package.</p>
         )}
 
         <div className={styles.footer}>

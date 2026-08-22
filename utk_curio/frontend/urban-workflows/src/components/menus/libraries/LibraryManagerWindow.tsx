@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import styles from "./PackageManagerWindow.module.css";
+import styles from "./LibraryManagerWindow.module.css";
 import ModalShell from "../../ModalShell";
 import { packagesApi } from "../../../api/packagesApi";
 
@@ -57,7 +57,7 @@ function splitSpec(spec: string): { name: string; version: string } {
   return { name: m[1], version: v.startsWith("@") ? v.slice(1) : v };
 }
 
-export default function PackageManagerWindow({
+export default function LibraryManagerWindow({
   open,
   closeModal,
 }: {

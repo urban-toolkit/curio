@@ -117,7 +117,7 @@ export function DataCatalogBrowseCard({
                 void onPublish(dataset);
               }}
               publishedTitle="Listed in the Data Catalog"
-              publishActionTitle="Write this dataset into the dev catalog under datasets/"
+              publishActionTitle="Publish this dataset into the shared catalog (datasets/)"
             />
           ) : null}
         </div>

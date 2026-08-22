@@ -41,7 +41,7 @@ export interface PackageCardProps {
   busy: boolean;
   /** When set, this card's secondary actions show a busy state. */
   cardActionDir?: string | null;
-  /** Whether dev catalog fixture writes are allowed on this server. */
+  /** Whether shared-catalog writes are allowed on this server. */
   catalogPublishAllowed: boolean;
   /** True when the package exists in the shared catalog (drives the Published badge). */
   isPublished?: boolean;
@@ -176,7 +176,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
                 type="button"
                 className={styles.btnSecondary}
                 disabled={cardBusy}
-                title={`Remove ${pkg.dirName} from the dev catalog (packages/)`}
+                title={`Remove ${pkg.dirName} from the shared catalog (packages/)`}
                 onClick={() => onUnpublish(pkg)}
               >
                 Unpublish

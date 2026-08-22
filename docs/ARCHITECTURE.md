@@ -578,7 +578,7 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `src/utils/ConnectionValidator.ts` | Edge validation logic |
 | `src/api/` | API client wrappers (`packagesApi`, `projectsApi`, `authApi`) |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |
-| `src/components/menus/packages/PackageManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
+| `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend
 

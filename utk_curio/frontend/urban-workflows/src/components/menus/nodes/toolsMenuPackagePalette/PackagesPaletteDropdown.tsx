@@ -187,7 +187,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                     nextPublished.add(dirName);
                     return { ...prev, publishedDirNames: nextPublished };
                 });
-                showToast(`Published ${dirName} to dev catalog fixtures.`, "success");
+                showToast(`Published ${dirName} to the shared catalog.`, "success");
             } catch (e) {
                 showToast((e as Error)?.message ?? "Publish failed.", "error");
             } finally {
@@ -216,10 +216,10 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                     onClick={toggle}
                     aria-expanded={open}
                     aria-haspopup="true"
-                    title={open ? "Close package nodes" : "Open package nodes"}
+                    title={open ? "Close node package palette" : "Open node package palette"}
                 >
                     <FontAwesomeIcon icon={faCube} className={packageStyles.packagePaletteTriggerIcon} />
-                    <span className={packageStyles.packagePaletteTriggerLabel}>Packages</span>
+                    <span className={packageStyles.packagePaletteTriggerLabel}>Node packages</span>
                     <span className={packageStyles.packagePaletteTriggerCount}>{totalPackagesDisplayed}</span>
                     <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className={packageStyles.packagePaletteTriggerChevron} />
                 </button>
@@ -281,12 +281,12 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                             type="button"
                             className={packageStyles.packageGetPackagesBtn}
                             title="Browse and install node packages"
-                            aria-label="Get more packages — open node catalog drawer"
+                            aria-label="Browse Node Catalog — open node catalog drawer"
                             onClick={() => {
                                 openNodeCatalogDrawer();
                             }}
                         >
-                            Get more packages +
+                            Browse Node Catalog +
                         </button>
                     </div>
                 </div>

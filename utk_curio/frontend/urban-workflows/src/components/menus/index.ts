@@ -2,4 +2,4 @@ export * from "./nodes";
 export * from "./top";
 export * from "./provenance";
 export * from "./expand";
-export * from "./packages";
+export * from "./libraries";

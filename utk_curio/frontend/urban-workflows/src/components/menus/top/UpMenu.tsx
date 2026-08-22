@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-    PackageManagerWindow,
+    LibraryManagerWindow,
     TrillProvenanceWindow,
 } from "components/menus";
 import {
@@ -58,7 +58,7 @@ export default function UpMenu({
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
     const [tutorialOpen, setTutorialOpen] = useState(false);
-    const [packagesOpen, setPackagesOpen] = useState(false);
+    const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [aiModeOn, setAiModeOn] = useState(false);
@@ -527,7 +527,7 @@ export default function UpMenu({
                             <div
                                 className={styles.dropDownRow}
                                 onClick={() => {
-                                    setPackagesOpen(true);
+                                    setLibrariesOpen(true);
                                     setActiveMenu(null);
                                 }}
                             >
@@ -685,9 +685,9 @@ export default function UpMenu({
                 closeModal={closeTrillProvenanceModal}
                 workflowName={workflowNameRef.current}
             />
-            <PackageManagerWindow
-                open={packagesOpen}
-                closeModal={() => setPackagesOpen(false)}
+            <LibraryManagerWindow
+                open={librariesOpen}
+                closeModal={() => setLibrariesOpen(false)}
             />
         </>
     );
