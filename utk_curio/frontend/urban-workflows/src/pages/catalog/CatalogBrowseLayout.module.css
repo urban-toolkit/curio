@@ -391,37 +391,6 @@
   cursor: pointer;
 }
 
-.viewToggles {
-  display: flex;
-  gap: 4px;
-}
-
-.viewToggleActive {
-  width: 26px;
-  height: 24px;
-  border: 0;
-  border-radius: 5px;
-  background: #E8E8E5;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-
-.viewToggleInactive {
-  width: 26px;
-  height: 24px;
-  border: 1px solid #E0E0E0;
-  border-radius: 5px;
-  background: transparent;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-
 /* ── Card grid ── */
 .cardGrid {
   height: calc(100vh - 290px);
@@ -1039,25 +1008,6 @@
   color: #555555;
 }
 
-.verifiedBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  color: #2F8F4A;
-}
-
-.verifiedCircle {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #DFF2E1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 8px;
-}
-
 /* Usage meta */
 .drawerMeta {
   padding: 0 20px 0;
@@ -1199,15 +1149,6 @@
 }
 
 .viewSampleBtn:hover { background: #fafafa; }
-
-.trustNote {
-  padding: 0 20px 16px;
-  text-align: center;
-  font-size: 10px;
-  color: #BBBBBB;
-  line-height: 1.6;
-  flex-shrink: 0;
-}
 
 .drawerEmpty {
   flex: 1;

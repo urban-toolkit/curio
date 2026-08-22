@@ -92,9 +92,6 @@ export const DatasetTablePreview: React.FC<DatasetTablePreviewProps> = ({
     <section className={styles.panel}>
       <div className={styles.toolbar}>
         <span className={styles.toolbarNote}>{rangeLabel}</span>
-        <button type="button" className={styles.columnsButton}>
-          Columns
-        </button>
       </div>
 
       {isInitialLoad ? <div className={styles.state}>Loading preview...</div> : null}

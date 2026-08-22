@@ -1,15 +1,28 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons";
-import { SortMode } from "./packageTypes";
 import styles from "./PackageSearchRow.module.css";
+
+export interface SearchRowSortOption {
+  value: string;
+  label: string;
+}
 
 export interface PackageSearchRowProps {
   search: string;
-  sort: SortMode;
+  sort: string;
   onSearchChange: (value: string) => void;
-  onSortChange: (value: SortMode) => void;
+  onSortChange: (value: string) => void;
+  /** Defaults to the package-catalog copy; the dataset drawer overrides these. */
+  placeholder?: string;
+  sortAriaLabel?: string;
+  sortOptions?: SearchRowSortOption[];
 }
+
+const PACKAGE_SORT_OPTIONS: SearchRowSortOption[] = [
+  { value: "new", label: "Sort: New" },
+  { value: "name", label: "Sort: Name" },
+];
 
 /** Search input + sort select bar rendered below the drawer subtitle. */
 export const PackageSearchRow: React.FC<PackageSearchRowProps> = ({
@@ -17,6 +30,9 @@ export const PackageSearchRow: React.FC<PackageSearchRowProps> = ({
   sort,
   onSearchChange,
   onSortChange,
+  placeholder = "Search packages, authors, keywords...",
+  sortAriaLabel = "Sort packages",
+  sortOptions = PACKAGE_SORT_OPTIONS,
 }) => (
   <div className={styles.searchRow}>
     <div className={styles.searchWrap}>
@@ -24,7 +40,7 @@ export const PackageSearchRow: React.FC<PackageSearchRowProps> = ({
       <input
         className={styles.searchInput}
         type="search"
-        placeholder="Search packages, authors, keywords..."
+        placeholder={placeholder}
         value={search}
         onChange={(e) => onSearchChange(e.target.value)}
       />
@@ -32,12 +48,14 @@ export const PackageSearchRow: React.FC<PackageSearchRowProps> = ({
     <select
       className={styles.sortSelect}
       value={sort}
-      aria-label="Sort packages"
-      onChange={(e) => onSortChange(e.target.value as SortMode)}
+      aria-label={sortAriaLabel}
+      onChange={(e) => onSortChange(e.target.value)}
     >
-      <option value="new">Sort: New</option>
-      <option value="name">Sort: Name</option>
+      {sortOptions.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
     </select>
   </div>
 );
-

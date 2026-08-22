@@ -6,6 +6,7 @@ import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import {
   DATASET_IMPORT_ACCEPT,
+  DatasetSortMode,
   pendingInstallsNotYetListed,
 } from "../../../services/datasetCatalog";
 import { DatasetCard } from "./DatasetCard";
@@ -15,7 +16,6 @@ import { InstalledDatasetsList } from "./InstalledDatasetsList";
 import { TAB_LABEL } from "./datasetCatalogDrawerTypes";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
-import { SortMode } from "components/packages/publishing/packageTypes";
 import styles from "./DatasetCatalogDrawer.module.css";
 
 export interface DatasetCatalogDrawerProps {
@@ -118,9 +118,15 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
 
           <PackageSearchRow
             search={search}
-            sort={sort as SortMode}
+            sort={sort}
             onSearchChange={(value) => startUiTransition(() => setSearch(value))}
-            onSortChange={setSort as (value: SortMode) => void}
+            onSortChange={(value) => setSort(value as DatasetSortMode)}
+            placeholder="Search datasets, publishers, tags..."
+            sortAriaLabel="Sort datasets"
+            sortOptions={[
+              { value: "recent", label: "Sort: Recent activity" },
+              { value: "name", label: "Sort: Name" },
+            ]}
           />
 
           <nav className={tabStyles.tabs} aria-label="Data catalog sections">

@@ -38,7 +38,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const drawerRef = useRef<HTMLElement>(null);
 
   // The drawer is *per-project*: Install/Uninstall write to the current
-  // project's lockfile (see docs/CATALOG.md). When projectId is null
+  // project's lockfile (see docs/NODE-CATALOG.md). When projectId is null
   // (user landed on /dataflow/new and hasn't saved yet), Install auto-saves
   // the dataflow first so the user isn't forced to interrupt their flow.
   const { projectId, packages: projectPackages, saveCurrentProject } = useFlowContext();
@@ -281,7 +281,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     async (pkg: PackagePayload) => {
       if (
         !window.confirm(
-          `Unpublish ${pkg.name} (${pkg.dirName}) from the dev catalog?\n\nThis removes the entry under packages/. Installed copies in projects are not removed.`,
+          `Unpublish ${pkg.name} (${pkg.dirName}) from the shared catalog?\n\nThis removes the entry under packages/. Installed copies in projects are not removed.`,
         )
       ) {
         return;
@@ -378,7 +378,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             search={search}
             sort={sort}
             onSearchChange={setSearch}
-            onSortChange={setSort}
+            onSortChange={(value) => setSort(value as SortMode)}
           />
 
           <DrawerTabs

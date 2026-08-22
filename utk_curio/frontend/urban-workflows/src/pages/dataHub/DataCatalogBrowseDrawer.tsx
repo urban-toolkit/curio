@@ -101,10 +101,6 @@ function DataCatalogBrowseDrawerContent({
         <span className={styles.drawerPublisherText}>
           {datasetSubtitle(dataset)}
         </span>
-        <span className={styles.verifiedBadge}>
-          <span className={styles.verifiedCircle}>✓</span>
-          Verified
-        </span>
       </div>
 
       <div className={styles.drawerMeta}>
@@ -151,7 +147,7 @@ function DataCatalogBrowseDrawerContent({
         )}
         <div className={styles.infoRow}>
           <span className={styles.infoRowLabel}>License</span>
-          <span className={styles.infoRowValue}>{dataset.license || "CC BY 4.0"}</span>
+          <span className={styles.infoRowValue}>{dataset.license || "Unknown"}</span>
         </div>
         <div className={styles.infoRow}>
           <span className={styles.infoRowLabel}>Origin</span>
@@ -208,12 +204,6 @@ function DataCatalogBrowseDrawerContent({
           View sample data
         </button>
       </div>
-
-      <p className={styles.trustNote}>
-        Published by verified author
-        <br />
-        Last updated: {relativeTime(dataset.updatedAt)}
-      </p>
     </>
   );
 }

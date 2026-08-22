@@ -201,9 +201,6 @@ export const DataCatalogBrowse: React.FC = () => {
               {DATASET_FORMAT_LABEL[key]}
             </button>
           ))}
-          <button className={styles.chip} type="button">
-            Popular
-          </button>
           <button className={styles.newChip} type="button" onClick={() => setSort("recent")}>
             NEW
           </button>
@@ -218,24 +215,6 @@ export const DataCatalogBrowse: React.FC = () => {
             <option value="recent">Sort: Recent activity</option>
             <option value="name">Sort: Name</option>
           </select>
-
-          <div className={styles.viewToggles}>
-            <button className={styles.viewToggleActive} type="button" title="Grid view" aria-label="Grid view">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <rect x="0" y="0" width="5" height="4" rx="0.5" fill="#555" />
-                <rect x="7" y="0" width="5" height="4" rx="0.5" fill="#555" />
-                <rect x="0" y="6" width="5" height="4" rx="0.5" fill="#555" />
-                <rect x="7" y="6" width="5" height="4" rx="0.5" fill="#555" />
-              </svg>
-            </button>
-            <button className={styles.viewToggleInactive} type="button" title="List view" aria-label="List view">
-              <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
-                <line x1="0" y1="1" x2="12" y2="1" stroke="#BBBBBB" strokeWidth="1.2" />
-                <line x1="0" y1="5" x2="12" y2="5" stroke="#BBBBBB" strokeWidth="1.2" />
-                <line x1="0" y1="9" x2="12" y2="9" stroke="#BBBBBB" strokeWidth="1.2" />
-              </svg>
-            </button>
-          </div>
         </div>
 
         {catalog.loading && catalog.items.length === 0 ? (
