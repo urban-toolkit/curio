@@ -199,6 +199,151 @@ describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
   });
 });
 
+describe("useDatasetCatalogDrawer refresh flow (#178)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCatalogReload.mockResolvedValue(undefined);
+    mockCatalogItems = [];
+  });
+
+  it("reloads the catalog exactly ONCE per action (self-listener answers the event)", async () => {
+    const installSpy = jest
+      .spyOn(datasetCatalogApi, "installToDataflow")
+      .mockResolvedValue({
+        id: "imported.xaaa",
+        title: "One",
+        origin: "imported",
+        format: "csv",
+        dirName: "imported.xaaa@1",
+        uri: "curio://datasets/imported.xaaa@1",
+        consumerNodeIds: [],
+        tags: [],
+        updatedAt: "2026-01-01T00:00:00Z",
+        installed: true,
+      } as never);
+    const refreshSpy = jest.fn();
+    window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
+
+    const dataset = {
+      id: "imported.xaaa",
+      title: "One",
+      origin: "imported" as const,
+      format: "csv" as const,
+      consumerNodeIds: [],
+      tags: [],
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+    await act(async () => {
+      await result.current.onInstall(dataset as never);
+    });
+
+    // One event dispatched; the hook's own listener performed the single
+    // bust-cache reload — no direct reload from the handler.
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    expect(mockCatalogReload).toHaveBeenCalledTimes(1);
+    expect(mockCatalogReload).toHaveBeenCalledWith({ bustCache: true });
+
+    window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
+    installSpy.mockRestore();
+  });
+});
+
+describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCatalogReload.mockResolvedValue(undefined);
+    mockCatalogItems = [];
+  });
+
+  const dataset = {
+    id: "computed.flow-1.n1",
+    title: "Knowledge Graph",
+    origin: "computed" as const,
+    format: "json" as const,
+    dirName: "computed.flow-1.n1@1",
+    producerNodeId: "n1",
+    consumerNodeIds: [],
+    consumerNodeCount: 5,
+    tags: [],
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+
+  it("warns with the affected-DATAFLOW count from /usage, not consumerNodeCount", async () => {
+    const usageSpy = jest.spyOn(datasetCatalogApi, "datasetUsage").mockResolvedValue([
+      { dataflowId: "a", dataflowName: "A", nodeCount: 0, nodes: [] },
+      { dataflowId: "b", dataflowName: "B", nodeCount: 2, nodes: [] },
+      { dataflowId: "c", dataflowName: "C", nodeCount: 0, nodes: [] },
+    ] as never);
+    const deleteSpy = jest
+      .spyOn(datasetCatalogApi, "deleteDataset")
+      .mockResolvedValue({ id: dataset.id, deleted: true, removedFrom: ["a", "b", "c"] });
+    let confirmMessage = "";
+    const confirmSpy = jest.spyOn(window, "confirm").mockImplementation((msg) => {
+      confirmMessage = String(msg);
+      return true;
+    });
+
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+    await act(async () => {
+      await result.current.onDelete(dataset as never);
+    });
+
+    expect(usageSpy).toHaveBeenCalledWith(dataset.id);
+    expect(confirmMessage).toContain("used in 3 data flows");
+    expect(confirmMessage).toContain("consumed by 2 nodes");
+    // The old wording keyed on consumerNodeCount is gone.
+    expect(confirmMessage).not.toContain("referenced by 5 nodes");
+    expect(deleteSpy).toHaveBeenCalledWith(dataset.id);
+
+    confirmSpy.mockRestore();
+    usageSpy.mockRestore();
+    deleteSpy.mockRestore();
+  });
+
+  it("falls back to the node-count wording when the usage lookup fails", async () => {
+    const usageSpy = jest
+      .spyOn(datasetCatalogApi, "datasetUsage")
+      .mockRejectedValue(new Error("offline"));
+    const deleteSpy = jest
+      .spyOn(datasetCatalogApi, "deleteDataset")
+      .mockResolvedValue({ id: dataset.id, deleted: true, removedFrom: [] });
+    let confirmMessage = "";
+    const confirmSpy = jest.spyOn(window, "confirm").mockImplementation((msg) => {
+      confirmMessage = String(msg);
+      return true;
+    });
+
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+    await act(async () => {
+      await result.current.onDelete(dataset as never);
+    });
+
+    expect(confirmMessage).toContain("referenced by 5 nodes");
+
+    confirmSpy.mockRestore();
+    usageSpy.mockRestore();
+    deleteSpy.mockRestore();
+  });
+
+  it("does not delete when the dialog is dismissed", async () => {
+    const usageSpy = jest.spyOn(datasetCatalogApi, "datasetUsage").mockResolvedValue([]);
+    const deleteSpy = jest.spyOn(datasetCatalogApi, "deleteDataset");
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(false);
+
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+    await act(async () => {
+      await result.current.onDelete(dataset as never);
+    });
+
+    expect(deleteSpy).not.toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
+    usageSpy.mockRestore();
+    deleteSpy.mockRestore();
+  });
+});
+
 describe("useDatasetCatalogDrawer visible items (account-level computed)", () => {
   beforeEach(() => {
     jest.clearAllMocks();

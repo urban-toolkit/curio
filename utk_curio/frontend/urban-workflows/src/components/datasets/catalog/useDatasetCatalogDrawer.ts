@@ -18,6 +18,7 @@ import {
   DatasetSortMode,
   DATASET_CATALOG_REFRESH_EVENT,
   datasetCatalogApi,
+  datasetDisplayTitle,
   isOsmGroupId,
   notifyDatasetCatalogRefresh,
   useDatasetCatalog,
@@ -188,10 +189,10 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           );
           return [...next, ...installedItems.map(dataflowRefFromCatalogItem)];
         });
-        // Bust the cache so the drawer refetches fresh rather than re-reading
-        // the stale cached response, then let the palette (and other catalog
-        // listeners) refresh so the newly installed dataset shows up immediately.
-        await catalog.reload({ bustCache: true });
+        // One refresh event fans out to every catalog listener — including this
+        // hook's own listener, which does the bust-cache reload. Calling
+        // catalog.reload here too issued the expensive multi-source listing
+        // twice per action (#178).
         notifyDatasetCatalogRefresh();
         showToast(
           isGroup
@@ -206,7 +207,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [catalog, ensureProjectId, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall],
+    [ensureProjectId, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall],
   );
 
   const onUninstall = useCallback(
@@ -229,14 +230,13 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           const removed = new Set(memberIds.map(String));
           return prev.filter((row) => !removed.has(String(row?.datasetId || row?.id)));
         });
-        // Bust the cache so the drawer's own list refetches the post-uninstall
-        // state immediately rather than re-reading the stale cached response.
-        await catalog.reload({ bustCache: true });
+        // Single refresh event; this hook's own listener does the reload (#178).
         notifyDatasetCatalogRefresh();
+        const title = datasetDisplayTitle(dataset);
         showToast(
           isGroup
-            ? `Removed ${dataset.title} (${memberIds.length} layers) from this dataflow.`
-            : `Removed ${dataset.title} from this dataflow.`,
+            ? `Removed ${title} (${memberIds.length} layers) from this dataflow.`
+            : `Removed ${title} from this dataflow.`,
           "success",
         );
       } catch (err) {
@@ -245,7 +245,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [catalog, ensureProjectId, setDataflowDatasets, showToast],
+    [ensureProjectId, setDataflowDatasets, showToast],
   );
 
   const onPublish = useCallback(
@@ -274,7 +274,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           if (published.producerNodeId) ref.producerNodeId = published.producerNodeId;
           return [...next, ref];
         });
-        await catalog.reload({ bustCache: true });
+        // Single refresh event; this hook's own listener does the reload (#178).
         notifyDatasetCatalogRefresh();
         showToast("Dataset published to Data Catalog.", "success");
       } catch (err) {
@@ -283,13 +283,14 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setPublishingId(null);
       }
     },
-    [catalog, ensureProjectId, liveOutputs, setDataflowDatasets, showToast],
+    [ensureProjectId, liveOutputs, setDataflowDatasets, showToast],
   );
 
   const onUnpublish = useCallback(
     async (dataset: DatasetCatalogItem) => {
+      const title = datasetDisplayTitle(dataset);
       const confirmed = window.confirm(
-        `Unpublish ${dataset.title} from the Data Catalog?\n\nThis removes the catalog listing. Installed copies in dataflows are not removed.`,
+        `Unpublish ${title} from the Data Catalog?\n\nThis removes the catalog listing. Installed copies in dataflows are not removed.`,
       );
       if (!confirmed) return;
       setBusyId(dataset.id);
@@ -307,27 +308,45 @@ export function useDatasetCatalogDrawer(presented: boolean) {
             return { ...row, origin: "imported", publishedToHub: false };
           }),
         );
-        await catalog.reload({ bustCache: true });
+        // Single refresh event; this hook's own listener does the reload (#178).
         notifyDatasetCatalogRefresh();
-        showToast(`${dataset.title} unpublished from the Data Catalog.`, "success");
+        showToast(`${title} unpublished from the Data Catalog.`, "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not unpublish dataset.", "error");
       } finally {
         setBusyId(null);
       }
     },
-    [catalog, ensureProjectId, setDataflowDatasets, showToast],
+    [ensureProjectId, setDataflowDatasets, showToast],
   );
 
   const onDelete = useCallback(
     async (dataset: DatasetCatalogItem) => {
-      const usageCount = dataset.consumerNodeCount ?? 0;
-      const usageNote =
-        usageCount > 0
-          ? `\n\nIt is referenced by ${usageCount} node${usageCount === 1 ? "" : "s"} across your projects; those references will be removed.`
-          : "";
+      const title = datasetDisplayTitle(dataset);
+      // Delete strips the dataset's references per DATA FLOW (across all
+      // projects), so warn with the affected-dataflow count fetched up front —
+      // consumerNodeCount both under-warns (installed in 3 projects, wired to
+      // 0 nodes) and over-warns (5 nodes in one project) (#177). Fall back to
+      // the node-count wording only if the usage lookup fails.
+      let usageNote = "";
+      try {
+        const usage = await datasetCatalogApi.datasetUsage(dataset.id);
+        if (usage.length > 0) {
+          const nodeCount = usage.reduce((sum, u) => sum + (u.nodeCount ?? 0), 0);
+          const nodeNote =
+            nodeCount > 0
+              ? ` (consumed by ${nodeCount} node${nodeCount === 1 ? "" : "s"})`
+              : "";
+          usageNote = `\n\nIt is used in ${usage.length} data flow${usage.length === 1 ? "" : "s"}${nodeNote}; its references there will be removed.`;
+        }
+      } catch {
+        const usageCount = dataset.consumerNodeCount ?? 0;
+        if (usageCount > 0) {
+          usageNote = `\n\nIt is referenced by ${usageCount} node${usageCount === 1 ? "" : "s"} across your projects; those references will be removed.`;
+        }
+      }
       const confirmed = window.confirm(
-        `Delete ${dataset.title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just uninstalled from this project.${usageNote}`,
+        `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just uninstalled from this project.${usageNote}`,
       );
       if (!confirmed) return;
       setBusyId(dataset.id);
@@ -336,10 +355,9 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         if (result?.deleted === false) {
           // Partial failure (#173): refs were stripped but locked files kept
           // the folder alive — keep the row visible and say so honestly.
-          await catalog.reload({ bustCache: true });
           notifyDatasetCatalogRefresh();
           showToast(
-            `Could not fully delete ${dataset.title} — some of its files are still in use. Close anything using them and try again.`,
+            `Could not fully delete ${title} — some of its files are still in use. Close anything using them and try again.`,
             "error",
           );
           return;
@@ -348,13 +366,13 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setDataflowDatasets((prev) =>
           prev.filter((row) => !removed.has(String(row?.datasetId || row?.id))),
         );
-        await catalog.reload({ bustCache: true });
+        // Single refresh event; this hook's own listener does the reload (#178).
         notifyDatasetCatalogRefresh();
         const n = result?.removedFrom?.length ?? 0;
         showToast(
           n > 0
-            ? `Deleted ${dataset.title} from your Data Catalog (removed from ${n} project${n === 1 ? "" : "s"}).`
-            : `Deleted ${dataset.title} from your Data Catalog.`,
+            ? `Deleted ${title} from your Data Catalog (removed from ${n} project${n === 1 ? "" : "s"}).`
+            : `Deleted ${title} from your Data Catalog.`,
           "success",
         );
       } catch (err) {
@@ -363,7 +381,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [catalog, setDataflowDatasets, showToast],
+    [setDataflowDatasets, showToast],
   );
 
   const onPickImport = useCallback(
