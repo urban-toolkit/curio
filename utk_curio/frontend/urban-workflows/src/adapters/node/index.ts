@@ -1,5 +1,5 @@
 export { useCodeNodeBehavior } from './codeNodeBehavior';
-export { usePackageNodeBehavior } from './packageNodeBehavior';
+export { usePackageNodeBehavior, withPackageStarter } from './packageNodeBehavior';
 export { useDataExportBehavior } from './dataExportBehavior';
 export { useVegaBehavior } from './vegaBehavior';
 export { useSimpleVisBehavior } from './simpleVisBehavior';

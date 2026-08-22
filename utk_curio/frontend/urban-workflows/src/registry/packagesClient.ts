@@ -30,6 +30,7 @@ import {
   useCodeNodeBehavior,
   usePackageNodeBehavior,
   withBidirectional,
+  withPackageStarter,
 } from '../adapters/node';
 import { packagesApi } from 'api/packagesApi';
 import { getToken } from '../utils/authApi';
@@ -178,8 +179,16 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
 
   const isBuiltin = pkg.packageId === BUILTIN_PACKAGE_ID;
   const lookedUpBehavior = template.behavior ? getBehavior(template.behavior) : undefined;
-  const behavior = lookedUpBehavior
+  const resolvedBehavior = lookedUpBehavior
     ?? (isBuiltin ? useCodeNodeBehavior : usePackageNodeBehavior);
+  // A template that ships a `source` starter must get it injected on a fresh
+  // drop no matter which behavior key its manifest names — resolving `"code"`
+  // lands on the no-op `useCodeNodeBehavior`, which would leave the editor
+  // empty. `usePackageNodeBehavior` already does injection on its own, so it
+  // is not double-wrapped.
+  const behavior = template.source && resolvedBehavior !== usePackageNodeBehavior
+    ? withPackageStarter(resolvedBehavior)
+    : resolvedBehavior;
   const icon = resolveIconRef(template.iconRef) ?? faCube;
   const paletteOrder = typeof template.paletteOrder === 'number'
     ? template.paletteOrder
