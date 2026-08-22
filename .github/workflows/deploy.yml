@@ -128,11 +128,20 @@ jobs:
           echo "Deploying $ref ($(git rev-parse --short HEAD))"
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           export BACKEND_URL=https://curio-dev.urbantk.org/api
-          docker compose -p curio-dev down --remove-orphans 2>/dev/null || true
+          set -a; [ -f .env ] && . ./.env; set +a
+          docker compose -p curio-dev down --remove-orphans --timeout 30 2>/dev/null || true
+          # A container from an earlier convention / manual run keeps itself alive
+          # via restart:unless-stopped and can hold the published ports, so a
+          # freshly built image never actually serves. Force-remove it by name.
+          docker rm -f "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || true
           docker run --rm -v "$PWD:/work" -w /work alpine rm -rf .curio
           mkdir -p instance .curio
           docker compose -p curio-dev build --no-cache
-          docker compose -p curio-dev up -d
+          docker compose -p curio-dev up -d --force-recreate --remove-orphans
+          echo "=== docker ps (post-deploy) ==="
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true
+          echo "=== serving container ==="
+          docker inspect -f 'name={{.Name}} image={{.Config.Image}} imageId={{.Image}} created={{.Created}} restart={{.HostConfig.RestartPolicy.Name}}' "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || true
           EOF
 
   deploy-stable:
@@ -178,7 +187,16 @@ jobs:
           mkdir -p instance .curio
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           export BACKEND_URL=https://curio.urbantk.org/api
-          docker compose -p curio down --remove-orphans 2>/dev/null || true
+          set -a; [ -f .env ] && . ./.env; set +a
+          docker compose -p curio down --remove-orphans --timeout 30 2>/dev/null || true
+          # A container from an earlier convention / manual run keeps itself alive
+          # via restart:unless-stopped and can hold the published ports, so a
+          # freshly built image never actually serves. Force-remove it by name.
+          docker rm -f "${CURIO_CONTAINER_NAME:-curio}" 2>/dev/null || true
           docker compose -p curio build --no-cache
-          docker compose -p curio up -d
+          docker compose -p curio up -d --force-recreate --remove-orphans
+          echo "=== docker ps (post-deploy) ==="
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true
+          echo "=== serving container ==="
+          docker inspect -f 'name={{.Name}} image={{.Config.Image}} imageId={{.Image}} created={{.Created}} restart={{.HostConfig.RestartPolicy.Name}}' "${CURIO_CONTAINER_NAME:-curio}" 2>/dev/null || true
           EOF
