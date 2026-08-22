@@ -10,6 +10,7 @@ on:
       - 'Dockerfile'
       - '.github/workflows/docker-compose.yml'
       # Baked into the image (see Dockerfile runtime_base COPYs):
+      - 'requirements.txt'
       - 'package.json'
       - 'package-lock.json'
       - 'packages/**'
@@ -22,6 +23,7 @@ on:
       - 'Dockerfile'
       - '.github/workflows/docker-compose.yml'
       # Baked into the image (see Dockerfile runtime_base COPYs):
+      - 'requirements.txt'
       - 'package.json'
       - 'package-lock.json'
       - 'packages/**'

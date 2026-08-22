@@ -63,6 +63,7 @@ on:
     paths:
       - 'utk_curio/**'
       - 'docs/**'
+      - 'requirements.txt'
       - 'Dockerfile'
       - 'docker-compose.yml'
       - 'docker-compose.deploy.yml'
