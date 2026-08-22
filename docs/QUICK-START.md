@@ -6,7 +6,7 @@ Before you begin, please read our [usage guide](USAGE.md).
 
 In this tutorial, we are going to learn how Curio can easily help with visualizing a simple dataset using a Vega-Lite barchart.
 
-After initializing Curio, you will see a blank canvas. The left sidebar contains icons for each built-in node type — drag any of them onto the canvas to instantiate a node.
+After initializing Curio, you will see a blank canvas. The left sidebar contains icons for each built-in node type. Drag any of them onto the canvas to instantiate a node.
 
 Start by dragging a `Data Loading` node onto the canvas. Inside the node, switch to the `Code` view and enter the following snippet:
 

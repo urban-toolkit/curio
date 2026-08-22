@@ -32,7 +32,7 @@
   </p>
 </div>
 
-> 🌐 **Hosted instances** — Try Curio in your browser without installing anything. Stable at [**curio.urbantk.org**](https://curio.urbantk.org), and the latest `main` build at [**curio-dev.urbantk.org**](https://curio-dev.urbantk.org). Sign in to save dataflows; guests can browse shared examples read-only. To run your own server, see the [deployment guide](docs/DEPLOYMENT.md). For local deployment, see [installation and usage guide](docs/USAGE.md). Local installs require **Python 3.12**.
+> 🌐 **Hosted instances.** Try Curio in your browser without installing anything. Stable at [**curio.urbantk.org**](https://curio.urbantk.org), and the latest `main` build at [**curio-dev.urbantk.org**](https://curio-dev.urbantk.org). Sign in to save dataflows; guests can browse shared examples read-only. To run your own server, see the [deployment guide](docs/DEPLOYMENT.md). For local deployment, see [installation and usage guide](docs/USAGE.md). Local installs require **Python 3.12**.
 
 Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
 
@@ -105,21 +105,21 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 
 A lot has landed since v0.5. Highlights:
 
-- 🌐 **Hosted instances** — Public deployments at [curio.urbantk.org](https://curio.urbantk.org) (stable) and [curio-dev.urbantk.org](https://curio-dev.urbantk.org) (dev), plus a [deployment guide](docs/DEPLOYMENT.md) for self-hosting behind HTTPS.
-- 📦 **Node Catalog** — Every node now lives in a manifest-driven package, and you can freely mix built-ins, community packages, and your own in a single dataflow. Install ready-made packages from the catalog with one click, save a canvas node directly into a (new or existing) package via **Save as package node**, import `.curio.zip` archives shared by collaborators, or fork an existing package to extend it. Per-package metadata (description, license, README, permissions) is editable from the catalog drawer; Python / JS dependencies are detected automatically from each template's source. Packages are **versioned and pinnable**, so a workflow can declare the exact node set it depends on — reproducibility for shared research artefacts. See the [Node Catalog guide](docs/NODE-CATALOG.md).
-- 🗂️ **Data Catalog** — Datasets get the same treatment as nodes: browse and install them into a dataflow, import your own files (CSV, GeoJSON, Parquet, GeoTIFF, Shapefile, or an OSM PBF extract that is split into per-layer datasets), and publish them for everyone on your deployment. Drag a dataset onto the canvas and Curio writes the loader code for you. Every node run can also save its output as a **computed dataset**, with lineage back to the node and dataflow that produced it — so any intermediate result becomes a reusable, previewable input. See the [Data Catalog guide](docs/DATA-CATALOG.md).
-- 🤖 **Per-user LLM configuration** — Connect Curio to OpenAI, Anthropic, Gemini, or a custom endpoint, configurable per user.
-- 🗺️ **Autark integration** — New `AutkMap` and `AutkPlot` node types, with JS Computation I/O routed through Python DuckDB.
-- ⚡ **JavaScript Computation node** — Run Node.js code in a sandbox subprocess alongside Python nodes.
-- 🧬 **Provenance refactor** — Provenance is now tracked in the dataflow JSON itself, with the visualization rebuilt on React Flow (no separate provenance DB).
-- 📓 **Jupyter ↔ dataflow conversion** — Initial bidirectional notebook conversion support.
-- 💾 **Auto-save** — With unsaved-changes guard and a save status icon.
-- ▶️ **Play All & auto-play ancestors** — Execute nodes in topological order, or automatically run upstream nodes when a downstream play button is clicked.
-- 👥 **Session-level multi-user isolation** — Across backend, sandbox, and frontend.
-- 📊 **Dashboard mode toggle** — Switches mode while preserving node state, edges, and positions.
-- 🦆 **DuckDB-native artifact I/O** — Faster, type-safe data exchange between sandbox and backend.
+- 🌐 **Hosted instances.** Public deployments at [curio.urbantk.org](https://curio.urbantk.org) (stable) and [curio-dev.urbantk.org](https://curio-dev.urbantk.org) (dev), plus a [deployment guide](docs/DEPLOYMENT.md) for self-hosting behind HTTPS.
+- 📦 **Node Catalog.** Every node now lives in a manifest-driven package, and you can freely mix built-ins, community packages, and your own in a single dataflow. Install ready-made packages from the catalog with one click, save a canvas node directly into a (new or existing) package via **Save as package node**, import `.curio.zip` archives shared by collaborators, or fork an existing package to extend it. Per-package metadata (description, license, README, permissions) is editable from the catalog drawer; Python / JS dependencies are detected automatically from each template's source. Packages are **versioned and pinnable**, so a workflow can declare the exact node set it depends on, which gives reproducibility for shared research artefacts. See the [Node Catalog guide](docs/NODE-CATALOG.md).
+- 🗂️ **Data Catalog.** Datasets get the same treatment as nodes: browse and install them into a dataflow, import your own files (CSV, GeoJSON, Parquet, GeoTIFF, Shapefile, or an OSM PBF extract that is split into per-layer datasets), and publish them for everyone on your deployment. Drag a dataset onto the canvas and Curio writes the loader code for you. Every node run can also save its output as a **computed dataset**, with lineage back to the node and dataflow that produced it, so any intermediate result becomes a reusable, previewable input. See the [Data Catalog guide](docs/DATA-CATALOG.md).
+- 🤖 **Per-user LLM configuration.** Connect Curio to OpenAI, Anthropic, Gemini, or a custom endpoint, configurable per user.
+- 🗺️ **Autark integration.** New `AutkMap` and `AutkPlot` node types, with JS Computation I/O routed through Python DuckDB.
+- ⚡ **JavaScript Computation node.** Run Node.js code in a sandbox subprocess alongside Python nodes.
+- 🧬 **Provenance refactor.** Provenance is now tracked in the dataflow JSON itself, with the visualization rebuilt on React Flow (no separate provenance DB).
+- 📓 **Jupyter ↔ dataflow conversion.** Initial bidirectional notebook conversion support.
+- 💾 **Auto-save.** With unsaved-changes guard and a save status icon.
+- ▶️ **Play All & auto-play ancestors.** Execute nodes in topological order, or automatically run upstream nodes when a downstream play button is clicked.
+- 👥 **Session-level multi-user isolation.** Across backend, sandbox, and frontend.
+- 📊 **Dashboard mode toggle.** Switches mode while preserving node state, edges, and positions.
+- 🦆 **DuckDB-native artifact I/O.** Faster, type-safe data exchange between sandbox and backend.
 - 🖼️ **Project thumbnails** in the project list, plus the `--with-examples` flag to seed example projects on startup, and toast notifications replacing browser alerts.
-- 👥 **Real-time collaboration** — Opt-in via `curio start --collab`. Co-edit a project with presence, soft locks, and shared execution output. See [docs/COLLABORATION.md](docs/COLLABORATION.md).
+- 👥 **Real-time collaboration.** Opt-in via `curio start --collab`. Co-edit a project with presence, soft locks, and shared execution output. See [docs/COLLABORATION.md](docs/COLLABORATION.md).
 
 See the full [release notes](https://github.com/urban-toolkit/curio/releases) for more. To get started, follow the [usage guide](docs/USAGE.md) or jump into the [quick start tutorial](docs/QUICK-START.md). If you'd like to contribute, read the [contribution guide](docs/CONTRIBUTING.md).
 

@@ -1,6 +1,6 @@
 # Example: Multiple dataflows joined into one Vega-Lite dashboard
 
-This example shows how several independent dataflows — each loading from the same source CSV and reducing it differently — can be joined back together via `MERGE_FLOW` and `COMPUTATION_ANALYSIS` to drive coordinated Vega-Lite views. The use case is Chicago's [red-light-violation dataset](data/08-red_light_violations.zip): six dataflow branches answer six analytical questions (seasonal trend, monthly heatmap, stacked area by season, top intersections, camera-count distribution, and spatial map), all reading from a single root `DATA_LOADING` node.
+This example shows how several independent dataflows, each loading from the same source CSV and reducing it differently, can be joined back together via `MERGE_FLOW` and `COMPUTATION_ANALYSIS` to drive coordinated Vega-Lite views. The use case is Chicago's [red-light-violation dataset](data/08-red_light_violations.zip): six dataflow branches answer six analytical questions (seasonal trend, monthly heatmap, stacked area by season, top intersections, camera-count distribution, and spatial map), all reading from a single root `DATA_LOADING` node.
 
 This example is intentionally large; the markdown shows the *shape* of each branch and one representative Vega-Lite spec per branch. The full set of 24 nodes is in [04-vega-lite-multi-flow-dashboard.json](04-vega-lite-multi-flow-dashboard.json).
 
@@ -34,9 +34,9 @@ flowchart LR
 
 ## Data
 
-[08-red_light_violations.zip](data/08-red_light_violations.zip) — Chicago's open-data export of red-light camera violations.
+[08-red_light_violations.zip](data/08-red_light_violations.zip): Chicago's open-data export of red-light camera violations.
 
-Paths in the code below are relative to the directory you launched Curio from — run `curio start` from the repo root.
+Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
 
 ## Step 1: Load the violations CSV (`DATA_LOADING`)
 
@@ -110,7 +110,7 @@ A second `DATA_TRANSFORMATION` aggregates by `(Year, Month)` for the heatmap. It
 
 ## Branch C: Stacked area by season+year (`DATA_TRANSFORMATION` → `VIS_VEGA`)
 
-A standalone branch that aggregates totals by `(Year, Season)` and renders a stacked area chart — useful for spotting year-over-year shifts in seasonal mix.
+A standalone branch that aggregates totals by `(Year, Season)` and renders a stacked area chart, useful for spotting year-over-year shifts in seasonal mix.
 
 ## Branch D: Top-3 intersections per year (`DATA_TRANSFORMATION` → `VIS_VEGA`)
 
@@ -155,4 +155,4 @@ The final branch aggregates violations per `(INTERSECTION, LATITUDE, LONGITUDE)`
 
 ## Final result
 
-Each branch answers a different question (when, where, who, how much, how does enforcement compare?) but they all read from the same root `DATA_LOADING` node. The `MERGE_FLOW` + `COMPUTATION_ANALYSIS` pattern is what lets Branches B / E / F join two independent reductions into a single coordinated view. Adding a new analytical question is one more branch off the root — the existing branches are unaffected.
+Each branch answers a different question (when, where, who, how much, how does enforcement compare?) but they all read from the same root `DATA_LOADING` node. The `MERGE_FLOW` + `COMPUTATION_ANALYSIS` pattern is what lets Branches B / E / F join two independent reductions into a single coordinated view. Adding a new analytical question is one more branch off the root; the existing branches are unaffected.

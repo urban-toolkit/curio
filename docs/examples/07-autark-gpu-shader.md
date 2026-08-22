@@ -3,7 +3,7 @@
 In this example an `autk-grammar` chain runs a WGSL sunlight-accumulation shader on the GPU and renders
 the result as a thematic map linked to a brushable histogram. The driving question: *how many minutes of
 sunlight does each Chicago Loop road segment receive over the course of a June day, given the shadows
-cast by every building around it?* The shader answers it per road segment in **one** GPU dispatch — it
+cast by every building around it?* The shader answers it per road segment in **one** GPU dispatch; it
 loops over all buildings inside WGSL so each daylight hour earns 60 minutes only when no building shades
 the road. The `data`, `compute`, `map`, and `plot` blocks live in five connected nodes wired through a
 `data-pool` so brush selections on the histogram light up matching roads on the map.
@@ -35,15 +35,15 @@ route brushes through the pool to the matching roads.
 
 ## Data
 
-`docs/examples/data/chicago_loop.osm.pbf` — OSM extract for the Chicago Loop (regenerate with
+`docs/examples/data/chicago_loop.osm.pbf` is an OSM extract for the Chicago Loop (regenerate with
 `scripts/build_example_pbfs.py`).
 
 ## Step 1: Load OSM from a PBF (`sh-data`)
 
-The `data` block loads the Chicago Loop layers from `docs/examples/data/chicago_loop.osm.pbf` — DuckDB-WASM
+The `data` block loads the Chicago Loop layers from `docs/examples/data/chicago_loop.osm.pbf`. DuckDB-WASM
 parses the PBF in the browser, so there is no Overpass call at run time. autk-db materializes the layers in
 EPSG:3395 (metric), which is what the shader's geometry math assumes. The downstream compute and render
-nodes reference these layers by name (`table_osm_roads`, `table_osm_buildings`) — the named-layer case of
+nodes reference these layers by name (`table_osm_roads`, `table_osm_buildings`), the named-layer case of
 [Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ```json
@@ -62,7 +62,7 @@ The `compute` block binds each road's geometry as a per-feature matrix (`attribu
 `geometry.coordinates`, `attributeMatrices.seg`) and pulls every building's footprint and height from the
 upstream `table_osm_buildings` layer via a `fromFeature` directive with `iterate: "batched"`. The runtime
 packs each building's **AABB** (4 corners × 2 floats = 8 f32 per building) into a flat array exposed as
-`uniformArrays.ring`, packs the height array as `uniformArrays.bld_height`, and runs the shader **once** —
+`uniformArrays.ring`, packs the height array as `uniformArrays.bld_height`, and runs the shader **once**,
 not once per building. A `num_features` uniform tells the WGSL how many buildings are in the pack.
 `required: true` on `bld_height` tells the runtime to drop any OSM building that has no `properties.height`
 tag rather than substitute a synthetic default and over-extrude its shadow.
@@ -98,15 +98,15 @@ tag rather than substitute a synthetic default and over-extrude its shadow.
 
 Two iteration modes are supported on the same `fromFeature` shape:
 
-- `"all"` — the runtime dispatches `ComputeGpgpu.run()` once per source feature and **sums** the per-run
+- `"all"`: the runtime dispatches `ComputeGpgpu.run()` once per source feature and **sums** the per-run
   output columns. Trivial to write but it scales linearly in dispatch count and overcounts when multiple
   source features affect the same target row (e.g. two buildings shading the same road at noon both add 60).
-- `"batched"` — the runtime stacks every source feature's values into uniform arrays and dispatches
+- `"batched"`: the runtime stacks every source feature's values into uniform arrays and dispatches
   exactly once. The WGSL is responsible for looping over `num_features` and combining contributions
   however the analysis requires (here: per-hour union of shadows → boolean "any shadow", then accumulate
   sunlight only when none). One dispatch, correct semantics, ~100× faster on Loop-scale data.
 
-For the sunlight question, `"batched"` is the right mode — the shader needs to answer "is *any* building
+For the sunlight question, `"batched"` is the right mode, because the shader needs to answer "is *any* building
 shading this road right now" per hour, which is a union the runtime can't compute by post-summation.
 
 ### AABB simplification & feature cap
@@ -119,7 +119,7 @@ shadow envelope (correct for axis-aligned buildings, a slight over-estimate for 
 The runtime also caps the source feature count at **1500** to stay well under the uniform buffer limit. If
 the source layer has more, the excess is dropped (in source order) with a console warning. Combined with
 the `required: true` filter on `bld_height`, the surviving features are the OSM buildings that both have a
-tagged height and fit in the cap — the ones whose shadows actually matter for the analysis.
+tagged height and fit in the cap, the ones whose shadows actually matter for the analysis.
 
 ### Shader sketch
 
@@ -195,7 +195,7 @@ segments; `isColorMap` shows the colour ramp at load.
 
 ## Step 4: Brushable histogram (`sh-plot`)
 
-The `plot` block bins `sunlight` into a 13-bucket histogram (0–780 minutes is the physical range). Brushing
+The `plot` block bins `sunlight` into a 13-bucket histogram (0 to 780 minutes is the physical range). Brushing
 the chart (`brushX`) fires an `autk_selection` carrying the plot's `dataRef` as its `layerRef`; the pool's
 multi-layer routing applies the brush to roads only, leaving surface/parks/water/buildings untouched, and
 re-emits the wrapper so the map highlights the matching roads.
@@ -211,7 +211,7 @@ re-emits the wrapper so the map highlights the matching roads.
 
 ## Going further
 
-The upstream Autark example layers on more capability — picking-driven recompute against any clicked
+The upstream Autark example layers on more capability: picking-driven recompute against any clicked
 building, monthly variants, and ground-truth baselines from a CSV: see
 [main.ts](https://github.com/urban-toolkit/autark/blob/main/usecases/src/shadows/main.ts) and
 [shadow.wgsl](https://github.com/urban-toolkit/autark/blob/main/usecases/src/shadows/shadow.wgsl) upstream.

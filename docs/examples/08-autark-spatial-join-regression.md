@@ -1,7 +1,7 @@
 # Example: Per-feature spatial join + GPU regression with Autark
 
 This example combines OSM road geometry with a 24-band land-surface-temperature (LST) raster to estimate
-the per-road warming trend over Niterói (2001–2024). It mixes the Autark grammar with imperative JS/Python
+the per-road warming trend over Niterói (2001 to 2024). It mixes the Autark grammar with imperative JS/Python
 nodes: an `autk-grammar` **data** node loads roads from a local PBF, a Python node fetches the raster, a JS
 DuckDB node spatially joins per-band LST averages onto each road, and a second `autk-grammar` node fits a
 per-feature OLS regression on the GPU and feeds a thematic map + brushable scatter linked through a Data Pool.
@@ -35,13 +35,13 @@ flowchart LR
   POOL <-. brush/pick .-> PLOT
 ```
 
-The one step the grammar can't express — sampling a raster — stays in a JS DuckDB node; the regression and
+The one step the grammar can't express, sampling a raster, stays in a JS DuckDB node; the regression and
 the linked views live in the grammar, and the Data Pool fans the result out to both views and routes brush
 selections back.
 
 ## Data
 
-`docs/examples/data/niteroi.osm.pbf` — OSM extract for Niterói (regenerate with
+`docs/examples/data/niteroi.osm.pbf` is an OSM extract for Niterói (regenerate with
 `scripts/build_example_pbfs.py`). The 24-band LST raster is fetched at run time from the upstream Autark
 repo (Step 2).
 
@@ -49,7 +49,7 @@ repo (Step 2).
 
 A grammar node with only a `data` block loads Niterói's surface, parks, water, and roads from the local PBF.
 Layers are emitted in **EPSG:4326** so the downstream join node can re-ingest them via `loadCustomLayer`
-(which assumes WGS84 input) and reproject to a metric CRS for the spatial join — setting
+(which assumes WGS84 input) and reproject to a metric CRS for the spatial join. Setting
 `autoLoadLayers.coordinateFormat` to `EPSG:4326` is what keeps that contract (the grammar default is the
 metric `EPSG:3395`).
 
@@ -65,9 +65,9 @@ metric `EPSG:3395`).
 
 The data-only grammar node persists the layer array (`table_osm_surface` / `_parks` / `_water` / `_roads`)
 to the backend and emits a DuckDB reference. The downstream `js-computation` join receives it as the plain
-`[{ name, type, geojson }]` array — the Curio sandbox resolves the reference automatically before the join's
+`[{ name, type, geojson }]` array, and the Curio sandbox resolves the reference automatically before the join's
 `arg` is built, so no manual fetch is needed. Downstream autark nodes reference these layers by name
-(`"dataRef": "table_osm_roads"`) — the named-layer case of
+(`"dataRef": "table_osm_roads"`), the named-layer case of
 [Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ## Step 2: Reference the LST raster (`data-loading`)
@@ -85,7 +85,7 @@ geotiff_b64 = base64.b64encode(resp.content).decode('ascii')
 return gpd.GeoDataFrame({'geotiff_b64': [geotiff_b64], 'band_count': [24]}, geometry=[Point(0, 0)], crs='EPSG:4326')
 ```
 
-The two branches are bundled by a **`merge-flow`** node into a 2-element input — `arg[0]` is the OSM layer
+The two branches are bundled by a **`merge-flow`** node into a 2-element input: `arg[0]` is the OSM layer
 array, `arg[1]` is the raster row.
 
 ## Step 3: Spatial join LST → roads (`js-computation`, DuckDB)
@@ -111,7 +111,7 @@ await db.spatialQuery({
 
 The grammar `compute` block binds each road's 24-year series as a per-feature array
 (`attributes.bands` = `lst_timeseries`, `attributeArrays.bands` = 24) and runs the OLS WGSL shader, emitting
-two columns — `angle` (warming angle, degrees) and `intercept`. It references the roads layer by its real
+two columns: `angle` (warming angle, degrees) and `intercept`. It references the roads layer by its real
 name so the surface/parks/water context layers pass through untouched.
 
 ```json
@@ -129,7 +129,7 @@ name so the surface/parks/water context layers pass through untouched.
 The compute output flows into a **`data-pool`** node, which fans the augmented layer stack out to two
 `autk-grammar` views and routes brush/pick selections between them (`Interaction` edges `pool→map` and
 `pool→plot`). The `map` renders the full stack and colours roads by `angle`; the `plot` is a brushable
-`intercept`-vs-`angle` scatter — brushing it highlights the matching roads on the 3D map.
+`intercept`-vs-`angle` scatter, and brushing it highlights the matching roads on the 3D map.
 
 ```json
 "map": { "layerRefs": [
@@ -138,7 +138,7 @@ The compute output flows into a **`data-pool`** node, which fans the augmented l
 ]}
 
 "plot": { "dataRef": "table_osm_roads", "mark": "scatter", "axis": ["intercept", "angle"],
-          "title": "LST regression — warming angle vs baseline (Niterói roads)", "events": ["brush"] }
+          "title": "LST regression, warming angle vs baseline (Niterói roads)", "events": ["brush"] }
 ```
 
 ## Going further

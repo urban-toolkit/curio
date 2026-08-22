@@ -1,6 +1,6 @@
 # Example: Heterogeneous data + cross-grammar linked views
 
-This example combines three different data sources — a high-resolution thermal raster, a tabular meteorological feed, and a sociodemographic GeoDataFrame — into a single pipeline that derives the Universal Thermal Climate Index (UTCI) per Milan census tract, and then renders the result through coordinated `autk-grammar` map, Vega-Lite scatter, and Vega-Lite boxplot views with cross-grammar Interaction edges. The use case is heat exposure of older adults in Milan; the framework story is that Curio's `MERGE_FLOW` and `DATA_POOL` let you fan a heterogeneous join out to multiple linked views regardless of the visualization grammar.
+This example combines three different data sources, a high-resolution thermal raster, a tabular meteorological feed, and a sociodemographic GeoDataFrame, into a single pipeline that derives the Universal Thermal Climate Index (UTCI) per Milan census tract, and then renders the result through coordinated `autk-grammar` map, Vega-Lite scatter, and Vega-Lite boxplot views with cross-grammar Interaction edges. The use case is heat exposure of older adults in Milan; the framework story is that Curio's `MERGE_FLOW` and `DATA_POOL` let you fan a heterogeneous join out to multiple linked views regardless of the visualization grammar.
 
 > [!NOTE]
 > **WebGPU required**
@@ -8,7 +8,7 @@ This example combines three different data sources — a high-resolution thermal
 
 > [!NOTE]
 > **Python dependencies**
-> The code nodes import `rasterio`, `pythermalcomfort`, and `rasterstats`, which are provided by the `curio.weather` package — installed automatically when Curio starts with `--with-examples` (or `--deploy`), or on demand from the catalog drawer ("Weather Analysis"). Opening the seeded example project also triggers an automatic check that warns about and installs any of these that are missing in your own workspace.
+> The code nodes import `rasterio`, `pythermalcomfort`, and `rasterstats`, which are provided by the `curio.weather` package, installed automatically when Curio starts with `--with-examples` (or `--deploy`), or on demand from the catalog drawer ("Weather Analysis"). Opening the seeded example project also triggers an automatic check that warns about and installs any of these that are missing in your own workspace.
 
 ## Pipeline overview
 
@@ -36,13 +36,13 @@ flowchart LR
 
 ## Data
 
-- [09-milan_mrt.tif](data/09-milan_mrt.tif) — 2022 mean radiant temperature raster (Milan, July 22, noon). Pre-downsampled by 4× per dimension and float16-quantized so the file fits in the repo; UTCI precision (~0.06 °C in this range) is unaffected.
-- [09-milan_weather.csv](data/09-milan_weather.csv) — hourly ERA5 weather (Td, Wind, RH) for the same day.
-- [09-milan_census.geojson](data/09-milan_census.geojson) — Milan census polygons, trimmed to the `gt_65` (population over 65) column.
+- [09-milan_mrt.tif](data/09-milan_mrt.tif): the 2022 mean radiant temperature raster (Milan, July 22, noon). Pre-downsampled by a factor of 4 per dimension and float16-quantized so the file fits in the repo; UTCI precision (about 0.06 °C in this range) is unaffected.
+- [09-milan_weather.csv](data/09-milan_weather.csv): hourly ERA5 weather (Td, Wind, RH) for the same day.
+- [09-milan_census.geojson](data/09-milan_census.geojson): Milan census polygons, trimmed to the `gt_65` (population over 65) column.
 
 Original sources: Milan thermal raster from the [Curio team's bundled tutorial Drive](https://drive.google.com/drive/folders/1-cncKF-omB0av98WzKApKtyJTrgvfa0P?usp=sharing); census polygons from ISTAT.
 
-Paths in the code below are relative to the directory you launched Curio from — run `curio start` from the repo root.
+Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
 
 ## Step 1: Load the mean radiant temperature raster (`DATA_LOADING`)
 
@@ -73,7 +73,7 @@ The merge node has no code of its own; it exposes the raster as `arg[0]` and the
 Read the noon weather row and call `pythermalcomfort.models.utci` to produce a UTCI value per pixel. Two non-obvious details in this node:
 
 - `data.filled(np.nan)` collapses the rasterio MaskedArray to a plain float array with NaN for nodata, regardless of the raster's nodata sentinel.
-- `limit_inputs=False` keeps UTCI valid when `tr − tdb > 30` (common at noon in Milan, where MRT is regularly 60–70 °C while air temperature stays around 30 °C). With the default `limit_inputs=True`, those pixels would silently come back as NaN and the map would render half-empty.
+- `limit_inputs=False` keeps UTCI valid when `tr − tdb > 30` (common at noon in Milan, where MRT is regularly 60 to 70 °C while air temperature stays around 30 °C). With the default `limit_inputs=True`, those pixels would silently come back as NaN and the map would render half-empty.
 
 The output is the UTCI grid as a list-of-lists plus its `[width, height]` shape, packaged as a tuple so the downstream zonal-stats node can rebuild the array.
 
@@ -158,7 +158,7 @@ return gdf.loc[:, [gdf.geometry.name, "mean", "gt_65"]]
 
 Drop polygons with non-positive UTCI and reproject to EPSG:3395 so the `autk-grammar` map downstream sees the CRS its tile pipeline expects. The `metadata.name` keeps the table referenceable as `census` throughout the rest of the dataflow.
 
-Note the assignment goes through ``__dict__['metadata']`` instead of plain attribute syntax: pandas emits a `UserWarning` when setting an unknown attribute on a sliced DataFrame, and curio's sandbox treats any non-empty stderr as a node failure during e2e. Curio reads `.metadata` back through `getattr`, so both write paths work — but only the dict path stays warning-free.
+Note the assignment goes through ``__dict__['metadata']`` instead of plain attribute syntax: pandas emits a `UserWarning` when setting an unknown attribute on a sliced DataFrame, and curio's sandbox treats any non-empty stderr as a node failure during e2e. Curio reads `.metadata` back through `getattr`, so both write paths work, but only the dict path stays warning-free.
 
 ```python
 import geopandas as gpd
@@ -180,8 +180,8 @@ The pool keeps the joined `census` table in shared memory so the next three view
 The map is an `autk-grammar` node with just a `map` block. The census polygons routed in from the Data
 Pool are auto-injected as the `upstream` source; the layer is coloured by the UTCI `mean` column and
 picking is enabled so the linked scatterplot can highlight selected tracts. No JavaScript and no explicit
-data block — the grammar reads the upstream GeoDataFrame directly. This is the single-frame case of
-Autark's two upstream-referencing mechanisms — see
+data block, so the grammar reads the upstream GeoDataFrame directly. This is the single-frame case of
+Autark's two upstream-referencing mechanisms; see
 [Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ```json
@@ -198,7 +198,7 @@ Autark's two upstream-referencing mechanisms — see
 `interacted` flag through the pool, which the Vega scatter and boxplot consume on the next propagation
 cycle.
 
-## Step 10: Linked scatterplot — UTCI vs. older adults (`VIS_VEGA`)
+## Step 10: Linked scatterplot of UTCI vs. older adults (`VIS_VEGA`)
 
 A Vega-Lite scatter of `gt_65` vs `mean` UTCI. The interval selection on this view, combined with the Interaction edges added in Step 12, marks each polygon as `interacted` so the map can re-render with the selected tracts highlighted.
 
@@ -242,12 +242,12 @@ return gdf.loc[:, ["gt_65"]]
 
 ## Step 12: Wire the linked interaction (Interaction edges)
 
-Connect the `autk-grammar` map, `VIS_VEGA` (scatter), and `VIS_VEGA` (boxplot) to the shared `DATA_POOL` with edges of `type: "Interaction"`. Brushing in any one view propagates an `interacted` flag through the census table the pool holds; the other views re-style by reading that column on the next propagation cycle. This is the cross-grammar piece — the same Interaction wiring works between Vega-Lite and Autark views without either side knowing about the other.
+Connect the `autk-grammar` map, `VIS_VEGA` (scatter), and `VIS_VEGA` (boxplot) to the shared `DATA_POOL` with edges of `type: "Interaction"`. Brushing in any one view propagates an `interacted` flag through the census table the pool holds; the other views re-style by reading that column on the next propagation cycle. This is the cross-grammar piece: the same Interaction wiring works between Vega-Lite and Autark views without either side knowing about the other.
 
 This example wires two pool-anchored Interaction edges:
 
-- `DATA_POOL ↔ autk-grammar` — double-clicking a polygon in the map flips its row's `interacted` flag in the pool, which the Vega scatter and boxplot consume.
-- `VIS_VEGA` (scatter) `↔ DATA_POOL` — brushing a region of the scatter writes the matching rows' `interacted` flag in the pool, which the grammar map consumes through its `map:picking` interaction.
+- `DATA_POOL ↔ autk-grammar`: double-clicking a polygon in the map flips its row's `interacted` flag in the pool, which the Vega scatter and boxplot consume.
+- `VIS_VEGA` (scatter) `↔ DATA_POOL`: brushing a region of the scatter writes the matching rows' `interacted` flag in the pool, which the grammar map consumes through its `map:picking` interaction.
 
 ## Final result
 

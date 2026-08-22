@@ -13,9 +13,9 @@ flowchart LR
 
 ## Data
 
-[04-labels.json.zip](data/04-labels.json.zip) — Project Sidewalk's labelled accessibility features export (originally from [the Project Sidewalk API](https://sidewalk-chicago.cs.washington.edu/api)).
+[04-labels.json.zip](data/04-labels.json.zip): Project Sidewalk's labelled accessibility features export (originally from [the Project Sidewalk API](https://sidewalk-chicago.cs.washington.edu/api)).
 
-Paths in the code below are relative to the directory you launched Curio from — run `curio start` from the repo root.
+Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
 
 ## Step 1: Load the accessibility GeoJSON (`DATA_LOADING`)
 

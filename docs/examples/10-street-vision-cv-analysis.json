@@ -22,7 +22,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Recommended model: nvidia/segformer-b2-finetuned-cityscapes-1024-1024 (SegFormer B2 Cityscapes — the one used in the Chicago Greenery case study). Recommended classes: vegetation, road, building, sidewalk, sky. Then Run Inference.",
+        "goal": "Recommended model: nvidia/segformer-b2-finetuned-cityscapes-1024-1024 (SegFormer B2 Cityscapes, the one used in the Chicago Greenery case study). Recommended classes: vegetation, road, building, sidewalk, sky. Then Run Inference.",
         "metadata": {
           "keywords": []
         }

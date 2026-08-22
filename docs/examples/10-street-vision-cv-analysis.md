@@ -1,12 +1,12 @@
 # Example: Street-level computer vision
 
-This example pulls Google Street View imagery for a chosen neighborhood, runs a HuggingFace segmentation model on every panorama, tags each result with the city neighborhood it falls in via a spatial join, and renders the output as a polygon-shaded map + a per-neighborhood bar chart. The use case is *urban greenery audits* — see which neighborhoods are visually leafy vs. paved — but the same pipeline works for any per-pixel class you can find a model for (sidewalks, traffic signs, advertising, building facade material, …).
+This example pulls Google Street View imagery for a chosen neighborhood, runs a HuggingFace segmentation model on every panorama, tags each result with the city neighborhood it falls in via a spatial join, and renders the output as a polygon-shaded map + a per-neighborhood bar chart. The use case is *urban greenery audits*, showing which neighborhoods are visually leafy and which are paved, but the same pipeline works for any per-pixel class you can find a model for: sidewalks, traffic signs, advertising, building facade material, and so on.
 
-This example doubles as the worked example in [EXTENDING.md](../EXTENDING.md) — if you're a developer reading code, the manifest entries, behavior hooks, and Flask blueprint that ship these nodes are walked through there.
+This example doubles as the worked example in [EXTENDING.md](../EXTENDING.md). If you're a developer reading code, the manifest entries, behavior hooks, and Flask blueprint that ship these nodes are walked through there.
 
 > [!NOTE]
 > **Setup required**
-> Install the **Street Vision** package from Curio's `/catalog` page; the first install pip-installs the package's ML stack (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in its manifest — a ~3 GB download on a cold env. Have a Google Maps API key ready to paste into the Street View Fetcher node (the key lives in the node UI for the current session only — never written to disk or saved with the dataflow). The Spatial Join node is built-in and needs no separate install.
+> Install the **Street Vision** package from Curio's `/catalog` page; the first install pip-installs the package's ML stack (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in its manifest, roughly a 3 GB download on a cold env. Have a Google Maps API key ready to paste into the Street View Fetcher node (the key lives in the node UI for the current session only, and is never written to disk or saved with the dataflow). The Spatial Join node is built-in and needs no separate install.
 
 ## Pipeline overview
 
@@ -64,10 +64,10 @@ Suggested place for first-run: `Lincoln Park, Chicago`.
 
 Wire the Fetcher's output into the Inference node. Inside the node:
 
-1. **Task** — pick `Segmentation` (or `Detection` for YOLO).
-2. **Model** — the search defaults to `cityscapes`; leave "auto-pick top match" enabled or click a specific entry. For greenery audits a SegFormer-Cityscapes checkpoint works well (e.g. `nvidia/segformer-b0-finetuned-cityscapes-512-1024`).
-3. **Target Classes** — click `vegetation` (and optionally `building`, `road`, `sky`). You can also drop a CSV via the `+ Import CSV` link.
-4. Click **Run Inference**. Progress is polled every 2 seconds; expect ~10–60 seconds per image on CPU, faster with a GPU.
+1. **Task.** Pick `Segmentation` (or `Detection` for YOLO).
+2. **Model.** The search defaults to `cityscapes`; leave "auto-pick top match" enabled or click a specific entry. For greenery audits a SegFormer-Cityscapes checkpoint works well (e.g. `nvidia/segformer-b0-finetuned-cityscapes-512-1024`).
+3. **Target Classes.** Click `vegetation` (and optionally `building`, `road`, `sky`). You can also drop a CSV via the `+ Import CSV` link.
+4. Click **Run Inference**. Progress is polled every 2 seconds; expect 10 to 60 seconds per image on CPU, faster with a GPU.
 
 The output is per-image JSON with class ratios, lat/lon, and a stable `image_id`.
 
@@ -75,11 +75,11 @@ The output is per-image JSON with class ratios, lat/lon, and a stable `image_id`
 
 Wire Inference → CV Gallery. The gallery shows thumbnails with top-3 class breakdowns; click any tile for an inspect view with side-by-side source / segmentation-overlay tabs. The "Aggregate Stats" tab summarizes the run.
 
-Click **▶ Push to Downstream** to emit the same data as a GEODATAFRAME-shaped FeatureCollection — each feature's `properties` now flatten the class ratios into individual columns plus `dominant_class` and `dominant_pct` columns useful for downstream visualization.
+Click **▶ Push to Downstream** to emit the same data as a GEODATAFRAME-shaped FeatureCollection, where each feature's `properties` now flatten the class ratios into individual columns plus `dominant_class` and `dominant_pct` columns useful for downstream visualization.
 
 ## Step 4: Load neighborhood polygons (`DATA_LOADING`)
 
-For Chicago, the city publishes a [Boundaries — Neighborhoods](https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Neighborhoods/bbvr-jsnu) GeoJSON. Any FeatureCollection works as long as each Polygon feature carries a string property to use as the tag.
+For Chicago, the city publishes a [Boundaries, Neighborhoods](https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Neighborhoods/bbvr-jsnu) GeoJSON. Any FeatureCollection works as long as each Polygon feature carries a string property to use as the tag.
 
 ```python
 import geopandas as gpd
@@ -89,7 +89,7 @@ return gdf
 
 ## Step 5: Tag each image with its neighborhood (`Spatial Join`)
 
-The Spatial Join node (built-in, in `curio.builtin@1`) renders as a small icon-only block — just like Merge Flow — with two distinct input handles on the left edge: **points** (top, blue dot) and **polygons** (bottom, green dot). Wire the CV Gallery output to the points handle and the polygons output (from Step 4) to the polygons handle.
+The Spatial Join node (built-in, in `curio.builtin@1`) renders as a small icon-only block, just like Merge Flow, with two distinct input handles on the left edge: **points** (top, blue dot) and **polygons** (bottom, green dot). Wire the CV Gallery output to the points handle and the polygons output (from Step 4) to the polygons handle.
 
 The node hardcodes the polygon tag column to `properties.name`. The Chicago neighborhoods file uses `pri_neigh`, the NYC boroughs file uses `BoroName`, etc., so insert a `Data Transformation` node between Data Loading and Spatial Join to rename the relevant property to `name`:
 
@@ -101,8 +101,8 @@ return gdf
 
 The node emits the input points augmented with:
 
-- `neighborhood_name` — the matching polygon's tag value, or null for points outside every polygon.
-- `nbhd_dominant_class` / `nbhd_dominant_pct` / `nbhd_image_count` — per-polygon roll-ups projected back onto every member point so a Vega-Lite `lookup` can read them directly.
+- `neighborhood_name`: the matching polygon's tag value, or null for points outside every polygon.
+- `nbhd_dominant_class` / `nbhd_dominant_pct` / `nbhd_image_count`: per-polygon roll-ups projected back onto every member point so a Vega-Lite `lookup` can read them directly.
 
 ## Step 6: Map view (`VIS_VEGA`)
 
@@ -175,11 +175,11 @@ A second `VIS_VEGA` wired off the same Spatial Join output:
 
 ## Expected output
 
-For a Lincoln Park run with the SegFormer-Cityscapes model and `vegetation` as the target class, the map polygon for Lincoln Park is colored vegetation-yellow (≈25–35% average vegetation pixels), while a denser downtown neighborhood like the Loop comes in road-blue or building-green. The bar chart shows image counts per neighborhood with each bar segmented by the modal dominant class.
+For a Lincoln Park run with the SegFormer-Cityscapes model and `vegetation` as the target class, the map polygon for Lincoln Park is colored vegetation-yellow (about 25 to 35% average vegetation pixels), while a denser downtown neighborhood like the Loop comes in road-blue or building-green. The bar chart shows image counts per neighborhood with each bar segmented by the modal dominant class.
 
 ## Limitations
 
 - **Jobs don't survive a backend restart.** Inference state is in-memory; restart loses any in-flight job. Re-run.
 - **Cost.** Street View Static API requests are billed past Google's free tier. The Fetcher node caps requests at 200; default 20.
-- **CPU inference is slow.** A single SegFormer pass per panorama takes a few seconds on CPU; a 20-image run lands around 1–2 minutes. With a GPU it's near-realtime.
+- **CPU inference is slow.** A single SegFormer pass per panorama takes a few seconds on CPU; a 20-image run lands around 1 to 2 minutes. With a GPU it's near-realtime.
 - **The neighborhood `name` property is per-dataset.** Chicago uses `pri_neigh`, NYC uses `BoroName`, a generic FeatureCollection uses `name`. Set this in the Spatial Join node's "Polygon name property" field; default is `name`.

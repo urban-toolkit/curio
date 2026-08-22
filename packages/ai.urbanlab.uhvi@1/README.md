@@ -1,4 +1,4 @@
-# `ai.urbanlab.uhvi@1` — fixture package
+# `ai.urbanlab.uhvi@1`: fixture package
 
 A minimal package used to exercise the Curio node-catalog integration end-to-end
 (see [`docs/NODE-CATALOG.md`](../../docs/NODE-CATALOG.md) for the user-facing guide,
@@ -31,7 +31,7 @@ The defaults assume a workspace layout matching the repo root:
 
 ## Self-containment
 
-The package is **self-contained** — every template preset lives under
+The package is **self-contained**: every template preset lives under
 `templates/<kindId>/` inside this directory. It does **not** reference
 `<CURIO_LAUNCH_CWD>/templates/` or any other path outside its own root.
 

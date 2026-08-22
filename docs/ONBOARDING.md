@@ -29,7 +29,7 @@ This document is meant for **undergraduate students** involved in the Curio proj
 
 **Curio** is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations. [GitHub](https://github.com/urban-toolkit/curio)
 
-In-browser map rendering and GPU compute are provided by the **Autark** grammar (`@urban-toolkit/autk-grammar`). It is exposed in dataflows through a single `AUTK_GRAMMAR` node whose "UrbanSpec" declaratively combines data loading (OSM/PBF), GPU `compute` (WGSL), and `map` / `plot` rendering. How a spec references data arriving from upstream nodes — the `upstream` keyword versus named layer references — is covered in [ARCHITECTURE.md](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
+In-browser map rendering and GPU compute are provided by the **Autark** grammar (`@urban-toolkit/autk-grammar`). It is exposed in dataflows through a single `AUTK_GRAMMAR` node whose "UrbanSpec" declaratively combines data loading (OSM/PBF), GPU `compute` (WGSL), and `map` / `plot` rendering. How a spec references data arriving from upstream nodes, using either the `upstream` keyword or named layer references, is covered in [ARCHITECTURE.md](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 **Urbanite** is a separate research project that has been integrated into Curio, adding LLM-powered assistance for dataflow authoring. See [urbantk.org/urbanite](https://urbantk.org/urbanite) for the paper.
 
@@ -37,11 +37,11 @@ If you would like to learn more about the design and research behind Curio, plea
 
 
 > "We have seen that computer programming is an art, because it applies accumulated knowledge to the world, because it requires skill and ingenuity, and especially because it produces objects of beauty. A programmer who subconsciously views himself as an artist will enjoy what he does and will do it better."  
-> — Donald Knuth
+> Donald Knuth
 
-As you code for Curio, remember that things not working is a normal, expected part of programming. Debugging is not just about fixing mistakes; it is how programmers learn, understand, and improve their work. Each error you encounter is an opportunity to clarify your thinking, discover how the systems and frameworks truly work, and refine your design. **This is the craft you are developing.** Treat debugging and refinement as part of your learning, not interruptions to it.
+As you code for Curio, remember that things not working is a normal, expected part of programming. Most of what you will learn about a system, you will learn while debugging it. An error usually means your mental model and the code disagree, and finding out which one is wrong is the whole job. **This is the craft you are developing.** Treat debugging and refinement as part of your learning, not interruptions to it.
 
-As you learn, consider reading [Peter Norvig’s "Teach Yourself Programming in Ten Years"](https://norvig.com/21-days.html). Norvig emphasizes that programming is not about shortcuts or overnight mastery but about learning deeply, practicing consistently, and staying curious while building meaningful systems. Likewise, Donald Knuth, one of the most respected computer scientists, describes programming as an art that requires creativity, skill, and the pursuit of clarity and beauty in your work. You can read his classic perspective in ["Computer Programming as an Art"](https://dl.acm.org/doi/pdf/10.1145/1283920.1283929).
+As you learn, consider reading [Peter Norvig’s "Teach Yourself Programming in Ten Years"](https://norvig.com/21-days.html). Norvig’s argument is that real skill comes from years of deliberate practice, not from a shortcut. Donald Knuth makes a related point: he treats programming as an art, where clarity and elegance are worth pursuing for their own sake. His classic essay is ["Computer Programming as an Art"](https://dl.acm.org/doi/pdf/10.1145/1283920.1283929).
 
 When your code breaks or your pipeline fails, take a breath: this is not a reason for frustration, but an invitation to engage with programming and strengthen your ability to think, debug, and build effectively.
 
@@ -145,9 +145,9 @@ Install these tools before you start:
 
 This is the folder structure of the Curio repository:
 
-- `docs/` – Usage guides, examples, contribution guidelines, developer references
-- `tests/` – Unit tests and integration tests
-- `utk_curio/` – Source code for Curio (backend, frontend, sandbox)
+- `docs/`: usage guides, examples, contribution guidelines, developer references
+- `tests/`: unit tests and integration tests
+- `utk_curio/`: source code for Curio (backend, frontend, sandbox)
 
 ## 5. Making Contributions
 

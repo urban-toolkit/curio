@@ -17,7 +17,7 @@ flowchart LR
 
 [10-green_roofs.csv](data/10-green_roofs.csv) (rooftop inventory) and [chicago.geojson](data/chicago.geojson) (zip-coded neighborhood polygons).
 
-Paths in the code below are relative to the directory you launched Curio from — run `curio start` from the repo root.
+Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
 
 ## Step 1: Load the green-roofs CSV (`DATA_LOADING`)
 
@@ -30,7 +30,7 @@ return df
 
 ## Step 2: Fill missing values (`DATA_TRANSFORMATION`)
 
-A trivial cleanup pass so the histogram in Step 3 is not skewed by `NaN` rows. Pandas 3.0 raises `TypeError` when filling string columns with an integer, so the fill is scoped to numeric dtypes — string nulls are left untouched.
+A trivial cleanup pass so the histogram in Step 3 is not skewed by `NaN` rows. Pandas 3.0 raises `TypeError` when filling string columns with an integer, so the fill is scoped to numeric dtypes; string nulls are left untouched.
 
 ```python
 import pandas as pd
@@ -77,7 +77,7 @@ A log-binned histogram of `TOTAL_ROOF_SQFT`, useful because rooftop sizes span s
 
 ## Step 4: Spatial join with neighborhood polygons (`DATA_LOADING`)
 
-A second loading node reads the rooftop CSV again, projects the lat/lon columns into a GeoDataFrame, and `sjoin`s it with Chicago's zip-coded polygons. The result is then trimmed to just the columns the downstream views actually use, and the geometry column is dropped — that lets the `DATA_POOL` serialize a small plain DataFrame instead of the full GeoDataFrame plus the unused string-typed columns the GeoJSON contributes (`objectid`, `shape_area`, `shape_len`).
+A second loading node reads the rooftop CSV again, projects the lat/lon columns into a GeoDataFrame, and `sjoin`s it with Chicago's zip-coded polygons. The result is then trimmed to just the columns the downstream views actually use, and the geometry column is dropped, which lets the `DATA_POOL` serialize a small plain DataFrame instead of the full GeoDataFrame plus the unused string-typed columns the GeoJSON contributes (`objectid`, `shape_area`, `shape_len`).
 
 ```python
 import geopandas as gpd
@@ -200,4 +200,4 @@ return top_10_largest
 
 ## Final result
 
-The histogram answers "how big is a typical green roof?", the dot density map answers "where are they?", and the bar chart answers "which zips lead?". Because the three views fan out from a `DATA_POOL`, the spatial join only runs once — and adding a fourth view (e.g. a chart of installations by year) is one more node off the pool, not a re-join.
+The histogram answers "how big is a typical green roof?", the dot density map answers "where are they?", and the bar chart answers "which zips lead?". Because the three views fan out from a `DATA_POOL`, the spatial join only runs once, and adding a fourth view (e.g. a chart of installations by year) is one more node off the pool, not a re-join.

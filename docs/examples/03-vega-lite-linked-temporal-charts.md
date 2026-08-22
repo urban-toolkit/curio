@@ -1,6 +1,6 @@
 # Example: Temporal aggregation feeding linked Vega-Lite charts
 
-This example demonstrates how a single time-aggregated table can feed two different Vega-Lite views — a per-camera stacked bar chart and a city-wide totals line chart — both reading from the same `COMPUTATION_ANALYSIS` output. The use case is Chicago's [speed-camera violations dataset](data/07-speed_camera_violations.zip): we group violations per camera per year, keep the top five offenders, and visualise both the per-camera breakdown and the year-over-year total.
+This example demonstrates how a single time-aggregated table can feed two different Vega-Lite views, a per-camera stacked bar chart and a city-wide totals line chart, both reading from the same `COMPUTATION_ANALYSIS` output. The use case is Chicago's [speed-camera violations dataset](data/07-speed_camera_violations.zip): we group violations per camera per year, keep the top five offenders, and visualise both the per-camera breakdown and the year-over-year total.
 
 ## Pipeline overview
 
@@ -13,9 +13,9 @@ flowchart LR
 
 ## Data
 
-[07-speed_camera_violations.zip](data/07-speed_camera_violations.zip) — Chicago's open-data export of speed-camera violations.
+[07-speed_camera_violations.zip](data/07-speed_camera_violations.zip): Chicago's open-data export of speed-camera violations.
 
-Paths in the code below are relative to the directory you launched Curio from — run `curio start` from the repo root.
+Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
 
 ## Step 1: Load the violations CSV (`DATA_LOADING`)
 

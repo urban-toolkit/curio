@@ -1,6 +1,6 @@
 # Example: Faceted Vega-Lite drill-down across multiple axes
 
-This example uses five independent dataflows to slice the same building-energy dataset along five orthogonal axes — building type, community area, monthly trend, monthly drill-down by community, and building age × stories. Each dataflow re-loads the source CSV (which Curio caches per file) and produces a focused Vega-Lite view, demonstrating how a large analytical question can be decomposed into small, independently runnable branches that the user can scrub interactively.
+This example uses five independent dataflows to slice the same building-energy dataset along five orthogonal axes: building type, community area, monthly trend, monthly drill-down by community, and building age by stories. Each dataflow re-loads the source CSV (which Curio caches per file) and produces a focused Vega-Lite view, demonstrating how a large analytical question can be decomposed into small, independently runnable branches that the user can scrub interactively.
 
 This example is intentionally large; the markdown shows the *shape* of each dataflow and one representative Vega-Lite spec per dataflow. The full set of 27 nodes is in [05-vega-lite-multi-view-drilldown.json](05-vega-lite-multi-view-drilldown.json).
 
@@ -26,9 +26,9 @@ flowchart LR
 
 ## Data
 
-[11-energy_usage.csv](data/11-energy_usage.csv) — Chicago Energy Usage 2010 dataset.
+[11-energy_usage.csv](data/11-energy_usage.csv): the Chicago Energy Usage 2010 dataset.
 
-Paths in the code below are relative to the directory you launched Curio from — run `curio start` from the repo root.
+Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
 
 ## Step 1: Energy split by building type (`DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA`)
 
@@ -62,7 +62,7 @@ A second `DATA_LOADING` node re-reads the CSV (Curio caches the file read) and a
 
 ## Step 3: Monthly KWH trend by community (`DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA`)
 
-Reshape the dataset's wide monthly KWH columns (`KWH JANUARY 2010`, … `KWH DECEMBER 2010`) into long form, narrow to the top 20 communities by mean KWH, then render a `vconcat` of a line chart (one line per community, click to highlight via a `commPick` param) and a horizontal bar chart of the selected community's monthly average — a classic *focus + context* drill-down.
+Reshape the dataset's wide monthly KWH columns (`KWH JANUARY 2010`, … `KWH DECEMBER 2010`) into long form, narrow to the top 20 communities by mean KWH, then render a `vconcat` of a line chart (one line per community, click to highlight via a `commPick` param) and a horizontal bar chart of the selected community's monthly average, a classic *focus + context* drill-down.
 
 ```json
 {
@@ -104,4 +104,4 @@ Load the CSV → categorise `AVERAGE STORIES` into `1 / 2 / 3-5 / 6-10 / 11+ sto
 
 ## Final result
 
-The five dataflows give the analyst five independent entry points into the same dataset. Because each is a self-contained branch, an analyst exploring building-age effects (Step 5) can re-run only that branch without disturbing the community-level views (Steps 2-4) — Curio's per-node caching means the source CSV reads only once per Python process. Adding a sixth axis (e.g. by ZIP code) is one more `DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA` chain, isolated from the others.
+The five dataflows give the analyst five independent entry points into the same dataset. Because each is a self-contained branch, an analyst exploring building-age effects (Step 5) can re-run only that branch without disturbing the community-level views (Steps 2-4), because Curio's per-node caching means the source CSV reads only once per Python process. Adding a sixth axis (e.g. by ZIP code) is one more `DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA` chain, isolated from the others.

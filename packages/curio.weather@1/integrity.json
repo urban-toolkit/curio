@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "README.md": "0c73a146b7afda792719f8efc013bde81072afff0ccd240ad27f02a0d663d1c4",
+    "README.md": "9a8c42f7b25709a6d97189c6eed882c29c153cf73201d8dd7a11446bc6b6bc09",
     "manifest.json": "4312a4a500687b68621c8f1a731420cf9fff474eb805e78cbad2a338c281dfb5",
     "sources/census-load.py": "717c18b81d433b896c7d5488bc5ac2cab6921e282789007adc055d577d48f5ed",
     "sources/census-reproject.py": "49eac77a6a3b408487308998bb4c7959e1cf1ad63ab0df21768f60db7508ec91",

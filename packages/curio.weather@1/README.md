@@ -1,4 +1,4 @@
-# `curio.weather@1` — Weather Analysis
+# `curio.weather@1`: Weather Analysis
 
 Nodes for weather data ingestion and thermal-comfort analysis: ERA5 meteorological
 loading, UTCI computation via `pythermalcomfort`, raster I/O via `rasterio`, raster
@@ -40,7 +40,7 @@ Multi-input nodes read their edges positionally (`arg[0]`, `arg[1]`, …) using 
 
 ## Setup
 
-Install the package from the [Node Catalog](../../docs/NODE-CATALOG.md) — the drawer
+Install the package from the [Node Catalog](../../docs/NODE-CATALOG.md). The drawer
 inside the canvas (**Node packages → Browse Node Catalog +**) or the **Nodes** tab on
 `/catalog`. Curio installs the declared Python dependencies automatically:
 

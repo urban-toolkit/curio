@@ -1,6 +1,6 @@
 # Curio Architecture
 
-This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how nodes and packages work — including how to add a new behavior hook or icon — see [NODE-CATALOG.md](NODE-CATALOG.md), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
+This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how nodes and packages work, including how to add a new behavior hook or icon, see [NODE-CATALOG.md](NODE-CATALOG.md), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
 
 ## Table of Contents
 
@@ -88,12 +88,12 @@ State is managed through a nested context-provider tree rather than a global sto
 
 ```
 ReactFlowProvider
-  LLMProvider          — LLM chat
-  ProvenanceProvider   — Provenance tracking
-  UserProvider         — Auth / user profile
-  DialogProvider       — Modal dialogs
-  FlowProvider         — Nodes, edges, outputs, interactions  ← primary state
-    StarterProvider    — Per-template starter source snippets (formerly TemplateProvider)
+  LLMProvider          LLM chat
+  ProvenanceProvider   Provenance tracking
+  UserProvider         Auth / user profile
+  DialogProvider       Modal dialogs
+  FlowProvider         Nodes, edges, outputs, interactions  ← primary state
+    StarterProvider    Per-template starter source snippets (formerly TemplateProvider)
 ```
 
 Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProvenance()`). Components call these hooks rather than reaching into global variables.
@@ -118,7 +118,7 @@ When a node produces output, it calls `outputCallback(nodeId, output)`, which up
 
 ### Node Packages and Manifests
 
-Node types are no longer hardcoded into a TypeScript enum. They live in **node packages** under [`packages/<packageId>@<major>/`](../packages/) — each directory ships a `manifest.json` that declares one or more **templates**, the manifest's name for what becomes a `NodeDescriptor` at runtime.
+Node types are no longer hardcoded into a TypeScript enum. They live in **node packages** under [`packages/<packageId>@<major>/`](../packages/). Each directory ships a `manifest.json` that declares one or more **templates**, the manifest's name for what becomes a `NodeDescriptor` at runtime.
 
 ```
 packages/
@@ -147,7 +147,7 @@ A manifest's `templates[*]` entry maps cleanly to a `NodeDescriptor`:
 }
 ```
 
-[`packagesClient.ts::buildDescriptor`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads each installed manifest and constructs the corresponding `NodeDescriptor` at boot — there is no longer a static enum or a hand-written descriptors file. The frontend `nodeRegistry` is populated entirely from these manifests.
+[`packagesClient.ts::buildDescriptor`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads each installed manifest and constructs the corresponding `NodeDescriptor` at boot; there is no longer a static enum or a hand-written descriptors file. The frontend `nodeRegistry` is populated entirely from these manifests.
 
 Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 
@@ -155,7 +155,7 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 |---|---|
 | Data | `data-loading`, `data-transformation`, `data-summary`, `data-export`, `data-pool` |
 | Computation | `computation-analysis`, `js-computation`, `merge-flow`, `spatial-join` |
-| Grammar (Autark) | `autk-grammar` — one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
+| Grammar (Autark) | `autk-grammar`, one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
 | Chart/table visualization | `vis-vega`, `vis-simple` |
 
 Third-party packages (or first-party optional ones, like `curio.streetvision@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
@@ -177,10 +177,10 @@ interface NodeDescriptor {
 ```
 
 Port cardinality strings follow a mini-language:
-- `'1'` — exactly one connection
-- `'n'` — any number of connections
-- `'[1,2]'` — between 1 and 2 connections
-- `'[1,n]'` — one or more connections
+- `'1'`: exactly one connection
+- `'n'`: any number of connections
+- `'[1,2]'`: between 1 and 2 connections
+- `'[1,n]'`: one or more connections
 
 ### NodeAdapter: Runtime Wiring
 
@@ -197,7 +197,7 @@ interface NodeAdapter {
 
 ### Behavior Hooks
 
-Every template in a manifest references a **behavior key** (the `behavior` field — `"code"`, `"vega"`, `"data-pool"`, `"street-view-fetcher"`, …). A behavior is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
+Every template in a manifest references a **behavior key** (the `behavior` field, holding values such as `"code"`, `"vega"`, `"data-pool"`, or `"street-view-fetcher"`). A behavior is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
 
 ```typescript
 type NodeBehaviorHook = (
@@ -215,13 +215,13 @@ The hook can return:
 | `defaultValueOverride` | Override the initial code shown in the editor |
 | `dynamicHandles` / `handlesOverride` | Add or replace connection handles at runtime |
 
-Behaviors register against a single global registry — [`behaviorRegistry.ts::registerBehavior(name, hook)`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) — and the manifest's `behavior` key looks them up by name. Two distribution channels:
+Behaviors register against a single global registry, [`behaviorRegistry.ts::registerBehavior(name, hook)`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts), and the manifest's `behavior` key looks them up by name. Two distribution channels:
 
-**1. Built-in (ships with Curio's main bundle).** [`builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts) calls `registerBehavior(...)` at import time for the hooks every install needs — `useCodeNodeBehavior`, `useVegaBehavior`, `useAutkGrammarBehavior`, `useDataPoolBehavior`, `useMergeFlowBehavior`, `useSpatialJoinBehavior`, etc. These power `curio.builtin@1`'s templates.
+**1. Built-in (ships with Curio's main bundle).** [`builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts) calls `registerBehavior(...)` at import time for the hooks every install needs: `useCodeNodeBehavior`, `useVegaBehavior`, `useAutkGrammarBehavior`, `useDataPoolBehavior`, `useMergeFlowBehavior`, `useSpatialJoinBehavior`, and so on. These power `curio.builtin@1`'s templates.
 
 **2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"behaviorScript": "scripts/behaviors.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageBehaviorScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each hook it ships.
 
-**Worked example — `curio.streetvision@1`** ships three custom behaviors:
+**Worked example: `curio.streetvision@1`** ships three custom behaviors:
 
 | Behavior key | Hook | Purpose |
 |---|---|---|
@@ -309,20 +309,20 @@ CREATE TABLE artifacts (
 2. The sandbox prints `{ "path": "<artifact_id>", "dataType": "<kind>" }` to stdout.
 3. The backend reads stdout and returns `{ path, dataType }` to the frontend.
 4. The frontend stores the artifact ID in `FlowProvider.outputs` and passes it as `INodeData.input` to downstream nodes.
-5. When a downstream node executes, it sends the artifact ID to the sandbox, which calls `load_from_duckdb(id)` to reconstruct the Python object — no re-serialization of the original data needed.
+5. When a downstream node executes, it sends the artifact ID to the sandbox, which calls `load_from_duckdb(id)` to reconstruct the Python object, with no re-serialization of the original data needed.
 6. For previewing data in the UI, the frontend fetches via `GET /get-preview?fileName=<artifact_id>`, which loads the artifact and returns only the first 100 rows as JSON.
 
 ### Referencing Upstream Data in Autark Nodes
 
-The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) resolves whatever arrived on the input edge and injects it as named `geojson` sources the spec can reference. Upstream geojson is data the browser already holds, so it stays client-side — only the spec's own authored `data` sources (OSM / PBF / CSV / …) run in the backend sandbox. There are two cases:
+The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) resolves whatever arrived on the input edge and injects it as named `geojson` sources the spec can reference. Upstream geojson is data the browser already holds, so it stays client-side; only the spec's own authored `data` sources (OSM / PBF / CSV and the like) run in the backend sandbox. There are two cases:
 
-**1. Single frame — the `upstream` keyword.** A single upstream frame (e.g. a Python GeoDataFrame from a computation node, or one routed through a Data Pool) is injected as one source named `upstream`:
+**1. Single frame, the `upstream` keyword.** A single upstream frame (e.g. a Python GeoDataFrame from a computation node, or one routed through a Data Pool) is injected as one source named `upstream`:
 
 ```json
 "map": { "layerRefs": [{ "dataRef": "upstream", "getFnv": "mean", "getFnvType": "quantitative" }] }
 ```
 
-**2. Layer array — named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually:
+**2. Layer array, named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually:
 
 ```json
 "map": { "layerRefs": [{ "dataRef": "table_osm_buildings" }, { "dataRef": "table_osm_roads" }] }
@@ -330,7 +330,7 @@ The `autk-grammar` node consumes upstream data differently from Python nodes: it
 
 When a layer array arrives, `upstream` is additionally kept as an alias for the **first** layer, so a single-layer spec keeps working when its upstream node starts emitting an array. New multi-layer specs should use the real layer names.
 
-A `dataRef` that names an unavailable table — an empty layer, a layer that was never loaded, or one dropped by an upstream node — does not fail the run. The behavior drops the dangling `map.layerRefs` entry or `plot` block before the grammar executes and logs a console warning listing the table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. The visible symptom of a typo'd reference is therefore a missing layer plus a DevTools warning, not an error.
+A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, does not fail the run. The behavior drops the dangling `map.layerRefs` entry or `plot` block before the grammar executes and logs a console warning listing the table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. The visible symptom of a typo'd reference is therefore a missing layer plus a DevTools warning, not an error.
 
 [Example 09](examples/09-heterogeneous-data-linked-views.md) demonstrates the `upstream` keyword; [Example 11](examples/11-autark-pbf-loading.md) demonstrates named layer references.
 
@@ -379,10 +379,10 @@ When a user clicks the play button on a node, the following sequence occurs:
    - React re-renders downstream nodes
 
 7. ProvenanceProvider.recordExecution()
-   POST /nodeExecProv — records timestamps, types, source
+   POST /nodeExecProv: records timestamps, types, source
 ```
 
-**JavaScript execution detail:** `JS_COMPUTATION` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed — the Node subprocess is per-request and fully isolated.
+**JavaScript execution detail:** `JS_COMPUTATION` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
 
 ### The Python Wrapper
 
@@ -447,9 +447,9 @@ Curio records a per-node execution history (start/end time, source code, input/o
 
 Curio's Python deps live in two places:
 
-**1. Framework deps** ([`requirements.txt`](../requirements.txt), mirrored in [`pyproject.toml::dependencies`](../pyproject.toml)) — only what the backend + sandbox Flask apps need at module load (Flask, Flask-SQLAlchemy, Flask-Migrate, Flask-Caching, `requests`, `python-dotenv`, the LLM SDKs, `altair`, `tqdm`, `pygments`) plus test/dev tools. No data-ops libraries.
+**1. Framework deps** ([`requirements.txt`](../requirements.txt), mirrored in [`pyproject.toml::dependencies`](../pyproject.toml)) carries only what the backend and sandbox Flask apps need at module load (Flask, Flask-SQLAlchemy, Flask-Migrate, Flask-Caching, `requests`, `python-dotenv`, the LLM SDKs, `altair`, `tqdm`, `pygments`) plus test/dev tools. No data-ops libraries.
 
-**2. Per-package deps** — every node package declares the libraries its templates need in its manifest's `dependencies.python`:
+**2. Per-package deps.** Every node package declares the libraries its templates need in its manifest's `dependencies.python`:
 
 ```json
 // packages/curio.builtin@1/manifest.json
@@ -474,17 +474,17 @@ Spec syntax accepts PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`), bare ver
 
 ### Install paths
 
-- **At `curio start`** — the launcher ([`main.py::install_manifest_dependencies`](../utk_curio/main.py)) walks every installed manifest (`packages/curio.builtin@*` from the catalog source + every user store under `.curio/users/<u>/packages/`), unions their `dependencies.python` via [`resolver.merge_python_deps`](../utk_curio/backend/app/packages/resolver.py) (which surfaces range conflicts as warnings instead of silently last-write-wins), and pip-installs the merged map via [`pip_runner.install_python_deps`](../utk_curio/backend/app/packages/pip_runner.py). Already-satisfied deps are skipped via `importlib.metadata.version` — the steady-state cost is ~1 s with no network.
+- **At `curio start`**, the launcher ([`main.py::install_manifest_dependencies`](../utk_curio/main.py)) walks every installed manifest (`packages/curio.builtin@*` from the catalog source + every user store under `.curio/users/<u>/packages/`), unions their `dependencies.python` via [`resolver.merge_python_deps`](../utk_curio/backend/app/packages/resolver.py) (which surfaces range conflicts as warnings instead of silently last-write-wins), and pip-installs the merged map via [`pip_runner.install_python_deps`](../utk_curio/backend/app/packages/pip_runner.py). Already-satisfied deps are skipped via `importlib.metadata.version`, so the steady-state cost is about a second with no network.
 
-- **At catalog install time** (`/api/packages/projects/<id>/install`) — when the user installs a package from the drawer, [`services._ensure_user_store_install`](../utk_curio/backend/app/packages/services.py) copies the files, then calls `pip_runner.install_python_deps` on the freshly-installed manifest. The Install button stays busy until pip finishes; heavy installs (`torch`, ~3 GB) can take minutes.
+- **At catalog install time** (`/api/packages/projects/<id>/install`), when the user installs a package from the drawer, [`services._ensure_user_store_install`](../utk_curio/backend/app/packages/services.py) copies the files, then calls `pip_runner.install_python_deps` on the freshly-installed manifest. The Install button stays busy until pip finishes; heavy installs (`torch`, ~3 GB) can take minutes.
 
-- **At catalog uninstall time** — `prune_unreferenced_packages` walks every other still-installed package's manifest, finds the deps the pruned package declared that no other surviving package still requires, and pip-uninstalls only those (ref-counted shared deps survive).
+- **At catalog uninstall time**, `prune_unreferenced_packages` walks every other still-installed package's manifest, finds the deps the pruned package declared that no other surviving package still requires, and pip-uninstalls only those (ref-counted shared deps survive).
 
 ### Why this split
 
-The framework needs to boot before any manifests can be walked — so `pip install -r requirements.txt` (or `pip install utk-curio`) seeds enough of an env that the launcher can read `manifest.dependencies.python` and continue. Heavy ML/data libraries are intentionally NOT in the framework requirements: a fresh `pip install utk-curio` is small + fast; the multi-GB pulls happen lazily when the user actually installs the matching package (Street Vision pulls `torch` only after they click Install in the catalog).
+The framework needs to boot before any manifests can be walked, so `pip install -r requirements.txt` (or `pip install utk-curio`) seeds enough of an env that the launcher can read `manifest.dependencies.python` and continue. Heavy ML/data libraries are intentionally NOT in the framework requirements: a fresh `pip install utk-curio` is small and fast, and the multi-GB pulls happen lazily when the user actually installs the matching package (Street Vision pulls `torch` only after they click Install in the catalog).
 
-Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → File → Installed libraries) sit in a third bucket — per-user JSON at `.curio/users/<u>/installed-libraries.json` — and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
+Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → File → Installed libraries) sit in a third bucket, per-user JSON at `.curio/users/<u>/installed-libraries.json`, and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
 
 ---
 
@@ -517,7 +517,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/api/packages/projects/<id>/<dirName>` | DELETE | Uninstall a package from a project (ref-counted prune + pip uninstall of unique deps) |
 | `/api/packages/<dirName>/file/<path>` | GET | Serve a static file from the user's installed copy (behavior bundles, icons, …) |
 | `/api/packages/defaults` | GET/POST | Per-user "always installed" set (drives the catalog page's Installed badge) |
-| `/api/packages/libraries` | GET/POST/DELETE | Per-user "Installed libraries" surface — list / add / remove standalone pip libs alongside manifest-derived ones |
+| `/api/packages/libraries` | GET/POST/DELETE | Per-user "Installed libraries" surface: list, add, or remove standalone pip libs alongside manifest-derived ones |
 
 ### Dataset Routes
 
@@ -527,7 +527,7 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 |---|---|---|
 | `/api/datasets/catalog` | GET | List catalog items (`q`, `format`, `origin`, `sort`, `includeHub`, `groupOsm`, `dataflowId`, `liveOutputs`) |
 | `/api/datasets/<id>` | GET | Dataset detail, including resolved producer node for computed datasets |
-| `/api/datasets/<id>/preview` | GET | Paginated tabular/geo preview (`rowLimit` 1–500, default 50; `offset`; `part` for bundles) |
+| `/api/datasets/<id>/preview` | GET | Paginated tabular/geo preview (`rowLimit` 1 to 500, default 50; `offset`; `part` for bundles) |
 | `/api/datasets/<id>/usage` | GET | Dataflows across the user's projects that reference this dataset |
 | `/api/datasets/<id>/download` | GET | Download the dataset file as an attachment |
 | `/api/datasets/import` | POST | Upload a local file into the user's catalog (multipart: `file`, `dataflowId`, `title`, `sourceUpdatedAt`) |
@@ -593,7 +593,7 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `backend/app/packages/services.py` | Catalog install/uninstall orchestration; calls `pip_runner` on file-copy + prune |
 | `backend/app/packages/routes.py` | `/api/packages/*` endpoints (list, catalog, install, libraries, defaults) |
 | `backend/app/packages/libraries.py` | Per-user `.curio/users/<u>/installed-libraries.json` storage + aggregator |
-| `backend/app/datasets/service.py` | `DatasetCatalogService` — the façade every dataset route calls |
+| `backend/app/datasets/service.py` | `DatasetCatalogService`, the façade every dataset route calls |
 | `backend/app/datasets/routes.py` | `/api/datasets/*` and `/api/dataflows/<id>/datasets/*` endpoints |
 | `backend/app/datasets/domain/` | Dataset manifest parsing, catalog items, computed-dataset identity, dedup, provenance |
 | `backend/app/datasets/application/` | Listing, preview, export, mutations, path resolution, auto-install, migrations |

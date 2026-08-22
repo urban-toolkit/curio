@@ -1,6 +1,6 @@
 # Contributing to Curio
 
-This guide is intended for students who are interested in contributing to an open-source software project, as well as for developers looking to participate in the Curio ecosystem. It provides a structured and detailed overview of the system, its architecture, and various ways to contribute. Whether you're building your first pull request or integrating advanced features, this document is designed to support your contribution journey.
+This guide is for students getting their first taste of open-source work and for developers who already know their way around a codebase. It covers how Curio is put together, how to get it running, and where the useful contributions tend to be.
 
 ## Table of Contents
 
@@ -73,7 +73,7 @@ curio/
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
 ```
 
-For how nodes are added — most users via **Save as package node** on a canvas node, advanced users via a hand-authored `manifest.json` or a new behavior hook — see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For a deep dive into how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+For how nodes are added, whether through **Save as package node** on a canvas node (the usual route) or through a hand-authored `manifest.json` or a new behavior hook, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation Options
 
@@ -229,7 +229,7 @@ npm test -- --watchAll=false
 
 Tests live under `src/tests/` and mirror the structure of `src/components/`. See [utk_curio/frontend/urban-workflows/src/tests/README.md](../utk_curio/frontend/urban-workflows/src/tests/README.md) for guidelines on writing and organizing tests.
 
-Jest requires **Node ≥ 24** (transitive dep `html-encoding-sniffer@6` uses `require()`-of-ESM). Older Node fails every suite with `ERR_REQUIRE_ESM`. The `curio` conda env ships Node 24 — `conda activate curio` before `npm test`, or use a system install of Node 24+.
+Jest requires **Node ≥ 24** (transitive dep `html-encoding-sniffer@6` uses `require()`-of-ESM). Older Node fails every suite with `ERR_REQUIRE_ESM`. The `curio` conda env ships Node 24, so run `conda activate curio` before `npm test`, or use a system install of Node 24+.
 
 ### Frontend E2E Tests
 
@@ -268,7 +268,7 @@ pytest utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanv
 pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "Vega.json"
 ```
 
-**Test matrix** — each workflow runs four checks:
+**Test matrix.** Each workflow runs four checks:
 
 | Test | What it verifies |
 |---|---|
@@ -395,4 +395,4 @@ Use the following template when creating a new issue:
 
 ## Final Notes
 
-Every contribution helps. You don’t need deep expertise—just curiosity, commitment, and a willingness to learn.
+Every contribution helps. You don’t need deep expertise, just curiosity, commitment, and a willingness to learn.

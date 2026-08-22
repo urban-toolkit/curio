@@ -1,7 +1,7 @@
 # Example: What-if shadow study with Autark
 
 This example reuses the per-road sunlight shader from
-[Example 7](07-autark-gpu-shader.md) and runs it twice — once with each Back Bay building's real
+[Example 7](07-autark-gpu-shader.md) and runs it twice, once with each Back Bay building's real
 OSM height as the shadow caster, and once with every building's height **doubled** inside the
 shadow loop. Two side-by-side maps then render the roads coloured by accumulated June-solstice
 sunlight, so the visual diff is the loss of road sunlight when every building gets twice as tall.
@@ -27,17 +27,17 @@ flowchart LR
 ```
 
 A single `data` node loads the PBF once and fans out through a `data-pool` to two parallel
-shader branches. The two branches are identical except for one WGSL line — the modified branch
+shader branches. The two branches are identical except for one WGSL line: the modified branch
 multiplies each building's height by `2.0` before computing its shadow.
 
 ## Data
 
-`docs/examples/data/back_bay.osm.pbf` — OSM extract for Boston's Back Bay (regenerate with
+`docs/examples/data/back_bay.osm.pbf` is an OSM extract for Boston's Back Bay (regenerate with
 `scripts/build_example_pbfs.py`). The data node requests the layers the shader needs:
 `surface`, `parks`, `water`, `roads`, and `buildings`. Anything missing from the PBF is skipped
 quietly; everything present materialises in EPSG:3395 (metric), which is what the shadow math
 expects. The downstream compute and map nodes reference these layers by name (`table_osm_roads`,
-`table_osm_buildings`) — the named-layer case of
+`table_osm_buildings`), the named-layer case of
 [Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ```json
@@ -55,7 +55,7 @@ expects. The downstream compute and map nodes reference these layers by name (`t
 
 ## Compute (baseline and modified)
 
-Both compute nodes share the same spec — only the `wglsFunction` body differs by a single line.
+Both compute nodes share the same spec; only the `wglsFunction` body differs by a single line.
 The shader iterates `batched` over every building (so the building ring and height are packed as
 uniform arrays the WGSL can loop over once per dispatch), and runs per road segment:
 
@@ -131,4 +131,4 @@ scenarios side by side:
 Two maps of Back Bay's road network, coloured by minutes of June-solstice sunlight. The baseline
 shows today's shadow conditions; the modified map shows the same network under a "what-if every
 building were twice as tall" world. Streets near tall structures lose the most sunlight in the
-modified scenario — that delta is the point of the comparison.
+modified scenario, and that delta is the point of the comparison.
