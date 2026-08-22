@@ -840,20 +840,41 @@ class CatalogMutations:
                     dataset_id, df_id, exc_info=True,
                 )
 
-        # 3. Delete the account-store folder(s) for this dataset id.
-        deleted = False
+        # 3. Delete the account-store folder(s) for this dataset id — and
+        #    VERIFY: ``rmtree(ignore_errors=True)`` can leave a locked/mmapped
+        #    file behind (common on Windows) while reporting nothing, which
+        #    used to surface as a hardcoded success and a reappearing row (#173).
+        deleted_any = False
+        failed_dirs: list[str] = []
         for dataset_root in list_user_datasets(user_key):
             base = dataset_root.name.split("@")[0]
             if base == dataset_id or dataset_root.name == dataset_id:
                 shutil.rmtree(dataset_root, ignore_errors=True)
-                deleted = True
+                if dataset_root.exists():
+                    # One retry for transient locks, then report honestly.
+                    shutil.rmtree(dataset_root, ignore_errors=True)
+                if dataset_root.exists():
+                    logger.warning(
+                        "delete_dataset left files behind in %s (locked?)",
+                        dataset_root.name,
+                    )
+                    failed_dirs.append(dataset_root.name)
+                else:
+                    deleted_any = True
 
-        if not deleted and not removed_from:
+        if not deleted_any and not failed_dirs and not removed_from:
             raise DatasetCatalogError(
                 f"Dataset '{dataset_id}' was not found in your catalog", 404
             )
 
-        return {"id": dataset_id, "deleted": True, "removedFrom": removed_from}
+        # HTTP stays 200 even on partial failure: the unpublish and ref strips
+        # above already committed — a 5xx would falsely imply nothing happened.
+        return {
+            "id": dataset_id,
+            "deleted": not failed_dirs,
+            "removedFrom": removed_from,
+            "failedDirs": failed_dirs,
+        }
 
     def _ref_from_item(self, item: dict[str, Any]) -> dict[str, Any]:
         origin = item.get("origin")

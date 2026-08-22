@@ -333,6 +333,17 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       setBusyId(dataset.id);
       try {
         const result = await datasetCatalogApi.deleteDataset(dataset.id);
+        if (result?.deleted === false) {
+          // Partial failure (#173): refs were stripped but locked files kept
+          // the folder alive — keep the row visible and say so honestly.
+          await catalog.reload({ bustCache: true });
+          notifyDatasetCatalogRefresh();
+          showToast(
+            `Could not fully delete ${dataset.title} — some of its files are still in use. Close anything using them and try again.`,
+            "error",
+          );
+          return;
+        }
         const removed = new Set([dataset.id, ...(dataset.groupLayerIds ?? [])].map(String));
         setDataflowDatasets((prev) =>
           prev.filter((row) => !removed.has(String(row?.datasetId || row?.id))),

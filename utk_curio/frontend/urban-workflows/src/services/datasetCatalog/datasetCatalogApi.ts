@@ -255,7 +255,9 @@ export const datasetCatalogApi = {
    * dataflow): this cascades an unpublish + ref removal across every dataflow,
    * then deletes the account-store folder.
    */
-  deleteDataset(datasetId: string): Promise<{ id: string; deleted: boolean; removedFrom: string[] }> {
+  deleteDataset(
+    datasetId: string,
+  ): Promise<{ id: string; deleted: boolean; removedFrom: string[]; failedDirs?: string[] }> {
     return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}`, {
       method: "DELETE",
     });
