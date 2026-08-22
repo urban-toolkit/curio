@@ -128,6 +128,32 @@ def test_no_output_artifact_skips_with_diagnostic(client, user_and_token, monkey
     assert body["datasetDiagnostic"]["status"] == "skipped"
 
 
+def test_exec_time_save_persists_dataflow_name(app, client, user_and_token, monkeypatch):
+    """#172: the exec-time save reads the workflow name from
+    ``spec["dataflow"]["name"]`` — a top-level read wrote ``null`` and, because
+    re-execution rewrites the manifest, wiped a correct save-time name."""
+    user, token = user_and_token
+    project_name = "Named producer flow"
+    project_id = create_project(client, token, name=project_name)
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    artifact = "1790000000005_deadf00d.json"
+    (shared / artifact).write_text(json.dumps({"n": 1}), encoding="utf-8")
+
+    node_id = "named-node"
+    _mock_sandbox(monkeypatch, {"path": artifact, "dataType": "dict"})
+    resp = _exec(client, token, node_id=node_id, node_type="PYTHON_COMPUTATION", project_id=project_id)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json()["datasetDiagnostic"]["status"] == "installed"
+
+    from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+
+    with app.app_context():
+        dir_name = f"{computed_dataset_id(node_id, project_id)}@1"
+        manifest = load_dataset_manifest(dataset_dir(str(user.id), dir_name))
+    assert manifest.producer_dataflow_name == project_name
+
+
 def test_exec_without_dataflow_id_skips_persistence(client, user_and_token, monkeypatch):
     """#166: an unsaved dataflow (no dataflowId in the exec payload) must not
     mint a legacy un-namespaced ``computed.<node>`` dir — the auto-save that

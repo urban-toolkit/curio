@@ -137,7 +137,12 @@ def auto_install_node_output(
 
                 spec = project_storage.read_spec(user_key, dataflow_id)
                 if isinstance(spec, dict):
-                    dataflow_name = spec.get("name") or None
+                    # The workflow name lives at spec["dataflow"]["name"] — a
+                    # top-level read is always None and, because re-execution
+                    # rewrites the manifest, wipes a save-time name (#172).
+                    dataflow = spec.get("dataflow")
+                    if isinstance(dataflow, dict):
+                        dataflow_name = dataflow.get("name") or None
                     upstream_inputs = resolve_upstream_inputs(spec, node_id)
             except Exception:  # noqa: BLE001 — lineage is best-effort on execution
                 logger.debug(
