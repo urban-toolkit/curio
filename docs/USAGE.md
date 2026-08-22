@@ -54,10 +54,10 @@ The three startup modes control which pages are shown when a user first opens Cu
 
 | Mode | Login page | Project page | Typical use |
 |------|-----------|--------------|-------------|
-| *(default)* | No — auto sign-in as shared guest | Yes | Local single-user development |
+| *(default)* | No (auto sign-in as shared guest) | Yes | Local single-user development |
 | `--auth` / `--deploy` | Yes | Yes | Multi-user or production deployment |
-| `--no-project` | No — auto sign-in as shared guest | No — opens canvas directly | Demos or embedding Curio in a kiosk |
-| `--collab` | Stackable with other modes (pairs naturally with `--auth`) | — | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
+| `--no-project` | No (auto sign-in as shared guest) | No, opens the canvas directly | Demos or embedding Curio in a kiosk |
+| `--collab` | Stackable with other modes (pairs naturally with `--auth`) | n/a | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
 
 > [!NOTE]
 > When reading files from inside Curio's dataflow nodes, paths are resolved relative to the directory where you started Curio. If you see a "No such file or directory" error while loading a file, double-check the folder you're running Curio from, because the file path you provide is interpreted relative to that location.
@@ -211,13 +211,13 @@ Settings are stored per user in the database and apply across all of their proje
 
 ### Guest users
 
-Guest users cannot configure their own LLM key. Instead, a shared key is set by via environment variables in a `.env` file at the project root:
+Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in a `.env` file at the project root:
 
 ```bash
 # Required
 GUEST_LLM_API_KEY=sk-...
 
-# Optional — defaults shown
+# Optional (defaults shown)
 GUEST_LLM_API_TYPE=openai_compatible   # openai_compatible | anthropic | gemini
 GUEST_LLM_MODEL=gpt-4o-mini
 GUEST_LLM_BASE_URL=                    # leave blank for the provider default
@@ -249,9 +249,9 @@ If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for gu
 
 ## Node Catalog
 
-Curio's nodes ship as **packages** — small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, Autark, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.
+Curio's nodes ship as **packages**: small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, Autark, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.
 
-One Autark-specific note: an Autark node's spec references incoming data by name — a single upstream frame is auto-injected as the `upstream` source, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Referencing Upstream Data in Autark Nodes](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
+One Autark-specific note: an Autark node's spec references incoming data by name. A single upstream frame is auto-injected as the `upstream` source, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Referencing Upstream Data in Autark Nodes](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Node packages** dropdown (cube icon) and open it; the **Browse Node Catalog +** button sits in the dropdown's footer. From there you can:
 
@@ -260,7 +260,7 @@ To open the drawer: in the **Tools panel** on the left edge of the canvas, find 
 - Import a `.curio.zip` archive from the footer.
 - Author your own package directly from the canvas: build the node, click the cog on its header, then **Save as package node…**. Edit per-package metadata later via the pencil button next to the export icon in the **Node packages** dropdown.
 
-The full walkthrough — concepts, the Save-As flow, the per-package metadata editor, exporting / importing, versioning, and fork lineage — is in [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
+For the full walkthrough, covering concepts, the Save-As flow, the per-package metadata editor, exporting and importing, versioning, and fork lineage, see [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
 ## Data Catalog
 
@@ -268,19 +268,27 @@ Datasets have their own catalog, built on the same model as the Node Catalog: a 
 
 Three surfaces manage datasets:
 
-- The **Data Catalog drawer** inside the canvas — open it from the top menu **Data ⏷ → Data Catalog**, or from the **Data** dropdown in the left Tools panel via **Browse Data Catalog +**. Install datasets into the open dataflow, import files from your machine, publish, or delete.
-- The **Data** dropdown in the Tools panel — your installed datasets, which you drag onto the canvas to create (or extend) a node with generated loader code.
-- The **`/catalog/data`** page — the read-only library view, reached from `/projects` → **Catalog** → the **Data** tab.
+- The **Data Catalog drawer** inside the canvas. Open it from the top menu **Data ⏷ → Data Catalog**, or from the **Data** dropdown in the left Tools panel via **Browse Data Catalog +**. Install datasets into the open dataflow, import files from your machine, publish, or delete.
+- The **Data** dropdown in the Tools panel, listing your installed datasets. Drag one onto the canvas to create (or extend) a node with generated loader code.
+- The **`/catalog/data`** page, a read-only library view reached from `/projects` → **Catalog** → the **Data** tab.
 
 Running a node also saves its output as a **computed dataset** in your account (the database toggle next to each node's play button), so any node's result can be reused as an input elsewhere. This is on by default; set `CURIO_DEFAULT_SAVE_NODE_OUTPUT=0` to flip the default off.
 
 Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs and Docker deployments should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 
-The full walkthrough — storage layers, the action matrix, computed datasets and lineage, OSM PBF imports, publishing, and previews — is in [docs/DATA-CATALOG.md](DATA-CATALOG.md).
+> [!NOTE]
+> `CURIO_CATALOG_ROOT` relocates the **dataset** catalog only. The shared *node
+> package* catalog is always `<install_root>/packages/`, resolved relative to
+> the installed `utk_curio` package with no env override. On a pip install that
+> is inside `site-packages`, so publishing a node package there is at best
+> non-persistent. That is one more reason to author node packages from a git
+> checkout (see [Authoring nodes](AUTHORING-NODES.md)).
+
+For the full walkthrough, covering storage layers, the action matrix, computed datasets and lineage, OSM PBF imports, publishing, and previews, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
 
 ## Real-time collaboration
 
-`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default — passing `--collab` flips an env flag that the frontend reads at runtime, so no rebuild is needed.
+`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default. Passing `--collab` flips an env flag that the frontend reads at runtime, so no rebuild is needed.
 
 See [COLLABORATION.md](COLLABORATION.md) for the full architecture, security model, setup instructions, and current limitations.
 

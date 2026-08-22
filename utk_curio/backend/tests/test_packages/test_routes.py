@@ -795,3 +795,167 @@ def test_resolve_conflict_returns_409(client, user_and_token, tmp_curio):
     assert resp.status_code == 409
     body = resp.get_json()
     assert any(c["package"] == "rasterio" for c in body["conflicts"])
+
+
+# ---------------------------------------------------------------------------
+# POST /api/packages/catalog/install with replace -- the "Reload from catalog"
+# action in the drawer's Installed tab.
+#
+# Authoring a package under packages/ means editing it in place. Plain install
+# is a no-op once a copy exists in the user store, so the drawer's Reload
+# button re-installs with replace=true; without that, on-disk edits (including
+# a rebuilt scripts/behaviors.js) never reach the running app.
+# ---------------------------------------------------------------------------
+
+def _write_catalog_package(root, manifest: dict, sources: dict[str, str]) -> str:
+    """Materialise a package directory under *root*; returns its dirName."""
+    dir_name = f"{manifest['id']}@{manifest['compatibility']['major']}"
+    package_root = root / dir_name
+    (package_root / "sources").mkdir(parents=True, exist_ok=True)
+    (package_root / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    for name, body in sources.items():
+        (package_root / "sources" / name).write_text(body, encoding="utf-8")
+    return dir_name
+
+
+@pytest.fixture()
+def fake_catalog(tmp_path, monkeypatch):
+    """Point the packages routes at a throwaway catalog directory.
+
+    The real catalog is <repo_root>/packages/, which tests must not mutate.
+    """
+    from utk_curio.backend.app.packages import routes as packages_routes
+
+    catalog = tmp_path / "catalog"
+    catalog.mkdir()
+    monkeypatch.setattr(packages_routes, "_catalog_root", lambda: catalog)
+    return catalog
+
+
+def test_catalog_install_replace_picks_up_edited_sources(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """Reload overwrites the installed copy with the catalog's current bits."""
+    _, token = user_and_token
+    manifest = manifest_dict(package_id="ai.test.reload", major=1)
+    manifest["templates"] = [
+        {
+            "id": "reload-kind",
+            "label": "Reload kind",
+            "category": "computation",
+            "engine": "python",
+            "editor": "code",
+            "hasCode": True,
+            "hasWidgets": False,
+            "hasGrammar": False,
+            "inputPorts": [],
+            "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+            "source": "sources/reload-kind.py",
+        }
+    ]
+    dir_name = _write_catalog_package(
+        fake_catalog, manifest, {"reload-kind.py": "return 'first'\n"}
+    )
+
+    resp = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert resp.get_json()["replacedExisting"] is False
+
+    file_url = f"/api/packages/{dir_name}/file/sources/reload-kind.py"
+    body = client.get(file_url, headers=_auth(token)).get_data(as_text=True)
+    assert "first" in body
+
+    # Author edits the package on disk...
+    (fake_catalog / dir_name / "sources" / "reload-kind.py").write_text(
+        "return 'second'\n", encoding="utf-8"
+    )
+
+    # ...and a plain install does nothing, because a copy already exists.
+    # This is the trap the Reload button exists to avoid.
+    stale = client.get(file_url, headers=_auth(token)).get_data(as_text=True)
+    assert "first" in stale
+
+    # Reload == install with replace.
+    resp = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name, "replace": True}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert resp.get_json()["replacedExisting"] is True
+
+    fresh = client.get(file_url, headers=_auth(token)).get_data(as_text=True)
+    assert "second" in fresh
+    assert "first" not in fresh
+
+
+def test_catalog_install_without_replace_rejects_existing(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """The same coordinate cannot be installed twice without replace."""
+    _, token = user_and_token
+    manifest = manifest_dict(package_id="ai.test.twice", major=1)
+    dir_name = _write_catalog_package(fake_catalog, manifest, {})
+
+    first = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name}),
+        headers=_auth(token),
+    )
+    assert first.status_code == 201, first.get_data(as_text=True)
+
+    second = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name}),
+        headers=_auth(token),
+    )
+    assert second.status_code == 400
+    assert "already installed" in second.get_json()["error"].lower()
+
+
+def test_catalog_install_replace_refreshes_behavior_bundle(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """A rebuilt scripts/behaviors.js reaches the user store on reload.
+
+    This is the custom-UI case: the frontend fetches the bundle from the
+    *installed* copy, so a reload is what makes a rebuilt bundle live.
+    """
+    _, token = user_and_token
+    manifest = manifest_dict(package_id="ai.test.uinode", major=1)
+    manifest["behaviorScript"] = "scripts/behaviors.js"
+    dir_name = f"{manifest['id']}@1"
+    package_root = fake_catalog / dir_name
+    (package_root / "scripts").mkdir(parents=True)
+    (package_root / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    bundle = package_root / "scripts" / "behaviors.js"
+    bundle.write_text("/* build 1 */\n", encoding="utf-8")
+
+    resp = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+    bundle_url = f"/api/packages/{dir_name}/file/scripts/behaviors.js"
+    assert "build 1" in client.get(bundle_url, headers=_auth(token)).get_data(as_text=True)
+
+    bundle.write_text("/* build 2 */\n", encoding="utf-8")
+    resp = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name, "replace": True}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+    served = client.get(bundle_url, headers=_auth(token)).get_data(as_text=True)
+    assert "build 2" in served

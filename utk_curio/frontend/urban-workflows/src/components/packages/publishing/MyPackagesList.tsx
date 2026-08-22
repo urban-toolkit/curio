@@ -1,6 +1,10 @@
 import React, { useMemo } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faDownload, faTrashCan } from "@fortawesome/free-solid-svg-icons";
+import {
+  faArrowsRotate,
+  faDownload,
+  faTrashCan,
+} from "@fortawesome/free-solid-svg-icons";
 import { PackagePayload } from "../../../api/packagesApi";
 import {
   formatForkOfSubtitle,
@@ -21,17 +25,29 @@ export interface MyPackagesListProps {
   onUninstall?: (pkg: PackagePayload) => void;
   onExport?: (pkg: PackagePayload) => void;
   onPublishToCatalog?: (dirName: string) => void;
+  /**
+   * Re-copy a package from the shared catalog over the installed copy.
+   * The authoring loop for a package you are editing under `packages/`:
+   * without this, edits on disk are invisible because the user store already
+   * has a copy and the install path is a no-op when one exists.
+   */
+  onReloadFromCatalog?: (pkg: PackagePayload) => void;
+  reloadingPackageKey?: string | null;
 }
 
 type RowActionProps = {
-  package: PackagePayload;
+  pkg: PackagePayload;
   catalogPublishedDirs?: ReadonlySet<string>;
   catalogPublishAllowed: boolean;
   publishingPackageKey: string | null;
   busy: boolean;
+  /** True when this package exists in the catalog and may be overwritten. */
+  canReload: boolean;
+  reloadingPackageKey: string | null;
   onUninstall?: (pkg: PackagePayload) => void;
   onExport?: (pkg: PackagePayload) => void;
   onPublishToCatalog?: (dirName: string) => void;
+  onReloadFromCatalog?: (pkg: PackagePayload) => void;
 };
 
 function PackageRowActions({
@@ -40,12 +56,29 @@ function PackageRowActions({
   catalogPublishAllowed,
   publishingPackageKey,
   busy,
+  canReload,
+  reloadingPackageKey,
   onUninstall,
   onExport,
   onPublishToCatalog,
+  onReloadFromCatalog,
 }: RowActionProps) {
+  const reloading = reloadingPackageKey === pkg.dirName;
   return (
     <>
+      {canReload && onReloadFromCatalog != null ? (
+        <button
+          type="button"
+          className={styles.rowActionBtn}
+          title="Reload this package from the catalog, picking up edits made on disk"
+          aria-label={`Reload ${pkg.name} from catalog`}
+          disabled={busy || reloading}
+          onClick={() => onReloadFromCatalog(pkg)}
+        >
+          <FontAwesomeIcon icon={faArrowsRotate} spin={reloading} aria-hidden />
+        </button>
+      ) : null}
+
       {catalogPublishedDirs != null && onPublishToCatalog != null ? (
         <CatalogPublishPill
           variant="dock"
@@ -97,9 +130,11 @@ function InstalledPackageRow({
   onUninstall,
   onExport,
   onPublishToCatalog,
+  onReloadFromCatalog,
+  reloadingPackageKey,
   nested = false,
 }: {
-  package: PackagePayload;
+  pkg: PackagePayload;
   catalogByDir: Map<string, PackagePayload>;
   catalogPublishedDirs?: ReadonlySet<string>;
   catalogPublishAllowed: boolean;
@@ -109,10 +144,17 @@ function InstalledPackageRow({
   onUninstall?: (pkg: PackagePayload) => void;
   onExport?: (pkg: PackagePayload) => void;
   onPublishToCatalog?: (dirName: string) => void;
+  onReloadFromCatalog?: (pkg: PackagePayload) => void;
+  reloadingPackageKey: string | null;
   nested?: boolean;
 }) {
   const catRow = catalogByDir.get(pkg.dirName);
   const hasUpdate = catRow != null && catRow.version !== pkg.version;
+  // Offer Reload for anything the catalog also carries — not just when the
+  // version string differs. Editing a package's source without bumping
+  // `version` is the normal authoring loop, and that is exactly the case
+  // where nothing else would tell the user their edit has not landed.
+  const canReload = catRow != null && pkg.readOnly !== true;
 
   const actionProps = {
     pkg,
@@ -120,9 +162,12 @@ function InstalledPackageRow({
     catalogPublishAllowed,
     publishingPackageKey,
     busy,
+    canReload,
+    reloadingPackageKey,
     onUninstall,
     onExport,
     onPublishToCatalog,
+    onReloadFromCatalog,
   };
 
   return (
@@ -165,6 +210,8 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
   onUninstall,
   onExport,
   onPublishToCatalog,
+  onReloadFromCatalog,
+  reloadingPackageKey = null,
 }) => {
   const rows = useMemo(() => partitionInstalledPackagesForCatalogList(installed), [installed]);
 
@@ -173,7 +220,8 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
   const hasActions =
     onUninstall != null ||
     onExport != null ||
-    onPublishToCatalog != null;
+    onPublishToCatalog != null ||
+    onReloadFromCatalog != null;
 
   const rowProps = {
     catalogByDir,
@@ -185,6 +233,8 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
     onUninstall,
     onExport,
     onPublishToCatalog,
+    onReloadFromCatalog,
+    reloadingPackageKey,
   };
 
   return (
@@ -202,16 +252,25 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
             ? `v${headerPack.version} · ${headerPack.templates.length} nodes`
             : `${row.members.length} fork${row.members.length === 1 ? "" : "s"}`;
 
+          // NOTE: this key must be `pkg` — `PackageRowActions` destructures
+          // `pkg`, so the previous `package:` spelling reached it as
+          // `undefined` and threw on `pkg.dirName` while rendering any fork
+          // family that had its root package installed.
           const headerActionProps = headerPack
             ? {
-                package: headerPack,
+                pkg: headerPack,
                 catalogPublishedDirs,
                 catalogPublishAllowed,
                 publishingPackageKey,
                 busy,
+                canReload:
+                  catalogByDir.get(headerPack.dirName) != null &&
+                  headerPack.readOnly !== true,
+                reloadingPackageKey,
                 onUninstall,
                 onExport,
                 onPublishToCatalog,
+                onReloadFromCatalog,
               }
             : null;
 

@@ -4,6 +4,7 @@
 
 - [Installation and usage](USAGE.md)
 - [Quick start](QUICK-START.md)
+- [Authoring nodes](AUTHORING-NODES.md): build your own node, from a clone to a shareable package
 - [Node catalog](NODE-CATALOG.md)
 - [Data catalog](DATA-CATALOG.md)
 - [Real-time collaboration](COLLABORATION.md)
@@ -20,7 +21,7 @@
 
 Each example below has a JSON dataflow you can import into Curio plus a step-by-step markdown walkthrough. Pipeline overviews in the walkthroughs are drawn with [Mermaid](https://mermaid.js.org/) `flowchart` blocks, which GitHub renders inline.
 
-The same examples are also seeded into the public deployments at [**curio.urbantk.org**](https://curio.urbantk.org) (stable) and [**curio-dev.urbantk.org**](https://curio-dev.urbantk.org) (latest `main`) — sign in to fork them into your own projects, or browse them read-only as a guest.
+The same examples are also seeded into the public deployments at [**curio.urbantk.org**](https://curio.urbantk.org) (stable) and [**curio-dev.urbantk.org**](https://curio-dev.urbantk.org) (latest `main`). Sign in to fork them into your own projects, or browse them read-only as a guest.
 
 Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediate, 🔴 Advanced.
 
@@ -33,7 +34,7 @@ Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediat
 | 05 | [Vega-Lite multi-view drilldown](examples/05-vega-lite-multi-view-drilldown.md) | Five parallel dataflows producing a faceted Vega-Lite drill-down across orthogonal axes | Chicago building energy use | 🟡 |
 | 06 | [Autark what-if shadow study](examples/06-autark-what-if-shadow-study.md) | Two `autk-grammar` nodes (baseline vs modified); GPU shoelace footprint-area criterion (>200 m²) raises tall buildings 3× | Boston Back Bay building-height what-if | 🔴 |
 | 07 | [Autark GPU shader](examples/07-autark-gpu-shader.md) | `autk-grammar` with a WGSL shadow-accumulation shader (minutes of shadow per road); thematic map + brushable histogram | Chicago Loop solstice shadows | 🔴 |
-| 08 | [Autark spatial join + regression](examples/08-autark-spatial-join-regression.md) | `autk-grammar` loads roads from PBF, a Python node samples a 24-band LST raster, then GPU per-road OLS regression + linked scatter | Niterói per-road warming trend (2001–2024) | 🔴 |
+| 08 | [Autark spatial join + regression](examples/08-autark-spatial-join-regression.md) | `autk-grammar` loads roads from PBF, a Python node samples a 24-band LST raster, then GPU per-road OLS regression + linked scatter | Niterói per-road warming trend (2001 to 2024) | 🔴 |
 | 09 | [Heterogeneous data + linked views](examples/09-heterogeneous-data-linked-views.md) | Python UTCI pipeline fanned out via `DATA_POOL`; `autk-grammar` map + Vega-Lite scatter with bidirectional brushing | Milan urban heat exposure (UTCI) | 🔴 |
 | 10 | [Street-level computer vision](examples/10-street-vision-cv-analysis.md) | `curio.streetvision@1` Fetcher → HF Inference → Gallery → `Spatial Join` → Vega-Lite polygons + bars | Chicago Lincoln Park greenery audit | 🔴 |
 | 11 | [Autark PBF loading](examples/11-autark-pbf-loading.md) | Single `autk-grammar` node loading OSM layers from a local `.pbf` file; all parsing in the browser via DuckDB-WASM | Lower Manhattan (Battery Park City + Financial District) | 🟢 |

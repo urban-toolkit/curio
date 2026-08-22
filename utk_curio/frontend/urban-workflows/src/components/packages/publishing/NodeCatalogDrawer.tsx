@@ -52,6 +52,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const [busy, setBusy] = useState(false);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
   const [publishingPackageKey, setPublishingPackageKey] = useState<string | null>(null);
+  const [reloadingPackageKey, setReloadingPackageKey] = useState<string | null>(null);
   const [cardActionDir, setCardActionDir] = useState<string | null>(null);
   const [installCandidate, setInstallCandidate] = useState<PackagePayload | null>(null);
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
@@ -319,6 +320,36 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     }
   }, [reload, reportActionError]);
 
+  /**
+   * Re-copy a package from the shared catalog over the user's installed copy.
+   *
+   * This is the authoring loop for a package you are editing under
+   * `packages/`. Install is a no-op once a copy exists in the user store
+   * (`_ensure_user_store_install`), so without an explicit reload your edits —
+   * including a rebuilt `scripts/behaviors.js` — stay invisible and the only
+   * workaround is uninstalling from every project and installing again.
+   *
+   * The page is reloaded afterwards rather than just refreshing the registry:
+   * `loadPackageBehaviorScripts` de-dupes injected bundles by package
+   * coordinate, so a custom-UI package's rebuilt bundle would be skipped for
+   * the rest of the session. A reload is the honest way to guarantee the new
+   * behavior code is the one running.
+   */
+  const onReloadFromCatalog = useCallback(
+    async (pkg: PackagePayload) => {
+      setReloadingPackageKey(pkg.dirName);
+      setActionError(null);
+      try {
+        await packagesApi.installFromCatalog(pkg.dirName, { replace: true });
+        window.location.reload();
+      } catch (err) {
+        reportActionError(`Couldn't reload ${pkg.name}`, err);
+        setReloadingPackageKey(null);
+      }
+    },
+    [reportActionError],
+  );
+
   const myPackagesListProps = {
     installed: filteredInstalled,
     catalogByDir,
@@ -326,8 +357,10 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     catalogPublishAllowed,
     publishingPackageKey,
     busy,
+    reloadingPackageKey,
     onUninstall: (p: PackagePayload) => void onUninstall(p),
     onPublishToCatalog: (d: string) => void onPublishToCatalog(d),
+    onReloadFromCatalog: (p: PackagePayload) => void onReloadFromCatalog(p),
   };
 
   const tabLabel: Record<DrawerTab, string> = {
