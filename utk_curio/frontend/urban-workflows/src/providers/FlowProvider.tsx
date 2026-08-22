@@ -26,7 +26,7 @@ import { ConnectionValidator } from "../ConnectionValidator";
 import type { InstalledDatasetPayload } from "../services/datasetCatalog/datasetCatalogApi";
 import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import { NodeType, EdgeType } from "../constants";
-import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
+import { getFlowNodeCanonicalType, getUnversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
 import { applyDashboardLayout } from "../utils/dashboardLayout";
 import {
@@ -41,7 +41,7 @@ import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { pythonInterpreter, jsInterpreter } from "../hook/useCode";
 import { normalizeFlowInput } from "../utils/flowOutputRef";
-import { DEFAULT_SAVE_OUTPUT_DATASET, resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { DEFAULT_SAVE_OUTPUT_DATASET, isNonProducingNodeType, resolveSaveOutputDataset } from "../utils/saveOutputDataset";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { authApi } from "../utils/authApi";
@@ -1433,15 +1433,12 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     scheduleInstallSyncRef.current = (nodeId: string) => {
         const node = reactFlow.getNode(nodeId);
         if (!node) return;
-        const canonical = getFlowNodeCanonicalType(node);
+        const canonical = getUnversionedFlowNodeType(node);
         // Sinks / interaction surfaces pass their input through — never a NEW
         // dataset — so excluding them keeps e.g. a Data Pool's per-brush re-emit
-        // from triggering saves.
-        if (
-            canonical === NodeType.VIS_VEGA ||
-            canonical === NodeType.VIS_SIMPLE ||
-            canonical === NodeType.DATA_POOL
-        ) {
+        // from triggering saves. DATA_POOL is a save-trigger-only extra on top
+        // of the shared sink set: the backend must NOT prune data-pool refs.
+        if (isNonProducingNodeType(canonical) || canonical === NodeType.DATA_POOL) {
             return;
         }
         if (isDatasetPaletteNode(node.data)) return;

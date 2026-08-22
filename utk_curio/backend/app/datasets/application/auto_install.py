@@ -38,10 +38,10 @@ def _is_sink_node(node_type: str | None) -> bool:
     if not node_type:
         return False
     try:
-        from utk_curio.backend.app.projects.services import _SINK_NODE_TYPES
+        from utk_curio.backend.app.projects.services import _is_sink_node_type
     except Exception:  # noqa: BLE001 — never let a diagnostic helper break install
         return False
-    return node_type in _SINK_NODE_TYPES
+    return _is_sink_node_type(node_type)
 
 
 def auto_install_node_output(

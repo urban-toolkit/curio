@@ -96,6 +96,26 @@ def test_sink_node_output_is_skipped_with_diagnostic(client, user_and_token, mon
     assert "sink" in (diag.get("reason") or "").lower()
 
 
+def test_versioned_sink_node_output_is_skipped_too(client, user_and_token, monkeypatch):
+    """#169: palette-dragged sinks carry ``@<major>`` — the skip must still fire."""
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Versioned sink skip")
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    artifact = "1790000000004_cafebabe.json"
+    (shared / artifact).write_text(json.dumps({"$schema": "vega"}), encoding="utf-8")
+
+    _mock_sandbox(monkeypatch, {"path": artifact, "dataType": "dict"})
+    resp = _exec(
+        client, token, node_id="viz-2", node_type="curio.builtin/vis-vega@1", project_id=project_id
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body.get("installedDataset") is None
+    diag = body.get("datasetDiagnostic", {})
+    assert diag.get("status") == "skipped"
+    assert "sink" in (diag.get("reason") or "").lower()
+
+
 def test_no_output_artifact_skips_with_diagnostic(client, user_and_token, monkeypatch):
     """A node whose output carries no artifact reference skips with a reason."""
     _, token = user_and_token

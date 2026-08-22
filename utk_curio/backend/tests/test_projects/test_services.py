@@ -232,12 +232,16 @@ def test_prune_sink_node_dataset_refs(app, tmp_curio):
             "nodes": [
                 {"id": "transform-x", "type": "curio.builtin/data-transformation"},
                 {"id": "visnode-y", "type": "curio.builtin/vis-vega"},
+                # Palette-dragged sinks carry the versioned form (#169).
+                {"id": "visnode-z", "type": "curio.builtin/vis-simple@1"},
             ],
             "datasets": [
                 {"datasetId": "computed.df-p.transform-x", "dirName": "computed.df-p.transform-x@1",
                  "origin": "computed", "producerNodeId": "transform-x"},
                 {"datasetId": "computed.df-p.visnode-y", "dirName": "computed.df-p.visnode-y@1",
                  "origin": "computed", "producerNodeId": "visnode-y"},
+                {"datasetId": "computed.df-p.visnode-z", "dirName": "computed.df-p.visnode-z@1",
+                 "origin": "computed", "producerNodeId": "visnode-z"},
             ],
         }
     }

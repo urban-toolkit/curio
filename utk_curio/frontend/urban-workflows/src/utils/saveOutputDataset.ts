@@ -1,7 +1,7 @@
 import { NodeType } from "../constants";
 import { defaultSaveOutputDatasetFromEnv } from "./curioEnvFlag";
 import { flowOutputRefFromRaw, FlowOutputRef } from "./flowOutputRef";
-import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
+import { getFlowNodeCanonicalType, unversionedNodeType } from "./flowNodeCanonicalType";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 
 /**
@@ -10,11 +10,21 @@ import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplicat
  * data.input)) so they can sit mid-chain — they never produce a NEW dataset.
  * Saving their passthrough would auto-install a redundant computed dataset that
  * just duplicates the upstream node's output (same file, different node id).
+ *
+ * Kept set-equal with the backend ``_SINK_NODE_TYPES``
+ * (utk_curio/backend/app/projects/services.py) — a drift-guard test enforces
+ * it. Entries are UNVERSIONED; check membership via ``isNonProducingNodeType``,
+ * which strips the ``@<major>`` palette-dragged nodes carry (#169).
  */
-const NON_PRODUCING_NODE_TYPES: ReadonlySet<string> = new Set([
+export const NON_PRODUCING_NODE_TYPES: ReadonlySet<string> = new Set([
   NodeType.VIS_VEGA,
   NodeType.VIS_SIMPLE,
 ]);
+
+/** Sink-set membership, tolerant of versioned canonical types (#169). */
+export function isNonProducingNodeType(nodeType: string): boolean {
+  return NON_PRODUCING_NODE_TYPES.has(unversionedNodeType(nodeType));
+}
 
 /** Workflow-wide default when a node has no explicit ``saveOutputDataset`` (env + UI). */
 export const DEFAULT_SAVE_OUTPUT_DATASET = defaultSaveOutputDatasetFromEnv();
@@ -65,7 +75,7 @@ export function buildSaveableLiveOutputs(
   for (const node of nodes || []) {
     // Visualization/sink nodes never produce a new dataset — they pass their
     // input through — so never save them, regardless of the per-node toggle.
-    const isSink = NON_PRODUCING_NODE_TYPES.has(getFlowNodeCanonicalType(node));
+    const isSink = isNonProducingNodeType(getFlowNodeCanonicalType(node));
     const enabled = !isSink && resolveSaveOutputDataset(node?.data, defaultSave);
     if (typeof node?.id === "string") saveByNodeId.set(node.id, enabled);
     const dataNodeId = node?.data?.nodeId;

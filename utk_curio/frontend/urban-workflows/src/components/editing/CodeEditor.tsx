@@ -3,16 +3,11 @@ import React, { useState, useEffect, useRef } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { NodeType } from "../../constants";
 import { NodeTemplateId } from "../../registry/types";
-import { splitCanonicalNodeType } from "../../registry/packageKeys";
-
-// Resolve a node type to its unversioned `<packageId>/<templateId>` form so
-// comparisons against the NodeType enum (which is unversioned) line up even
-// when the registry handed us the canonical `…@<major>` id. Without this,
+// Comparisons against the NodeType enum (which is unversioned) must line up
+// even when the registry handed us the canonical `…@<major>` id. Without this,
 // JS_COMPUTATION nodes route to the Python interpreter and the sandbox
 // raises a SyntaxError on JS source.
-function unversionedNodeType(nodeType: string): string {
-    return splitCanonicalNodeType(nodeType)?.unversioned ?? nodeType;
-}
+import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";

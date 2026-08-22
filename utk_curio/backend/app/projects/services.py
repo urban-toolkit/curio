@@ -41,6 +41,14 @@ _SINK_NODE_TYPES = frozenset({
 })
 
 
+def _is_sink_node_type(node_type) -> bool:
+    """Membership in ``_SINK_NODE_TYPES``, tolerant of the versioned canonical
+    form palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169)."""
+    from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
+
+    return unversioned_node_type(node_type) in _SINK_NODE_TYPES
+
+
 def _prune_sink_node_dataset_refs(user_key: str, spec: Optional[dict]) -> Optional[dict]:
     """Drop ``dataflow.datasets`` refs whose producer is a visualization/sink node.
 
@@ -67,7 +75,7 @@ def _prune_sink_node_dataset_refs(user_key: str, spec: Optional[dict]) -> Option
     pruned: List[dict] = []
     for ref in refs:
         producer = ref.get("producerNodeId") if isinstance(ref, dict) else None
-        if producer and node_types.get(producer) in _SINK_NODE_TYPES:
+        if producer and _is_sink_node_type(node_types.get(producer)):
             pruned.append(ref)
         else:
             kept.append(ref)

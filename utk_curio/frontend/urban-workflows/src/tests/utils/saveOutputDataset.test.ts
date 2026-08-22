@@ -93,4 +93,43 @@ describe('buildSaveableLiveOutputs sink-node exclusion', () => {
     const nodes = [{ id: 'v', type: 'curio.builtin/vis-simple', data: { nodeId: 'v' } }];
     expect(buildSaveableLiveOutputs(outputs, nodes, true)).toBeUndefined();
   });
+
+  test('versioned sink types (palette-dragged, @1) are excluded too (#169)', () => {
+    const outputs = [{ nodeId: 'v', output: 'x.parquet' }];
+    const nodes = [{ id: 'v', type: 'curio.builtin/vis-vega@1', data: { nodeId: 'v' } }];
+    expect(buildSaveableLiveOutputs(outputs, nodes, true)).toBeUndefined();
+  });
+
+  test('universal-node form with a versioned data.nodeType is excluded (#169)', () => {
+    const outputs = [{ nodeId: 'v', output: 'x.parquet' }];
+    const nodes = [{
+      id: 'v',
+      type: '__curioUniversalNode',
+      data: { nodeId: 'v', nodeType: 'curio.builtin/vis-simple@2' },
+    }];
+    expect(buildSaveableLiveOutputs(outputs, nodes, true)).toBeUndefined();
+  });
+
+  test('a versioned NON-sink type still saves', () => {
+    const outputs = [{ nodeId: 't', output: 'y.parquet' }];
+    const nodes = [{ id: 't', type: 'curio.builtin/data-transformation@1', data: { nodeId: 't' } }];
+    const refs = buildSaveableLiveOutputs(outputs, nodes, true) ?? [];
+    expect(refs.map((r) => r.node_id)).toContain('t');
+  });
+});
+
+describe('isNonProducingNodeType', () => {
+  const { isNonProducingNodeType } = require('../../utils/saveOutputDataset');
+
+  test('matches unversioned and versioned sink types', () => {
+    expect(isNonProducingNodeType('curio.builtin/vis-vega')).toBe(true);
+    expect(isNonProducingNodeType('curio.builtin/vis-vega@1')).toBe(true);
+    expect(isNonProducingNodeType('curio.builtin/vis-simple@12')).toBe(true);
+  });
+
+  test('rejects non-sink types in either form', () => {
+    expect(isNonProducingNodeType('curio.builtin/data-transformation')).toBe(false);
+    expect(isNonProducingNodeType('curio.builtin/data-transformation@1')).toBe(false);
+    expect(isNonProducingNodeType('')).toBe(false);
+  });
 });

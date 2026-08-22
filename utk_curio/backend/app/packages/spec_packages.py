@@ -38,6 +38,20 @@ _NODE_TYPE_VERSIONED_RE = re.compile(
 _NODE_TYPE_UNVERSIONED_RE = re.compile(
     rf"^({_PKG_ID})/{_TEMPLATE_ID}$"
 )
+_VERSION_SUFFIX_RE = re.compile(rf"@{_MAJOR}$")
+
+
+def unversioned_node_type(node_type: object) -> object:
+    """Strip a trailing ``@<major>`` from a canonical node type.
+
+    Palette-dragged nodes carry the versioned canonical form
+    (``curio.builtin/vis-vega@1``) while programmatic nodes use the unversioned
+    enum — both coexist in specs and canvases, so any membership check against
+    an unversioned set must normalize first. Non-strings pass through unchanged.
+    """
+    if not isinstance(node_type, str):
+        return node_type
+    return _VERSION_SUFFIX_RE.sub("", node_type)
 
 
 def dir_name_from_node_type(
