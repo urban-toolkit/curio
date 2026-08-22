@@ -668,10 +668,13 @@ class CatalogMutations:
             return
         try:
             from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+            from utk_curio.backend.app.datasets.repositories import index as index_repo
 
-            dest = dataset_dir(self._paths._user_key(), dir_name)
+            user_key = self._paths._user_key()
+            dest = dataset_dir(user_key, dir_name)
             if dest.exists():
                 shutil.rmtree(dest, ignore_errors=True)
+            index_repo.safe_forget(user_key, dir_name)
         except Exception:  # noqa: BLE001
             pass
 
@@ -861,8 +864,16 @@ class CatalogMutations:
                         dataset_root.name,
                     )
                     failed_dirs.append(dataset_root.name)
+                    # Row deliberately kept: the dir is still on disk, so the
+                    # catalog should keep listing it rather than hide a dataset
+                    # whose files remain (#173 reported the opposite as a bug).
                 else:
                     deleted_any = True
+                    from utk_curio.backend.app.datasets.repositories import (
+                        index as index_repo,
+                    )
+
+                    index_repo.safe_forget(user_key, dataset_root.name)
 
         if not deleted_any and not failed_dirs and not removed_from:
             raise DatasetCatalogError(

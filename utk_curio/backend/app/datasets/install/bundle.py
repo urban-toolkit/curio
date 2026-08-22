@@ -309,7 +309,9 @@ def install_computed_bundle_for_node(
         shutil.rmtree(dest, ignore_errors=True)
         raise InstallerError(f"Failed to create bundle manifest: {exc}") from exc
 
-    return InstallResult(manifest=manifest, dest=dest, replaced=True)
+    from utk_curio.backend.app.datasets.install.installer import _index
+
+    return _index(user_key, InstallResult(manifest=manifest, dest=dest, replaced=True))
 
 
 def install_node_output(

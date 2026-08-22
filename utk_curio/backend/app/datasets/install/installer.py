@@ -49,6 +49,21 @@ class InstallResult:
     replaced: bool
 
 
+def _index(user_key: str, result: InstallResult) -> InstallResult:
+    """Mirror a freshly written store dir into the dataset index.
+
+    Wrapped around every installer's return so a new dataset is queryable
+    immediately instead of waiting for the next listing's reconcile. Purely an
+    accelerator: it never raises (the files are already written and the install
+    has succeeded by this point), and ``index.reconcile`` repairs anything that
+    fails here.
+    """
+    from utk_curio.backend.app.datasets.repositories import index as index_repo
+
+    index_repo.safe_upsert_from_dir(user_key, result.dest)
+    return result
+
+
 def _is_installed(user_key: str, dir_name: str) -> bool:
     return (dataset_dir(user_key, dir_name) / "manifest.json").is_file()
 
@@ -78,7 +93,9 @@ def install_dataset_from_catalog(
         data_file = dest / manifest.data_file
         install_is_complete = data_file.is_file()
         if install_is_complete and not replace:
-            return InstallResult(manifest=manifest, dest=dest, replaced=False)
+            return _index(
+                user_key, InstallResult(manifest=manifest, dest=dest, replaced=False)
+            )
         # Either replace was requested or the previous install was incomplete –
         # remove the stale/partial directory and start fresh.
         shutil.rmtree(dest)
@@ -94,7 +111,10 @@ def install_dataset_from_catalog(
             shutil.rmtree(dest, ignore_errors=True)
         raise InstallerError(f"Failed to copy dataset files: {exc}") from exc
 
-    return InstallResult(manifest=load_dataset_manifest(dest), dest=dest, replaced=replaced)
+    return _index(
+        user_key,
+        InstallResult(manifest=load_dataset_manifest(dest), dest=dest, replaced=replaced),
+    )
 
 
 def resolve_installed_data_path(user_key: str, manifest: DatasetManifest) -> Path:
@@ -317,7 +337,7 @@ def install_computed_file_for_node(
         shutil.rmtree(dest, ignore_errors=True)
         raise InstallerError(f"Failed to create computed dataset manifest: {exc}") from exc
 
-    return InstallResult(manifest=manifest, dest=dest, replaced=True)
+    return _index(user_key, InstallResult(manifest=manifest, dest=dest, replaced=True))
 
 
 def install_computed_file(
@@ -351,7 +371,10 @@ def install_computed_file(
         try:
             manifest = load_dataset_manifest(dest)
             if (dest / manifest.data_file).is_file():
-                return InstallResult(manifest=manifest, dest=dest, replaced=False)
+                return _index(
+                    user_key,
+                    InstallResult(manifest=manifest, dest=dest, replaced=False),
+                )
         except ManifestError:
             # Corrupt or incomplete prior install; remove and reinstall below.
             logger.debug(
@@ -396,7 +419,7 @@ def install_computed_file(
         shutil.rmtree(dest, ignore_errors=True)
         raise InstallerError(f"Failed to create computed dataset manifest: {exc}") from exc
 
-    return InstallResult(manifest=manifest, dest=dest, replaced=True)
+    return _index(user_key, InstallResult(manifest=manifest, dest=dest, replaced=True))
 
 
 def install_imported_file(
@@ -471,6 +494,6 @@ def install_imported_file(
         raise InstallerError(f"Failed to create imported dataset manifest: {exc}") from exc
 
     # A fresh unique dir is always created — never a reuse of a prior import.
-    return InstallResult(manifest=manifest, dest=dest, replaced=False)
+    return _index(user_key, InstallResult(manifest=manifest, dest=dest, replaced=False))
 
 

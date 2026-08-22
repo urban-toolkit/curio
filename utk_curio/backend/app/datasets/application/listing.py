@@ -464,13 +464,23 @@ class CatalogListing:
         the mapping can only ever contain paths the authenticated user may
         read. Ids that don't resolve are omitted — the sandbox raises a clear
         per-id error for those at call time.
+
+        Account-store ids resolve straight from the dataset index, so the common
+        case (a loader node reading an imported or computed dataset) costs a
+        keyed lookup instead of a full catalog listing on every node execution.
+        Anything the index doesn't know — hub, workspace files, live outputs —
+        falls back to the listing below.
         """
         if not dataset_ids:
             return {}
+        resolved: dict[str, str] = {}
+        pending = self._resolve_execution_paths_from_index(dataset_ids, resolved)
+        if not pending:
+            return resolved
+
         result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
         by_id = {item["id"]: item for item in result["items"] if item.get("id")}
-        resolved: dict[str, str] = {}
-        for dataset_id in dataset_ids:
+        for dataset_id in pending:
             item = by_id.get(dataset_id)
             if item is None:
                 continue
@@ -485,6 +495,54 @@ class CatalogListing:
             if path and Path(path).is_file():
                 resolved[dataset_id] = path
         return resolved
+
+    def _resolve_execution_paths_from_index(
+        self, dataset_ids: list[str], resolved: dict[str, str]
+    ) -> list[str]:
+        """Fill *resolved* from the dataset index; return the ids still pending.
+
+        Same security property as the listing path: the file must exist AND sit
+        inside an allowed read root. ``data_file`` comes from a manifest on disk
+        and is not containment-checked when it is written, so the
+        ``_contained_path`` guard is applied here too — never skipped just
+        because the row came from the index.
+        """
+        from utk_curio.backend.app.datasets.repositories import index as index_repo
+
+        if self.user is None:
+            return list(dataset_ids)
+        try:
+            user_key = self._paths._user_key()
+        except DatasetCatalogError:
+            return list(dataset_ids)
+
+        by_dir = index_repo.safe_sync_rows_by_dir(user_key)
+        if not by_dir:
+            return list(dataset_ids)
+        rows = {row.dataset_id: row for row in by_dir.values()}
+
+        from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+
+        pending: list[str] = []
+        for dataset_id in dataset_ids:
+            row = rows.get(dataset_id)
+            if row is None:
+                pending.append(dataset_id)
+                continue
+            try:
+                candidate = (dataset_dir(user_key, row.dir_name) / row.data_file).resolve()
+            except Exception:  # noqa: BLE001 — bad dir/data_file: try the listing
+                pending.append(dataset_id)
+                continue
+            if not candidate.is_file():
+                pending.append(dataset_id)
+                continue
+            contained = self._paths._contained_path(candidate.as_posix())
+            if contained:
+                resolved[dataset_id] = contained
+            # A path outside the allowed roots is refused outright (logged by
+            # _contained_path); it must not fall through to another resolver.
+        return pending
 
     def preview(
         self,

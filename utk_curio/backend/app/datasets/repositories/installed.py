@@ -39,8 +39,19 @@ class InstalledDatasetRepository:
         return [r for r in refs if isinstance(r, dict)]
 
     def list_items(self, dataflow_id: str | None) -> list[dict[str, Any]]:
+        refs = self.list_refs(dataflow_id)
+        # One index read for the whole project's refs, so hydrating them costs a
+        # single query instead of a manifest parse each. ``{}`` when the index is
+        # unavailable, which falls back to parsing exactly as before.
+        rows: dict[str, Any] = {}
+        if refs and self.user is not None:
+            from utk_curio.backend.app.datasets.repositories import index as index_repo
+            from utk_curio.backend.app.projects.services import _user_dir_key
+
+            rows = index_repo.safe_sync_rows_by_dir(_user_dir_key(self.user))
+
         items: list[dict[str, Any]] = []
-        for ref in self.list_refs(dataflow_id):
+        for ref in refs:
             dir_name = ref.get("dirName")
 
             # Folder-based datasets (hub OR imported): all metadata lives in the
@@ -61,7 +72,15 @@ class InstalledDatasetRepository:
                 user_key = _user_dir_key(self.user)
                 try:
                     installed_dir = dataset_dir(user_key, dir_name)
-                    manifest = load_dataset_manifest(installed_dir)
+                    row = rows.get(dir_name)
+                    if row is not None:
+                        from utk_curio.backend.app.datasets.repositories import (
+                            index as index_repo,
+                        )
+
+                        manifest = index_repo.manifest_from_row(row)
+                    else:
+                        manifest = load_dataset_manifest(installed_dir)
                     data_path = resolve_installed_data_path(user_key, manifest)
                     item = item_from_manifest(
                         manifest, installed_dir, origin=origin_from_dataflow_ref(ref)

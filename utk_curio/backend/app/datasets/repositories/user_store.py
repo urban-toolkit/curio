@@ -25,8 +25,34 @@ import logging
 from typing import Any
 
 from utk_curio.backend.app.datasets.domain.catalog_item import item_from_manifest
+from utk_curio.backend.app.datasets.repositories import index as index_repo
 
 logger = logging.getLogger(__name__)
+
+
+def _manifest_for(dataset_root: Any, row: Any) -> Any:
+    """Manifest for a store dir — from its index row when available, else parsed.
+
+    Store dirs are always enumerated from disk, so the listing is authoritative
+    regardless of index state; the row only saves the JSON parse (the part that
+    made every listing O(manifests)). Returns ``None`` for a dir whose manifest
+    can't be read, which the callers skip exactly as before.
+    """
+    if row is not None:
+        return index_repo.manifest_from_row(row)
+    from utk_curio.backend.app.datasets.domain.manifest import (
+        ManifestError,
+        load_dataset_manifest,
+    )
+
+    try:
+        return load_dataset_manifest(dataset_root)
+    except (ManifestError, OSError, ValueError):
+        # Best-effort: a malformed/partial dir must not fail the listing.
+        logger.debug(
+            "Skipping unreadable user-store dataset dir %s", dataset_root, exc_info=True
+        )
+        return None
 
 # User-store dir prefixes. ``imported.x<hash>`` from ``install_imported_file``;
 # ``computed.<dataflow>.<node>`` from the computed installers.
@@ -43,10 +69,6 @@ class UserDatasetRepository:
     def list_items(self) -> list[dict[str, Any]]:
         if self.user is None:
             return []
-        from utk_curio.backend.app.datasets.domain.manifest import (
-            ManifestError,
-            load_dataset_manifest,
-        )
         from utk_curio.backend.app.datasets.infrastructure.storage import (
             list_user_datasets,
         )
@@ -58,7 +80,10 @@ class UserDatasetRepository:
         user_key = _user_dir_key(self.user)
         # Namespace any legacy computed dirs before surfacing them so the account
         # id matches the dataflow-scoped indexer/installed id (dedupe by id).
+        # Runs BEFORE the index sync: it renames dirs on disk, and the index
+        # mirrors dirs.
         ensure_computed_ids_migrated(user_key)
+        rows = index_repo.safe_sync_rows_by_dir(user_key)
 
         items: list[dict[str, Any]] = []
         for dataset_root in list_user_datasets(user_key):
@@ -69,15 +94,8 @@ class UserDatasetRepository:
                 origin = "computed"
             else:
                 continue
-            try:
-                manifest = load_dataset_manifest(dataset_root)
-            except (ManifestError, OSError, ValueError):
-                # Best-effort: a malformed/partial dir must not fail the listing.
-                logger.debug(
-                    "Skipping unreadable user-store dataset dir %s",
-                    dataset_root,
-                    exc_info=True,
-                )
+            manifest = _manifest_for(dataset_root, rows.get(name))
+            if manifest is None:
                 continue
             items.append(item_from_manifest(manifest, dataset_root, origin=origin))
         return items
@@ -92,10 +110,6 @@ class UserDatasetRepository:
         """
         if self.user is None or not dataflow_id:
             return []
-        from utk_curio.backend.app.datasets.domain.manifest import (
-            ManifestError,
-            load_dataset_manifest,
-        )
         from utk_curio.backend.app.datasets.infrastructure.storage import (
             list_user_datasets,
         )
@@ -109,17 +123,14 @@ class UserDatasetRepository:
 
         user_key = _user_dir_key(self.user)
         ensure_computed_ids_migrated(user_key)
+        rows = index_repo.safe_sync_rows_by_dir(user_key)
         prefix = f"{_COMPUTED_DIR_PREFIX}{sanitize_node_id_segment(dataflow_id)}."
         items: list[dict[str, Any]] = []
         for dataset_root in list_user_datasets(user_key):
             if not dataset_root.name.startswith(prefix):
                 continue
-            try:
-                manifest = load_dataset_manifest(dataset_root)
-            except (ManifestError, OSError, ValueError):
-                logger.debug(
-                    "Skipping unreadable computed dir %s", dataset_root, exc_info=True
-                )
+            manifest = _manifest_for(dataset_root, rows.get(dataset_root.name))
+            if manifest is None:
                 continue
             items.append(item_from_manifest(manifest, dataset_root, origin="computed"))
         return items

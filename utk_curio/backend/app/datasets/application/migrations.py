@@ -325,6 +325,14 @@ def migrate_computed_dataset_ids(user_key: str) -> int:
                 new_dir_name, exc_info=True,
             )
 
+        # The dir moved and its manifest id changed, so the index's old row is
+        # doubly stale. Drop it and mirror the new dir; a failure here self-heals
+        # on the next reconcile (the row is keyed on dir_name, which is gone).
+        from utk_curio.backend.app.datasets.repositories import index as index_repo
+
+        index_repo.safe_forget(user_key, dir_name)
+        index_repo.safe_upsert_from_dir(user_key, dest)
+
         try:
             _rewrite_spec_ref(user_key, dataflow_id, base_id, new_id, new_dir_name)
         except Exception:  # noqa: BLE001 — dir is renamed; ref rewrite is best-effort
