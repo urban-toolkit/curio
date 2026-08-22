@@ -122,13 +122,13 @@ class CatalogListing:
             # browse view so a dataset imported without an open dataflow (and
             # the shipped samples) are visible, not silently dropped.
             items.extend(self.local.list_items())
-            # Account-level imported datasets registered in the user store, so a
-            # register-only import stays visible in the catalog even when no
-            # project references it. Computed node-output copies are excluded by
-            # the repository (their per-project path is unchanged). A dataset
-            # that IS installed in the open project also appears via
-            # ``installed`` below; ``dedupe_items`` merges the two by id (the
-            # ref row wins ``installed=True``).
+            # Account-level datasets registered in the user store — imported
+            # AND computed alike (``user_store.list_items()`` lists every
+            # account-level computed dataset) — so a register-only import or a
+            # freshly-saved node output stays visible even when no project
+            # references it. A dataset that IS installed in the open project
+            # also appears via ``installed`` below; ``dedupe_items`` merges the
+            # two by id (the ref row wins ``installed=True``).
             items.extend(self.user_store.list_items())
         if dataflow_id:
             items.extend(self.installed.list_items(dataflow_id))

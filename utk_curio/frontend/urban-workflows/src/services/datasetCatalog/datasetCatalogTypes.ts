@@ -326,12 +326,15 @@ export function displayFolderName(
 ): string | null | undefined {
   const d = dirName?.trim();
   if (!d) return dirName;
-  const m = d.match(/^computed\.(.+)@(\d+)$/);
+  // ``@<major>`` is OPTIONAL (a dataset ID never carries it, only a dirName
+  // does) — the Python twin ``display_folder_name`` agrees; requiring it here
+  // leaked raw namespaced ids (with the dataflow UUID) into titles (#175).
+  const m = d.match(/^computed\.(.+?)(@\d+)?$/);
   if (!m) return dirName;
   const segments = m[1].split(".");
   if (segments.length < 2) return dirName; // legacy ``computed.<node>``
   const nodeSegment = segments[segments.length - 1];
-  return `computed.${nodeSegment}@${m[2]}`;
+  return `computed.${nodeSegment}${m[2] ?? ""}`;
 }
 
 /**

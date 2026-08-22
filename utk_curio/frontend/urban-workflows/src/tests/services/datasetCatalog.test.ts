@@ -108,6 +108,18 @@ describe("datasetDisplayTitle (clean, user-facing dataset name)", () => {
     ).toBe("computed.whatif-data@1");
   });
 
+  test("a bare namespaced id (no @N) also drops the dataflow segment (#175)", () => {
+    // Dataset IDs never carry @<major> — only dirNames do. The regex must not
+    // require it, or the raw namespaced string (with the dataflow UUID) leaks.
+    const { displayFolderName } = require("../../services/datasetCatalog/datasetCatalogTypes");
+    expect(
+      displayFolderName("computed.c8077fbd-010d-4f6f-b7e2-a99f5df87243.whatif-data"),
+    ).toBe("computed.whatif-data");
+    // Python-twin parity: legacy and non-computed inputs pass through.
+    expect(displayFolderName("computed.node-x")).toBe("computed.node-x");
+    expect(displayFolderName("imported.xabc@1")).toBe("imported.xabc@1");
+  });
+
   test("a friendly node title is still shown even with a namespaced dirName", () => {
     expect(
       datasetDisplayTitle(
@@ -539,5 +551,20 @@ describe("installedComputedByProducer (producer↔palette linkage)", () => {
       makeDataset({ id: "computed.older", producerNodeId: "node-a", installed: true }),
     ];
     expect(installedComputedByProducer(items).get("node-a")?.id).toBe("computed.recent");
+  });
+
+  test("links a fresh account-store save (dirName set, not installed) (#175)", () => {
+    // Computed outputs are account-level assets on save — no spec ref, so
+    // installed stays false until an explicit Install. The OUTPUT chip must
+    // still render for them.
+    const items = [
+      makeDataset({
+        id: "computed.flow-1.node-a",
+        dirName: "computed.flow-1.node-a@1",
+        producerNodeId: "node-a",
+        installed: false,
+      }),
+    ];
+    expect(installedComputedByProducer(items).get("node-a")?.id).toBe("computed.flow-1.node-a");
   });
 });

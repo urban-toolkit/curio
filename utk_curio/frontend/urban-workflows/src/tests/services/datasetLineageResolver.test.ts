@@ -280,6 +280,39 @@ describe("producerNodeIdForDataset", () => {
       producerNodeIdForDataset({ id: "it.urbanlab.example", dirName: null, producerNodeId: null }),
     ).toBeNull();
   });
+
+  it("returns only the NODE segment for a namespaced id (#175)", () => {
+    // Never the full `<dataflowSeg>.<nodeSeg>` pair — that string poisons
+    // carrier matching and leaks the dataflow UUID into the UI.
+    expect(
+      producerNodeIdForDataset({
+        id: "computed.nc8077fbd-010d-4f6f-b7e2-a99f5df87243.whatif-data",
+        dirName: "computed.nc8077fbd-010d-4f6f-b7e2-a99f5df87243.whatif-data@1",
+        producerNodeId: null,
+      }),
+    ).toBe("whatif-data");
+  });
+
+  it("resolves the REAL canvas node id by sanitizing candidates (#175)", () => {
+    // Node ids are UUIDs; the id segment is the sanitized form ("n" prefix for
+    // a hex-initial uuid) — not the raw node id.
+    const rawNodeId = "13AB-40cd";
+    expect(
+      producerNodeIdForDataset(
+        { id: "computed.flow-1.n13ab-40cd", dirName: null, producerNodeId: null },
+        { nodes: [{ data: { nodeId: rawNodeId } }], dataflowId: "flow-1" },
+      ),
+    ).toBe(rawNodeId);
+  });
+
+  it("does not attribute another dataflow's dataset to this canvas (#175)", () => {
+    expect(
+      producerNodeIdForDataset(
+        { id: "computed.flow-other.node-1", dirName: null, producerNodeId: null },
+        { nodes: [{ data: { nodeId: "node-1" } }], dataflowId: "flow-mine" },
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("selectDatasetUpstreamLineage", () => {

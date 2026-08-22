@@ -14,6 +14,11 @@ import {
   datasetProvenanceLabel,
 } from "../datasetCatalog";
 import {
+  dataflowSegmentFromComputedId,
+  nodeSegmentFromComputedId,
+  sanitizeNodeIdSegment,
+} from "../datasetCatalog/computedIds";
+import {
   DatasetDownstreamUsage,
   DatasetLineage,
   DatasetLineageDataflowUsageRef,
@@ -306,8 +311,18 @@ export function selectDatasetDownstreamUsage(
 
 /**
  * The producing node id of a computed dataset, derived from the persisted
- * lineage data: an explicit ``producerNodeId`` when present, otherwise the node
- * id encoded in the dataset id/dirName (``computed.<sanitizedNodeId>[@N]``).
+ * lineage data: an explicit ``producerNodeId`` when present, otherwise the
+ * NODE segment encoded in the dataset id/dirName
+ * (``computed.[<dataflowSeg>.]<nodeSeg>[@N]`` — mirror of the backend
+ * ``node_segment_from_computed_id``, #175). Never the full
+ * ``<dataflowSeg>.<nodeSeg>`` pair a namespaced id carries: that string is not
+ * a node id and both poisons carrier matching and leaks the dataflow UUID.
+ *
+ * When *options.nodes* is given, the sanitized segment is resolved to a REAL
+ * canvas node id by sanitizing candidates (sanitization is not invertible).
+ * When *options.dataflowId* is given, a namespaced id from ANOTHER dataflow
+ * resolves to null — node ids recur across dataflows (Duplicate Project,
+ * trill re-import), so a same-named node on this canvas is not the producer.
  *
  * Reinstalling a computed dataset from a previous node persists its ref with a
  * null ``producerNodeId`` (origin flips to "imported"), which would otherwise
@@ -319,12 +334,27 @@ export function selectDatasetDownstreamUsage(
  */
 export function producerNodeIdForDataset(
   dataset: Pick<DatasetCatalogItem, "id" | "dirName" | "producerNodeId">,
+  options?: {
+    nodes?: LineageCanvasNode[] | null;
+    dataflowId?: string | null;
+  },
 ): string | null {
   if (dataset.producerNodeId) return dataset.producerNodeId;
   const source = dataset.dirName || dataset.id || "";
-  if (!source.startsWith("computed.")) return null;
-  const seg = source.slice("computed.".length).replace(/@\d+$/, "");
-  return seg || null;
+  const nodeSeg = nodeSegmentFromComputedId(source);
+  if (!nodeSeg) return null;
+  const dfSeg = dataflowSegmentFromComputedId(source);
+  const dataflowId = options?.dataflowId;
+  if (dfSeg && dataflowId && sanitizeNodeIdSegment(dataflowId) !== dfSeg) {
+    return null;
+  }
+  for (const node of options?.nodes || []) {
+    const candidate = node?.data?.nodeId ?? node?.id;
+    if (candidate && sanitizeNodeIdSegment(candidate) === nodeSeg) {
+      return candidate;
+    }
+  }
+  return nodeSeg;
 }
 
 export interface UpstreamLineageParams {
@@ -340,6 +370,8 @@ export interface UpstreamLineageParams {
     | "producerDataflowName"
   >;
   nodes: LineageCanvasNode[];
+  /** Current canvas dataflow id — gates cross-dataflow producer attribution. */
+  dataflowId?: string | null;
   resolveNodeLabel?: NodeLabelResolver;
 }
 
@@ -347,8 +379,8 @@ export interface UpstreamLineageParams {
 export function selectDatasetUpstreamLineage(
   params: UpstreamLineageParams,
 ): DatasetUpstreamLineage {
-  const { dataset, nodes, resolveNodeLabel } = params;
-  const producerNodeId = producerNodeIdForDataset(dataset);
+  const { dataset, nodes, dataflowId, resolveNodeLabel } = params;
+  const producerNodeId = producerNodeIdForDataset(dataset, { nodes, dataflowId });
 
   let generatingNode: DatasetUpstreamLineage["generatingNode"] = null;
   if (producerNodeId) {
@@ -419,15 +451,15 @@ export function selectDatasetLineage(params: DatasetLineageParams): DatasetLinea
     nodes,
     edges,
     // Derive the producer from the computed id when the ref dropped it (reinstall),
-    // so downstream carrier resolution matches a freshly-generated dataset.
-    producerNodeId: producerNodeIdForDataset(dataset),
+    // resolved against the canvas nodes so carrier matching uses a REAL node id.
+    producerNodeId: producerNodeIdForDataset(dataset, { nodes, dataflowId }),
     dataflowId,
     dataflowName,
     persistedConsumerNodeIds: dataset.consumerNodeIds || [],
     nodeExecStatus,
     resolveNodeLabel,
   });
-  const upstream = selectDatasetUpstreamLineage({ dataset, nodes, resolveNodeLabel });
+  const upstream = selectDatasetUpstreamLineage({ dataset, nodes, dataflowId, resolveNodeLabel });
 
   const hasUnresolvedReferences = downstream.consumingNodes.some(
     (usage) => usage.status === "unresolved",
