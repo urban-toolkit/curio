@@ -69,6 +69,7 @@ import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
 import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { nodeRunStatus } from "../utils/nodeRunStatus";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 import { useDatasetPalette } from "../providers/DatasetPaletteContext";
@@ -729,6 +730,7 @@ export const NodeContainer = ({
                 ref={resizableRef}
                 id={nodeId + "resizable"}
                 className={"resizable"}
+                data-curio-node-status={nodeRunStatus(output)}
                 onDragOver={onDatasetDragOver}
                 onDrop={onDatasetDrop}
                 style={{

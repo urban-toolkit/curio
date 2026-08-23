@@ -45,6 +45,7 @@ export const PackageTemplateRow = memo(function PackageTemplateRow({
             <div className={packageStyles.packageKindRow}>
                 <div
                     className={packageStyles.packageKindRowDrag}
+                    data-pkg-template-id={String(desc.id)}
                     draggable
                     onDragStart={(event) => {
                         event.dataTransfer.setData("application/reactflow", String(desc.id));
