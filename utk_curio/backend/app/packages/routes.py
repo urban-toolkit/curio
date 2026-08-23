@@ -783,11 +783,39 @@ def factory_publish_catalog():
     }), 201
 
 
+def _installed_dir_for_draft(user_key: str, manifest_raw) -> "Path | None":
+    """The user's installed directory for a draft's coordinate, if any.
+
+    Save-As rebuilds a whole package from one draft, so both the build and the
+    install path need to know whether they are rewriting something that already
+    exists on disk — that is what makes source preservation possible.
+    """
+    if not isinstance(manifest_raw, dict):
+        return None
+    package_id_raw = manifest_raw.get("id")
+    major_raw = (manifest_raw.get("compatibility") or {}).get("major")
+    if not isinstance(package_id_raw, str) or not isinstance(major_raw, int):
+        return None
+    try:
+        candidate = package_dir(user_key, f"{package_id_raw}@{major_raw}")
+    except PackageIdError:
+        return None
+    return candidate if candidate.is_dir() else None
+
+
 @packages_bp.route("/factory/build", methods=["POST"])
 @require_auth
 def factory_build():
     """Validate a draft and return the produced ``.curio.zip`` bytes."""
+    user_key = _user_dir_key(g.user)
     draft = request.get_json(silent=True) or {}
+    # Same preservation the install path does: a Save-As draft over an existing
+    # package carries real source only for the edited template, so building
+    # without this ships placeholder bodies for every sibling — an exported
+    # archive that silently destroys code when imported elsewhere.
+    draft = preserve_unedited_sources(
+        draft, _installed_dir_for_draft(user_key, draft.get("manifest")),
+    )
     try:
         result = build_packageage_archive(draft)
     except FactoryError as exc:
@@ -841,18 +869,9 @@ def factory_install():
     # template the user actively edited; every other template comes through
     # with the STARTER_CODE placeholder. Read the unedited templates' real
     # source from disk before the rebuild so we don't clobber them.
-    existing_dir: Path | None = None
-    if isinstance(manifest_raw, dict):
-        package_id_raw = manifest_raw.get("id")
-        major_raw = (manifest_raw.get("compatibility") or {}).get("major")
-        if isinstance(package_id_raw, str) and isinstance(major_raw, int):
-            try:
-                candidate = package_dir(user_key, f"{package_id_raw}@{major_raw}")
-            except PackageIdError:
-                candidate = None
-            if candidate is not None and candidate.is_dir():
-                existing_dir = candidate
-    draft = preserve_unedited_sources(draft, existing_dir)
+    draft = preserve_unedited_sources(
+        draft, _installed_dir_for_draft(user_key, manifest_raw),
+    )
     try:
         built = build_packageage_archive(draft)
         result = install_packageage_from_archive(

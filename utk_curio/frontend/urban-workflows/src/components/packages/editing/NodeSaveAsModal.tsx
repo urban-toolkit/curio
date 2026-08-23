@@ -210,8 +210,11 @@ export function NodeSaveAsModal({
   // the modal open — an export is not a commit.
   //
   // Deliberately sends the *same* envelope Save would: `/factory/build` reads
-  // only manifest/sources/readme/license and ignores `replace`, so the zip the
-  // user downloads is byte-for-byte the package Save would have installed.
+  // only manifest/sources/readme/license and ignores `replace`. Both endpoints
+  // run preserve_unedited_sources, so the downloaded zip carries the same
+  // template bodies Save would have installed — including the real source of
+  // siblings this draft only has placeholders for. Not literally byte-identical:
+  // each request stamps its own `createdAt` when the draft omits one.
   const onExport = useCallback(async () => {
     if (!canvasNode || busy) return;
     setBusy(true);

@@ -9,6 +9,8 @@ import zipfile
 
 import pytest
 
+from utk_curio.backend.app.packages.factory import _STARTER_CODE_SENTINEL
+
 
 def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -286,6 +288,89 @@ def test_factory_build_returns_zip(client, user_and_token, tmp_curio):
     assert resp.status_code == 200
     assert resp.mimetype == "application/zip"
     assert resp.headers["X-Curio-Package-Dir"] == "ai.test.factory@1"
+    assert resp.headers["X-Curio-Package-Version"] == "1.0.0"
+    # The browser reads the download name from Content-Disposition
+    # (packagesApi.factoryBuild), so the server must actually send it.
+    assert resp.headers["Content-Disposition"] == (
+        'attachment; filename="ai.test.factory@1-1.0.0.curio.zip"'
+    )
+    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
+        names = set(zf.namelist())
+    assert "manifest.json" in names
+    assert "sources/demo.py" in names
+    # integrity.json is computed post-extraction by the installer, never shipped
+    # in an archive. Regressing this would make every archive carry stale hashes.
+    assert "integrity.json" not in names
+
+
+def _two_template_draft():
+    """A draft for a package with two code templates, each with distinct source."""
+    draft = _draft()
+    draft["manifest"]["templates"] = [
+        {
+            "id": f"{name}-kind",
+            "label": name.title(),
+            "category": "computation",
+            "engine": "python",
+            "editor": "code",
+            "hasCode": True,
+            "hasWidgets": False,
+            "hasGrammar": False,
+            "inputPorts": [],
+            "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+            "source": f"sources/{name}-kind.py",
+        }
+        for name in ("foo", "bar")
+    ]
+    draft["sources"] = {
+        "foo-kind": {"filename": "foo-kind.py", "code": "def run():\n    return 'foo-original'\n"},
+        "bar-kind": {"filename": "bar-kind.py", "code": "def run():\n    return 'bar-original'\n"},
+    }
+    return draft
+
+
+def test_factory_build_preserves_unedited_sources(client, user_and_token, tmp_curio):
+    """Export must not blank the code of templates the user didn't edit.
+
+    ``factory_install`` calls ``preserve_unedited_sources`` before building;
+    ``factory_build`` historically did not. Save-As only carries the real body
+    for the one canvas template — every sibling arrives as a STARTER_CODE
+    placeholder — so Export shipped a zip whose other node kinds had lost their
+    code, while Save preserved them. Importing such a zip elsewhere silently
+    destroys work, which is the same failure
+    ``test_factory.py::test_preserve_unedited_sources_restores_real_source_for_placeholder_kind``
+    guards on the install path.
+    """
+    _, token = user_and_token
+    original = _two_template_draft()
+    install = client.post(
+        "/api/packages/factory/install",
+        data=json.dumps(original),
+        headers=_auth(token),
+    )
+    assert install.status_code == 201
+
+    # Save-As rebuild: foo is really edited, bar carries the placeholder.
+    edited_foo = "def run():\n    return 'foo-edited'\n"
+    rebuild = _two_template_draft()
+    rebuild["sources"] = {
+        "foo-kind": {"filename": "foo-kind.py", "code": edited_foo},
+        "bar-kind": {"filename": "bar-kind.py", "code": _STARTER_CODE_SENTINEL},
+    }
+    resp = client.post(
+        "/api/packages/factory/build",
+        data=json.dumps(rebuild),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
+        foo_body = zf.read("sources/foo-kind.py").decode("utf-8")
+        bar_body = zf.read("sources/bar-kind.py").decode("utf-8")
+    assert foo_body == edited_foo
+    assert bar_body == "def run():\n    return 'bar-original'\n", (
+        "Export blanked an unedited sibling template. factory_build must call "
+        "preserve_unedited_sources like factory_install does."
+    )
 
 
 def test_factory_install_creates_packageage(client, user_and_token, tmp_curio):
