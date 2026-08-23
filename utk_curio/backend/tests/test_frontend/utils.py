@@ -12,7 +12,12 @@ from urllib.error import URLError
 
 import allure
 import pytest
-from playwright.sync_api import Error as PlaywrightError, Page, expect
+from playwright.sync_api import (
+    Error as PlaywrightError,
+    Page,
+    TimeoutError as PlaywrightTimeoutError,
+    expect,
+)
 
 # Repo root is 4 levels up: test_frontend -> tests -> backend -> utk_curio -> curio-main
 REPO_ROOT = os.path.abspath(
@@ -1043,6 +1048,79 @@ def _post_json(url: str, payload: dict, timeout: float = 10.0) -> dict:
     with urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
         body = resp.read().decode("utf-8") or "{}"
         return json.loads(body)
+
+
+def api_json(
+    url: str,
+    token: str,
+    *,
+    method: str = "GET",
+    payload: dict | None = None,
+    timeout: float = 10.0,
+) -> dict:
+    """Authenticated JSON request against the backend, stdlib only.
+
+    The escape hatch for asserting backend state from a browser test: it makes a
+    seeding or persistence problem fail in about a second with the offending
+    payload, instead of as a 15-second locator timeout that says nothing about
+    which side broke.
+    """
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Authorization": f"Bearer {token}"}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    req = Request(url, data=data, headers=headers, method=method)
+    with urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
+        return json.loads(resp.read().decode("utf-8") or "{}")
+
+
+def skip_if_shared_view(page, *, timeout: float = 4000) -> None:
+    """Skip when the dataflow opened read-only as the shared guest.
+
+    In a no-auth environment (e.g. ``CURIO_E2E_USE_EXISTING=1`` against a dev
+    server that ignores the injected stub session) the browser is the read-only
+    shared guest: it can't see another user's installed packages or datasets, and
+    catalog fetches come back empty. Skip with a clear reason rather than fail
+    confusingly deep inside a palette or drawer assertion.
+    """
+    banner = page.get_by_test_id("shared-view-banner")
+    try:
+        banner.wait_for(state="visible", timeout=timeout)
+    except PlaywrightTimeoutError:
+        return  # no banner → authenticated owner, proceed
+    pytest.skip(
+        "Dataflow opened read-only as the shared guest — owner auth is "
+        "unavailable in this e2e environment. Run with CURIO_TESTING=1 "
+        "(without CURIO_E2E_USE_EXISTING) against an auth-enabled server."
+    )
+
+
+_TOOLS_PALETTES = {
+    "packages": ("#packages-palette", "Open node package palette", "Package templates"),
+    "datasets": ("#datasets-palette", "Open dataset palette", "Dataset palette"),
+}
+
+
+def open_tools_palette(page, kind: str):
+    """Open one of the left-rail tool palettes and return its panel locator.
+
+    ONE-SHOT PER TEST: the trigger's ``title`` flips to ``Close …`` once open, so
+    a second call finds nothing. The two palettes are also mutually exclusive
+    (``ToolsMenu`` keeps a single ``activePalette``), so opening one closes the
+    other. ``force=True`` because the ReactFlow pane overlaps the rail.
+    """
+    try:
+        root_sel, trigger_title, panel_name = _TOOLS_PALETTES[kind]
+    except KeyError:
+        raise ValueError(
+            f"kind must be one of {sorted(_TOOLS_PALETTES)}, got {kind!r}"
+        ) from None
+    trigger = page.locator(f'{root_sel} button[title="{trigger_title}"]')
+    trigger.wait_for(state="visible", timeout=30000)
+    trigger.click(force=True)
+    panel = page.locator(root_sel).get_by_role("region", name=panel_name)
+    panel.wait_for(state="visible", timeout=10000)
+    return panel
 
 
 def install_session_cookie(page, frontend_url: str, token: str) -> None:

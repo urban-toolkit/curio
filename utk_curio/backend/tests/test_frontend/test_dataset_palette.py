@@ -24,17 +24,17 @@ Run with the e2e harness, e.g.::
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.request import Request, urlopen
 
-import pytest
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
+from playwright.sync_api import expect
 
 from .utils import (
+    api_json,
     get_shared_data_dir,
+    open_tools_palette,
     require_project_page,
+    skip_if_shared_view,
     stub_login_and_enter_workflow,
 )
 
@@ -42,11 +42,17 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 
-def _dataset_ref(node_id: str) -> tuple[str, dict]:
-    """The catalog id + dataflow ``datasets`` ref for a computed node output."""
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+def _dataset_ref(node_id: str, dataflow_id: str) -> tuple[str, dict]:
+    """The catalog id + dataflow ``datasets`` ref for a computed node output.
 
-    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    The id is namespaced by the producing dataflow, so the same node id in two
+    dataflows yields two distinct account-level datasets (#166). Built with the
+    production helper rather than hand-rolled: the un-namespaced
+    ``computed.<node>`` form is display/lookup-only and the installers refuse it.
+    """
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+
+    dataset_id = computed_dataset_id(node_id, dataflow_id)
     ref = {
         "datasetId": dataset_id,
         "dirName": f"{dataset_id}@1",
@@ -56,9 +62,9 @@ def _dataset_ref(node_id: str) -> tuple[str, dict]:
     return dataset_id, ref
 
 
-def _install_dataset_on_disk(user_id: int, node_id: str) -> None:
-    """Materialize ``computed.<node>@1/`` in the owner's dataset store — the
-    on-disk state a toggle-on node run leaves behind."""
+def _install_dataset_on_disk(user_id: int, node_id: str, dataflow_id: str) -> None:
+    """Materialize the computed dataset dir in the owner's store — the on-disk
+    state a toggle-on node run leaves behind."""
     from utk_curio.backend.app.datasets.install.bundle import install_node_output
 
     # Bytes need not be valid parquet — the installer copies them and the palette
@@ -66,7 +72,11 @@ def _install_dataset_on_disk(user_id: int, node_id: str) -> None:
     parquet_name = "1718000000222_cafe0002_output.parquet"
     (Path(get_shared_data_dir()) / parquet_name).write_bytes(b"PAR1")
     result = install_node_output(
-        str(user_id), node_id=node_id, path_ref=parquet_name, data_type="dataframe"
+        str(user_id),
+        node_id=node_id,
+        path_ref=parquet_name,
+        data_type="dataframe",
+        dataflow_id=dataflow_id,
     )
     assert result is not None, "installer should materialize the computed dataset dir"
 
@@ -82,25 +92,6 @@ def _spec_with_dataset(ref: dict) -> dict:
     }
 
 
-def _request_json(url: str, token: str, *, method: str, payload: dict | None = None) -> dict:
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    headers = {"Authorization": f"Bearer {token}"}
-    if data is not None:
-        headers["Content-Type"] = "application/json"
-    req = Request(url, data=data, headers=headers, method=method)
-    with urlopen(req, timeout=10) as resp:  # noqa: S310 (trusted local URL)
-        return json.loads(resp.read().decode("utf-8") or "{}")
-
-
-def _open_palette(page):
-    trigger = page.locator('#datasets-palette button[title="Open dataset palette"]')
-    trigger.wait_for(state="visible", timeout=30000)
-    trigger.click(force=True)
-    panel = page.get_by_role("region", name="Dataset palette")
-    panel.wait_for(state="visible", timeout=10000)
-    return panel
-
-
 def test_saved_computed_dataset_shows_in_palette_and_persists(
     app_frontend: "FrontendPage",
     current_server: str,
@@ -110,7 +101,6 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
 
     base = app_frontend.base_url
     node_id = "node-palette"
-    dataset_id, ref = _dataset_ref(node_id)
 
     # 1. SAVE A PROJECT FIRST: log in as the owner and enter a fresh saved
     #    dataflow (a real authenticated session, not the shared-guest view).
@@ -126,31 +116,17 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
     token = result["token"]
     project_id = result["project"]["id"]
 
-    # Owner check. In a no-auth / shared-guest e2e environment (e.g.
-    # ``CURIO_E2E_USE_EXISTING=1`` against a dev server that ignores the injected
-    # stub session) the browser is the *read-only shared guest*, so it can never
-    # see another user's installed datasets and this test is not meaningful.
-    # Wait long enough for ProjectLoader to resolve, and if the read-only banner
-    # appears, SKIP with a clear reason rather than fail confusingly at the
-    # palette. The proper environment is ``CURIO_TESTING=1`` (without
-    # ``CURIO_E2E_USE_EXISTING``), which boots an auth-enabled server where the
-    # stub session authenticates the owner — same as the workflow e2e tests.
-    shared_banner = page.get_by_test_id("shared-view-banner")
-    try:
-        shared_banner.wait_for(state="visible", timeout=4000)
-    except PlaywrightTimeoutError:
-        pass  # no banner → authenticated owner, proceed
-    else:
-        pytest.skip(
-            "Dataflow opened read-only as the shared guest — owner auth is "
-            "unavailable in this e2e environment. Run with CURIO_TESTING=1 "
-            "(without CURIO_E2E_USE_EXISTING) against an auth-enabled server."
-        )
+    # Owner check: a shared-guest session can never see another user's installed
+    # datasets, so this test wouldn't be meaningful there.
+    skip_if_shared_view(page)
 
     # 2. Now generate/install the computed dataset INTO the saved project:
     #    materialize the dataset dir on disk and reference it from the spec.
-    _install_dataset_on_disk(user_id, node_id)
-    _request_json(
+    #    The id is only knowable once the project exists — it is namespaced by
+    #    the producing dataflow.
+    dataset_id, ref = _dataset_ref(node_id, project_id)
+    _install_dataset_on_disk(user_id, node_id, project_id)
+    api_json(
         f"{current_server}/api/projects/{project_id}",
         token,
         method="PUT",
@@ -159,7 +135,7 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
 
     # 2b. Assert backend-side first so a seeding problem is distinguishable from a
     #     browser-timing one: the dataflow catalog must list it as installed.
-    catalog = _request_json(
+    catalog = api_json(
         f"{current_server}/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
         token,
         method="GET",
@@ -177,7 +153,7 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_url(f"**/dataflow/{project_id}", timeout=15000)
 
-    panel = _open_palette(page)
+    panel = open_tools_palette(page, "datasets")
     # Auto-retrying assertions ride out the async catalog fetch (the accordion
     # shows the empty hint until the request resolves).
     expect(panel.get_by_text(dataset_title, exact=False).first).to_be_visible(timeout=15000)
@@ -189,5 +165,5 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_url(f"**/dataflow/{project_id}", timeout=15000)
 
-    panel = _open_palette(page)
+    panel = open_tools_palette(page, "datasets")
     expect(panel.get_by_text(dataset_title, exact=False).first).to_be_visible(timeout=15000)
