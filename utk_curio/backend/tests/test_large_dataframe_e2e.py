@@ -24,6 +24,7 @@ the test environment (e.g. CI without geopandas / rasterio installed).
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -39,6 +40,21 @@ REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..")
 )
 SANDBOX_BOOT_TIMEOUT_S = 90  # importing geopandas / rasterio is slow on a cold cache
+
+# Dedicated DuckDB store, so this test cannot collide with a running
+# `curio start` writing to the same path. Relative because the sandbox
+# subprocess resolves it against REPO_ROOT (its cwd).
+SHARED_DATA_REL = ".curio/test-large-df-data/"
+WATCHDOG_DATA_REL = ".curio/test-watchdog-data/"
+
+
+def _remove_shared_data(rel_path: str) -> None:
+    """Delete one of this module's dedicated DuckDB stores.
+
+    Best-effort: a leaked handle from the sandbox subprocess must not fail an
+    otherwise-passing test, and the next run recreates the directory anyway.
+    """
+    shutil.rmtree(os.path.join(REPO_ROOT, rel_path.rstrip("/")), ignore_errors=True)
 
 
 def _free_port() -> int:
@@ -97,7 +113,7 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         env["CURIO_LAUNCH_CWD"] = REPO_ROOT
         # Use a dedicated DuckDB store so the test cannot collide with a running
         # `curio start` instance writing to the same path.
-        env["CURIO_SHARED_DATA"] = ".curio/test-large-df-data/"
+        env["CURIO_SHARED_DATA"] = SHARED_DATA_REL
         env["PYTHONUNBUFFERED"] = "1"
         env["FLASK_USE_RELOADER"] = "0"
 
@@ -156,6 +172,12 @@ class TestLargeDataFrameE2E(unittest.TestCase):
 
         if hasattr(cls, "_user_patch"):
             cls._user_patch.stop()
+
+        # Drop the dedicated DuckDB store. Each run of this test spills a
+        # 50M-row DataFrame to parquet (gigabytes per artifact); without this
+        # the directory accumulates across runs until the disk fills, which
+        # surfaces as unrelated IOExceptions all over the suite.
+        _remove_shared_data(SHARED_DATA_REL)
 
     def _auth_headers(self):
         return {"Authorization": "Bearer test-token"}
@@ -258,7 +280,7 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         env["CURIO_LAUNCH_CWD"] = REPO_ROOT
         # Separate DuckDB store so a leak here is obvious and doesn't trash the
         # other tests' artifacts.
-        env["CURIO_SHARED_DATA"] = ".curio/test-watchdog-data/"
+        env["CURIO_SHARED_DATA"] = WATCHDOG_DATA_REL
         env["PYTHONUNBUFFERED"] = "1"
 
         proc = subprocess.Popen(
@@ -313,6 +335,7 @@ class TestLargeDataFrameE2E(unittest.TestCase):
             )
         finally:
             _shutdown_sandbox(proc)
+            _remove_shared_data(WATCHDOG_DATA_REL)
             # Best-effort cleanup of any survivor we still see (would only run
             # if the assertion above failed, in which case we don't want to
             # leak processes onto the host).

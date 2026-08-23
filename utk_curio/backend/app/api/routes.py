@@ -148,7 +148,6 @@ _node_type_registry: dict = {
     "DATA_EXPORT":           {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": []},
     "DATA_TRANSFORMATION":   {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
     "COMPUTATION_ANALYSIS":  {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
-    "FLOW_SWITCH":           {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
     "VIS_VEGA":              {"inputTypes": ["DATAFRAME"],                                                 "outputTypes": ["DATAFRAME"]},
     "VIS_SIMPLE":            {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE"],                        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE"]},
     "CONSTANTS":             {"inputTypes": [],                                                             "outputTypes": ["VALUE"]},
