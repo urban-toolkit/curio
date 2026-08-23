@@ -1057,7 +1057,8 @@ def api_json(
     method: str = "GET",
     payload: dict | None = None,
     timeout: float = 10.0,
-) -> dict:
+    raw: bool = False,
+):
     """Authenticated JSON request against the backend, stdlib only.
 
     The escape hatch for asserting backend state from a browser test: it makes a
@@ -1071,7 +1072,10 @@ def api_json(
         headers["Content-Type"] = "application/json"
     req = Request(url, data=data, headers=headers, method=method)
     with urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
-        return json.loads(resp.read().decode("utf-8") or "{}")
+        body = resp.read()
+        # ``raw`` for binary endpoints (e.g. a .curio.zip archive), where the
+        # point is the bytes rather than a JSON document.
+        return body if raw else json.loads(body.decode("utf-8") or "{}")
 
 
 def skip_if_shared_view(page, *, timeout: float = 4000) -> None:
