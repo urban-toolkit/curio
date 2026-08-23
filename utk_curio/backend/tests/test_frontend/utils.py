@@ -1108,10 +1108,13 @@ _TOOLS_PALETTES = {
 def open_tools_palette(page, kind: str):
     """Open one of the left-rail tool palettes and return its panel locator.
 
-    ONE-SHOT PER TEST: the trigger's ``title`` flips to ``Close …`` once open, so
-    a second call finds nothing. The two palettes are also mutually exclusive
-    (``ToolsMenu`` keeps a single ``activePalette``), so opening one closes the
-    other. ``force=True`` because the ReactFlow pane overlaps the rail.
+    Re-callable: the trigger's ``title`` flips to ``Close …`` once open, so this
+    matches either title and only clicks when the panel is not already showing.
+    That matters for a test that needs both palettes, because they are mutually
+    exclusive (``ToolsMenu`` keeps a single ``activePalette``) and opening one
+    closes the other, so coming back to the first one is a normal thing to do.
+
+    ``force=True`` because the ReactFlow pane overlaps the rail.
     """
     try:
         root_sel, trigger_title, panel_name = _TOOLS_PALETTES[kind]
@@ -1119,10 +1122,15 @@ def open_tools_palette(page, kind: str):
         raise ValueError(
             f"kind must be one of {sorted(_TOOLS_PALETTES)}, got {kind!r}"
         ) from None
-    trigger = page.locator(f'{root_sel} button[title="{trigger_title}"]')
+    close_title = trigger_title.replace("Open ", "Close ", 1)
+    trigger = page.locator(
+        f'{root_sel} button[title="{trigger_title}"], '
+        f'{root_sel} button[title="{close_title}"]'
+    )
     trigger.wait_for(state="visible", timeout=30000)
-    trigger.click(force=True)
     panel = page.locator(root_sel).get_by_role("region", name=panel_name)
+    if panel.count() == 0 or not panel.first.is_visible():
+        trigger.click(force=True)
     panel.wait_for(state="visible", timeout=10000)
     return panel
 
@@ -1293,6 +1301,577 @@ def upload_workflow(
         assert tools_menu_bar.is_hidden() is True, (
             f"Tools menu bar is not hidden"
         )
+
+
+# ---------------------------------------------------------------------------
+# Canvas authoring helpers (drag a node in, connect it, give it code, run it)
+# ---------------------------------------------------------------------------
+#
+# Everything above builds a canvas by *loading* a dataflow (a Trill JSON through
+# the File menu, or a spec seeded into the DB). These helpers cover the other
+# half: what a user does by hand. They are deliberately DOM/event driven rather
+# than store driven, because the two are not equivalent -
+# ``window.__curio_reactFlow.setNodes`` writes only React Flow's zustand store,
+# and ReactFlow's ``useStoreUpdater`` pushes the provider's node array straight
+# back over it on the next render, so a node (or a code edit) injected that way
+# silently disappears.
+
+CANVAS_DROP_TARGET = ".curio-canvas-drop-target"
+
+# One HTML5 drag, start to finish, on the elements the app actually listens to.
+#
+# ``dragstart`` has to be fired on the SOURCE, not just the drop constructed by
+# hand: the built-in tiles and the package palette rows put their payload on
+# ``dataTransfer`` inside their own ``onDragStart``, and dataset rows go further
+# and stash the payload in a module singleton via ``beginDatasetDrag`` (the
+# canvas reads that singleton in preference to ``getData``, because custom MIME
+# types do not round-trip reliably). Skipping ``dragstart`` therefore drops an
+# empty payload, which ``handleDrop`` ignores without a word.
+_DRAG_TO_CANVAS_JS = r"""({ source, targetSelector, clientX, clientY }) => {
+    const target = document.querySelector(targetSelector);
+    if (!target) return `no drop target matching ${targetSelector}`;
+    // The identifying attribute and the draggable element are not always the
+    // same node: a dataset palette row carries data-dataset-id on its wrapper
+    // and puts onDragStart on an inner grip, so dispatching on the wrapper
+    // would fire nothing (events bubble up, never down). Built-in tiles and
+    // package rows are themselves draggable, so this resolves to the element
+    // itself for them.
+    const dragSource = source.hasAttribute("draggable")
+        ? source
+        : source.querySelector("[draggable]");
+    if (!dragSource) return "source has no draggable element";
+    const dataTransfer = new DataTransfer();
+    const fire = (el, type, coords) => {
+        el.dispatchEvent(new DragEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer,
+            ...(coords || {}),
+        }));
+    };
+    const coords = { clientX, clientY };
+    fire(dragSource, "dragstart", coords);
+    // dragover before drop: handleDragOver is where the canvas sets dropEffect,
+    // and a dataset drag ("copy") is refused outright by a browser that saw
+    // effectAllowed "move".
+    fire(target, "dragover", coords);
+    fire(target, "drop", coords);
+    fire(dragSource, "dragend", coords);
+    return "ok";
+}"""
+
+
+def canvas_nodes(page) -> list[dict]:
+    """Every node on the canvas as ``{"id", "nodeType"}``.
+
+    Projected, not returned raw: ``node.data`` holds a ``PythonInterpreter``
+    instance and the ``outputCallback`` / ``propagationCallback`` closures, and
+    Playwright cannot serialize either, so handing back the real nodes fails
+    with an unhelpful "Unexpected value" from inside evaluate().
+    """
+    page.wait_for_function("() => !!window.__curio_reactFlow", timeout=30000)
+    return page.evaluate(
+        """() => window.__curio_reactFlow.getNodes().map((n) => ({
+            id: n.id,
+            nodeType: (n.data && n.data.nodeType) || null,
+        }))"""
+    )
+
+
+def canvas_node_type(page, node_id: str) -> str | None:
+    """The ``data.nodeType`` of one canvas node.
+
+    Every node renders as the single React Flow type ``__curioUniversalNode``,
+    so the DOM cannot tell a loader from a transformation; the real kind only
+    exists in node data.
+    """
+    for node in canvas_nodes(page):
+        if node["id"] == node_id:
+            return node["nodeType"]
+    return None
+
+
+def node_locator(page, node_id: str):
+    """Return a Playwright ``Locator`` for a ReactFlow node element."""
+    return page.locator(f'.react-flow__node[data-id="{node_id}"]')
+
+
+def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
+                   timeout: float = 15000) -> str:
+    """Drag *source* onto the canvas and return the id of the node it created.
+
+    *source* is a locator for anything draggable that the canvas accepts: a
+    built-in palette tile (``#step-transformation``), a package palette row
+    (``[data-pkg-template-id="..."]``), or a dataset row/card
+    (``[data-dataset-id="..."]``). *at* is an offset from the pane's top-left
+    corner; the pane centre is used when omitted.
+
+    Mind the geometry when dropping more than one node: a node renders 525x350
+    at zoom 1, so offsets less than ~600px apart horizontally overlap, and the
+    later node's body then covers the earlier one's connection handle. In a
+    1280x720 viewport, ``(150, 150)`` and ``(760, 150)`` is a pair that leaves
+    both facing handles exposed.
+
+    Ids are ``uuid4`` and assigned inside ``createCodeNode``, so the only way to
+    learn the new one is to diff the canvas before and after.
+    """
+    before = {node["id"] for node in canvas_nodes(page)}
+
+    pane = page.locator(CANVAS_DROP_TARGET)
+    pane.wait_for(state="visible", timeout=timeout)
+    box = pane.bounding_box()
+    assert box, f"{CANVAS_DROP_TARGET} has no layout box"
+    if at is None:
+        client_x = box["x"] + box["width"] / 2
+        client_y = box["y"] + box["height"] / 2
+    else:
+        client_x = box["x"] + at[0]
+        client_y = box["y"] + at[1]
+
+    source.wait_for(state="visible", timeout=timeout)
+    source.scroll_into_view_if_needed()
+    result = page.evaluate(
+        _DRAG_TO_CANVAS_JS,
+        {
+            "source": source.element_handle(),
+            "targetSelector": CANVAS_DROP_TARGET,
+            "clientX": client_x,
+            "clientY": client_y,
+        },
+    )
+    assert result == "ok", f"drag to canvas failed: {result}"
+
+    try:
+        page.wait_for_function(
+            "(n) => window.__curio_reactFlow.getNodes().length > n",
+            arg=len(before),
+            timeout=timeout,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            "Drop produced no node. Either the drag payload was empty (the "
+            "source's own onDragStart did not run) or the canvas is refusing "
+            "drops (dashboard mode / shared read-only view)."
+        ) from None
+
+    created = [n for n in canvas_nodes(page) if n["id"] not in before]
+    assert len(created) == 1, (
+        f"expected exactly one new node, got {created}"
+    )
+    node_id = created[0]["id"]
+    node_locator(page, node_id).wait_for(state="visible", timeout=timeout)
+    return node_id
+
+
+# Monaco is bundled and pinned on ``window`` by index.tsx, so the editor
+# instance is reachable; it is found by DOM containment because a canvas holds
+# one editor per code node and ``getEditors()`` returns all of them.
+_SET_NODE_CODE_JS = r"""({ nodeId, code }) => {
+    const nodeEl = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    if (!nodeEl) return "node is not on the canvas";
+    const editorEl = nodeEl.querySelector(".monaco-editor");
+    if (!editorEl) return "node has no code editor";
+    const editors = (window.monaco && window.monaco.editor
+        && window.monaco.editor.getEditors && window.monaco.editor.getEditors()) || [];
+    const match = editors.find((e) => editorEl.contains(e.getDomNode()));
+    if (!match) return "no monaco instance owns this node's editor";
+    match.setValue(code);
+    return "ok";
+}"""
+
+_NODE_CODE_IS_JS = r"""({ nodeId, code }) => {
+    const nodeEl = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    const editorEl = nodeEl && nodeEl.querySelector(".monaco-editor");
+    if (!editorEl) return false;
+    const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+    const match = editors.find((e) => editorEl.contains(e.getDomNode()));
+    return !!match && match.getValue() === code;
+}"""
+
+
+def set_node_code(page, node_id: str, code: str, *, timeout: float = 15000) -> None:
+    """Replace a code node's source with *code*.
+
+    Goes through Monaco's ``setValue``, which fires
+    ``onDidChangeModelContent`` -> ``handleCodeChange`` -> ``setCode`` ->
+    ``floatCode`` -> ``data.code``. That last hop is the only thing that
+    publishes editor text to the node, so this is the same path a keystroke
+    takes rather than a back door around it.
+
+    Do not reach for ``page.keyboard.type`` instead: the editor runs with
+    ``autoClosingBrackets: "always"`` and ``formatOnType: true``, so typed
+    Python comes back with extra brackets and re-indentation and never
+    round-trips.
+    """
+    node_el = node_locator(page, node_id)
+    node_el.scroll_into_view_if_needed()
+    # The pane stays mounted when inactive, so the editor exists either way,
+    # but activating the tab keeps a failure legible in --headed runs.
+    code_tab = node_el.locator('.nav-link[data-rr-ui-event-key="code"]').first
+    try:
+        code_tab.wait_for(state="visible", timeout=2000)
+        if "active" not in (code_tab.get_attribute("class") or ""):
+            code_tab.dispatch_event("click")
+    except PlaywrightTimeoutError:
+        pass
+    node_el.locator(".monaco-editor").first.wait_for(state="visible", timeout=timeout)
+
+    deadline = time.time() + timeout / 1000
+    result = None
+    while True:
+        result = page.evaluate(_SET_NODE_CODE_JS, {"nodeId": node_id, "code": code})
+        if result == "ok" or time.time() >= deadline:
+            break
+        page.wait_for_timeout(250)
+    assert result == "ok", f"could not set code on node {node_id}: {result}"
+
+    # setValue is synchronous but the React round-trip to data.code is not, so
+    # confirm the editor is actually holding the new text before running it.
+    page.wait_for_function(
+        _NODE_CODE_IS_JS, arg={"nodeId": node_id, "code": code}, timeout=timeout
+    )
+
+
+def read_node_code(page, node_id: str, *, timeout: float = 15000) -> str:
+    """Return the Python/JS source a code node currently holds.
+
+    Reads Monaco rather than ``data.code`` because the editor is what the run
+    actually sends, and because node data cannot be serialized out of the page
+    (see ``canvas_nodes``).
+    """
+    node_el = node_locator(page, node_id)
+    node_el.locator(".monaco-editor").first.wait_for(state="attached", timeout=timeout)
+    code = page.evaluate(
+        """(nodeId) => {
+            const nodeEl = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+            const editorEl = nodeEl && nodeEl.querySelector(".monaco-editor");
+            if (!editorEl) return null;
+            const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+            const match = editors.find((e) => editorEl.contains(e.getDomNode()));
+            return match ? match.getValue() : null;
+        }""",
+        node_id,
+    )
+    assert code is not None, f"could not read code from node {node_id}"
+    return code
+
+
+def _handle_locator(page, node_id: str, handle_id: str):
+    return page.locator(
+        f'.react-flow__node[data-id="{node_id}"] '
+        f'.react-flow__handle[data-handleid="{handle_id}"]'
+    )
+
+
+def connect_nodes(page, source_id: str, target_id: str, *,
+                  source_handle: str = "out", target_handle: str = "in",
+                  timeout: float = 15000) -> str:
+    """Drag an edge from *source_id*'s output handle to *target_id*'s input.
+
+    Returns the edge id, which React Flow derives deterministically as
+    ``reactflow__edge-<source><sourceHandle>-<target><targetHandle>``.
+
+    Uses real pointer moves rather than a synthetic event pair, because React
+    Flow tracks a connection through pointermove on the pane and never sees a
+    lone pointerup on the target handle. The intermediate moves matter for the
+    same reason. Coordinates come from ``bounding_box()`` so the viewport's CSS
+    transform is already baked in.
+    """
+    src = _handle_locator(page, source_id, source_handle)
+    tgt = _handle_locator(page, target_id, target_handle)
+    for locator, node_id, handle_id in (
+        (src, source_id, source_handle), (tgt, target_id, target_handle)
+    ):
+        try:
+            locator.wait_for(state="visible", timeout=timeout)
+        except PlaywrightTimeoutError:
+            raise AssertionError(
+                f"node {node_id} has no {handle_id!r} handle - check the "
+                f"node type's manifest ports (a data-loading node has no "
+                f"input, and a bidirectional node uses 'in/out')"
+            ) from None
+    src.scroll_into_view_if_needed()
+    src_box, tgt_box = src.bounding_box(), tgt.bounding_box()
+    assert src_box and tgt_box, "connection handles have no layout box"
+
+    # React Flow starts and ends a connection by hit-testing whatever sits under
+    # the pointer, so a handle that is merely *present* is not enough: if another
+    # node's body overlaps it, mousedown lands on that instead and the whole drag
+    # is a silent no-op. Check it up front, because the symptom otherwise is an
+    # unexplained "no edge" 15 seconds later.
+    for locator, node_id, handle_id in (
+        (src, source_id, source_handle), (tgt, target_id, target_handle)
+    ):
+        covering = locator.evaluate(
+            """(el) => {
+                const r = el.getBoundingClientRect();
+                const top = document.elementFromPoint(
+                    r.x + r.width / 2, r.y + r.height / 2
+                );
+                if (!top) return "nothing (the handle is outside the viewport)";
+                if (top === el || el.contains(top)) return null;
+                return `<${top.tagName.toLowerCase()} class="${top.className}">`;
+            }"""
+        )
+        if covering:
+            raise AssertionError(
+                f"node {node_id}'s {handle_id!r} handle is not the topmost "
+                f"element at its own centre; {covering} is. Space the nodes "
+                f"further apart when dropping them (a node is 525x350 at "
+                f"zoom 1) or scroll the handle into view."
+            )
+
+    src_x = src_box["x"] + src_box["width"] / 2
+    src_y = src_box["y"] + src_box["height"] / 2
+    tgt_x = tgt_box["x"] + tgt_box["width"] / 2
+    tgt_y = tgt_box["y"] + tgt_box["height"] / 2
+
+    page.mouse.move(src_x, src_y)
+    page.mouse.down()
+    page.mouse.move(tgt_x, tgt_y, steps=16)
+    # A second move on the spot: React Flow only marks a handle "connectable"
+    # from a pointermove it receives while already over it.
+    page.mouse.move(tgt_x, tgt_y)
+    page.mouse.up()
+
+    edge_id = (
+        f"reactflow__edge-{source_id}{source_handle}-{target_id}{target_handle}"
+    )
+    try:
+        page.wait_for_function(
+            """({ source, target }) => (window.__curio_reactFlow.getEdges() || [])
+                .some((e) => e.source === source && e.target === target)""",
+            arg={"source": source_id, "target": target_id},
+            timeout=timeout,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"no edge from {source_id} to {target_id} after the drag. A "
+            f"rejected connection toasts instead of throwing (cycle, or "
+            f"incompatible ports), so check the canvas for a toast."
+        ) from None
+    page.locator(f'[data-testid="rf__edge-{edge_id}"]').wait_for(
+        state="attached", timeout=timeout
+    )
+    return edge_id
+
+
+_HEAVY_NODE_TYPES = {
+    "AUTK_GRAMMAR",
+    "DATA_LOADING",
+    "DATA_TRANSFORMATION",
+    "COMPUTATION_ANALYSIS",
+}
+
+
+def node_execution_timeout_ms(node_type: str) -> int:
+    """Return a generous timeout for nodes that execute heavy data ops.
+
+    AUTK_GRAMMAR shares the data-node budget: a node with a `data` section
+    runs it in the backend sandbox - autk-db parses a local OSM PBF
+    (multi-MB) via DuckDB-WASM in Node and round-trips the layers back over
+    HTTP. This is deterministic and fast now that the data is local: a
+    1.6 MB PBF (171k features) parses in ~12 s including cold-start WASM
+    init, and the largest bundled PBF is ~6 MB, so 2 min is ~2.5x the
+    worst case. The old 5-min budget dated from the Overpass era (a remote,
+    throttled OSM endpoint), which has since been removed - a node that now
+    runs past this budget is hung, not slow, so fail it.
+
+    Accepts either the legacy uppercase name a ``NodeSpec`` carries
+    (``DATA_LOADING``) or the namespaced id the frontend uses on the wire
+    (``curio.builtin/data-loading``).
+    """
+    canonical = (node_type or "").rsplit("/", 1)[-1].split("@", 1)[0]
+    canonical = canonical.replace("-", "_").upper()
+    return 120000 if canonical in _HEAVY_NODE_TYPES else 30000
+
+
+def read_node_error_text(node_el) -> str | None:
+    """Return the error message text from a code node's inline output
+    area. Returns ``None`` if it cannot be read.
+
+    Works for both autk behavior nodes and Python/JS code nodes:
+    CodeEditor renders any output (success or error) into the same output box,
+    the one carrying the ``[N]:`` counter. For autk,
+    ``autkBehaviorFactory``'s catch block sets
+    ``output = { code: 'error', content: err.message }``; for
+    COMPUTATION_ANALYSIS / DATA_LOADING / DATA_TRANSFORMATION the
+    sandbox's stderr/exception traceback is routed there too. We
+    switch to the code tab so that area is in the layout, then read
+    it.
+    """
+    try:
+        code_tab = node_el.locator(
+            '.nav-link[data-rr-ui-event-key="code"]'
+        ).first
+        try:
+            code_tab.wait_for(state="visible", timeout=2000)
+            if "active" not in (code_tab.get_attribute("class") or ""):
+                code_tab.click(force=True)
+        except Exception:
+            # Some autk nodes may not expose a code tab depending on
+            # NodeEditor config; fall through and read whatever is
+            # currently visible.
+            pass
+        output_area = node_el.locator("[data-curio-node-output]").first
+        output_area.wait_for(state="visible", timeout=2000)
+        return output_area.text_content()
+    except Exception:
+        return None
+
+
+def read_node_output_text(page, node_id: str, *, timeout: float = 10000) -> str:
+    """Return the text of a code node's inline output box.
+
+    Reads ``[data-curio-node-output]`` rather than ``.nowheel.nodrag``: that
+    class sits on the editor wrapper too, and the wrapper's ``textContent``
+    starts with every line of code Monaco has rendered.
+
+    The text is the Jupyter-style counter followed by the result, e.g.
+    ``"[1]:Saved to file: xyz"`` or ``"[ ]:No output yet"``.
+    """
+    box = node_locator(page, node_id).locator("[data-curio-node-output]").first
+    box.wait_for(state="visible", timeout=timeout)
+    return box.text_content() or ""
+
+
+def activate_header_icon(locator) -> None:
+    """Press one of a node header's icon buttons (the pencil, the settings cog).
+
+    Two reasons a normal click does not work here. The buttons activate on
+    ``pointerdown`` + ``pointerup`` and deliberately swallow the native click
+    (``useHeaderIconDragClick``, so that press-and-drag still moves the node),
+    and app chrome overlaps the header band at the top of the canvas, which means
+    a real click at the button's centre is delivered to the overlay instead.
+    Dispatching the two pointer events skips hit-testing entirely, the same way
+    the play button's ``dispatch_event("click")`` does.
+
+    The drag threshold is satisfied for free: a dispatched event carries
+    ``clientX``/``clientY`` of 0, so down and up read as the same point.
+    """
+    locator.wait_for(state="attached", timeout=15000)
+    locator.dispatch_event("pointerdown")
+    locator.dispatch_event("pointerup")
+
+
+# Any of these proves the play click was honoured: the header swaps the play SVG
+# for a spinner, the status attribute leaves "idle", or the inline counter flips
+# from "[ ]:" to "[*]:".
+_PLAY_ACKNOWLEDGED_JS = r"""(nodeId) => {
+    const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    if (!el) return false;
+    if (el.querySelector('.spinner-border')) return true;
+    const status = el.querySelector('[data-curio-node-status]');
+    if (status && status.getAttribute('data-curio-node-status') !== 'idle') return true;
+    const texts = [...el.querySelectorAll('[data-curio-node-output], span')]
+        .map(e => e.textContent);
+    return texts.some(
+        t => /\[(\d+|\*)\]:/.test(t) || /^(Running|Done|Error)$/.test(t.trim())
+    );
+}"""
+
+
+def play_node(page, node_id: str, *, max_attempts: int = 3) -> None:
+    """Click *play* on one node and confirm execution actually started.
+
+    Note this runs the node's not-yet-successful ancestors too
+    (``playNodesUpTo``), so playing the tail of a chain is enough to run it.
+
+    We don't use ``play_btn.click(force=True)`` - ``force=True`` skips
+    actionability checks so React Flow's transformed viewport, pointer
+    events, or an overlay can swallow the click. And the button is an
+    ``<svg>`` (FontAwesomeIcon), so ``SVGElement`` has no native ``click()``
+    and calling it through evaluate raises ``TypeError``.
+    ``dispatch_event("click")`` sends a bubbling synthetic ``MouseEvent``
+    that React's onClick picks up regardless of where the element actually
+    sits on screen.
+    """
+    node_el = node_locator(page, node_id)
+    node_el.scroll_into_view_if_needed()
+    play_btn = node_el.locator("svg.fa-circle-play")
+
+    last_error = None
+    for _ in range(max_attempts):
+        try:
+            play_btn.wait_for(state="visible", timeout=10000)
+            play_btn.dispatch_event("click")
+            try:
+                page.wait_for_function(
+                    _PLAY_ACKNOWLEDGED_JS, arg=node_id, timeout=20000
+                )
+                return
+            except PlaywrightTimeoutError:
+                last_error = TimeoutError("No spinner or counter-flip within 20s")
+        except PlaywrightTimeoutError as e:
+            last_error = e
+    raise AssertionError(
+        f"Node {node_id} never acknowledged Play after {max_attempts} "
+        f"attempts; click is being silently dropped (React handler likely "
+        f"not bound). Last error: {last_error}"
+    )
+
+
+def wait_for_node_settled(page, node_id: str, *, node_type: str = "",
+                          timeout_ms: int | None = None) -> str:
+    """Block until a node finishes and return ``"done"`` or ``"error"``.
+
+    Use this when a *failure* is the expected outcome (a node that needs a
+    library nobody installed yet, say). Prefer ``wait_for_node_done`` otherwise:
+    it fails with the node's own error text instead of handing back a status
+    string the caller has to remember to check.
+    """
+    budget = timeout_ms or node_execution_timeout_ms(node_type)
+    node_el = node_locator(page, node_id)
+    try:
+        page.wait_for_function(
+            """(nodeId) => {
+                const el = document.querySelector(
+                    `.react-flow__node[data-id="${nodeId}"] [data-curio-node-status]`
+                );
+                if (!el) return false;
+                const status = el.getAttribute('data-curio-node-status');
+                return status === 'done' || status === 'error';
+            }""",
+            arg=node_id,
+            timeout=budget,
+        )
+    except PlaywrightTimeoutError:
+        raise PlaywrightTimeoutError(
+            f"Node {node_id} ({node_type or 'unknown type'}) timed out after "
+            f"{budget} ms"
+        ) from None
+    return node_el.locator("[data-curio-node-status]").first.get_attribute(
+        "data-curio-node-status"
+    ) or "idle"
+
+
+def wait_for_node_done(page, node_id: str, *, node_type: str = "",
+                       timeout_ms: int | None = None) -> None:
+    """Block until a node reports success, and fail loudly if it errors.
+
+    Keys off ``data-curio-node-status`` rather than the header's "Done" /
+    "Error" text, so the wait does not depend on that copy. A node that never
+    settles is a hard timeout failure: there is no tolerance and no retry, since
+    all data is local and deterministic.
+    """
+    status = wait_for_node_settled(
+        page, node_id, node_type=node_type, timeout_ms=timeout_ms
+    )
+    if status == "error":
+        detail = read_node_error_text(node_locator(page, node_id))
+        raise AssertionError(
+            f"Node {node_id} ({node_type or 'unknown type'}) execution failed "
+            f"with Error"
+            + (f"\n--- node error output ---\n{detail}" if detail else "")
+        )
+
+
+def run_node_and_wait(page, node_id: str, *, node_type: str = "",
+                      timeout_ms: int | None = None) -> str:
+    """``play_node`` + ``wait_for_node_done``, returning the output text."""
+    play_node(page, node_id)
+    wait_for_node_done(page, node_id, node_type=node_type, timeout_ms=timeout_ms)
+    return read_node_output_text(page, node_id)
 
 
 # ---------------------------------------------------------------------------
