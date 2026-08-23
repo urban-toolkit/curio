@@ -405,7 +405,6 @@ The sandbox runs as a completely separate Flask process. It:
 
 - Is not directly reachable from the browser (only the backend calls it).
 - Has its own Python environment for package installation (`POST /install`).
-- Supports file uploads for initial data ingestion (`POST /upload`).
 - Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
 
 ### Portable dataset paths
@@ -515,19 +514,26 @@ Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING
 
 ## Backend API Reference
 
-The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: legacy sandbox/proxy endpoints in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
+The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the LLM and spatial-join handlers in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
 
 ### Core Routes
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/live` | GET | Health check |
+| `/live` | GET | Health check (the container healthcheck uses `/health` on `server.py`) |
+| `/version` | GET | Installed `utk_curio` version, as JSON |
 | `/processPythonCode` | POST | Execute Python node code (proxies to sandbox `/exec`) |
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
-| `/upload` | POST | Upload a file to `.curio/data/` |
-| `/get` | GET | Download a data file by name |
-| `/get-preview` | GET | Download first 100 rows of a data file |
-| `/installPackages` | POST | Install Python packages in the sandbox (legacy; per-project pip libs) |
+| `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it) |
+| `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
+| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use |
+| `/starters` | GET | Per-template starter source bodies from every installed package |
+| `/llm/chat` | POST | Proxy a chat completion using the user's stored LLM config |
+| `/llm/check` | POST | Token-budget probe for the LLM chat surface |
+| `/llm/clean` | GET | Reset a chat's server-side history |
+| `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
+
+File ingestion is **not** here — it lives in the datasets blueprint as `POST /api/datasets/import`.
 
 ### Package Routes
 
@@ -672,7 +678,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 
 | File | Purpose |
 |---|---|
-| `sandbox/app/api.py` | Sandbox REST endpoints (`/exec`, `/execJs`, `/install`, `/upload`) |
+| `sandbox/app/api.py` | Sandbox REST endpoints (`/exec`, `/execJs`, `/install`, `/get`) |
 | `sandbox/python_wrapper.txt` | Execution wrapper template for user code |
 | `sandbox/util/db.py` | DuckDB connection, path resolution, and `artifacts` table initialization |
 | `sandbox/util/parsers.py` | `save_to_duckdb`, `load_from_duckdb`, `detect_kind`, and type validation |

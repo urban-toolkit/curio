@@ -4,9 +4,11 @@ The design locks two policies:
 
 1. **Shared sandbox env, fail-closed conflicts.** Package Python deps from
    every package a project pins are merged into a single requirement set
-   and installed via the existing ``POST /installPackages`` route — there
-   is no per-package venv. Two packages requesting incompatible ranges for the
-   same PyPI package is a hard install error.
+   and pip-installed into the one shared interpreter (by the launcher at
+   ``curio start``, and by ``services.install_to_store`` behind
+   ``POST /api/packages/workflow-deps/install``) — there is no per-package
+   venv. Two packages requesting incompatible ranges for the same PyPI
+   package is a hard install error.
 2. **Project lockfile inside the project.** The resolved package set and
    the merged Python (and JS) deps are recorded inside the project's
    ``spec.trill.json`` so a clean machine can reproduce the install.

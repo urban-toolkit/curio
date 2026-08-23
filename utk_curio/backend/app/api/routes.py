@@ -15,8 +15,6 @@ _sandbox_session = requests.Session()
 SANDBOX_EXEC_TIMEOUT     = 600  # /processPythonCode and /processJavaScriptCode
 SANDBOX_GET_TIMEOUT      = 300  # /get (full artifact JSON)
 SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
-SANDBOX_UPLOAD_TIMEOUT   = 60
-SANDBOX_INSTALL_TIMEOUT  = 600  # `pip install` of optional libraries can be slow
 
 
 def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs):
@@ -58,9 +56,7 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
                         f'({api_address}:{api_port}).'),
             'path': path,
         }), 502
-from utk_curio.backend.extensions import db
 from utk_curio.backend.app.users.dependencies import require_auth, get_current_token
-import uuid
 import os
 import time
 from utk_curio.backend.config import (
@@ -157,15 +153,6 @@ def _parse_input_ref(req_input: dict | None) -> dict:
         result['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
     return result
 
-def transform_to_vega(data):
-    """Transform a pandas-style column-based JSON to Vega-Lite row-based JSON."""
-    if "data" in data and isinstance(data["data"], dict):
-        columns = list(data["data"].keys())
-        num_rows = len(data["data"][columns[0]])
-        return [{col: data["data"][col][i] for col in columns} for i in range(num_rows)]
-    return data
-
-
 @bp.route('/')
 def root():
     abort(403)
@@ -178,18 +165,6 @@ def live():
 def version():
     from utk_curio import __version__
     return jsonify({'version': __version__})
-
-@bp.route('/cwd')
-def cwd():
-    return os.getcwd()
-
-@bp.route('/launchCwd')
-def launchCwd():
-    return os.environ["CURIO_LAUNCH_CWD"]
-
-@bp.route('/sharedDataPath')
-def sharedDataPath():
-    return os.environ["CURIO_SHARED_DATA"]
 
 @bp.route('/file/<path:filename>', methods=['GET'])
 def serve_launch_cwd_file(filename: str):
@@ -220,47 +195,15 @@ def serve_launch_cwd_file(filename: str):
         abort(403)
     return send_from_directory(launch_cwd, filename)
 
-@bp.route('/upload', methods=['POST'])
-@require_auth
-def upload_file():
-
-    if 'file' not in request.files:
-        return 'No file part'
-
-    file = request.files['file']
-
-    if file.filename == '':
-        return 'No selected file'
-
-    response = _sandbox_call(
-        'post', '/upload',
-        label='/upload', timeout=SANDBOX_UPLOAD_TIMEOUT,
-        files={'file': file}, data={'fileName': file.filename},
-    )
-    if isinstance(response, tuple):  # transport-level failure
-        return response
-
-    if response.status_code == 200:
-        return 'File uploaded successfully'
-    else:
-        return 'Error uploading file'
-
-
 @bp.route('/get', methods=['GET'])
 @require_auth
 def get_file():
     file_name = request.args.get('fileName')
-    vega = request.args.get('vega', 'false').lower() == 'true'
 
     if not file_name:
         return 'No artifact id specified', 400
 
     wants_arrow = request.accept_mimetypes.best == ARROW_IPC_MIME
-    if wants_arrow and vega:
-        return jsonify({
-            'error': 'bad_request',
-            'message': "Arrow IPC and vega=true are mutually exclusive.",
-        }), 400
 
     session_id = get_current_token()
     t0 = time.perf_counter()
@@ -294,8 +237,6 @@ def get_file():
     try:
         resp.raise_for_status()
         data = resp.json()
-        if vega:
-            data = transform_to_vega(data)
         print(f"[/get] id={file_name} took={time.perf_counter()-t0:.4f}s", flush=True)
         return jsonify(data), 200
     except Exception as e:
@@ -578,38 +519,6 @@ def process_javascript_code():
         'installedDataset': installed_dataset,
         'datasetDiagnostic': dataset_diagnostic,
     }
-
-
-@bp.route('/installPackages', methods=['POST'])
-@require_auth
-def install_packages():
-    packages = request.json.get('packages', [])
-    response = _sandbox_call(
-        'post', '/install',
-        label='/installPackages', timeout=SANDBOX_INSTALL_TIMEOUT,
-        data=json.dumps({"packages": packages}),
-        headers={"Content-Type": "application/json"},
-    )
-    if isinstance(response, tuple):
-        return response
-    return response.json()
-
-@bp.route('/getUser', methods=['GET'])
-def get_user_legacy():
-    """Deprecated shim — redirects to /api/auth/me."""
-    from flask import redirect
-    return redirect('/api/auth/me', code=308)
-
-@bp.route('/saveUserType', methods=['POST'])
-def save_user_type_legacy():
-    """Deprecated shim — redirects to /api/auth/me (PATCH)."""
-    from flask import redirect
-    return redirect('/api/auth/me', code=308)
-
-@bp.route('/checkDB', methods=['GET'])
-def check_db():
-    db.session.execute(db.text('SELECT 1'))
-    return "OK", 200
 
 
 @bp.route("/starters", methods=["GET"])

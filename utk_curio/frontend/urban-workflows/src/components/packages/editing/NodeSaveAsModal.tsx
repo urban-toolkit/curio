@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useReactFlow } from "reactflow";
 import ModalShell from "../../ModalShell";
-import { packagesApi, refreshPackageRegistry } from "../../../api/packagesApi";
+import { packagesApi, refreshPackageRegistry, triggerBlobDownload } from "../../../api/packagesApi";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { groupPalettePackages } from "../../menus/nodes/toolsMenuPackagePalette/model";
 import { useStarterContext } from "../../../providers/StarterProvider";
@@ -55,6 +55,7 @@ export function NodeSaveAsModal({
   const [targetKey, setTargetKey] = useState<string>(SAVE_AS_NEW_PACK);
   const [newPackageName, setNewPackageName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyKind, setBusyKind] = useState<"save" | "export" | null>(null);
 
   const registryKey = useSyncExternalStore(
     typeof window !== "undefined" ? subscribeToRegistry : NOOP,
@@ -105,40 +106,53 @@ export function NodeSaveAsModal({
     [packageOptions, targetKey],
   );
 
+  // Shared by Save and Export: resolve the target package and turn the canvas
+  // node into a factory draft. Returns null (after toasting) when the draft
+  // can't be built, so both callers can simply bail.
+  const buildDraft = useCallback(async () => {
+    if (!canvasNode) return null;
+
+    let draft;
+    let replace = false;
+    let replacedExistingKind = false;
+
+    if (targetKey === SAVE_AS_NEW_PACK) {
+      draft = buildSaveAsInstallDraft({
+        canvasNode,
+        target: { kind: "new", packageDisplayName: newPackageName.trim() || undefined },
+        getStarters,
+      });
+    } else {
+      const { packages } = await packagesApi.listInstalled();
+      const pkg = packages.find((p) => `${p.packageId}@${p.major}` === targetKey);
+      if (!pkg) {
+        showToast("Could not load the selected package.", "warning");
+        return null;
+      }
+      replacedExistingKind = saveAsWouldReplaceByLabel(pkg, nodeLabel);
+      draft = buildSaveAsInstallDraft({
+        canvasNode,
+        target: { kind: "installed", package: pkg },
+        getStarters,
+      });
+      replace = true;
+    }
+
+    if (!draft) {
+      showToast("Could not build a package draft from this node.", "error");
+      return null;
+    }
+    return { draft, replace, replacedExistingKind };
+  }, [canvasNode, getStarters, newPackageName, nodeLabel, showToast, targetKey]);
+
   const onConfirm = useCallback(async () => {
     if (!canvasNode || busy) return;
     setBusy(true);
+    setBusyKind("save");
     try {
-      let draft;
-      let replace = false;
-      let replacedExistingKind = false;
-
-      if (targetKey === SAVE_AS_NEW_PACK) {
-        draft = buildSaveAsInstallDraft({
-          canvasNode,
-          target: { kind: "new", packageDisplayName: newPackageName.trim() || undefined },
-          getStarters,
-        });
-      } else {
-        const { packages } = await packagesApi.listInstalled();
-        const pkg = packages.find((p) => `${p.packageId}@${p.major}` === targetKey);
-        if (!pkg) {
-          showToast("Could not load the selected package.", "warning");
-          return;
-        }
-        replacedExistingKind = saveAsWouldReplaceByLabel(pkg, nodeLabel);
-        draft = buildSaveAsInstallDraft({
-          canvasNode,
-          target: { kind: "installed", package: pkg },
-          getStarters,
-        });
-        replace = true;
-      }
-
-      if (!draft) {
-        showToast("Could not build a package draft from this node.", "error");
-        return;
-      }
+      const built = await buildDraft();
+      if (!built) return;
+      const { draft, replace, replacedExistingKind } = built;
 
       const result = await packagesApi.factoryInstall(buildFactoryInstallEnvelope(draft, replace));
       // When creating a brand-new package via Save As, the package is only in
@@ -187,8 +201,36 @@ export function NodeSaveAsModal({
       showToast((err as Error)?.message ?? "Save As failed.", "error");
     } finally {
       setBusy(false);
+      setBusyKind(null);
     }
-  }, [busy, canvasNode, getStarters, newPackageName, nodeId, nodeLabel, onClose, projectId, setNodes, showToast, targetKey]);
+  }, [buildDraft, busy, canvasNode, nodeId, nodeLabel, onClose, projectId, setNodes, showToast, targetKey]);
+
+  // Export the same draft as a .curio.zip without installing it. Shares the
+  // `busy` flag with Save so the two can never run concurrently, and leaves
+  // the modal open — an export is not a commit.
+  //
+  // Deliberately sends the *same* envelope Save would: `/factory/build` reads
+  // only manifest/sources/readme/license and ignores `replace`, so the zip the
+  // user downloads is byte-for-byte the package Save would have installed.
+  const onExport = useCallback(async () => {
+    if (!canvasNode || busy) return;
+    setBusy(true);
+    setBusyKind("export");
+    try {
+      const built = await buildDraft();
+      if (!built) return;
+      const { blob, filename } = await packagesApi.factoryBuild(
+        buildFactoryInstallEnvelope(built.draft, built.replace),
+      );
+      triggerBlobDownload(blob, filename);
+      showToast(`Exported ${filename}.`, "success");
+    } catch (err) {
+      showToast((err as Error)?.message ?? "Export failed.", "error");
+    } finally {
+      setBusy(false);
+      setBusyKind(null);
+    }
+  }, [buildDraft, busy, canvasNode, showToast]);
 
   if (!show) return null;
 
@@ -251,8 +293,17 @@ export function NodeSaveAsModal({
           <button type="button" className={styles.ghostBtn} disabled={busy} onClick={onClose}>
             Cancel
           </button>
+          <button
+            type="button"
+            className={styles.ghostBtn}
+            disabled={busy}
+            title="Download this node as a .curio.zip package without installing it"
+            onClick={() => void onExport()}
+          >
+            {busyKind === "export" ? "Exporting…" : "Export"}
+          </button>
           <button type="button" className={styles.primaryBtn} disabled={busy} onClick={() => void onConfirm()}>
-            {busy ? "Saving…" : willReplace ? "Replace" : "Save"}
+            {busyKind === "save" ? "Saving…" : willReplace ? "Replace" : "Save"}
           </button>
         </div>
       </div>

@@ -1,6 +1,5 @@
 import shutil
 import unittest
-import tempfile
 import os
 import sys
 import json
@@ -50,31 +49,6 @@ class TestRoutes(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
     @_SKIP_AUTH
-    def test_upload_file(self):
-        # Create a temporary file for the test
-        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-            tmp_file.write(b"Test content")  # Write some test data to the file
-            tmp_file.seek(0)  # Move the file pointer back to the beginning for reading
-            temp_file_path = tmp_file.name  # Save the file path to use in the test
-
-        try:
-            # Simulate a file upload using the temporary file
-            with open(temp_file_path, 'rb') as file:
-                data = {
-                    'file': (file, 'test_file.txt')  # Simulate the file upload
-                }
-                response = self.client.post('/upload', data=data)
-
-                # Test if the file upload was successful
-                self.assertIn('File uploaded successfully', response.data.decode('utf-8'))
-                self.assertEqual(response.status_code, 200)
-
-        finally:
-            # Clean up: Delete the temporary file after the test
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-
-    @_SKIP_AUTH
     def test_process_python_code(self):
         test_code = {
             "code": test_data["data"]["activity_source_code"],
@@ -103,12 +77,6 @@ class TestRoutes(unittest.TestCase):
         self.assertIn('output', data)
         self.assertIn('stdout', data)
         self.assertIn('stderr', data)
-
-    @_SKIP_AUTH
-    def test_db(self):
-        # checkDB now requires SQLAlchemy (full app) — covered by integration tests
-        response = self.client.get('/checkDB')
-        self.assertEqual(response.status_code, 200)
 
 
 class TestSandboxTransportErrors(unittest.TestCase):
@@ -224,20 +192,6 @@ class TestSandboxTransportErrors(unittest.TestCase):
         # /get-preview keeps a tighter limit because the response is bounded
         # to maxRows by design.
         self.assertEqual(body['timeout_seconds'], 60)
-
-    # ---- /installPackages --------------------------------------------------
-
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
-    def test_installPackages_502_on_sandbox_unreachable(self, mock_session):
-        mock_session.post.side_effect = requests.ConnectionError("refused")
-        resp = self.client.post(
-            '/installPackages',
-            json={"packages": ["xarray"]},
-            headers=self._auth_headers(),
-        )
-        self.assertEqual(resp.status_code, 502, resp.data)
-        body = resp.get_json()
-        self.assertEqual(body['error'], 'sandbox_unreachable')
 
     # ---- Smoke test: timeout knobs are wired through to requests.post -----
 

@@ -72,15 +72,6 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
       throw new Error(inputType + " is not a valid input type for the 2D Plot (Vega-Lite)");
     }
 
-    // if (parsedInput.dataType == "dataframe" || parsedInput.dataType == "geodataframe") {
-    //   if(parsedInput.path) {
-    //     values = await fetchData(`${parsedInput.path}`, true);
-    //   }
-    //   else {
-    //     values = transformToVega(parsedInput);
-    //   }
-    // }
-
     const parserMap = {
       "dataframe": parseDataframe,
       "geodataframe": parseGeoDataframe,

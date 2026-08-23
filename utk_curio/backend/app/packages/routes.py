@@ -33,7 +33,6 @@ from pathlib import Path
 
 import json as _json
 
-import requests
 from flask import Blueprint, Response, g, jsonify, request
 
 from utk_curio.backend.app.packages.factory import (
@@ -870,116 +869,6 @@ def factory_install():
         "replacedExisting": result.replaced_existing,
         "filename": built.filename,
     }), 201
-
-
-# ---------------------------------------------------------------------------
-# POST /api/packages/resolve — dep resolution
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Sandbox install helper
-# ---------------------------------------------------------------------------
-
-def _forward_to_sandbox_install(packages: list[str]) -> tuple[dict, int]:
-    """POST the merged package list to the sandbox ``/install`` route.
-
-    Mirrors the shape of :func:`api.routes.install_packageages` so the
-    behaviour stays in lockstep with the existing ``/installPackages``
-    endpoint — same Flask address resolution, same timeout policy. Lives
-    in this module (rather than importing from ``api.routes``) so the
-    test suite can monkey-patch without booting the sandbox.
-    """
-    from utk_curio.backend.app.api import routes as api_routes  # local: no cycle
-    response = api_routes._sandbox_call(
-        "post", "/install",
-        label="/api/packages/install-deps",
-        timeout=api_routes.SANDBOX_INSTALL_TIMEOUT,
-        data=_json.dumps({"packages": packages}),
-        headers={"Content-Type": "application/json"},
-    )
-    if isinstance(response, tuple):
-        flask_resp, status = response
-        try:
-            return flask_resp.get_json(), status
-        except Exception:  # noqa: BLE001
-            return {"error": "sandbox_unreachable"}, status
-    try:
-        return response.json(), response.status_code
-    except (ValueError, requests.JSONDecodeError):
-        return {
-            "error": "sandbox_returned_non_json",
-            "status": response.status_code,
-            "body": response.text[:512],
-        }, 502
-
-
-# ---------------------------------------------------------------------------
-# POST /api/packages/install-deps — resolve + push to sandbox
-# ---------------------------------------------------------------------------
-
-@packages_bp.route("/install-deps", methods=["POST"])
-@require_auth
-def install_packageage_deps():
-    """Resolve a set of package dirs and install the merged python deps.
-
-    Body shape: ``{"packages": ["ai.urbanlab.uhvi@1", ...]}``.
-
-    Returns ``{lockfile, conflicts, sandboxStatus, sandboxBody}``:
-
-    * On conflict (409) the resolver returns ``conflicts``; the sandbox
-      is never touched.
-    * On success the resolver hands the **merged** python deps over to
-      the existing ``/install`` route on the shared sandbox interpreter
-      (this is the same path the legacy ``/installPackages`` route
-      uses). The lockfile is returned so the frontend can persist it in
-      the project's ``spec.trill.json``.
-    """
-    user_key = _user_dir_key(g.user)
-    body = request.get_json(silent=True) or {}
-    packages = body.get("packages")
-    if not isinstance(packages, list) or not all(isinstance(p, str) for p in packages):
-        return _error("body must be {'packages': [<dirName>, ...]}")
-    overrides = _resolver_overrides_for(user_key, packages)
-    try:
-        result = resolve_for_project(user_key, packages, overrides=overrides)
-    except ResolverError as exc:
-        return _error(str(exc))
-    except PackageIdError as exc:
-        return _error(str(exc))
-
-    if result.conflicts:
-        return jsonify({
-            "lockfile": result.to_lockfile(),
-            "conflicts": [
-                {
-                    "package": c.package,
-                    "ranges": [
-                        {"packageDir": p, "range": r} for (p, r) in c.ranges
-                    ],
-                }
-                for c in result.conflicts
-            ],
-            "sandboxStatus": None,
-        }), 409
-
-    # ``resolver._format_range`` only ever emits ``"*"`` (no constraint),
-    # ``">=X.Y.Z"`` or ``">=X.Y.Z,<A.B.C"`` — all directly understood by
-    # pip. ``"*"`` becomes a bare package name (install latest).
-    pip_requirements = [
-        pkg if rng == "*" else f"{pkg}{rng}"
-        for pkg, rng in sorted(result.python_deps.items())
-    ]
-    sandbox_body, sandbox_status = (
-        _forward_to_sandbox_install(pip_requirements) if pip_requirements else ({"installed": []}, 200)
-    )
-
-    return jsonify({
-        "lockfile": result.to_lockfile(),
-        "conflicts": [],
-        "sandboxStatus": sandbox_status,
-        "sandboxBody": sandbox_body,
-        "pipRequirements": pip_requirements,
-    }), 200 if sandbox_status < 400 else sandbox_status
 
 
 # ---------------------------------------------------------------------------

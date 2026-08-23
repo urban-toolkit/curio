@@ -8,7 +8,6 @@ from utk_curio.sandbox.app import app, cache
 from utk_curio.sandbox.app.utils.cache import make_key
 import os
 import mmap
-from pathlib import Path
 
 from shapely import wkt
 
@@ -168,68 +167,6 @@ def _get_artifact_arrow(art_id, session_id, max_rows_param):
         headers['X-Curio-Frame-Metadata'] = json.dumps(frame_metadata)
 
     return Response(body, mimetype=ARROW_IPC_MIME, headers=headers)
-
-@app.route('/cwd')
-def cwd():
-    return os.getcwd()
-
-@app.route('/launchCwd')
-def launchCwd():
-    return os.environ["CURIO_LAUNCH_CWD"]
-
-@app.route('/sharedDataPath')
-def sharedDataPath():
-    return os.environ["CURIO_SHARED_DATA"]
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return 'No file part'
-
-    file = request.files['file']
-    if file.filename == '':
-        return 'No selected file'
-
-    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
-    data_dir = Path(os.path.join(launch_dir, "data"))
-    data_dir.mkdir(parents=True, exist_ok=True)
-
-    filename = os.path.basename(request.form.get('fileName', file.filename))
-    save_path = data_dir / filename
-    file.save(save_path)
-
-    return str(save_path)
-
-@app.route('/datasets', methods=['GET'])
-def list_datasets():
-    allowed_extensions = {'.json', '.geojson', '.csv'}
-
-    files = []
-
-    # Source 1: /data relative to the root of the installed pip package
-    project_root_data = Path(__file__).parent.parent.parent / 'data'
-    print("Loading datasets from pip package location:", project_root_data)
-
-    if project_root_data.exists() and project_root_data.is_dir():
-        files.extend([
-            f.as_posix() for f in project_root_data.iterdir()
-            if f.is_file() and f.suffix.lower() in allowed_extensions
-        ])
-
-    # Source 2: /data relative to current working directory
-    # cwd_data = os.getcwd() / 'data'
-    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
-    data_dir = os.path.join(launch_dir, "data")
-    data_dir = Path(data_dir)
-    print("Loading datasets from working directory:", data_dir)
-
-    if data_dir.exists() and data_dir.is_dir():
-        files.extend([
-            f.as_posix() for f in data_dir.iterdir()
-            if f.is_file() and f.suffix.lower() in allowed_extensions
-        ])
-
-    return jsonify(files)
 
 @app.route('/install', methods=['POST'])
 def install_packages():

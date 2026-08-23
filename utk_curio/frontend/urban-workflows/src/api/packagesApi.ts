@@ -186,14 +186,6 @@ export interface ResolveResponse {
   conflicts: ResolveConflict[];
 }
 
-export interface InstallDepsResponse {
-  lockfile: Lockfile;
-  conflicts: ResolveConflict[];
-  sandboxStatus: number | null;
-  sandboxBody?: Record<string, unknown>;
-  pipRequirements?: string[];
-}
-
 /** Response from `POST /api/packages/workflow-deps/check`. */
 export interface WorkflowDepsCheckResponse {
   /** Declared dependency packages (dirNames) that aren't installed yet, or
@@ -263,10 +255,22 @@ async function uploadArchive(
 }
 
 /**
- * Trigger a browser download of an installed package as a ``.curio.zip``
- * archive. The blob never lives in JS memory longer than the click
- * handler — we hand it straight to ``URL.createObjectURL``.
+ * Hand a blob to the browser as a download. Shared by the two archive
+ * paths — `download` (an already-installed package) and `factoryBuild`
+ * (an un-installed wizard draft). The blob never lives in JS memory longer
+ * than the click handler — we hand it straight to ``URL.createObjectURL``
+ * and revoke immediately after.
  */
+export function triggerBlobDownload(blob: Blob, filename: string): void {
+  const objUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objUrl;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(objUrl);
+}
+
+/** Download an already-installed package as a ``.curio.zip`` archive. */
 async function downloadArchive(dirName: string): Promise<void> {
   const token = getToken();
   const res = await fetch(`${BACKEND_URL}/api/packages/${dirName}/archive`, {
@@ -276,13 +280,7 @@ async function downloadArchive(dirName: string): Promise<void> {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `HTTP ${res.status}`);
   }
-  const blob = await res.blob();
-  const objUrl = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = objUrl;
-  a.download = `${dirName}.curio.zip`;
-  a.click();
-  URL.revokeObjectURL(objUrl);
+  triggerBlobDownload(await res.blob(), `${dirName}.curio.zip`);
 }
 
 /**
@@ -419,19 +417,6 @@ export const packagesApi = {
    */
   resolve(packages: string[]): Promise<ResolveResponse> {
     return apiFetch("/api/packages/resolve", {
-      method: "POST",
-      body: JSON.stringify({ packages }),
-    });
-  },
-
-  /**
-   * Resolve, then forward the merged python deps to the shared sandbox
-   * via ``/installPackages``. Returns the lockfile the caller should
-   * persist in ``spec.trill.json`` (epic invariant: project lockfile
-   * lives inside the project).
-   */
-  installDeps(packages: string[]): Promise<InstallDepsResponse> {
-    return apiFetch("/api/packages/install-deps", {
       method: "POST",
       body: JSON.stringify({ packages }),
     });

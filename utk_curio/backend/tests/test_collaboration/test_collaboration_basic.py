@@ -4,6 +4,7 @@ Covers the contract that every other event handler relies on:
 - handshake without a token is refused,
 - handshake with a valid Bearer token resolves the right User,
 - two clients in the same project room see each other,
+- disconnecting removes a user from the room and releases their locks,
 - a client cannot spoof another user's identity via payload fields
   (the server-side session is the only source of truth).
 """
@@ -129,6 +130,59 @@ def test_two_clients_see_each_other(collab_app):
 
     a_events = [e["name"] for e in client_a.get_received(namespace=NAMESPACE)]
     assert "user_joined" in a_events
+
+
+def test_disconnect_releases_membership_and_locks(collab_app):
+    """Disconnecting is the *only* way a client leaves a room.
+
+    There is no ``leave_session`` event: the frontend switches projects by
+    closing the socket and reconnecting (see ``CollaborationProvider``), so
+    ``disconnect`` alone has to drop room membership, release any locks the
+    sid held, and tell the remaining peers. If that regresses, a user who
+    navigates away stays in the room forever holding their node locks.
+    """
+    application, socketio, room_state = collab_app
+    with application.app_context():
+        _u_a, sess_a = _make_user("alice")
+        _u_b, sess_b = _make_user("bob")
+        token_a, token_b = sess_a.token, sess_b.token
+
+    client_a = socketio.test_client(
+        application, namespace=NAMESPACE, auth={"token": token_a},
+    )
+    client_b = socketio.test_client(
+        application, namespace=NAMESPACE, auth={"token": token_b},
+    )
+    for client in (client_a, client_b):
+        ack = client.emit(
+            "join_session", {"projectId": VALID_PROJECT_ID},
+            namespace=NAMESPACE, callback=True,
+        )
+        assert ack["ok"] is True
+
+    # Alice takes a lock, then drops off without any leave event.
+    lock_ack = client_a.emit(
+        "node_lock", {"projectId": VALID_PROJECT_ID, "nodeId": "node-1"},
+        namespace=NAMESPACE, callback=True,
+    )
+    assert lock_ack["ok"] is True
+    client_b.get_received(namespace=NAMESPACE)  # drain the lock broadcast
+
+    client_a.disconnect(namespace=NAMESPACE)
+
+    room = f"project:{VALID_PROJECT_ID}"
+    remaining = {u["username"] for u in room_state.users_in(room)}
+    assert remaining == {"bob"}, "disconnect must drop the sid from the room"
+
+    b_events = [e["name"] for e in client_b.get_received(namespace=NAMESPACE)]
+    assert "user_left" in b_events, "peers must be told the user is gone"
+
+    # The lock is free again, so bob can take it.
+    relock = client_b.emit(
+        "node_lock", {"projectId": VALID_PROJECT_ID, "nodeId": "node-1"},
+        namespace=NAMESPACE, callback=True,
+    )
+    assert relock["ok"] is True, "disconnect must release the departed sid's locks"
 
 
 def test_spoofed_user_id_does_not_override_auth(collab_app):

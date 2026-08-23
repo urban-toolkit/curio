@@ -9,22 +9,20 @@ def test_app_routes(app):
         "/static/<path:filename>",
         "/",
         "/live",
-        "/upload",
+        "/version",
+        "/file/<path:filename>",
         "/processPythonCode",
-        "/getUser",
-        "/saveUserType",
-        "/checkDB",
+        "/processJavaScriptCode",
     ]
 
     expected_app_routes = [
         "static",
         "api.root",
         "api.live",
-        "api.upload_file",
+        "api.version",
+        "api.serve_launch_cwd_file",
         "api.process_python_code",
-        "api.get_user_legacy",
-        "api.save_user_type_legacy",
-        "api.check_db",
+        "api.process_javascript_code",
     ]
 
     with app.app_context():
@@ -35,6 +33,38 @@ def test_app_routes(app):
         assert route in app_routes, f"Missing route: {route}"
     for endpoint in expected_app_routes:
         assert endpoint in app_endpoints, f"Missing endpoint: {endpoint}"
+
+
+def test_removed_legacy_routes_stay_removed(app):
+    """Routes deleted in the loose-endpoint sweep must not come back.
+
+    Each of these had zero callers when it was removed: debug probes that
+    leaked server paths (``/cwd``, ``/launchCwd``, ``/sharedDataPath``),
+    deprecated 308 shims superseded by ``/api/auth/me`` (``/getUser``,
+    ``/saveUserType``), an unused DB probe (``/checkDB`` — the container
+    healthcheck uses ``/health``), and two endpoints superseded by the
+    packages and datasets blueprints (``/installPackages`` ->
+    ``/api/packages/workflow-deps/install``, ``/upload`` ->
+    ``/api/datasets/import``).
+    """
+    removed = [
+        "/cwd",
+        "/launchCwd",
+        "/sharedDataPath",
+        "/getUser",
+        "/saveUserType",
+        "/checkDB",
+        "/installPackages",
+        "/upload",
+        "/api/packages/install-deps",
+    ]
+    with app.app_context():
+        app_routes = {rule.rule for rule in current_app.url_map.iter_rules()}
+    for route in removed:
+        assert route not in app_routes, (
+            f"{route} was removed as a loose endpoint; re-add a caller "
+            f"(and this test entry) before restoring it"
+        )
 
 
 def test_file_route_serves_relative_to_launch_cwd(app):

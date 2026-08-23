@@ -607,88 +607,6 @@ def test_resolve_ok(client, user_and_token, tmp_curio):
     assert "numpy" in body["lockfile"]["pythonDeps"]
 
 
-def test_install_deps_forwards_to_sandbox(client, user_and_token, tmp_curio, monkeypatch):
-    """``/install-deps`` resolves, then hands merged deps to the sandbox."""
-    _, token = user_and_token
-
-    # Install a package with a single python dep so the resolver has
-    # something to forward.
-    client.post(
-        "/api/packages/factory/install",
-        data=json.dumps(_draft()),
-        headers=_auth(token),
-    )
-
-    captured: dict = {}
-
-    def _fake_forward(packages):
-        captured["packages"] = packages
-        return ({"installed": packages}, 200)
-
-    from utk_curio.backend.app.packages import routes as package_routes
-    monkeypatch.setattr(package_routes, "_forward_to_sandbox_install", _fake_forward)
-
-    resp = client.post(
-        "/api/packages/install-deps",
-        data=json.dumps({"packages": ["ai.test.factory@1"]}),
-        headers=_auth(token),
-    )
-    assert resp.status_code == 200
-    body = resp.get_json()
-    assert body["conflicts"] == []
-    # numpy lands in pip requirements with no version pin (source-driven
-    # detection emits ``*``).
-    assert any(req == "numpy" or req.startswith("numpy ") or req.startswith("numpy==") or req.startswith("numpy>=") for req in body["pipRequirements"])
-    assert captured["packages"] == body["pipRequirements"]
-    assert body["lockfile"]["installedPackages"][0]["dirName"] == "ai.test.factory@1"
-
-
-@pytest.mark.skip(
-    reason="Manual python dep pinning is no longer the source of truth — factory now "
-           "derives dependencies from source imports (see dependency_scanner.py), so "
-           "tests that fabricate version conflicts via manifest['dependencies']['python'] "
-           "no longer have a path to surface conflicts through factory_install. Conflict "
-           "logic remains exercised by tests that install via .curio.zip upload "
-           "(archive sideload skips source detection by design)."
-)
-def test_install_deps_conflict_skips_sandbox(client, user_and_token, tmp_curio, monkeypatch):
-    """A range conflict returns 409 and never invokes the sandbox forwarder."""
-    _, token = user_and_token
-
-    a = _draft()
-    a["manifest"]["id"] = "ai.test.alpha"
-    a["manifest"]["dependencies"]["python"] = {"rasterio": "^1.3"}
-    client.post(
-        "/api/packages/factory/install",
-        data=json.dumps(a), headers=_auth(token),
-    )
-    b = _draft()
-    b["manifest"]["id"] = "ai.test.beta"
-    b["manifest"]["dependencies"]["python"] = {"rasterio": "^2.0"}
-    client.post(
-        "/api/packages/factory/install",
-        data=json.dumps(b), headers=_auth(token),
-    )
-
-    invoked = {"count": 0}
-
-    def _fake_forward(_packages):  # pragma: no cover — must not run
-        invoked["count"] += 1
-        return ({}, 200)
-
-    from utk_curio.backend.app.packages import routes as package_routes
-    monkeypatch.setattr(package_routes, "_forward_to_sandbox_install", _fake_forward)
-
-    resp = client.post(
-        "/api/packages/install-deps",
-        data=json.dumps({"packages": ["ai.test.alpha@1", "ai.test.beta@1"]}),
-        headers=_auth(token),
-    )
-    assert resp.status_code == 409
-    assert invoked["count"] == 0
-    assert any(c["package"] == "rasterio" for c in resp.get_json()["conflicts"])
-
-
 def test_resolve_falls_back_to_catalog_for_uninstalled_packageage(
     client, user_and_token, tmp_curio,
 ):
@@ -714,10 +632,11 @@ def test_resolve_falls_back_to_catalog_for_uninstalled_packageage(
 
 
 @pytest.mark.skip(
-    reason="Same as test_install_deps_conflict_skips_sandbox: factory now derives deps "
-           "from source so the test's manual rasterio pin is overridden. Catalog "
-           "conflict semantics still verified by other tests that exercise "
-           "/packages/upload (archive sideload preserves manifest deps verbatim)."
+    reason="Factory now derives deps from source imports (see dependency_scanner.py), "
+           "so the test's manual rasterio pin is overridden and it has no path to "
+           "surface a version conflict. Catalog conflict semantics stay verified by "
+           "the tests that install via /packages/upload (archive sideload preserves "
+           "manifest deps verbatim)."
 )
 def test_resolve_catalog_fallback_still_reports_conflicts(
     client, user_and_token, tmp_curio,
@@ -766,8 +685,8 @@ def test_resolve_unknown_packageage_still_errors(client, user_and_token, tmp_cur
 
 
 @pytest.mark.skip(
-    reason="Same as test_install_deps_conflict_skips_sandbox: factory derives deps from "
-           "source so test cannot fabricate version conflicts via factory_install."
+    reason="Factory derives deps from source imports, so this test cannot fabricate "
+           "a version conflict via factory_install."
 )
 def test_resolve_conflict_returns_409(client, user_and_token, tmp_curio):
     _, token = user_and_token
