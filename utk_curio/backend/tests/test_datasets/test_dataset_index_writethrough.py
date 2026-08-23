@@ -236,3 +236,80 @@ def test_index_failure_does_not_break_the_dataset_write(store, monkeypatch):
     items = UserDatasetRepository(user).list_items()
     assert any(item["id"] == result.manifest.id for item in items)
     assert index_repo.get("1", result.manifest.id) is not None
+
+
+# ── the installed-refs read path ────────────────────────────────────────────
+
+def _project_with_installed_dataset(client, token):
+    """Import a dataset and attach it to a fresh dataflow; return both ids."""
+    project_id = create_project(client, token, name="Index hydration")
+    imported = client.post(
+        "/api/datasets/import",
+        headers={"Authorization": f"Bearer {token}"},
+        data={"file": (io.BytesIO(b"a,b\n1,2\n"), "hydrate.csv")},
+        content_type="multipart/form-data",
+    ).get_json()
+
+    resp = client.post(
+        f"/api/dataflows/{project_id}/datasets/install",
+        headers=auth_headers(token),
+        json={"datasetId": imported["id"]},
+    )
+    assert resp.status_code in (200, 201), resp.get_data(as_text=True)
+    return project_id, imported["id"]
+
+
+def test_installed_list_items_hydrates_from_the_index(
+    store, client, user_and_token, monkeypatch
+):
+    """``InstalledDatasetRepository.list_items`` uses the row, not a re-parse.
+
+    The point of the index on this path is one query instead of a manifest
+    parse per project ref; nothing else asserts the row is actually consulted,
+    so the optimisation could silently stop applying.
+    """
+    user, token = user_and_token
+    project_id, dataset_id = _project_with_installed_dataset(client, token)
+
+    import utk_curio.backend.app.datasets.domain.manifest as manifest_mod
+    from utk_curio.backend.app.datasets.repositories.installed import (
+        InstalledDatasetRepository,
+    )
+
+    parses = []
+    original = manifest_mod.load_dataset_manifest
+
+    def counting(root):
+        parses.append(str(root))
+        return original(root)
+
+    monkeypatch.setattr(manifest_mod, "load_dataset_manifest", counting)
+
+    items = InstalledDatasetRepository(user).list_items(project_id)
+
+    assert [i["id"] for i in items] == [dataset_id]
+    assert parses == [], "the index row should have satisfied the read"
+
+
+def test_installed_list_items_matches_a_parsed_read(store, client, user_and_token):
+    """Index-hydrated and manifest-parsed items must be indistinguishable.
+
+    ``manifest_from_row`` rebuilds a real ``DatasetManifest`` precisely so the
+    two paths cannot drift; this pins that they agree field for field.
+    """
+    user, token = user_and_token
+    project_id, dataset_id = _project_with_installed_dataset(client, token)
+
+    from utk_curio.backend.app.datasets.repositories.installed import (
+        InstalledDatasetRepository,
+    )
+
+    repo = InstalledDatasetRepository(user)
+    hydrated = repo.list_items(project_id)
+    assert hydrated, "expected the installed dataset to be listed"
+
+    # Drop the row, forcing the fallback parse, and compare.
+    index_repo.forget_dataset("1", dataset_id)
+    parsed = repo.list_items(project_id)
+
+    assert hydrated == parsed

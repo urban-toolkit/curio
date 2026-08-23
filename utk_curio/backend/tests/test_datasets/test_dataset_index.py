@@ -273,3 +273,150 @@ def test_safe_wrappers_ignore_missing_user_key(store):
     index_repo.safe_upsert_from_dir(None, store)
     index_repo.safe_forget(None, "imported.x1@1")
     index_repo.safe_reconcile(None)
+
+
+# ── uniqueness the lookups depend on ────────────────────────────────────────
+
+def test_one_row_per_user_and_dataset_id(store):
+    """``uq_dataset_index_user_id`` backs the keyed ``get`` lookup.
+
+    Without it a duplicate row would make ``get`` return an arbitrary one of
+    them, so a stale path could win over a fresh one.
+    """
+    import sqlalchemy.exc
+
+    from utk_curio.backend.app.datasets.models import DatasetIndexEntry
+    from utk_curio.backend.extensions import db
+
+    result = _install_imported()
+    row = index_repo.upsert_from_dir("1", result.dest)
+
+    db.session.add(
+        DatasetIndexEntry(
+            user_key="1",
+            dataset_id=row.dataset_id,      # same id...
+            dir_name="imported.somethingelse@1",  # ...different dir
+            major=1,
+            origin="imported",
+            title="dupe",
+            format="csv",
+            data_file="data/x.csv",
+            manifest_mtime_ns=0,
+            manifest_size=0,
+        )
+    )
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        db.session.commit()
+    db.session.rollback()
+
+
+def test_one_row_per_user_and_dir(store):
+    """``uq_dataset_index_user_dir`` backs ``upsert_from_dir``/``get_by_dir``."""
+    import sqlalchemy.exc
+
+    from utk_curio.backend.app.datasets.models import DatasetIndexEntry
+    from utk_curio.backend.extensions import db
+
+    result = _install_imported()
+    row = index_repo.upsert_from_dir("1", result.dest)
+
+    db.session.add(
+        DatasetIndexEntry(
+            user_key="1",
+            dataset_id="imported.other",     # different id...
+            dir_name=row.dir_name,           # ...same dir
+            major=1,
+            origin="imported",
+            title="dupe",
+            format="csv",
+            data_file="data/x.csv",
+            manifest_mtime_ns=0,
+            manifest_size=0,
+        )
+    )
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        db.session.commit()
+    db.session.rollback()
+
+
+def test_the_same_dataset_under_a_different_user_is_allowed(store):
+    """Both constraints are scoped to ``user_key``.
+
+    Two accounts holding the same dataset (same id AND same dir) must coexist;
+    a global unique index would let whoever imported first block everyone else.
+    """
+    from utk_curio.backend.app.datasets.models import DatasetIndexEntry
+    from utk_curio.backend.extensions import db
+
+    shared = dict(
+        dataset_id="imported.shared",
+        dir_name="imported.shared@1",
+        major=1,
+        origin="imported",
+        title="Shared",
+        format="csv",
+        data_file="data/x.csv",
+        manifest_mtime_ns=0,
+        manifest_size=0,
+    )
+    db.session.add(DatasetIndexEntry(user_key="1", **shared))
+    db.session.add(DatasetIndexEntry(user_key="2", **shared))
+    db.session.commit()
+
+    assert index_repo.get("1", "imported.shared") is not None
+    assert index_repo.get("2", "imported.shared") is not None
+
+
+def test_upsert_is_idempotent_and_updates_in_place(store):
+    # upsert_from_dir matches on dir_name, so re-running it must update the
+    # existing row rather than trip the uniqueness constraints above.
+    result = _install_imported()
+    first = index_repo.upsert_from_dir("1", result.dest)
+    again = index_repo.upsert_from_dir("1", result.dest)
+    assert again.id == first.id
+    assert len(index_repo.list_for_user("1")) == 1
+
+
+# ── concurrency ─────────────────────────────────────────────────────────────
+
+def test_concurrent_reconciles_converge_without_duplicating_rows(store, app):
+    """Two threads reconciling one user must not race into duplicate rows.
+
+    The dev server is threaded, so two catalog listings for the same user can
+    reconcile at once. ``upsert_from_dir`` matches on dir_name and the unique
+    constraints are the backstop; a lost race would surface as an
+    IntegrityError bubbling into a listing rather than a quiet retry.
+    """
+    import threading
+
+    _install_imported(name="a.csv")
+    _install_imported(name="b.csv")
+
+    errors: list[BaseException] = []
+    barrier = threading.Barrier(2)
+
+    def worker():
+        try:
+            barrier.wait(timeout=5)
+            with app.app_context():
+                index_repo.reconcile("1")
+        except BaseException as exc:  # noqa: BLE001 - reported below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert not errors, f"reconcile raced: {errors!r}"
+    rows = index_repo.list_for_user("1")
+    assert len(rows) == 2
+    assert len({r.dir_name for r in rows}) == 2
+
+
+def test_repeated_reconcile_is_stable(store):
+    # Reconcile must be a fixed point: the second run reports no work.
+    _install_imported(name="a.csv")
+    index_repo.reconcile("1")
+    assert index_repo.reconcile("1") == {"added": 0, "updated": 0, "removed": 0}

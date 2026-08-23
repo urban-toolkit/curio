@@ -88,3 +88,55 @@ def test_publisher_can_unpublish_own_dataset(app, db, client, catalog_root):
     assert resp.status_code == 200, resp.get_data(as_text=True)
     # Owner unpublish removes the shared catalog copy.
     assert not pub_dir.exists()
+
+
+def test_corrupt_manifest_fails_closed(app, db, client, catalog_root):
+    """A present-but-unreadable manifest must be treated as "not yours".
+
+    The publisher is unknowable, so the gate cannot confirm ownership. Failing
+    open here would make a truncated or hand-edited manifest a way to delete
+    anyone's published dataset.
+    """
+    _make_user(db, "alice", "alice-tok")
+    dataset_id = "computed.corrupt"
+    pub_dir = _publish_dir(catalog_root, dataset_id, publisher="someone-else")
+    (pub_dir / "manifest.json").write_text("{ not json", encoding="utf-8")
+
+    resp = client.delete(
+        f"/api/datasets/publish/{dataset_id}", headers=auth_headers("alice-tok")
+    )
+    assert resp.status_code == 403, resp.get_data(as_text=True)
+    assert pub_dir.is_dir()
+
+
+def test_manifest_without_a_publisher_is_not_removable(app, db, client, catalog_root):
+    # Factory seeds publish as "Data Catalog" rather than a user id, so no
+    # regular user matches and they stay put.
+    _make_user(db, "alice", "alice-tok")
+    dataset_id = "computed.factory-seeded"
+    pub_dir = _publish_dir(catalog_root, dataset_id, publisher="Data Catalog")
+
+    resp = client.delete(
+        f"/api/datasets/publish/{dataset_id}", headers=auth_headers("alice-tok")
+    )
+    assert resp.status_code == 403, resp.get_data(as_text=True)
+    assert pub_dir.is_dir()
+
+
+def test_a_directory_with_no_manifest_stays_removable(app, db, client, catalog_root):
+    """Legacy/corrupt leftovers with no manifest at all skip the gate.
+
+    Publish always writes a manifest, so a directory without one was never a
+    properly published dataset: there is no recorded owner to protect, and
+    leaving it unremovable would strand it in the shared catalog forever.
+    """
+    _make_user(db, "alice", "alice-tok")
+    dataset_id = "computed.leftover"
+    pub_dir = _publish_dir(catalog_root, dataset_id, publisher="someone-else")
+    (pub_dir / "manifest.json").unlink()
+
+    resp = client.delete(
+        f"/api/datasets/publish/{dataset_id}", headers=auth_headers("alice-tok")
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert not pub_dir.exists()
