@@ -357,7 +357,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           // the folder alive — keep the row visible and say so honestly.
           notifyDatasetCatalogRefresh();
           showToast(
-            `Could not fully delete ${title} — some of its files are still in use. Close anything using them and try again.`,
+            `Could not fully delete ${title}: some of its files are still in use. Close anything using them and try again.`,
             "error",
           );
           return;

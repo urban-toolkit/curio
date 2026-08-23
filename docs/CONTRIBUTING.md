@@ -395,7 +395,6 @@ Use the following template when creating a new issue:
 
 ## Need Help
 
-* Join the [Curio Discord server](https://discord.gg/vjpSMSJR8r)
 * Post in the GitHub Discussions or Issues tab
 
 ## Final Notes
