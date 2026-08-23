@@ -9,6 +9,9 @@ on:
       - 'utk_curio/**'
       - 'Dockerfile'
       - '.github/workflows/docker-compose.yml'
+      # scripts/test.sh is this workflow's entry point; the authoring helpers
+      # (new_package.py, regen_integrity.py) are covered by the test suite too.
+      - 'scripts/**'
       # Baked into the image (see Dockerfile runtime_base COPYs):
       - 'requirements.txt'
       - 'package.json'
@@ -22,6 +25,9 @@ on:
       - 'utk_curio/**'
       - 'Dockerfile'
       - '.github/workflows/docker-compose.yml'
+      # scripts/test.sh is this workflow's entry point; the authoring helpers
+      # (new_package.py, regen_integrity.py) are covered by the test suite too.
+      - 'scripts/**'
       # Baked into the image (see Dockerfile runtime_base COPYs):
       - 'requirements.txt'
       - 'package.json'
