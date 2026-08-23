@@ -64,6 +64,16 @@ Dataset state lives in three places. As with node packages, knowing which layer 
 
 The most important consequence: **computed datasets are account-level assets, not project contents.** Running a node saves its output into your per-user store and writes *no* `dataflow.datasets` ref. It appears in the catalog immediately, but it is only "in" a dataflow once you add it there.
 
+> [!NOTE]
+> A fourth thing exists, but it is not a storage layer: the **dataset index**, a
+> database table mirroring your store's manifests so catalog listings are keyed
+> lookups instead of re-parsing every `manifest.json`. It is a cache, and disk
+> always wins — it is reconciled against the store on every listing, a manifest
+> it cannot read has its row dropped, and any failure falls back to scanning.
+> Nothing you do interacts with it directly and nothing is lost if it is wiped;
+> see [ARCHITECTURE.md](ARCHITECTURE.md#the-dataset-index) if you are working on
+> the backend.
+
 ### Dataset ids
 
 Ids are 2 to 6 dot-separated lowercase segments (`[a-z][a-z0-9-]*`, at most 63 chars each), with a major version between `0` and `9999`. Curio mints ids for you in the non-hub cases:
@@ -283,6 +293,12 @@ The catalog root is **never created eagerly**. A missing root simply means nothi
 | `CURIO_CATALOG_ROOT` | `<repo_root>/datasets/` | Shared catalog read source and publish target. |
 | `CURIO_LAUNCH_CWD` | process CWD | Anchors the per-user store at `.curio/users/<key>/datasets/`. |
 | `CURIO_DEFAULT_SAVE_NODE_OUTPUT` | `True` | Default state of every node's save-output toggle. |
+
+### The dataset index
+
+Catalog listings are served from a database table (`dataset_index_entry`, created by alembic revision `d4e5f6a7b8c9`) that mirrors each user's store manifests. Upgrading an existing deployment picks it up through the normal migration run; nothing else is required.
+
+It is a cache, so it needs no operational care: it is reconciled against disk on every listing, and any failure degrades to the old full-scan behaviour. If you ever suspect it has drifted, dropping every row is safe — the next listing rebuilds it. It is also safe to leave alone; there is no cleanup job to schedule.
 
 ### There is no publish gate for datasets
 
