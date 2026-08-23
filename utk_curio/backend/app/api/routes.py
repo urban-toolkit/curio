@@ -140,31 +140,6 @@ conversation = {}
 tokens_left = 200000 # Tokens allowed per minute
 last_refresh = time.time() # Last time that 60 minutes elapsed
 
-# In-memory node-type registry populated by the frontend via POST /node-types.
-# Initialised with hardcoded defaults so templates work even if the frontend
-# hasn't registered yet (e.g. backend starts before frontend).
-_node_type_registry: dict = {
-    "DATA_LOADING":          {"inputTypes": [],                                                             "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
-    "DATA_EXPORT":           {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": []},
-    "DATA_TRANSFORMATION":   {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
-    "COMPUTATION_ANALYSIS":  {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
-    "VIS_VEGA":              {"inputTypes": ["DATAFRAME"],                                                 "outputTypes": ["DATAFRAME"]},
-    "VIS_SIMPLE":            {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE"],                        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE"]},
-    "CONSTANTS":             {"inputTypes": [],                                                             "outputTypes": ["VALUE"]},
-    "DATA_POOL":             {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
-    "MERGE_FLOW":            {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
-    "DATA_SUMMARY":          {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["JSON"]},
-    "AUTK_GRAMMAR":          {"inputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"],                 "outputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"]},
-}
-
-def get_output_types(node_type: str) -> list:
-    entry = _node_type_registry.get(node_type)
-    return entry["outputTypes"] if entry else []
-
-def get_input_types(node_type: str) -> list:
-    entry = _node_type_registry.get(node_type)
-    return entry["inputTypes"] if entry else []
-
 
 def _parse_input_ref(req_input: dict | None) -> dict:
     """Normalize the input reference field from execution requests."""
@@ -203,21 +178,6 @@ def live():
 def version():
     from utk_curio import __version__
     return jsonify({'version': __version__})
-
-@bp.route('/node-types', methods=['POST'])
-def register_node_types():
-    payload = request.get_json(silent=True) or {}
-    node_types = payload.get('nodeTypes', {})
-    if not isinstance(node_types, dict) or len(node_types) == 0:
-        return jsonify({'error': 'Expected { nodeTypes: { NODE_TYPE: { inputTypes, outputTypes } } }'}), 400
-
-    _node_type_registry.clear()
-    _node_type_registry.update(node_types)
-    return jsonify({'registered': len(_node_type_registry)}), 200
-
-@bp.route('/node-types', methods=['GET'])
-def get_node_types():
-    return jsonify(_node_type_registry), 200
 
 @bp.route('/cwd')
 def cwd():

@@ -12,8 +12,7 @@ import { IPropagation } from '../providers/FlowProvider';
  *   so existing call sites continue to type-check unchanged.
  * - **Package kinds** use a canonical string of the form `<packageId>/<templateId>@<major>`
  *   (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`). This is the string the frontend
- *   registry, backend `_node_type_registry`, saved Trill graphs, and
- *   `/processPythonCode` all dispatch on.
+ *   registry, saved Trill graphs, and `/processPythonCode` all dispatch on.
  *
  * See ``docs/NODE-CATALOG.md`` for the user-facing overview and
  * ``docs/schemas/node-package.v4.json`` for the manifest schema.

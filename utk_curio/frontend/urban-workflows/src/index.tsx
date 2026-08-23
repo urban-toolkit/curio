@@ -56,12 +56,8 @@ export { refreshPackageRegistry };
 // Boot sequence:
 //   Fetch installed packages first — `refreshPackageRegistry()` registers every
 //   package-derived descriptor (including the auto-installed `curio.builtin@1`)
-//   and *then* pushes the merged port table to the backend. Calling
-//   `syncNodeTypeRegistry()` up-front would POST an empty `{nodeTypes: {}}`
-//   (the registry is empty at module-evaluation time post-Phase-B) and clear
-//   the backend's `_node_type_registry`, leaving a validation gap until the
-//   package fetch resolves. Anonymous boots are no-ops until sign-in calls
-//   `refreshPackageRegistry()` explicitly.
+//   so the palette is populated before anything reads it. Anonymous boots are
+//   no-ops until sign-in calls `refreshPackageRegistry()` explicitly.
 void refreshPackageRegistry();
 
 import FlowProvider from "./providers/FlowProvider";

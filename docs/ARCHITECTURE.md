@@ -528,7 +528,6 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/get` | GET | Download a data file by name |
 | `/get-preview` | GET | Download first 100 rows of a data file |
 | `/installPackages` | POST | Install Python packages in the sandbox (legacy; per-project pip libs) |
-| `/node-types` | GET/POST | Get or register node type metadata |
 
 ### Package Routes
 
@@ -648,7 +647,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | File | Purpose |
 |---|---|
 | `backend/server.py` | Flask app factory; Werkzeug reloader exclude patterns |
-| `backend/app/api/routes.py` | Legacy REST endpoints (sandbox proxies, node-types) |
+| `backend/app/api/routes.py` | Legacy REST endpoints (sandbox proxies, starters, file serving) |
 | `backend/app/packages/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
 | `backend/app/packages/installer.py` | Catalog-source-dir → archive → user-store copy + integrity hashing |
 | `backend/app/packages/pip_runner.py` | `install_python_deps` / `uninstall_python_deps`; PEP 440 + caret support, idempotent skip |
