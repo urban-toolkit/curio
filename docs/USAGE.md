@@ -33,22 +33,42 @@ If installed from Git:
 python curio.py --help
 ```
 
-Sample output:
+There are two commands. `start` launches the servers (running `setup` first automatically); `setup` installs the framework and every installed package's Python dependencies for the current interpreter, then exits without starting anything — useful for warming a container image or a CI job.
 
 ```bash
-Usage:
-  curio start                       # Start all servers (Backend, Sandbox, Frontend)
-  curio start backend               # Start only the backend (localhost:5002)
-  curio start sandbox               # Start only the sandbox (localhost:2000)
-  curio start frontend              # Start only the frontend (localhost:8080)
-  curio start --auth                # Require login before reaching the project page
-  curio start --no-project          # Skip login and project page; open the canvas directly
-  curio start --deploy              # Same as --auth; use for production deployments
-  curio start --collab              # Enable real-time multi-user collaboration
-  curio start --verbose 2           # Verbosity level (0=silent, 1=normal, 2=debug)
-  curio start --force-rebuild       # Re-build the frontend and start all servers
-  curio start --force-db-init       # Re-initialize the backend database and start all servers
+curio start                  # all three servers
+curio start backend          # one server: all | frontend | backend | sandbox
+curio setup                  # install deps and exit
 ```
+
+**Startup mode**
+
+| Flag | Effect |
+|---|---|
+| *(none)* | Auto sign-in as shared guest, projects page shown |
+| `--auth` | Require login (`CURIO_NO_AUTH=0`) |
+| `--no-project` | Skip both login and projects; open the canvas directly |
+| `--deploy` | Auth **and** projects on. Use for anything reachable by others |
+| `--collab` | Real-time collaborative editing. Experimental, LAN-only |
+
+**Catalogs**
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
+| `--save-node-outputs` / `--no-save-node-outputs` | on | Default state of every node's save-output toggle |
+| `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
+| `--with-examples` | off | Seed the example projects from `docs/examples/` |
+| `--reseed` | off | Force re-seeding catalog packages into the guest package store |
+
+**Hosts, ports, and diagnostics**
+
+`--backend-host` / `--backend-port` (127.0.0.1:5002), `--sandbox-host` / `--sandbox-port` (127.0.0.1:2000), `--frontend-host` / `--frontend-port` (localhost:8080), and `--verbose N` (0=silent, 1=normal, 2=debug).
+
+> [!NOTE]
+> `--force-rebuild` and `--force-db-init` exist only in dev mode, which `curio.py` sets and the pip entry point does not. From a pip install or inside Docker they are rejected as unknown arguments; rebuild by other means there.
+
+Because these flags are set as environment variables on every start, putting the corresponding `CURIO_*` var in a `.env` has no effect when you launch through `curio.py`. Use the flag.
 
 The three startup modes control which pages are shown when a user first opens Curio:
 
@@ -211,7 +231,7 @@ Settings are stored per user in the database and apply across all of their proje
 
 ### Guest users
 
-Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in a `.env` file at the project root:
+Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in **`utk_curio/backend/.env`** — the backend loads its `.env` relative to its own package directory ([`config.py`](../utk_curio/backend/config.py)), so a `.env` at the repo root is not read by the app. (Docker Compose does read a root `.env`, but only for interpolating values like `BACKEND_URL` into `docker-compose.yml`.)
 
 ```bash
 # Required
