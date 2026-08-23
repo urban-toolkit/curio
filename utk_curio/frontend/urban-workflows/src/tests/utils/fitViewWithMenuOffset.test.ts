@@ -68,6 +68,88 @@ describe('fitViewWithMenuOffset', () => {
     expect(rf.fitView).not.toHaveBeenCalled();
   });
 
+  test('an open palette panel widens the occluded strip beyond the dock rect', () => {
+    // The rail (#tools-palette-dock) is narrow; an open palette panel is
+    // absolutely positioned beside it, so it falls OUTSIDE the dock's own
+    // bounding rect. Measuring the dock alone would under-report the occlusion
+    // and fit content underneath the open panel.
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 600, left: 0, top: 0 }) as DOMRect;
+
+    const dock = document.createElement('div');
+    dock.id = 'tools-palette-dock';
+    document.body.appendChild(dock);
+    dock.getBoundingClientRect = () => ({ right: 60, left: 0, top: 0, width: 60 }) as DOMRect;
+
+    // The panel lives inside the dock in the DOM but paints far to its right.
+    const panel = document.createElement('div');
+    panel.setAttribute('data-curio-tools-palette-panel', 'true');
+    dock.appendChild(panel);
+    panel.getBoundingClientRect = () => ({ right: 380, left: 60, top: 0, width: 320 }) as DOMRect;
+
+    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 1 });
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+
+    // Occlusion is the panel's right edge (380), not the rail's (60).
+    const [, widthArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
+    expect(widthArg).toBe(1000 - 380);
+    expect(rf.setViewport).toHaveBeenCalledWith({ x: 5 + 380, y: 6, zoom: 1 }, undefined);
+  });
+
+  test('a closed palette contributes nothing, leaving the rail as the occluder', () => {
+    // Same DOM minus the panel marker: the panel element is only rendered while
+    // open, so the occluded strip collapses back to the rail's own width.
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 600, left: 0, top: 0 }) as DOMRect;
+
+    const dock = document.createElement('div');
+    dock.id = 'tools-palette-dock';
+    document.body.appendChild(dock);
+    dock.getBoundingClientRect = () => ({ right: 60, left: 0, top: 0, width: 60 }) as DOMRect;
+
+    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 1 });
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+
+    const [, widthArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
+    expect(widthArg).toBe(1000 - 60);
+    expect(rf.setViewport).toHaveBeenCalledWith({ x: 5 + 60, y: 6, zoom: 1 }, undefined);
+  });
+
+  test('the widest open panel wins when several are marked', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 600, left: 0, top: 0 }) as DOMRect;
+
+    const dock = document.createElement('div');
+    dock.id = 'tools-palette-dock';
+    document.body.appendChild(dock);
+    dock.getBoundingClientRect = () => ({ right: 60, left: 0, top: 0, width: 60 }) as DOMRect;
+
+    for (const right of [200, 420, 310]) {
+      const p = document.createElement('div');
+      p.setAttribute('data-curio-tools-palette-panel', 'true');
+      dock.appendChild(p);
+      p.getBoundingClientRect = () => ({ right, left: 60, top: 0, width: right - 60 }) as DOMRect;
+    }
+
+    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 1 });
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+
+    const [, widthArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
+    expect(widthArg).toBe(1000 - 420);
+  });
+
   test('with an open dock, fits against the VISIBLE width and shifts past the dock', () => {
     const container = document.createElement('div');
     container.className = 'react-flow';
