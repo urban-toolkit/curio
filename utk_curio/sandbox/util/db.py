@@ -15,11 +15,30 @@ _LOCK_RETRY_BASE_DELAY = 0.05  # seconds; total worst-case wait ~3.9s
 
 
 def _is_lock_conflict(exc: Exception) -> bool:
+    """True when *exc* is cross-process contention rather than a real fault.
+
+    The wording is platform-specific, and matching only the POSIX phrasing is
+    not enough. POSIX/DuckDB says "Could not set lock" / "Conflicting lock is
+    held". **Windows** raises a sharing violation whose message never contains
+    the word "lock" at all::
+
+        IO Error: Cannot open file "...curio_data.duckdb": The process cannot
+        access the file because it is being used by another process.
+        File is already open in <python.exe> (PID 1234)
+
+    Missing that phrasing made ``_connect_with_retry`` re-raise on the first
+    attempt, so the retry below never engaged on Windows and a transient
+    collision with a backend read-only open failed the whole node. Both Windows
+    signatures are contention-specific, so matching them cannot swallow a
+    genuine corruption or permission fault.
+    """
     msg = str(exc).lower()
     return (
         "lock" in msg
         or "conflicting" in msg
         or "resource temporarily unavailable" in msg
+        or "being used by another process" in msg
+        or "already open in" in msg
     )
 
 
