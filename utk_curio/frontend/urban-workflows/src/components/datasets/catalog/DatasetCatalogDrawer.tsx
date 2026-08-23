@@ -113,7 +113,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             title="Data Catalog"
             titleId="dataset-catalog-title"
             subtitle="Datasets available to this dataflow."
-            closeAriaLabel="Close data catalog drawer"
+            closeAriaLabel="Close Data Catalog drawer"
           />
 
           <PackageSearchRow
@@ -129,7 +129,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             ]}
           />
 
-          <nav className={tabStyles.tabs} aria-label="Data catalog sections">
+          <nav className={tabStyles.tabs} aria-label="Data Catalog sections">
             <button
               type="button"
               className={`${tabStyles.tab} ${tab === "featured" ? tabStyles.tabActive : ""}`}

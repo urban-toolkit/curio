@@ -84,7 +84,7 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
     expect(mockSetDataflowDatasets).not.toHaveBeenCalled();
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     expect(mockShowToast).toHaveBeenCalledWith(
-      "Registered Imported.csv in the data catalog.",
+      "Registered Imported.csv in the Data Catalog.",
       "success",
     );
 
@@ -134,7 +134,7 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
       expect(mockImportDataset).toHaveBeenCalledWith(file);
       expect(refreshSpy).toHaveBeenCalledTimes(1);
       expect(mockShowToast).toHaveBeenCalledWith(
-        `Registered 3 datasets from ${name} in the data catalog.`,
+        `Registered 3 datasets from ${name} in the Data Catalog.`,
         "success",
       );
 

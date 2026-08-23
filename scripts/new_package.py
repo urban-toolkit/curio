@@ -30,7 +30,7 @@ HOW
     python scripts/new_package.py me.thing --major 2 --template-id my-thing
 
 The package lands in ``packages/<id>@<major>/``. Install it from the canvas via
-**Node packages → Browse Node Catalog + → Browse**, then use **Reload** on the
+**Node Catalog → Browse Node Catalog + → Browse**, then use **Reload** on the
 **Installed** tab to pick up later edits.
 """
 
@@ -604,7 +604,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         step += 1
     print(
-        f"  {step}. Start Curio, open a dataflow, then Node packages ->"
+        f"  {step}. Start Curio, open a dataflow, then Node Catalog ->"
         " Browse Node Catalog + -> Browse -> Install."
     )
     step += 1

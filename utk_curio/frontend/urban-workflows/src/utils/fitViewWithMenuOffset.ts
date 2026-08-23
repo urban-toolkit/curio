@@ -1,5 +1,6 @@
 import type { ReactFlowInstance, FitViewOptions, Node } from "reactflow";
 import { getNodesBounds, getViewportForBounds } from "reactflow";
+import { TOOLS_PALETTE_PANEL_ATTR } from "../components/menus/nodes/toolsPaletteDismiss";
 
 // fitView centers content in the full pane, but the palette dock
 // (`#tools-palette-dock`) is a fixed overlay on the left — and with a panel open
@@ -62,10 +63,17 @@ export function fitViewWithMenuOffset(
     // With a palette panel open this is wide, so it must shrink the width the fit
     // is computed against — otherwise content is sized for the full pane and
     // overflows the visible strip. Clamp so the visible width stays positive.
+    // The dock's own rect covers just the left rail; an open palette panel is
+    // absolutely positioned beside it and so is NOT part of that rect. Take the
+    // rightmost edge across the rail and any open panel.
     const dock = document.getElementById("tools-palette-dock");
     let occluded = 0;
     if (dock) {
-        const raw = dock.getBoundingClientRect().right - paneRect.left;
+        let right = dock.getBoundingClientRect().right;
+        dock.querySelectorAll<HTMLElement>(`[${TOOLS_PALETTE_PANEL_ATTR}]`).forEach((panel) => {
+            right = Math.max(right, panel.getBoundingClientRect().right);
+        });
+        const raw = right - paneRect.left;
         if (raw > 0) occluded = Math.min(raw, paneRect.width - 1);
     }
     const visibleWidth = Math.max(1, paneRect.width - occluded);

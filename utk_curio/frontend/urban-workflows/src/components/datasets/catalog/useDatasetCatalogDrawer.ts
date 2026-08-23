@@ -404,8 +404,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         const count = imported?.importedDatasetCount ?? 1;
         showToast(
           count > 1
-            ? `Registered ${count} datasets from ${file.name} in the data catalog.`
-            : `Registered ${file.name} in the data catalog.`,
+            ? `Registered ${count} datasets from ${file.name} in the Data Catalog.`
+            : `Registered ${file.name} in the Data Catalog.`,
           "success",
         );
       } catch (err) {

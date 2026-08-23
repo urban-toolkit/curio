@@ -1,8 +1,8 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-  faChevronDown,
-  faChevronUp,
+  faChevronLeft,
+  faChevronRight,
   faDatabase,
 } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../../providers/FlowProvider";
@@ -18,22 +18,23 @@ import {
   prefetchDatasetCatalog,
   type DatasetPaletteSortKey,
 } from "../../../../services/datasetCatalog";
-import {
-  isToolsPaletteDismissOutsideClick,
-  TOOLS_PALETTE_DROPDOWN_ATTR,
-} from "../toolsPaletteDismiss";
+import { TOOLS_PALETTE_DROPDOWN_ATTR, TOOLS_PALETTE_PANEL_ATTR } from "../toolsPaletteDismiss";
 import { buildSaveableLiveOutputs } from "../../../../utils/saveOutputDataset";
 import { DatasetGroupRow, DatasetRow } from "./DatasetPaletteRows";
 import { DatasetInstallingRow } from "./DatasetInstallingRow";
 import { pendingInstallsNotYetListed } from "../../../../services/datasetCatalog/pendingInstallView";
 import styles from "./DatasetsPaletteDropdown.module.css";
 
-export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
+export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
+  open,
+  setOpen,
+}: {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { projectId, outputs, nodes, defaultSaveOutputDataset, pendingInstalls } = useFlowContext();
-  const { openDatasetCatalogDrawer, isDatasetCatalogDrawerOpen } = useDatasetCatalogDrawer();
+  const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
   const { datasetRevealId, setDatasetRevealId } = useDatasetPalette();
 
   // Saveable session outputs — a node's freshly-computed-and-auto-installed dataset
@@ -66,30 +67,9 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
   }, [catalog.reload]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (ev: KeyboardEvent) => {
-      // Let the drawer own Escape while it is open so the palette stays open
-      // behind it (e.g. after installing from the Data Catalog).
-      if (ev.key === "Escape" && !isDatasetCatalogDrawerOpen) setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, isDatasetCatalogDrawerOpen]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocMouseDown = (ev: MouseEvent) => {
-      // Keep the palette open while the Data Catalog drawer is open so the
-      // newly installed dataset is visible once the drawer is dismissed.
-      if (isDatasetCatalogDrawerOpen) return;
-      if (rootRef.current?.contains(ev.target as Node)) return;
-      if (!isToolsPaletteDismissOutsideClick(ev.target)) return;
-      setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocMouseDown, true);
-    return () => document.removeEventListener("mousedown", onDocMouseDown, true);
-  }, [open, isDatasetCatalogDrawerOpen]);
+  // No Escape / outside-click dismissal on purpose: the palette stays open
+  // until its own trigger is clicked again (or the packages palette claims the
+  // strip), so browsing the canvas or the Data Catalog never collapses it.
 
   const rows = useMemo(
     () => catalog.items.filter((item) => item.origin === "imported" || item.origin === "hub" || item.origin === "computed"),
@@ -133,7 +113,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   // matching row into view and pulse it. Mirrors the package palette behaviour.
   useEffect(() => {
     if (datasetRevealId) setOpen(true);
-  }, [datasetRevealId]);
+  }, [datasetRevealId, setOpen]);
 
   useEffect(() => {
     if (!open || !datasetRevealId) return undefined;
@@ -181,28 +161,35 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
     <div
       id="datasets-palette"
       className={styles.root}
-      ref={rootRef}
       {...{ [TOOLS_PALETTE_DROPDOWN_ATTR]: "true" }}
     >
       <div className={styles.column}>
         <button
           type="button"
           className={`${styles.trigger} ${open ? styles.triggerOpen : ""}`}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen(!open)}
           aria-expanded={open}
           aria-haspopup="true"
           title={open ? "Close dataset palette" : "Open dataset palette"}
         >
-          <FontAwesomeIcon icon={faDatabase} className={styles.triggerIcon} />
-          <span className={styles.triggerLabel}>Data</span>
-          <span className={styles.triggerCount}>{total}</span>
-          <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className={styles.triggerChevron}/>
-          
+          <span className={styles.triggerTop}>
+            <FontAwesomeIcon icon={faDatabase} className={styles.triggerIcon} />
+            <span className={styles.triggerCount}>{total}</span>
+            <FontAwesomeIcon
+              icon={open ? faChevronLeft : faChevronRight}
+              className={styles.triggerChevron}
+            />
+          </span>
+          <span className={styles.triggerLabel}>Data Catalog</span>
         </button>
-        {total === 0 ? <p className={styles.emptyHint}>No data yet</p> : null}
       </div>
       {open ? (
-        <div className={styles.panel} role="region" aria-label="Dataset palette">
+        <div
+          className={styles.panel}
+          role="region"
+          aria-label="Dataset palette"
+          {...{ [TOOLS_PALETTE_PANEL_ATTR]: "true" }}
+        >
           <div className={styles.panelHeader}>
             <div className={styles.title}>Datasets</div>
           </div>

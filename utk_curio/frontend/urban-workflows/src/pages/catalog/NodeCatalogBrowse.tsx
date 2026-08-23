@@ -1,5 +1,5 @@
 /**
- * Global node catalog under /catalog/nodes (see docs/NODE-CATALOG.md).
+ * Global Node Catalog under /catalog/nodes (see docs/NODE-CATALOG.md).
  */
 import React, { useState } from "react";
 import { InstallPermissionsDialog } from "../../components/packages/publishing/InstallPermissionsDialog";
@@ -102,15 +102,15 @@ export const NodeCatalogBrowse: React.FC = () => {
 
       <main className={browseStyles.browseMain}>
         <section className={browseStyles.browseHeader}>
-          <p className={browseStyles.crumb}>Node catalog</p>
+          <p className={browseStyles.crumb}>Node Catalog</p>
           <div className={browseStyles.titleRow}>
             <CatalogKindIcon kind="package" size="md" title="Node package catalog" />
-            <h1>Node catalog</h1>
+            <h1>Node Catalog</h1>
             <span className={browseStyles.titleCount}>{filtered.length}</span>
           </div>
           <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6B6B76", maxWidth: 720 }}>
             Add packages to <strong>all your projects</strong>, present and future.
-            Removing a package from a single project can be done in that project&apos;s node catalog.
+            Removing a package from a single project can be done in that project&apos;s Node Catalog.
           </p>
           <div className={browseStyles.headerTools}>
             <span className={browseStyles.hubStatusChip}>

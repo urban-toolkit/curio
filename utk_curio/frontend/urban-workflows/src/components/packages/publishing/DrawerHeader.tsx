@@ -9,7 +9,7 @@ export interface DrawerHeaderProps {
   pinned: boolean;
   onPinToggle: () => void;
   onClose: () => void;
-  /** Catalog item kind shown as the type icon. Defaults to the Node catalog. */
+  /** Catalog item kind shown as the type icon. Defaults to the Node Catalog. */
   kind?: CatalogItemKind;
   title?: string;
   titleId?: string;
@@ -27,10 +27,10 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
   onPinToggle,
   onClose,
   kind = "package",
-  title = "Node catalog",
+  title = "Node Catalog",
   titleId = "node-catalog-drawer-title",
   subtitle = "Discover nodes that extend Curio.",
-  closeAriaLabel = "Close node catalog drawer",
+  closeAriaLabel = "Close Node Catalog drawer",
 }) => (
   <>
     <header className={styles.topBar}>

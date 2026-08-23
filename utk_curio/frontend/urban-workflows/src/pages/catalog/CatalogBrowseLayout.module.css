@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────
-   Shared 3-column browse layout (Data Catalog + Node catalog master).
+   Shared 3-column browse layout (Data Catalog + Node Catalog master).
    Font: Rubik  |  Accent: #FBAA69  |  Dark: #1E1F23
    Page shell lives in CatalogMasterPage.module.css.
    ───────────────────────────────────────────────────────────── */
@@ -359,7 +359,7 @@
 .chipDot_csv     { background: #3B6FD4; }
 .chipDot_json    { background: #7A4BD1; }
 .chipDotDefault { background: #9E9E9E; }
-/* Node catalog category chips (primaryCategory) */
+/* Node Catalog category chips (primaryCategory) */
 .chipDot_data         { background: #FBAA69; }
 .chipDot_computation  { background: #3B6FD4; }
 .chipDot_vis          { background: #7A4BD1; }

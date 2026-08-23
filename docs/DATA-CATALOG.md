@@ -107,8 +107,8 @@ Dataset manifests are validated in code ([`domain/manifest.py`](../utk_curio/bac
 There are three places you interact with datasets, and unlike the Node Catalog, they are **not** interchangeable:
 
 - **The `/catalog/data` page** is a read-only library view. Reach it from `/projects` → **Catalog** in the top nav → the **Data** tab. You can browse, filter, preview, publish, and open a dataset's detail page. You **cannot add a dataset to a dataflow from here**, because adding is always relative to a dataflow and this page has none. (The legacy `/data-hub` URL redirects here.)
-- **The Data Catalog drawer** (inside the canvas) is the working surface. Open it from the top menu **Data ⏷ → Data Catalog**, or from the left Tools panel's **Data** dropdown → **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: Add to dataflow, Remove from dataflow, Import, Publish, Unpublish, Delete.
-- **The Data palette** (left Tools panel, the **Data** dropdown) holds the datasets already added to this dataflow, ready to drag onto the canvas. It sits directly above the **Node packages** dropdown, mirroring it.
+- **The Data Catalog drawer** (inside the canvas) is the working surface. Open it from the top menu **Data ⏷ → Data Catalog**, or from the left Tools panel's **Data Catalog** dropdown → **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: Add to dataflow, Remove from dataflow, Import, Publish, Unpublish, Delete.
+- **The Data palette** (left Tools panel, the **Data Catalog** dropdown) holds the datasets already added to this dataflow, ready to drag onto the canvas. It sits in the left rail below the built-in nodes and the **Node Catalog** dropdown, mirroring the latter; its panel opens in the strip to the right of the rail.
 
 The drawer has four tabs: **Featured** (published or already added, capped at six), **Browse all** (the default), **In dataflow**, and **Computed**.
 
@@ -116,7 +116,7 @@ The drawer has four tabs: **Featured** (published or already added, capped at si
 
 | Action | Where | Endpoint | Layers it writes | What you see |
 |---|---|---|---|---|
-| **Add to dataflow** | Drawer | `POST /api/dataflows/<id>/datasets/install` | per-dataflow refs (+ user store if the dataset came from the hub) | The dataset appears in this dataflow's **Data** palette, ready to drag. |
+| **Add to dataflow** | Drawer | `POST /api/dataflows/<id>/datasets/install` | per-dataflow refs (+ user store if the dataset came from the hub) | The dataset appears in this dataflow's **Data Catalog** palette, ready to drag. |
 | **Remove from dataflow** | Drawer (**Remove from dataflow**, or the trash icon in the **In dataflow** tab) | `DELETE /api/dataflows/<id>/datasets/<id>` | per-dataflow refs | It leaves this dataflow's palette. The account-level copy is **kept**. |
 | **Import** | Drawer footer (**Import dataset**) | `POST /api/datasets/import` | per-user store | The file is registered in your catalog. It is **not** attached to the open dataflow; add it afterwards. |
 | **Publish** | Drawer, `/catalog/data` cards, or the detail panel (**Publish to Catalog**) | `POST /api/datasets/publish` | shared catalog | The dataset becomes browsable by every user on this install. |
@@ -127,7 +127,7 @@ Only **Unpublish** and **Delete** ask for confirmation; Add to dataflow, Remove 
 
 ### Workflows
 
-**I want to use a catalog dataset in my dataflow.** Open the dataflow, then **Data ⏷ → Data Catalog**. Find the dataset, click **Add to dataflow**. It now appears in the left Tools panel's **Data** dropdown. Drag it onto the canvas to get a Data Loading node wired to it ([part 3](#3-using-a-dataset-in-a-dataflow)).
+**I want to use a catalog dataset in my dataflow.** Open the dataflow, then **Data ⏷ → Data Catalog**. Find the dataset, click **Add to dataflow**. It now appears in the left Tools panel's **Data Catalog** dropdown. Drag it onto the canvas to get a Data Loading node wired to it ([part 3](#3-using-a-dataset-in-a-dataflow)).
 
 **I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.shp`, `.pbf`). Import only *registers* the dataset in your account. Switch to the **In dataflow** or **Browse all** tab and click **Add to dataflow** to attach it to the open dataflow.
 
@@ -146,7 +146,7 @@ Only **Unpublish** and **Delete** ask for confirmation; Add to dataflow, Remove 
 
 ## 3. Using a dataset in a dataflow
 
-Adding a dataset to a dataflow does not create anything on the canvas. You consume it by **dragging** it from the **Data** palette (or from a card in the drawer):
+Adding a dataset to a dataflow does not create anything on the canvas. You consume it by **dragging** it from the **Data Catalog** palette (or from a card in the drawer):
 
 - **Drop on empty canvas** → Curio creates a **Data Loading** node pre-filled with loader code for that dataset, and confirms with *"Created a Data Loading node for `<title>`."*
 - **Drop onto an existing node** → the loader code is merged into that node's existing code, under a `# Curio dataset loader: <title>` marker, and confirms with *"Applied `<title>` to this node."* If the node's code already ends in a `return`, the loader block is inserted before it and the return is rewritten.

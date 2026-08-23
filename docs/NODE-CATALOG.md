@@ -72,7 +72,7 @@ ai.urbanlab.uhvi/uhvi-load@1
 
 There are exactly two places you manage packages:
 
-- **The drawer** (inside the canvas): per-project. Open it from the **Node packages** dropdown in the left-edge Tools panel → **Browse Node Catalog +**. Adding and removing here affect *only* the open project's lockfile (plus the user-store copy when needed), which is why its buttons say per-dataflow.
+- **The drawer** (inside the canvas): per-project. Open it from the **Node Catalog** dropdown in the left-edge Tools panel → **Browse Node Catalog +**. Adding and removing here affect *only* the open project's lockfile (plus the user-store copy when needed), which is why its buttons say per-dataflow.
 - **The `/catalog` master page** (linked from **Catalog** on `/projects`): opens on the **Nodes** tab (`/catalog/nodes`). Adding there applies to every existing project of yours and auto-seeds into any new project, so the button reads **Add to all projects** rather than the drawer's **Add to dataflow**. There is no removal affordance; the workflows below explain why. The sibling **Data** tab (`/catalog/data`) is the Data Catalog, which manages datasets rather than nodes (see [DATA-CATALOG.md](DATA-CATALOG.md)).
 
 The drawer's two working tabs are **Browse** and **In dataflow**; an *update available* note appears on a row whose catalog copy carries a different `version`. Each row on **In dataflow** also has a **Reload** button (circular-arrows icon) that re-copies the package from the shared catalog over your installed copy. Use it when you are editing a package under `packages/` and want your changes to show up (see [Authoring nodes](AUTHORING-NODES.md)). It is offered for any package the catalog also carries, not only when the version differs, because editing source without bumping `version` is the normal authoring loop. The **Nodes** tab on `/catalog` uses a Data Catalog-style layout with status and category filters plus a preview drawer.
@@ -89,7 +89,7 @@ The drawer's two working tabs are **Browse** and **In dataflow**; an *update ava
 
 ### Workflows
 
-**I want to add a package to one project.** Open the project, click **Node packages → Browse Node Catalog +** to open the drawer, find the package, click **Add to dataflow**. The package's nodes appear in this project's palette only. Other projects you have are unaffected.
+**I want to add a package to one project.** Open the project, click **Node Catalog → Browse Node Catalog +** to open the drawer, find the package, click **Add to dataflow**. The package's nodes appear in this project's palette only. Other projects you have are unaffected.
 
 **I want a package available across all my projects (present and future).** Go to `/projects`, click **Catalog** in the top nav, find the package, click **Add to all projects**. Curio adds it to your per-user defaults list AND walks every existing project to patch its lockfile, so the package appears in every project's palette immediately. New projects you create from then on auto-include it too.
 
@@ -144,7 +144,7 @@ When you save **into an existing package**, the backend preserves the unedited t
 
 ### Editing package metadata
 
-Open the **Node packages** dropdown in the Tools panel, expand an installed package's accordion, and click the **pencil** button next to the export icon in the row's header. A modal lets you edit:
+Open the **Node Catalog** dropdown in the Tools panel, expand an installed package's accordion, and click the **pencil** button next to the export icon in the row's header. A modal lets you edit:
 
 - Name, description, publisher, license
 - Permissions (comma-separated, e.g. `filesystem.read, network.fetch`)
@@ -180,7 +180,7 @@ A package is portable: you can export it, send it, and the recipient can drop it
 
 ### Exporting
 
-Open the **Node packages** dropdown in the left Tools panel and click the **download** icon on your package's row ("Export package"). It saves the package as `<packageId>@<major>.curio.zip` (a deterministic ZIP). The export and metadata-edit buttons live on those rows, next to each other; the catalog drawer handles adding and removing rather than export.
+Open the **Node Catalog** dropdown in the left Tools panel and click the **download** icon on your package's row ("Export package"). It saves the package as `<packageId>@<major>.curio.zip` (a deterministic ZIP). The export and metadata-edit buttons live on those rows, next to each other; the catalog drawer handles adding and removing rather than export.
 
 The archive contains exactly what's on disk: `manifest.json`, `sources/`, `README.md`, `LICENSE`, and `scripts/` (so a custom-UI package's compiled `behaviors.js` travels with it and the recipient needs no build step). `integrity.json` is the one exception: it is **not** shipped, because the installer regenerates it on the recipient's machine.
 
@@ -190,7 +190,7 @@ Files sit at the **root of the zip**, not inside a `<packageId>@<major>/` wrappe
 
 To install someone else's archive:
 
-1. Open the catalog drawer (Tools panel → **Node packages** dropdown → **Browse Node Catalog +** in the footer).
+1. Open the catalog drawer (Tools panel → **Node Catalog** dropdown → **Browse Node Catalog +** in the footer).
 2. Click **Import package** in the footer.
 3. Pick the archive.
 

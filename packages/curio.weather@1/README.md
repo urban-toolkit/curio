@@ -41,7 +41,7 @@ Multi-input nodes read their edges positionally (`arg[0]`, `arg[1]`, …) using 
 ## Setup
 
 Install the package from the [Node Catalog](../../docs/NODE-CATALOG.md). The drawer
-inside the canvas (**Node packages → Browse Node Catalog +**) or the **Nodes** tab on
+inside the canvas (**Node Catalog → Browse Node Catalog +**) or the **Nodes** tab on
 `/catalog`. Curio installs the declared Python dependencies automatically:
 
 - `pythermalcomfort ^3.9`

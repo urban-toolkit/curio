@@ -88,7 +88,7 @@ Your package lands in your user store, not in the repo:
 ```
 
 Edit its metadata later (name, description, publisher, license, README) with
-the **pencil** button on the package's row in the **Node packages** dropdown.
+the **pencil** button on the package's row in the **Node Catalog** dropdown.
 
 Python dependencies are detected from your source: `import geopandas` in the
 node body puts `geopandas` in `manifest.dependencies.python`, and the catalog
@@ -104,7 +104,7 @@ python scripts/new_package.py me.roughness
 
 That writes a valid `packages/me.roughness@1/` with a manifest, a Python
 starter, a README, a LICENSE and an `integrity.json`. Install it from the canvas
-via **Node packages → Browse Node Catalog + → Browse → Add to dataflow**.
+via **Node Catalog → Browse Node Catalog + → Browse → Add to dataflow**.
 
 ---
 
@@ -134,8 +134,8 @@ cd utk_curio/frontend/urban-workflows
 npm run build:packages          # seconds, not the full app build
 
 # then, in the browser
-#   first time:  Node packages -> Browse Node Catalog + -> Browse -> Add to dataflow
-#   after that:  Node packages -> Browse Node Catalog + -> In dataflow -> Reload
+#   first time:  Node Catalog -> Browse Node Catalog + -> Browse -> Add to dataflow
+#   after that:  Node Catalog -> Browse Node Catalog + -> In dataflow -> Reload
 ```
 
 **That last step is the one people miss.** Curio serves your node's bundle from

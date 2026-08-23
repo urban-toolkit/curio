@@ -10,7 +10,7 @@ export interface InstallPermissionsDialogProps {
   onConfirm: () => void;
   /**
    * Label for the confirm button. Defaults to the per-dataflow wording used by
-   * the node catalog drawer; the /catalog/nodes page passes the all-projects
+   * the Node Catalog drawer; the /catalog/nodes page passes the all-projects
    * wording, since that surface writes the user's defaults rather than one
    * dataflow's lockfile.
    */

@@ -387,7 +387,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         <button
           type="button"
           className={styles.scrim}
-          aria-label="Close node catalog drawer"
+          aria-label="Close Node Catalog drawer"
           onClick={() => {
             if (!pinned) onRequestClose();
           }}

@@ -1,8 +1,8 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-    faChevronDown,
-    faChevronUp,
+    faChevronLeft,
+    faChevronRight,
     faCube,
 } from "@fortawesome/free-solid-svg-icons";
 import { packagesApi } from "../../../../api/packagesApi";
@@ -19,19 +19,22 @@ import { InstalledPackageAccordion } from "./InstalledPackageAccordion";
 import { PaletteForkFamily } from "./PaletteForkFamily";
 import { visiblePaletteTriggerPackagesCount, type PackagePaletteGroup } from "./model";
 import { paletteDescriptorBootstrapKey } from "./registryBootstrap";
-import {
-    isToolsPaletteDismissOutsideClick,
-    TOOLS_PALETTE_DROPDOWN_ATTR,
-} from "../toolsPaletteDismiss";
+import { TOOLS_PALETTE_DROPDOWN_ATTR, TOOLS_PALETTE_PANEL_ATTR } from "../toolsPaletteDismiss";
 import packageStyles from "./ToolsMenuPackagePalette.module.css";
 
 function escapeCssAttrToken(coord: string): string {
     return typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(coord) : coord;
 }
 
-export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ groups }: { groups: PackagePaletteGroup[] }) {
-    const [open, setOpen] = useState(false);
-    const rootRef = useRef<HTMLDivElement>(null);
+export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({
+    groups,
+    open,
+    setOpen,
+}: {
+    groups: PackagePaletteGroup[];
+    open: boolean;
+    setOpen: (open: boolean) => void;
+}) {
     const packagePaletteScrollRef = useRef<HTMLDivElement>(null);
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
     const { showToast } = useToastContext();
@@ -57,8 +60,6 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
         [groups],
     );
 
-    const close = useCallback(() => setOpen(false), []);
-
     const prevPaletteOpenRef = useRef(false);
     useEffect(() => {
         if (prevPaletteOpenRef.current && !open) {
@@ -66,7 +67,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
         }
         prevPaletteOpenRef.current = open;
     }, [open, setPaletteDockRevealCoord]);
-    const toggle = useCallback(() => setOpen((v) => !v), []);
+    const toggle = useCallback(() => setOpen(!open), [open, setOpen]);
 
     const packageRegistryBootstrapKey = useSyncExternalStore(
         subscribeToRegistry,
@@ -74,25 +75,9 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
         () => "ssr",
     );
 
-    useEffect(() => {
-        if (!open) return;
-        const onKey = (ev: KeyboardEvent) => {
-            if (ev.key === "Escape") close();
-        };
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, [open, close]);
-
-    useEffect(() => {
-        if (!open) return;
-        const onDocMouseDown = (ev: MouseEvent) => {
-            if (rootRef.current?.contains(ev.target as Node)) return;
-            if (!isToolsPaletteDismissOutsideClick(ev.target)) return;
-            close();
-        };
-        document.addEventListener("mousedown", onDocMouseDown, true);
-        return () => document.removeEventListener("mousedown", onDocMouseDown, true);
-    }, [open, close]);
+    // No Escape / outside-click dismissal on purpose: the palette stays open
+    // until its own trigger is clicked again (or the Data Catalog claims the
+    // strip beside the rail).
 
     useEffect(() => {
         if (!open) return;
@@ -127,7 +112,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
 
     useEffect(() => {
         if (paletteDockRevealCoord?.trim()) setOpen(true);
-    }, [paletteDockRevealCoord]);
+    }, [paletteDockRevealCoord, setOpen]);
 
     useEffect(() => {
         const coord = paletteDockRevealCoord?.trim();
@@ -206,7 +191,6 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
         <div
             id="packages-palette"
             className={packageStyles.packagePaletteRoot}
-            ref={rootRef}
             {...{ [TOOLS_PALETTE_DROPDOWN_ATTR]: "true" }}
         >
             <div className={packageStyles.packagePaletteColumn}>
@@ -218,17 +202,24 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                     aria-haspopup="true"
                     title={open ? "Close node package palette" : "Open node package palette"}
                 >
-                    <FontAwesomeIcon icon={faCube} className={packageStyles.packagePaletteTriggerIcon} />
-                    <span className={packageStyles.packagePaletteTriggerLabel}>Node packages</span>
-                    <span className={packageStyles.packagePaletteTriggerCount}>{totalPackagesDisplayed}</span>
-                    <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className={packageStyles.packagePaletteTriggerChevron} />
+                    <span className={packageStyles.packagePaletteTriggerTop}>
+                        <FontAwesomeIcon icon={faCube} className={packageStyles.packagePaletteTriggerIcon} />
+                        <span className={packageStyles.packagePaletteTriggerCount}>{totalPackagesDisplayed}</span>
+                        <FontAwesomeIcon
+                            icon={open ? faChevronLeft : faChevronRight}
+                            className={packageStyles.packagePaletteTriggerChevron}
+                        />
+                    </span>
+                    <span className={packageStyles.packagePaletteTriggerLabel}>Node Catalog</span>
                 </button>
-                {paletteRows.length === 0 ? (
-                    <p className={packageStyles.packagePaletteEmptyHint}>No packages yet</p>
-                ) : null}
             </div>
             {open && (
-                <div className={packageStyles.packagePalettePanel} role="region" aria-label="Package templates">
+                <div
+                    className={packageStyles.packagePalettePanel}
+                    role="region"
+                    aria-label="Package templates"
+                    {...{ [TOOLS_PALETTE_PANEL_ATTR]: "true" }}
+                >
                     <div className={packageStyles.packagePaletteToolbar}>
                         <div className={packageStyles.packagePalettePanelTitle}>NODE PACKAGES</div>
                     </div>
@@ -281,7 +272,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                             type="button"
                             className={packageStyles.packageGetPackagesBtn}
                             title="Browse and install node packages"
-                            aria-label="Browse Node Catalog — open node catalog drawer"
+                            aria-label="Browse Node Catalog — open Node Catalog drawer"
                             onClick={() => {
                                 openNodeCatalogDrawer();
                             }}

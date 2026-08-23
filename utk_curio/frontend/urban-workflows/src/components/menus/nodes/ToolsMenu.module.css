@@ -1,13 +1,18 @@
+/* Left rail: built-in nodes, then the two catalog triggers, then Run all.
+   Palette panels are absolutely positioned against this dock (see each
+   palette's `.panel`), so they open in the strip to its right without
+   stretching the rail. `width: max-content` keeps `left: 100%` on those
+   panels anchored to the rail's own width. */
 .paletteDock {
     position: fixed;
     z-index: 100;
     top: 150px;
     left: 50px;
     display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 10px;
-    /* Let clicks pass through flex gaps and areas not covered by visible controls. */
+    flex-direction: column;
+    align-items: stretch;
+    width: max-content;
+    /* Let clicks pass through areas not covered by visible controls. */
     pointer-events: none;
 }
 
@@ -15,6 +20,8 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
     pointer-events: none;
 }
 
@@ -88,7 +95,6 @@
   flex-direction: row;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
   width: 100%;
 }
 

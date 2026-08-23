@@ -1,8 +1,9 @@
+/* Trigger lives in the left rail (below the built-in nodes); the panel opens
+   into the strip to the right of the rail. */
 .root {
   display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
   flex-shrink: 0;
   pointer-events: none;
 }
@@ -15,18 +16,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
-  width: 56px;
+  gap: 4px;
   flex-shrink: 0;
-}
-
-.columnRow {
-  display: grid;
-  grid-template-rows: 1fr 1fr;
-  align-items: stretch;
-  padding-left: 66px;
-  gap: 6px;
-  width: 56px;
 }
 
 .trigger {
@@ -34,14 +25,23 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  min-width: 56px;
-  padding: 10px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 5px;
   background-color: #1e1f23;
   color: #fbfcf6;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.triggerTop {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .trigger:hover {
@@ -86,20 +86,16 @@
   background-color: rgba(251, 170, 105, 0.35);
 }
 
-.emptyHint {
-  margin: 0;
-  color: rgba(251, 252, 246, 0.68);
-  font-size: 8px;
-  font-weight: 500;
-  line-height: 1.25;
-  padding: 0 2px;
-  text-align: center;
-}
-
+/* Absolutely positioned against #tools-palette-dock (the only positioned
+   ancestor) so the panel opens beside the built-in rail without widening it. */
 .panel {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 10px;
   width: min(380px, calc(100vw - 120px));
   min-height: 0;
-  max-height: calc(100vh - 152px);
+  max-height: calc(100vh - 170px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -114,7 +110,7 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 34px;
   padding: 0 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -126,7 +122,7 @@
   font-weight: 700;
   letter-spacing: 0.8px;
   line-height: 1.2;
-  text-align: center;
+  text-align: left;
   text-transform: uppercase;
 }
 

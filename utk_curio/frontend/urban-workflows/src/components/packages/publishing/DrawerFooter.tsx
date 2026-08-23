@@ -7,7 +7,7 @@ export interface DrawerFooterProps {
   onSideload: (file: File) => void;
   /** Accepted file types. Pass ``null`` to accept any file. Defaults to ``.curio.zip`` archives. */
   accept?: string | null;
-  /** Button content. Defaults to the Node catalog's "Import package". */
+  /** Button content. Defaults to the Node Catalog's "Import package". */
   label?: React.ReactNode;
 }
 
