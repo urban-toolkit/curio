@@ -326,6 +326,65 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
     deleteSpy.mockRestore();
   });
 
+  it("reports a partial delete honestly and keeps the row (#173)", async () => {
+    // The backend verifies the rmtree actually emptied the directory and
+    // reports `deleted: false` with the survivors in `failedDirs` when a locked
+    // file keeps it alive. The row must stay visible and the toast must be an
+    // error: claiming success here strands a dataset the user thinks is gone.
+    const usageSpy = jest.spyOn(datasetCatalogApi, "datasetUsage").mockResolvedValue([]);
+    const deleteSpy = jest.spyOn(datasetCatalogApi, "deleteDataset").mockResolvedValue({
+      id: dataset.id,
+      deleted: false,
+      removedFrom: [],
+      failedDirs: ["computed.flow-1.n1@1"],
+    } as never);
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+    await act(async () => {
+      await result.current.onDelete(dataset as never);
+    });
+
+    expect(deleteSpy).toHaveBeenCalledWith(dataset.id);
+    const [message, level] = mockShowToast.mock.calls.at(-1)!;
+    expect(level).toBe("error");
+    expect(String(message)).toContain("Could not fully delete");
+    expect(String(message)).toContain(dataset.title);
+    // No success toast slipped out alongside it.
+    expect(mockShowToast).not.toHaveBeenCalledWith(
+      expect.stringContaining("Deleted "),
+      "success",
+    );
+
+    confirmSpy.mockRestore();
+    usageSpy.mockRestore();
+    deleteSpy.mockRestore();
+  });
+
+  it("still reloads the catalog after a partial delete", async () => {
+    // Refs were stripped even though the directory survived, so the listing is
+    // stale either way and must be refetched.
+    const usageSpy = jest.spyOn(datasetCatalogApi, "datasetUsage").mockResolvedValue([]);
+    const deleteSpy = jest.spyOn(datasetCatalogApi, "deleteDataset").mockResolvedValue({
+      id: dataset.id,
+      deleted: false,
+      removedFrom: [],
+      failedDirs: ["computed.flow-1.n1@1"],
+    } as never);
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+    await act(async () => {
+      await result.current.onDelete(dataset as never);
+    });
+
+    expect(mockCatalogReload).toHaveBeenCalledWith({ bustCache: true });
+
+    confirmSpy.mockRestore();
+    usageSpy.mockRestore();
+    deleteSpy.mockRestore();
+  });
+
   it("does not delete when the dialog is dismissed", async () => {
     const usageSpy = jest.spyOn(datasetCatalogApi, "datasetUsage").mockResolvedValue([]);
     const deleteSpy = jest.spyOn(datasetCatalogApi, "deleteDataset");

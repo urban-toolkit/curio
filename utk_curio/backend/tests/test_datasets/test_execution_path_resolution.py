@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from unittest.mock import MagicMock
 
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_headers
@@ -171,3 +172,82 @@ def test_resolve_execution_paths_service(app, client, user_and_token, tmp_path, 
         assert set(resolved) == {imported["id"]}
         assert Path(resolved[imported["id"]]).is_file()
         assert service.resolve_execution_paths([]) == {}
+
+
+def test_index_row_escaping_the_read_roots_is_refused(
+    app, client, user_and_token, tmp_path, monkeypatch
+):
+    """A dataset-index row whose ``data_file`` points outside the allowed read
+    roots must be refused outright, not resolved and not retried elsewhere.
+
+    ``data_file`` is copied from a manifest on disk and is never containment-
+    checked when the row is written, so the index fast path is the only thing
+    standing between a doctored manifest and an arbitrary file read at
+    execution time.
+    """
+    user, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    imported = _import_csv(client, token, filename="inside.csv")
+
+    # A real file that exists but sits outside every allowed root.
+    secret = tmp_path / "outside" / "secret.csv"
+    secret.parent.mkdir(parents=True, exist_ok=True)
+    secret.write_text("token\nhunter2\n", encoding="utf-8")
+
+    from utk_curio.backend.app.datasets.repositories import index as index_repo
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+    from utk_curio.backend.extensions import db
+
+    with app.app_context():
+        service = DatasetCatalogService(user)
+        user_key = service._listing._paths._user_key()
+
+        # Sanity: it resolves before we tamper with the row.
+        assert set(service.resolve_execution_paths([imported["id"]])) == {imported["id"]}
+
+        row = index_repo.get(user_key, imported["id"])
+        assert row is not None
+        # Point data_file at the outside file via traversal. The row stays
+        # otherwise valid, so only the containment guard can reject it.
+        from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+
+        here = dataset_dir(user_key, row.dir_name)
+        row.data_file = os.path.relpath(secret, here).replace(os.sep, "/")
+        db.session.commit()
+
+        # Reconciliation must not silently repair the row out from under us:
+        # the manifest is untouched, so mtime/size still match.
+        resolved = service.resolve_execution_paths([imported["id"]])
+
+    assert imported["id"] not in resolved, (
+        "a data_file escaping the allowed read roots must not be resolved"
+    )
+
+
+def test_resolution_uses_the_index_without_a_full_listing(
+    app, client, user_and_token, tmp_path, monkeypatch
+):
+    """An id the index already knows resolves without falling back to
+    ``list_catalog``, which is the entire point of the fast path."""
+    user, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    imported = _import_csv(client, token, filename="fast.csv")
+
+    from utk_curio.backend.app.datasets.application import listing as listing_mod
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    calls: list[dict] = []
+    original = listing_mod.CatalogListing.list_catalog
+
+    def spy(self, *args, **kwargs):
+        calls.append(kwargs)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(listing_mod.CatalogListing, "list_catalog", spy)
+
+    with app.app_context():
+        service = DatasetCatalogService(user)
+        resolved = service.resolve_execution_paths([imported["id"]])
+
+    assert set(resolved) == {imported["id"]}
+    assert calls == [], "index hit should not trigger a full catalog listing"
