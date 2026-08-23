@@ -8,11 +8,11 @@ Playwright-based end-to-end tests that upload workflow JSON files into the Curio
 ## Run
 
 ```bash
-# full suite (CURIO_TESTING=1 is exported by test.sh; set it explicitly if you invoke pytest directly)
-CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/
+# full suite
+pytest utk_curio/backend/tests/test_frontend/
 
 # headed (watch the browser; required for AUTK fixtures to actually render — see below)
-CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/ --headed
+pytest utk_curio/backend/tests/test_frontend/ --headed
 
 # use already-running servers (e.g. docker compose); the caller is responsible for
 # booting them with CURIO_TESTING=1 + DATABASE_URL pointing at the test DB
@@ -42,7 +42,7 @@ In other words: **every pytest invocation starts against an empty database**, an
 
 | Variable | Purpose |
 |---|---|
-| `CURIO_TESTING` | When `1`, backend uses test-only DB paths (set automatically by `test.sh`). |
+| `CURIO_TESTING` | When `1`, backend uses test-only DB paths. Exported by [`../conftest.py`](../conftest.py) at import time, so every pytest run under `tests/` already has it. |
 | `DATABASE_URL_TEST` | Override for the SQLAlchemy test DB URL (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |
 | `CURIO_TEST_WORKSPACE` | Persist the temp workspace at this path instead of `tempfile.mkdtemp` (useful for debugging). |
 
@@ -146,7 +146,7 @@ The suite has two configurations with mutually-exclusive UI surfaces:
 Tests that depend on either surface call `require_project_page()` / `require_no_project_mode()` from [`utils.py`](utils.py) (both consult the live backend's `/api/config/public` so the pytest process and the `curio start` subprocess never disagree). To exercise the no-project UI explicitly:
 
 ```bash
-CURIO_NO_PROJECT=1 CURIO_TESTING=1 pytest \
+CURIO_NO_PROJECT=1 pytest \
     utk_curio/backend/tests/test_frontend/test_no_project_menu.py \
     utk_curio/backend/tests/test_frontend/test_alive.py
 ```
@@ -163,6 +163,6 @@ CURIO_NO_PROJECT=1 CURIO_TESTING=1 pytest \
 | `CURIO_E2E_BACKEND_PORT` | Backend port for existing servers (default: `5002`) |
 | `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`) |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
-| `CURIO_TESTING` | Switches backend to test-only DB paths under `.curio/test/`. Required for any test that boots the real backend. |
+| `CURIO_TESTING` | Switches backend to test-only DB paths under `.curio/test/`. Exported by `../conftest.py`; only externally-booted servers need it passed in explicitly. |
 | `DATABASE_URL_TEST` | SQLAlchemy URL for the test DB (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |
 | `CURIO_TEST_WORKSPACE` | Persist the per-session test workspace here instead of a temp dir (debugging). |

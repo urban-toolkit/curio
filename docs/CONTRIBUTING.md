@@ -189,23 +189,29 @@ Before submitting a pull request, run the relevant test suites to confirm your c
 
 ### TL;DR
 
-A single script starts all Curio services, runs unit tests and Playwright E2E tests, then shuts everything down:
+One command starts all Curio services, runs unit tests and Playwright E2E tests, then shuts everything down:
 
 ```bash
-./scripts/test.sh
+python curio.py test
 ```
 
 Common shortcuts:
 
 ```bash
-# containers already running, unit tests only
-./scripts/test.sh --use-existing --unit-only
+# servers already running, unit tests only (backend + sandbox + jest)
+python curio.py test unit --use-existing
+
+# one suite: all | unit | backend | sandbox | jest | e2e
+python curio.py test backend
 
 # watch the browser, specific workflows only
-./scripts/test.sh --use-existing --e2e-only --headed --workflows Vega.json,Regression.json
+python curio.py test e2e --use-existing --headed --workflows Vega.json,Regression.json
 ```
 
-See `./scripts/test.sh --help` for all options, or read the sections below for more detail.
+See `python curio.py test --help` for all options, or read the sections below for
+more detail. The command is a front end for `./scripts/test.sh`, which CI calls
+directly and which still accepts its own flags (`--unit-only`, `--e2e-only`, ...)
+if you prefer to run it yourself.
 
 ### One-Time Setup
 

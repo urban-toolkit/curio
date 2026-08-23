@@ -795,6 +795,103 @@ def install_manifest_dependencies() -> None:
         sys.exit(1)
 
 
+TEST_SUITES = ["all", "unit", "backend", "sandbox", "jest", "e2e"]
+
+
+def _parse_test_args(argv, command_prefix="curio"):
+    """Parse ``curio test``'s own flags, which have nothing in common with
+    ``start``/``setup``'s (hence its own parser rather than more options on
+    the main one)."""
+    parser = argparse.ArgumentParser(
+        prog=f"{command_prefix} test",
+        description="Run Curio's test suite. Delegates to scripts/test.sh.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=f"""
+    Examples:
+        {command_prefix} test                       # clean, boot servers, run every suite
+        {command_prefix} test unit                  # backend + sandbox + jest, no E2E
+        {command_prefix} test backend               # one suite on its own
+        {command_prefix} test e2e --use-existing    # E2E against servers already running
+        {command_prefix} test e2e --headed --workflows Vega.json,Regression.json
+    """,
+    )
+    parser.add_argument(
+        "suite", nargs="?", default="all", choices=TEST_SUITES,
+        help=(
+            "all (default) | unit = backend + sandbox + jest | "
+            "backend | sandbox | jest | e2e = that suite alone"
+        ),
+    )
+    parser.add_argument(
+        "--use-existing", "-e", action="store_true",
+        help="Test the servers already running; skip clean, npm install and start",
+    )
+    parser.add_argument(
+        "--headed", action="store_true",
+        help="Open a visible browser window during E2E tests",
+    )
+    parser.add_argument(
+        "--workflows", default=None, metavar="A.json,B.json",
+        help="Run only the named E2E workflow files",
+    )
+    parser.add_argument(
+        "--allure-dir", default=None, metavar="DIR",
+        help="Write the E2E run's Allure results to DIR",
+    )
+    return parser.parse_args(argv)
+
+
+def _test_script_flags(args) -> list[str]:
+    """Translate parsed ``curio test`` args into ``scripts/test.sh`` flags."""
+    flags = []
+    if args.suite != "all":
+        flags.append(f"--{args.suite}-only")
+    if args.use_existing:
+        flags.append("--use-existing")
+    if args.headed:
+        flags.append("--headed")
+    if args.workflows:
+        flags += ["--workflows", args.workflows]
+    if args.allure_dir:
+        flags += ["--allure-dir", args.allure_dir]
+    return flags
+
+
+def run_tests(argv, command_prefix="curio") -> None:
+    """Run the test suite and exit with its status.
+
+    ``scripts/test.sh`` stays the single source of truth for how each
+    suite is booted, and is what CI calls directly. This is a
+    discoverable front door onto it (``curio test --help`` lists the
+    suites) so the flag spellings do not have to be memorised.
+    Never returns.
+    """
+    args = _parse_test_args(argv, command_prefix)
+
+    script = Path(__file__).resolve().parent.parent / "scripts" / "test.sh"
+    if not script.is_file():
+        # Only shipped in a source checkout, not in the pip wheel.
+        print(
+            f"[ERROR] {script} not found. 'test' needs a git checkout of Curio.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    bash = shutil.which("bash")
+    if bash is None:
+        print(
+            "[ERROR] scripts/test.sh needs 'bash' on PATH "
+            "(on Windows, run from Git Bash).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    cmd = [bash, str(script), *_test_script_flags(args)]
+    print(f"==> {' '.join(cmd)}")
+    # Not log_info: setup_logging() has not run, and clean.sh wipes .curio/.
+    sys.exit(subprocess.call(cmd, cwd=str(script.parent.parent)))
+
+
 def main():
 
     global processes
@@ -806,6 +903,10 @@ def main():
 
     command_prefix = get_command_prefix()
 
+    # 'test' has its own flag set; keep it out of the start/setup parser.
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        run_tests(sys.argv[2:], command_prefix)
+
     parser = argparse.ArgumentParser(
         description="Curio's multi-server management tool.",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -814,6 +915,7 @@ def main():
         {command_prefix} start                       # Start all servers (backend, sandbox, frontend)
         {command_prefix} start backend               # Start only the backend (localhost:5002)
         {command_prefix} start sandbox               # Start only the sandbox (localhost:2000)
+        {command_prefix} test                        # Run the test suite ('test --help' for suites)
         {command_prefix} --verbose                   # Verbosity level (e.g., 0=silent, 1=normal, 2=debug)
         {command_prefix} --force-rebuild             # Re-build the frontend (if dev mode)
         {command_prefix} --force-db-init             # Re-initialize the backend database (if dev mode)
@@ -823,12 +925,13 @@ def main():
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["start", "setup"],
+        choices=["start", "setup", "test"],
         help=(
             "Command to execute "
-            "(start: launch the servers — automatically runs setup first; "
+            "(start: launch the servers, automatically running setup first; "
             "setup: install framework + manifest python deps for this "
-            "interpreter and exit, no servers)"
+            "interpreter and exit, no servers; "
+            "test: run the test suite, see 'test --help')"
         ),
     )
     parser.add_argument(
@@ -969,19 +1072,6 @@ def main():
     else:
         args.force_rebuild = False
         args.force_db_init = False
-
-    if args.command == "test":
-        if args.server == "frontend":
-            run_frontend_tests()
-        else:
-            log_error(f"No tests available for '{args.server}'. Available: frontend")
-            sys.exit(1)
-
-    if args.command == "coverage":
-        if args.server not in ("all", "backend"):
-            log_error("coverage only runs backend tests; use: curio coverage  or  curio coverage backend")
-            sys.exit(1)
-        run_backend_coverage()
 
     if args.command == "setup":
         install_framework_requirements()

@@ -18,7 +18,7 @@
 - [ ] Sandbox
 
 # Testing
- - [ ] Executed `./scripts/test.sh` and it passed all tests.
+ - [ ] Executed `python curio.py test` and it passed all tests.
 
 # Screenshots (if relevant)
 
