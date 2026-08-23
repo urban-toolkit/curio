@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import io
+import json
 import zipfile
+from datetime import datetime
 
 import pytest
 
@@ -240,3 +242,109 @@ def test_publish_packageage_archive_to_catalog_dir(tmp_path):
     replaced = publish_packageage_archive_to_catalog_dir(archive2, root, replace=True)
     assert replaced.replaced_existing is True
     assert replaced.manifest.version == "2.0.0"
+
+
+# ---------------------------------------------------------------------------
+# Builder details the existing tests skip
+# ---------------------------------------------------------------------------
+
+def test_build_omits_integrity_json(tmp_curio):
+    """Hashes describe files as installed, so no archive ever carries them."""
+    result = build_packageage_archive(_draft())
+    with zipfile.ZipFile(io.BytesIO(result.archive)) as zf:
+        assert "integrity.json" not in set(zf.namelist())
+
+
+def test_build_stamps_created_at_when_the_draft_omits_it(tmp_curio):
+    """``_draft()`` pins ``createdAt``, so the stamping branch is otherwise dead.
+
+    A Save-As draft never carries one (``makeDraft`` leaves it unset), which
+    makes this the branch every real Save-As actually takes.
+    """
+    draft = _draft()
+    del draft["manifest"]["createdAt"]
+    result = build_packageage_archive(draft)
+
+    with zipfile.ZipFile(io.BytesIO(result.archive)) as zf:
+        manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+    stamped = manifest["createdAt"]
+    # ISO-8601 UTC, parseable — the format the manifest loader expects.
+    assert stamped.endswith("Z")
+    datetime.strptime(stamped, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_build_leaves_a_pinned_created_at_alone(tmp_curio):
+    result = build_packageage_archive(_draft())
+    with zipfile.ZipFile(io.BytesIO(result.archive)) as zf:
+        manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+    assert manifest["createdAt"] == "2000-01-01T00:00:00Z"
+
+
+def test_build_accepts_license_text_camel_case_alias(tmp_curio):
+    """The frontend sends ``licenseText``; the docstring documents ``license_text``."""
+    draft = _draft()
+    draft["licenseText"] = "MIT-ish, camelCase key"
+    result = build_packageage_archive(draft)
+    with zipfile.ZipFile(io.BytesIO(result.archive)) as zf:
+        assert zf.read("LICENSE").decode("utf-8") == "MIT-ish, camelCase key"
+
+
+def test_build_auto_detects_js_dependencies_from_source(tmp_curio):
+    """The JS half of the dependency scanner, reached through the builder.
+
+    Only the Python scanner was covered here, though a Save-As draft of a JS
+    node goes through this path.
+    """
+    draft = _draft()
+    draft["manifest"]["templates"][0]["engine"] = "javascript"
+    draft["manifest"]["templates"][0]["source"] = "sources/demo-kind.js"
+    draft["sources"] = {
+        "demo-kind": {
+            "filename": "demo-kind.js",
+            "code": """
+import cloneDeep from 'lodash/fp';
+import { render } from '@scope/widget';
+import fs from 'node:fs';
+export default function run() { return cloneDeep({}); }
+""",
+        }
+    }
+
+    result = build_packageage_archive(draft)
+    js = result.manifest.js_deps
+    # Subpath collapsed to the package, scope retained, node: builtin dropped.
+    assert js.get("lodash") == "*", js
+    assert js.get("@scope/widget") == "*", js
+    assert "node:fs" not in js and "fs" not in js, js
+
+
+def test_preserve_unedited_sources_ignores_a_real_edit(tmp_curio, make_archive):
+    """Only placeholder/empty bodies are substituted — a real edit always wins."""
+    install_draft = _draft()
+    install_draft["sources"] = {
+        "demo-kind": {"filename": "demo-kind.py", "code": "ON_DISK = 1"}
+    }
+    built = build_packageage_archive(install_draft)
+    install_packageage_from_archive("guest", built.archive)
+    installed_dir = package_dir("guest", "ai.test.demo@1")
+
+    edited = _draft()
+    edited["sources"] = {
+        "demo-kind": {"filename": "demo-kind.py", "code": "EDITED = 1"}
+    }
+    merged = preserve_unedited_sources(edited, installed_dir)
+    assert merged["sources"]["demo-kind"]["code"] == "EDITED = 1"
+
+
+def test_preserve_unedited_sources_returns_draft_when_sources_dir_missing(
+    tmp_curio, tmp_path
+):
+    """Guard branches: no ``sources`` key, and an existing dir without ``sources/``."""
+    draft = _draft()
+    no_sources = {k: v for k, v in draft.items() if k != "sources"}
+    assert preserve_unedited_sources(no_sources, tmp_path) is no_sources
+
+    empty_pkg = tmp_path / "pkg"
+    empty_pkg.mkdir()
+    assert preserve_unedited_sources(draft, empty_pkg) is draft
+
