@@ -29,9 +29,9 @@ HOW
     python scripts/new_package.py me.heatmap --with-ui
     python scripts/new_package.py me.thing --major 2 --template-id my-thing
 
-The package lands in ``packages/<id>@<major>/``. Install it from the canvas via
-**Node Catalog → Browse Node Catalog + → Browse**, then use **Reload** on the
-**Installed** tab to pick up later edits.
+The package lands in ``packages/<id>@<major>/``. Add it from the canvas via
+**Node Catalog → Browse Node Catalog + → Browse → Add to dataflow**, then use
+**Reload** on the **In dataflow** tab to pick up later edits.
 """
 
 from __future__ import annotations
@@ -415,7 +415,7 @@ def _readme(*, label: str, package_id: str, major: int, with_ui: bool) -> str:
         "npm run build:packages\n"
         "```\n\n"
         "Then click **Reload** on this package in the catalog drawer's "
-        "**Installed** tab.\n"
+        "**In dataflow** tab.\n"
         if with_ui
         else ""
     )
@@ -605,12 +605,12 @@ def main(argv: list[str] | None = None) -> int:
         step += 1
     print(
         f"  {step}. Start Curio, open a dataflow, then Node Catalog ->"
-        " Browse Node Catalog + -> Browse -> Install."
+        " Browse Node Catalog + -> Browse -> Add to dataflow."
     )
     step += 1
     print(
         f"  {step}. After every later edit: re-run the build (if any), then click"
-        " Reload on the package in the drawer's Installed tab."
+        " Reload on the package in the drawer's In dataflow tab."
     )
     print()
     print("Docs: docs/AUTHORING-NODES.md")

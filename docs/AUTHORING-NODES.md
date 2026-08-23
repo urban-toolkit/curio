@@ -289,7 +289,7 @@ All of these are real, and none of them produce an obvious error message.
 ## Submitting your package
 
 Export it as a single file. In the left **Tools panel**, open the **Node
-packages** dropdown (cube icon), find your package's row, and click the
+Catalog** dropdown (cube icon), find your package's row, and click the
 **download** icon ("Export package"). You get `<packageId>@<major>.curio.zip`.
 
 The export button is on that dropdown's package rows, not in the Node Catalog

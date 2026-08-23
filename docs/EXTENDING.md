@@ -451,7 +451,7 @@ The smallest possible package adds one template plus its behavior hook. Use this
    ```
    Then `npm run build:packages` compiles `sources/index.tsx` into `<package-dir>/scripts/behaviors.js` as UMD output, externalizing React / ReactDOM / ReactFlow so the bundle shares Curio's instances at runtime (essential for rules-of-hooks). That target takes a couple of seconds and is all you need for a package-only change; `npm run build` chains it after the much slower full app build.
 
-   Rebuilding the bundle is only half of it: the frontend loads `behaviorScript` from your **installed** copy in the user store, so after every rebuild click **Reload** on the package in the catalog drawer's **Installed** tab. See [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md) for the whole loop.
+   Rebuilding the bundle is only half of it: the frontend loads `behaviorScript` from your **installed** copy in the user store, so after every rebuild click **Reload** on the package in the catalog drawer's **In dataflow** tab. See [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md) for the whole loop.
 
    **Packages built outside this repo** ship their own pre-built `scripts/behaviors.js` and need no row in this file, since Curio loads any `behaviorScript` it finds in an installed package regardless of who built it. There is no separate toolchain for that case: the practical route is to author inside a Curio checkout (where `registry/types` resolves and this build config exists), then distribute the resulting `.curio.zip`.
 
