@@ -7,6 +7,11 @@ import tempfile
 import pytest
 import subprocess
 from signal import SIGINT
+
+try:  # POSIX only; the Windows branch of _terminate_process_tree never uses it.
+    from signal import SIGKILL
+except ImportError:  # pragma: no cover - Windows
+    SIGKILL = SIGINT
 from playwright.sync_api import Page
 from .utils import (
     FrontendPage,
@@ -39,6 +44,57 @@ _SQLA_MUTABLE_TABLES = (
     "user_session",
     "user",
 )
+
+
+def _terminate_process_tree(process: "subprocess.Popen", *, timeout: float = 10.0) -> None:
+    """Kill *process* and every descendant it spawned.
+
+    ``curio.py start`` is only a supervisor: it spawns ``backend.server``,
+    ``sandbox.server`` and an ``npm``->``cmd``->``webpack`` chain as separate
+    processes. Terminating the supervisor alone orphans all of them, and on
+    Windows ``Popen.terminate()`` is ``TerminateProcess``, so the supervisor's
+    own cleanup never runs either. The orphaned backend and sandbox keep the
+    test SQLite file open, which makes the *next* run die at conftest import
+    with ``PermissionError: [WinError 32]`` before collecting a single test.
+
+    Order matters: the tree is walked via parent-PID links, so the root has to
+    still be alive when we ask. Kill the tree first, then reap the root.
+    """
+    if process.poll() is not None:
+        return
+
+    if sys.platform == "win32":
+        # /T = tree, /F = force. Returns 128 when the pid is already gone,
+        # which is fine — we only care that nothing survives.
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    else:
+        # The child was started with start_new_session=True, so it leads its
+        # own process group and one signal reaches every descendant.
+        try:
+            os.killpg(os.getpgid(process.pid), SIGINT)
+            process.wait(timeout=timeout / 2)
+        except (ProcessLookupError, PermissionError):
+            pass
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(process.pid), SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+    # Reap the root itself so it doesn't linger as a zombie.
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
 
 
 def _free_port(port: int, *, raise_on_failure: bool, total_timeout: float = 10.0) -> None:
@@ -195,6 +251,13 @@ def curio_servers(session_app, request):
     # Discard child stdout/stderr: PIPE deadlocks the subprocess once the
     # buffer fills, and a file in the repo trips webpack-dev-server's
     # watcher. Full output is in $CURIO_LAUNCH_CWD/.curio/messages.log.
+    # Own process group / session so teardown can take down the whole server
+    # tree in one shot (see _terminate_process_tree).
+    if sys.platform == "win32":
+        spawn_kwargs = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    else:
+        spawn_kwargs = {"start_new_session": True}
+
     process = subprocess.Popen(
         [
             "python", "curio.py", "start",
@@ -206,6 +269,7 @@ def curio_servers(session_app, request):
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
+        **spawn_kwargs,
     )
 
     # Cold-start budget: backend/sandbox imports + webpack compile can easily
@@ -220,17 +284,22 @@ def curio_servers(session_app, request):
     wait_for_http_ready(f"http://{host}:{sandbox_port}", timeout=15.0)
 
     def shutdown():
-
+        # Let any in-flight request finish before pulling the rug out.
         time.sleep(2)
-        if sys.platform != "win32":
-            process.send_signal(SIGINT)
-        process.terminate()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
+        _terminate_process_tree(process)
+        # Backstop only: the tree kill should already have released these. A
+        # port still held here means something escaped the tree (e.g. a
+        # detached webpack respawn), so sweep it rather than leave the next
+        # run to fail at wait_for_port.
         for port in (backend_port, sandbox_port, frontend_port):
             _free_port(port, raise_on_failure=False)
+        for port in (backend_port, sandbox_port, frontend_port):
+            if is_port_in_use(port):
+                debug_log(
+                    "fixtures.py:curio_servers.shutdown",
+                    "port still in use after teardown",
+                    {"port": port},
+                )
 
     request.addfinalizer(shutdown)
     yield {

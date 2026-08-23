@@ -108,8 +108,30 @@ wait_for_port() {
 cleanup() {
   if [[ -n "$CURIO_PID" ]]; then
     echo ""
-    echo "==> Stopping Curio (pid $CURIO_PID)..."
-    kill "$CURIO_PID" 2>/dev/null || true
+    echo "==> Stopping Curio (pid $CURIO_PID) and its server tree..."
+    # 'curio.py start' only supervises: backend.server, sandbox.server and the
+    # npm -> webpack chain are separate processes. Killing the supervisor alone
+    # orphans all of them, and they keep holding :5002/:2000/:8080 — so the next
+    # run either fails to bind or, worse, silently tests the stale servers left
+    # listening from this one.
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*)
+        # /T walks parent-PID links, so the supervisor has to still be alive
+        # when we ask — kill the tree first, never the root first.
+        # MSYS2_ARG_CONV_EXCL stops MSYS rewriting the flags as paths, so the
+        # switches are passed with single slashes. Do NOT also double them:
+        # with conversion disabled '//PID' reaches taskkill verbatim and errors.
+        MSYS2_ARG_CONV_EXCL='*' taskkill /PID "$CURIO_PID" /T /F >/dev/null 2>&1 || true
+        ;;
+      *)
+        # Launched under 'set -m', so the job leads its own process group and a
+        # negative pid signals every descendant. Fall back to the bare pid if
+        # the group is already gone.
+        kill -TERM "-$CURIO_PID" 2>/dev/null || kill -TERM "$CURIO_PID" 2>/dev/null || true
+        sleep 2
+        kill -KILL "-$CURIO_PID" 2>/dev/null || true
+        ;;
+    esac
     wait "$CURIO_PID" 2>/dev/null || true
   fi
 
@@ -170,9 +192,15 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # source) rather than the prebuilt static dist/, so the E2E suite always
   # tests the current frontend — matching how the e2e curio_servers fixture
   # boots. Without it a stale dist/ hides in-tree frontend changes.
+  # Job control on for the launch only: it puts the background job in its own
+  # process group so cleanup() can signal the whole server tree by negative pid
+  # on POSIX. Without it the job shares this script's group and a group-kill
+  # would take the script down with it.
+  set -m
   CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_LAUNCH_CWD="$REPO_ROOT" \
     python "$REPO_ROOT/curio.py" start --with-examples &
   CURIO_PID=$!
+  set +m
 
   wait_for_port "backend"  5002
   wait_for_port "sandbox"  2000
