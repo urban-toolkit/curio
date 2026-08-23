@@ -35,29 +35,74 @@ def _collect_import_names(tree):
 
 
 def _collect_defined(tree):
-    """Names assigned at module scope (excludes function/class bodies)."""
+    """Names assigned at module scope (excludes function/class bodies).
+
+    A name only counts as 'defined' if the FIRST time it appears in this
+    cell (in source order) is a write. If a name is read before it's
+    (re)assigned in the same cell -- including being read on the RHS of
+    the very assignment that rebinds it -- it's a dependency on an
+    incoming value, not a fresh definition, and is excluded here.
+    """
     defined = set()
+    loaded = set()  # names already seen as a Load, in source order, this cell only
+
+    def note_loads(node):
+        """Record Name-Load references anywhere under node."""
+        for child in ast.walk(node):
+            if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
+                loaded.add(child.id)
+
+    def add_targets_if_fresh(target_node):
+        names = set()
+        _collect_assign_target(target_node, names)
+        for name in names:
+            if name not in loaded:
+                defined.add(name)
+            # else: name was read before this store -> dependency, not a fresh define
+
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.Assign):
+            note_loads(node.value)
             for t in node.targets:
-                _collect_assign_target(t, defined)
-        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
-            _collect_assign_target(node.target, defined)
+                note_loads(t)              # catches e.g. df["x"] = ... (df is Load'd here)
+                add_targets_if_fresh(t)
+        elif isinstance(node, ast.AugAssign):
+            note_loads(node.value)
+            note_loads(node.target)        # x += 1 always reads x first
+            add_targets_if_fresh(node.target)
+        elif isinstance(node, ast.AnnAssign):
+            if node.value is not None:
+                note_loads(node.value)
+            note_loads(node.target)
+            add_targets_if_fresh(node.target)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            defined.add(node.name)
+            if node.name not in loaded:
+                defined.add(node.name)
+            note_loads(node)               # free-variable reads inside body still count
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                defined.add(alias.asname or alias.name.split('.')[0])
+                name = alias.asname or alias.name.split('.')[0]
+                if name not in loaded:
+                    defined.add(name)
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
                 if alias.name != '*':
-                    defined.add(alias.asname or alias.name)
+                    name = alias.asname or alias.name
+                    if name not in loaded:
+                        defined.add(name)
         elif isinstance(node, (ast.For, ast.AsyncFor)):
-            _collect_assign_target(node.target, defined)
+            note_loads(node.iter)
+            add_targets_if_fresh(node.target)
+            for stmt in node.body:
+                note_loads(stmt)
         elif isinstance(node, (ast.With, ast.AsyncWith)):
             for item in node.items:
+                note_loads(item.context_expr)
                 if item.optional_vars:
-                    _collect_assign_target(item.optional_vars, defined)
+                    add_targets_if_fresh(item.optional_vars)
+        else:
+            note_loads(node)               # bare expression statements etc.
+
     return defined
 
 
@@ -82,7 +127,7 @@ def _last_assigned_var(tree):
 
 class _UsedNamesVisitor(ast.NodeVisitor):
     """Collects Name(Load) references, skipping into function/class bodies."""
-
+    
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
             self.used.add(node.id)
@@ -131,7 +176,7 @@ def _try_altair_to_spec(code, last_var, external_vars=()):
     or None if the conversion fails.
 
     A mock DataFrame built from field names mentioned in the code is used as
-    data so Altair can infer column types for shorthand fields.  The 'data' and
+    data so Altair can infer column types for shorthand fields. The 'data' and
     'datasets' keys are stripped from the result so the VIS_VEGA node receives
     real data from its upstream Curio connection at runtime.
     """
@@ -152,30 +197,49 @@ def _try_altair_to_spec(code, last_var, external_vars=()):
         chart = ns.get(last_var)
         if chart is None or not hasattr(chart, 'to_dict'):
             return None
-
+        
         spec = chart.to_dict(validate=False)
-        spec.pop('data', None)
+
+        def _clean_spec_data(node):
+            if isinstance(node, dict):
+                # Check if this node has a 'data' key pointing to an auto-generated dataset
+                if 'data' in node:
+                    data_val = node['data']
+                    # Altair auto-generated data typically looks like {"name": "data-..."}
+                    if isinstance(data_val, dict) and str(data_val.get('name', '')).startswith('data'):
+                        node.pop('data', None)
+                    elif isinstance(data_val, str) and data_val.startswith('data'):
+                        node.pop('data', None)
+                
+                # Recursively check all dictionary values (handling layers, concat, facet, repeat, etc.)
+                for key, value in list(node.items()):
+                    _clean_spec_data(value)
+            elif isinstance(node, list):
+                for item in node:
+                    _clean_spec_data(item)
+
+        _clean_spec_data(spec)
         spec.pop('datasets', None)
         return spec
     except Exception:
         return None
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
-
-def analyze_cells(cells: list[str]) -> dict:
-    """
-    Analyse a list of notebook cell source strings.
-
-    Returns a dict with:
-      - 'analysis': per-cell dicts with 'defined', 'used', 'last_var',
-                    and 'altair_spec' (Vega-Lite spec or null).
-      - 'edges': list of {source, target} cell-index pairs representing
-                 data-flow dependencies.
-    """
+# ── Improved Public API ───────────────────────────────────────────────────────
+def analyze_cells(raw_cells: list[str]) -> dict:
     analysis = []
     import_names_per_cell = []
 
+    # ── Cleaning the data of any comments─────────────────────────────────
+    
+    # Naive regex approach to stripping "FULL LINE" comments
+    # Trailing inline comments are left unhandled. The regex
+    # required may generate syntactical mistakes in the code.
+    cells:list[str] = []
+    for code in raw_cells:
+        cells.append(re.sub(r'(?m)^\s*#.*\n?', '', code))
+
+    # ── Pass 1: Static analysis───────────────────────────────────────────
     for code in cells:
         try:
             tree = ast.parse(code)
@@ -207,20 +271,20 @@ def analyze_cells(cells: list[str]) -> dict:
         })
         import_names_per_cell.append(import_names)
 
-    # Build dependency edges.
-    # Only non-import names are tracked as producers so library aliases (pd, alt, np)
-    # don't create spurious edges between an import cell and every cell that uses the library.
+    # ── Pass 2: Dependency edges──────────────────────────────────────────
     producer: dict[str, int] = {}
     edges: list[dict] = []
-    seen: set[tuple] = set()
+    edge_index: dict[tuple, int] = {}  # (source, target) -> index into edges list
 
     for i, cell in enumerate(analysis):
-        for name in cell['used']:
-            if name in producer:
+        for name in sorted(cell['used'], key=lambda n: producer.get(n, -1)):
+            if name in producer and name not in cell['defined']:
                 key = (producer[name], i)
-                if key not in seen:
-                    seen.add(key)
-                    edges.append({'source': producer[name], 'target': i})
+                if key not in edge_index:
+                    edge_index[key] = len(edges)
+                    edges.append({'source': producer[name], 'target': i, 'parent_var': name})
+                else:
+                    edges[edge_index[key]]['parent_var'] += f", {name}"
         import_names = import_names_per_cell[i]
         for name in cell['defined']:
             if name not in import_names:

@@ -38,3 +38,8 @@ allure-pytest==2.16.0
 # Code quality
 # ------------------------------------------------------------------------------
 black==26.3.1
+
+# Notebook import tooling (extracts requirements.txt from imported .ipynb
+# files via /api/extractRequirements)
+# ------------------------------------------------------------------------------
+pipreqs==0.5.0
