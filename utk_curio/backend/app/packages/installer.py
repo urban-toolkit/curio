@@ -98,6 +98,12 @@ def _purge_stale_staging(user_key: str, keep: "Path | None" = None) -> None:
         for entry in staging_base.iterdir():
             if not entry.is_dir():
                 continue
+            if not entry.name.startswith(_STAGING_PREFIX):
+                # Only sweep what this module created. A concurrent install's
+                # validate copy also lives here (see
+                # load_packageage_manifest_from_dir) and deleting it mid-copy is
+                # exactly the race this guard exists to prevent.
+                continue
             if keep_resolved is not None and entry.resolve() == keep_resolved:
                 continue
             try:
@@ -600,7 +606,16 @@ def load_packageage_manifest_from_dir(package_root: Path) -> PackageManifest:
             f"manifest yields malformed package dir name {expected!r}"
         )
 
-    side_parent = Path(tempfile.mkdtemp(prefix=".validate-"))
+    # Sibling of the tree being validated, not the system temp dir. Same
+    # filesystem (so the copy is local and cheap), and out of reach of the
+    # OS temp cleaners and scanners that were intermittently deleting
+    # ``%TEMP%/.validate-*`` mid-copy — surfacing as a shutil.Error with
+    # ``WinError 3`` on every destination path at once. The ".validate-" prefix
+    # is deliberately not ``_STAGING_PREFIX``, so ``_purge_stale_staging``
+    # leaves it alone.
+    side_parent = Path(
+        tempfile.mkdtemp(prefix=".validate-", dir=str(package_root.parent))
+    )
     try:
         validate_root = side_parent / expected
         shutil.copytree(package_root, validate_root)

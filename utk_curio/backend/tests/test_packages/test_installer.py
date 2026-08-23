@@ -447,3 +447,59 @@ def test_purge_stale_staging_sweeps_everything_when_nothing_is_kept(tmp_curio):
 
     assert list(base.iterdir()) == []
 
+
+def test_purge_stale_staging_only_sweeps_its_own_prefix(tmp_curio):
+    """The sweep must not touch directories this module did not create.
+
+    A concurrent install's manifest-validation copy lives in the same parent
+    (``load_packageage_manifest_from_dir`` stages it there to stay on one
+    filesystem). Deleting it mid-copy surfaces as a shutil.Error with WinError 3
+    on every destination path at once, from a request that looks unrelated.
+    """
+    from utk_curio.backend.app.packages.installer import _purge_stale_staging
+    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+
+    base = user_packageage_staging_dir("guest")
+    base.mkdir(parents=True, exist_ok=True)
+    ours = base / "stage-orphaned"
+    theirs = base / ".validate-inflight"
+    for d in (ours, theirs):
+        d.mkdir(parents=True)
+        (d / "manifest.json").write_text("{}", encoding="utf-8")
+
+    _purge_stale_staging("guest")
+
+    assert not ours.exists(), "a stale stage- dir should still be swept"
+    assert (theirs / "manifest.json").is_file(), (
+        "a concurrent validate copy must survive the sweep"
+    )
+
+
+def test_validate_copy_lands_beside_the_tree_it_validates(tmp_curio, make_archive):
+    """The validate copy stays on the same filesystem, not in the system temp dir.
+
+    Asserted by observing where it appears during the load: the system temp dir
+    is exposed to OS cleaners and scanners, which was deleting it mid-copy.
+    """
+    import tempfile
+    from utk_curio.backend.app.packages import installer as inst
+
+    seen: list[str] = []
+    real_mkdtemp = tempfile.mkdtemp
+
+    def spy(*args, **kwargs):
+        path = real_mkdtemp(*args, **kwargs)
+        if str(kwargs.get("prefix", "")).startswith(".validate-"):
+            seen.append(str(kwargs.get("dir")))
+        return path
+
+    original = inst.tempfile.mkdtemp
+    inst.tempfile.mkdtemp = spy
+    try:
+        install_packageage_from_archive("guest", make_archive())
+    finally:
+        inst.tempfile.mkdtemp = original
+
+    assert seen, "the validate copy should declare an explicit parent dir"
+    assert all(d and "package-staging" in d for d in seen), seen
+

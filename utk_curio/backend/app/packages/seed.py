@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import threading
 from pathlib import Path
 
 from utk_curio.backend.app.packages import seed_state
@@ -130,6 +131,33 @@ def _max_mtime(root: Path) -> float:
     return newest
 
 
+# ---------------------------------------------------------------------------
+# Per-user seeding lock
+# ---------------------------------------------------------------------------
+#
+# ``curio.builtin@*`` is force-reseeded on EVERY call (see the ``is_builtin``
+# branch below), and ``_ensure_user_seeded`` runs on both ``GET /api/packages``
+# and ``GET /api/packages/catalog``. The Node Catalog drawer issues those two
+# concurrently in one ``Promise.all``, and the backend serves requests on
+# threads, so two seeders would rmtree + copytree the same directory at the same
+# time. The loser saw its files vanish mid-operation, surfacing far away as a
+# WinError 32/2/3 from an unrelated install or manifest validation.
+#
+# Serialise per user rather than globally: seeding is filesystem-bound and two
+# different users share nothing.
+_SEED_LOCKS: dict[str, threading.Lock] = {}
+_SEED_LOCKS_GUARD = threading.Lock()
+
+
+def _seed_lock(user_key: str) -> threading.Lock:
+    with _SEED_LOCKS_GUARD:
+        lock = _SEED_LOCKS.get(user_key)
+        if lock is None:
+            lock = threading.Lock()
+            _SEED_LOCKS[user_key] = lock
+        return lock
+
+
 def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
     """Copy every fixture package into ``<user_key>``'s package store.
 
@@ -137,7 +165,16 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
     refreshed (empty if nothing was copied). Safe to call repeatedly —
     the per-user state file in :mod:`.seed_state` makes the decision
     idempotent and respects explicit user uninstalls.
+
+    Serialised per user: concurrent callers would otherwise race on the
+    force-reseeded built-in package directory (see ``_SEED_LOCKS``).
     """
+    with _seed_lock(user_key):
+        return _seed_dev_packageages_locked(user_key=user_key)
+
+
+def _seed_dev_packageages_locked(*, user_key: str) -> list[str]:
+    """Body of :func:`seed_dev_packageages`; callers must hold the user's lock."""
     src_root = _catalog_root()
     if not src_root.is_dir():
         return []
