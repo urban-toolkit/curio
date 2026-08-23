@@ -350,6 +350,22 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     [reportActionError],
   );
 
+  // Export an installed package as a .curio.zip. MyPackagesList has always
+  // rendered this control when handed a handler, but nothing ever passed one —
+  // so the drawer's export affordance was dead code and the palette accordion
+  // was the only way out. Same call the palette makes; failures surface as a
+  // toast because a download has no other visible failure state.
+  const onExportArchive = useCallback(
+    async (pkg: PackagePayload) => {
+      try {
+        await packagesApi.download(pkg.dirName);
+      } catch (err) {
+        reportActionError(`Couldn't export ${pkg.dirName}`, err);
+      }
+    },
+    [reportActionError],
+  );
+
   const myPackagesListProps = {
     installed: filteredInstalled,
     catalogByDir,
@@ -358,6 +374,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     publishingPackageKey,
     busy,
     reloadingPackageKey,
+    onExport: (p: PackagePayload) => void onExportArchive(p),
     onUninstall: (p: PackagePayload) => void onUninstall(p),
     onPublishToCatalog: (d: string) => void onPublishToCatalog(d),
     onReloadFromCatalog: (p: PackagePayload) => void onReloadFromCatalog(p),
