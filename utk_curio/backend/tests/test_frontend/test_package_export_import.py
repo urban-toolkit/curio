@@ -83,14 +83,21 @@ def uninstall_packages(current_server):
                 print(f"[teardown] DELETE {url} failed: {exc}")
 
 
-def _enter_dataflow(page, app_frontend, current_server):
+def _enter_dataflow(page, app_frontend, current_server, *, username):
+    """One stub user PER TEST.
+
+    Sharing a username across tests in a file is a 401 waiting to happen:
+    ``e2e_clean_db`` truncates ``user``/``user_session`` between tests and sqlite
+    recycles the id, so the second login lands on a coordinate the backend has
+    already seen. Every other file here gives each test its own name.
+    """
     page.emulate_media(reduced_motion="reduce")
     result = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
         name="Export User",
-        username="pkg_export_user",
+        username=username,
         project_name="Package Export",
     )
     skip_if_shared_view(page)
@@ -158,7 +165,9 @@ def test_export_then_load_package_through_node_catalog(
 ):
     require_project_page()
     require_user_auth()
-    result = _enter_dataflow(page, app_frontend, current_server)
+    result = _enter_dataflow(
+        page, app_frontend, current_server, username="pkg_roundtrip_user"
+    )
     token = result["token"]
     project_id = result["project"]["id"]
 
@@ -290,3 +299,80 @@ def test_export_then_load_package_through_node_catalog(
             "button", name=f"Export {CLONE_NAME} as a .curio.zip archive"
         )
     ).to_be_visible(timeout=20000)
+
+
+def test_export_from_the_drawer_in_dataflow_tab(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+    tmp_path,
+    uninstall_packages,
+):
+    """The drawer's own export control, distinct from the palette accordion's.
+
+    ``MyPackagesList`` has always rendered an export button when handed a
+    handler, but ``NodeCatalogDrawer`` never passed one — so the affordance was
+    dead code and the palette was the only route to an archive. Now that it is
+    wired, this is the test that keeps it wired: nothing else would notice the
+    prop being dropped again, because a missing button is not an error.
+
+    Deliberately a second test rather than an extra leg on the round-trip above:
+    it asserts the *same* archive is reachable from a *different* surface, so
+    coupling them would hide which one broke.
+    """
+    require_project_page()
+    require_user_auth()
+    result = _enter_dataflow(
+        page, app_frontend, current_server, username="pkg_drawer_export_user"
+    )
+    token = result["token"]
+    project_id = result["project"]["id"]
+
+    api_json(
+        f"{current_server}/api/packages/projects/{project_id}/install",
+        token,
+        method="POST",
+        payload={"dirName": PKG_DIR},
+        timeout=120.0,
+    )
+    uninstall_packages(token, PKG_DIR, project_id)
+    page.reload()
+    page.wait_for_load_state("domcontentloaded")
+
+    drawer = _open_drawer_from_menu(page)
+    # The export control lives on the "In dataflow" rows, which render
+    # MyPackagesList (no data-pkg-dir there) — the aria-label uses the manifest
+    # NAME, while the palette accordion's uses a longer ".curio.zip archive" form.
+    drawer.get_by_role("navigation", name="Catalog sections").get_by_role(
+        "button", name="In dataflow"
+    ).click()
+    export_button = drawer.get_by_role("button", name=f"Export {PKG_NAME}", exact=True)
+    expect(export_button).to_be_visible(timeout=30000)
+
+    with page.expect_download(timeout=30000) as download:
+        export_button.click()
+
+    assert download.value.suggested_filename == f"{PKG_DIR}.curio.zip"
+    saved = tmp_path / download.value.suggested_filename
+    download.value.save_as(str(saved))
+
+    # Same bytes the endpoint serves, and a complete archive — the blob URL is
+    # revoked on the line after the click, so a truncated download is the one
+    # real hazard on this path.
+    direct = api_json(
+        f"{current_server}/api/packages/{PKG_DIR}/archive", token, raw=True
+    )
+    archive = saved.read_bytes()
+    assert len(archive) == len(direct), (
+        f"downloaded {len(archive)} bytes but the endpoint served {len(direct)}"
+    )
+    with zipfile.ZipFile(io.BytesIO(archive)) as zf:
+        assert zf.testzip() is None, "downloaded archive has a corrupt member"
+        names = set(zf.namelist())
+    assert "manifest.json" in names, names
+    assert "integrity.json" not in names, names
+
+    expect(
+        page.get_by_label("Notifications").get_by_text("Couldn't export")
+    ).to_have_count(0)
+
