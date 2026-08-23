@@ -87,6 +87,80 @@ class TestDatasetPathResolver(unittest.TestCase):
             self.assertEqual(data["stderr"], "")
             self.assertEqual(data["output"]["dataType"], "int")
 
+    # -- Defensive re-shaping of the /exec payload -------------------------
+    # dataset_paths crosses a process boundary, so the sandbox re-validates it
+    # instead of trusting the backend's shape. None of these may 500.
+
+    def _exec_with(self, dataset_paths, code="    return 1\n"):
+        from utk_curio.sandbox.app import app
+
+        return app.test_client().post("/exec", json={
+            "code": code,
+            "file_path": "",
+            "nodeType": "PYTHON_COMPUTATION",
+            "dataType": "",
+            "session_id": None,
+            "save_dataset": False,
+            "dataset_paths": dataset_paths,
+        })
+
+    def test_non_dict_dataset_paths_is_ignored(self):
+        for bogus in (["a", "b"], "imported.x", 7, True):
+            with self.subTest(bogus=bogus):
+                response = self._exec_with(bogus)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.get_json()["stderr"], "")
+
+    def test_missing_dataset_paths_is_ignored(self):
+        from utk_curio.sandbox.app import app
+
+        response = app.test_client().post("/exec", json={
+            "code": "    return 1\n",
+            "file_path": "",
+            "nodeType": "PYTHON_COMPUTATION",
+            "dataType": "",
+            "session_id": None,
+            "save_dataset": False,
+        })
+        self.assertEqual(response.status_code, 200)
+
+    def test_falsy_values_are_dropped(self):
+        # An empty path would resolve to the process CWD; the id must instead
+        # report as unmapped.
+        response = self._exec_with(
+            {"imported.xempty": ""},
+            code='    return curio_dataset_path("imported.xempty")\n',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("imported.xempty", response.get_json()["stderr"])
+
+    def test_keys_and_values_are_coerced_to_str(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = os.path.join(tmp, "t.csv")
+            with open(csv_path, "w", encoding="utf-8") as handle:
+                handle.write("a\n5\n")
+            # A non-str key must not crash the dict comprehension.
+            response = self._exec_with({7: csv_path})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json()["stderr"], "")
+
+    def test_entries_past_the_cap_are_dropped_not_fatal(self):
+        # The cap mirrors the backend's MAX_EXEC_DATASET_IDS; surplus ids are
+        # dropped, so the request still succeeds and the dropped id reports as
+        # unmapped rather than 500ing.
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = os.path.join(tmp, "t.csv")
+            with open(csv_path, "w", encoding="utf-8") as handle:
+                handle.write("a\n5\n")
+            paths = {f"imported.x{i:03d}": csv_path for i in range(40)}
+            surplus = "imported.x039"
+            response = self._exec_with(
+                paths,
+                code=f'    return curio_dataset_path("{surplus}")\n',
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(surplus, response.get_json()["stderr"])
+
 
 if __name__ == "__main__":
     unittest.main()
