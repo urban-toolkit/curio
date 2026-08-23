@@ -2947,10 +2947,22 @@ def _apply_package_draft(
     build_promotion.confirm_nodes_created(user_key, artifact_digest)
 
     name = str(proposal.get("packageName") or target)
+    # dev/92 B-2: the restart signal rides the result turn AND the payload —
+    # pip actually changed shared libraries under the running server; nodes
+    # keep the previously loaded versions until Curio restarts.
+    restart = journal.get("restartRecommended")
+    restart_line = ""
+    if isinstance(restart, dict) and restart.get("libs"):
+        restart_line = (
+            " Restart Curio to pick up "
+            + ", ".join(str(lib) for lib in restart["libs"])
+            + " — running nodes keep the previously loaded versions until then."
+        )
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
         f"Applied: package {name} built and installed"
-        + (f"; {len(created_nodes)} node(s) created." if created_nodes else "."),
+        + (f"; {len(created_nodes)} node(s) created." if created_nodes else ".")
+        + restart_line,
         "Applied: package draft installed",
         [name, target, f"proposal {proposal_id[:8]}"],
     )
@@ -2965,6 +2977,8 @@ def _apply_package_draft(
         # BEFORE these nodes are painted (dev/89 registry-before-canvas).
         "createdNodes": created_nodes,
         "requiresRegistryRefresh": True,
+        **({"restartRecommended": restart} if isinstance(restart, dict)
+           and restart.get("libs") else {}),
     }
 
 

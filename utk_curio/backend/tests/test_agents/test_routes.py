@@ -7179,3 +7179,72 @@ class TestBackendDraftEndToEnd:
         )
         assert tampered.status_code == 409
         assert "reinstall" in tampered.get_json()["error"]
+
+
+class TestRestartHonestyOnApply:
+    """dev/92 B-2: an Apply whose pip step ACTUALLY changed shared libraries
+    says so — on the apply payload and in the result turn's text; idempotent
+    (skipped-only) installs stay silent."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh_build_jobs(self):
+        from utk_curio.backend.app.packages import build_jobs
+
+        build_jobs.reset_registry()
+        yield
+        build_jobs.reset_registry()
+
+    def _apply_draft_with_pip(self, client, token, alice_project, monkeypatch,
+                              *, installed, skipped):
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(
+            pip_runner, "install_python_deps",
+            lambda deps, on_line=None: pip_runner.InstallReport(
+                installed=list(installed), skipped=list(skipped)),
+        )
+        helper = TestPackageBuilderTools()
+        params = helper._draft_params()
+        # The packager derives manifest deps from the SBOM report — declared
+        # python deps ride the REQUEST-level dependencies field.
+        params["dependencies"] = {"python": {"weather-sdk": "1.2.0"}}
+        att_id, _ = helper._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[helper._draft_tail(params), "Proposed."],
+        )
+        run = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        return resp.get_json(), turns
+
+    def test_installed_libs_surface_on_payload_and_result_turn(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        body, turns = self._apply_draft_with_pip(
+            client, token, alice_project, monkeypatch,
+            installed=["weather-sdk"], skipped=[])
+        assert body["restartRecommended"] == {"libs": ["weather-sdk"]}
+        applied_text = next(t["text"] for t in turns
+                            if "Applied: package" in (t.get("text") or ""))
+        assert "Restart Curio to pick up weather-sdk" in applied_text
+        assert "previously loaded versions" in applied_text
+
+    def test_skipped_only_apply_stays_silent(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        body, turns = self._apply_draft_with_pip(
+            client, token, alice_project, monkeypatch,
+            installed=[], skipped=["weather-sdk"])
+        assert "restartRecommended" not in body
+        applied_text = next(t["text"] for t in turns
+                            if "Applied: package" in (t.get("text") or ""))
+        assert "Restart Curio" not in applied_text

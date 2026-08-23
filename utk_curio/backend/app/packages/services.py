@@ -106,7 +106,7 @@ def _installed_majors_by_pkg(user_key: str) -> dict[str, list[int]]:
     return out
 
 
-def _ensure_user_store_install(user_key: str, dir_name: str) -> None:
+def _ensure_user_store_install(user_key: str, dir_name: str) -> list[str]:
     """No-op if installed; otherwise copy from the shared catalog AND
     pip-install any Python deps the manifest declares.
 
@@ -115,9 +115,13 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> None:
     Install button stays in its busy state for the whole duration. If
     pip fails the catalog copy is rolled back so a retry can re-attempt
     cleanly.
+
+    dev/92 B-2: returns the pip report's ``installed`` names (empty when
+    nothing was actually installed/changed) — the restart-honesty signal the
+    install response surfaces; skipped-only runs stay silent.
     """
     if _is_installed_in_user_store(user_key, dir_name):
-        return
+        return []
     src = catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(
@@ -137,12 +141,12 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> None:
 
     py_deps = dict(result.manifest.python_deps or {})
     if not py_deps:
-        return
+        return []
     try:
         from utk_curio.backend.app.packages.pip_runner import (
             PipInstallError, install_python_deps,
         )
-        install_python_deps(py_deps)
+        pip_report = install_python_deps(py_deps)
     except PipInstallError as exc:
         # Roll the just-installed files back so the user-store doesn't
         # show a package that's unusable. Best-effort: log + continue on
@@ -156,6 +160,7 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> None:
         raise PackageServiceError(
             f"package files installed but pip install failed: {exc}",
         ) from exc
+    return sorted(pip_report.installed)
 
 
 def ensure_user_packages_initialized(user_key: str) -> None:
@@ -622,19 +627,26 @@ def install_to_project(
         raise PackageServiceError(f"invalid dirName: {dir_name!r}")
 
     will_install = not _is_installed_in_user_store(user_key, dir_name)
-    _ensure_user_store_install(user_key, dir_name)
+    pip_installed = _ensure_user_store_install(user_key, dir_name)
+    # dev/92 B-2: additive restart-honesty field — present exactly when pip
+    # actually changed shared libraries under the running server.
+    restart = (
+        {"restartRecommended": {"libs": pip_installed}} if pip_installed else {}
+    )
 
     current = get_project_lockfile(user_key, project_id)
     if dir_name in current:
         return {
             "packages": sorted(current),
             "addedToUserStore": will_install,
+            **restart,
         }
     current.add(dir_name)
     _write_lockfile(user_key, project_id, current)
     return {
         "packages": sorted(current),
         "addedToUserStore": will_install,
+        **restart,
     }
 
 

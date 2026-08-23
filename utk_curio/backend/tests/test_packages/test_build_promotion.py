@@ -226,3 +226,52 @@ class TestLockfileAndActivation:
     def test_confirm_without_journal_refused(self, tmp_curio):
         with pytest.raises(PromotionError, match="no promotion journal"):
             confirm_registry_ready("guest", "0" * 64)
+
+
+class TestRestartHonesty:
+    """dev/92 B-2: pip's InstallReport is KEPT at Apply — a lib that actually
+    landed/changed in the shared interpreter becomes restartRecommended on
+    the journal; skipped-only (idempotent) installs recommend nothing."""
+
+    def _promote_with_pip(self, tmp_curio, manifest_dict, monkeypatch, *,
+                          installed, skipped):
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(
+            pip_runner, "install_python_deps",
+            lambda deps, on_line=None: pip_runner.InstallReport(
+                installed=list(installed), skipped=list(skipped)),
+        )
+        digest = _stage_build(manifest_dict, python_deps={"torch": "2.4.0",
+                                                          "shapely": "2.0.0"})
+        return promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+
+    def test_actually_installed_libs_recommend_a_restart(
+            self, tmp_curio, manifest_dict, monkeypatch):
+        journal = self._promote_with_pip(
+            tmp_curio, manifest_dict, monkeypatch,
+            installed=["torch"], skipped=["shapely"])
+        assert journal["restartRecommended"] == {"libs": ["torch"]}
+        # The persisted journal carries it too (disconnect-safe).
+        from utk_curio.backend.app.packages.build_promotion import load_journal
+
+        stored = load_journal("guest", journal["artifactDigest"])
+        assert stored["restartRecommended"] == {"libs": ["torch"]}
+
+    def test_skipped_only_install_stays_silent(
+            self, tmp_curio, manifest_dict, monkeypatch):
+        journal = self._promote_with_pip(
+            tmp_curio, manifest_dict, monkeypatch,
+            installed=[], skipped=["torch", "shapely"])
+        assert "restartRecommended" not in journal
+
+    def test_no_python_deps_stays_silent(self, tmp_curio, manifest_dict, monkeypatch):
+        from utk_curio.backend.app.packages import pip_runner
+
+        def _never(deps, on_line=None):  # pragma: no cover — must not run
+            raise AssertionError("pip must not be invoked without declared deps")
+
+        monkeypatch.setattr(pip_runner, "install_python_deps", _never)
+        digest = _stage_build(manifest_dict)
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+        assert "restartRecommended" not in journal

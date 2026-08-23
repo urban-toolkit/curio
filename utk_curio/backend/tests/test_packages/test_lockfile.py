@@ -366,3 +366,29 @@ class TestHttpEndpoints:
             headers=_auth(token),
         )
         assert resp.status_code >= 400
+
+
+class TestRestartHonestyOnCatalogInstall:
+    """dev/92 B-2: the catalog path is an install authority too — its
+    response carries restartRecommended exactly when pip actually changed
+    shared libraries; a no-op/already-installed path stays silent."""
+
+    def test_pip_installed_libs_ride_the_response(self, app, user_and_token,
+                                                  alice_project, monkeypatch):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        monkeypatch.setattr(
+            packages_services, "_ensure_user_store_install",
+            lambda uk, dn: ["geo-sdk", "tiny-lib"],
+        )
+        result = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        assert result["restartRecommended"] == {"libs": ["geo-sdk", "tiny-lib"]}
+
+    def test_silent_when_nothing_actually_installed(self, app, user_and_token,
+                                                    alice_project):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        result = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        assert "restartRecommended" not in result  # UHVI declares no python deps
+        again = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        assert "restartRecommended" not in again

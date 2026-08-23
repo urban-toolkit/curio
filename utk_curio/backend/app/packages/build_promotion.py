@@ -229,7 +229,16 @@ def promote(
             from utk_curio.backend.app.packages import pip_runner
 
             try:
-                pip_runner.install_python_deps(py_deps)
+                pip_report = pip_runner.install_python_deps(py_deps)
+                # dev/92 B-2: the report's installed-vs-skipped split IS the
+                # restart signal — a lib that actually landed/changed in the
+                # shared interpreter leaves the running warm sandbox executing
+                # its boot-time imports until Curio restarts (dev/91 §0.1).
+                # Skipped-only (idempotent re-Apply) recommends nothing.
+                if pip_report.installed:
+                    journal["restartRecommended"] = {
+                        "libs": sorted(pip_report.installed)}
+                    _save_journal(user_key, journal)
             except pip_runner.PipInstallError as exc:
                 journal["error"] = f"pip install failed: {exc}"
                 _save_journal(user_key, journal)
