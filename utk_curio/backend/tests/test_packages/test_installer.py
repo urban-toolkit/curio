@@ -405,3 +405,45 @@ def test_watchdog_pathlib_ignore_fails_deep_curio_paths_documentation():
         "expected pathlib to miss deep .curio trees (Watchdog ignore bug)"
     )
     assert _matches_exclude(str(deep), list(RELOADER_EXCLUDE_PATTERNS))
+
+
+def test_purge_stale_staging_keeps_the_in_flight_dir(tmp_curio):
+    """A concurrent install must not delete a staging tree still being extracted.
+
+    The sweep is indiscriminate by design (a crashed install leaves no marker to
+    distinguish it from a live one), so the only safe discriminator is the
+    caller's own directory. Without ``keep`` this races: Flask serves requests
+    concurrently, and the victim fails much later — as a WinError 2 from the
+    manifest-validation copytree on a file it had just written.
+    """
+    from utk_curio.backend.app.packages.installer import _purge_stale_staging
+    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+
+    base = user_packageage_staging_dir("guest")
+    base.mkdir(parents=True, exist_ok=True)
+    orphan = base / "stage-orphaned"
+    in_flight = base / "stage-in-flight"
+    for d in (orphan, in_flight):
+        (d / "scripts").mkdir(parents=True)
+        (d / "scripts" / "behaviors.js.map").write_text("{}", encoding="utf-8")
+
+    _purge_stale_staging("guest", keep=in_flight)
+
+    assert not orphan.exists(), "a genuine orphan should still be swept"
+    assert (in_flight / "scripts" / "behaviors.js.map").is_file(), (
+        "the in-flight staging tree must survive the sweep"
+    )
+
+
+def test_purge_stale_staging_sweeps_everything_when_nothing_is_kept(tmp_curio):
+    from utk_curio.backend.app.packages.installer import _purge_stale_staging
+    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+
+    base = user_packageage_staging_dir("guest")
+    (base / "stage-a").mkdir(parents=True)
+    (base / "stage-b").mkdir(parents=True)
+
+    _purge_stale_staging("guest")
+
+    assert list(base.iterdir()) == []
+

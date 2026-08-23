@@ -71,8 +71,14 @@ log = logging.getLogger(__name__)
 _STAGING_PREFIX = "stage-"
 
 
-def _purge_stale_staging(user_key: str) -> None:
+def _purge_stale_staging(user_key: str, keep: "Path | None" = None) -> None:
     """Remove any orphaned staging directories for ``user_key``.
+
+    *keep* is the caller's own in-flight staging directory, which must never be
+    swept: Flask serves requests concurrently, so a second install starting while
+    the first is mid-extract would otherwise delete the first's tree out from
+    under it (surfacing as ``WinError 2`` from the manifest-validation copytree
+    on a file that had just been written).
 
     Two sources need sweeping:
 
@@ -87,9 +93,12 @@ def _purge_stale_staging(user_key: str) -> None:
     Best-effort; never raises.
     """
     staging_base = user_packageage_staging_dir(user_key)
+    keep_resolved = keep.resolve() if keep is not None else None
     if staging_base.is_dir():
         for entry in staging_base.iterdir():
             if not entry.is_dir():
+                continue
+            if keep_resolved is not None and entry.resolve() == keep_resolved:
                 continue
             try:
                 shutil.rmtree(entry, ignore_errors=True)
@@ -494,13 +503,16 @@ def install_packageage_from_archive(
         user_packageages_dir(user_key).mkdir(parents=True, exist_ok=True)
         staging_base = user_packageage_staging_dir(user_key)
         staging_base.mkdir(parents=True, exist_ok=True)
-        # Best-effort sweep of any orphaned staging dirs from a previous
-        # crashed install. ``tempfile.mkdtemp`` does not clean up after
-        # a SIGKILL / power loss, and the orphans accumulate every cycle.
-        _purge_stale_staging(user_key)
+        # Claim our own staging dir BEFORE sweeping, then exclude it: the sweep
+        # is indiscriminate, and a concurrent install must not delete a tree that
+        # is still being extracted.
         staging_root = Path(
             tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=str(staging_base))
         )
+        # Best-effort sweep of any orphaned staging dirs from a previous
+        # crashed install. ``tempfile.mkdtemp`` does not clean up after
+        # a SIGKILL / power loss, and the orphans accumulate every cycle.
+        _purge_stale_staging(user_key, keep=staging_root)
         try:
             _extract_into(zf, staging_root)
             try:
