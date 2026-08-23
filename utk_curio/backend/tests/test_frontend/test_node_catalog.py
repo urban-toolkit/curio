@@ -36,6 +36,7 @@ from .utils import (
     open_tools_palette,
     require_project_page,
     require_user_auth,
+    save_workflow_test_screenshot,
     skip_if_shared_view,
     stub_login_and_enter_workflow,
 )
@@ -50,6 +51,37 @@ BUILTIN_DIR = "curio.builtin@1"
 
 DRAWER_ROOT = '[data-curio-node-catalog-drawer="true"]'
 SEARCH_PLACEHOLDER = "Search packages, authors, keywords..."
+
+
+def _one_node_spec() -> dict:
+    """A single node so the canvas is not empty.
+
+    ``save_workflow_test_screenshot`` pins the viewport with
+    ``_wait_for_reactflow_ready`` before capturing, and that waits for at least
+    one ``.react-flow__node``. An empty dataflow therefore times out. A node also
+    makes the baseline more useful: it shows the drawer against real canvas
+    content rather than blank space.
+    """
+    return {
+        "dataflow": {
+            "name": "CatalogBaseline",
+            "task": "",
+            "nodes": [
+                {
+                    "id": "catalog-baseline-node",
+                    "type": "curio.builtin/computation-analysis",
+                    "x": 420,
+                    "y": 300,
+                    "content": "return [1]",
+                    "in": "DEFAULT",
+                    "out": "DEFAULT",
+                    "goal": "",
+                    "metadata": {"keywords": []},
+                }
+            ],
+            "edges": [],
+        }
+    }
 
 
 def _enter_dataflow(page, app_frontend, current_server, *, username, project):
@@ -70,6 +102,7 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
         name="Node Catalog User",
         username=username,
         project_name=project,
+        project_spec=_one_node_spec(),
     )
     skip_if_shared_view(page)
     return result
@@ -126,6 +159,14 @@ def test_drawer_lists_catalog_packages(
     # here as an error banner. Asserting its absence turns that into a legible
     # failure instead of a button that mysteriously never flips.
     expect(drawer.locator('[role="alert"]')).to_have_count(0)
+
+    # Visual baseline of the drawer in its listing state. The assertions above
+    # cover which cards and buttons exist; this covers the layout they sit in,
+    # which no locator can see. Captured with the drawer open, before the
+    # close/reopen cycle below changes what is on screen.
+    save_workflow_test_screenshot(
+        page, "node-catalog-drawer", test_name="test_drawer_lists_catalog_packages",
+    )
 
     # Escape closes and the portal unmounts; reopening mounts exactly one. Guards
     # the duplicate-portal regression the provider's own comment says once shipped.

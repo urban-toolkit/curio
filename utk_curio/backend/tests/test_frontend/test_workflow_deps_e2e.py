@@ -43,6 +43,7 @@ from .utils import (
     open_tools_palette,
     require_project_page,
     require_user_auth,
+    save_workflow_test_screenshot,
     skip_if_shared_view,
     stub_login_and_enter_workflow,
 )
@@ -206,6 +207,13 @@ def test_importing_a_dataflow_installs_its_declared_packages(
     assert PKG_ID in after, (
         f"{PKG_DIR} was reported installed but is absent from GET /api/packages: "
         f"{sorted(after)}"
+    )
+
+    # Visual baseline after the auto-install: the imported dataflow on canvas
+    # with the newly installed package present.
+    save_workflow_test_screenshot(
+        page, "workflow-deps-import",
+        test_name="test_importing_a_dataflow_installs_its_declared_packages",
     )
 
     # The point of installing: the package's nodes become usable. The palette

@@ -31,6 +31,7 @@ from .utils import (
     open_tools_palette,
     require_project_page,
     require_user_auth,
+    save_workflow_test_screenshot,
     skip_if_shared_view,
     stub_login_and_enter_workflow,
 )
@@ -49,6 +50,37 @@ SEARCH_PLACEHOLDER = "Search datasets, publishers, tags..."
 CARD = 'article:not([role="status"])'
 
 
+def _one_node_spec() -> dict:
+    """A single node so the canvas is not empty.
+
+    ``save_workflow_test_screenshot`` pins the viewport with
+    ``_wait_for_reactflow_ready`` before capturing, and that waits for at least
+    one ``.react-flow__node``. An empty dataflow therefore times out. A node also
+    makes the baseline more useful: it shows the drawer against real canvas
+    content rather than blank space.
+    """
+    return {
+        "dataflow": {
+            "name": "CatalogBaseline",
+            "task": "",
+            "nodes": [
+                {
+                    "id": "catalog-baseline-node",
+                    "type": "curio.builtin/computation-analysis",
+                    "x": 420,
+                    "y": 300,
+                    "content": "return [1]",
+                    "in": "DEFAULT",
+                    "out": "DEFAULT",
+                    "goal": "",
+                    "metadata": {"keywords": []},
+                }
+            ],
+            "edges": [],
+        }
+    }
+
+
 def _enter_dataflow(page, app_frontend, current_server, *, username, project):
     # Before navigating: the drawer slides via translate3d, so to_be_visible is
     # not a gate, and the provider reads prefers-reduced-motion through
@@ -61,6 +93,7 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
         name="Data Catalog User",
         username=username,
         project_name=project,
+        project_spec=_one_node_spec(),
     )
     skip_if_shared_view(page)
     return result
@@ -113,6 +146,13 @@ def test_drawer_lists_hub_datasets(
         ).to_have_count(1, timeout=15000)
 
     expect(drawer.locator('[role="alert"]')).to_have_count(0)
+
+    # Visual baseline of the hub listing. Card text includes a relative
+    # timestamp, which drifts slowly against a fixed manifest date; the suite's
+    # default tolerance (20% of pixels, 30/255 per channel) absorbs that.
+    save_workflow_test_screenshot(
+        page, "data-catalog-drawer", test_name="test_drawer_lists_hub_datasets",
+    )
 
     # Close/reopen: the portal must unmount and remount exactly once. This drawer
     # has no Escape handler, so close through the header button.

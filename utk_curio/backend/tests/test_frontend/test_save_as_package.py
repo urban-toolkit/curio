@@ -43,6 +43,7 @@ from .utils import (
     open_tools_palette,
     require_project_page,
     require_user_auth,
+    save_workflow_test_screenshot,
     skip_if_shared_view,
     stub_login_and_enter_workflow,
 )
@@ -169,6 +170,14 @@ def test_save_node_as_package_export_then_load_back(
     name_input = modal.locator("#save-as-new-package-name")
     expect(name_input).to_be_visible()
     name_input.fill(NEW_PACKAGE_NAME)
+
+    # Visual baseline of the Save-As modal in its ready-to-export state: the
+    # destination explicitly set to "New package..." and the name filled in.
+    # The generated package id is random per run but is not displayed here, so
+    # the capture stays deterministic.
+    save_workflow_test_screenshot(
+        page, "save-as-modal", test_name="test_save_node_as_package_export_then_load_back",
+    )
 
     # 4. Export. Never hard-code the filename: the package id is randomised per
     #    Save-As, so the archive is curio.canvas.draft.<random>@1-0.1.0.curio.zip.

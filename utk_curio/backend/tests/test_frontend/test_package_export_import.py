@@ -35,6 +35,7 @@ from .utils import (
     open_tools_palette,
     require_project_page,
     require_user_auth,
+    save_workflow_test_screenshot,
     skip_if_shared_view,
     stub_login_and_enter_workflow,
 )
@@ -83,6 +84,37 @@ def uninstall_packages(current_server):
                 print(f"[teardown] DELETE {url} failed: {exc}")
 
 
+def _one_node_spec() -> dict:
+    """A single node so the canvas is not empty.
+
+    ``save_workflow_test_screenshot`` pins the viewport with
+    ``_wait_for_reactflow_ready`` before capturing, and that waits for at least
+    one ``.react-flow__node``. An empty dataflow therefore times out. A node also
+    makes the baseline more useful: it shows the drawer against real canvas
+    content rather than blank space.
+    """
+    return {
+        "dataflow": {
+            "name": "CatalogBaseline",
+            "task": "",
+            "nodes": [
+                {
+                    "id": "catalog-baseline-node",
+                    "type": "curio.builtin/computation-analysis",
+                    "x": 420,
+                    "y": 300,
+                    "content": "return [1]",
+                    "in": "DEFAULT",
+                    "out": "DEFAULT",
+                    "goal": "",
+                    "metadata": {"keywords": []},
+                }
+            ],
+            "edges": [],
+        }
+    }
+
+
 def _enter_dataflow(page, app_frontend, current_server, *, username):
     """One stub user PER TEST.
 
@@ -99,6 +131,7 @@ def _enter_dataflow(page, app_frontend, current_server, *, username):
         name="Export User",
         username=username,
         project_name="Package Export",
+        project_spec=_one_node_spec(),
     )
     skip_if_shared_view(page)
     return result
@@ -348,6 +381,14 @@ def test_export_from_the_drawer_in_dataflow_tab(
     ).click()
     export_button = drawer.get_by_role("button", name=f"Export {PKG_NAME}", exact=True)
     expect(export_button).to_be_visible(timeout=30000)
+
+    # Visual baseline of the In dataflow tab with its row actions. This is the
+    # surface whose export control was dead code until it was wired, so a
+    # baseline here records what "wired" looks like.
+    save_workflow_test_screenshot(
+        page, "package-export-drawer",
+        test_name="test_export_from_the_drawer_in_dataflow_tab",
+    )
 
     with page.expect_download(timeout=30000) as download:
         export_button.click()
