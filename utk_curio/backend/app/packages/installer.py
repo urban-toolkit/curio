@@ -609,7 +609,7 @@ def load_packageage_manifest_from_dir(package_root: Path) -> PackageManifest:
     # Sibling of the tree being validated, not the system temp dir. Same
     # filesystem (so the copy is local and cheap), and out of reach of the
     # OS temp cleaners and scanners that were intermittently deleting
-    # ``%TEMP%/.validate-*`` mid-copy — surfacing as a shutil.Error with
+    # ``%TEMP%/.validate-*`` mid-copy - surfacing as a shutil.Error with
     # ``WinError 3`` on every destination path at once. The ".validate-" prefix
     # is deliberately not ``_STAGING_PREFIX``, so ``_purge_stale_staging``
     # leaves it alone.

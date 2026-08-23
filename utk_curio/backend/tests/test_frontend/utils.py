@@ -1093,7 +1093,7 @@ def skip_if_shared_view(page, *, timeout: float = 4000) -> None:
     except PlaywrightTimeoutError:
         return  # no banner → authenticated owner, proceed
     pytest.skip(
-        "Dataflow opened read-only as the shared guest — owner auth is "
+        "Dataflow opened read-only as the shared guest - owner auth is "
         "unavailable in this e2e environment. Run with CURIO_TESTING=1 "
         "(without CURIO_E2E_USE_EXISTING) against an auth-enabled server."
     )

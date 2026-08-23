@@ -1,8 +1,8 @@
 /**
  * SECURITY: auto-install of a dataflow's declared packages is owner-only.
  *
- * `ProjectLoader` loads a project two ways: the owner-scoped endpoint, and — on
- * a 404 — the share-link endpoint for visitors. Only the first is `trusted`, and
+ * `ProjectLoader` loads a project two ways: the owner-scoped endpoint, and - on
+ * a 404 - the share-link endpoint for visitors. Only the first is `trusted`, and
  * only `trusted` reaches `ensureWorkflowDeps`. The hook's own doc comment spells
  * out why: the declared package names come from a spec the loader cannot vet,
  * and installing pulls a package into the visitor's store server-side. Opening
@@ -83,7 +83,7 @@ it("renders a shared project but never installs its declared deps", async () => 
   mockLoadProject.mockRejectedValue(notFound());
   mockLoadSharedProject.mockResolvedValue({ spec: SPEC_WITH_DEPS, outputs: [] });
   renderLoader();
-  // The spec IS applied — a visitor still sees the dataflow…
+  // The spec IS applied - a visitor still sees the dataflow…
   await waitFor(() => expect(mockLoadTrill).toHaveBeenCalledWith(SPEC_WITH_DEPS));
   // …but nothing is installed on their behalf.
   expect(mockEnsureWorkflowDeps).not.toHaveBeenCalled();

@@ -5,7 +5,7 @@ import type { PackagePayload } from "../../api/packagesApi";
 
 /**
  * Which action a package card offers is a pure function of its props, and it had
- * no test — even though the labels have been renamed three times in the last
+ * no test - even though the labels have been renamed three times in the last
  * twenty commits and the e2e tests key on them.
  *
  * The invariant worth pinning hardest is `curio.builtin@*`: it ships with every
@@ -44,7 +44,7 @@ const button = (name: string) => screen.queryByRole("button", { name });
 
 beforeEach(() => jest.clearAllMocks());
 
-describe("PackageCard — primary action", () => {
+describe("PackageCard - primary action", () => {
   it("offers Add to dataflow when not installed", () => {
     renderCard();
     expect(button("Add to dataflow")).toBeTruthy();
@@ -83,7 +83,7 @@ describe("PackageCard — primary action", () => {
   });
 });
 
-describe("PackageCard — curio.builtin", () => {
+describe("PackageCard - curio.builtin", () => {
   const builtin = pkg({
     dirName: "curio.builtin@1",
     packageId: "curio.builtin",
@@ -109,7 +109,7 @@ describe("PackageCard — curio.builtin", () => {
   });
 });
 
-describe("PackageCard — author actions", () => {
+describe("PackageCard - author actions", () => {
   it("hides Unpublish on a read-only package even when publishing is allowed", () => {
     renderCard({
       pkg: pkg({ readOnly: true }),

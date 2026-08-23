@@ -2,7 +2,7 @@
 
 The subject is the far end of the authoring loop: after a round trip through an
 archive, does a kind that came from someone's canvas node actually *work* for the
-person who imports it? So the payoff here is the last third — the imported kind
+person who imports it? So the payoff here is the last third - the imported kind
 is dragged in twice, chained onto a catalog dataset, run, and checked against the
 numbers the original node produced, then persisted into the consuming dataflow's
 spec. Nothing else in the suite runs a package node at all.
@@ -11,7 +11,7 @@ Two neighbours own the middle of this journey, and this test defers to both
 rather than re-asserting them:
 
 * ``test_save_as_package.py`` owns the two-modal Save-As chain and the modal's
-  *Export* button — which deliberately does not install, so its archive is a
+  *Export* button - which deliberately does not install, so its archive is a
   clean first import. This test takes the other branch: **Save** (which does
   install) followed by the palette accordion's own export control.
 * ``test_package_export_import.py`` owns the export/import mechanics: the
@@ -78,8 +78,8 @@ TRANSFORM_TILE = "#step-transformation"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
 LOADER_TYPE = "curio.builtin/data-loading"
 
-# The inline output box shows stdout plus "Saved to file: …" — never the return
-# value itself — so a result assertion has to print what it wants to check.
+# The inline output box shows stdout plus "Saved to file: …" - never the return
+# value itself - so a result assertion has to print what it wants to check.
 HEAD_MARKER = "E2E_HEAD_ROWS"
 HEAD_CODE = (
     "df = arg\n"
@@ -121,7 +121,7 @@ def _open_package_drawer(page, project_id: str):
 
     ``projectId`` reaches the drawer through FlowContext only once
     ``loadProject`` resolves, and ``onPickArchive`` skips the lockfile write
-    entirely when it is still null — the archive installs into the user store and
+    entirely when it is still null - the archive installs into the user store and
     then stays invisible, because ``refreshPackageRegistry`` intersects the store
     with the project lockfile. The drawer's own
     ``GET /api/packages/projects/<id>`` fires exactly when it learns the project,
@@ -255,7 +255,7 @@ def _save_into_package(page, node_id, *, new_package: str | None = None,
         and r.request.method == "POST",
         timeout=60000,
     ) as installed:
-        # "Save" for a new kind, "Replace" when the label already exists — a
+        # "Save" for a new kind, "Replace" when the label already exists - a
         # distinct label means this is always Save, and asserting the button's
         # text is how we notice if that stops being true.
         save_btn = page.get_by_role("button", name="Save", exact=True)
@@ -278,7 +278,7 @@ def uninstall_packages(current_server):
 
     Mandatory, not hygiene: the store lives at ``.curio/users/<id>/packages/``
     and survives ``reset-db`` while sqlite recycles user ids from 1. Every save
-    mints a fresh generated id, so a leak does not collide with the next run —
+    mints a fresh generated id, so a leak does not collide with the next run -
     it just accumulates dead packages in the palette of every later test.
     """
     registered: dict[str, str] = {}
@@ -376,8 +376,8 @@ def test_save_export_import_and_run_package_nodes(
     # reliably leave /dataflow/new while this test was being written.
     #
     # It also wants to be an already-saved dataflow. Both catalogs can add to an
-    # unsaved one — ``onInstall`` calls ``ensureProjectId``, which creates the
-    # project on demand — but ``onPickArchive`` has no such fallback: its
+    # unsaved one - ``onInstall`` calls ``ensureProjectId``, which creates the
+    # project on demand - but ``onPickArchive`` has no such fallback: its
     # ``installToProject`` step is skipped outright when ``projectId`` is null, so
     # the archive would install into the user store and stay invisible on the
     # canvas.
@@ -427,7 +427,7 @@ def test_save_export_import_and_run_package_nodes(
     expect(drawer.locator('[role="alert"]')).to_have_count(0)
 
     # The import also has to write the project lockfile, because
-    # refreshPackageRegistry intersects the user store with it — a package
+    # refreshPackageRegistry intersects the user store with it - a package
     # missing here installed fine and is still invisible on the canvas.
     lockfile = api_json(
         f"{current_server}/api/packages/projects/{consumer_project_id}", token
@@ -464,7 +464,7 @@ def test_save_export_import_and_run_package_nodes(
     first_output = run_node_and_wait(page, first_id, node_type=TRANSFORM_TYPE)
     second_output = run_node_and_wait(page, second_id, node_type=TRANSFORM_TYPE)
     # The whole dataset reaches the first copy, and its head(2) reaches the
-    # second — so the imported kind both runs and propagates.
+    # second - so the imported kind both runs and propagates.
     assert f"{HEAD_MARKER} {DATASET_ROWS}" in first_output, first_output
     assert f"{HEAD_MARKER} 2" in second_output, second_output
 
@@ -498,7 +498,7 @@ def test_save_export_import_and_run_package_nodes(
     )
     # Visual baseline for a canvas nobody hand-checks otherwise. The semantic
     # assertions above cover what each node computed; this covers what the
-    # canvas *looks* like — most usefully that the edge is actually drawn, which
+    # canvas *looks* like - most usefully that the edge is actually drawn, which
     # a store-level edge assertion cannot see. Compared at the suite's default
     # tolerance (20% of pixels, 30/255 per channel), which is what absorbs the
     # per-run "Saved to file: <timestamp>_<hash>" text in each output box.
@@ -533,7 +533,7 @@ def test_two_kinds_saved_into_one_package_keep_their_own_code(
     against the archive rather than the canvas: the mix-up is invisible in the
     palette (two rows, two labels) and shows up only in what the kinds point at.
 
-    No dataset and no runs — the defect is in what gets written, so the cheapest
+    No dataset and no runs - the defect is in what gets written, so the cheapest
     proof is the archive the package exports.
     """
     require_project_page()

@@ -3,11 +3,11 @@
  *
  * `useEnsureWorkflowDeps` is the whole answer, and it had no test. It reads
  * `spec.dataflow.packages`, asks the backend which of them are missing, and
- * installs those — fire-and-forget, so the canvas stays usable while pip runs.
+ * installs those - fire-and-forget, so the canvas stays usable while pip runs.
  *
  * The backend halves are covered by test_workflow_deps.py (9 tests over
  * /workflow-deps/check and /workflow-deps/install). What was untested is the
- * decision logic here: when to install at all, and — critically — that a
+ * decision logic here: when to install at all, and - critically - that a
  * best-effort check failure never escalates into a spurious install or a
  * misleading toast.
  *
@@ -57,7 +57,7 @@ beforeEach(() => {
   mockRefresh.mockResolvedValue(undefined);
 });
 
-describe("useEnsureWorkflowDeps — when it does nothing", () => {
+describe("useEnsureWorkflowDeps - when it does nothing", () => {
   it.each([
     ["undefined spec", undefined],
     ["no dataflow", {}],
@@ -93,7 +93,7 @@ describe("useEnsureWorkflowDeps — when it does nothing", () => {
   });
 });
 
-describe("useEnsureWorkflowDeps — the install path", () => {
+describe("useEnsureWorkflowDeps - the install path", () => {
   it("installs only what the check reported as missing", async () => {
     mockCheck.mockResolvedValue({ packages: ["ai.urbanlab.uhvi@1"] });
     await ensure({
@@ -128,7 +128,7 @@ describe("useEnsureWorkflowDeps — the install path", () => {
   });
 });
 
-describe("useEnsureWorkflowDeps — failure handling", () => {
+describe("useEnsureWorkflowDeps - failure handling", () => {
   it("stays completely silent when the check fails", async () => {
     // Best-effort by design: an older backend without the route, or a dev
     // reloader restart, must not assert an install failure for packages that

@@ -159,7 +159,7 @@ def test_export_omits_integrity_and_reinstall_rebuilds_it(tmp_curio, make_archiv
     The builder and the exporter both skip it deliberately: hashes describe the
     files as installed, so carrying a stale copy in the zip would either be
     ignored or actively wrong. Nothing verifies it on install, so a regression
-    here is silent — hence asserting the absence, not just the presence.
+    here is silent - hence asserting the absence, not just the presence.
     """
     install_packageage_from_archive("guest", make_archive())
     installed = package_dir("guest", "ai.test.demo@1")
@@ -202,7 +202,7 @@ def test_renamed_archive_installs_alongside_original(tmp_curio, make_archive):
     """Editing the manifest id forks a package rather than colliding with it.
 
     ``dir_name`` is derived purely from the manifest (``<id>@<major>``), and
-    nothing verifies integrity on install — so retitling an exported archive
+    nothing verifies integrity on install - so retitling an exported archive
     yields an independent package. This is what makes an export -> edit ->
     re-import round trip usable without ``replace=True``.
     """
@@ -413,7 +413,7 @@ def test_purge_stale_staging_keeps_the_in_flight_dir(tmp_curio):
     The sweep is indiscriminate by design (a crashed install leaves no marker to
     distinguish it from a live one), so the only safe discriminator is the
     caller's own directory. Without ``keep`` this races: Flask serves requests
-    concurrently, and the victim fails much later — as a WinError 2 from the
+    concurrently, and the victim fails much later - as a WinError 2 from the
     manifest-validation copytree on a file it had just written.
     """
     from utk_curio.backend.app.packages.installer import _purge_stale_staging

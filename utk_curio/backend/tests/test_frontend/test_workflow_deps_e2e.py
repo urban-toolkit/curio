@@ -9,11 +9,11 @@ refresh, and the palette's own filter (installed ∩ project lockfile).
 
 Covered below this level:
 
-* ``test_packages/test_workflow_deps.py`` — the /check and /install routes,
+* ``test_packages/test_workflow_deps.py`` - the /check and /install routes,
   including the real unstubbed declare → install → probe-clean cycle.
-* ``src/tests/hook/useEnsureWorkflowDeps.test.ts`` — when the hook installs,
+* ``src/tests/hook/useEnsureWorkflowDeps.test.ts`` - when the hook installs,
   what it installs, and its silent-on-check-failure contract.
-* ``src/tests/components/projectLoaderTrustedDeps.test.tsx`` — the owner-only
+* ``src/tests/components/projectLoaderTrustedDeps.test.tsx`` - the owner-only
   gate (a shared link must never trigger an install).
 
 What only a browser proves is the end-to-end consequence, which is what this
@@ -92,7 +92,7 @@ def uninstall_declared_package(current_server):
     Mandatory, not hygiene: ``/api/testing/reset-db`` truncates SQL only, while
     ``.curio/users/<id>/packages/`` persists and sqlite recycles user ids from 1.
     Without this, the second run of this file finds the package already in the
-    store and skips — a test that silently stops testing after it first passes.
+    store and skips - a test that silently stops testing after it first passes.
 
     Non-autouse on purpose: the autouse ``e2e_clean_db`` finalizes *last*, so an
     explicitly-requested fixture still has a valid stub user (and token) to
@@ -110,7 +110,7 @@ def uninstall_declared_package(current_server):
             api_json(
                 f"{current_server}/api/packages/{dir_name}", token, method="DELETE"
             )
-        except Exception as exc:  # noqa: BLE001 — teardown must never mask a failure
+        except Exception as exc:  # noqa: BLE001 - teardown must never mask a failure
             print(f"[teardown] DELETE /api/packages/{dir_name} failed: {exc}")
 
 
@@ -166,7 +166,7 @@ def test_importing_a_dataflow_installs_its_declared_packages(
     # Precondition, asserted backend-side so a dirty user store is
     # distinguishable from a browser-timing problem. The store persists across
     # runs while user ids recycle, so a leaked copy would make the whole test
-    # vacuous — it would "pass" without ever installing anything.
+    # vacuous - it would "pass" without ever installing anything.
     before = _installed_package_ids(current_server, token)
     if PKG_ID in before:
         pytest.skip(
@@ -218,7 +218,7 @@ def test_importing_a_dataflow_installs_its_declared_packages(
 
     # The point of installing: the package's nodes become usable. The palette
     # filters installed packages by the project lockfile, which the import set
-    # from dataflow.packages — so this also proves that ordering held.
+    # from dataflow.packages - so this also proves that ordering held.
     palette = open_tools_palette(page, "packages")
     expect(
         palette.locator(f'[data-pkg-palette-coords~="{PKG_DIR}"]')

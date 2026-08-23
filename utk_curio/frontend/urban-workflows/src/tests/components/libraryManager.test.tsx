@@ -60,7 +60,7 @@ beforeEach(() => {
   mockRemove.mockResolvedValue({ standalone: { python: [], js: [] } });
 });
 
-describe("LibraryManagerWindow — rendering", () => {
+describe("LibraryManagerWindow - rendering", () => {
   it("renders nothing until opened", () => {
     render(<LibraryManagerWindow open={false} closeModal={jest.fn()} />);
     expect(screen.queryByRole("heading", { name: "Installed libraries" })).toBeNull();
@@ -109,7 +109,7 @@ describe("LibraryManagerWindow — rendering", () => {
   });
 });
 
-describe("LibraryManagerWindow — adding", () => {
+describe("LibraryManagerWindow - adding", () => {
   it("keeps Add disabled until a spec is typed", async () => {
     open();
     await waitFor(() => expect(mockList).toHaveBeenCalled());
@@ -182,7 +182,7 @@ describe("LibraryManagerWindow — adding", () => {
   });
 });
 
-describe("LibraryManagerWindow — removing", () => {
+describe("LibraryManagerWindow - removing", () => {
   it("sends the kind and spec to the delete endpoint", async () => {
     mockList.mockResolvedValue(listing({ python: ["numpy"] }));
     open();

@@ -788,7 +788,7 @@ def _installed_dir_for_draft(user_key: str, manifest_raw) -> "Path | None":
 
     Save-As rebuilds a whole package from one draft, so both the build and the
     install path need to know whether they are rewriting something that already
-    exists on disk — that is what makes source preservation possible.
+    exists on disk - that is what makes source preservation possible.
     """
     if not isinstance(manifest_raw, dict):
         return None
@@ -811,7 +811,7 @@ def factory_build():
     draft = request.get_json(silent=True) or {}
     # Same preservation the install path does: a Save-As draft over an existing
     # package carries real source only for the edited template, so building
-    # without this ships placeholder bodies for every sibling — an exported
+    # without this ships placeholder bodies for every sibling - an exported
     # archive that silently destroys code when imported elsewhere.
     draft = preserve_unedited_sources(
         draft, _installed_dir_for_draft(user_key, draft.get("manifest")),

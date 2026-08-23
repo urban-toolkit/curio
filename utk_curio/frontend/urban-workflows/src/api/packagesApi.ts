@@ -256,9 +256,9 @@ async function uploadArchive(
 
 /**
  * Hand a blob to the browser as a download. Shared by the two archive
- * paths — `download` (an already-installed package) and `factoryBuild`
+ * paths - `download` (an already-installed package) and `factoryBuild`
  * (an un-installed wizard draft). The blob never lives in JS memory longer
- * than the click handler — we hand it straight to ``URL.createObjectURL``
+ * than the click handler - we hand it straight to ``URL.createObjectURL``
  * and revoke immediately after.
  */
 export function triggerBlobDownload(blob: Blob, filename: string): void {

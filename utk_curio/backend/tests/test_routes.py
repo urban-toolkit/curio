@@ -41,7 +41,7 @@ def test_removed_legacy_routes_stay_removed(app):
     Each of these had zero callers when it was removed: debug probes that
     leaked server paths (``/cwd``, ``/launchCwd``, ``/sharedDataPath``),
     deprecated 308 shims superseded by ``/api/auth/me`` (``/getUser``,
-    ``/saveUserType``), an unused DB probe (``/checkDB`` — the container
+    ``/saveUserType``), an unused DB probe (``/checkDB`` - the container
     healthcheck uses ``/health``), and two endpoints superseded by the
     packages and datasets blueprints (``/installPackages`` ->
     ``/api/packages/workflow-deps/install``, ``/upload`` ->

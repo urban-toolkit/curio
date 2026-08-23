@@ -91,7 +91,7 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
     # so `to_be_visible` would pass before the panel is reachable. Both providers
     # read prefers-reduced-motion through useSyncExternalStore, so emulating it
     # makes presentation synchronous and collapses the 380ms close timer to zero.
-    # No reload is needed (or wanted — it races ProjectLoader into the
+    # No reload is needed (or wanted - it races ProjectLoader into the
     # shared-guest fallback): emulate_media fires the matchMedia change event the
     # store already subscribes to.
     page.emulate_media(reduced_motion="reduce")
@@ -112,7 +112,7 @@ def _open_drawer_from_menu(page):
     """Data menu -> Node Catalog."""
     page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     # "Node Catalog" also labels the palette trigger, whose accessible name
-    # includes a count span — exact=True picks out the menu row's own button.
+    # includes a count span - exact=True picks out the menu row's own button.
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     return _drawer(page)
 
@@ -249,7 +249,7 @@ def test_add_package_propagates_to_palette(
     expect(card).to_have_count(1, timeout=15000)
 
     # 4. The dialog mounts BEFORE /resolve settles, and a non-409 error unmounts
-    #    it again — so wait on the response, not just on the dialog appearing.
+    #    it again - so wait on the response, not just on the dialog appearing.
     with page.expect_response(
         lambda r: r.url.endswith("/api/packages/resolve"), timeout=30000
     ):
@@ -271,7 +271,7 @@ def test_add_package_propagates_to_palette(
         lambda r: "/api/packages/projects/" in r.url
         and r.url.endswith("/install")
         and r.request.method == "POST"
-        # 201, not 200 — the route reports a created lockfile entry.
+        # 201, not 200 - the route reports a created lockfile entry.
         and r.ok,
         timeout=30000,
     ):

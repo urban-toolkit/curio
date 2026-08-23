@@ -2,7 +2,7 @@
  * The palette's export path: `packagesApi.download(dirName)`.
  *
  * `nodeSaveAsExport.test.ts` covers `triggerBlobDownload` for the Save-As wizard,
- * but not this one — and they differ in the detail that matters. The wizard reads
+ * but not this one - and they differ in the detail that matters. The wizard reads
  * its filename from `Content-Disposition`; this path *synthesises*
  * `${dirName}.curio.zip` client-side and ignores the header entirely. So a server
  * change to that header is invisible here (it is pinned in
@@ -144,7 +144,7 @@ describe("packagesApi.uploadArchive", () => {
   });
 
   it("posts to /upload with NO replace flag by default", async () => {
-    // The drawer's onPickArchive never passes replace, and no UI path does — so a
+    // The drawer's onPickArchive never passes replace, and no UI path does - so a
     // duplicate coordinate is meant to 400 rather than silently overwrite an
     // installed package. A stray `?replace=true` here would make import
     // destructive.

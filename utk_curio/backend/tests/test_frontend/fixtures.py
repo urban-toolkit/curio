@@ -65,7 +65,7 @@ def _terminate_process_tree(process: "subprocess.Popen", *, timeout: float = 10.
 
     if sys.platform == "win32":
         # /T = tree, /F = force. Returns 128 when the pid is already gone,
-        # which is fine — we only care that nothing survives.
+        # which is fine - we only care that nothing survives.
         subprocess.run(
             ["taskkill", "/PID", str(process.pid), "/T", "/F"],
             capture_output=True,
@@ -120,7 +120,7 @@ def _free_port(port: int, *, raise_on_failure: bool, total_timeout: float = 10.0
     if sys.platform == "win32":
         # A STRING, not a one-element list: with shell=True on Windows,
         # subprocess runs list2cmdline() first, which quotes the whole
-        # thing into a single token — cmd.exe then reports
+        # thing into a single token - cmd.exe then reports
         # '"npx kill-port 5002"' is not recognized. The port was never
         # freed, so setup always failed hard whenever one was occupied.
         cmd: "list | str" = f"npx kill-port {port}"

@@ -1,7 +1,7 @@
 """Playwright E2E: exporting a package and loading it back in.
 
 Export is the one part of this flow only a browser can prove. It is not a
-navigation to the archive endpoint — ``packagesApi.downloadArchive`` fetches with
+navigation to the archive endpoint - ``packagesApi.downloadArchive`` fetches with
 a bearer token, then ``triggerBlobDownload`` builds an object URL on a detached
 ``<a download>``, clicks it, and revokes the URL on the very next line. Nothing
 below the browser exercises that, and the e2e suite had never tested a download
@@ -13,7 +13,7 @@ duplicate produces, and the lockfile + palette wiring a fresh coordinate gets.
 Covered more cheaply and not re-asserted here: the byte-level round trip and the
 duplicate-rejection semantics live in ``test_packages/test_installer.py``
 (including the renamed-archive fork), and the ``Content-Disposition`` header in
-``test_packages/test_routes.py`` — the client synthesises its own filename and
+``test_packages/test_routes.py`` - the client synthesises its own filename and
 ignores that header, so no browser test could observe it.
 
 Run::
@@ -59,7 +59,7 @@ def uninstall_packages(current_server):
     """Remove packages this test installed, through the real routes.
 
     The sideloaded clone is not in the catalog, so ``prune_unreferenced_packages``
-    will never collect it — and ``.curio/users/<id>/packages/`` outlives
+    will never collect it - and ``.curio/users/<id>/packages/`` outlives
     ``reset-db`` while sqlite recycles user ids from 1.
     """
     registered: list[tuple[str, str, str | None]] = []  # (token, dirName, projectId)
@@ -172,7 +172,7 @@ def _rewrite_package_id(archive: bytes, new_id: str, new_name: str) -> bytes:
 
     ``dir_name`` is derived purely from the manifest and nothing verifies
     integrity on install, so this yields an independent package rather than a
-    collision — which is what makes export -> edit -> re-import usable at all
+    collision - which is what makes export -> edit -> re-import usable at all
     (there is no UI path that sets ``replace=true``).
     """
     out = io.BytesIO()
@@ -253,7 +253,7 @@ def test_export_then_load_package_through_node_catalog(
         f"{current_server}/api/packages/{PKG_DIR}/archive", token, raw=True
     )
     assert len(archive) == len(direct), (
-        f"downloaded {len(archive)} bytes but the endpoint served {len(direct)} — "
+        f"downloaded {len(archive)} bytes but the endpoint served {len(direct)} - "
         f"the blob was revoked before Chromium finished reading it"
     )
     with zipfile.ZipFile(io.BytesIO(archive)) as zf:
@@ -281,7 +281,7 @@ def test_export_then_load_package_through_node_catalog(
     assert CLONE_DIR not in lock_after_reject
 
     # 5. Positive leg: a renamed clone installs alongside and wires up fully.
-    # Clear the failure banner first, the way a user would — and so a stuck
+    # Clear the failure banner first, the way a user would - and so a stuck
     # `busy` state or an intercepted click surfaces here rather than as an
     # unexplained timeout on the upload below.
     drawer.get_by_role("button", name="Dismiss error").click()
@@ -303,14 +303,14 @@ def test_export_then_load_package_through_node_catalog(
     # The clone is sideloaded, so it shows under "In dataflow" but never under
     # Browse, which lists the committed packages/ catalog. That tab renders
     # MyPackagesList rather than PackageCard, so there is no data-pkg-dir to key
-    # on — the per-row Remove control's aria-label is the stable hook.
+    # on - the per-row Remove control's aria-label is the stable hook.
     tabs = drawer.get_by_role("navigation", name="Catalog sections")
     tabs.get_by_role("button", name="In dataflow").click()
     expect(
         drawer.get_by_role("button", name=f"Remove {CLONE_NAME}", exact=True)
     ).to_be_visible(timeout=30000)
 
-    # 6. onPickArchive also writes the project lockfile — without that the
+    # 6. onPickArchive also writes the project lockfile - without that the
     #    package would be invisible in-project, since refreshPackageRegistry
     #    intersects the user store with the lockfile.
     _close_drawer(page, drawer)
@@ -323,7 +323,7 @@ def test_export_then_load_package_through_node_catalog(
     )["packages"]
     assert {PKG_DIR, CLONE_DIR} <= set(lock_final), lock_final
 
-    # 7. The clone is exportable in turn — the round trip closes.
+    # 7. The clone is exportable in turn - the round trip closes.
     clone_row = page.locator(
         f'#packages-palette [data-pkg-palette-coords~="{CLONE_DIR}"]'
     )
@@ -344,7 +344,7 @@ def test_export_from_the_drawer_in_dataflow_tab(
     """The drawer's own export control, distinct from the palette accordion's.
 
     ``MyPackagesList`` has always rendered an export button when handed a
-    handler, but ``NodeCatalogDrawer`` never passed one — so the affordance was
+    handler, but ``NodeCatalogDrawer`` never passed one - so the affordance was
     dead code and the palette was the only route to an archive. Now that it is
     wired, this is the test that keeps it wired: nothing else would notice the
     prop being dropped again, because a missing button is not an error.
@@ -374,7 +374,7 @@ def test_export_from_the_drawer_in_dataflow_tab(
 
     drawer = _open_drawer_from_menu(page)
     # The export control lives on the "In dataflow" rows, which render
-    # MyPackagesList (no data-pkg-dir there) — the aria-label uses the manifest
+    # MyPackagesList (no data-pkg-dir there) - the aria-label uses the manifest
     # NAME, while the palette accordion's uses a longer ".curio.zip archive" form.
     drawer.get_by_role("navigation", name="Catalog sections").get_by_role(
         "button", name="In dataflow"
@@ -397,7 +397,7 @@ def test_export_from_the_drawer_in_dataflow_tab(
     saved = tmp_path / download.value.suggested_filename
     download.value.save_as(str(saved))
 
-    # Same bytes the endpoint serves, and a complete archive — the blob URL is
+    # Same bytes the endpoint serves, and a complete archive - the blob URL is
     # revoked on the line after the click, so a truncated download is the one
     # real hazard on this path.
     direct = api_json(

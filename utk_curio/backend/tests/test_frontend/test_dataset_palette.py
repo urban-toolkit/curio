@@ -63,7 +63,7 @@ def _dataset_ref(node_id: str, dataflow_id: str) -> tuple[str, dict]:
 
 
 def _install_dataset_on_disk(user_id: int, node_id: str, dataflow_id: str) -> None:
-    """Materialize the computed dataset dir in the owner's store — the on-disk
+    """Materialize the computed dataset dir in the owner's store - the on-disk
     state a toggle-on node run leaves behind."""
     from utk_curio.backend.app.datasets.install.bundle import install_node_output
 
@@ -122,7 +122,7 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
 
     # 2. Now generate/install the computed dataset INTO the saved project:
     #    materialize the dataset dir on disk and reference it from the spec.
-    #    The id is only knowable once the project exists — it is namespaced by
+    #    The id is only knowable once the project exists - it is namespaced by
     #    the producing dataflow.
     dataset_id, ref = _dataset_ref(node_id, project_id)
     _install_dataset_on_disk(user_id, node_id, project_id)

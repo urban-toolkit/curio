@@ -71,7 +71,7 @@ die() {
   if [[ $rc -ne 0 ]]; then
     RESULTS+=("  FAIL  $label (setup step, exit $rc)")
     OVERALL=1
-    echo "ERROR: $label failed with exit $rc — aborting." >&2
+    echo "ERROR: $label failed with exit $rc - aborting." >&2
     exit $rc
   fi
 }
@@ -111,13 +111,13 @@ cleanup() {
     echo "==> Stopping Curio (pid $CURIO_PID) and its server tree..."
     # 'curio.py start' only supervises: backend.server, sandbox.server and the
     # npm -> webpack chain are separate processes. Killing the supervisor alone
-    # orphans all of them, and they keep holding :5002/:2000/:8080 — so the next
+    # orphans all of them, and they keep holding :5002/:2000/:8080 - so the next
     # run either fails to bind or, worse, silently tests the stale servers left
     # listening from this one.
     case "$(uname -s)" in
       MINGW*|MSYS*|CYGWIN*)
         # /T walks parent-PID links, so the supervisor has to still be alive
-        # when we ask — kill the tree first, never the root first.
+        # when we ask - kill the tree first, never the root first.
         # MSYS2_ARG_CONV_EXCL stops MSYS rewriting the flags as paths, so the
         # switches are passed with single slashes. Do NOT also double them:
         # with conversion disabled '//PID' reaches taskkill verbatim and errors.

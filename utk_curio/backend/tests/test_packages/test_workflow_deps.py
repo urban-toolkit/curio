@@ -190,7 +190,7 @@ def test_check_is_a_pure_probe_and_installs_nothing(
     """/check must not have side effects.
 
     The frontend probes on *every* dataflow load, so a side-effecting check
-    would mean merely opening a dataflow installs its declared packages —
+    would mean merely opening a dataflow installs its declared packages -
     bypassing the owner-only gate that ProjectLoader enforces for shared links.
     """
     installs: list[str] = []
@@ -242,7 +242,7 @@ def test_declared_package_is_installed_and_then_probes_clean(
     listing = client.get("/api/packages", headers=_auth(token)).get_json()["packages"]
     assert "curio.example-ui" in {p["packageId"] for p in listing}
 
-    # 4. The same probe now comes back clean — the load-time flow has converged.
+    # 4. The same probe now comes back clean - the load-time flow has converged.
     assert _check(client, token, declared).get_json()["packages"] == []
 
 

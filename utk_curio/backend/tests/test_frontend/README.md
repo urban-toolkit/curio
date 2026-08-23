@@ -96,7 +96,7 @@ menu.
 | Helper | What it does |
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
-| `skip_if_shared_view(page, *, timeout=4000)` | Skips when the dataflow opened read-only as the shared guest. In a no-auth environment the browser cannot see another user's installed packages or datasets and every catalog fetch comes back empty, so the test is not meaningful — better a clear skip than a confusing failure deep inside a drawer assertion. |
+| `skip_if_shared_view(page, *, timeout=4000)` | Skips when the dataflow opened read-only as the shared guest. In a no-auth environment the browser cannot see another user's installed packages or datasets and every catalog fetch comes back empty, so the test is not meaningful - better a clear skip than a confusing failure deep inside a drawer assertion. |
 | `open_tools_palette(page, kind)` | Opens the left-rail `"packages"` or `"datasets"` palette and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs both palettes can come back to the first one. They are still mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. |
 
 ### Canvas authoring helpers
@@ -119,7 +119,7 @@ Five things here are easy to get wrong:
 
 - **The identifying attribute is often not the draggable element.** A dataset
   palette row carries `data-dataset-id` on its wrapper and puts `onDragStart` on
-  an inner grip, so `drag_to_canvas` resolves a `[draggable]` descendant — events
+  an inner grip, so `drag_to_canvas` resolves a `[draggable]` descendant - events
   bubble up, never down.
 - **`dragstart` must be fired on the source.** Dataset drags keep their payload in
   a module singleton set by `beginDatasetDrag`, which the canvas reads in
@@ -147,15 +147,15 @@ canvas, which means a real click at the button's centre lands on the overlay.
 
 Three things are easy to get wrong against the catalog drawers:
 
-- **Disable motion before navigating.** `page.emulate_media(reduced_motion="reduce")` — both drawer providers read `prefers-reduced-motion` through `useSyncExternalStore`, so this makes presentation synchronous and collapses the 380 ms close timer to zero. Do it *before* `stub_login_and_enter_workflow`; a `page.reload()` afterwards races `ProjectLoader` into the shared-guest fallback.
-- **`to_be_visible()` is not a gate for a drawer.** Both slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. Gate on the dataset drawer's `aria-hidden="false"` (that attribute *is* the presented signal) and let Playwright's bounding-box-stability check ride out the transform. Never `force=True` on drawer internals — `force` skips the very hit-target check that protects against clicking a mid-slide panel.
+- **Disable motion before navigating.** `page.emulate_media(reduced_motion="reduce")` - both drawer providers read `prefers-reduced-motion` through `useSyncExternalStore`, so this makes presentation synchronous and collapses the 380 ms close timer to zero. Do it *before* `stub_login_and_enter_workflow`; a `page.reload()` afterwards races `ProjectLoader` into the shared-guest fallback.
+- **`to_be_visible()` is not a gate for a drawer.** Both slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. Gate on the dataset drawer's `aria-hidden="false"` (that attribute *is* the presented signal) and let Playwright's bounding-box-stability check ride out the transform. Never `force=True` on drawer internals - `force` skips the very hit-target check that protects against clicking a mid-slide panel.
 - **Settle the canvas before clicking anything on a node.** ReactFlow's initial `fitView` animates the viewport, and a visible-but-still-moving element makes `click()` time out with no useful message. Call `_wait_for_reactflow_ready(page)` first.
 
 ## Screenshot baselines
 
 `save_workflow_test_screenshot` compares the canvas against a PNG in
 `docs/examples/dataflows/expected_outputs/`, named
-`screenshot_<stem>_<test_name>.png`. **A missing baseline is not a failure** — the
+`screenshot_<stem>_<test_name>.png`. **A missing baseline is not a failure** - the
 helper writes the current capture as the new baseline and passes, so the first run
 of a new test silently establishes whatever it happened to render. Review a new
 baseline by eye before trusting it.
@@ -171,14 +171,14 @@ Two families of baseline live in that folder:
   `test_node_type_and_content` and `test_node_execution`), each paired with a
   `_browser_log.txt` because autk swallows its errors into React state;
 - three for the hand-built canvases: `canvas-authoring`, `package-roundtrip` and
-  `library-manager`. These guard what the semantic assertions cannot see — most
+  `library-manager`. These guard what the semantic assertions cannot see - most
   usefully that an edge is actually *drawn*, not merely present in the React Flow
   store.
 
 Measured run-to-run drift for the three canvas baselines is 1.24% (library
 manager) and under 0.1% (the other two) against the 20% budget, so the headroom is
 wide. They were captured with the executable `browser_type_launch_args` resolves
-to — **system Google Chrome** when it is installed, bundled Chromium otherwise —
+to - **system Google Chrome** when it is installed, bundled Chromium otherwise -
 so regenerate them on the machine that will police them if that ever diverges. To
 regenerate, delete the PNG and re-run the test.
 
@@ -289,7 +289,7 @@ sees five packages and three datasets.
 **Only `curio.example-ui@1` may be installed in a test.** It declares no python
 dependencies, so nothing shells out to pip. `curio.weather@1`,
 `ai.urbanlab.uhvi@1` and `curio.streetvision@1` pull rasterio / geopandas /
-**torch** through a synchronous call capped at 30 minutes — and worse, the
+**torch** through a synchronous call capped at 30 minutes - and worse, the
 resulting user-store copy makes *every later* `curio start` re-resolve those deps
 (`main.py` walks every user store on boot and `sys.exit(1)`s if pip fails). The
 e2e suite cannot stub pip: it runs in the backend subprocess, not the pytest
@@ -313,7 +313,7 @@ Other things that surprise people here:
   aria-label.
 - Card roots carry `data-pkg-dir` / `data-dataset-id`. Prefer them over display
   copy, which has been renamed repeatedly.
-- Palette kind rows carry `data-pkg-template-id` — the same descriptor id the
+- Palette kind rows carry `data-pkg-template-id` - the same descriptor id the
   row writes into `dataTransfer`, so addressing a row and dropping that kind
   cannot drift apart. Canvas nodes carry `data-curio-node-status`
   (`idle` / `running` / `done` / `error`) and `data-curio-node-output` on the
@@ -347,14 +347,14 @@ access to PyPI and skips (rather than fails) when the index is unreachable.
 ## Cleaning up after a test
 
 `/api/testing/reset-db` truncates SQL tables only, while `.curio/users/<id>/`
-persists — and `user.id` is a bare sqlite rowid alias, so ids recycle from 1.
+persists - and `user.id` is a bare sqlite rowid alias, so ids recycle from 1.
 A test that installs a package, imports a dataset or adds a library therefore
 leaks into the *next* test's view of a "fresh" user unless it cleans up.
 
 Use a **non-autouse** yield fixture and request it explicitly: the autouse
 `e2e_clean_db` finalizes *last*, so an explicitly-requested fixture still has a
 live stub user (and a valid token) to authenticate its DELETE calls with. Go
-through the real routes rather than deleting files — for libraries that matters,
+through the real routes rather than deleting files - for libraries that matters,
 because the route runs in the backend process, the only interpreter guaranteed to
 match the sandbox's.
 

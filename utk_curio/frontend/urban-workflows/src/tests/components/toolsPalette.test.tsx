@@ -20,7 +20,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 // needs none of their catalog/provider machinery.
 // Each stub exposes the real trigger behaviour (toggle) plus unconditional
 // open/close buttons, so a test can send setOpen(false) from a palette that is
-// not currently active — the case the reducer's guard clause exists for.
+// not currently active - the case the reducer's guard clause exists for.
 const paletteStub = (name: string) =>
     function Stub({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
         return (

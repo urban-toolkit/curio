@@ -15,7 +15,7 @@ import type { DatasetCatalogItem } from "../../services/datasetCatalog/datasetCa
  *
  * A hub row is someone else's published dataset. Those rows now carry a
  * `producerNodeId`, so the naive "is this computed?" check would offer Delete on
- * them — a button the backend correctly 403s. The owner still sees their own
+ * them - a button the backend correctly 403s. The owner still sees their own
  * asset as the merged `origin: "computed"` row, so hiding it on hub rows costs
  * them nothing. Pinned here because the condition is subtle and the failure mode
  * (offering a destructive action that cannot succeed) is user-visible.
@@ -51,7 +51,7 @@ const button = (name: string) => screen.queryByRole("button", { name });
 
 beforeEach(() => jest.clearAllMocks());
 
-describe("DatasetCard — primary action", () => {
+describe("DatasetCard - primary action", () => {
   it("offers Add to dataflow when not installed", () => {
     renderCard();
     expect(button("Add to dataflow")).toBeTruthy();
@@ -78,7 +78,7 @@ describe("DatasetCard — primary action", () => {
   });
 });
 
-describe("DatasetCard — Delete gating", () => {
+describe("DatasetCard - Delete gating", () => {
   it("never offers Delete on a hub row, even one carrying a producer node", () => {
     renderCard({
       dataset: dataset({ origin: "hub", producerNodeId: "node-1" }),
@@ -117,7 +117,7 @@ describe("DatasetCard — Delete gating", () => {
   });
 });
 
-describe("DatasetCard — publish affordances", () => {
+describe("DatasetCard - publish affordances", () => {
   it("offers Publish when allowed and not yet published", () => {
     renderCard({ onPublish: jest.fn(), publishAllowed: true });
     expect(button("Publish")).toBeTruthy();

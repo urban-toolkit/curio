@@ -1,7 +1,7 @@
 """Playwright E2E: the Data Catalog drawer.
 
 Mirrors ``test_node_catalog.py`` but across a different boundary. Installing a
-dataset does not refresh the palette through a React subscription — it dispatches
+dataset does not refresh the palette through a React subscription - it dispatches
 a ``window`` CustomEvent (``curio:dataset-catalog-refresh``) that fans out to two
 independent module caches keyed on *different* query strings (the drawer asks
 with ``includeHub=true&groupOsm=true``, the palette with ``includeHub=false``).
@@ -135,7 +135,7 @@ def test_drawer_lists_hub_datasets(
 
     drawer = _open_drawer_from_menu(page)
 
-    # All three committed hub datasets render, each exactly once — proving the
+    # All three committed hub datasets render, each exactly once - proving the
     # live directory scan reached the browser.
     expect(_card(drawer, DATASET_ID)).to_have_count(1, timeout=15000)
     for title in (DATASET_TITLE, *OTHER_HUB_TITLES):
@@ -170,7 +170,7 @@ def test_drawer_search_filters_server_side(
     """Worth a browser assertion: this search is debounced, refetched and deferred.
 
     Typing waits 280ms, issues a *new* server request, then renders through
-    useDeferredValue — three chances to race that no unit test reproduces.
+    useDeferredValue - three chances to race that no unit test reproduces.
     """
     require_project_page()
     require_user_auth()
@@ -249,7 +249,7 @@ def test_add_dataset_propagates_to_palette(
         )
     ).to_be_visible(timeout=20000)
 
-    # THE POINT: close the drawer, and the palette already lists it — the window
+    # THE POINT: close the drawer, and the palette already lists it - the window
     # event reached the palette's own cache with no reload.
     drawer.locator("header").get_by_role(
         "button", name="Close Data Catalog drawer"
@@ -292,7 +292,7 @@ def delete_imported_datasets(current_server):
     """Remove datasets the test registered, through the real DELETE route.
 
     An import writes into ``.curio/users/<id>/datasets/``, which survives
-    ``reset-db`` while sqlite recycles user ids from 1 — so without this the next
+    ``reset-db`` while sqlite recycles user ids from 1 - so without this the next
     run sees a phantom dataset in the catalog.
     """
     registered: list[tuple[str, str]] = []
@@ -323,7 +323,7 @@ def test_importing_a_user_dataset_registers_without_attaching(
     Import is deliberately register-only: it creates an account-level catalog
     item and leaves ``dataflow.datasets`` untouched, so the dataset/node link is
     only ever made by an explicit Add. Conflating the two would silently attach
-    every imported file to whatever dataflow happened to be open — which is why
+    every imported file to whatever dataflow happened to be open - which is why
     this asserts the *absence* of a palette row before asserting its presence
     after an explicit Add.
     """
@@ -393,7 +393,7 @@ beta,2
         page.locator(f'#datasets-palette [data-dataset-id="{dataset_id}"]')
     ).to_have_count(0)
 
-    # 3. An explicit Add is what attaches it — and an imported dataset takes the
+    # 3. An explicit Add is what attaches it - and an imported dataset takes the
     #    same path a hub one does.
     drawer = _open_drawer_from_menu(page)
     with page.expect_response(

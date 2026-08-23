@@ -15,7 +15,7 @@ the same interpreter. When both fail, the browser-free one says whether the
 process boundary or the front end is at fault.
 
 ``titlecase`` is the subject because it is pure Python, has no dependencies, and
-is absent from the sandbox's ``_globals_cache`` — anything in that cache
+is absent from the sandbox's ``_globals_cache`` - anything in that cache
 (``pandas``, ``geopandas``, …) is already in ``sys.modules`` for the sandbox's
 lifetime and could never demonstrate a fresh import. It is deliberately a
 different library from the sibling test's ``inflection`` so the two cannot
@@ -74,7 +74,7 @@ SPEC_PLACEHOLDER = "e.g. numpy or scikit-learn==1.4.0"
 POS_NODE = (150, 150)
 
 # ``worker.py`` refuses code that mentions ``arg`` when no input is wired, and
-# that guard is a plain substring test — any occurrence at all (even inside a
+# that guard is a plain substring test - any occurrence at all (even inside a
 # word like "large" or "target") would make both runs fail the same way and
 # quietly void the test.
 MARKER = "CURIO_E2E_TITLE"
@@ -100,7 +100,7 @@ def library_teardown(current_server):
     Non-autouse on purpose: the autouse ``e2e_clean_db`` finalizes *last*, so an
     explicitly requested fixture still has a live stub user (and a valid token)
     to authenticate with. The route is used rather than a direct pip call because
-    it runs in the backend process — the interpreter guaranteed to match the
+    it runs in the backend process - the interpreter guaranteed to match the
     sandbox's. The pytest process's ``sys.executable`` is not.
     """
     registered: list[tuple[str, str, int]] = []
@@ -227,7 +227,7 @@ def test_install_library_from_ui_then_use_it(
     assert LIB in listing["standalone"]["python"], listing
     # Visual baseline for a canvas nobody hand-checks otherwise. The semantic
     # assertions above cover what each node computed; this covers what the
-    # canvas *looks* like — most usefully that the edge is actually drawn, which
+    # canvas *looks* like - most usefully that the edge is actually drawn, which
     # a store-level edge assertion cannot see. Compared at the suite's default
     # tolerance (20% of pixels, 30/255 per channel), which is what absorbs the
     # per-run "Saved to file: <timestamp>_<hash>" text in each output box.

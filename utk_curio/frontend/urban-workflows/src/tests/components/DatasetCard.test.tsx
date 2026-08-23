@@ -16,7 +16,7 @@ import type { DatasetCatalogItem } from "../../services/datasetCatalog/datasetCa
  * The Delete gate is the interesting one. Hub rows started carrying
  * ``producerNodeId`` once publish began persisting lineage, which made the
  * "is this a computed asset?" test true for datasets belonging to someone
- * else — so a viewer browsing the shared catalog saw a Delete button the
+ * else - so a viewer browsing the shared catalog saw a Delete button the
  * backend then (correctly) refused with a 403. The owner is unaffected because
  * their own copy wins the dedup and arrives as ``origin: "computed"``.
  */

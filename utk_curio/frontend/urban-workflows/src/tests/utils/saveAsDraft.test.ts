@@ -1,5 +1,5 @@
 /**
- * The pure draft-shaping functions behind Save As — none of which had a test.
+ * The pure draft-shaping functions behind Save As - none of which had a test.
  *
  * These decide the wire payload for `/api/packages/factory/{build,install}`, so
  * a mistake here silently ships a malformed package rather than failing loudly:
@@ -9,10 +9,10 @@
  * The two shapes worth pinning hardest:
  *   - `toApiPayload` emits several keys only when truthy. Emitting `null`/`false`
  *     instead would change what the backend stores (and `readOnly` must never be
- *     emitted at all — `factory/install` rejects a draft that carries it).
+ *     emitted at all - `factory/install` rejects a draft that carries it).
  *   - `buildFactoryInstallEnvelope` *omits* `replace` rather than sending
  *     `false`, because the route reads `bool(draft.get("replace", False))` and a
- *     literal `false` is fine — but an accidental `true` overwrites an installed
+ *     literal `false` is fine - but an accidental `true` overwrites an installed
  *     package directory.
  */
 import {
@@ -119,7 +119,7 @@ describe("toApiPayload", () => {
 
   it("never emits readOnly", () => {
     // factory/install refuses a draft carrying readOnly, and the frontend has no
-    // business claiming it — the flag belongs to the installed manifest.
+    // business claiming it - the flag belongs to the installed manifest.
     const { manifest } = toApiPayload(withTemplate());
     expect("readOnly" in manifest).toBe(false);
   });
@@ -170,7 +170,7 @@ describe("toApiPayload", () => {
 
 describe("depsToMap", () => {
   it("turns the wizard's entry rows into the manifest's map form", () => {
-    // A blank range becomes "*", not "" — the same "any version" spelling the
+    // A blank range becomes "*", not "" - the same "any version" spelling the
     // backend dependency scanner emits, so hand-entered and auto-detected deps
     // are indistinguishable downstream.
     expect(

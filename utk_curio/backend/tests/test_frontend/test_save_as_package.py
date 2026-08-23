@@ -6,20 +6,20 @@ gear -> the Node settings modal -> its ``Save as package node…`` button ->
 ``NodeSaveAsModal``.
 
 The Export button is new (committed in ``381d03d``) and shipped with only
-source-text tests — assertions that read the ``.tsx`` off disk and grep it. This
+source-text tests - assertions that read the ``.tsx`` off disk and grep it. This
 is the first test that actually presses it.
 
 Two behaviours make the round trip work, and both are asserted:
 
 * **Export does not install.** ``onExport`` calls only ``factoryBuild`` +
-  ``triggerBlobDownload`` — no ``factoryInstall``, no ``installToProject``, no
+  ``triggerBlobDownload`` - no ``factoryInstall``, no ``installToProject``, no
   registry refresh. So the package exists nowhere but the download, and loading
   it back is a clean first install (201), not the duplicate-400 that
   ``test_package_export_import.py`` covers.
 * **The destination must be chosen explicitly.** ``NodeSaveAsModal`` defaults to
   the first installed *writable* package, not "New package…". Without an explicit
   selection this would export a modified copy of an existing package, whose
-  coordinate is already installed — and the import would 400 for a reason with
+  coordinate is already installed - and the import would 400 for a reason with
   nothing to do with the feature.
 
 Run::
@@ -139,12 +139,12 @@ def test_save_node_as_package_export_then_load_back(
     node.wait_for(state="visible", timeout=60000)
     # Settle the canvas before clicking anything on a node. ReactFlow's initial
     # fitView animates the viewport transform, and Playwright's actionability
-    # check requires a stable bounding box — a visible-but-still-moving gear
+    # check requires a stable bounding box - a visible-but-still-moving gear
     # makes click() time out with no useful message.
     _wait_for_reactflow_ready(page)
     node.scroll_into_view_if_needed()
 
-    # 1. The gear renders only for a node whose descriptor came from a package —
+    # 1. The gear renders only for a node whose descriptor came from a package -
     #    builtins ship as curio.builtin@1, so a stock node qualifies. Activation
     #    is on pointerup (a press-and-drag moves the node instead), and the
     #    native click is deliberately swallowed; Playwright's click() dispatches
@@ -163,7 +163,7 @@ def test_save_node_as_package_export_then_load_back(
     )
     expect(modal).to_be_visible(timeout=15000)
 
-    # 3. Choose "New package…" explicitly — see the module docstring.
+    # 3. Choose "New package…" explicitly - see the module docstring.
     target = modal.locator("#save-as-package-target")
     expect(target).to_be_visible()
     target.select_option(SAVE_AS_NEW)
@@ -209,7 +209,7 @@ def test_save_node_as_package_export_then_load_back(
     assert manifest["name"] == NEW_PACKAGE_NAME, manifest["name"]
     assert len(manifest["templates"]) == 1, manifest["templates"]
     assert "integrity.json" not in names, names
-    # The canvas node's body is what got packaged — not a starter placeholder.
+    # The canvas node's body is what got packaged - not a starter placeholder.
     assert any("MARKER_SAVE_AS_ROUNDTRIP" in body for body in sources.values()), sources
 
     dir_name = f"{manifest['id']}@{manifest['compatibility']['major']}"

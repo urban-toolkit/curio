@@ -388,7 +388,7 @@ def _pick_export_entry(node):
     Node's export conditions NEST: ``exports["."]["import"]`` is frequently
     another condition object (``{"types": ..., "default": "./x.mjs"}``) rather
     than a path. Walking only one level and handing the resulting dict to
-    ``pathlib`` raises TypeError, which the caller used to swallow — silently
+    ``pathlib`` raises TypeError, which the caller used to swallow - silently
     degrading to the bare specifier, which then resolves only when the Node
     subprocess cwd happens to sit inside the repo.
 

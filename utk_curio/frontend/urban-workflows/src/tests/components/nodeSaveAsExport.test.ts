@@ -2,7 +2,7 @@
  * The wizard's **Export** button.
  *
  * `POST /api/packages/factory/build` builds a `.curio.zip` from an
- * *un-installed* draft — it is the only way to get a package out of Curio
+ * *un-installed* draft - it is the only way to get a package out of Curio
  * without first installing it. The route and its client method survived a
  * loose-endpoint sweep with zero callers, because the button that drove them
  * had been dropped from `NodeSaveAsModal`. This guards the wiring so the
@@ -134,7 +134,7 @@ describe("NodeSaveAsModal Export wiring", () => {
     expect(start).toBeGreaterThan(-1);
     // Find the end of the useCallback by SHAPE, not by the literal dependency
     // list. Keying on the exact deps meant that reordering them made indexOf
-    // return -1, and slice(start, -1) then handed back nearly the whole file —
+    // return -1, and slice(start, -1) then handed back nearly the whole file -
     // so these assertions kept passing against unrelated code. A false pass is
     // worse than a false failure, hence the explicit end-marker check.
     const endMatch = /\}, \[[^\]]*\]\);/.exec(src.slice(start));

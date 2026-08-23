@@ -268,7 +268,7 @@ def test_build_stamps_created_at_when_the_draft_omits_it(tmp_curio):
     with zipfile.ZipFile(io.BytesIO(result.archive)) as zf:
         manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
     stamped = manifest["createdAt"]
-    # ISO-8601 UTC, parseable — the format the manifest loader expects.
+    # ISO-8601 UTC, parseable - the format the manifest loader expects.
     assert stamped.endswith("Z")
     datetime.strptime(stamped, "%Y-%m-%dT%H:%M:%SZ")
 
@@ -319,7 +319,7 @@ export default function run() { return cloneDeep({}); }
 
 
 def test_preserve_unedited_sources_ignores_a_real_edit(tmp_curio, make_archive):
-    """Only placeholder/empty bodies are substituted — a real edit always wins."""
+    """Only placeholder/empty bodies are substituted - a real edit always wins."""
     install_draft = _draft()
     install_draft["sources"] = {
         "demo-kind": {"filename": "demo-kind.py", "code": "ON_DISK = 1"}

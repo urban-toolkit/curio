@@ -533,7 +533,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/llm/clean` | GET | Reset a chat's server-side history |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
 
-File ingestion is **not** here — it lives in the datasets blueprint as `POST /api/datasets/import`.
+File ingestion is **not** here - it lives in the datasets blueprint as `POST /api/datasets/import`.
 
 ### Package Routes
 

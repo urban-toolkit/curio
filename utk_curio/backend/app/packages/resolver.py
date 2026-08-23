@@ -6,7 +6,7 @@ The design locks two policies:
    every package a project pins are merged into a single requirement set
    and pip-installed into the one shared interpreter (by the launcher at
    ``curio start``, and by ``services.install_to_store`` behind
-   ``POST /api/packages/workflow-deps/install``) — there is no per-package
+   ``POST /api/packages/workflow-deps/install``) - there is no per-package
    venv. Two packages requesting incompatible ranges for the same PyPI
    package is a hard install error.
 2. **Project lockfile inside the project.** The resolved package set and

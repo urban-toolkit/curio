@@ -376,7 +376,7 @@ class TestWorkflowCanvas:
             play_node(self.page, node.id)
 
             # Wait for success, or fail with the node's own error text. A
-            # node that never settles is a hard timeout failure — there is
+            # node that never settles is a hard timeout failure - there is
             # no tolerance and no retry (all data is local/deterministic).
             try:
                 wait_for_node_done(self.page, node.id, node_type=node.type)

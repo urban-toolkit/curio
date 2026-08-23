@@ -113,7 +113,7 @@ def test_uninstall_invokes_pip_with_names():
 #
 # install_python_deps has two implementations picked by whether on_line is
 # given. Only the buffered one was covered, yet the streaming one is what the
-# launcher uses (main.py install_manifest_dependencies) — so a break there
+# launcher uses (main.py install_manifest_dependencies) - so a break there
 # surfaces as a broken `curio start`, not a failing API call.
 
 
@@ -141,7 +141,7 @@ def test_streaming_path_reports_each_line_and_returns_installed():
     assert seen == ["Collecting inflection", "Successfully installed"]
     assert report.installed == ["inflection"]
     assert report.skipped == []
-    # Streaming means no timeout is passed — Popen + readline has no deadline.
+    # Streaming means no timeout is passed - Popen + readline has no deadline.
     # Asserted so the omission stays a deliberate, visible choice: the launcher
     # blocks on this call, so a wedged pip hangs `curio start` indefinitely.
     assert "timeout" not in popen.call_args.kwargs

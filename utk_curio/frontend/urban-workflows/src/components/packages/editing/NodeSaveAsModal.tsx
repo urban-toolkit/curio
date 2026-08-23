@@ -207,12 +207,12 @@ export function NodeSaveAsModal({
 
   // Export the same draft as a .curio.zip without installing it. Shares the
   // `busy` flag with Save so the two can never run concurrently, and leaves
-  // the modal open — an export is not a commit.
+  // the modal open - an export is not a commit.
   //
   // Deliberately sends the *same* envelope Save would: `/factory/build` reads
   // only manifest/sources/readme/license and ignores `replace`. Both endpoints
   // run preserve_unedited_sources, so the downloaded zip carries the same
-  // template bodies Save would have installed — including the real source of
+  // template bodies Save would have installed - including the real source of
   // siblings this draft only has placeholders for. Not literally byte-identical:
   // each request stamps its own `createdAt` when the draft omits one.
   const onExport = useCallback(async () => {

@@ -206,10 +206,10 @@ class TestLibraryRoutes:
         ("pkg<4,>=2", ("pkg", "<4,>=2")),
         # npm-ish separator: the '@' is consumed, the version kept verbatim.
         ("pkg@1.2", ("pkg", "1.2")),
-        # A leading '@' is a scoped name, not a separator — splitting there
+        # A leading '@' is a scoped name, not a separator - splitting there
         # would yield the meaningless name "". The guard is blunt though: it
         # skips the '@' branch entirely, so a *versioned* scoped name keeps its
-        # version in the name. Latent rather than live — scoped names only arise
+        # version in the name. Latent rather than live - scoped names only arise
         # for JS specs, and JS install/remove both 501 (no runner exists).
         ("@scope/pkg", ("@scope/pkg", "")),
         ("@scope/pkg@1.2", ("@scope/pkg@1.2", "")),
@@ -253,7 +253,7 @@ def test_remove_keeps_a_library_a_package_still_declares(
 
     assert resp.status_code == 200
     assert "flask" not in resp.get_json()["standalone"]["python"]
-    assert uninstalled == [], "a package still declares flask — it must stay installed"
+    assert uninstalled == [], "a package still declares flask - it must stay installed"
 
 
 def test_remove_uninstalls_a_library_no_package_declares(

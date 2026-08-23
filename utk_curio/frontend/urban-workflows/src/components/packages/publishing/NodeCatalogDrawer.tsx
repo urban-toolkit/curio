@@ -351,7 +351,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   );
 
   // Export an installed package as a .curio.zip. MyPackagesList has always
-  // rendered this control when handed a handler, but nothing ever passed one —
+  // rendered this control when handed a handler, but nothing ever passed one -
   // so the drawer's export affordance was dead code and the palette accordion
   // was the only way out. Same call the palette makes; failures surface as a
   // toast because a download has no other visible failure state.

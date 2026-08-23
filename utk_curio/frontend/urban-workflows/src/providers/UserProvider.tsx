@@ -77,7 +77,7 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const applyUser = useCallback((nextUser: UserData) => {
     setUser(nextUser);
     // The per-user node-package store only responds once we carry a Bearer token.
-    // Refresh immediately so the palette matches the Nodes hub — do not rely
+    // Refresh immediately so the palette matches the Nodes hub - do not rely
     // solely on ``window.curio`` indirection which can silently no-op.
     void refreshPackageRegistry();
     return nextUser;

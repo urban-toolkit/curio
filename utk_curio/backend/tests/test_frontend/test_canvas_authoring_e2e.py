@@ -71,8 +71,8 @@ TRANSFORM_TILE = "#step-transformation"
 POS_LOADER = (150, 150)
 POS_TRANSFORM = (760, 150)
 
-# The inline output box shows stdout plus "Saved to file: …" — never the return
-# value itself — so a result assertion has to print what it wants to check.
+# The inline output box shows stdout plus "Saved to file: …" - never the return
+# value itself - so a result assertion has to print what it wants to check.
 ROW_MARKER = "CURIO_E2E_ROWS"
 TRANSFORM_CODE = (
     "df = arg\n"
@@ -256,7 +256,7 @@ def test_build_and_run_dataflow_from_scratch(
     )
     # Visual baseline for a canvas nobody hand-checks otherwise. The semantic
     # assertions above cover what each node computed; this covers what the
-    # canvas *looks* like — most usefully that the edge is actually drawn, which
+    # canvas *looks* like - most usefully that the edge is actually drawn, which
     # a store-level edge assertion cannot see. Compared at the suite's default
     # tolerance (20% of pixels, 30/255 per channel), which is what absorbs the
     # per-run "Saved to file: <timestamp>_<hash>" text in each output box.

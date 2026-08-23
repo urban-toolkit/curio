@@ -280,7 +280,7 @@ def test_archive_sets_content_disposition_filename(client, user_and_token, tmp_c
 
     ``packagesApi.downloadArchive`` synthesises ``<dirName>.curio.zip`` client
     side and ignores the header entirely, so no browser test can catch the
-    server dropping it — but anything fetching the endpoint directly (curl, a
+    server dropping it - but anything fetching the endpoint directly (curl, a
     script, a future client that does read it) depends on it.
     """
     _, token = user_and_token
@@ -303,7 +303,7 @@ def test_export_then_upload_with_replace_round_trips(client, user_and_token, tmp
     """install -> GET /archive -> POST /upload?replace=true over HTTP.
 
     The byte round trip is covered at the installer layer and ``replace`` is
-    covered on its own, but not the two joined — which is the actual shape of
+    covered on its own, but not the two joined - which is the actual shape of
     "export a package, edit it, put it back".
     """
     _, token = user_and_token
@@ -400,8 +400,8 @@ def test_factory_build_preserves_unedited_sources(client, user_and_token, tmp_cu
 
     ``factory_install`` calls ``preserve_unedited_sources`` before building;
     ``factory_build`` historically did not. Save-As only carries the real body
-    for the one canvas template — every sibling arrives as a STARTER_CODE
-    placeholder — so Export shipped a zip whose other node kinds had lost their
+    for the one canvas template - every sibling arrives as a STARTER_CODE
+    placeholder - so Export shipped a zip whose other node kinds had lost their
     code, while Save preserved them. Importing such a zip elsewhere silently
     destroys work, which is the same failure
     ``test_factory.py::test_preserve_unedited_sources_restores_real_source_for_placeholder_kind``

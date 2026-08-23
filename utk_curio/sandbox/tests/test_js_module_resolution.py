@@ -2,7 +2,7 @@
 
 ``resolve_pkg_entry_url`` is what lets a JS node write ``import x from "pkg"``:
 the import rewriter turns the bare specifier into an absolute ``file://`` URL
-under the repo-root ``node_modules``. That rewrite is not a nicety — Node's ESM
+under the repo-root ``node_modules``. That rewrite is not a nicety - Node's ESM
 resolver ignores ``NODE_PATH`` and resolves a bare specifier by walking
 ``node_modules`` up from the importing module, which fails whenever the
 subprocess cwd sits outside the repo (``CURIO_LAUNCH_CWD`` /
@@ -11,7 +11,7 @@ subprocess cwd sits outside the repo (``CURIO_LAUNCH_CWD`` /
 The regression these tests exist for: package.json export conditions NEST, so
 ``exports["."]["import"]`` is often another condition object rather than a path.
 Reading one level deep and handing a dict to pathlib raised TypeError, which was
-swallowed as "unresolvable" — degrading to the bare specifier and making JS
+swallowed as "unresolvable" - degrading to the bare specifier and making JS
 imports silently cwd-dependent. ``test_nested_export_conditions_resolve`` is the
 guard.
 
@@ -35,21 +35,21 @@ _ROOT_NODE_MODULES = _REPO_ROOT / 'node_modules'
 
 _SKIP_NO_NODE = unittest.skipIf(
     shutil.which('node') is None,
-    "Node.js is not installed — skipping JS execution tests",
+    "Node.js is not installed - skipping JS execution tests",
 )
 
 
 def _skip_unless_installed(test, pkg, rel_entry):
     """Skip when a hoisted transitive dep isn't present.
 
-    Neither package is a direct dependency of the root package.json — both
+    Neither package is a direct dependency of the root package.json - both
     arrive hoisted under @urban-toolkit/autk-db. Absence is an npm-layout fact,
     not a Curio bug, so skip rather than fail.
     """
     entry = _ROOT_NODE_MODULES / pkg / rel_entry
     if not entry.is_file():
         test.skipTest(
-            f"{entry} is absent — '{pkg}' is a hoisted transitive dep. Run "
+            f"{entry} is absent - '{pkg}' is a hoisted transitive dep. Run "
             f"`npm install` at the repo root, or repoint this test at another "
             f"zero-dep package in root node_modules."
         )
@@ -112,7 +112,7 @@ class TestResolvePkgEntryUrl(unittest.TestCase):
     def test_scoped_package_keeps_both_segments(self):
         pkg_json = _ROOT_NODE_MODULES / '@urban-toolkit' / 'autk-db' / 'package.json'
         if not pkg_json.is_file():
-            self.skipTest(f"{pkg_json} is absent — run `npm install` at the repo root")
+            self.skipTest(f"{pkg_json} is absent - run `npm install` at the repo root")
         url = resolve_pkg_entry_url('@urban-toolkit/autk-db', _ROOT_NODE_MODULES)
         self.assertIsNotNone(url)
         self.assertIn('/autk-db/', url)
@@ -227,7 +227,7 @@ class TestJsImportIsCwdIndependent(unittest.TestCase):
         entry = _ROOT_NODE_MODULES / 'quickselect' / 'index.js'
         if not entry.is_file():
             self.skipTest(
-                f"{entry} is absent — 'quickselect' is a hoisted transitive dep "
+                f"{entry} is absent - 'quickselect' is a hoisted transitive dep "
                 f"(autk-db -> rbush -> quickselect). Run `npm install` at the repo root."
             )
         code = (
@@ -244,7 +244,7 @@ class TestJsImportIsCwdIndependent(unittest.TestCase):
         self.assertEqual(result['stderr'], '', msg=result.get('stderr'))
         self.assertNotEqual(
             result['output']['path'], '',
-            msg="bare specifier failed to resolve from outside the repo — the "
+            msg="bare specifier failed to resolve from outside the repo - the "
                 "import rewriter did not produce an absolute file:// URL",
         )
 
