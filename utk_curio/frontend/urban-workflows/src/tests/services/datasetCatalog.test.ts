@@ -487,6 +487,34 @@ test("mergeDatasetLoaderCode inserts loader before return in existing code", () 
   expect(returnPos).toBeGreaterThan(loaderPos);
 });
 
+test("mergeDatasetLoaderCode is a no-op when the id-form loader is already there", () => {
+  // Dropping the same dataset onto a node twice must not stack a second loader
+  // block. The check matches the emitted curio_dataset_path("<id>") call, so it
+  // keeps working now that snippets no longer embed a literal path.
+  const once = mergeDatasetLoaderCode("", dataset);
+  expect(once).toContain('curio_dataset_path("file-123")');
+
+  const twice = mergeDatasetLoaderCode(once, dataset);
+  expect(twice).toBe(once.trim());
+
+  const calls = once.split('curio_dataset_path("file-123")').length - 1;
+  expect(twice.split('curio_dataset_path("file-123")').length - 1).toBe(calls);
+});
+
+test("mergeDatasetLoaderCode still recognises a legacy literal-path loader", () => {
+  // Nodes generated before id-based resolution embed the absolute path; those
+  // must not gain a duplicate block either.
+  const legacy = [
+    "import pandas as pd",
+    "",
+    `dataset_path = "${dataset.path}"`,
+    "df = pd.read_csv(dataset_path)",
+    "return df",
+  ].join("\n");
+
+  expect(mergeDatasetLoaderCode(legacy, dataset)).toBe(legacy);
+});
+
 test("mergeDatasetLoaderCode on empty code includes return", () => {
   const merged = mergeDatasetLoaderCode("", dataset);
   expect(merged).toContain("pd.read_csv(dataset_path)");

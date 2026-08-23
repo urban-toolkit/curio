@@ -133,3 +133,29 @@ describe('isNonProducingNodeType', () => {
     expect(isNonProducingNodeType('')).toBe(false);
   });
 });
+
+describe("DATA_POOL is a save-trigger extra, not a shared sink", () => {
+  // FlowProvider.scheduleInstallSync skips `isNonProducingNodeType(t) ||
+  // t === DATA_POOL`. The second clause is only load-bearing while DATA_POOL
+  // stays OUT of the shared sink set: the backend must keep pruning rights over
+  // data-pool refs, so the two sides deliberately disagree here. If someone
+  // "tidies" DATA_POOL into NON_PRODUCING_NODE_TYPES, this fails loudly.
+  const {
+    isNonProducingNodeType,
+    NON_PRODUCING_NODE_TYPES,
+  } = require('../../utils/saveOutputDataset');
+  const DATA_POOL = 'curio.builtin/data-pool';
+
+  test('DATA_POOL is not in the shared sink set', () => {
+    expect(NON_PRODUCING_NODE_TYPES.has(DATA_POOL)).toBe(false);
+    expect(isNonProducingNodeType(DATA_POOL)).toBe(false);
+    expect(isNonProducingNodeType(`${DATA_POOL}@1`)).toBe(false);
+  });
+
+  test('the shared sink set is exactly the two view nodes', () => {
+    expect([...NON_PRODUCING_NODE_TYPES].sort()).toEqual([
+      'curio.builtin/vis-simple',
+      'curio.builtin/vis-vega',
+    ]);
+  });
+});

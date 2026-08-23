@@ -247,6 +247,53 @@ describe("useDatasetCatalogDrawer refresh flow (#178)", () => {
     window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
     installSpy.mockRestore();
   });
+
+  // onInstall above is the worked example; the other four handlers follow the
+  // same shape (notify, never reload directly) and each could regress alone.
+  const dataset = {
+    id: "imported.xbbb",
+    title: "Two",
+    origin: "imported" as const,
+    format: "csv" as const,
+    dirName: "imported.xbbb@1",
+    consumerNodeIds: [],
+    tags: [],
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+
+  it.each([
+    ["onUninstall", "uninstallFromDataflow", { id: dataset.id }],
+    ["onPublish", "publishDataset", { id: dataset.id }],
+    ["onUnpublish", "unpublishDataset", { id: dataset.id }],
+    ["onDelete", "deleteDataset", { id: dataset.id, deleted: true, removedFrom: [] }],
+  ])("%s reloads the catalog exactly once", async (handler, apiMethod, resolved) => {
+    const apiSpy = jest
+      .spyOn(datasetCatalogApi, apiMethod as never)
+      .mockResolvedValue(resolved as never);
+    const usageSpy = jest
+      .spyOn(datasetCatalogApi, "datasetUsage")
+      .mockResolvedValue([] as never);
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    const refreshSpy = jest.fn();
+    window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
+
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+    await act(async () => {
+      await (result.current as never as Record<string, (d: unknown) => Promise<void>>)[
+        handler
+      ](dataset);
+    });
+
+    expect(apiSpy).toHaveBeenCalled();
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    expect(mockCatalogReload).toHaveBeenCalledTimes(1);
+    expect(mockCatalogReload).toHaveBeenCalledWith({ bustCache: true });
+
+    window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
+    confirmSpy.mockRestore();
+    usageSpy.mockRestore();
+    apiSpy.mockRestore();
+  });
 });
 
 describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
