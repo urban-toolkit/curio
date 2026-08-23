@@ -31,6 +31,7 @@
       "default": false,
       "description": "When true, this package cannot be overwritten via factory-install / Save-As. The package is omitted from the Save-As destination dropdown. Used by the built-in package and by curated organisation packages."
     },
+    "behaviorScript": { "type": "string", "description": "Path, relative to the package root, of a pre-built JS bundle that registers this package's custom behavior hooks at boot (e.g. 'scripts/behaviors.js'). Required for any package whose templates declare a custom behavior key rather than a built-in one; omit it for pure-Python (code-editor) packages." },
     "compatibility": {
       "type": "object",
       "required": ["major"],
