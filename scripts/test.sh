@@ -62,6 +62,20 @@ esac
 RESULTS=()   # "PASS|FAIL  label" entries
 OVERALL=0
 
+# Abort immediately on a failed setup step. These are preconditions, not
+# suites: continuing past a failed `npm install` or `playwright install`
+# produces downstream failures whose real cause is buried, and if the
+# remaining suites happen to pass the script would exit 0 despite the error.
+die() {
+  local label=$1 rc=$2
+  if [[ $rc -ne 0 ]]; then
+    RESULTS+=("  FAIL  $label (setup step, exit $rc)")
+    OVERALL=1
+    echo "ERROR: $label failed with exit $rc — aborting." >&2
+    exit $rc
+  fi
+}
+
 record() {
   local label=$1 rc=$2
   if [[ $rc -eq 0 ]]; then
@@ -121,6 +135,7 @@ cleanup() {
 # ---------------------------------------------------------------------------
 if [[ $USE_EXISTING -eq 0 ]]; then
   bash "$REPO_ROOT/scripts/clean.sh"
+  die "clean.sh" $?
 fi
 
 # ---------------------------------------------------------------------------
@@ -128,13 +143,16 @@ fi
 # ---------------------------------------------------------------------------
 echo "==> Installing Python dependencies..."
 pip install -r "$REPO_ROOT/requirements.txt" -q
+die "pip install -r requirements.txt" $?
 
 echo "==> Installing manifest python deps via curio setup..."
 PYTHONPATH="$REPO_ROOT" python "$REPO_ROOT/curio.py" setup
+die "curio.py setup" $?
 
 if [[ $USE_EXISTING -eq 0 ]]; then
   echo "==> Installing frontend npm dependencies..."
   (cd "$REPO_ROOT/utk_curio/frontend/urban-workflows" && npm install -q)
+  die "npm install" $?
 fi
 
 # ---------------------------------------------------------------------------
@@ -203,6 +221,7 @@ if [[ $RUN_E2E -eq 1 ]]; then
   echo ""
   echo "==> Installing Playwright browser..."
   python -m playwright install chromium
+  die "playwright install chromium" $?
 
   PYTEST_ARGS="-v"
   [[ $HEADED -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --headed"
@@ -214,6 +233,7 @@ if [[ $RUN_E2E -eq 1 ]]; then
   echo ""
   echo "==> Running E2E tests..."
   cd "$REPO_ROOT/utk_curio/backend"
+  die "cd to utk_curio/backend" $?
   env $E2E_ENV python -m pytest tests/test_frontend/ $PYTEST_ARGS
   record "E2E tests" $?
 fi
