@@ -105,3 +105,92 @@ def test_uninstall_invokes_pip_with_names():
     assert "uninstall" in argv and "-y" in argv
     assert "torch" in argv and "transformers" in argv
     assert report.removed == ["torch", "transformers"]
+
+
+# ---------------------------------------------------------------------------
+# The streaming (on_line) path
+# ---------------------------------------------------------------------------
+#
+# install_python_deps has two implementations picked by whether on_line is
+# given. Only the buffered one was covered, yet the streaming one is what the
+# launcher uses (main.py install_manifest_dependencies) — so a break there
+# surfaces as a broken `curio start`, not a failing API call.
+
+
+class _FakeProc:
+    """Minimal Popen stand-in: iterable stdout plus a fixed exit code."""
+
+    def __init__(self, lines, returncode=0):
+        self.stdout = iter(lines)
+        self._rc = returncode
+
+    def wait(self):
+        return self._rc
+
+
+def test_streaming_path_reports_each_line_and_returns_installed():
+    seen: list[str] = []
+    with patch(
+        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False
+    ), patch(
+        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen",
+        return_value=_FakeProc(["Collecting inflection", "Successfully installed"]),
+    ) as popen:
+        report = install_python_deps({"inflection": ""}, on_line=seen.append)
+
+    assert seen == ["Collecting inflection", "Successfully installed"]
+    assert report.installed == ["inflection"]
+    assert report.skipped == []
+    # Streaming means no timeout is passed — Popen + readline has no deadline.
+    # Asserted so the omission stays a deliberate, visible choice: the launcher
+    # blocks on this call, so a wedged pip hangs `curio start` indefinitely.
+    assert "timeout" not in popen.call_args.kwargs
+
+
+def test_streaming_path_raises_with_the_output_tail():
+    with patch(
+        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False
+    ), patch(
+        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen",
+        return_value=_FakeProc(["ERROR: could not build wheel"], returncode=1),
+    ):
+        with pytest.raises(PipInstallError) as exc:
+            install_python_deps({"inflection": ""}, on_line=lambda _l: None)
+
+    assert "exit 1" in str(exc.value)
+    assert "could not build wheel" in str(exc.value)
+
+
+def test_streaming_path_keeps_only_the_last_40_lines():
+    """The tail is capped, so a chatty failure stays a readable error."""
+    lines = [f"line-{i}" for i in range(200)]
+    with patch(
+        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False
+    ), patch(
+        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen",
+        return_value=_FakeProc(lines, returncode=2),
+    ):
+        with pytest.raises(PipInstallError) as exc:
+            install_python_deps({"inflection": ""}, on_line=lambda _l: None)
+
+    message = str(exc.value)
+    assert "line-199" in message
+    assert "line-160" in message      # 200 - 40 = the oldest line still kept
+    assert "line-159" not in message  # ...and the one before it is dropped
+
+
+def test_streaming_path_skips_pip_entirely_when_satisfied():
+    """The satisfied short-circuit precedes the branch, so on_line is never called."""
+    seen: list[str] = []
+    with patch(
+        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=True
+    ), patch(
+        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen"
+    ) as popen:
+        report = install_python_deps({"inflection": ""}, on_line=seen.append)
+
+    popen.assert_not_called()
+    assert seen == []
+    assert report.installed == []
+    assert report.skipped == ["inflection"]
+

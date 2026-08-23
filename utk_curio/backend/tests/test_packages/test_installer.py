@@ -153,6 +153,87 @@ def test_export_unknown_packageage(tmp_curio):
         export_packageage_archive("guest", "ai.test.demo@1")
 
 
+def test_export_omits_integrity_and_reinstall_rebuilds_it(tmp_curio, make_archive):
+    """``integrity.json`` is never shipped in an archive, only recomputed on install.
+
+    The builder and the exporter both skip it deliberately: hashes describe the
+    files as installed, so carrying a stale copy in the zip would either be
+    ignored or actively wrong. Nothing verifies it on install, so a regression
+    here is silent — hence asserting the absence, not just the presence.
+    """
+    install_packageage_from_archive("guest", make_archive())
+    installed = package_dir("guest", "ai.test.demo@1")
+    assert (installed / "integrity.json").is_file(), "install should write integrity.json"
+
+    archive_bytes = export_packageage_archive("guest", "ai.test.demo@1")
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+        names = set(zf.namelist())
+    assert "manifest.json" in names
+    assert any(n.startswith("starters/") for n in names), names
+    assert "integrity.json" not in names, (
+        f"exported archive must not carry integrity.json: {sorted(names)}"
+    )
+
+    uninstall_packageage("guest", "ai.test.demo@1")
+    install_packageage_from_archive("guest", archive_bytes)
+    rebuilt = json.loads((installed / "integrity.json").read_text(encoding="utf-8"))
+    assert "manifest.json" in rebuilt["sha256"]
+    # The map describes the files actually on disk, so every hashed path exists.
+    for rel in rebuilt["sha256"]:
+        assert (installed / rel).is_file(), f"integrity names a missing file: {rel}"
+
+
+def _rewrite_archive_package_id(archive: bytes, new_id: str) -> bytes:
+    """Copy *archive*, replacing only ``manifest.json``'s ``id``."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(archive)) as src:
+        with zipfile.ZipFile(out, mode="w", compression=zipfile.ZIP_DEFLATED) as dst:
+            for item in src.infolist():
+                body = src.read(item.filename)
+                if item.filename == "manifest.json":
+                    manifest = json.loads(body.decode("utf-8"))
+                    manifest["id"] = new_id
+                    body = json.dumps(manifest, indent=2).encode("utf-8")
+                dst.writestr(item.filename, body)
+    return out.getvalue()
+
+
+def test_renamed_archive_installs_alongside_original(tmp_curio, make_archive):
+    """Editing the manifest id forks a package rather than colliding with it.
+
+    ``dir_name`` is derived purely from the manifest (``<id>@<major>``), and
+    nothing verifies integrity on install — so retitling an exported archive
+    yields an independent package. This is what makes an export -> edit ->
+    re-import round trip usable without ``replace=True``.
+    """
+    original = make_archive()
+    install_packageage_from_archive("guest", original)
+
+    forked = _rewrite_archive_package_id(original, "ai.test.forked")
+    result = install_packageage_from_archive("guest", forked)
+
+    assert result.manifest.package_id == "ai.test.forked"
+    assert result.replaced_existing is False, "a new coordinate must not replace anything"
+
+    original_dir = package_dir("guest", "ai.test.demo@1")
+    forked_dir = package_dir("guest", "ai.test.forked@1")
+    assert original_dir.is_dir() and forked_dir.is_dir()
+    assert original_dir != forked_dir
+    # Both remain independently loadable, each with its own integrity map.
+    for d in (original_dir, forked_dir):
+        assert (d / "manifest.json").is_file()
+        assert (d / "integrity.json").is_file()
+
+
+def test_reinstalling_the_same_coordinate_still_needs_replace(tmp_curio, make_archive):
+    """The fork above works *because* the coordinate changed, not because
+    re-import is permissive: the unmodified archive is still refused."""
+    archive = make_archive()
+    install_packageage_from_archive("guest", archive)
+    with pytest.raises(InstallerError, match="already installed"):
+        install_packageage_from_archive("guest", archive)
+
+
 def test_install_packageage_from_directory_uses_committed_fixture(tmp_curio):
     """The catalog install path turns a fixture dir into an installed package."""
     from pathlib import Path

@@ -272,6 +272,72 @@ def test_export_after_install(client, user_and_token, tmp_curio):
         names = set(zf.namelist())
     assert "manifest.json" in names
     assert "sources/demo.py" in names
+    assert "integrity.json" not in names
+
+
+def test_archive_sets_content_disposition_filename(client, user_and_token, tmp_curio):
+    """The download name comes from this header, and only a route test can see it.
+
+    ``packagesApi.downloadArchive`` synthesises ``<dirName>.curio.zip`` client
+    side and ignores the header entirely, so no browser test can catch the
+    server dropping it — but anything fetching the endpoint directly (curl, a
+    script, a future client that does read it) depends on it.
+    """
+    _, token = user_and_token
+    client.post(
+        "/api/packages/upload",
+        data={"file": (io.BytesIO(_archive_from_draft(_draft())), "x.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    resp = client.get(
+        "/api/packages/ai.test.factory@1/archive", headers=_auth(token)
+    )
+    assert resp.status_code == 200
+    assert resp.headers["Content-Disposition"] == (
+        'attachment; filename="ai.test.factory@1.curio.zip"'
+    )
+
+
+def test_export_then_upload_with_replace_round_trips(client, user_and_token, tmp_curio):
+    """install -> GET /archive -> POST /upload?replace=true over HTTP.
+
+    The byte round trip is covered at the installer layer and ``replace`` is
+    covered on its own, but not the two joined — which is the actual shape of
+    "export a package, edit it, put it back".
+    """
+    _, token = user_and_token
+    client.post(
+        "/api/packages/upload",
+        data={"file": (io.BytesIO(_archive_from_draft(_draft())), "x.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    exported = client.get(
+        "/api/packages/ai.test.factory@1/archive", headers=_auth(token)
+    ).data
+
+    # Without replace the coordinate collides.
+    rejected = client.post(
+        "/api/packages/upload",
+        data={"file": (io.BytesIO(exported), "again.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    assert rejected.status_code == 400
+    assert "already installed" in rejected.get_json()["error"]
+
+    # With it, the same bytes reinstall cleanly.
+    accepted = client.post(
+        "/api/packages/upload?replace=true",
+        data={"file": (io.BytesIO(exported), "again.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    assert accepted.status_code == 201, accepted.get_json()
+    body = accepted.get_json()
+    assert body["replacedExisting"] is True
+    assert body["package"]["packageId"] == "ai.test.factory"
 
 
 # ---------------------------------------------------------------------------
