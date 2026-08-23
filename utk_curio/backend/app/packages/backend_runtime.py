@@ -75,6 +75,57 @@ _BACKEND_TREE_MAX_BYTES = 8 * 1024 * 1024
 _LEDGER_DIRNAME = "package-backend-ledger"
 _DATA_DIRNAME = "package-backend-data"
 
+#: dev/92 B-3 — the crash-loop quarantine breaker. Counted per
+#: (user, package, handler): only INFRASTRUCTURE failures count
+#: (worker timeout/kill/nonzero-exit, missing or contract-violating reply);
+#: a well-formed ``handler-error`` reply is the handler working as designed
+#: and never trips it. In-process by design — a server restart clears the
+#: breaker, which is the correct semantic anyway; the ledger keeps history.
+QUARANTINE_THRESHOLD = 3
+QUARANTINE_SECONDS = 120.0
+_now = time.monotonic  # test seam (injectable clock)
+_breaker_guard = threading.Lock()
+_breakers: dict[tuple[str, str, str], dict[str, Any]] = {}
+
+
+def reset_breakers() -> None:
+    """Test seam: drop all quarantine state."""
+    with _breaker_guard:
+        _breakers.clear()
+
+
+def _breaker_check(key: tuple[str, str, str], pin: str) -> float | None:
+    """Remaining quarantine seconds for *key*, or None when invocable.
+
+    A changed entry pin (reinstall/promote) resets the breaker immediately —
+    new code deserves a fresh start. An expired cooldown goes HALF-OPEN: the
+    call proceeds, the consecutive counter is kept, and one more
+    infrastructure failure re-quarantines at once."""
+    with _breaker_guard:
+        state = _breakers.get(key)
+        if state is None:
+            return None
+        if state.get("pin") != pin:
+            del _breakers[key]
+            return None
+        remaining = state.get("until", 0.0) - _now()
+        return remaining if remaining > 0 else None
+
+
+def _breaker_record(key: tuple[str, str, str], pin: str, *,
+                    infrastructure_failure: bool) -> None:
+    with _breaker_guard:
+        if not infrastructure_failure:
+            _breakers.pop(key, None)
+            return
+        state = _breakers.get(key)
+        if state is None or state.get("pin") != pin:
+            state = {"pin": pin, "consecutive": 0, "until": 0.0}
+            _breakers[key] = state
+        state["consecutive"] += 1
+        if state["consecutive"] >= QUARANTINE_THRESHOLD:
+            state["until"] = _now() + QUARANTINE_SECONDS
+
 
 class BackendRuntimeError(ValueError):
     """An invocation refusal/failure with an HTTP-ish status. Messages are
@@ -365,6 +416,27 @@ def invoke_handler(
         timeout_class, LIMITS_BY_TIMEOUT_CLASS["standard"]
     )
 
+    # dev/92 B-3: the quarantine breaker gates BEFORE any slot or worker is
+    # spent — a crash-looping handler stops burning wall-clock per click. The
+    # check runs after pin verification so a reinstall's new digest resets it.
+    breaker_key = (user_key, dir_name, handler)
+    remaining = _breaker_check(breaker_key, digest)
+    if remaining is not None:
+        wait_s = int(remaining) + 1
+        _append_ledger(user_key, dir_name, {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "invocationId": invocation_id,
+            "handler": handler,
+            "entryDigest": digest,
+            "status": "quarantined",
+            "cooldownRemainingSeconds": wait_s,
+        })
+        raise BackendRuntimeError(
+            f"handler {handler!r} is quarantined after "
+            f"{QUARANTINE_THRESHOLD} consecutive worker failures — retries "
+            f"resume in {wait_s}s; a reinstall clears it immediately", 503,
+        )
+
     if not _worker_slots.acquire(timeout=_SLOT_WAIT_SECONDS):
         raise BackendRuntimeError(
             "no backend worker slot became available — the sandbox runs at most "
@@ -431,4 +503,13 @@ def invoke_handler(
     finally:
         _worker_slots.release()
         row.setdefault("durationMs", int((time.monotonic() - started) * 1000))
+        # dev/92 B-3: ONE classification, two consumers — the ledger's status
+        # taxonomy drives the breaker. Infrastructure failures count; ok and
+        # well-formed reply-* envelopes reset; a refused payload (413/422)
+        # says nothing about the worker and touches neither.
+        status_val = row.get("status")
+        if isinstance(status_val, str) and status_val != "refused":
+            _breaker_record(breaker_key, digest, infrastructure_failure=(
+                status_val.startswith("worker-")
+                or status_val in ("no-reply", "bad-reply")))
         _append_ledger(user_key, dir_name, row)

@@ -113,6 +113,15 @@ def _install_pkg(monkeypatch, tmp_path: Path, *, permissions=None,
     return pkg
 
 
+@pytest.fixture(autouse=True)
+def _fresh_breakers_everywhere():
+    # dev/92 B-3: breaker state is module-global in backend_runtime — every
+    # test in THIS file starts clean, whatever the execution order.
+    rt.reset_breakers()
+    yield
+    rt.reset_breakers()
+
+
 def _ledger_rows(tmp_path: Path) -> list[dict]:
     root = tmp_path / ".curio" / "users" / USER / "package-backend-ledger" / PKG
     rows: list[dict] = []
@@ -380,3 +389,85 @@ class TestPromoteInvokeConsistency:
         # No transient 404/409 — the invocation read the NEW consistent state.
         assert "err" not in results, results.get("err")
         assert results["out"]["reply"]["ok"] is True
+
+
+class TestQuarantineBreaker:
+    """dev/92 B-3: three consecutive INFRASTRUCTURE failures quarantine the
+    handler (503, self-expiring, reinstall clears); a well-formed
+    handler-error reply is the handler working as designed and never counts;
+    isolation is per handler."""
+
+    def _fail_n(self, n: int, *, handler="word-count", limits=FAST):
+        for _ in range(n):
+            with pytest.raises(rt.BackendRuntimeError) as exc:
+                rt.invoke_handler(USER, PKG, handler, {}, limits=limits)
+            yield exc
+
+    def test_three_infra_failures_quarantine_with_the_way_out(
+            self, monkeypatch, tmp_path):
+        # os._exit(0) at import: every invocation is a no-reply infra failure.
+        _install_pkg(monkeypatch, tmp_path, handler_src="import os\nos._exit(0)\n")
+        for exc in self._fail_n(3):
+            assert exc.value.status == 502  # the failures themselves
+        with pytest.raises(rt.BackendRuntimeError) as exc4:
+            rt.invoke_handler(USER, PKG, "word-count", {}, limits=FAST)
+        assert exc4.value.status == 503
+        assert "quarantined" in str(exc4.value)
+        assert "reinstall clears it immediately" in str(exc4.value)
+        rows = _ledger_rows(tmp_path)
+        assert rows[-1]["status"] == "quarantined"
+        assert rows[-1]["cooldownRemainingSeconds"] >= 1
+        # The refusal spent NO worker: three no-reply rows + one quarantine row.
+        assert [r["status"] for r in rows] == ["no-reply"] * 3 + ["quarantined"]
+
+    def test_handler_errors_never_count(self, monkeypatch, tmp_path):
+        _install_pkg(monkeypatch, tmp_path)
+        for _ in range(4):
+            out = rt.invoke_handler(USER, PKG, "boom", {}, limits=FAST)
+            assert out["reply"]["kind"] == "handler-error"
+        # Still invocable — a correctly-failing handler is not a crash loop.
+        ok = rt.invoke_handler(USER, PKG, "word-count", {"text": "x"}, limits=FAST)
+        assert ok["reply"]["ok"] is True
+
+    def test_quarantine_is_per_handler(self, monkeypatch, tmp_path):
+        _install_pkg(monkeypatch, tmp_path)
+        # Quarantine "spin" via three timeout kills (KILL_FAST wall = 1.5s).
+        for exc in self._fail_n(3, handler="spin", limits=KILL_FAST):
+            assert "timeout" in str(exc.value)
+        with pytest.raises(rt.BackendRuntimeError) as exc:
+            rt.invoke_handler(USER, PKG, "spin", {}, limits=KILL_FAST)
+        assert exc.value.status == 503
+        # The healthy sibling is untouched.
+        ok = rt.invoke_handler(USER, PKG, "word-count", {"text": "a b"}, limits=FAST)
+        assert ok["reply"]["result"] == {"words": 2}
+
+    def test_reinstall_resets_the_breaker(self, monkeypatch, tmp_path):
+        pkg = _install_pkg(monkeypatch, tmp_path, handler_src="import os\nos._exit(0)\n")
+        list(self._fail_n(3))
+        with pytest.raises(rt.BackendRuntimeError) as exc:
+            rt.invoke_handler(USER, PKG, "word-count", {}, limits=FAST)
+        assert exc.value.status == 503
+        # "Reinstall": the entry changes on disk → new digest → fresh start.
+        entry = pkg / "backend" / "handler.py"
+        entry.chmod(0o644)
+        entry.write_text(_HANDLER_SRC, encoding="utf-8")
+        out = rt.invoke_handler(USER, PKG, "word-count", {"text": "a"}, limits=FAST)
+        assert out["reply"]["ok"] is True
+
+    def test_cooldown_half_open_requarantines_at_once(self, monkeypatch, tmp_path):
+        _install_pkg(monkeypatch, tmp_path, handler_src="import os\nos._exit(0)\n")
+        clock = {"t": 1000.0}
+        monkeypatch.setattr(rt, "_now", lambda: clock["t"])
+        list(self._fail_n(3))
+        with pytest.raises(rt.BackendRuntimeError) as exc:
+            rt.invoke_handler(USER, PKG, "word-count", {}, limits=FAST)
+        assert exc.value.status == 503
+        # Cooldown expires → HALF-OPEN: the next call runs (and fails again)…
+        clock["t"] += rt.QUARANTINE_SECONDS + 1
+        with pytest.raises(rt.BackendRuntimeError) as exc_half:
+            rt.invoke_handler(USER, PKG, "word-count", {}, limits=FAST)
+        assert exc_half.value.status == 502  # a real worker ran
+        # …and ONE failure re-quarantines immediately (counter was kept).
+        with pytest.raises(rt.BackendRuntimeError) as exc_again:
+            rt.invoke_handler(USER, PKG, "word-count", {}, limits=FAST)
+        assert exc_again.value.status == 503

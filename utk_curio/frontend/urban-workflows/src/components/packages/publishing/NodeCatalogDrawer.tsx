@@ -19,6 +19,7 @@ import { EnvNote } from "./EnvNote";
 import { DrawerFooter } from "./DrawerFooter";
 import { DrawerTab, SortMode } from "./packageTypes";
 import { sortPackages, matchesSearch } from "./packageUtils";
+import { restartNotice } from "../../../services/packageRestartCopy";
 import styles from "./NodeCatalogDrawer.module.css";
 
 
@@ -56,6 +57,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const [installCandidate, setInstallCandidate] = useState<PackagePayload | null>(null);
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // dev/92 B-2: the restart-honesty line after an install that changed
+  // shared Python libraries (backend-declared, never inferred here).
+  const [restartNoticeText, setRestartNoticeText] = useState<string | null>(null);
   const installedByDirRef = useRef<Map<string, PackagePayload>>(new Map());
   // When Install auto-saves a brand-new dataflow, the React state update
   // for `projectId` doesn't always make it into `confirmCatalogInstall`'s
@@ -221,6 +225,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       const result = await packagesApi.installToProject(
         effectiveProjectId, installCandidate.dirName,
       );
+      if (result.restartRecommended?.libs?.length) {
+        setRestartNoticeText(restartNotice(result.restartRecommended));
+      }
       // Keep the lockfile store in sync — palette filter reads this.
       setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
@@ -390,6 +397,19 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
           <div className={styles.scrollBody}>
             {unsavedBanner}
+            {restartNoticeText ? (
+              <div className={styles.noticeBanner} role="status">
+                <span className={styles.errorBannerText}>{restartNoticeText}</span>
+                <button
+                  type="button"
+                  className={styles.noticeBannerDismiss}
+                  aria-label="Dismiss restart notice"
+                  onClick={() => setRestartNoticeText(null)}
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
             {actionError ? (
               <div className={styles.errorBanner} role="alert">
                 <span className={styles.errorBannerText}>{actionError}</span>

@@ -221,6 +221,9 @@ export interface ProjectPackagesResponse {
   pruned?: string[];
   /** Set on uninstall responses: defaults entries the prune sweep removed. */
   removedFromDefaults?: string[];
+  /** dev/92 B-2: present exactly when this install's pip step actually
+   * installed/changed shared libraries under the running server. */
+  restartRecommended?: { libs: string[] };
 }
 
 /** Per-project result row in a global (defaults) install response. */
