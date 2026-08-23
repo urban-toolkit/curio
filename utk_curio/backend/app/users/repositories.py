@@ -31,7 +31,10 @@ def user_by_username(username: str) -> Optional[User]:
 
 
 def user_by_id(user_id: int) -> Optional[User]:
-    return User.query.get(user_id)
+    # Session.get(), not the legacy Query.get(): same identity-map lookup by
+    # primary key, but Query.get() emits a LegacyAPIWarning on every call and
+    # this runs once per authenticated request.
+    return db.session.get(User, user_id)
 
 
 def create_user(**kwargs) -> User:
