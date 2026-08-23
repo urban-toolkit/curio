@@ -118,7 +118,12 @@ def _free_port(port: int, *, raise_on_failure: bool, total_timeout: float = 10.0
         return
 
     if sys.platform == "win32":
-        cmd: list = [f"npx kill-port {port}"]
+        # A STRING, not a one-element list: with shell=True on Windows,
+        # subprocess runs list2cmdline() first, which quotes the whole
+        # thing into a single token — cmd.exe then reports
+        # '"npx kill-port 5002"' is not recognized. The port was never
+        # freed, so setup always failed hard whenever one was occupied.
+        cmd: "list | str" = f"npx kill-port {port}"
         shell = True
     else:
         cmd = ["npx", "kill-port", str(port)]
