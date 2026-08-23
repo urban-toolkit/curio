@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import expect
 
 from .utils import (
@@ -244,3 +245,137 @@ def test_add_dataset_propagates_to_palette(
         page.locator(f'#datasets-palette [data-dataset-id="{DATASET_ID}"]')
     ).to_have_count(0, timeout=20000)
     assert _installed_flag() is not True
+
+
+@pytest.fixture
+def delete_imported_datasets(current_server):
+    """Remove datasets the test registered, through the real DELETE route.
+
+    An import writes into ``.curio/users/<id>/datasets/``, which survives
+    ``reset-db`` while sqlite recycles user ids from 1 — so without this the next
+    run sees a phantom dataset in the catalog.
+    """
+    registered: list[tuple[str, str]] = []
+
+    def register(token: str, dataset_id: str) -> None:
+        registered.append((token, dataset_id))
+
+    yield register
+
+    for token, dataset_id in registered:
+        try:
+            api_json(
+                f"{current_server}/api/datasets/{dataset_id}", token, method="DELETE"
+            )
+        except Exception as exc:  # noqa: BLE001 - teardown must not mask failures
+            print(f"[teardown] DELETE dataset {dataset_id} failed: {exc}")
+
+
+def test_importing_a_user_dataset_registers_without_attaching(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+    tmp_path,
+    delete_imported_datasets,
+):
+    """A user's own file becomes a catalog entry, but is NOT added to the dataflow.
+
+    Import is deliberately register-only: it creates an account-level catalog
+    item and leaves ``dataflow.datasets`` untouched, so the dataset/node link is
+    only ever made by an explicit Add. Conflating the two would silently attach
+    every imported file to whatever dataflow happened to be open — which is why
+    this asserts the *absence* of a palette row before asserting its presence
+    after an explicit Add.
+    """
+    require_project_page()
+    require_user_auth()
+    result = _enter_dataflow(
+        page, app_frontend, current_server,
+        username="datacat_import", project="Data Catalog Import",
+    )
+    token = result["token"]
+
+    source = tmp_path / "my-observations.csv"
+    source.write_text(
+        """station,reading
+alpha,1
+beta,2
+""",
+        encoding="utf-8",
+    )
+
+    palette = open_tools_palette(page, "datasets")
+    palette.get_by_role("button", name="Browse Data Catalog +").click(force=True)
+    drawer = _drawer(page)
+    expect(_card(drawer, DATASET_ID)).to_have_count(1, timeout=15000)
+
+    # The footer is shared with the Node Catalog; the dataset surface overrides
+    # its label and widens `accept` past .curio.zip archives.
+    import_button = drawer.get_by_role("button", name="Import dataset")
+    expect(import_button).to_be_visible()
+    accept = drawer.locator('input[type="file"]').get_attribute("accept")
+    assert ".csv" in accept and ".geojson" in accept, accept
+
+    with page.expect_response(
+        lambda r: r.url.endswith("/api/datasets/import")
+        and r.request.method == "POST"
+        and r.ok,
+        timeout=60000,
+    ) as imported:
+        with page.expect_file_chooser() as chooser:
+            import_button.click()
+        chooser.value.set_files(str(source))
+
+    dataset_id = imported.value.json()["id"]
+    delete_imported_datasets(token, dataset_id)
+
+    expect(page.get_by_label("Notifications")).to_contain_text(
+        f"Registered {source.name} in the Data Catalog.", timeout=20000
+    )
+
+    # 1. It is now a catalog entry the user can see...
+    card = _card(drawer, dataset_id)
+    expect(card).to_have_count(1, timeout=20000)
+    # ...offering Add, which is the proof it was NOT auto-attached.
+    expect(
+        card.get_by_role("button", name="Add to dataflow", exact=True)
+    ).to_be_visible(timeout=20000)
+    expect(
+        card.get_by_role("button", name="Remove from dataflow", exact=True)
+    ).to_have_count(0)
+
+    # 2. And the dataflow itself is untouched: nothing in the palette.
+    drawer.locator("header").get_by_role(
+        "button", name="Close Data Catalog drawer"
+    ).click()
+    expect(page.locator(DRAWER_ROOT)).to_have_count(0, timeout=5000)
+    expect(
+        page.locator(f'#datasets-palette [data-dataset-id="{dataset_id}"]')
+    ).to_have_count(0)
+
+    # 3. An explicit Add is what attaches it — and an imported dataset takes the
+    #    same path a hub one does.
+    drawer = _open_drawer_from_menu(page)
+    with page.expect_response(
+        lambda r: "/datasets/install" in r.url
+        and r.request.method == "POST"
+        and r.ok,
+        timeout=30000,
+    ):
+        _card(drawer, dataset_id).get_by_role(
+            "button", name="Add to dataflow", exact=True
+        ).click()
+
+    expect(
+        _card(drawer, dataset_id).get_by_role(
+            "button", name="Remove from dataflow", exact=True
+        )
+    ).to_be_visible(timeout=20000)
+    drawer.locator("header").get_by_role(
+        "button", name="Close Data Catalog drawer"
+    ).click()
+    expect(page.locator(DRAWER_ROOT)).to_have_count(0, timeout=5000)
+    expect(
+        page.locator(f'#datasets-palette [data-dataset-id="{dataset_id}"]')
+    ).to_have_count(1, timeout=20000)
+
