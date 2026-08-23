@@ -94,7 +94,13 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   const cat = primaryCategory(pkg);
 
   return (
-    <article className={styles.card}>
+    <article
+      className={styles.card}
+      /* Stable hook for e2e locators: the CSS module class is hashed, and
+         keying on the display name couples tests to copy that has been
+         renamed repeatedly. Mirrors data-pkg-palette-coords. */
+      data-pkg-dir={pkg.dirName}
+    >
       <div className={`${styles.cardIcon}`}>
         <CatalogKindIcon
           className={`${styles.cardIcon} ${styles.cardIconPackage} ${iconVariantForPack(pkg.dirName)} `}

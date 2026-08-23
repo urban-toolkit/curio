@@ -115,6 +115,9 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   return (
     <article
       className={styles.card}
+      /* Same attribute the palette rows carry (DatasetPaletteRows), so a
+         card and its palette row share one identifier across surfaces. */
+      data-dataset-id={dataset.id}
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
