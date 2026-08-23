@@ -79,6 +79,22 @@ The blueprint lives in [`utk_curio/backend/app/testing/routes.py`](../../app/tes
 
 The DB stub is strictly additive — Strategy A still works against the same test DB. Keep project-ownership / signup UI tests on Strategy A so regressions in the real auth flow still fail those tests.
 
+### Shared helpers
+
+| Helper | What it does |
+|---|---|
+| `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
+| `skip_if_shared_view(page, *, timeout=4000)` | Skips when the dataflow opened read-only as the shared guest. In a no-auth environment the browser cannot see another user's installed packages or datasets and every catalog fetch comes back empty, so the test is not meaningful — better a clear skip than a confusing failure deep inside a drawer assertion. |
+| `open_tools_palette(page, kind)` | Opens the left-rail `"packages"` or `"datasets"` palette and returns its panel locator. **One-shot per test**: the trigger's `title` flips to `Close …` once open, and the two palettes are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. |
+
+### Browser-test conventions
+
+Three things are easy to get wrong against the catalog drawers:
+
+- **Disable motion before navigating.** `page.emulate_media(reduced_motion="reduce")` — both drawer providers read `prefers-reduced-motion` through `useSyncExternalStore`, so this makes presentation synchronous and collapses the 380 ms close timer to zero. Do it *before* `stub_login_and_enter_workflow`; a `page.reload()` afterwards races `ProjectLoader` into the shared-guest fallback.
+- **`to_be_visible()` is not a gate for a drawer.** Both slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. Gate on the dataset drawer's `aria-hidden="false"` (that attribute *is* the presented signal) and let Playwright's bounding-box-stability check ride out the transform. Never `force=True` on drawer internals — `force` skips the very hit-target check that protects against clicking a mid-slide panel.
+- **Settle the canvas before clicking anything on a node.** ReactFlow's initial `fitView` animates the viewport, and a visible-but-still-moving element makes `click()` time out with no useful message. Call `_wait_for_reactflow_ready(page)` first.
+
 ## Workflow Subset Filtering
 
 Run only specific workflows by setting `CURIO_E2E_WORKFLOWS` (comma-separated basenames):
@@ -134,7 +150,23 @@ test_frontend/
   test_guest_project_cleanup.py
   test_guest_flag.py          # ALLOW_GUEST_LOGIN toggle
   test_no_project_menu.py     # File-menu UI in --no-project mode (CURIO_NO_PROJECT=1)
+  test_share_link.py          # share URL: owner creates, second context visits read-only
+  test_shared_guest_workspace.py  # guest workspace shared across browser contexts
+  test_examples.py            # structural drift check on docs/examples (no browser)
+  test_dataset_palette.py     # computed dataset shows in the dataset palette and persists
+  test_node_catalog.py        # Node Catalog drawer: list, search, add/remove -> palette
+  test_data_catalog.py        # Data Catalog drawer: hub datasets, search, add/remove, import
+  test_package_export_import.py   # palette export download -> re-import (dup + renamed clone)
+  test_save_as_package.py     # node -> Save as package -> Export -> load back
+  test_workflow_deps_e2e.py   # loading a dataflow auto-installs its declared packages
+  test_library_install_integration.py  # library install -> sandbox import (NO browser)
 ```
+
+Two of these deliberately do not drive a browser. `test_examples.py` is a
+structural check on the bundled dataflow JSON. `test_library_install_integration.py`
+requests no `page` fixture: it lives here only to reuse `curio_servers` /
+`current_server` / `sandbox_server`, and isolates the backend-to-sandbox process
+boundary from every UI concern, so a failure says immediately which half broke.
 
 ## CURIO_NO_PROJECT-mode tests
 
@@ -152,6 +184,76 @@ CURIO_NO_PROJECT=1 pytest \
 ```
 
 `fixtures.py::curio_servers` reads `CURIO_NO_PROJECT` from the pytest env and forwards `--no-project` to `curio.py start`, so no extra wiring is needed.
+
+## Catalog surfaces
+
+**No seeding is needed.** Both catalogs are live directory scans of committed
+content: the Node Catalog reads `<repo_root>/packages/`, the Data Catalog reads
+`<repo_root>/datasets/` (surfacing as `origin: "hub"`). A fresh test user already
+sees five packages and three datasets.
+
+**Only `curio.example-ui@1` may be installed in a test.** It declares no python
+dependencies, so nothing shells out to pip. `curio.weather@1`,
+`ai.urbanlab.uhvi@1` and `curio.streetvision@1` pull rasterio / geopandas /
+**torch** through a synchronous call capped at 30 minutes — and worse, the
+resulting user-store copy makes *every later* `curio start` re-resolve those deps
+(`main.py` walks every user store on boot and `sys.exit(1)`s if pip fails). The
+e2e suite cannot stub pip: it runs in the backend subprocess, not the pytest
+process. Guard the install endpoint with `page.route` so a mis-targeted click
+fails in milliseconds instead.
+
+Other things that surprise people here:
+
+- **"Installed" in a drawer means the project lockfile**, not the user store. A
+  fresh project therefore always offers `Add to dataflow`, even though
+  `.curio/users/*/packages/` persists across runs.
+- `curio.builtin@*` is always treated as installed and offers **no** buttons: it
+  ships with every instance and can be neither uninstalled nor published.
+- **Export is palette-only** and gated to (user store ∩ project lockfile) minus
+  builtin. The drawer's `MyPackagesList` also renders an export control.
+- **A plain re-import is expected to 400.** `onPickArchive` never sets
+  `replace`, and no UI path does, so re-importing an installed coordinate fails
+  by design. Rename the manifest `id` to fork it instead.
+- The **"In dataflow" tab renders `MyPackagesList`, not `PackageCard`**, so the
+  `data-pkg-dir` attribute is absent there; key on the row's `Remove {name}`
+  aria-label.
+- Card roots carry `data-pkg-dir` / `data-dataset-id`. Prefer them over display
+  copy, which has been renamed repeatedly.
+
+## Libraries
+
+`test_library_install_integration.py` **really runs pip**, so it needs network
+access to PyPI and skips (rather than fails) when the index is unreachable.
+
+- **JS library install does not exist.** `POST /api/packages/libraries` with
+  `kind: "js"` returns 501, as does the DELETE. There is no npm runner; JS nodes
+  resolve imports only against `<repo_root>/node_modules`, populated by
+  `npm install` at launch.
+- **Only a library outside the sandbox's `_globals_cache` can demonstrate a
+  fresh import.** Anything in that cache (`pandas`, `geopandas`, the DuckDB
+  helpers, …) is already in `sys.modules` for the sandbox's lifetime. The tests
+  use `inflection`: pure Python, zero dependencies, never preloaded.
+- **Not repeat-safe.** Teardown pip-uninstalls the library, but
+  `sys.modules['inflection']` stays warm in the still-running sandbox, so the
+  negative control cannot be re-armed within one server session. Restart the
+  servers between runs.
+- A library install is importable by the next node execution with **no sandbox
+  restart**: backend and sandbox launch from the same `sys.executable`, so pip
+  writes into the site-packages the sandbox already imports from.
+
+## Cleaning up after a test
+
+`/api/testing/reset-db` truncates SQL tables only, while `.curio/users/<id>/`
+persists — and `user.id` is a bare sqlite rowid alias, so ids recycle from 1.
+A test that installs a package, imports a dataset or adds a library therefore
+leaks into the *next* test's view of a "fresh" user unless it cleans up.
+
+Use a **non-autouse** yield fixture and request it explicitly: the autouse
+`e2e_clean_db` finalizes *last*, so an explicitly-requested fixture still has a
+live stub user (and a valid token) to authenticate its DELETE calls with. Go
+through the real routes rather than deleting files — for libraries that matters,
+because the route runs in the backend process, the only interpreter guaranteed to
+match the sandbox's.
 
 ## Environment Variables
 
