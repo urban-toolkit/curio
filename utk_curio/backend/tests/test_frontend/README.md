@@ -79,13 +79,69 @@ The blueprint lives in [`utk_curio/backend/app/testing/routes.py`](../../app/tes
 
 The DB stub is strictly additive — Strategy A still works against the same test DB. Keep project-ownership / signup UI tests on Strategy A so regressions in the real auth flow still fail those tests.
 
+**One footgun in the stub spec.** `_empty_spec()` sets a top-level `name` but no
+`dataflow.name`, so `loadParsedTrill` calls `setWorkflowName(undefined)` and the
+canvas ends up with no workflow name at all (it clobbers `FlowProvider`'s
+`"DefaultDataflow"` default). Nothing notices until a test presses **File > New
+dataflow** and then **Save**: `discardProject()` clears `projectName`, so
+`saveCurrentProject` sends `nameOverride || projectName || workflowNameRef.current`
+= `undefined`, and `ProjectCreate` rejects it with `name is required`. The symptom
+is an error toast and a URL that stays on `/dataflow/new`, because `handleSave`
+only navigates after a successful create. A test that needs a second empty
+dataflow should stub another project rather than create one through the File
+menu.
+
 ### Shared helpers
 
 | Helper | What it does |
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
 | `skip_if_shared_view(page, *, timeout=4000)` | Skips when the dataflow opened read-only as the shared guest. In a no-auth environment the browser cannot see another user's installed packages or datasets and every catalog fetch comes back empty, so the test is not meaningful — better a clear skip than a confusing failure deep inside a drawer assertion. |
-| `open_tools_palette(page, kind)` | Opens the left-rail `"packages"` or `"datasets"` palette and returns its panel locator. **One-shot per test**: the trigger's `title` flips to `Close …` once open, and the two palettes are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. |
+| `open_tools_palette(page, kind)` | Opens the left-rail `"packages"` or `"datasets"` palette and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs both palettes can come back to the first one. They are still mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. |
+
+### Canvas authoring helpers
+
+Everything else in this suite gets its graph from a file or a seeded spec. These
+build one by hand, the way a user does, and they are the only coverage of the
+palette drag and the edge drag.
+
+| Helper | What it does |
+|---|---|
+| `drag_to_canvas(page, source, *, at=None)` | One synthetic HTML5 drag from any draggable palette source onto `.curio-canvas-drop-target`; returns the new node's id, diffed from the canvas because ids are `uuid4`. |
+| `connect_nodes(page, source_id, target_id, *, source_handle="out", target_handle="in")` | Draws an edge with real pointer moves between two `.react-flow__handle`s and returns the derived edge id. |
+| `set_node_code(page, node_id, code)` / `read_node_code(page, node_id)` | Writes / reads a code node's source through that node's own Monaco instance. |
+| `canvas_nodes(page)` / `canvas_node_type(page, node_id)` | `{id, nodeType}` for the canvas, read from `window.__curio_reactFlow`. Projected, because `node.data` holds a `PythonInterpreter` and callbacks that Playwright cannot serialize. |
+| `play_node`, `wait_for_node_done`, `wait_for_node_settled`, `run_node_and_wait` | Press a node's play button and wait for it to settle. `wait_for_node_done` raises with the node's own error text; `wait_for_node_settled` returns `"done"` / `"error"` for a test where the failure *is* the expected outcome. |
+| `read_node_output_text(page, node_id)` | The inline output box's text: the `[N]:` counter, stdout, and `Saved to file: …`. The return value is never shown, so a result assertion has to `print` what it wants to check. |
+| `activate_header_icon(locator)` | Presses a node-header icon button (the title pencil, the settings gear). |
+
+Five things here are easy to get wrong:
+
+- **The identifying attribute is often not the draggable element.** A dataset
+  palette row carries `data-dataset-id` on its wrapper and puts `onDragStart` on
+  an inner grip, so `drag_to_canvas` resolves a `[draggable]` descendant — events
+  bubble up, never down.
+- **`dragstart` must be fired on the source.** Dataset drags keep their payload in
+  a module singleton set by `beginDatasetDrag`, which the canvas reads in
+  preference to `getData`, so a hand-built `drop` on its own carries nothing and
+  `handleDrop` ignores it without a word.
+- **Nodes are 525x350 at zoom 1.** In a 1280x720 viewport, drops less than ~600 px
+  apart horizontally overlap, and the later node's body then covers the earlier
+  one's handle. React Flow hit-tests whatever is under the pointer, so the
+  connection drag becomes a silent no-op; `connect_nodes` checks
+  `elementFromPoint` up front and fails with the covering element instead.
+- **Never `keyboard.type` into Monaco.** `autoClosingBrackets: "always"` and
+  `formatOnType: true` mean typed Python does not round-trip. `setValue` fires the
+  same `onChange` -> `floatCode` -> `data.code` chain a keystroke does, so it is
+  the user path, not a back door.
+- **Never `__curio_reactFlow.setNodes`.** That writes only React Flow's zustand
+  store, and `useStoreUpdater` pushes the provider's node array straight back over
+  it on the next render, so an injected node or code edit silently disappears.
+
+Node-header icons need `activate_header_icon` rather than `click()`: they activate
+on `pointerdown` + `pointerup` and swallow the native click (so press-and-drag
+still moves the node), and app chrome overlaps the header band at the top of the
+canvas, which means a real click at the button's centre lands on the overlay.
 
 ### Browser-test conventions
 
@@ -94,6 +150,41 @@ Three things are easy to get wrong against the catalog drawers:
 - **Disable motion before navigating.** `page.emulate_media(reduced_motion="reduce")` — both drawer providers read `prefers-reduced-motion` through `useSyncExternalStore`, so this makes presentation synchronous and collapses the 380 ms close timer to zero. Do it *before* `stub_login_and_enter_workflow`; a `page.reload()` afterwards races `ProjectLoader` into the shared-guest fallback.
 - **`to_be_visible()` is not a gate for a drawer.** Both slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. Gate on the dataset drawer's `aria-hidden="false"` (that attribute *is* the presented signal) and let Playwright's bounding-box-stability check ride out the transform. Never `force=True` on drawer internals — `force` skips the very hit-target check that protects against clicking a mid-slide panel.
 - **Settle the canvas before clicking anything on a node.** ReactFlow's initial `fitView` animates the viewport, and a visible-but-still-moving element makes `click()` time out with no useful message. Call `_wait_for_reactflow_ready(page)` first.
+
+## Screenshot baselines
+
+`save_workflow_test_screenshot` compares the canvas against a PNG in
+`docs/examples/dataflows/expected_outputs/`, named
+`screenshot_<stem>_<test_name>.png`. **A missing baseline is not a failure** — the
+helper writes the current capture as the new baseline and passes, so the first run
+of a new test silently establishes whatever it happened to render. Review a new
+baseline by eye before trusting it.
+
+The helper calls `_wait_for_reactflow_ready` first, so baseline and comparison
+always share one fitView'd viewport. Comparison allows 20% of pixels to differ by
+more than 30/255 per channel; that budget exists because every executed code node
+renders `Saved to file: <timestamp>_<hash>`, which changes on every run.
+
+Two families of baseline live in that folder:
+
+- one per bundled dataflow JSON, for `TestWorkflowCanvas` (two per workflow,
+  `test_node_type_and_content` and `test_node_execution`), each paired with a
+  `_browser_log.txt` because autk swallows its errors into React state;
+- three for the hand-built canvases: `canvas-authoring`, `package-roundtrip` and
+  `library-manager`. These guard what the semantic assertions cannot see — most
+  usefully that an edge is actually *drawn*, not merely present in the React Flow
+  store.
+
+Measured run-to-run drift for the three canvas baselines is 1.24% (library
+manager) and under 0.1% (the other two) against the 20% budget, so the headroom is
+wide. They were captured with the executable `browser_type_launch_args` resolves
+to — **system Google Chrome** when it is installed, bundled Chromium otherwise —
+so regenerate them on the machine that will police them if that ever diverges. To
+regenerate, delete the PNG and re-run the test.
+
+A failing comparison writes `screenshot_<stem>_<test_name>_actual.png` next to the
+baseline and attaches expected/actual/diff to the Allure report. Those `_actual`
+files are debris; do not commit them.
 
 ## Workflow Subset Filtering
 
@@ -158,6 +249,9 @@ test_frontend/
   test_data_catalog.py        # Data Catalog drawer: hub datasets, search, add/remove, import
   test_package_export_import.py   # palette export download -> re-import (dup + renamed clone)
   test_save_as_package.py     # node -> Save as package -> Export -> load back
+  test_canvas_authoring_e2e.py     # build by hand: dataset -> drag -> connect -> run
+  test_library_manager_e2e.py      # Installed-libraries modal -> a node imports the lib
+  test_package_roundtrip_e2e.py    # canvas node -> package -> archive -> import -> run it
   test_workflow_deps_e2e.py   # loading a dataflow auto-installs its declared packages
   test_library_install_integration.py  # library install -> sandbox import (NO browser)
 ```
@@ -219,6 +313,12 @@ Other things that surprise people here:
   aria-label.
 - Card roots carry `data-pkg-dir` / `data-dataset-id`. Prefer them over display
   copy, which has been renamed repeatedly.
+- Palette kind rows carry `data-pkg-template-id` — the same descriptor id the
+  row writes into `dataTransfer`, so addressing a row and dropping that kind
+  cannot drift apart. Canvas nodes carry `data-curio-node-status`
+  (`idle` / `running` / `done` / `error`) and `data-curio-node-output` on the
+  inline output box. The last one matters: `.nowheel.nodrag` is on the editor
+  wrapper too, so a `.first` match there returns Monaco's rendered code.
 
 ## Libraries
 
@@ -233,6 +333,9 @@ access to PyPI and skips (rather than fails) when the index is unreachable.
   fresh import.** Anything in that cache (`pandas`, `geopandas`, the DuckDB
   helpers, …) is already in `sys.modules` for the sandbox's lifetime. The tests
   use `inflection`: pure Python, zero dependencies, never preloaded.
+  `test_library_manager_e2e.py` uses `titlecase` for the same reasons and
+  deliberately a *different* library, so the two cannot poison each other's
+  negative control within one server session.
 - **Not repeat-safe.** Teardown pip-uninstalls the library, but
   `sys.modules['inflection']` stays warm in the still-running sandbox, so the
   negative control cannot be re-armed within one server session. Restart the
