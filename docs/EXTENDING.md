@@ -283,7 +283,7 @@ Spatial Join is simpler: a single handler at the end of [`api/routes.py`](../utk
 
 ### 4.5 Shipping the package
 
-The Street Vision package is bundled in-repo under [`packages/`](../packages/) but **not auto-installed** (`readOnly: true`, but no `factoryInstall` entry). Users opt in by clicking *Install* in the catalog. Generally:
+The Street Vision package is bundled in-repo under [`packages/`](../packages/) but **not auto-installed**: seeding covers `curio.builtin@1` plus whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/seed.py`](../utk_curio/backend/app/packages/seed.py)), and Street Vision is in neither set. Users opt in by clicking **Add to dataflow** in the catalog. Generally:
 
 - **Bundled-and-auto-installed** → only for `curio.builtin@1`. Anything every user must have.
 - **Bundled-and-installable** → optional first-party packages like `curio.streetvision@1`, `ai.urbanlab.uhvi@1`. Visible in the catalog without a remote registry roundtrip.

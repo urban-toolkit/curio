@@ -124,8 +124,7 @@ Node types are no longer hardcoded into a TypeScript enum. They live in **node p
 packages/
   curio.builtin@1/        # always-on baseline (data, computation, autk, vis, flow nodes)
     manifest.json
-    sources/              # per-template Python starter code (data-loading, …)
-    integrity.json        # SHA-256 of every file (verified on install)
+    integrity.json        # SHA-256 of every file (written on install, not verified)
   curio.streetvision@1/   # optional package, install from /catalog
     manifest.json
     sources/*.tsx         # custom behavior hooks (Street View Fetcher, …)
@@ -336,11 +335,11 @@ A `dataRef` that names an unavailable table, whether an empty layer, a layer tha
 
 ### Connection Validation
 
-`src/utils/ConnectionValidator.ts` enforces rules when the user draws an edge:
+`src/ConnectionValidator.ts` enforces rules when the user draws an edge:
 
 - Source port type must be compatible with target port type.
 - Port cardinality is respected (e.g., a `'1'` input port rejects a second incoming edge).
-- `MERGE_FLOW` and `FLOW_SWITCH` nodes have special cardinality rules handled by their behavior hooks via `dynamicHandles`.
+- `MERGE_FLOW` nodes have special cardinality rules handled by their behavior hook via `dynamicHandles`.
 
 ---
 
@@ -361,7 +360,11 @@ When a user clicks the play button on a node, the following sequence occurs:
 3. Backend proxies to Sandbox
    POST {SANDBOX_HOST}:{SANDBOX_PORT}/exec    [Python nodes]
    POST {SANDBOX_HOST}:{SANDBOX_PORT}/execJs  [JS_COMPUTATION nodes]
-   Body: { code, nodeType, file_path: <artifact_id>, dataType: <kind> }
+   Body: { code, nodeType, file_path: <artifact_id>, dataType: <kind>,
+           dataset_paths: { <datasetId>: <absPath> } }
+
+   dataset_paths resolves the portable curio_dataset_path("<id>") calls that
+   Data Catalog loader snippets emit — see "Portable dataset paths" below.
 
 4. Sandbox executes user code
    Python: wraps in python_wrapper.txt, runs via exec() in-process
@@ -378,8 +381,8 @@ When a user clicks the play button on a node, the following sequence occurs:
    - Downstream nodes' INodeData.input is updated
    - React re-renders downstream nodes
 
-7. ProvenanceProvider.recordExecution()
-   POST /nodeExecProv: records timestamps, types, source
+7. ProvenanceProvider.nodeExecProv()
+   records timestamps, types, source — in-browser only, no backend call
 ```
 
 **JavaScript execution detail:** `JS_COMPUTATION` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
@@ -404,6 +407,28 @@ The sandbox runs as a completely separate Flask process. It:
 - Has its own Python environment for package installation (`POST /install`).
 - Supports file uploads for initial data ingestion (`POST /upload`).
 - Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
+
+### Portable dataset paths
+
+Data Catalog loader snippets do not embed absolute paths. They emit
+`curio_dataset_path("<datasetId>")`, resolved per execution, so a saved dataflow
+stays valid when it is shared, moved, or opened by another user on the same
+install.
+
+1. `backend/app/api/routes.py` scans the outgoing code for literal
+   `curio_dataset_path("<id>")` calls (single or double quoted), dedupes the
+   ids, and caps them at `MAX_EXEC_DATASET_IDS` (32).
+2. It resolves them via `DatasetCatalogService.resolve_execution_paths`, which
+   refuses any path outside the allowed read roots. Resolution **fails open**: an
+   error yields an empty mapping rather than blocking the run.
+3. The resulting `{id: absPath}` map rides along on the `/exec` body. The sandbox
+   re-validates it (dict-shaped, stringified, ≤32 entries) and injects
+   `curio_dataset_path` into the user namespace, where an unknown id raises an
+   actionable `RuntimeError` instead of returning a foreign path.
+
+The id must satisfy the same safe-id pattern on both sides before it is
+interpolated into generated Python; an id that fails it falls back to a literal
+quoted path. See [DATA-CATALOG.md](DATA-CATALOG.md) for the authoring view.
 
 ---
 
@@ -455,9 +480,9 @@ Curio's Python deps live in two places:
 // packages/curio.builtin@1/manifest.json
 "dependencies": {
   "python": {
-    "pandas": "==3.0.2", "geopandas": "==1.1.3", "shapely": ">=2.0",
-    "numpy": "", "pyarrow": "==24.0.0",
-    "duckdb": ">=1.5.0", "fiona": "==1.10.1", "pillow": "==12.2.0"
+    "pandas": ">=3.0.2", "geopandas": ">=1.1.3", "pyproj": ">=3.7.2",
+    "shapely": ">=2.0", "numpy": "", "pyarrow": ">=24.0.0",
+    "duckdb": ">=1.5.0", "fiona": ">=1.10.1", "pillow": ">=12.2.0"
   }
 }
 
@@ -484,7 +509,7 @@ Spec syntax accepts PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`), bare ver
 
 The framework needs to boot before any manifests can be walked, so `pip install -r requirements.txt` (or `pip install utk-curio`) seeds enough of an env that the launcher can read `manifest.dependencies.python` and continue. Heavy ML/data libraries are intentionally NOT in the framework requirements: a fresh `pip install utk-curio` is small and fast, and the multi-GB pulls happen lazily when the user actually installs the matching package (Street Vision pulls `torch` only after they click Install in the catalog).
 
-Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → File → Installed libraries) sit in a third bucket, per-user JSON at `.curio/users/<u>/installed-libraries.json`, and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
+Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → Data ⏷ → Installed libraries) sit in a third bucket, per-user JSON at `.curio/users/<u>/installed-libraries.json`, and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
 
 ---
 
@@ -502,7 +527,6 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/upload` | POST | Upload a file to `.curio/data/` |
 | `/get` | GET | Download a data file by name |
 | `/get-preview` | GET | Download first 100 rows of a data file |
-| `/toLayers` | POST | Convert GeoJSON to map layers |
 | `/installPackages` | POST | Install Python packages in the sandbox (legacy; per-project pip libs) |
 | `/node-types` | GET/POST | Get or register node type metadata |
 
@@ -519,6 +543,39 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/api/packages/defaults` | GET/POST | Per-user "always installed" set (drives the catalog page's Installed badge) |
 | `/api/packages/libraries` | GET/POST/DELETE | Per-user "Installed libraries" surface: list, add, or remove standalone pip libs alongside manifest-derived ones |
 
+### The dataset index
+
+Catalog listings used to scan a user's account store and parse every
+`manifest.json` on each request. `backend/app/datasets/repositories/index.py`
+turns that into keyed lookups against `DatasetIndexEntry`
+(`backend/app/datasets/models.py`, alembic revision `d4e5f6a7b8c9`).
+
+The index is a **derived cache**, and two invariants keep it from ever becoming a
+source of truth:
+
+- **Disk wins.** `reconcile()` walks the store, compares each manifest's
+  `(mtime_ns, size)` against the row, and re-parses only what changed — it
+  commits nothing when nothing moved. A dir whose manifest fails validation has
+  its row **deleted**, matching the listing's own skip behavior, so the index
+  cannot resurrect a dataset the catalog considers unreadable.
+- **Never raise into a caller.** Every entry point has a `safe_*` wrapper
+  (`safe_upsert_from_dir`, `safe_forget`, `safe_sync_rows_by_dir`,
+  `safe_reconcile`) that rolls back and degrades to "no row". Callers fall back
+  to parsing the manifest, so a DB failure costs speed, never correctness.
+
+Rows are keyed on `user_key`, deliberately **not** a foreign key to `user.id` —
+the literal `"guest"` is a valid key. Writes go through on every install path
+(`install/installer.py`, `install/bundle.py`) and rows are dropped on delete.
+Reads hydrate in `repositories/user_store.py` and `repositories/installed.py`,
+always *after* `ensure_computed_ids_migrated`, since that migration renames dirs
+and the index mirrors dir names.
+
+`application/listing.py::resolve_execution_paths` uses the index as a fast path
+for turning dataset ids into filesystem paths at execution time, falling back to
+a full listing for hub and live-output ids. Both paths run the same containment
+check, so an index row pointing outside the allowed read roots is refused rather
+than served.
+
 ### Dataset Routes
 
 Defined in `backend/app/datasets/routes.py`; all require authentication. See [DATA-CATALOG.md](DATA-CATALOG.md) for the user-facing model.
@@ -532,17 +589,23 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `/api/datasets/<id>/download` | GET | Download the dataset file as an attachment |
 | `/api/datasets/import` | POST | Upload a local file into the user's catalog (multipart: `file`, `dataflowId`, `title`, `sourceUpdatedAt`) |
 | `/api/datasets/publish` | POST | Publish a dataset into the shared catalog |
-| `/api/datasets/publish/<id>` | DELETE | Unpublish (remove from the shared catalog) |
-| `/api/datasets/<id>` | DELETE | Permanently delete an account-level dataset from the user's catalog |
+| `/api/datasets/publish/<id>` | DELETE | Unpublish (remove from the shared catalog). **403** unless you published it |
+| `/api/datasets/<id>` | DELETE | Permanently delete an account-level dataset. **403** unless you published it. Returns `failedDirs: string[]`; `deleted` is `false` when a directory survived (still HTTP 200) |
 | `/api/dataflows/<dataflowId>/datasets/install` | POST | Attach a dataset to one dataflow (`datasetId`, optional `sourceItem`, `nodeTitle`) |
 | `/api/dataflows/<dataflowId>/datasets/<id>` | DELETE | Detach a dataset from one dataflow (keeps the account asset) |
 
-### Template Routes
+### Starter Routes
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/templates` | GET | List available code templates |
-| `/addTemplate` | POST | Save a custom template |
+| `/starters` | GET | Per-template starter source bodies from every installed package, keyed on `<packageId>/<templateId>@<major>` |
+
+Starters come from each installed package's optional per-template `source` file.
+`curio.builtin@1` ships no sources, so dragging a built-in node onto the canvas
+yields an empty editor; third-party packages may ship a starter per template.
+When a template declares both `behavior: "code"` and a `source`, the frontend
+composes `withPackageStarter` over the behavior hook so the starter is injected
+on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 
 ### Auth Routes
 
@@ -575,8 +638,8 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `src/registry/types.ts` | TypeScript interfaces for descriptors, adapters, behavior hooks |
 | `src/constants.ts` | `SupportedType`, `EdgeType` enums (node types live in manifests now) |
 | `src/adapters/node/` | Built-in behavior hook implementations (code, vega, autk family, …) |
-| `src/utils/ConnectionValidator.ts` | Edge validation logic |
-| `src/api/` | API client wrappers (`packagesApi`, `projectsApi`, `authApi`) |
+| `src/ConnectionValidator.ts` | Edge validation logic |
+| `src/api/` | API client wrappers (`packagesApi`, `projectsApi`); `authApi` lives at `src/utils/authApi.ts` |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
@@ -598,7 +661,11 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `backend/app/datasets/domain/` | Dataset manifest parsing, catalog items, computed-dataset identity, dedup, provenance |
 | `backend/app/datasets/application/` | Listing, preview, export, mutations, path resolution, auto-install, migrations |
 | `backend/app/datasets/install/` | Dataset installer, multi-part bundles, OSM/PBF layer extraction |
-| `backend/app/datasets/repositories/` | Installed / local / registry / user-store persistence for datasets |
+| `backend/app/datasets/repositories/` | Installed / local / registry / user-store persistence, plus the per-user dataset index |
+| `backend/app/datasets/repositories/index.py` | The dataset index: write-through, disk reconciliation, never-raise `safe_*` wrappers |
+| `backend/app/datasets/models.py` | `DatasetIndexEntry`, the index's SQLAlchemy table |
+| `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
+| `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |
 | `backend/extensions.py` | SQLAlchemy and Flask-Migrate initialization |
 
