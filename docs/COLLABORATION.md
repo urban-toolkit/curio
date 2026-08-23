@@ -23,7 +23,7 @@ When two or more users open the same project (`/dataflow/<UUID>`) on a host that
 - **Per-node soft locks.** Focusing a node's editor records a lock for that user; peers see an avatar chip in the node's corner and the editor becomes read-only on their side.
 - **Code-change proposals.** When a user blurs a Monaco editor (Python code or Vega grammar) and the contents differ from the loaded baseline, a proposal is broadcast. Peers see Approve / Reject buttons; once every peer approves, the change is applied to all editors at once.
 - **Shared execution output.** When a node finishes running on one user's machine, the rendered output payload is broadcast over the socket so peers see the same result without re-running and **without crossing the sandbox session-isolation boundary**.
-- **Activity log.** The side panel keeps the last 20 or so room events (joins, locks, proposals, applies, conflict resolutions).
+- **Activity log.** The side panel keeps the last 200 room events (joins, locks, proposals, applies, conflict resolutions); see `ACTIVITY_CAP` in [`room_state.py`](../utk_curio/backend/app/collaboration/room_state.py).
 
 ## Setup
 
@@ -78,7 +78,7 @@ Useful environment variables:
 ## Security model
 
 - **Identity** is anchored in `UserSession.token` (the same Bearer token used by REST). The token is sent through Socket.IO's `auth` handshake (`io(url, { auth: { token } })`); the server resolves it in [auth.py](../utk_curio/backend/app/collaboration/auth.py) and stashes the `(user_id, username, name, profile_image)` tuple via `room_state.set_identity(sid, ...)`. **Every subsequent event handler reads from that stashed identity, never from the client-supplied payload.** Spoofing `userId`/`username` fields in an event has no effect.
-- **Sandbox artifact isolation is preserved.** The check at [sandbox/util/parsers.py:691-697](../utk_curio/sandbox/util/parsers.py) that gates DuckDB artifact reads on `session_id` is **unchanged**. Outputs flow between collaborators over the socket as `output_produced` payloads, not by one user fetching another user's artifact via `/get`.
+- **Sandbox artifact isolation is preserved.** The check in [`sandbox/util/parsers.py`](../utk_curio/sandbox/util/parsers.py) that gates DuckDB artifact reads on `session_id` is **unchanged**. Outputs flow between collaborators over the socket as `output_produced` payloads, not by one user fetching another user's artifact via `/get`.
 - **Room access** today is "any signed-in user who knows the project UUID can join". This matches the existing project share model (the URL is the share). A stricter `ProjectCollaborator` ACL is out of scope for v1.
 - **Editability of shared dataflows.** Without `--collab`, a non-owner who opens a project URL lands in a read-only "shared view" (project ownership in Curio is single-user). With `--collab` on, that read-only gate stands down so peers can actually collaborate. Edits flow over the socket to the owner's tab, which persists them via the existing auto-save path. **Only the owner writes to disk**; if the owner is offline, collaborator edits are ephemeral. A multi-writer model needs the `ProjectCollaborator` ACL above.
 - **No transport encryption out of the box.** Run behind HTTPS for deployments crossing an untrusted network.

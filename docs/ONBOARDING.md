@@ -108,30 +108,26 @@ These functions handle environment setup, server startup, and process management
 
 The `mainCanvas` component (located here: `utk_curio/frontend/urban-workflows/src/components/MainCanvas.tsx`) is responsible for building and rendering the entire editor canvas. Inside the `components` folder, you will find modular subcomponents. For example:
 
-- `TableBox` → renders and manages table nodes
-- `ImageBox` → handles image nodes
-- `UserMenu`, `ToolsMenu`, `TopMenu` → UI layers
+- `ToolsMenu` → the left rail: built-in node icons, plus the Node Catalog and Data Catalog dropdowns
+- `UpMenu` → the top menu bar (File, Data, and the rest)
+- `UniversalNode` → the single component every node type renders through
 
-If you check the `MainCanvas.tsx` file, at around line 97, you will see something similar to:
+If you scroll to the component's `return (`, currently around line 471, you will see something similar to:
 
 ```tsx
 return (
     <div>
-        <ReactFlow />
-        <UserMenu />
-        <ToolsMenu />
+        {!dashboardOn && <ToolsMenu />}
+        {!dashboardOn && <UpMenu ... />}
+        <ReactFlow ... />
         {/* other components */}
     </div>
 );
 ```
 
-This JSX structure defines the editor layout with React components, not raw HTML. Components are implemented in other files. For examples:
+This JSX structure defines the editor layout with React components, not raw HTML. Each component is implemented in its own file: `<ToolsMenu />` comes from `components/menus/nodes/ToolsMenu.tsx` and `<UpMenu />` from `components/menus/top/UpMenu.tsx`. Style classes are likewise defined elsewhere, in CSS modules such as `UpMenu.module.css`.
 
-```tsx
-<TopMenu />
-```
-
-References to: `components/menu/top/TopMenu.tsx`. Similarly, style classes (e.g., `className="rightSide"`) are defined in other files (e.g., `UpMenu.module.css`).
+Do not take the line number literally, because it moves. Use your editor's "go to symbol" or search for `return (` instead.
 
 ## 3. Essential Installations
 
@@ -146,8 +142,10 @@ Install these tools before you start:
 This is the folder structure of the Curio repository:
 
 - `docs/`: usage guides, examples, contribution guidelines, developer references
-- `tests/`: unit tests and integration tests
-- `utk_curio/`: source code for Curio (backend, frontend, sandbox)
+- `packages/`: the shared node catalog, one directory per node package
+- `datasets/`: the shared Data Catalog
+- `scripts/`: `test.sh` and the package-authoring helpers
+- `utk_curio/`: source code for Curio (backend, frontend, sandbox). Tests live beside the code they cover: `utk_curio/backend/tests/`, `utk_curio/sandbox/tests/`, and `utk_curio/frontend/urban-workflows/src/tests/`
 
 ## 5. Making Contributions
 

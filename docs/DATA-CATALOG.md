@@ -68,7 +68,7 @@ The most important consequence: **computed datasets are account-level assets, no
 > A fourth thing exists, but it is not a storage layer: the **dataset index**, a
 > database table mirroring your store's manifests so catalog listings are keyed
 > lookups instead of re-parsing every `manifest.json`. It is a cache, and disk
-> always wins — it is reconciled against the store on every listing, a manifest
+> always wins: it is reconciled against the store on every listing, a manifest
 > it cannot read has its row dropped, and any failure falls back to scanning.
 > Nothing you do interacts with it directly and nothing is lost if it is wiped;
 > see [ARCHITECTURE.md](ARCHITECTURE.md#the-dataset-index) if you are working on
@@ -298,7 +298,7 @@ The catalog root is **never created eagerly**. A missing root simply means nothi
 
 Catalog listings are served from a database table (`dataset_index_entry`, created by alembic revision `d4e5f6a7b8c9`) that mirrors each user's store manifests. Upgrading an existing deployment picks it up through the normal migration run; nothing else is required.
 
-It is a cache, so it needs no operational care: it is reconciled against disk on every listing, and any failure degrades to the old full-scan behaviour. If you ever suspect it has drifted, dropping every row is safe — the next listing rebuilds it. It is also safe to leave alone; there is no cleanup job to schedule.
+It is a cache, so it needs no operational care: it is reconciled against disk on every listing, and any failure degrades to the old full-scan behaviour. If you ever suspect it has drifted, dropping every row is safe, because the next listing rebuilds it. It is also safe to leave alone; there is no cleanup job to schedule.
 
 ### There is no publish gate for datasets
 

@@ -46,7 +46,7 @@ Contributing to Curio offers the opportunity to:
 | Component | Technology                             | Function                                                             |
 | --------- | -------------------------------------- | -------------------------------------------------------------------- |
 | Backend   | Python, Flask                          | REST API for managing users, workflows, and provenance               |
-| Frontend  | JavaScript, Autark, Vega-Lite          | Browser-based interface for authoring and interacting with dataflows |
+| Frontend  | React, TypeScript, Autark, Vega-Lite   | Browser-based interface for authoring and interacting with dataflows |
 | Execution | Python sandbox (multiprocess)          | Secure module for executing user code                                |
 | DevOps    | Docker, Docker Compose, GitHub Actions | Containerization, deployment, and CI/CD                              |
 | Packaging | PyPI (`utk-curio`)                     | Distributes the CLI and backend/frontend bundle                      |
@@ -59,21 +59,26 @@ The codebase follows a modular structure under the `utk_curio/` directory. This 
 curio/
 ├── utk_curio/
 │   ├── backend/                     # Manages database access and user authentication
-│   │   └── tests/                   # pytest files for backend
+│   │   ├── migrations/              # Alembic migrations
+│   │   └── tests/                   # pytest files for backend (+ test_frontend/ for Playwright E2E)
 │   ├── sandbox/                     # Executes user Python code in a secure environment
-│   │   └── tests/                   # pytest files for sandbox
+│   │   └── tests/                   # unittest files for sandbox
 │   └── frontend/                    # All frontend logic
 │       └── urban-workflows/         # Main Curio interface for dataflow editing
 │           └── src/
-│               └── components/     # React components and CSS
+│               ├── components/      # React components and CSS
+│               └── tests/           # Jest unit tests
 │
 ├── curio.py                        # CLI entry point for running and managing all services
-├── tests/                          # Dataflow examples for testing
+├── packages/                       # The shared node catalog: one directory per node package
+├── datasets/                       # The shared Data Catalog: datasets published on this install
+├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py
 ├── docs/                           # Documentation, usage guides, and examples
+│   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
 ```
 
-For how nodes are added, whether through **Save as package node** on a canvas node (the usual route) or through a hand-authored `manifest.json` or a new behavior hook, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation Options
 

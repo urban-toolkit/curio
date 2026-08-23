@@ -364,7 +364,7 @@ When a user clicks the play button on a node, the following sequence occurs:
            dataset_paths: { <datasetId>: <absPath> } }
 
    dataset_paths resolves the portable curio_dataset_path("<id>") calls that
-   Data Catalog loader snippets emit — see "Portable dataset paths" below.
+   Data Catalog loader snippets emit. See "Portable dataset paths" below.
 
 4. Sandbox executes user code
    Python: wraps in python_wrapper.txt, runs via exec() in-process
@@ -382,7 +382,7 @@ When a user clicks the play button on a node, the following sequence occurs:
    - React re-renders downstream nodes
 
 7. ProvenanceProvider.nodeExecProv()
-   records timestamps, types, source — in-browser only, no backend call
+   records timestamps, types, source; in-browser only, no backend call
 ```
 
 **JavaScript execution detail:** `JS_COMPUTATION` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
@@ -554,7 +554,7 @@ The index is a **derived cache**, and two invariants keep it from ever becoming 
 source of truth:
 
 - **Disk wins.** `reconcile()` walks the store, compares each manifest's
-  `(mtime_ns, size)` against the row, and re-parses only what changed — it
+  `(mtime_ns, size)` against the row, and re-parses only what changed. It
   commits nothing when nothing moved. A dir whose manifest fails validation has
   its row **deleted**, matching the listing's own skip behavior, so the index
   cannot resurrect a dataset the catalog considers unreadable.
@@ -563,7 +563,7 @@ source of truth:
   `safe_reconcile`) that rolls back and degrades to "no row". Callers fall back
   to parsing the manifest, so a DB failure costs speed, never correctness.
 
-Rows are keyed on `user_key`, deliberately **not** a foreign key to `user.id` —
+Rows are keyed on `user_key`, deliberately **not** a foreign key to `user.id`:
 the literal `"guest"` is a valid key. Writes go through on every install path
 (`install/installer.py`, `install/bundle.py`) and rows are dropped on delete.
 Reads hydrate in `repositories/user_store.py` and `repositories/installed.py`,

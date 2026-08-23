@@ -24,7 +24,7 @@
 
 
 # Checklist (Check all that apply)
-- [ ] I have manually loaded each .json test from the `tests/` folder into Curio, ran all the nodes one by one, and checked that they run without errors and give the expected results
+- [ ] I have manually loaded each .json dataflow from `docs/examples/dataflows/` into Curio, ran all the nodes one by one, and checked that they run without errors and give the expected results
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation
 - [ ] My changes generate no new warnings

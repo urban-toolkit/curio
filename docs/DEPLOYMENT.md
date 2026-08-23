@@ -54,7 +54,7 @@ The three directories you created are bind-mounted into the container and persis
 | Directory | Holds | Back up? |
 |---|---|---|
 | `instance/` | The SQLite DB: users, projects, sessions | **Yes** |
-| `datasets/` | The shared Data Catalog — every dataset your users publish | **Yes** |
+| `datasets/` | The shared Data Catalog: every dataset your users publish | **Yes** |
 | `.curio/` | Per-user stores, logs, sandbox artifacts | Yes, if users' imported datasets and computed outputs matter |
 
 `packages/` is deliberately **not** mounted. The node catalog is baked into the
@@ -132,7 +132,7 @@ docker compose build
 docker compose up -d
 ```
 
-Confirm auth actually came up before you hand out the URL — the container logs
+Confirm auth actually came up before you hand out the URL. The container logs
 the resolved flags on boot:
 
 ```bash
@@ -203,7 +203,7 @@ To adapt it: install Tailscale on the server (`sudo tailscale up --advertise-tag
 
 Pushing to `main` triggers the dev deploy. Stable runs manually via Actions → Deploy → Run workflow.
 
-`deploy.yml` takes two inputs: `ref` (branch, tag, or SHA — empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref, export the two-file `COMPOSE_FILE`, and rebuild with `--no-cache --force-recreate`.
+`deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref, export the two-file `COMPOSE_FILE`, and rebuild with `--no-cache --force-recreate`.
 
 ## Cutting a release
 
@@ -237,7 +237,7 @@ To roll back, dispatch Deploy with `ref` set to the previous tag and `target: st
 
 - **Verify auth is on**: `docker compose logs curio | grep CURIO_NO_AUTH` must print `CURIO_NO_AUTH=0`. If it prints `1`, you started without the `docker-compose.deploy.yml` overlay and the instance is open to anyone.
 - Set a real `SECRET_KEY`. Auth is on for any real deployment, so this is not optional.
-- Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into or delete from the shared node catalog — `DELETE /api/packages/catalog/<dirName>` performs no ownership check. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
+- Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into or delete from the shared node catalog, and `DELETE /api/packages/catalog/<dirName>` performs no ownership check. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
 - Dataset publishing has no equivalent switch. Any signed-in user can publish into the shared Data Catalog; only the original publisher can unpublish or delete. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
 - `.env` is gitignored, but verify with `git status` after creating it.
 - Back up `instance/urban_workflow.db`, `datasets/`, and `.curio/` regularly.
