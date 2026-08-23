@@ -339,7 +339,7 @@ A `dataRef` that names an unavailable table, whether an empty layer, a layer tha
 
 - Source port type must be compatible with target port type.
 - Port cardinality is respected (e.g., a `'1'` input port rejects a second incoming edge).
-- `MERGE_FLOW` nodes have special cardinality rules handled by their behavior hook via `dynamicHandles`.
+- `Merge Flow` nodes have special cardinality rules handled by their behavior hook via `dynamicHandles`.
 
 ---
 
@@ -354,12 +354,12 @@ When a user clicks the play button on a node, the following sequence occurs:
    Collects: node code, nodeType, upstream artifact ID + kind
 
 2. POST /processPythonCode  (Backend)   [Python nodes]
-   POST /processJavaScriptCode (Backend) [JS_COMPUTATION nodes]
+   POST /processJavaScriptCode (Backend) [JS Computation nodes]
    Body: { code, nodeType, input: { filename: <artifact_id>, dataType: <kind> } }
 
 3. Backend proxies to Sandbox
    POST {SANDBOX_HOST}:{SANDBOX_PORT}/exec    [Python nodes]
-   POST {SANDBOX_HOST}:{SANDBOX_PORT}/execJs  [JS_COMPUTATION nodes]
+   POST {SANDBOX_HOST}:{SANDBOX_PORT}/execJs  [JS Computation nodes]
    Body: { code, nodeType, file_path: <artifact_id>, dataType: <kind>,
            dataset_paths: { <datasetId>: <absPath> } }
 
@@ -385,7 +385,7 @@ When a user clicks the play button on a node, the following sequence occurs:
    records timestamps, types, source; in-browser only, no backend call
 ```
 
-**JavaScript execution detail:** `JS_COMPUTATION` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
+**JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
 
 ### The Python Wrapper
 
@@ -434,7 +434,7 @@ quoted path. See [DATA-CATALOG.md](DATA-CATALOG.md) for the authoring view.
 
 ## Interactions and Propagation
 
-Visualization nodes (`AUTK_GRAMMAR`, `VIS_VEGA`, `VIS_SIMPLE`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
+Visualization nodes (`Autark`, `Vega-Lite`, `Simple View`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
 
 ### IInteraction
 

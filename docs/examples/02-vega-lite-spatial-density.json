@@ -1,6 +1,6 @@
 {
   "dataflow": {
-    "description": "Spatial density + zip-code aggregation in Vega-Lite, fanned out via DATA_POOL (Chicago green roofs).",
+    "description": "Spatial density + zip-code aggregation in Vega-Lite, fanned out via a Data Pool (Chicago green roofs).",
     "nodes": [
       {
         "id": "82537c44-8195-4cd3-a5fa-8a049d53d96e",

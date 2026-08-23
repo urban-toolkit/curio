@@ -1,16 +1,16 @@
 # Example: Spatial density + zip-code aggregation in Vega-Lite
 
-This example shows how to fan out a single spatially-joined dataset to multiple Vega-Lite views via a `DATA_POOL`. The data is Chicago's [green-roofs inventory](data/10-green_roofs.csv): we load the raw CSV, join each rooftop point with the city's neighborhood polygons, then read the same joined table from a histogram (size distribution), a dot density map, and a top-N bar chart.
+This example shows how to fan out a single spatially-joined dataset to multiple Vega-Lite views via a `Data Pool`. The data is Chicago's [green-roofs inventory](data/10-green_roofs.csv): we load the raw CSV, join each rooftop point with the city's neighborhood polygons, then read the same joined table from a histogram (size distribution), a dot density map, and a top-N bar chart.
 
 ## Pipeline overview
 
 ```mermaid
 flowchart LR
-  L1[DATA_LOADING<br/>CSV] --> T1[DATA_TRANSFORMATION<br/>fill NA] --> V1[VIS_VEGA<br/>size histogram]
+  L1[`Data Loading`<br/>CSV] --> T1[`Data Transformation`<br/>fill NA] --> V1[`Vega-Lite`<br/>size histogram]
 
-  L2[DATA_LOADING<br/>CSV + GeoJSON sjoin] --> P[DATA_POOL]
-  P --> V2[VIS_VEGA<br/>dot density map]
-  P --> T2[DATA_TRANSFORMATION<br/>top-10 zips] --> V3[VIS_VEGA<br/>bar chart]
+  L2[`Data Loading`<br/>CSV + GeoJSON sjoin] --> P[`Data Pool`]
+  P --> V2[`Vega-Lite`<br/>dot density map]
+  P --> T2[`Data Transformation`<br/>top-10 zips] --> V3[`Vega-Lite`<br/>bar chart]
 ```
 
 ## Data
@@ -19,7 +19,7 @@ flowchart LR
 
 Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
 
-## Step 1: Load the green-roofs CSV (`DATA_LOADING`)
+## Step 1: Load the green-roofs CSV (`Data Loading`)
 
 ```python
 import pandas as pd
@@ -28,7 +28,7 @@ df = pd.read_csv("docs/examples/data/10-green_roofs.csv")
 return df
 ```
 
-## Step 2: Fill missing values (`DATA_TRANSFORMATION`)
+## Step 2: Fill missing values (`Data Transformation`)
 
 A trivial cleanup pass so the histogram in Step 3 is not skewed by `NaN` rows. Pandas 3.0 raises `TypeError` when filling string columns with an integer, so the fill is scoped to numeric dtypes; string nulls are left untouched.
 
@@ -42,7 +42,7 @@ df[numeric_cols] = df[numeric_cols].fillna(0)
 return df
 ```
 
-## Step 3: Roof-size histogram (`VIS_VEGA`)
+## Step 3: Roof-size histogram (`Vega-Lite`)
 
 A log-binned histogram of `TOTAL_ROOF_SQFT`, useful because rooftop sizes span several orders of magnitude.
 
@@ -75,9 +75,9 @@ A log-binned histogram of `TOTAL_ROOF_SQFT`, useful because rooftop sizes span s
 }
 ```
 
-## Step 4: Spatial join with neighborhood polygons (`DATA_LOADING`)
+## Step 4: Spatial join with neighborhood polygons (`Data Loading`)
 
-A second loading node reads the rooftop CSV again, projects the lat/lon columns into a GeoDataFrame, and `sjoin`s it with Chicago's zip-coded polygons. The result is then trimmed to just the columns the downstream views actually use, and the geometry column is dropped, which lets the `DATA_POOL` serialize a small plain DataFrame instead of the full GeoDataFrame plus the unused string-typed columns the GeoJSON contributes (`objectid`, `shape_area`, `shape_len`).
+A second loading node reads the rooftop CSV again, projects the lat/lon columns into a GeoDataFrame, and `sjoin`s it with Chicago's zip-coded polygons. The result is then trimmed to just the columns the downstream views actually use, and the geometry column is dropped, which lets the `Data Pool` serialize a small plain DataFrame instead of the full GeoDataFrame plus the unused string-typed columns the GeoJSON contributes (`objectid`, `shape_area`, `shape_len`).
 
 ```python
 import geopandas as gpd
@@ -94,11 +94,11 @@ joined = gpd.sjoin(green_roofs_df, chicago, predicate='within')
 return pd.DataFrame(joined[['LONGITUDE', 'LATITUDE', 'VEGETATED_SQFT', 'TOTAL_ROOF_SQFT', 'zip']])
 ```
 
-## Step 5: Fan out the joined dataset (`DATA_POOL`)
+## Step 5: Fan out the joined dataset (`Data Pool`)
 
 The pool keeps the joined table in shared memory so the next two views can read it without re-running the spatial join.
 
-## Step 6: Dot density map (`VIS_VEGA`)
+## Step 6: Dot density map (`Vega-Lite`)
 
 Each circle is one rooftop, sized by vegetated area, plotted in lat/lon with bound zoom and pan.
 
@@ -141,7 +141,7 @@ Each circle is one rooftop, sized by vegetated area, plotted in lat/lon with bou
 }
 ```
 
-## Step 7: Top-10 zips by vegetated area (`DATA_TRANSFORMATION`)
+## Step 7: Top-10 zips by vegetated area (`Data Transformation`)
 
 The third branch off the pool reduces the joined table down to the ten zip codes with the most vegetated rooftop area.
 
@@ -157,7 +157,7 @@ top_10_largest = (joined.groupby('zip')['VEGETATED_SQFT']
 return top_10_largest
 ```
 
-## Step 8: Top-10 bar chart (`VIS_VEGA`)
+## Step 8: Top-10 bar chart (`Vega-Lite`)
 
 ```json
 {
@@ -200,4 +200,4 @@ return top_10_largest
 
 ## Final result
 
-The histogram answers "how big is a typical green roof?", the dot density map answers "where are they?", and the bar chart answers "which zips lead?". Because the three views fan out from a `DATA_POOL`, the spatial join only runs once, and adding a fourth view (e.g. a chart of installations by year) is one more node off the pool, not a re-join.
+The histogram answers "how big is a typical green roof?", the dot density map answers "where are they?", and the bar chart answers "which zips lead?". Because the three views fan out from a `Data Pool`, the spatial join only runs once, and adding a fourth view (e.g. a chart of installations by year) is one more node off the pool, not a re-join.

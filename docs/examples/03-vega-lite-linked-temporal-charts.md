@@ -1,14 +1,14 @@
 # Example: Temporal aggregation feeding linked Vega-Lite charts
 
-This example demonstrates how a single time-aggregated table can feed two different Vega-Lite views, a per-camera stacked bar chart and a city-wide totals line chart, both reading from the same `COMPUTATION_ANALYSIS` output. The use case is Chicago's [speed-camera violations dataset](data/07-speed_camera_violations.zip): we group violations per camera per year, keep the top five offenders, and visualise both the per-camera breakdown and the year-over-year total.
+This example demonstrates how a single time-aggregated table can feed two different Vega-Lite views, a per-camera stacked bar chart and a city-wide totals line chart, both reading from the same `Python Computation` output. The use case is Chicago's [speed-camera violations dataset](data/07-speed_camera_violations.zip): we group violations per camera per year, keep the top five offenders, and visualise both the per-camera breakdown and the year-over-year total.
 
 ## Pipeline overview
 
 ```mermaid
 flowchart LR
-  L[DATA_LOADING] --> C[COMPUTATION_ANALYSIS<br/>per-camera-per-year]
-  C --> V1[VIS_VEGA<br/>per-camera stacked bar]
-  C --> V2[VIS_VEGA<br/>citywide totals line]
+  L[`Data Loading`] --> C[`Python Computation`<br/>per-camera-per-year]
+  C --> V1[`Vega-Lite`<br/>per-camera stacked bar]
+  C --> V2[`Vega-Lite`<br/>citywide totals line]
 ```
 
 ## Data
@@ -17,7 +17,7 @@ flowchart LR
 
 Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
 
-## Step 1: Load the violations CSV (`DATA_LOADING`)
+## Step 1: Load the violations CSV (`Data Loading`)
 
 Read the zipped CSV. Three trims at the source matter for runtime: `usecols` keeps only the five columns downstream actually reads; `parse_dates` parses `VIOLATION DATE` once instead of per-row; converting `CAMERA ID` to a `category` cuts the in-memory size of the resulting DataFrame from ~130 MB (400k rows × 9 cols of mostly strings) to ~16 MB. Without these the inter-node serialization can time out the frontend.
 
@@ -34,7 +34,7 @@ df['CAMERA ID'] = df['CAMERA ID'].astype('category')
 return df
 ```
 
-## Step 2: Per-camera-per-year aggregation (`COMPUTATION_ANALYSIS`)
+## Step 2: Per-camera-per-year aggregation (`Python Computation`)
 
 Parse the date, derive a `Year` column, sum violations per camera per year, then narrow to the five cameras with the highest cumulative violations. The mean lat/lon per camera is merged in so the same table could later be used to plot the cameras on a map.
 
@@ -67,7 +67,7 @@ yr_sum = yr_sum.merge(camera_pos, on='CAMERA ID')
 return yr_sum
 ```
 
-## Step 3: Per-camera stacked bar chart (`VIS_VEGA`)
+## Step 3: Per-camera stacked bar chart (`Vega-Lite`)
 
 The first view stacks violations by camera within each year so individual offenders stand out.
 
@@ -96,7 +96,7 @@ The first view stacks violations by camera within each year so individual offend
 }
 ```
 
-## Step 4: Citywide totals line chart (`VIS_VEGA`)
+## Step 4: Citywide totals line chart (`Vega-Lite`)
 
 The second view sums across the same five cameras to show the year-over-year trend.
 
@@ -123,4 +123,4 @@ The second view sums across the same five cameras to show the year-over-year tre
 
 ## Final result
 
-The two views share an upstream table without recomputing it: the bar chart answers "*which* cameras drive each year's totals?", while the line chart answers "is the total trending up or down?". Adding a third view (e.g. a map of the five cameras using their merged lat/lon columns) is just one more node off the same `COMPUTATION_ANALYSIS` output.
+The two views share an upstream table without recomputing it: the bar chart answers "*which* cameras drive each year's totals?", while the line chart answers "is the total trending up or down?". Adding a third view (e.g. a map of the five cameras using their merged lat/lon columns) is just one more node off the same `Python Computation` output.

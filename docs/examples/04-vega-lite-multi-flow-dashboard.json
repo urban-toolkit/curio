@@ -1,6 +1,6 @@
 {
   "dataflow": {
-    "description": "Multiple independent dataflows joined via MERGE_FLOW into one coordinated dashboard (Chicago red-light violations).",
+    "description": "Multiple independent dataflows joined via Merge Flow into one coordinated dashboard (Chicago red-light violations).",
     "nodes": [
       {
         "id": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",

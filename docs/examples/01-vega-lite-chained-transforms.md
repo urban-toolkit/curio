@@ -1,14 +1,14 @@
 # Example: Multiple Vega-Lite views from chained transforms
 
-This example demonstrates how a single `DATA_LOADING` source can be cleaned once, then forked into two parallel `DATA_TRANSFORMATION` nodes that feed two independent Vega-Lite views. The use case is sidewalk accessibility data from [Project Sidewalk](https://sidewalk-chicago.cs.washington.edu/api): we load a GeoJSON of labelled accessibility issues, derive an agreement ratio + severity tier, then summarise the data both *by feature type* (bar chart) and *by neighborhood* (bubble chart).
+This example demonstrates how a single `Data Loading` source can be cleaned once, then forked into two parallel `Data Transformation` nodes that feed two independent Vega-Lite views. The use case is sidewalk accessibility data from [Project Sidewalk](https://sidewalk-chicago.cs.washington.edu/api): we load a GeoJSON of labelled accessibility issues, derive an agreement ratio + severity tier, then summarise the data both *by feature type* (bar chart) and *by neighborhood* (bubble chart).
 
 ## Pipeline overview
 
 ```mermaid
 flowchart LR
-  L[DATA_LOADING] --> C[DATA_TRANSFORMATION<br/>clean + enrich]
-  C --> F[DATA_TRANSFORMATION<br/>by feature type] --> VF[VIS_VEGA<br/>bar chart]
-  C --> N[DATA_TRANSFORMATION<br/>by neighborhood] --> VN[VIS_VEGA<br/>bubble chart]
+  L[`Data Loading`] --> C[`Data Transformation`<br/>clean + enrich]
+  C --> F[`Data Transformation`<br/>by feature type] --> VF[`Vega-Lite`<br/>bar chart]
+  C --> N[`Data Transformation`<br/>by neighborhood] --> VN[`Vega-Lite`<br/>bubble chart]
 ```
 
 ## Data
@@ -17,7 +17,7 @@ flowchart LR
 
 Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
 
-## Step 1: Load the accessibility GeoJSON (`DATA_LOADING`)
+## Step 1: Load the accessibility GeoJSON (`Data Loading`)
 
 Read the zipped GeoJSON straight into a `GeoDataFrame`. The `metadata.name` keeps the table name stable downstream.
 
@@ -33,7 +33,7 @@ gdf.metadata = {
 return gdf
 ```
 
-## Step 2: Clean and enrich (`DATA_TRANSFORMATION`)
+## Step 2: Clean and enrich (`Data Transformation`)
 
 This single transform is the shared root for both downstream branches. It selects the relevant columns, derives an `agreement_ratio` from the agree / disagree counts, bins `severity` into a four-level ordinal `severity_level`, and ensures the GeoDataFrame is in EPSG:4326 so any later spatial step has a known CRS.
 
@@ -71,7 +71,7 @@ processed_gdf.metadata = {
 return processed_gdf
 ```
 
-## Step 3: Aggregate by feature type (`DATA_TRANSFORMATION`)
+## Step 3: Aggregate by feature type (`Data Transformation`)
 
 The first branch groups the cleaned features by `label_type` and computes the count, mean severity, and mean agreement per group. The output table is named `feature_stats` so the Vega-Lite spec can reference it by name.
 
@@ -99,7 +99,7 @@ feature_stats.metadata = {
 return feature_stats
 ```
 
-## Step 4: Aggregate by neighborhood (`DATA_TRANSFORMATION`)
+## Step 4: Aggregate by neighborhood (`Data Transformation`)
 
 The second branch is structurally identical to Step 3, but groups by `neighborhood`. Keeping the two aggregations as separate nodes (rather than computing both inside one node and unpacking downstream) lets each Vega-Lite view declare a clean named source and makes the fork explicit on the canvas.
 
@@ -127,7 +127,7 @@ neighborhood_stats.metadata = {
 return neighborhood_stats
 ```
 
-## Step 5: Bar chart by feature type (`VIS_VEGA`)
+## Step 5: Bar chart by feature type (`Vega-Lite`)
 
 Bars encode the issue count per feature type, coloured by mean severity. The data source name (`feature_stats`) matches the upstream metadata so Curio routes the table automatically.
 
@@ -155,7 +155,7 @@ Bars encode the issue count per feature type, coloured by mean severity. The dat
 }
 ```
 
-## Step 6: Bubble chart by neighborhood (`VIS_VEGA`)
+## Step 6: Bubble chart by neighborhood (`Vega-Lite`)
 
 Neighborhoods sit on the y-axis (sorted by count, descending) so the long category labels read horizontally without crowding. Circles are sized by count and coloured by mean severity, so neighborhoods with many high-severity issues pop visually.
 
@@ -193,4 +193,4 @@ Neighborhoods sit on the y-axis (sorted by count, descending) so the long catego
 
 ## Final result
 
-The two views read from the same cleaned root but answer different questions: the bar chart calls out which kinds of accessibility issues dominate citywide, while the bubble chart points to the neighborhoods carrying the worst combination of count and severity. Adding more aggregation branches (e.g. by month, by survey wave) is just one more `DATA_TRANSFORMATION` + `VIS_VEGA` pair off the same root.
+The two views read from the same cleaned root but answer different questions: the bar chart calls out which kinds of accessibility issues dominate citywide, while the bubble chart points to the neighborhoods carrying the worst combination of count and severity. Adding more aggregation branches (e.g. by month, by survey wave) is just one more `Data Transformation` + `Vega-Lite` pair off the same root.

@@ -15,15 +15,15 @@ flowchart LR
   F[Street View Fetcher<br/>place → image points]
   I[HF CV Inference<br/>segmentation per image]
   G[CV Gallery<br/>inspect + re-emit as GEODATAFRAME]
-  L[DATA_LOADING<br/>neighborhood polygons]
+  L[`Data Loading`<br/>neighborhood polygons]
 
   F --> I --> G --> SJ[Spatial Join]
   L --> SJ
-  SJ --> V1[VIS_VEGA<br/>polygon map]
-  SJ --> V2[VIS_VEGA<br/>per-neighborhood bar]
+  SJ --> V1[`Vega-Lite`<br/>polygon map]
+  SJ --> V2[`Vega-Lite`<br/>per-neighborhood bar]
 ```
 
-Four nodes do the work plus two `VIS_VEGA` views consume the output. The split is deliberate: each node is independently useful (Spatial Join works for any spatial workflow, not just CV), and the imagery + inference are decoupled so you can swap one without touching the other.
+Four nodes do the work plus two `Vega-Lite` views consume the output. The split is deliberate: each node is independently useful (Spatial Join works for any spatial workflow, not just CV), and the imagery + inference are decoupled so you can swap one without touching the other.
 
 ## Origin
 
@@ -77,7 +77,7 @@ Wire Inference → CV Gallery. The gallery shows thumbnails with top-3 class bre
 
 Click **▶ Push to Downstream** to emit the same data as a GEODATAFRAME-shaped FeatureCollection, where each feature's `properties` now flatten the class ratios into individual columns plus `dominant_class` and `dominant_pct` columns useful for downstream visualization.
 
-## Step 4: Load neighborhood polygons (`DATA_LOADING`)
+## Step 4: Load neighborhood polygons (`Data Loading`)
 
 For Chicago, the city publishes a [Boundaries, Neighborhoods](https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Neighborhoods/bbvr-jsnu) GeoJSON. Any FeatureCollection works as long as each Polygon feature carries a string property to use as the tag.
 
@@ -104,9 +104,9 @@ The node emits the input points augmented with:
 - `neighborhood_name`: the matching polygon's tag value, or null for points outside every polygon.
 - `nbhd_dominant_class` / `nbhd_dominant_pct` / `nbhd_image_count`: per-polygon roll-ups projected back onto every member point so a Vega-Lite `lookup` can read them directly.
 
-## Step 6: Map view (`VIS_VEGA`)
+## Step 6: Map view (`Vega-Lite`)
 
-Wire Spatial Join → a VIS_VEGA node and paste this spec. Mercator projection, polygons colored by their dominant detected class, points overlaid as a sanity check.
+Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projection, polygons colored by their dominant detected class, points overlaid as a sanity check.
 
 ```json
 {
@@ -140,9 +140,9 @@ Wire Spatial Join → a VIS_VEGA node and paste this spec. Mercator projection, 
 }
 ```
 
-## Step 7: Per-neighborhood bar chart (`VIS_VEGA`)
+## Step 7: Per-neighborhood bar chart (`Vega-Lite`)
 
-A second `VIS_VEGA` wired off the same Spatial Join output:
+A second `Vega-Lite` wired off the same Spatial Join output:
 
 ```json
 {
