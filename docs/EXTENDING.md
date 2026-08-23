@@ -535,6 +535,14 @@ verify-on-read refuses drift with reinstall guidance. Every invocation appends a
 operator's `packageBackend.ledgerArchiveAfterDays` retention declaration (`docs/RETENTION.md`).
 Operator seams: `CURIO_BACKEND_SANDBOX_PYTHON` pins the worker interpreter (the dev/91 §0.1
 Option-3 parameter — per-package dependency overlays land later as parameter values).
-**Resident services, background jobs, and secret mediation remain out of scope** until the
-activation lifecycle (dev/89 Follow-up B) — a draft needing them is refused with a finding
-naming it.
+
+**Activation lifecycle** (dev/92, delivering dev/89 Follow-up B as re-scoped): invocations and
+promotes serialize on one per-target lock, so an Apply and a node Run never interleave
+observably; an install whose pip step *actually changed* shared Python libraries says
+"Restart Curio to pick up <libs>" on its success surfaces (running nodes keep the previously
+loaded versions until then — nothing is inferred, pip's own report is the truth); and a
+handler whose sandbox workers fail three times in a row at the infrastructure level is
+quarantined for 120s with an honest 503 (handler-level errors never count; a reinstall clears
+it immediately). **Resident services, background jobs, and secret mediation remain out of
+scope** — descoped demand-driven with recorded re-open conditions (DEC-064) — and a draft
+needing them is refused with a finding naming exactly that.

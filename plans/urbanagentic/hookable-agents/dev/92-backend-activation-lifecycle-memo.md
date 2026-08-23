@@ -1,6 +1,6 @@
 # dev/92 — Activation lifecycle for backend-bearing packages (dev/89 Follow-up B): re-scoped after dev/91 — promote/invoke consistency, restart honesty, crash-loop quarantine; resident services descoped demand-driven
 
-**Status: APPROVED (owner, 2026-08-21) — Option 3 adopted. Implementation in progress.**
+**Status: IMPLEMENTED (2026-08-23) — commits 1–4 landed (`e783dfe4`, `0f339338`, `fe49337d`, + docs); DEC-064 minted (planned id DEC-062 was taken by dev/93 while this memo waited); BL-P5-20260823-37. Option 3 adopted; dev/89 Follow-up B closed as re-scoped.**
 Prereq: dev/91 (DEC-061) is implemented and live: the on-demand package backend sandbox, `curio.pkgbackend.v1`, probing phase, entry pins, invocation route, registry dispatch.
 
 ---
