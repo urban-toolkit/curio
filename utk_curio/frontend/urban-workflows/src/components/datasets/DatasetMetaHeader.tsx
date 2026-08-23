@@ -15,8 +15,8 @@ import styles from "./DatasetMetaHeader.module.css";
 
 export interface DatasetMetaHeaderProps {
   source: DatasetNodeSource;
-  /** ``consumer`` — node loads this dataset (palette-created loader; pill reads
-   * "DATASET"). ``producer`` — node generated this dataset (pill reads "OUTPUT"). */
+  /** ``consumer`` - node loads this dataset (palette-created loader; pill reads
+   * "DATASET"). ``producer`` - node generated this dataset (pill reads "OUTPUT"). */
   variant?: "consumer" | "producer";
   /** When the owning node is selected on the canvas, render a more vibrant pill. */
   selected?: boolean;
@@ -27,8 +27,8 @@ export interface DatasetMetaHeaderProps {
  * Dataset linkage pill for the canvas node title bar. Clicking it reveals the
  * linked installed listing in the dataset palette. Independent of the PACKAGE
  * pill and of each other: a node may show consumer and producer pills at once.
- *  - ``consumer`` — rendered on nodes created from the dataset palette (``datasetSource``).
- *  - ``producer`` — rendered on nodes that generated an installed computed dataset.
+ *  - ``consumer`` - rendered on nodes created from the dataset palette (``datasetSource``).
+ *  - ``producer`` - rendered on nodes that generated an installed computed dataset.
  */
 export function DatasetMetaHeader({
   source,

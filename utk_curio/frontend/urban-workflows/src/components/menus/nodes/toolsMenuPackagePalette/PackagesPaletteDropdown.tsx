@@ -272,7 +272,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({
                             type="button"
                             className={packageStyles.packageGetPackagesBtn}
                             title="Browse and install node packages"
-                            aria-label="Browse Node Catalog — open Node Catalog drawer"
+                            aria-label="Browse Node Catalog - open Node Catalog drawer"
                             onClick={() => {
                                 openNodeCatalogDrawer();
                             }}

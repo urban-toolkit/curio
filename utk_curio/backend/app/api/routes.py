@@ -41,7 +41,7 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
         return jsonify({
             'error': 'sandbox_timeout',
             'message': (f'The sandbox did not respond within {timeout}s on {path}. '
-                        'The node is likely still running — check the sandbox log. '
+                        'The node is likely still running - check the sandbox log. '
                         'For large data loads, consider trimming columns or rows '
                         'before returning from the node.'),
             'path': path,
@@ -170,7 +170,7 @@ def version():
 def serve_launch_cwd_file(filename: str):
     """Serve a file by its path *relative to CURIO_LAUNCH_CWD* so browser-side
     nodes (e.g. autk-grammar) can fetch binary assets (PBF, GeoTIFF, …) the
-    same way Python sandbox nodes read them from disk — one shared root, one
+    same way Python sandbox nodes read them from disk - one shared root, one
     relative-path convention:
       Python node:   rasterio.open('docs/examples/data/file.tif')
       Grammar spec:  pbfFileUrl: 'docs/examples/data/file.pbf'
@@ -277,7 +277,7 @@ def get_file_preview():
 
 # Literal ``curio_dataset_path("<id>")`` calls in node code. The id charset must
 # stay in sync with _SAFE_DATASET_ID_RE in datasets/domain/catalog_item.py (the
-# backend snippet generator) and the frontend datasetLoaderSnippets.ts — the
+# backend snippet generator) and the frontend datasetLoaderSnippets.ts - the
 # generators only ever emit ids this scan can find. Single or double quotes are
 # accepted because users edit the generated code.
 _DATASET_PATH_CALL_RE = re.compile(
@@ -290,7 +290,7 @@ MAX_EXEC_DATASET_IDS = 32
 def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
     """Resolve the dataset ids referenced by *code* to absolute file paths.
 
-    Best-effort and fail-open: an empty mapping never blocks execution — the
+    Best-effort and fail-open: an empty mapping never blocks execution - the
     sandbox's injected ``curio_dataset_path`` raises a clear per-id error for
     anything missing. Only ids appearing as literal calls are found; a
     dynamically built id simply won't be in the mapping.
@@ -311,7 +311,7 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
 
         service = DatasetCatalogService(getattr(g, "user", None))
         return service.resolve_execution_paths(ids, dataflow_id=dataflow_id)
-    except Exception as e:  # noqa: BLE001 — resolution must never fail the execution
+    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
         print(f"[processPythonCode] dataset path resolution failed: {e}", flush=True)
         return {}
 
@@ -407,7 +407,7 @@ def process_python_code():
         else:
             print(
                 f"[processPythonCode] node {node_id} produced no computed dataset: "
-                f"{dataset_diagnostic.get('status')} — {dataset_diagnostic.get('reason')}",
+                f"{dataset_diagnostic.get('status')} - {dataset_diagnostic.get('reason')}",
                 flush=True,
             )
 
@@ -507,7 +507,7 @@ def process_javascript_code():
         else:
             print(
                 f"[processJavaScriptCode] node {node_id} produced no computed dataset: "
-                f"{dataset_diagnostic.get('status')} — {dataset_diagnostic.get('reason')}",
+                f"{dataset_diagnostic.get('status')} - {dataset_diagnostic.get('reason')}",
                 flush=True,
             )
 
@@ -540,7 +540,7 @@ def get_starters():
     if user is not None:
         try:
             starters = generate_packageage_starters(_user_dir_key(user))
-        except Exception:  # noqa: BLE001 — never fail /starters over a bad package
+        except Exception:  # noqa: BLE001 - never fail /starters over a bad package
             current_app.logger.exception("Package-starter loader failed; returning empty list")
     return jsonify(starters)
 

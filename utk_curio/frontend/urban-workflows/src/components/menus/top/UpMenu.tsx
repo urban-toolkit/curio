@@ -327,7 +327,7 @@ export default function UpMenu({
                 },
                 {
                     element: "#step-utk",
-                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON), run GPU compute, and render maps or plots — all in the browser.",
+                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON), run GPU compute, and render maps or plots - all in the browser.",
                 },
                 {
                     element: "#step-vega",
@@ -618,8 +618,8 @@ export default function UpMenu({
                         onClick={handleSave}
                         title={
                             saving          ? "Saving…"
-                            : projectDirty  ? "Unsaved changes — click to save"
-                            : `Saved at ${projectSavedAt!.toLocaleTimeString()} — click to save`
+                            : projectDirty  ? "Unsaved changes - click to save"
+                            : `Saved at ${projectSavedAt!.toLocaleTimeString()} - click to save`
                         }
                     >
                         <FontAwesomeIcon

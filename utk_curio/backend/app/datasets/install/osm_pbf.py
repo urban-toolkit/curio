@@ -3,12 +3,12 @@
 An OSM ``.pbf`` extract is inherently multi-layer: GDAL's OSM driver exposes
 ``points``, ``lines``, ``multilinestrings``, ``multipolygons`` and
 ``other_relations``. Each has a homogeneous geometry type, so we register one
-standalone catalog dataset **per non-empty layer** — every layer becomes its own
+standalone catalog dataset **per non-empty layer** - every layer becomes its own
 GeoParquet (EPSG:4326), the same on-disk format computed/imported geo datasets
 already use, so the existing loader, preview and export paths work unchanged.
 
 Geospatial libraries are imported lazily and errors degrade gracefully
-(``OsmPbfError``), mirroring the backend's existing optional-geo handling — the
+(``OsmPbfError``), mirroring the backend's existing optional-geo handling - the
 framework itself declares only non-geo deps.
 """
 
@@ -80,7 +80,7 @@ def convert_osm_pbf_layers(pbf_bytes: bytes) -> list[OsmLayer]:
             layer_names = [name for name, _geom in pyogrio.list_layers(src)]
         except Exception as exc:  # noqa: BLE001
             raise OsmPbfError(
-                "Could not read the OSM PBF file — it may be corrupt or not a "
+                "Could not read the OSM PBF file - it may be corrupt or not a "
                 "valid OpenStreetMap PBF extract."
             ) from exc
 

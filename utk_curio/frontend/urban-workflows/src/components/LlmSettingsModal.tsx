@@ -170,7 +170,7 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <label className={styles.label}>
                 API Key{" "}
                 <span className={styles.optional}>
-                  {user?.has_llm_api_key ? "(saved — leave blank to keep)" : uiMode === "custom" ? "(optional for keyless servers)" : "(required)"}
+                  {user?.has_llm_api_key ? "(saved - leave blank to keep)" : uiMode === "custom" ? "(optional for keyless servers)" : "(required)"}
                 </span>
               </label>
               <input

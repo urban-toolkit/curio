@@ -40,7 +40,7 @@ def create_job(total_images: int) -> str:
             "error": None,
             # ``stage_message`` lets the worker tell the UI what slow thing
             # it's currently waiting on (image downloads, HF model fetch,
-            # …) so the frontend can show "Downloading model — first run
+            # …) so the frontend can show "Downloading model - first run
             # takes a few minutes" instead of a static 0/N progress bar.
             "stage_message": None,
         }
@@ -83,7 +83,7 @@ def start_inference(
 
     def _worker():
         # Lazy-import the heavy services here so the import doesn't run on
-        # every Curio startup — only when a user actually starts an inference.
+        # every Curio startup - only when a user actually starts an inference.
         try:
             from .services import inference as inference_svc
             from .services import streetview as streetview_svc
@@ -110,7 +110,7 @@ def start_inference(
                     and "googleapis.com" in url_or_path
                     and api_key
                 ):
-                    # Street View URL with a key supplied by the caller —
+                    # Street View URL with a key supplied by the caller -
                     # use the pano_id-aware downloader so we reuse the
                     # existing cache layout. Without a key we fall through
                     # to the generic HTTP path: the URL itself embeds the
@@ -125,7 +125,7 @@ def start_inference(
                         lon=img.get("longitude"),
                     )
                 elif url_or_path.startswith(("http://", "https://")):
-                    # Generic HTTP URL — fetch via requests so this node works
+                    # Generic HTTP URL - fetch via requests so this node works
                     # for any image source, not just Street View.
                     import hashlib
                     import requests as _rq
@@ -149,14 +149,14 @@ def start_inference(
             prepared.append({**img, "local_path": local_path})
 
         # Update total_images to the count we actually prepared.
-        # Switch the stage to "model loading" — the next thing run_batch
+        # Switch the stage to "model loading" - the next thing run_batch
         # does is fetch the HF model (potentially hundreds of MB on a
         # cold cache). The first ``progress_cb`` call clears this once
         # actual inference starts.
         _update(
             job_id,
             total_images=len(prepared),
-            stage_message="Loading model — first run can take a few minutes for HuggingFace download…",
+            stage_message="Loading model - first run can take a few minutes for HuggingFace download…",
         )
 
         def _progress(processed: int, _total: int) -> None:

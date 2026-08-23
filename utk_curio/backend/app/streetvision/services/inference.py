@@ -61,7 +61,7 @@ def run_segmentation(model, processor, image_path: str, classes: List[str], imag
     else:
         raise ValueError(
             f"Cannot extract semantic segmentation from outputs of type "
-            f"{type(outputs).__name__} — model is not a supported semantic-seg head"
+            f"{type(outputs).__name__} - model is not a supported semantic-seg head"
         )
 
     total_pixels = pred.size

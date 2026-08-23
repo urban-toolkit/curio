@@ -151,7 +151,7 @@ def user_packageage_staging_dir(user_key: str) -> Path:
 
     Install transactions write into this sibling of ``packages/`` so the
     ``.py`` template files an in-flight install drops on disk never
-    live inside the user's installed-package tree — the dev server's
+    live inside the user's installed-package tree - the dev server's
     watchdog reloader would otherwise fire on those writes and kill
     the install request mid-flight. The staging dir is on the same
     filesystem as ``packages/`` so :func:`os.replace` still works
@@ -187,7 +187,7 @@ def package_asset_path(
     Each segment of ``subpath`` is validated with the project-wide
     :func:`validate_component`, which rejects ``..``, NUL bytes and any
     character outside ``[A-Za-z0-9._-]``. This means **packages can only
-    reference assets inside their own directory** — exactly the
+    reference assets inside their own directory** - exactly the
     self-containment invariant from the epic.
     """
     pdir = package_dir(user_key, package_dir_name).resolve()

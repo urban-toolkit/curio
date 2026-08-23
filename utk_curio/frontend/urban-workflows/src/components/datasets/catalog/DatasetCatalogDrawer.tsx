@@ -203,7 +203,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 {!catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
                   <div className={styles.empty}>
                     {tab === "computed"
-                      ? "No computed datasets yet. Run a dataflow node that outputs a table — it is saved to your Data Catalog and can be added to a dataflow from here."
+                      ? "No computed datasets yet. Run a dataflow node that outputs a table - it is saved to your Data Catalog and can be added to a dataflow from here."
                       : "No datasets match the current filters."}
                   </div>
                 ) : null}
@@ -215,7 +215,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                     // Installed state is driven by the ``installed`` flag (the
                     // dataset is referenced by the open dataflow). Imported
                     // datasets are register-only account-level items now, so
-                    // origin is NOT a proxy for installed — only ``source_node``
+                    // origin is NOT a proxy for installed - only ``source_node``
                     // datasets (a data-loading node's own output in this flow)
                     // are installed by nature.
                     const isInstalled =

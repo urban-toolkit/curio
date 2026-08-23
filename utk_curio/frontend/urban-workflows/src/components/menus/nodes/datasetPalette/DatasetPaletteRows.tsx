@@ -62,7 +62,7 @@ export const DatasetRow = memo(function DatasetRow({
       e.preventDefault();
       // A node is linked when it references this dataset by any means:
       //  - created from the palette (datasetSource) or dropped onto it
-      //    (datasetRefs / appliedDatasets) — including a group-created node that
+      //    (datasetRefs / appliedDatasets) - including a group-created node that
       //    references this layer among its members;
       //  - producer: the node that generated this computed dataset.
       const isLinked = (n: { id: string; data: any }) =>
@@ -122,7 +122,7 @@ export const DatasetRow = memo(function DatasetRow({
 /**
  * Collapsible parent row for a multilayer OSM PBF import. The header is not
  * draggable (it represents the whole import); expanding it reveals the
- * individual layer datasets, each an ordinary — still draggable — {@link
+ * individual layer datasets, each an ordinary - still draggable - {@link
  * DatasetRow}. Grouping is computed upstream by ``groupDatasetsForPalette``.
  */
 export const DatasetGroupRow = memo(function DatasetGroupRow({
@@ -210,7 +210,7 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
             className={rowStyles.groupCaretButton}
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
-            aria-label={`${open ? "Collapse" : "Expand"} ${group.title} — OSM PBF import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
+            aria-label={`${open ? "Collapse" : "Expand"} ${group.title} - OSM PBF import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
           >
             <FontAwesomeIcon
               icon={open ? faChevronUp : faChevronDown}

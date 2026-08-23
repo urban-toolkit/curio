@@ -17,11 +17,11 @@
  */
 
 export type ProjectPackages = {
-  /** ``undefined`` means "no project loaded — show everything in the palette". */
+  /** ``undefined`` means "no project loaded - show everything in the palette". */
   projectId: string | undefined;
   /**
    * Sorted dirNames in the project's lockfile. Empty when no project is
-   * loaded — but {@link getCurrentProjectPackages} returns ``null`` in that
+   * loaded - but {@link getCurrentProjectPackages} returns ``null`` in that
    * case so the palette filter knows to skip the intersection.
    */
   packages: ReadonlySet<string>;
@@ -42,7 +42,7 @@ export function setCurrentProject(projectId: string, packages: Iterable<string>)
 }
 
 export function setCurrentProjectPackages(packages: Iterable<string>): void {
-  // Same project, new package set — drawer install / uninstall path.
+  // Same project, new package set - drawer install / uninstall path.
   _state = { projectId: _state.projectId, packages: new Set(packages) };
   _notify();
 }

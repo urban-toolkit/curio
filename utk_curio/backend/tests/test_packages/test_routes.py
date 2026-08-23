@@ -599,6 +599,82 @@ def test_patch_package_metadata_404_for_missing(client, user_and_token, tmp_curi
     assert resp.status_code == 404
 
 
+PATCHED_README = "# Patched README\n"
+
+
+def test_patched_metadata_and_readme_survive_export_and_reupload(
+    client, user_and_token, tmp_curio
+):
+    """PATCH -> GET /archive -> DELETE -> POST /upload keeps every edited field.
+
+    The last leg of authoring a package is editing its metadata, and the archive
+    is how it leaves this machine. Those two are tested separately today: PATCH
+    against the payload it returns, export against a package nobody edited. The
+    join is what a user actually does, and it has a real seam in it - ``license``
+    and ``permissions`` live in ``manifest.json`` while ``readme`` is a sibling
+    file the PATCH writes only after the manifest revalidates, so the two halves
+    travel independently and only one of them is in the manifest the exporter
+    re-zips.
+
+    The README comparison is byte-exact on purpose: ``write_text`` translates
+    line endings by default, so without ``newline=""`` in the route a README
+    authored on Windows would ship CRLF and the same edit would produce a
+    different archive per author OS.
+
+    Kept at the route layer because it is the cheapest place the whole join
+    fits; ``test_package_metadata_roundtrip_e2e.py`` drives the same path
+    through the two modals that produce this body.
+    """
+    _, token = user_and_token
+    _install_factory_demo(client, token)
+
+    patched = client.patch(
+        "/api/packages/ai.test.factory@1",
+        data=json.dumps({
+            "publisher": "Publisher After Patch",
+            "license": "Apache-2.0",
+            "permissions": ["filesystem.read", "network.fetch"],
+            "readme": PATCHED_README,
+        }),
+        headers=_auth(token),
+    )
+    assert patched.status_code == 200, patched.get_data(as_text=True)
+
+    exported = client.get(
+        "/api/packages/ai.test.factory@1/archive", headers=_auth(token)
+    )
+    assert exported.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(exported.data), "r") as zf:
+        names = set(zf.namelist())
+        assert "README.md" in names, sorted(names)
+        manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+        assert zf.read("README.md").decode("utf-8") == PATCHED_README
+    assert manifest["publisher"] == "Publisher After Patch"
+    assert manifest["license"] == "Apache-2.0"
+    assert manifest["permissions"] == ["filesystem.read", "network.fetch"]
+
+    # Uninstall first: no UI path sets ``replace``, so a plain re-import is the
+    # real shape of loading an exported package back in.
+    assert client.delete(
+        "/api/packages/ai.test.factory@1", headers=_auth(token)
+    ).status_code == 204
+
+    reimported = client.post(
+        "/api/packages/upload",
+        data={"file": (io.BytesIO(exported.data), "patched.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    assert reimported.status_code == 201, reimported.get_data(as_text=True)
+
+    listing = client.get("/api/packages", headers=_auth(token)).get_json()["packages"]
+    pkg = next(p for p in listing if p["dirName"] == "ai.test.factory@1")
+    assert pkg["publisher"] == "Publisher After Patch"
+    assert pkg["license"] == "Apache-2.0"
+    assert pkg["permissions"] == ["filesystem.read", "network.fetch"]
+    assert pkg["readme"] == PATCHED_README
+
+
 # ---------------------------------------------------------------------------
 # GET /api/packages/factory/capabilities + POST publish-catalog
 # ---------------------------------------------------------------------------

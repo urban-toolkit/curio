@@ -39,7 +39,7 @@ def _is_sink_node(node_type: str | None) -> bool:
         return False
     try:
         from utk_curio.backend.app.projects.services import _is_sink_node_type
-    except Exception:  # noqa: BLE001 — never let a diagnostic helper break install
+    except Exception:  # noqa: BLE001 - never let a diagnostic helper break install
         return False
     return _is_sink_node_type(node_type)
 
@@ -58,7 +58,7 @@ def auto_install_node_output(
     Persists the node's output as a computed dataset in the per-project/user
     store (not the public Data Catalog), matching the project-save installer
     (:func:`_auto_install_computed_outputs`) so JSON outputs (dict/list/scalar)
-    are saved on execution too — not only DataFrame/GeoDataFrame parquet.
+    are saved on execution too - not only DataFrame/GeoDataFrame parquet.
 
     Returns a diagnostic dict ``{status, nodeId, dataType, reason?, dataset?}``
     with ``status`` in ``"installed" | "skipped" | "failed"``. Never raises:
@@ -81,7 +81,7 @@ def auto_install_node_output(
     if _is_sink_node(node_type):
         return _diagnostic(
             "skipped", node_id=node_id, data_type=data_type,
-            reason=f"sink node ({node_type}) — output is not a dataset",
+            reason=f"sink node ({node_type}) - output is not a dataset",
         )
 
     # Persisting without a dataflow id would mint the legacy un-namespaced
@@ -92,19 +92,19 @@ def auto_install_node_output(
         return _diagnostic(
             "skipped", node_id=node_id, data_type=data_type,
             reason=(
-                "dataflow not saved yet — the output will be saved as a "
+                "dataflow not saved yet - the output will be saved as a "
                 "computed dataset on the next dataflow save"
             ),
         )
 
     #   * a bundle (``dataType == "outputs"``) is keyed by the parent artifact
     #     id in ``output['path']``.
-    #   * otherwise prefer ``output['dataset']`` — the parquet a (geo)dataframe
-    #     deliberately saved (save_dataset_parquet) — and fall back to the node's
+    #   * otherwise prefer ``output['dataset']`` - the parquet a (geo)dataframe
+    #     deliberately saved (save_dataset_parquet) - and fall back to the node's
     #     own output artifact (``output['path']``) so JSON outputs (dict/list/
     #     scalar), which have no ``dataset`` parquet, are still persisted. Keyed
     #     on ``node_id`` (``computed.<node>@1``), so two nodes sharing a data file
-    #     stay distinct datasets — the catalog no longer collapses by basename.
+    #     stay distinct datasets - the catalog no longer collapses by basename.
     is_bundle = str(data_type or "").strip().lower() == "outputs"
     if is_bundle:
         path_ref = sandbox_output.get("path")
@@ -137,14 +137,14 @@ def auto_install_node_output(
 
                 spec = project_storage.read_spec(user_key, dataflow_id)
                 if isinstance(spec, dict):
-                    # The workflow name lives at spec["dataflow"]["name"] — a
+                    # The workflow name lives at spec["dataflow"]["name"] - a
                     # top-level read is always None and, because re-execution
                     # rewrites the manifest, wipes a save-time name (#172).
                     dataflow = spec.get("dataflow")
                     if isinstance(dataflow, dict):
                         dataflow_name = dataflow.get("name") or None
                     upstream_inputs = resolve_upstream_inputs(spec, node_id)
-            except Exception:  # noqa: BLE001 — lineage is best-effort on execution
+            except Exception:  # noqa: BLE001 - lineage is best-effort on execution
                 logger.debug(
                     "Could not resolve upstream lineage for node %s (dataflow %s)",
                     node_id, dataflow_id, exc_info=True,
@@ -186,7 +186,7 @@ def auto_install_node_output(
         return _diagnostic(
             "installed", node_id=node_id, data_type=data_type, dataset=installed,
         )
-    except Exception:  # noqa: BLE001 — surface as a diagnostic, never crash the run
+    except Exception:  # noqa: BLE001 - surface as a diagnostic, never crash the run
         logger.exception(
             "Auto-install of computed output failed for node %s (type=%s, ref=%r); "
             "this dataset will not be persisted",

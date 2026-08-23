@@ -1,7 +1,7 @@
 """In-memory per-room state for real-time collaboration.
 
 Everything in this module is volatile and lives only for the lifetime of
-the backend process — room state does not persist across restarts. All
+the backend process - room state does not persist across restarts. All
 mutations are serialised through a single module-level ``RLock`` because
 the SocketIO server is configured with ``async_mode='threading'``.
 
@@ -233,7 +233,7 @@ def is_member(room: str, sid: str) -> bool:
 
 
 def reset_for_tests() -> None:
-    """Test-only utility — wipe every dict."""
+    """Test-only utility - wipe every dict."""
     with _lock:
         _room_users.clear()
         _room_locks.clear()

@@ -53,7 +53,7 @@ def _legacy_installed_alias(
     before namespacing and not yet migrated).
 
     Pre-namespacing installs were same-dataflow only, so the alias applies only
-    when the item's dataflow segment is the open dataflow's — never across
+    when the item's dataflow segment is the open dataflow's - never across
     dataflows, and never on a bare producer-node match (#168).
     """
     if not item_id or not dataflow_id:
@@ -118,13 +118,13 @@ class CatalogListing:
         if include_hub:
             items.extend(self.registry.list_items())
             # Workspace data (``<launch>/data``) and bundled sample data are
-            # global, browsable sources like the hub — surface them in the
+            # global, browsable sources like the hub - surface them in the
             # browse view so a dataset imported without an open dataflow (and
             # the shipped samples) are visible, not silently dropped.
             items.extend(self.local.list_items())
-            # Account-level datasets registered in the user store — imported
+            # Account-level datasets registered in the user store - imported
             # AND computed alike (``user_store.list_items()`` lists every
-            # account-level computed dataset) — so a register-only import or a
+            # account-level computed dataset) - so a register-only import or a
             # freshly-saved node output stays visible even when no project
             # references it. A dataset that IS installed in the open project
             # also appears via ``installed`` below; ``dedupe_items`` merges the
@@ -139,15 +139,15 @@ class CatalogListing:
             ))
             # This dataflow's own computed outputs live in the account store
             # (saved on generation, no project ref). Surface them here so they
-            # appear in the open project's catalog — as available, not installed
-            # — with their store metadata + lineage, even right after execution.
+            # appear in the open project's catalog - as available, not installed
+            # - with their store metadata + lineage, even right after execution.
             # When include_hub is on, ``user_store.list_items()`` above already
             # lists every account-level computed dataset (this dataflow's
             # included), so only add the scoped set when the hub sources are off.
             if not include_hub:
                 items.extend(self.user_store.list_dataflow_computed_items(dataflow_id))
         elif live_outputs:
-            # No project yet (unsaved new dataflow) but live outputs provided —
+            # No project yet (unsaved new dataflow) but live outputs provided -
             # still show computed items so outputs are visible immediately.
             items.extend(self.computed.list_items(live_outputs=live_outputs))
 
@@ -155,7 +155,7 @@ class CatalogListing:
         installed_ids = {item["id"] for item in inst_items if item.get("id")}
 
         # Map installed dataset id → installed output basename for computed
-        # datasets. Keyed on the FULL (namespaced) id — never the bare
+        # datasets. Keyed on the FULL (namespaced) id - never the bare
         # producerNodeId: node ids recur across dataflows (Duplicate Project,
         # trill re-import), and a bare-node match falsely marks another
         # dataflow's dataset as installed here (#168). The basename comparison
@@ -215,14 +215,14 @@ class CatalogListing:
             is_outputs_uri = uri.startswith("curio://outputs/")
             if item.get("origin") == "computed" or is_outputs_uri:
                 # Auto-installed copies already carry an absolute path into the
-                # user's dataset store — keep it (don't replace it with the
+                # user's dataset store - keep it (don't replace it with the
                 # ephemeral shared-data parquet used only for live discovery),
                 # but ONLY when it resolves inside an allowed read root. The
                 # path is not trustworthy: a malicious ``liveOutputs`` entry has
                 # its ``filename`` copied verbatim into ``item["path"]`` by
                 # ``ComputedDatasetIndexer``, so an entry like
                 # ``{"filename": "/etc/passwd"}`` would otherwise be echoed back
-                # here — disclosing an absolute path and acting as a
+                # here - disclosing an absolute path and acting as a
                 # file-existence oracle in the listing/detail response, even
                 # though preview/download are separately gated by
                 # ``_resolve_item_path``. Confining it to the same roots is the
@@ -252,7 +252,7 @@ class CatalogListing:
                     # and drop an absolute path that escapes the allowed roots
                     # (the attacker case above) so the response never carries a
                     # leaked path. A *contained* absolute path is a legitimate
-                    # installed dataset whose file is momentarily missing —
+                    # installed dataset whose file is momentarily missing -
                     # leave it so the loader snippet still points at the right
                     # place once it reappears.
                     abs_uncontained = bool(path_val) and Path(path_val).is_absolute() and not contained
@@ -276,11 +276,11 @@ class CatalogListing:
         # basename here. Distinct saved records (e.g. an Autark map output and its
         # baseline-compute / modified-compute siblings) live in their own
         # ``computed.<node>@1`` dirs with distinct ids, but often share a generated
-        # filename — basename-collapsing silently hid all but the "richest" one
+        # filename - basename-collapsing silently hid all but the "richest" one
         # until the others were deleted. ``dedupe_items`` (by dataset id, above)
         # already merges the only legitimate duplicates: the same dataset's hub
         # registry row and its installed/live copy. Every distinct record must
-        # stay visible — the list reflects the actual saved datasets.
+        # stay visible - the list reflects the actual saved datasets.
 
         # Fold the per-layer OSM datasets of one import into a single
         # bundle-shaped group entry for grouped surfaces (the catalog drawer).
@@ -303,7 +303,7 @@ class CatalogListing:
             ]
 
         # Facet counts should reflect the same universe as search (q), not the
-        # narrowed list after format/origin filters — otherwise rails show zeros
+        # narrowed list after format/origin filters - otherwise rails show zeros
         # or misleading counts while other filters are active.
         facets = catalog_facets(items)
 
@@ -388,7 +388,7 @@ class CatalogListing:
             return build_osm_group_item(dataset_id, members)
 
         # ``include_hub=True`` is a strict superset of ``include_hub=False`` (it
-        # only *adds* the hub registry items), so a single pass finds any id —
+        # only *adds* the hub registry items), so a single pass finds any id -
         # no need for the historical two-pass scan.
         result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs)
         for item in result["items"]:
@@ -402,7 +402,7 @@ class CatalogListing:
         """Augment a computed dataset item with its authoritative producer.
 
         A computed dataset opened from a dataflow that only *imported* it carries
-        that dataflow's ref, whose ``producerNodeId`` is ``null`` — the producing
+        that dataflow's ref, whose ``producerNodeId`` is ``null`` - the producing
         node lives in another dataflow. Resolve the real producer (node + type +
         producing dataflow) across all the user's projects so the Dataset Details
         page shows the same generating node as the dataset's producing record,
@@ -414,7 +414,7 @@ class CatalogListing:
         if producer is None:
             return
         # Don't clobber a producer id already resolved from the open (producing)
-        # dataflow — it is identical to the authoritative one. Always surface the
+        # dataflow - it is identical to the authoritative one. Always surface the
         # node type and producing dataflow so the cross-dataflow case can render.
         if not item.get("producerNodeId"):
             item["producerNodeId"] = producer["nodeId"]
@@ -462,13 +462,13 @@ class CatalogListing:
         pass serves every id, and each path goes through the same
         containment-guarded ``_resolve_item_path`` used by preview/download, so
         the mapping can only ever contain paths the authenticated user may
-        read. Ids that don't resolve are omitted — the sandbox raises a clear
+        read. Ids that don't resolve are omitted - the sandbox raises a clear
         per-id error for those at call time.
 
         Account-store ids resolve straight from the dataset index, so the common
         case (a loader node reading an imported or computed dataset) costs a
         keyed lookup instead of a full catalog listing on every node execution.
-        Anything the index doesn't know — hub, workspace files, live outputs —
+        Anything the index doesn't know - hub, workspace files, live outputs -
         falls back to the listing below.
         """
         if not dataset_ids:
@@ -486,7 +486,7 @@ class CatalogListing:
                 continue
             try:
                 path = self._paths._resolve_item_path(item)
-            except Exception:  # noqa: BLE001 — one bad item must not drop the rest
+            except Exception:  # noqa: BLE001 - one bad item must not drop the rest
                 logger.warning(
                     "Could not resolve execution path for dataset %s", dataset_id,
                     exc_info=True,
@@ -504,7 +504,7 @@ class CatalogListing:
         Same security property as the listing path: the file must exist AND sit
         inside an allowed read root. ``data_file`` comes from a manifest on disk
         and is not containment-checked when it is written, so the
-        ``_contained_path`` guard is applied here too — never skipped just
+        ``_contained_path`` guard is applied here too - never skipped just
         because the row came from the index.
         """
         from utk_curio.backend.app.datasets.repositories import index as index_repo
@@ -531,7 +531,7 @@ class CatalogListing:
                 continue
             try:
                 candidate = (dataset_dir(user_key, row.dir_name) / row.data_file).resolve()
-            except Exception:  # noqa: BLE001 — bad dir/data_file: try the listing
+            except Exception:  # noqa: BLE001 - bad dir/data_file: try the listing
                 pending.append(dataset_id)
                 continue
             if not candidate.is_file():
@@ -589,7 +589,7 @@ class CatalogListing:
         """The individual layer items of an OSM group, in canonical tab order.
 
         Uses the un-collapsed listing (``group_osm=False``) so the member
-        datasets — each carrying ``groupId`` — are visible and enriched with
+        datasets - each carrying ``groupId`` - are visible and enriched with
         installed state + resolved paths.
         """
         result = self._owner.list_catalog(
@@ -723,8 +723,8 @@ class CatalogListing:
 
         *include_archived* widens the scan to archived (soft-deleted) projects.
         The public ``/usage`` endpoint stays active-only (archived rows would
-        reference un-openable projects in the UI), but destructive gates —
-        delete's ref strip and uninstall's orphan-dir check — must see archived
+        reference un-openable projects in the UI), but destructive gates -
+        delete's ref strip and uninstall's orphan-dir check - must see archived
         refs too, or they destroy data an archived project still uses (#176).
         """
         if self.user is None:
@@ -751,13 +751,13 @@ class CatalogListing:
 
     def _consumer_counts(self, dataset_ids: set[str]) -> dict[str, int]:
         """Total nodes consuming each id in *dataset_ids*, summed across all of
-        the user's dataflows — the count rendered as "N nodes consume" on Data
+        the user's dataflows - the count rendered as "N nodes consume" on Data
         Hub browse cards.
 
         Uses the same resolver as :meth:`dataset_usage`
         (``_dataset_consumer_nodes_in_spec``) so the browse count always agrees
         with the detail panel's ``/usage`` total, but reads each project spec
-        once and resolves every requested dataset against it — the whole browse
+        once and resolves every requested dataset against it - the whole browse
         page costs one pass over the projects, not one per dataset.
 
         Best-effort: returns ``{}`` when there is no authenticated user (an

@@ -26,7 +26,7 @@ from .services import cache, streetview
 def _missing_extras_response(err: ImportError):
     return jsonify({
         "error": f"streetvision dependency unavailable: {err}",
-        "hint": "Reinstall Curio — torch/transformers/huggingface_hub ship in the base dependencies",
+        "hint": "Reinstall Curio - torch/transformers/huggingface_hub ship in the base dependencies",
     }), 503
 
 
@@ -61,7 +61,7 @@ def models_search():
     except ImportError as e:
         # ``search_models`` defers the ``huggingface_hub`` import until
         # called. A missing dep here means the user's Curio install is
-        # incomplete — surface the same hint.
+        # incomplete - surface the same hint.
         return _missing_extras_response(e)
     except Exception as e:
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
@@ -163,11 +163,11 @@ def inference_run():
     """Start an inference job. Accepts either:
 
     1. A list of image entries: ``{ images: [{image_id, image_url, pano_id?,
-       latitude?, longitude?}, ...], model: {...}, classes: [...] }`` — used
+       latitude?, longitude?}, ...], model: {...}, classes: [...] }`` - used
        by the wired-up Inference node when fed by Street View Fetcher.
 
     2. A GEODATAFRAME FeatureCollection (as ``input``) with per-feature
-       ``image_url`` properties — used by the Inference node when fed by
+       ``image_url`` properties - used by the Inference node when fed by
        any node emitting GEODATAFRAME shape (Data Loading, Spatial Join, etc).
     """
     body = request.get_json(silent=True) or {}

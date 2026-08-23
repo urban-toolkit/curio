@@ -3,7 +3,7 @@ bundle-shaped catalog entry.
 
 The layers are stored as independent GeoParquet datasets (each with a shared
 ``groupId``); this module folds them into one synthetic catalog item whose id IS
-the group id and whose ``format`` is ``"bundle"`` — so the existing bundle card
+the group id and whose ``format`` is ``"bundle"`` - so the existing bundle card
 and tabbed preview UI render it, and install/uninstall expand to the members.
 """
 
@@ -61,7 +61,7 @@ def build_osm_group_item(group_id: str, members: list[dict[str, Any]]) -> dict[s
     return base_item(
         id=group_id,
         title=group_base_title(members, group_id),
-        description=f"OpenStreetMap import — {len(members)} layer(s).",
+        description=f"OpenStreetMap import - {len(members)} layer(s).",
         origin="imported",
         # Displayed as an OSM PBF type (not a generic bundle); the tabbed preview
         # is driven by the preview response's ``bundle`` flag, not this format.

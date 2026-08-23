@@ -3,7 +3,7 @@ Execution worker for the Curio sandbox.
 
 _worker_init() is called once at sandbox startup to pre-load all heavy imports
 into _globals_cache. execute_code() then runs user code in-process using those
-cached imports — no subprocess spawning, no IPC overhead.
+cached imports - no subprocess spawning, no IPC overhead.
 
 Thread safety: _exec_lock serializes calls because contextlib.redirect_stdout
 mutates the global sys.stdout, and os.chdir is process-wide. Both are restored
@@ -114,14 +114,14 @@ def _worker_init():
 def _resolve_outputs_elem(elem, session_id=None):
     """Resolve one element of an 'outputs' bundle to its concrete Python value.
 
-    An 'outputs' input — from a Merge Flow, or a Data Pool's multi-layer wrapper —
+    An 'outputs' input - from a Merge Flow, or a Data Pool's multi-layer wrapper -
     bundles one entry per connected slot / layer. An entry is one of:
       * a DuckDB reference: a `{'path', ...}` dict, or a bare artifact-id/filename
-        string (a project restored from persisted outputs seeds the latter) —
+        string (a project restored from persisted outputs seeds the latter) -
         loaded from DuckDB;
-      * an inline `{'dataType', 'data'}` envelope — e.g. a Data Pool layer
+      * an inline `{'dataType', 'data'}` envelope - e.g. a Data Pool layer
         `{'dataType':'geodataframe','data':<FeatureCollection>,'layerName':...}`
-        wired straight into a code node — reconstructed with `parseInput`;
+        wired straight into a code node - reconstructed with `parseInput`;
       * any other already-concrete value, used as-is.
     Distinguishing on the keys keeps refs loading while letting inline values flow
     through instead of raising KeyError('path').
@@ -141,9 +141,9 @@ def _expand_outputs_wrapper(input_data, session_id=None):
     """Resolve a merge ('outputs') input to the per-slot list user code expects.
 
     A merge output reaches a code node in one of two shapes:
-      * live  — an inline list of refs, already expanded by the caller's
+      * live  - an inline list of refs, already expanded by the caller's
         `data_type == 'outputs'` branch; passed through here untouched.
-      * reloaded — when the upstream merge output was persisted (project save, or
+      * reloaded - when the upstream merge output was persisted (project save, or
         the JS-node I/O round-trip through DuckDB), the node receives a single ref
         to it. `_parse_input_ref` remaps that ref's 'outputs' dataType to a plain
         load, so `load_from_duckdb` hands back the whole
@@ -172,7 +172,7 @@ def _make_curio_dataset_path(dataset_paths):
         path = mapping.get(str(dataset_id))
         if not path:
             raise RuntimeError(
-                f"Dataset '{dataset_id}' is not available in this environment — "
+                f"Dataset '{dataset_id}' is not available in this environment - "
                 "install it from the Data Catalog drawer (or re-import the "
                 "source file), then run this node again."
             )
@@ -188,7 +188,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
     session_id: Bearer token of the requesting session. Artifacts are stored and
                 loaded scoped to this session so concurrent sessions never share
-                execution state — even if they share the same user account.
+                execution state - even if they share the same user account.
 
     dataset_paths: {datasetId: absolutePath} for the code's
                 curio_dataset_path("<id>") calls, resolved (auth-scoped and
@@ -225,7 +225,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
             with contextlib.redirect_stdout(captured_stdout), \
                  contextlib.redirect_stderr(captured_stderr):
 
-                # Fresh namespace per call — prevents name leakage between executions.
+                # Fresh namespace per call - prevents name leakage between executions.
                 ns = dict(_globals_cache)
                 ns['curio_dataset_path'] = _make_curio_dataset_path(dataset_paths)
                 exec(f"def userCode(arg):\n{code}", ns)
@@ -261,7 +261,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # first `arg[…]`. Fail fast here with a message that points the
                 # user at the actual cause (unwired/unrun upstream, or a stale
                 # `data.input` because the merge-flow output effect hadn't
-                # propagated yet). Cheap substring check — false positives
+                # propagated yet). Cheap substring check - false positives
                 # are harmless because we only act when arg is truly None.
                 if incomingInput is None and 'arg' in code:
                     raise RuntimeError(
@@ -308,7 +308,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
             # Drop the sandbox write lock so the backend can open read-only
             # DuckDB (catalog, auto-install) as soon as this request returns.
             #
-            # NOTE: this teardown-per-exec is REQUIRED, not wasteful — DuckDB
+            # NOTE: this teardown-per-exec is REQUIRED, not wasteful - DuckDB
             # allows only a single cross-process writer, so the sandbox cannot
             # hold the R/W handle open between requests or the backend's
             # read-only opens would fail. The reopen is lazy (``get_connection``
@@ -336,7 +336,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 def _to_js_value(obj):
     """Convert a Python value to a JSON-serializable form for JS consumption.
 
-    DataFrames → list of row dicts, GeoDataFrames → GeoJSON FeatureCollection —
+    DataFrames → list of row dicts, GeoDataFrames → GeoJSON FeatureCollection -
     matching what the old JS loadFromDuckdb returned to user code.
     """
     import json
@@ -364,8 +364,8 @@ def _js_value_to_saveable_frame(value):
     """Best-effort convert a JS node's JSON result into a ``(kind, frame)`` pair
     for :func:`save_dataset_parquet`, or ``(None, None)`` when it isn't tabular.
 
-    JS nodes return plain JSON, so — mirroring how ``parseInput`` reconstructs
-    tabular inputs — a GeoJSON ``FeatureCollection`` becomes a GeoDataFrame and a
+    JS nodes return plain JSON, so - mirroring how ``parseInput`` reconstructs
+    tabular inputs - a GeoJSON ``FeatureCollection`` becomes a GeoDataFrame and a
     non-empty list of record objects becomes a DataFrame. Anything else (scalars,
     plain dicts, lists of scalars) is not a dataset and yields ``(None, None)``.
     """
@@ -457,7 +457,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
     Execute user JavaScript code in an isolated Node.js subprocess.
 
     Input is loaded from Python DuckDB, serialized to JSON, and embedded directly
-    in the script piped to `node --input-type=module` via stdin — no temp files.
+    in the script piped to `node --input-type=module` via stdin - no temp files.
     The result arrives as a specially-prefixed stdout line and is stored in Python
     DuckDB, mirroring execute_code()'s behaviour exactly.
 
@@ -495,7 +495,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         # ABSOLUTE file URL under the repo-root node_modules so the dynamic ESM
         # import() below resolves regardless of the Node subprocess cwd. Node's ESM
         # resolver does NOT consult NODE_PATH and resolves a bare specifier only by
-        # walking node_modules up from the importing module — which fails when
+        # walking node_modules up from the importing module - which fails when
         # CURIO_LAUNCH_CWD is outside the repo. Rewriting only the top-level
         # specifier is enough: the package's own internal imports still resolve
         # relative to its installed location.
@@ -548,7 +548,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         # Serialize input as an inline JS literal.
         arg_json = json.dumps(_to_js_value(input_data))
 
-        # Build script from static template — no temp file written to disk.
+        # Build script from static template - no temp file written to disk.
         template_path = pathlib.Path(__file__).parent.parent / 'util' / 'js_wrapper.mjs'
         template = template_path.read_text(encoding='utf-8')
         script = (template
@@ -559,7 +559,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
 
         # NODE_PATH is consulted only by the CommonJS require() resolver (not ESM),
-        # so it does NOT resolve the top-level autk-db ESM import — that is handled
+        # so it does NOT resolve the top-level autk-db ESM import - that is handled
         # by rewriting it to an absolute file URL above. We still point NODE_PATH at
         # the repo-root node_modules as a belt-and-braces aid for any CJS require()
         # autk-db's worker threads perform. cwd stays launch_dir so other JS nodes'
@@ -620,7 +620,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         print(f"[execJs] Node.js finished  total={t1-t0:.3f}s  exit={proc.returncode}  node={node_type}",
               file=_sys.stderr, flush=True)
 
-        # Extract result from stdout — a single line prefixed with __CURIO_JSON_RESULT__.
+        # Extract result from stdout - a single line prefixed with __CURIO_JSON_RESULT__.
         RESULT_PREFIX = '__CURIO_JSON_RESULT__'
         result_json = None
         user_log_lines = []
@@ -656,7 +656,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         output = {'path': result_artifact, 'dataType': out_kind}
 
         # Persist a named dataset (catalog parquet + auto-install) when the JS
-        # node opted in and produced tabular/geo data — parity with the Python
+        # node opted in and produced tabular/geo data - parity with the Python
         # path, which emits output['dataset'] for the backend to auto-install.
         if save_dataset:
             try:
