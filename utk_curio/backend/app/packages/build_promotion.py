@@ -34,7 +34,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -50,6 +49,7 @@ from utk_curio.backend.app.packages.installer import (
     uninstall_packageage,
 )
 from utk_curio.backend.app.packages.storage import _user_key_segment, _users_base
+from utk_curio.backend.app.packages.target_locks import target_lock as _target_lock
 
 log = logging.getLogger(__name__)
 
@@ -116,16 +116,10 @@ def _has_step(journal: dict[str, Any], step: str) -> bool:
     return any(s.get("step") == step for s in journal.get("steps") or [])
 
 
-# In-process serialization per (user, target): two promotions racing the same
-# coordinate run one at a time; the base-digest check keeps cross-process
-# races correct (the loser sees a stale base).
-_LOCKS_GUARD = threading.Lock()
-_TARGET_LOCKS: dict[tuple[str, str], threading.Lock] = {}
-
-
-def _target_lock(user_key: str, target: str) -> threading.Lock:
-    with _LOCKS_GUARD:
-        return _TARGET_LOCKS.setdefault((user_key, target), threading.Lock())
+# In-process serialization per (user, target) — dev/92 B-1: the lock LIVES in
+# target_locks now, shared with backend_runtime's invocation READ phase, so an
+# invocation can no longer observe the installer's non-atomic rmtree+move
+# window or a files-vs-pin mismatch; promotes behave exactly as before.
 
 
 def promote(

@@ -52,6 +52,7 @@ from utk_curio.backend.app.packages.storage import (
     package_dir,
     user_packageages_dir,
 )
+from utk_curio.backend.app.packages.target_locks import target_lock
 
 log = logging.getLogger(__name__)
 
@@ -305,55 +306,61 @@ def invoke_handler(
     503 no worker slot, 507 data dir over cap, 502 worker/contract failure.
     """
     invocation_id = uuid.uuid4().hex
-    try:
-        pkg_path = package_dir(user_key, dir_name)
-    except Exception as exc:  # PackageIdError/PathTraversalError — bad name
-        raise BackendRuntimeError(f"invalid package directory name: {exc}", 404) from exc
-    if not pkg_path.is_dir():
-        raise BackendRuntimeError(f"package {dir_name!r} is not installed", 404)
-    try:
-        manifest = load_packageage_manifest(pkg_path)
-    except ManifestError as exc:
-        raise BackendRuntimeError(
-            f"package {dir_name!r} has an unreadable manifest — reinstall it ({exc})", 409
-        ) from exc
-    backend = manifest.backend
-    if backend is None:
-        raise BackendRuntimeError(
-            f"package {dir_name!r} declares no backend surface", 404
-        )
-    timeout_class = backend.timeout_class_for(handler)
-    if timeout_class is None:
-        raise BackendRuntimeError(
-            f"handler {handler!r} is not declared by {dir_name!r} "
-            f"(declared: {backend.handler_names})", 404,
-        )
+    # dev/92 B-1: the whole READ phase — manifest, pin verify, entry/tree
+    # copies into memory — runs under the SAME per-target lock promotes hold,
+    # so an invocation never observes the installer's non-atomic rmtree+move
+    # window or a files-vs-pin mismatch. Microseconds of hold time; the
+    # sandbox worker always runs OUTSIDE the lock.
+    with target_lock(user_key, dir_name):
+        try:
+            pkg_path = package_dir(user_key, dir_name)
+        except Exception as exc:  # PackageIdError/PathTraversalError — bad name
+            raise BackendRuntimeError(f"invalid package directory name: {exc}", 404) from exc
+        if not pkg_path.is_dir():
+            raise BackendRuntimeError(f"package {dir_name!r} is not installed", 404)
+        try:
+            manifest = load_packageage_manifest(pkg_path)
+        except ManifestError as exc:
+            raise BackendRuntimeError(
+                f"package {dir_name!r} has an unreadable manifest — reinstall it ({exc})", 409
+            ) from exc
+        backend = manifest.backend
+        if backend is None:
+            raise BackendRuntimeError(
+                f"package {dir_name!r} declares no backend surface", 404
+            )
+        timeout_class = backend.timeout_class_for(handler)
+        if timeout_class is None:
+            raise BackendRuntimeError(
+                f"handler {handler!r} is not declared by {dir_name!r} "
+                f"(declared: {backend.handler_names})", 404,
+            )
 
-    entry_path = (pkg_path / backend.entry).resolve()
-    if not is_within(entry_path, pkg_path.resolve()) or not entry_path.is_file():
-        raise BackendRuntimeError(
-            f"the backend entry {backend.entry!r} is missing from the installed "
-            "package — reinstall it", 409,
-        )
-    entry_bytes = entry_path.read_bytes()
-    digest = entry_digest(entry_bytes)
-    if expected_entry_digest and digest != expected_entry_digest:
-        raise BackendRuntimeError(
-            "the backend entry changed on disk since install (digest mismatch) — "
-            "reinstall the package before invoking it", 409,
-        )
+        entry_path = (pkg_path / backend.entry).resolve()
+        if not is_within(entry_path, pkg_path.resolve()) or not entry_path.is_file():
+            raise BackendRuntimeError(
+                f"the backend entry {backend.entry!r} is missing from the installed "
+                "package — reinstall it", 409,
+            )
+        entry_bytes = entry_path.read_bytes()
+        digest = entry_digest(entry_bytes)
+        if expected_entry_digest and digest != expected_entry_digest:
+            raise BackendRuntimeError(
+                "the backend entry changed on disk since install (digest mismatch) — "
+                "reinstall the package before invoking it", 409,
+            )
 
-    data_dir = _data_dir(user_key, dir_name)
-    data_bytes = _dir_size_bytes(data_dir)
-    if data_bytes > DATA_DIR_MAX_BYTES:
-        raise BackendRuntimeError(
-            f"the package's persistent data dir holds {data_bytes} bytes — over "
-            f"the {DATA_DIR_MAX_BYTES // (1024 * 1024)} MiB cap; the handler (or an "
-            "uninstall) must clear it before the next invocation", 507,
-        )
+        data_dir = _data_dir(user_key, dir_name)
+        data_bytes = _dir_size_bytes(data_dir)
+        if data_bytes > DATA_DIR_MAX_BYTES:
+            raise BackendRuntimeError(
+                f"the package's persistent data dir holds {data_bytes} bytes — over "
+                f"the {DATA_DIR_MAX_BYTES // (1024 * 1024)} MiB cap; the handler (or an "
+                "uninstall) must clear it before the next invocation", 507,
+            )
 
-    files = _backend_tree(pkg_path)
-    net_allowed = bc.PERMISSION_SERVER_NETWORK in manifest.permissions
+        files = _backend_tree(pkg_path)
+        net_allowed = bc.PERMISSION_SERVER_NETWORK in manifest.permissions
     worker_limits = limits or LIMITS_BY_TIMEOUT_CLASS.get(
         timeout_class, LIMITS_BY_TIMEOUT_CLASS["standard"]
     )

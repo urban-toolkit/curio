@@ -323,3 +323,60 @@ class TestOptionThreeSeam:
                                 overlay_dir=overlay, limits=FAST)
         assert out["reply"] == {"contract": bc.PKGBACKEND_CONTRACT_VERSION,
                                 "ok": True, "result": {"from": "overlay"}}
+
+
+class TestPromoteInvokeConsistency:
+    """dev/92 B-1: invocations serialize against promotes on the SAME lock —
+    an invocation can no longer observe the installer's non-atomic
+    rmtree+move window or a files-vs-pin mismatch."""
+
+    def test_one_lock_object_shared_by_all_three_consumers(self):
+        from utk_curio.backend.app.packages import build_promotion
+        from utk_curio.backend.app.packages import backend_runtime as rt_mod
+        from utk_curio.backend.app.packages.target_locks import target_lock
+
+        lock = target_lock("42", "curio.demo@1")
+        assert build_promotion._target_lock("42", "curio.demo@1") is lock
+        assert rt_mod.target_lock("42", "curio.demo@1") is lock
+        # And it IS dev/93's shared implementation — never a second dance.
+        from utk_curio.backend.app.common.file_locks import keyed_thread_lock
+
+        assert keyed_thread_lock("package-target", "42/curio.demo@1") is lock
+
+    def test_invocation_waits_out_the_replace_window(self, monkeypatch, tmp_path):
+        import shutil
+        import threading as th
+
+        from utk_curio.backend.app.packages.target_locks import target_lock
+
+        _install_pkg(monkeypatch, tmp_path)
+        lock = target_lock(USER, PKG)
+        results: dict = {}
+
+        def _invoke():
+            try:
+                results["out"] = rt.invoke_handler(
+                    USER, PKG, "word-count", {"text": "a b"}, limits=FAST)
+            except rt.BackendRuntimeError as exc:  # pragma: no cover — the bug
+                results["err"] = exc
+
+        lock.acquire()
+        try:
+            worker = th.Thread(target=_invoke)
+            worker.start()
+            worker.join(timeout=0.4)
+            # The invocation is parked on the lock — it never reads the store
+            # while the "promote" below has it torn open.
+            assert worker.is_alive()
+            # Simulate the installer's non-atomic replace: dir GONE, then new.
+            pkg_dir = tmp_path / ".curio" / "users" / USER / "packages" / PKG
+            shutil.rmtree(pkg_dir)
+            assert not pkg_dir.exists()  # the pre-dev/92 404 window, held open
+            _install_pkg(monkeypatch, tmp_path)
+        finally:
+            lock.release()
+        worker.join(timeout=30)
+        assert not worker.is_alive()
+        # No transient 404/409 — the invocation read the NEW consistent state.
+        assert "err" not in results, results.get("err")
+        assert results["out"]["reply"]["ok"] is True
