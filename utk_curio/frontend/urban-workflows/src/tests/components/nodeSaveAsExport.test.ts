@@ -123,12 +123,23 @@ describe("packagesApi.factoryBuild", () => {
   });
 });
 
+// Source-text guards on the Export wiring. Belt-and-braces now: the behaviour
+// itself is covered by test_save_as_package.py (e2e, mutation-verified) and the
+// payload shaping by tests/utils/saveAsDraft.test.ts. These stay because they
+// are ~1ms and catch a wiring regression before a 45s browser test does.
 describe("NodeSaveAsModal Export wiring", () => {
   test("onExport builds the draft, calls factoryBuild, and downloads the result", () => {
     const src = modalSource();
     const start = src.indexOf("const onExport");
     expect(start).toBeGreaterThan(-1);
-    const body = src.slice(start, src.indexOf("}, [buildDraft, busy, canvasNode, showToast]);", start));
+    // Find the end of the useCallback by SHAPE, not by the literal dependency
+    // list. Keying on the exact deps meant that reordering them made indexOf
+    // return -1, and slice(start, -1) then handed back nearly the whole file —
+    // so these assertions kept passing against unrelated code. A false pass is
+    // worse than a false failure, hence the explicit end-marker check.
+    const endMatch = /\}, \[[^\]]*\]\);/.exec(src.slice(start));
+    expect(endMatch).not.toBeNull();
+    const body = src.slice(start, start + endMatch!.index + endMatch![0].length);
 
     expect(body).toContain("buildDraft()");
     expect(body).toContain("packagesApi.factoryBuild(");
