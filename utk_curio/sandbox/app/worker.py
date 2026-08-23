@@ -382,6 +382,76 @@ def _js_value_to_saveable_frame(value):
     return None, None
 
 
+def _pick_export_entry(node):
+    """Resolve a package.json ``exports`` subtree down to a relative path string.
+
+    Node's export conditions NEST: ``exports["."]["import"]`` is frequently
+    another condition object (``{"types": ..., "default": "./x.mjs"}``) rather
+    than a path. Walking only one level and handing the resulting dict to
+    ``pathlib`` raises TypeError, which the caller used to swallow — silently
+    degrading to the bare specifier, which then resolves only when the Node
+    subprocess cwd happens to sit inside the repo.
+
+    Condition order matches what the js_wrapper needs: it runs under
+    ``--input-type=commonjs`` but reaches packages through dynamic ``import()``,
+    so the ESM conditions win over ``require``.
+    """
+    if isinstance(node, str):
+        return node
+    if not isinstance(node, dict):
+        return None
+    for key in ('import', 'module', 'node', 'default', 'require'):
+        if key in node:
+            entry = _pick_export_entry(node[key])
+            if entry:
+                return entry
+    return None
+
+
+def resolve_pkg_entry_url(specifier, root_node_modules):
+    """Map a bare package specifier to an absolute ``file://`` URL, or None.
+
+    Returns None for anything that is not a bare specifier (relative, absolute,
+    URL, ``node:`` builtin), for a package that isn't installed under
+    ``root_node_modules``, or for an entry that escapes it.
+    """
+    import json
+    import pathlib
+
+    # Only bare specifiers (not relative / absolute / URL / node: builtin).
+    if not specifier or specifier[0] in './' or ':' in specifier:
+        return None
+    root_node_modules = pathlib.Path(root_node_modules)
+    seg = specifier.split('/')
+    pkg = '/'.join(seg[:2]) if specifier.startswith('@') else seg[0]
+    pkg_dir = root_node_modules / pkg
+    pj = pkg_dir / 'package.json'
+    if not pj.is_file():
+        return None
+    try:
+        meta = json.loads(pj.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    exp = meta.get('exports')
+    entry = None
+    if isinstance(exp, str):
+        entry = exp
+    elif isinstance(exp, dict):
+        # A subpath map keys on "."; a bare condition map has no "." and applies
+        # to the root itself.
+        entry = _pick_export_entry(exp.get('.', exp))
+    entry = entry or meta.get('module') or meta.get('main') or 'index.js'
+    if not isinstance(entry, str):
+        return None
+    try:
+        entry_path = (pkg_dir / entry).resolve()
+    except Exception:
+        return None
+    if not entry_path.is_file() or root_node_modules.resolve() not in entry_path.parents:
+        return None
+    return entry_path.as_uri()
+
+
 def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
     """
     Execute user JavaScript code in an isolated Node.js subprocess.
@@ -432,44 +502,10 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         repo_root = pathlib.Path(__file__).resolve().parents[3]
         root_node_modules = repo_root / 'node_modules'
 
-        def _resolve_pkg_entry_url(specifier):
-            # Only bare specifiers (not relative / absolute / URL / node: builtin).
-            if not specifier or specifier[0] in './' or ':' in specifier:
-                return None
-            seg = specifier.split('/')
-            pkg = '/'.join(seg[:2]) if specifier.startswith('@') else seg[0]
-            pkg_dir = root_node_modules / pkg
-            pj = pkg_dir / 'package.json'
-            if not pj.is_file():
-                return None
-            try:
-                meta = json.loads(pj.read_text(encoding='utf-8'))
-            except Exception:
-                return None
-            entry = None
-            exp = meta.get('exports')
-            if isinstance(exp, str):
-                entry = exp
-            elif isinstance(exp, dict):
-                dot = exp.get('.', exp)
-                if isinstance(dot, str):
-                    entry = dot
-                elif isinstance(dot, dict):
-                    entry = (dot.get('import') or dot.get('module') or dot.get('node')
-                             or dot.get('default') or dot.get('require'))
-            entry = entry or meta.get('module') or meta.get('main') or 'index.js'
-            try:
-                entry_path = (pkg_dir / entry).resolve()
-            except Exception:
-                return None
-            if not entry_path.is_file() or root_node_modules not in entry_path.parents:
-                return None
-            return entry_path.as_uri()
-
         def _resolved_source(quoted_source):
             # quoted_source keeps its surrounding quotes, e.g. "'@urban-toolkit/autk-db'".
             spec = quoted_source[1:-1]
-            url = _resolve_pkg_entry_url(spec)
+            url = resolve_pkg_entry_url(spec, root_node_modules)
             return f"'{url}'" if url else quoted_source
 
         # Rewrite static `import` statements to dynamic `await import()` calls
