@@ -139,3 +139,25 @@ export function resolveEditorTabFlags(
     explanation: config?.hasExplanation ?? (code || grammar),
   };
 }
+
+/**
+ * The tab a node's editor should open on.
+ *
+ * NodeEditor used to hardcode `"code"`. Grammar-only kinds (autk-grammar and
+ * vis-vega both declare `hasCode: false`) render no code pane, so that left NO
+ * pane active on mount and the grammar editor mounted inside a `display: none`
+ * Bootstrap tab (#157).
+ *
+ * Order follows the tab strip, so the first tab the user can actually see is the
+ * one that opens. `"output"` is the last resort: every node has an output pane.
+ */
+export function resolveInitialEditorTab(flags: {
+  code: boolean;
+  grammar: boolean;
+  widgets: boolean;
+}): "code" | "grammar" | "widgets" | "output" {
+  if (flags.code) return "code";
+  if (flags.grammar) return "grammar";
+  if (flags.widgets) return "widgets";
+  return "output";
+}

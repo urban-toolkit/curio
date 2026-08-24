@@ -31,6 +31,7 @@ import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import NodeExplanation from "./NodeExplanation";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
 
 type NodeEditorProps = {
     outputId?: string;
@@ -81,7 +82,12 @@ function NodeEditor({
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<boolean>(false); // code has to rerun every time button is pressed (having changes or not)
     const [fullscreen, setFullscreen] = useState<string>("");
-    const [activeTab, setActiveTab] = useState("code");
+    // Not the literal "code": grammar-only kinds (autk-grammar, vis-vega declare
+    // hasCode:false) have no code pane, so hardcoding it left NO pane active on
+    // mount and the editor rendered inside a display:none tab (#157).
+    const [activeTab, setActiveTab] = useState<string>(
+        () => resolveInitialEditorTab({ code, grammar, widgets })
+    );
     const { dashboardOn } = useFlowContext();
     const effectiveTab = dashboardOn ? "output" : activeTab;
 

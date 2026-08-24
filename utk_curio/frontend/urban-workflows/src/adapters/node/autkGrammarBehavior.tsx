@@ -523,14 +523,27 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         [nodeState.output],
     );
 
-    const hasExistingCode = !!(data.defaultCode || (data as any).code);
+    // Decided ONCE, on mount. Deriving this from `data.code` is what caused #157:
+    // GrammarEditor's floatCode writes back into `data.code` (useNodeState), which
+    // flipped `hasExistingCode` every render, so `defaultValueOverride` oscillated
+    // between the starter spec and `undefined`. @monaco-editor/react's controlled
+    // -value effect then replaced the whole model on the first real keystroke,
+    // making mid-document edits vanish. `data.defaultCode` — which no editor writes
+    // — is the field to key off, matching useDataSummaryBehavior.
+    const defaultValueOverrideRef = useRef<string | undefined>(undefined);
+    const defaultValueDecidedRef = useRef(false);
+    if (!defaultValueDecidedRef.current) {
+        defaultValueDecidedRef.current = true;
+        const hasExistingCode = !!(data.defaultCode || (data as any).code);
+        defaultValueOverrideRef.current = hasExistingCode
+            ? undefined
+            : (autkGrammarAdapter.getDefaultSpec?.() as string | undefined);
+    }
 
     return {
         applyGrammar,
         contentComponent,
-        defaultValueOverride: hasExistingCode
-            ? undefined
-            : (autkGrammarAdapter.getDefaultSpec?.() as string | undefined),
+        defaultValueOverride: defaultValueOverrideRef.current,
     };
 };
 

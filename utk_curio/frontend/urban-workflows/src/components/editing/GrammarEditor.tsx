@@ -44,7 +44,11 @@ export default function GrammarEditor({
     const baselineRef = useRef<string>("{}");
 
     useEffect(() => {
-        if (defaultValueBypass.current) {
+        // The `!= undefined` half matters as much as the bypass: without it an
+        // undefined defaultValue clobbers the editor's state, and the controlled
+        // `value` prop then snaps the model back on the next keystroke (#157).
+        // CodeEditor has always had this guard; GrammarEditor did not.
+        if (defaultValue != undefined && defaultValueBypass.current) {
             setGrammar(defaultValue);
             baselineRef.current = defaultValue;
         }
