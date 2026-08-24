@@ -1,0 +1,29 @@
+# Compose override used only by the CI test workflow
+# (.github/workflows/docker-compose.yml).
+#
+# The image's default CMD boots without any auth flag, which resolves to
+# CURIO_NO_AUTH=1 (see utk_curio/main.py). Every e2e test that needs a real
+# logged-in owner then skips itself via require_user_auth() -- around 26 of
+# them, including the whole package roundtrip, data catalog and node catalog
+# suites. Adding --auth turns those on.
+#
+# Deliberately NOT docker-compose.deploy.yml: that overlay also passes
+# --no-allow-publish, which would disable the two catalog mutators that the
+# publish-catalog tests exercise. CI wants auth on and publish still allowed.
+services:
+  curio:
+    command:
+      - python
+      - curio.py
+      - start
+      - all
+      - --auth
+      - --with-examples
+      - --backend-host
+      - 0.0.0.0
+      - --backend-port
+      - "5002"
+      - --sandbox-host
+      - 0.0.0.0
+      - --sandbox-port
+      - "2000"

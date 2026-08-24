@@ -8,6 +8,9 @@ on:
     paths:
       - 'utk_curio/**'
       - 'Dockerfile'
+      # Define the CI stack itself (ports, volumes, and the --auth boot flags).
+      - 'docker-compose.yml'
+      - 'docker-compose.ci.yml'
       - '.github/workflows/docker-compose.yml'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -24,6 +27,9 @@ on:
     paths:
       - 'utk_curio/**'
       - 'Dockerfile'
+      # Define the CI stack itself (ports, volumes, and the --auth boot flags).
+      - 'docker-compose.yml'
+      - 'docker-compose.ci.yml'
       - '.github/workflows/docker-compose.yml'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -65,6 +71,14 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
 
     env:
+      # Boot the CI stack with auth + projects enabled. Without the overlay the
+      # image's default CMD carries no auth flag, which means CURIO_NO_AUTH=1 --
+      # and the e2e suite then skips every owner-authenticated test via
+      # require_user_auth() (package roundtrip, data catalog, node catalog,
+      # workflow deps, library manager, project save/load, ...). Every
+      # `docker compose` step below reads COMPOSE_FILE, so setting it here is
+      # enough. See docker-compose.ci.yml for why this isn't the deploy overlay.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       # Hardware WebGPU path (see conftest.py browser_type_launch_args).
       CURIO_WEBGPU_BACKEND: hardware
       CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
