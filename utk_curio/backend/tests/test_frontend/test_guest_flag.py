@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .utils import allow_guest_login_env, auth_enabled_env, skip_project_page_env
+from .utils import (
+    allow_guest_login_env,
+    auth_enabled_env,
+    skip_project_page_env,
+    wait_for_projects_page,
+)
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -28,10 +33,10 @@ def test_guest_button_visible_in_dev(app_frontend: FrontendPage, page):
             page.wait_for_url("**/dataflow**", timeout=30000)
         else:
             page.wait_for_url("**/projects", timeout=30000)
-            page.get_by_role("heading", name="Projects").wait_for(timeout=10000)
+            wait_for_projects_page(page, timeout=10000)
         return
 
-    page.get_by_role("button", name="Sign In", exact=True).wait_for(timeout=30000)
+    page.get_by_role("button", name="Sign in", exact=True).wait_for(timeout=30000)
 
     guest = page.get_by_text("Continue as Guest")
     if allow_guest:

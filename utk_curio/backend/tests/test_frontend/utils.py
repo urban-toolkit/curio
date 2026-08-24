@@ -1058,8 +1058,18 @@ def signup_e2e_user(
     page.get_by_label("Username").fill(username)
     page.get_by_label("Password", exact=True).fill(password)
     page.get_by_label("Confirm Password").fill(password)
-    page.get_by_role("button", name="Create Account").click()
+    page.get_by_role("button", name="Create account").click()
     page.wait_for_url("**/projects", timeout=30000)
+
+
+def wait_for_projects_page(page, *, timeout: float = 10000) -> None:
+    """Wait until ``/projects`` has rendered.
+
+    The page no longer has an ``<h1>Projects</h1>`` — the section tab strip
+    (AppSectionTabs) names the page instead, so wait on that link. ``exact``
+    keeps this off the Curio logo link, whose accessible name is "Curio".
+    """
+    page.get_by_role("link", name="Projects", exact=True).wait_for(timeout=timeout)
 
 
 def open_new_workflow(page) -> None:

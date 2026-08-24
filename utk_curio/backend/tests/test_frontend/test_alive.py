@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .utils import auth_enabled_env, skip_project_page_env
+from .utils import auth_enabled_env, skip_project_page_env, wait_for_projects_page
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -66,12 +66,12 @@ def test_frontend_server(app_frontend: FrontendPage, page):
 
     if auth_disabled:
         page.wait_for_url("**/projects", timeout=60000)
-        page.get_by_role("heading", name="Projects").wait_for(timeout=60000)
+        wait_for_projects_page(page, timeout=60000)
         return
 
     # The app should redirect unauthenticated users to /auth/signin
-    page.get_by_role("button", name="Sign In", exact=True).or_(page.get_by_text("Login")).wait_for(timeout=60000)
+    page.get_by_role("button", name="Sign in", exact=True).wait_for(timeout=60000)
 
     app_frontend.expect_page_title("Curio")
     content = page.content()
-    assert "Sign in" in content or "Login" in content
+    assert "Sign in" in content

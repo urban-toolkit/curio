@@ -30,6 +30,8 @@ jest.mock('../../components/VersionBadge', () => ({ __esModule: true, default: (
 jest.mock('react-router-dom', () => ({
   useNavigate: () => jest.fn(),
   Link: ({ children }: any) => <a>{children}</a>,
+  // GlobalPageHeader / AppSectionTabs render outside a Router here.
+  NavLink: ({ children }: any) => <a>{children}</a>,
 }));
 jest.mock('assets/curio-2.png', () => 'logo.png');
 

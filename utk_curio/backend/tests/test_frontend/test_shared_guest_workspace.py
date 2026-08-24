@@ -8,7 +8,12 @@ from uuid import uuid4
 
 import pytest
 
-from .utils import allow_guest_login_env, auth_enabled_env, require_project_page
+from .utils import (
+    allow_guest_login_env,
+    auth_enabled_env,
+    require_project_page,
+    wait_for_projects_page,
+)
 
 
 def _auth_enabled() -> bool:
@@ -28,7 +33,7 @@ def _enter_guest_workspace(page, base_url: str) -> None:
         page.get_by_text("Continue as Guest").click()
 
     page.wait_for_url("**/projects", timeout=30000)
-    page.get_by_role("heading", name="Projects").wait_for(timeout=10000)
+    wait_for_projects_page(page, timeout=10000)
 
 
 def _session_token(page) -> str:

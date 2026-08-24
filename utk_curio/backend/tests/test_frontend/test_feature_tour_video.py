@@ -53,6 +53,7 @@ from .utils import (
     run_node_and_wait,
     set_node_code,
     stub_db_login,
+    wait_for_projects_page,
 )
 
 pytestmark = pytest.mark.skipif(
@@ -326,9 +327,9 @@ def scene_signup(ctx: Ctx) -> None:
     tour.type_into(page.get_by_label("Password", exact=True), USER_PASSWORD, delay=35)
     tour.type_into(page.get_by_label("Confirm Password"), USER_PASSWORD, delay=35)
     tour.hush()
-    tour.click(page.get_by_role("button", name="Create Account"))
+    tour.click(page.get_by_role("button", name="Create account"))
     page.wait_for_url("**/projects", timeout=40000)
-    page.get_by_role("heading", name="Projects").wait_for(timeout=15000)
+    wait_for_projects_page(page, timeout=15000)
     tour.beat(1200)
 
 
@@ -922,7 +923,7 @@ def scene_outro(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     page.goto(f"{ctx.frontend}/projects")
     page.wait_for_load_state("domcontentloaded")
-    page.get_by_role("heading", name="Projects").wait_for(timeout=20000)
+    wait_for_projects_page(page, timeout=20000)
     tour.beat(1800)
     tour.say(
         "Reproducible and shareable",
@@ -1065,7 +1066,7 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
         else:
             page.goto(f"{frontend_server}/projects")
             page.wait_for_load_state("domcontentloaded")
-            page.get_by_role("heading", name="Projects").wait_for(timeout=30000)
+            wait_for_projects_page(page, timeout=30000)
 
     failures: list[tuple[str, str]] = []
     for name, scene in scenes:
