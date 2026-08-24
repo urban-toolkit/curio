@@ -1,14 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import CSS from "csstype";
-import { useNavigate, Link } from "react-router-dom";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faStore } from "@fortawesome/free-solid-svg-icons";
-import { useUserContext } from "../../providers/UserProvider";
+import { useNavigate } from "react-router-dom";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
 import { notebookToTrill } from "../../NotebookConvertor";
-import logo from "assets/curio-2.png";
 import DataflowThumbnail from "../../components/DataflowThumbnail";
-import LlmSettingsModal from "../../components/LlmSettingsModal";
+import AppSectionTabs from "../../components/layout/AppSectionTabs";
+import { GlobalPageHeader } from "../../components/layout/GlobalPageHeader";
 import VersionBadge from "../../components/VersionBadge";
 
 type ViewMode = "grid" | "list";
@@ -22,14 +19,12 @@ const ACCENT_COLORS: Record<string, { bg: string; fg: string }> = {
 };
 
 const ProjectsList: React.FC = () => {
-  const { user, signout, enableUserAuth } = useUserContext();
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [filter, setFilter] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectSummary } | null>(null);
-  const [llmSettingsOpen, setLlmSettingsOpen] = useState(false);
   const importNotebookRef = useRef<HTMLInputElement>(null);
 
   const loadProjects = useCallback(async () => {
@@ -55,15 +50,6 @@ const ProjectsList: React.FC = () => {
   const filtered = projects.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
-
-  const initials = user?.name
-    ? user.name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase()
-    : "?";
 
   const handleRename = async (project: ProjectSummary) => {
     const newName = window.prompt("Rename project:", project.name);
@@ -136,65 +122,32 @@ const ProjectsList: React.FC = () => {
         onChange={handleNotebookImport}
         onClick={(e) => { (e.target as HTMLInputElement).value = ""; }}
       />
-      {/* Top Nav Bar */}
-      <header style={topBarStyle}>
-        <Link to="/projects" style={logoLinkStyle}>
-          <img src={logo} alt="Curio" style={logoImgStyle} />
-        </Link>
-        <div style={topBarRightStyle}>
-          <button style={llmSettingsBtnStyle} onClick={() => navigate("/catalog")}>
-            <FontAwesomeIcon icon={faStore} style={{ marginRight: 6, fontSize: 11 }} />
-            Catalog
-          </button>
-          <button style={llmSettingsBtnStyle} onClick={() => setLlmSettingsOpen(true)}>
-            LLM Settings
-          </button>
-          <div style={avatarStyle}>{initials}</div>
-          <div style={userInfoColumnStyle}>
-            <span style={userNameStyle}>{user?.name || "User"}</span>
-            {enableUserAuth && (
-              <button
-                style={signoutBtnStyle}
-                data-testid="signout-button"
-                onClick={async () => {
-                  await signout();
-                  navigate("/auth/signin");
-                }}
-              >
-                Sign out
-              </button>
-            )}
-          </div>
-        </div>
-        <LlmSettingsModal isOpen={llmSettingsOpen} onClose={() => setLlmSettingsOpen(false)} />
-      </header>
+      <GlobalPageHeader />
+      <AppSectionTabs />
 
       {/* Main Content */}
       <main style={mainStyle} data-curio-projects-scroll="true">
         <div style={mainInnerStyle}>
-          <div style={pageHeaderStyle}>
-            <h1 style={pageTitleStyle}>Projects</h1>
-            <div style={headerActionsStyle}>
-              <input
-                type="text"
-                placeholder="Search projects..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                style={searchInputStyle}
-              />
-              <button
-                style={importNotebookBtnStyle}
-                onClick={() => importNotebookRef.current?.click()}
-              >
-                Import Jupyter notebook
-              </button>
-              <button
-                style={newWorkflowBtnStyle}
-                onClick={() => navigate("/dataflow/new")}
-              >
-                + New Dataflow
-              </button>
-            </div>
+          <div style={headerActionsStyle}>
+            <input
+              type="text"
+              placeholder="Search projects..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={searchInputStyle}
+            />
+            <button
+              style={importNotebookBtnStyle}
+              onClick={() => importNotebookRef.current?.click()}
+            >
+              Import Jupyter notebook
+            </button>
+            <button
+              style={newWorkflowBtnStyle}
+              onClick={() => navigate("/dataflow/new")}
+            >
+              + New Dataflow
+            </button>
           </div>
 
           {/* Filter Tabs + View Toggle */}
@@ -325,29 +278,6 @@ const pageStyle: CSS.Properties = {
     "Rubik, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif",
 };
 
-const topBarStyle: CSS.Properties = {
-  flexShrink: 0,
-  height: "65px",
-  backgroundColor: "#1E1F23",
-  display: "flex",
-  alignItems: "center",
-  padding: "10px 20px 10px 10px",
-  justifyContent: "space-between",
-  borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
-};
-
-const logoLinkStyle: CSS.Properties = {
-  display: "contents",
-};
-
-const logoImgStyle: CSS.Properties = {
-  maxHeight: "100%",
-  width: "auto",
-  marginLeft: "15px",
-  marginRight: "15px",
-  cursor: "pointer",
-};
-
 const searchInputStyle: CSS.Properties = {
   width: "240px",
   height: "38px",
@@ -358,66 +288,6 @@ const searchInputStyle: CSS.Properties = {
   color: "#1E1F23",
   fontSize: "13px",
   outline: "none",
-};
-
-const topBarRightStyle: CSS.Properties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-};
-
-const userInfoColumnStyle: CSS.Properties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "2px",
-};
-
-const userNameStyle: CSS.Properties = {
-  color: "#fff",
-  fontSize: "12px",
-  fontWeight: 500,
-  maxWidth: "110px",
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-};
-const avatarStyle: CSS.Properties = {
-  width: "28px",
-  height: "28px",
-  borderRadius: "50%",
-  backgroundColor: "#fff",
-  color: "#0F0F11",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: "11px",
-  fontWeight: 700,
-  border: "1px solid #2A2A2E",
-  flexShrink: 0,
-};
-
-const signoutBtnStyle: CSS.Properties = {
-  background: "none",
-  border: "1px solid #444",
-  borderRadius: "4px",
-  color: "#ddd",
-  fontSize: "11px",
-  fontWeight: 500,
-  padding: "3px 10px",
-  cursor: "pointer",
-  lineHeight: 1.3,
-};
-
-const llmSettingsBtnStyle: CSS.Properties = {
-  background: "none",
-  border: "1px solid #444",
-  borderRadius: "4px",
-  color: "#ddd",
-  fontSize: "12px",
-  fontWeight: 500,
-  padding: "5px 12px",
-  cursor: "pointer",
-  marginRight: "12px",
 };
 
 const mainStyle: CSS.Properties = {
@@ -432,24 +302,14 @@ const mainInnerStyle: CSS.Properties = {
   padding: "32px 24px",
 };
 
-const pageHeaderStyle: CSS.Properties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginBottom: "24px",
-};
-
 const headerActionsStyle: CSS.Properties = {
+  // Actions only — the active tab in AppSectionTabs names the page now, so
+  // this row no longer has a title to sit opposite.
   display: "flex",
+  justifyContent: "flex-end",
   alignItems: "center",
   gap: "12px",
-};
-
-const pageTitleStyle: CSS.Properties = {
-  fontSize: "24px",
-  fontWeight: 600,
-  color: "#1E1F23",
-  margin: 0,
+  marginBottom: "24px",
 };
 
 const importNotebookBtnStyle: CSS.Properties = {

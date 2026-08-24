@@ -1,12 +1,14 @@
-import React from "react";
+import React, { useState } from "react";
 import CSS from "csstype";
 import { Link, useNavigate } from "react-router-dom";
 import logo from "assets/curio-2.png";
 import { useUserContext } from "../../providers/UserProvider";
+import LlmSettingsModal from "../LlmSettingsModal";
 
 export function GlobalPageHeader() {
   const { user, signout, enableUserAuth } = useUserContext();
   const navigate = useNavigate();
+  const [llmSettingsOpen, setLlmSettingsOpen] = useState(false);
 
   const initials = user?.name
     ? user.name
@@ -23,8 +25,8 @@ export function GlobalPageHeader() {
         <img src={logo} alt="Curio" style={logoImgStyle} />
       </Link>
       <div style={topBarRightStyle}>
-        <button style={navBtnStyle} type="button" onClick={() => navigate("/projects")}>
-          Projects
+        <button style={llmSettingsBtnStyle} type="button" onClick={() => setLlmSettingsOpen(true)}>
+          LLM Settings
         </button>
         <div style={avatarStyle}>{initials}</div>
         <div style={userInfoColumnStyle}>
@@ -33,16 +35,18 @@ export function GlobalPageHeader() {
             <button
               style={signoutBtnStyle}
               type="button"
+              data-testid="signout-button"
               onClick={async () => {
                 await signout();
                 navigate("/auth/signin");
               }}
             >
-              Logout
+              Sign out
             </button>
           )}
         </div>
       </div>
+      <LlmSettingsModal isOpen={llmSettingsOpen} onClose={() => setLlmSettingsOpen(false)} />
     </header>
   );
 }
@@ -74,7 +78,7 @@ const topBarRightStyle: CSS.Properties = {
   gap: "8px",
 };
 
-const navBtnStyle: CSS.Properties = {
+const llmSettingsBtnStyle: CSS.Properties = {
   background: "none",
   border: "1px solid #444",
   borderRadius: "4px",
