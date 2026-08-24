@@ -1,11 +1,27 @@
 # Compose override used only by the CI test workflow
 # (.github/workflows/docker-compose.yml).
 #
-# The image's default CMD boots without any auth flag, which resolves to
-# CURIO_NO_AUTH=1 (see utk_curio/main.py). Every e2e test that needs a real
-# logged-in owner then skips itself via require_user_auth() -- around 26 of
-# them, including the whole package roundtrip, data catalog and node catalog
-# suites. Adding --auth turns those on.
+# Two CI-specific adjustments to the image's default CMD:
+#
+# 1. --auth. The default CMD carries no auth flag, which resolves to
+#    CURIO_NO_AUTH=1 (see utk_curio/main.py). The e2e suite then skips every
+#    test that needs a real logged-in owner via require_user_auth() -- around
+#    26 of them, including the whole package roundtrip, data catalog and node
+#    catalog suites. This matches what the pytest-owned harness already does
+#    for itself (fixtures.py appends --auth for exactly this reason); only the
+#    --use-existing CI path was missing it.
+#
+# 2. umask 000. The e2e suite runs Playwright on the HOST (as the runner user
+#    `deploy`) against the containerized stack, and several tests clean up the
+#    per-user store directly on the bind-mounted workspace -- e.g.
+#    .curio/users/<id>/installed-libraries.json in test_library_manager_e2e's
+#    library_teardown. The container runs as root, so anything it creates
+#    mid-run is root-owned 755/644 and the host process cannot unlink inside
+#    it (PermissionError [Errno 13]). The workflow's pre-run
+#    `chmod -R a+rwx .curio` cannot cover paths that do not exist yet, so
+#    widen the container's creation mask instead. umask is inherited by the
+#    backend/sandbox/frontend children curio.py spawns. `exec` keeps python as
+#    PID 1 so `docker compose down` still signals it directly.
 #
 # Deliberately NOT docker-compose.deploy.yml: that overlay also passes
 # --no-allow-publish, which would disable the two catalog mutators that the
@@ -13,17 +29,9 @@
 services:
   curio:
     command:
-      - python
-      - curio.py
-      - start
-      - all
-      - --auth
-      - --with-examples
-      - --backend-host
-      - 0.0.0.0
-      - --backend-port
-      - "5002"
-      - --sandbox-host
-      - 0.0.0.0
-      - --sandbox-port
-      - "2000"
+      - sh
+      - -c
+      - >-
+        umask 000 && exec python curio.py start all --auth --with-examples
+        --backend-host 0.0.0.0 --backend-port 5002
+        --sandbox-host 0.0.0.0 --sandbox-port 2000
