@@ -56,7 +56,7 @@ curio setup                  # install deps and exit
 | Flag | Default | Effect |
 |---|---|---|
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
-| `--save-node-outputs` / `--no-save-node-outputs` | on | Default state of every node's save-output toggle |
+| `--save-node-outputs` / `--no-save-node-outputs` | off | Default state of every node's save-output toggle |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
 | `--with-examples` | off | Seed the example projects from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
@@ -292,7 +292,7 @@ Three surfaces manage datasets:
 - The **Data Catalog** dropdown in the Tools panel, listing your installed datasets. Drag one onto the canvas to create (or extend) a node with generated loader code.
 - The **`/catalog/data`** page, a read-only library view reached from `/projects` → **Catalog** → the **Data** tab.
 
-Running a node also saves its output as a **computed dataset** in your account (the database toggle next to each node's play button), so any node's result can be reused as an input elsewhere. This is on by default; set `CURIO_DEFAULT_SAVE_NODE_OUTPUT=0` to flip the default off.
+A node can also save its output as a **computed dataset** in your account (the database toggle next to each node's play button), so its result can be reused as an input elsewhere. This is off by default, so turn the toggle on for the nodes whose output you want to keep; set `CURIO_DEFAULT_SAVE_NODE_OUTPUT=1` to turn it on for every node instead.
 
 Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs and Docker deployments should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 

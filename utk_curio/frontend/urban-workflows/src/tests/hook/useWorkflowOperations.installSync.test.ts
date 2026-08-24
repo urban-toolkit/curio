@@ -66,9 +66,16 @@ const makeDeps = () =>
     defaultSaveOutputDataset: false,
   }) as any;
 
+let warnSpy: jest.SpyInstance;
+
 beforeEach(() => {
   jest.clearAllMocks();
   (TrillGenerator.generateTrill as jest.Mock).mockReturnValue({ dataflow: { datasets: [] } });
+  warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  warnSpy.mockRestore();
 });
 
 describe("ensureProjectId", () => {
@@ -364,5 +371,89 @@ describe("pendingInstalls store", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+describe("persistDataflowForInstall - warning scoping (#180)", () => {
+  const respondWith = (
+    warnings: Array<{ node_id: string; filename: string; reason: string }>,
+  ) =>
+    (projectsApi.create as jest.Mock).mockResolvedValue({
+      id: "proj-1",
+      name: "wf",
+      spec: { dataflow: { datasets: [], packages: [] } },
+      dataset_install_warnings: warnings,
+    });
+
+  const STALE = {
+    node_id: "n-untouched",
+    filename: "stale.parquet",
+    reason: "output artifact not found at save time",
+  };
+  const RAN = {
+    node_id: "n-ran",
+    filename: "out.parquet",
+    reason: "output artifact not found at save time",
+  };
+
+  it("does not toast a warning for a node this install-sync did not cover", async () => {
+    // The #180 nuisance: buildOutputRefs re-sends refs for EVERY toggle-enabled
+    // node, so a save triggered by n-ran carries n-untouched's stale ref too.
+    respondWith([STALE]);
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await act(async () => {
+      await result.current.persistDataflowForInstall(["n-ran"]);
+    });
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it("still logs the filtered-out warning so nothing is silently lost", async () => {
+    respondWith([STALE]);
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await act(async () => {
+      await result.current.persistDataflowForInstall(["n-ran"]);
+    });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("n-untouched"));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("stale.parquet"));
+  });
+
+  it("still toasts a warning for a node that IS in the pending set", async () => {
+    respondWith([RAN]);
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await act(async () => {
+      await result.current.persistDataflowForInstall(["n-ran"]);
+    });
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining("couldn't be generated"),
+      "warning",
+    );
+  });
+
+  it("toasts only the pending subset when one save reports both", async () => {
+    respondWith([STALE, RAN]);
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await act(async () => {
+      await result.current.persistDataflowForInstall(["n-ran"]);
+    });
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
+    // Singular copy proves the filter ran BEFORE the count, not just before the
+    // name list: the plural branch would read "2 datasets couldn't be generated".
+    const [message] = (mockShowToast as jest.Mock).mock.calls[0];
+    expect(message).toContain('Dataset for "n-ran"');
+    expect(message).not.toContain("n-untouched");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("n-untouched"));
+  });
+
+  it("surfaces every warning when no scope is passed (unscoped callers unchanged)", async () => {
+    respondWith([STALE, RAN]);
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await act(async () => {
+      await result.current.persistDataflowForInstall();
+    });
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining("2 datasets couldn't be generated"),
+      "warning",
+    );
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });

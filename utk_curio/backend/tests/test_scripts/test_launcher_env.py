@@ -46,12 +46,14 @@ def _isolate_env(monkeypatch, tmp_path):
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path / "data"))
 
 
-def test_save_node_outputs_defaults_on_and_can_be_turned_off():
+def test_save_node_outputs_defaults_off_and_can_be_turned_on():
+    # Opt-in per node (#180): a dataflow should not accumulate a Computed
+    # dataset for every node the user happens to run.
     set_environment_variables(**BASE)
-    assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "1"
-
-    set_environment_variables(**BASE, save_node_outputs=False)
     assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "0"
+
+    set_environment_variables(**BASE, save_node_outputs=True)
+    assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "1"
 
 
 def test_allow_publish_defaults_on_and_can_be_locked_down():

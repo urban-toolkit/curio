@@ -25,6 +25,11 @@ from utk_curio.backend.app.datasets.domain.constants import (
     SANDBOX_DATATYPE_TO_FORMAT,
 )
 from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+# Kinds whose ``value_str`` genuinely holds a path. For ``str`` it is the user's
+# own return value, so treating it as one hard-links an unrelated file in as the
+# node's dataset (#180). Imported rather than redeclared so this reader and
+# ``output_paths._resolve_duckdb_artifact_path`` can never drift apart.
+from utk_curio.backend.app.datasets.infrastructure.output_paths import PATH_BEARING_KINDS
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,21 @@ class BundlePart:
     label: str
     source_path: Path | None
 
+
+# Sandbox artifact kinds whose ENTIRE value lives in the DuckDB row: there is no
+# file under ``artifacts/`` for any of them (see ``sandbox/util/parsers``'s
+# ``save_to_duckdb``). int/float/bool keep it in value_int/value_float, ``str``
+# keeps the *string value* (not a path) in value_str, and ``null`` carries no
+# value column at all. Every one is a declared Python Computation output type
+# (``VALUE`` in packages/curio.builtin@1/manifest.json), so "no file on disk"
+# must NOT be reported as "output artifact not found at save time" (#180).
+ROW_ONLY_KINDS = frozenset({"int", "float", "bool", "str", "null"})
+
+# ``save_to_duckdb``'s fallbacks for a list/dict that CONTAINS DataFrames: each
+# element is saved as its own artifact and only the id list/map is stored here
+# (value_json). Also file-less, but the real data is the children's, so these
+# install as a bundle rather than as a scalar JSON stub (#180).
+ID_CONTAINER_KINDS = frozenset({"list_of_ids", "dict_of_ids"})
 
 def _part_label(index: int, kind: str) -> str:
     names = {
@@ -62,7 +82,12 @@ def _resolve_artifact_source(art_id: str, kind: str, value_str: str | None) -> P
     if resolved is not None and resolved.is_file():
         return resolved
 
-    if value_str:
+    # Only consult ``value_str`` as a path for the kinds that store one there. A
+    # ``str`` artifact holds the user's own return value, so ``return "cities.csv"``
+    # would otherwise resolve to a real shared-data file and install it as this
+    # part's data (#180). Kept in step with ``PATH_BEARING_KINDS``' other reader,
+    # ``output_paths._resolve_duckdb_artifact_path``.
+    if value_str and kind in PATH_BEARING_KINDS:
         from utk_curio.backend.app.projects.storage import _launch_dir
         from utk_curio.backend.app.datasets.infrastructure.output_paths import _shared_data_dir
 
@@ -84,23 +109,62 @@ def _resolve_artifact_source(art_id: str, kind: str, value_str: str | None) -> P
     return None
 
 
-def _serialize_scalar_part(dest: Path, kind: str, art_id: str) -> None:
-    from utk_curio.sandbox.util.db import get_read_connection
+def _bare_artifact_id(path_ref: str) -> str | None:
+    """*path_ref* as a bare DuckDB artifact id, or ``None`` when it isn't one.
 
-    con = get_read_connection()
+    Applies the same gate ``resolve_shared_output_path`` uses before it consults
+    DuckDB: a single flat, extensionless segment. Reusing it means the row lookup
+    can never be reached by a traversal ref (``../../etc/hosts``) or by a real
+    shared-data filename, and the ``<id>.json`` store name it yields is always a
+    valid single segment for ``_validate_store_filename``.
+    """
+    name = str(path_ref or "").strip()
+    if not name or "/" in name or "\\" in name or "\x00" in name:
+        return None
+    return None if "." in name else name
+
+
+def _artifact_value_row(art_id: str) -> tuple | None:
+    """``(kind, value_int, value_float, value_str, value_json)`` for *art_id*, or
+    ``None`` when the artifact has no row.
+
+    ``None`` is load-bearing. It is the only signal the single-output install
+    path has for "this artifact genuinely does not exist" - pruned, or the
+    sandbox restarted and lost the DB - which is the case the save warning exists
+    for and the only one where re-running the node helps. A DuckDB open failure
+    (the sandbox holds the write handle mid-``/exec``) reports the same way:
+    indistinguishable here, and equally "try again".
+    """
     try:
-        row = con.execute(
-            "SELECT value_int, value_float, value_str, value_json FROM artifacts WHERE id = ?",
+        from utk_curio.sandbox.util.db import get_read_connection
+
+        con = get_read_connection()
+    except Exception:  # noqa: BLE001 - a locked/absent DB reads as "no artifact"
+        return None
+    try:
+        return con.execute(
+            "SELECT kind, value_int, value_float, value_str, value_json "
+            "FROM artifacts WHERE id = ?",
             [art_id],
         ).fetchone()
+    except Exception:  # noqa: BLE001
+        return None
     finally:
         con.close()
-    if not row:
-        dest.write_text(json.dumps({"artifactId": art_id, "kind": kind}), encoding="utf-8")
-        return
-    v_int, v_float, v_str, v_json = row
+
+
+def _row_value_bytes(kind: str, row: tuple) -> bytes:
+    """JSON bytes for a row-only artifact: the ``{"value": <scalar>}`` envelope.
+
+    Shared by the bundle part writer and the single-output installer so both
+    materialize a scalar byte-identically - the same envelope the bundle loader
+    already unwraps and the JSON preview renders as a one-row ``value`` column.
+    """
+    _kind, v_int, v_float, v_str, v_json = row
     if kind == "bool":
-        payload = {"value": bool(v_int)}
+        # MUST precede int: value_int stores 0/1, and a bare read would emit
+        # ``{"value": 0}`` for a node that returned ``False``.
+        payload: Any = {"value": bool(v_int)}
     elif kind == "int":
         payload = {"value": v_int}
     elif kind == "float":
@@ -108,12 +172,29 @@ def _serialize_scalar_part(dest: Path, kind: str, art_id: str) -> None:
     elif kind == "str":
         payload = {"value": v_str}
     else:
+        # ``null`` (no value column) and any unexpected kind: value_json when the
+        # row carries one, else the null-valued envelope.
         payload = json.loads(v_json) if v_json else {"value": v_str}
-    dest.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    return json.dumps(payload, indent=2, default=str).encode("utf-8")
+
+
+def _serialize_scalar_part(dest: Path, kind: str, art_id: str) -> None:
+    row = _artifact_value_row(art_id)
+    if row is None:
+        dest.write_text(json.dumps({"artifactId": art_id, "kind": kind}), encoding="utf-8")
+        return
+    dest.write_bytes(_row_value_bytes(kind, row))
 
 
 def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
-    """Load child artifacts for an ``outputs`` (tuple) parent id."""
+    """Load child artifacts for a multi-part parent id.
+
+    Covers ``outputs`` (a tuple) and the two ``save_to_duckdb`` fallbacks for a
+    list/dict that CONTAINS DataFrames: ``list_of_ids`` stores the identical
+    ``[child_id, ...]`` shape, and ``dict_of_ids`` stores ``{key: child_id}``.
+    All three are multi-part outputs, so all three install as a bundle rather
+    than as a scalar JSON stub of opaque artifact ids (#180).
+    """
     from utk_curio.sandbox.util.db import get_read_connection
 
     try:
@@ -128,27 +209,34 @@ def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
     except Exception:
         return []
 
-    if not row or row[0] != "outputs" or not row[1]:
+    if not row or row[0] not in ("outputs", *ID_CONTAINER_KINDS) or not row[1]:
         return []
 
     raw_children = row[1]
-    if isinstance(raw_children, list):
-        child_ids = raw_children
+    if isinstance(raw_children, (list, dict)):
+        decoded = raw_children
     elif isinstance(raw_children, str) and raw_children:
         try:
-            child_ids = json.loads(raw_children)
+            decoded = json.loads(raw_children)
         except (json.JSONDecodeError, TypeError):
             return []
     else:
         return []
-    if not isinstance(child_ids, list):
+
+    # Keep a ``dict_of_ids``' keys as part labels so a dict of DataFrames
+    # installs with the names the user gave it, rather than "Table - part 1".
+    if isinstance(decoded, dict):
+        named_children = [(str(key), value) for key, value in decoded.items()]
+    elif isinstance(decoded, list):
+        named_children = [(None, child) for child in decoded]
+    else:
         return []
 
     parts: list[BundlePart] = []
     try:
         con = get_read_connection()
         try:
-            for index, child_id in enumerate(child_ids):
+            for index, (child_name, child_id) in enumerate(named_children):
                 if not child_id:
                     continue
                 child = con.execute(
@@ -166,7 +254,7 @@ def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
                         artifact_id=str(child_id),
                         kind=kind,
                         format=fmt,
-                        label=_part_label(index, kind),
+                        label=child_name or _part_label(index, kind),
                         source_path=src,
                     )
                 )
@@ -354,15 +442,76 @@ def install_node_output(
         )
 
     src = resolve_shared_output_path(path_ref, data_type=data_type)
+
+    file_bytes: bytes | None = None
+    source_path: Path | None = None
+
     if src is None:
-        return None
-    fmt = computed_output_format(src.name, data_type)
-    store_name = src.name if src.suffix else path_ref
-    # Hard-link the shared artifact into the dataset store instead of reading it
-    # into memory and re-writing it on the synchronous /processPythonCode path.
+        # No artifact FILE is not the same as no artifact. Only (geo)dataframe,
+        # raster and JSON-native dict/list outputs write one; int/float/bool/str/
+        # null keep their whole value in the DuckDB row, and list_of_ids/
+        # dict_of_ids keep a child-id list there. Reporting those as "output
+        # artifact not found at save time" is the spurious
+        # ``Dataset for "Python Computation" couldn't be generated`` toast of
+        # #180 - re-running never helps, because nothing is missing.
+        # ``install_computed_bundle_for_node`` has always materialized exactly
+        # these kinds correctly; this restores the same symmetry for a single
+        # output. Dispatch on the ROW's kind, never on *data_type*: the sandbox
+        # reports ``list``/``dict`` for the ``*_of_ids`` fallbacks (detect_kind
+        # has no such kinds) and *data_type* is client-supplied anyway.
+        art_id = _bare_artifact_id(path_ref)
+        row = _artifact_value_row(art_id) if art_id else None
+        if row is None:
+            # No row at all: the artifact really is gone (pruned, sandbox
+            # restarted, or the ref was never an artifact id). Keep returning
+            # None so the save warning fires - here re-running DOES help.
+            return None
+        kind = str(row[0] or "").strip().lower()
+        if kind in ID_CONTAINER_KINDS:
+            parts = resolve_output_bundle_parts(art_id)
+            if not parts:
+                return None  # children pruned - a genuine failure
+            return install_computed_bundle_for_node(
+                user_key,
+                parts,
+                node_id=node_id,
+                parent_artifact_id=art_id,
+                dataflow_id=dataflow_id,
+                node_type=node_type,
+                dataflow_name=dataflow_name,
+                upstream_inputs=upstream_inputs,
+                title=node_name,
+            )
+        if kind not in ROW_ONLY_KINDS:
+            # A row declaring a FILE-backed kind (dataframe, geodataframe,
+            # raster, dict, list) whose file is missing is a genuine failure,
+            # identical to no row. Only file-less kinds are synthesized here.
+            return None
+        file_bytes = _row_value_bytes(kind, row)
+        store_name = f"{art_id}.json"
+        fmt = "json"
+    elif src.name.endswith(".json.zlib"):
+        # dict/list artifacts are written zlib-compressed. Hard-linking those
+        # bytes under a ``format: json`` manifest produced a dataset whose data
+        # file is compressed garbage to every plain-JSON consumer (Export, and
+        # the generated ``json.load`` loader snippet). Decompress once, here -
+        # exactly what install_computed_bundle_for_node already does per part.
+        import zlib
+
+        file_bytes = zlib.decompress(src.read_bytes())
+        store_name = f"{src.name[: -len('.json.zlib')]}.json"
+        fmt = "json"
+    else:
+        # Hard-link the shared artifact into the dataset store instead of reading
+        # it into memory and re-writing it on the synchronous
+        # /processPythonCode path.
+        source_path = src
+        fmt = computed_output_format(src.name, data_type)
+        store_name = src.name if src.suffix else path_ref
+
     return install_computed_file_for_node(
         user_key,
-        None,
+        file_bytes,
         store_name,
         fmt,
         node_id=node_id,
@@ -371,5 +520,5 @@ def install_node_output(
         dataflow_name=dataflow_name,
         upstream_inputs=upstream_inputs,
         title=node_name,
-        source_path=src,
+        source_path=source_path,
     )

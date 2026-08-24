@@ -252,6 +252,16 @@ def curio_servers(session_app, request):
         extra_args.append("--auth")
     if env.get("CURIO_NO_PROJECT", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--no-project")
+    # Saving a node's output to the Data Catalog is opt-in per node by default
+    # (#180). Several tests here are ABOUT that save - test_dataset_palette,
+    # test_dataset_lineage_e2e, test_dataset_export all expect a computed dataset
+    # to exist after a run - so the suite turns it on deployment-wide rather than
+    # flipping a toggle in each. Stated explicitly rather than inherited, so a
+    # future change to the default cannot silently empty those tests.
+    # test_computed_json_output_e2e.py deliberately does NOT rely on this: it
+    # flips the per-node toggle in the UI, because "the user turned it on" is the
+    # scenario #180 reports.
+    extra_args.append("--save-node-outputs")
 
     # Discard child stdout/stderr: PIPE deadlocks the subprocess once the
     # buffer fills, and a file in the repo trips webpack-dev-server's

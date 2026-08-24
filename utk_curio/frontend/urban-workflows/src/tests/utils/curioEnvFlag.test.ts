@@ -25,9 +25,11 @@ describe('defaultSaveOutputDatasetFromEnv', () => {
     }
   });
 
-  test('defaults to true when unset', () => {
+  test('defaults to false when unset', () => {
+    // Opt-in per node (#180). Mirrors the backend default, which is
+    // authoritative and reaches the app via /api/config/public.
     delete process.env.CURIO_DEFAULT_SAVE_NODE_OUTPUT;
-    expect(defaultSaveOutputDatasetFromEnv()).toBe(true);
+    expect(defaultSaveOutputDatasetFromEnv()).toBe(false);
   });
 
   test('reads CURIO_DEFAULT_SAVE_NODE_OUTPUT', () => {

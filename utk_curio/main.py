@@ -95,7 +95,7 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=True, catalog_root=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -995,12 +995,12 @@ def main():
         ),
     )
     parser.add_argument(
-        "--save-node-outputs", action=argparse.BooleanOptionalAction, default=True,
+        "--save-node-outputs", action=argparse.BooleanOptionalAction, default=False,
         help=(
             "Persist every node run's output as a Computed dataset in the "
-            "account Data Catalog (sets CURIO_DEFAULT_SAVE_NODE_OUTPUT=1, the "
-            "default). Pass --no-save-node-outputs to make saving opt-in per "
-            "node (via each node's Save output toggle)."
+            "account Data Catalog (sets CURIO_DEFAULT_SAVE_NODE_OUTPUT=1). "
+            "Saving is opt-in per node by default (via each node's Save output "
+            "toggle); pass this to turn it on for every node instead."
         ),
     )
     parser.add_argument(

@@ -205,3 +205,73 @@ def test_dataframe_output_still_installs_via_dataset_key(client, user_and_token,
     inst = resp.get_json().get("installedDataset")
     assert inst is not None
     assert inst["id"] == computed_dataset_id(node_id, project_id)
+
+
+def test_scalar_output_installs_on_execution(client, user_and_token, monkeypatch):
+    """#180: a scalar return value installs at EXECUTION time too.
+
+    The exec path routes through the same ``install_node_output`` as the save
+    path, so fixing the single-output branch fixes both. Before it, a scalar's
+    artifact (a DuckDB row with no file) could not be resolved and this reported
+    ``skipped: output artifact could not be resolved or is an unsupported type``,
+    which is why the dataset never appeared even before the save warned.
+    """
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+        store_sandbox_artifact,
+    )
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Scalar output install")
+    # A real artifact through the real writer: the row-only layout IS the subject.
+    artifact = store_sandbox_artifact(42)
+
+    node_id = "scalar-node"
+    _mock_sandbox(monkeypatch, {"path": artifact, "dataType": "int"})
+
+    resp = _exec(
+        client, token, node_id=node_id, node_type="PYTHON_COMPUTATION",
+        project_id=project_id,
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+
+    inst = body.get("installedDataset")
+    assert inst is not None, body
+    expected_id = computed_dataset_id(node_id, project_id)
+    assert inst["id"] == expected_id
+    assert inst["format"] == "json"
+    assert body["datasetDiagnostic"]["status"] == "installed"
+
+    catalog = client.get(
+        f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
+        headers=auth_headers(token),
+    ).get_json()
+    assert any(i["id"] == expected_id for i in catalog["items"])
+
+
+def test_null_output_with_an_artifact_installs_on_execution(client, user_and_token, monkeypatch):
+    """A node with no ``return`` still mints an artifact, so it still installs.
+
+    Distinct from ``test_no_output_artifact_skips_with_diagnostic`` above, which
+    mocks a payload carrying no ``path`` at all and short-circuits before the
+    installer. A real ``null`` return does carry one (``save_to_duckdb(None)``
+    writes a row and returns its id), so it takes the row-only branch (#180).
+    """
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+        store_sandbox_artifact,
+    )
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Null output install")
+    artifact = store_sandbox_artifact(None)
+
+    _mock_sandbox(monkeypatch, {"path": artifact, "dataType": "null"})
+    resp = _exec(
+        client, token, node_id="null-node", node_type="PYTHON_COMPUTATION",
+        project_id=project_id,
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+
+    assert body["datasetDiagnostic"]["status"] == "installed", body["datasetDiagnostic"]
+    assert body["installedDataset"]["format"] == "json"

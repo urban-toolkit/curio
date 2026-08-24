@@ -806,10 +806,39 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // Without this, a computed output that failed to install (e.g. its artifact
     // was missing at save time) was swallowed server-side and the dataset just
     // never appeared — the "Play All didn't generate all datasets" symptom.
+    //
+    // ``scopeNodeIds`` is the set of nodes THIS install-sync covered
+    // (FlowProvider.runInstallSyncNow passes installSyncPendingIdsRef's contents).
+    // It is load-bearing: buildOutputRefs rebuilds refs for EVERY toggle-enabled
+    // node on every install-save, and ProjectLoader repopulates outputsRef from
+    // the saved refs on load, so a save triggered by node C used to toast
+    // `Dataset for "A" couldn't be generated` about a node the user never
+    // touched, for a stale artifact from a previous sandbox session (#180).
+    // ``undefined`` means unscoped (surface everything), which keeps every
+    // caller that has no id set to offer on the old behavior.
     const surfaceInstallWarnings = useCallback(
-        (detail: { dataset_install_warnings?: DatasetInstallWarning[] } | undefined) => {
-            const warnings = detail?.dataset_install_warnings;
-            if (!warnings || warnings.length === 0) return;
+        (
+            detail: { dataset_install_warnings?: DatasetInstallWarning[] } | undefined,
+            scopeNodeIds?: readonly string[],
+        ) => {
+            const all = detail?.dataset_install_warnings;
+            if (!all || all.length === 0) return;
+            const scope = scopeNodeIds ? new Set(scopeNodeIds) : null;
+            const warnings = scope ? all.filter((w) => scope.has(w.node_id)) : all;
+            const outOfScope = scope ? all.filter((w) => !scope.has(w.node_id)) : [];
+            // Filtered out, not discarded: these are real backend warnings, just
+            // not about anything this run touched. One formatted STRING (not an
+            // object arg) so the message survives console capture verbatim.
+            if (outOfScope.length > 0) {
+                console.warn(
+                    `[curio] ${outOfScope.length} dataset install warning(s) for ` +
+                        `nodes outside this install-sync (not toasted): ` +
+                        outOfScope
+                            .map((w) => `${w.node_id} (${w.filename}): ${w.reason}`)
+                            .join("; "),
+                );
+            }
+            if (warnings.length === 0) return;
             const labelByNodeId = new Map<string, string>();
             for (const node of reactFlow.getNodes()) {
                 const label = resolveNodeDisplayLabel(node.data).trim();
@@ -830,15 +859,21 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         [reactFlow, showToast],
     );
 
-    const persistDataflowForInstall = useCallback(async (): Promise<void> => {
-        try {
-            const detail = await requestProjectSave();
-            surfaceInstallWarnings(detail);
-        } catch (err) {
-            showToast((err as Error)?.message || "Could not save the dataflow.", "error");
-            notifyDatasetCatalogRefresh();
-        }
-    }, [requestProjectSave, showToast, surfaceInstallWarnings]);
+    // ``nodeIds`` scopes the warning toast to the producers this save was run
+    // for; omit it to surface every warning the response carries (see
+    // surfaceInstallWarnings).
+    const persistDataflowForInstall = useCallback(
+        async (nodeIds?: readonly string[]): Promise<void> => {
+            try {
+                const detail = await requestProjectSave();
+                surfaceInstallWarnings(detail, nodeIds);
+            } catch (err) {
+                showToast((err as Error)?.message || "Could not save the dataflow.", "error");
+                notifyDatasetCatalogRefresh();
+            }
+        },
+        [requestProjectSave, showToast, surfaceInstallWarnings],
+    );
 
     // ── In-flight install placeholders ────────────────────────────────────────
     // Upper bound on how long a placeholder can linger if its clear never fires

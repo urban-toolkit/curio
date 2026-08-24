@@ -785,11 +785,17 @@ def dismiss_toasts(
     obscures what the baseline is for.
 
     The *quiet* wait is the part that matters. A node reaching "Done" does not
-    mean its follow-up work has finished: the debounced dataset install runs
-    afterwards and can raise a "Dataset for … couldn't be generated" warning
-    *seconds later*. A single sweep dismisses nothing (there is nothing there
-    yet) and the toast then lands in the capture. So sweep, wait ``quiet_ms``
-    for a late arrival, and sweep again until a full window passes with none.
+    mean its follow-up work has finished: the dataset install-save is debounced
+    500 ms past it and answers seconds later, so the toasts it raises (a save,
+    an install) arrive well after the status flips. A single sweep dismisses
+    nothing (there is nothing there yet) and the toast then lands in the
+    capture. So sweep, wait ``quiet_ms`` for a late arrival, and sweep again
+    until a full window passes with none.
+
+    Never call this before an ASSERTION about a toast - it erases the evidence.
+    A "couldn't be generated" warning in particular is a bug rather than routine
+    noise (#180); ``test_computed_json_output_e2e.py`` records toasts through a
+    MutationObserver and fails on that one.
 
     Safe to call when there are none. Bounded by *max_rounds*, so a toast that
     genuinely re-fires forever costs a few seconds rather than hanging - it just
