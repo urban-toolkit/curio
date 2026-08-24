@@ -1,14 +1,16 @@
 .section {
-  margin-top: 16px;
+  margin-top: 22px;
 }
 
+/* Matches `.lineageLabel` in DatasetDetailPanel.module.css - a peer section
+   title in the same list of rows. */
 .label {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #888;
+  color: #1e1f23;
 }
 
 .list {
