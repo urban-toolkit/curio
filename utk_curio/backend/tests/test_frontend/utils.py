@@ -769,6 +769,61 @@ def dump_browser_log(
     return log_path
 
 
+def dismiss_toasts(
+    page: Page,
+    *,
+    timeout: float = 3000,
+    quiet_ms: float = 2500,
+    max_rounds: int = 8,
+) -> int:
+    """Close visible toasts and wait for the toast region to go quiet.
+
+    Worth doing before any visual baseline. Toasts are transient, bottom-right,
+    and up to 360px wide, so whether one is on screen at capture time depends on
+    timing rather than on the behaviour under test - and they sit exactly where
+    canvas content usually is. Leaving them in makes the comparison flaky and
+    obscures what the baseline is for.
+
+    The *quiet* wait is the part that matters. A node reaching "Done" does not
+    mean its follow-up work has finished: the debounced dataset install runs
+    afterwards and can raise a "Dataset for … couldn't be generated" warning
+    *seconds later*. A single sweep dismisses nothing (there is nothing there
+    yet) and the toast then lands in the capture. So sweep, wait ``quiet_ms``
+    for a late arrival, and sweep again until a full window passes with none.
+
+    Safe to call when there are none. Bounded by *max_rounds*, so a toast that
+    genuinely re-fires forever costs a few seconds rather than hanging - it just
+    ends up in the screenshot, which is the honest outcome.
+    """
+    container = page.locator('[aria-label="Notifications"]')
+    dismissed = 0
+
+    for _ in range(max_rounds):
+        # Each close click re-renders the list, so re-resolve rather than
+        # iterating a stale handle set.
+        for _ in range(12):
+            buttons = container.locator("button.btn-close")
+            if buttons.count() == 0:
+                break
+            try:
+                buttons.first.click(timeout=1000)
+                dismissed += 1
+            except PlaywrightTimeoutError:
+                break
+
+        # Did another arrive during the quiet window? wait_for_function resolving
+        # means one showed up, so loop and clear it; a timeout means quiet.
+        try:
+            page.wait_for_function(
+                "() => !!document.querySelector('[aria-label=\"Notifications\"] .toast')",
+                timeout=quiet_ms,
+            )
+        except PlaywrightTimeoutError:
+            return dismissed
+
+    return dismissed
+
+
 def save_workflow_test_screenshot(
     page: Page,
     workflow_filepath: str,
@@ -776,6 +831,7 @@ def save_workflow_test_screenshot(
     test_name: str,
     pixel_threshold: int = 30,
     max_diff_ratio: float = 0.20,
+    fit_reactflow: bool = True,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 
@@ -791,7 +847,15 @@ def save_workflow_test_screenshot(
     from the GitHub Actions artifact.
 
     If the file does **not** exist yet the screenshot is saved as the new
-    baseline.
+    baseline. Note that a first run therefore *always* passes - generate a
+    baseline deliberately, against a build where the behaviour is already
+    correct, and eyeball the PNG before committing it. A baseline captured
+    against a broken build enshrines the bug as expected output.
+
+    Set *fit_reactflow* to ``False`` for pages with no canvas (the projects list,
+    the catalog). The default path pins the ReactFlow viewport first, which waits
+    on ``.react-flow__node`` and would otherwise spend its whole timeout waiting
+    for a node that is never going to exist.
 
     Returns the path to the expected screenshot file.
     """
@@ -806,7 +870,8 @@ def save_workflow_test_screenshot(
     # Pin the ReactFlow viewport to a deterministic fitView before any
     # capture, so baselines and subsequent comparisons share the same
     # zoom/pan regardless of when the in-app setTimeout(fitView) fires.
-    _wait_for_reactflow_ready(page)
+    if fit_reactflow:
+        _wait_for_reactflow_ready(page)
 
     if not os.path.isfile(expected_path):
         _capture_full_page(page).save(expected_path)
@@ -1416,6 +1481,12 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
     learn the new one is to diff the canvas before and after.
     """
     before = {node["id"] for node in canvas_nodes(page)}
+
+    # Wait for the drag SOURCE too, not just the drop target. A tile that is
+    # attached but not yet interactive produces an empty dataTransfer payload,
+    # and the drop then silently creates nothing - which surfaces much later as
+    # the "Drop produced no node" assertion below, blaming the canvas.
+    source.wait_for(state="visible", timeout=timeout)
 
     pane = page.locator(CANVAS_DROP_TARGET)
     pane.wait_for(state="visible", timeout=timeout)
