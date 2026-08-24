@@ -45,6 +45,36 @@ describe('DataPoolContent', () => {
     expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
   });
 
+  // ---- #156: the node must scroll its own content --------------------------
+  //
+  // A merge (8e98eba) swapped the inline MUI TableContainer for the shared
+  // TabularPreviewTable and dropped its `sx={{ ...overflow: 'auto' }}`, leaving
+  // nothing to own vertical scroll. The outer clamp is `overflow: hidden`, so
+  // rows were simply clipped and the user had to resize the node. Nothing tested
+  // it, which is why a conflict resolution could delete it silently.
+
+  test('the content area owns vertical scroll', () => {
+    const { container } = render(<DataPoolContent {...defaultProps} />);
+    const scroller = container.querySelector('[data-curio-datapool-scroll="true"]');
+    expect(scroller).not.toBeNull();
+    // `nowheel` is what stops React Flow swallowing the wheel event before the
+    // div ever sees it, so the overflow alone would not be enough.
+    expect(scroller).toHaveClass('nowheel');
+    expect((scroller as HTMLElement).style.overflow).toBe('auto');
+  });
+
+  test('the tab strip scrolls sideways instead of wrapping', () => {
+    // Many tables must not steal height from the table below: the strip stays one
+    // row tall and scrolls horizontally.
+    const manyTabs = Array.from({ length: 12 }, (_, i) => ({ layerName: `layer_${i}` }));
+    render(<DataPoolContent {...defaultProps} tabData={manyTabs} />);
+    const strip = screen.getByTestId('data-pool-tabs');
+    expect(strip).toHaveClass('nowheel');
+    expect(strip.style.flexWrap).toBe('nowrap');
+    expect(strip.style.overflowX).toBe('auto');
+    expect(screen.getByText('layer_11')).toBeInTheDocument();
+  });
+
   test('renders with non-array tabData gracefully', () => {
     render(<DataPoolContent {...defaultProps} tabData={null as any} />);
     expect(screen.getByText('No data available.')).toBeInTheDocument();

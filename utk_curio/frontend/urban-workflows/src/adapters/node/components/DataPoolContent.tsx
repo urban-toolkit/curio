@@ -79,7 +79,11 @@ const ContentComponent = ({
   return (
       <div
           className="nowheel"
-          style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}
+          data-curio-datapool-scroll="true"
+          // overflow:'auto' is what makes this the scroll owner. The outer clamp
+          // below is overflow:'hidden', so without it the rows are simply clipped
+          // and the user has to resize the node to see them (#156).
+          style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column", overflow: "auto" }}
       >
           <TabularPreviewTable
               rows={displayTable}
@@ -130,8 +134,11 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
         variant="tabs"
         activeKey={activeTab}
         onSelect={(k) => onSelectTab(k || '0')}
-        className="mb-3"
-        style={{ flexShrink: 0 }}
+        className="mb-3 nowheel"
+        // nowrap + overflowX keeps the strip one row tall regardless of table
+        // count, so adding tables never steals height from the table below.
+        // `nowheel` stops React Flow swallowing the scroll (#156).
+        style={{ flexShrink: 0, flexWrap: 'nowrap', overflowX: 'auto' }}
         data-testid="data-pool-tabs"
       >
         {hasData ? (
