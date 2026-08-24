@@ -20,6 +20,14 @@ const NODE_COLORS: Record<string, string> = {
 };
 
 const FALLBACK_COLOR = "#95a5a6";
+
+// Local, dependency-free mirror of `unversionedNodeType`. This component renders
+// on the projects list before package discovery runs, so it deliberately avoids
+// importing anything that would pull in the node registry.
+const VERSIONED_TYPE = /^(.+)\/([^/@]+)@(\d+)$/;
+const unversionedType = (nodeType: string): string =>
+  VERSIONED_TYPE.test(nodeType) ? nodeType.replace(/@\d+$/, "") : nodeType;
+
 // Coordinate space for layout calculations — the SVG scales this to fill its container
 const VB_W = 260;
 const VB_H = 160;
@@ -109,7 +117,9 @@ const DataflowThumbnail: React.FC<Props> = ({ preview, accentColor, bgColor }) =
       })}
 
       {scaledNodes.map((n) => {
-        const color = NODE_COLORS[n.type] ?? FALLBACK_COLOR;
+        // Palette-dragged nodes persist a versioned type (`.../merge-flow@1`);
+        // this map is keyed unversioned, so strip the suffix first (#159).
+        const color = NODE_COLORS[unversionedType(n.type)] ?? FALLBACK_COLOR;
         return (
           <g key={n.id}>
             <rect x={n.sx} y={n.sy} width={NODE_W} height={NODE_H} rx={2} fill="#ffffff" stroke="#e0e0e0" strokeWidth={0.5} />
@@ -120,5 +130,11 @@ const DataflowThumbnail: React.FC<Props> = ({ preview, accentColor, bgColor }) =
     </svg>
   );
 };
+
+
+// Exposed for the #159 parity guard in src/tests/utils/versionedNodeTypeParity.test.ts:
+// the colour map is keyed unversioned, so a versioned id must resolve to the same
+// entry rather than silently taking FALLBACK_COLOR.
+export const __testables = { NODE_COLORS, FALLBACK_COLOR, unversionedType };
 
 export default DataflowThumbnail;

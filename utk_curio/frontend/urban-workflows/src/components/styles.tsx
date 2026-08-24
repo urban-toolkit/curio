@@ -19,6 +19,7 @@ import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
+import { unversionedNodeType } from "../utils/flowNodeCanonicalType";
 import { HeaderIconButton } from "./HeaderIconButton";
 import {
     EditableNodeHeaderLabel,
@@ -1232,7 +1233,10 @@ const nodeTypeBorderColor: Record<string, string> = {
 const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({
     position: "relative",
     backgroundColor: "#ffffff",
-    borderLeft: `4px solid ${nodeTypeBorderColor[nodeType] ?? "#95a5a6"}`,
+    // `nodeType` arrives versioned for palette-dragged nodes
+    // (`curio.builtin/merge-flow@1`) but this map is keyed by the unversioned
+    // NodeType enum, so an unnormalized lookup silently falls back to grey (#159).
+    borderLeft: `4px solid ${nodeTypeBorderColor[unversionedNodeType(nodeType)] ?? "#95a5a6"}`,
     borderRadius: "10px",
     padding: "5px",
     boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",

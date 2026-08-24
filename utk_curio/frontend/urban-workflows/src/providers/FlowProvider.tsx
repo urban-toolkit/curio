@@ -26,7 +26,7 @@ import { ConnectionValidator } from "../ConnectionValidator";
 import type { InstalledDatasetPayload } from "../services/datasetCatalog/datasetCatalogApi";
 import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import { NodeType, EdgeType } from "../constants";
-import { getFlowNodeCanonicalType, getUnversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
+import { getUnversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
 import { applyDashboardLayout } from "../utils/dashboardLayout";
 import {
@@ -578,7 +578,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             nds.map((node: any) => {
                 if (!nodesAffected.includes(node.id)) return node;
 
-                if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
+                if (getUnversionedFlowNodeType(node) == NodeType.MERGE_FLOW) {
                     const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                     // Fill EVERY slot this source feeds — one source can be wired
                     // to multiple slots of the same merge node.
@@ -671,7 +671,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         nds.map((node: any) => {
                             if (node.id !== resetInput) return node;
 
-                            if (getFlowNodeCanonicalType(targetNode) === NodeType.MERGE_FLOW) {
+                            if (getUnversionedFlowNodeType(targetNode) === NodeType.MERGE_FLOW) {
                                 const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                                 const handleIndex = parseHandleIndex(connection.targetHandle);
                                 if (handleIndex >= 0) {
@@ -790,11 +790,11 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
                 for (const elem of nodes) {
                     if (elem.id == connection.source) {
-                        outNodeType = getFlowNodeCanonicalType(elem) as NodeType;
+                        outNodeType = getUnversionedFlowNodeType(elem) as NodeType;
                     }
 
                     if (elem.id == connection.target) {
-                        inNodeType = getFlowNodeCanonicalType(elem) as NodeType;
+                        inNodeType = getUnversionedFlowNodeType(elem) as NodeType;
                     }
                 }
 
@@ -1136,7 +1136,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         }
 
         for (let i = 0; i < nodes.length; i++) {
-            if (getFlowNodeCanonicalType(nodes[i]) == NodeType.DATA_POOL) {
+            if (getUnversionedFlowNodeType(nodes[i]) == NodeType.DATA_POOL) {
                 poolsIds.push(nodes[i].id);
             }
         }
@@ -1149,8 +1149,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     edges[i].sourceHandle == "in/out" &&
                     edges[i].targetHandle == "in/out" &&
                     !(
-                        getFlowNodeCanonicalType(targetNode) == NodeType.DATA_POOL &&
-                        getFlowNodeCanonicalType(sourceNode) == NodeType.DATA_POOL
+                        getUnversionedFlowNodeType(targetNode) == NodeType.DATA_POOL &&
+                        getUnversionedFlowNodeType(sourceNode) == NodeType.DATA_POOL
                     )
                 ) {
                 const sourcePool = poolsIds.includes(edges[i].source);
@@ -1238,8 +1238,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 if (
                     edge.sourceHandle == "in/out" &&
                     edge.targetHandle == "in/out" &&
-                    getFlowNodeCanonicalType(targetNode) == NodeType.DATA_POOL &&
-                    getFlowNodeCanonicalType(sourceNode) == NodeType.DATA_POOL
+                    getUnversionedFlowNodeType(targetNode) == NodeType.DATA_POOL &&
+                    getUnversionedFlowNodeType(sourceNode) == NodeType.DATA_POOL
                 ) {
                     if (edge.target != propagationObj.nodeId) {
                         sendTo.push(edge.target);
