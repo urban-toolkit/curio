@@ -45,6 +45,12 @@ function joined(...parts: (string | false | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
+/** Feeds a project's accent colour to .cardActive / .cardSelectedMark, mirroring
+ *  how the catalog keys a selected card's border to the item's kind. */
+function accentVar(color: string): React.CSSProperties {
+  return { "--projectAccent": color } as React.CSSProperties;
+}
+
 const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
   // Every scope is held at once so the rail can show counts and switching
@@ -274,16 +280,34 @@ const ProjectsList: React.FC = () => {
                 {filtered.map((p) => (
                   <div
                     key={p.id}
-                    style={{ ...cardStyle, ...(p.id === selectedId ? cardSelectedStyle : {}) }}
+                    className={joined(
+                      styles.card,
+                      p.id === selectedId && styles.cardActive
+                    )}
+                    style={accentVar(accent(p.thumbnail_accent).fg)}
                     data-project-id={p.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={p.id === selectedId}
                     onClick={() => setSelectedId(p.id)}
                     onDoubleClick={() => openProject(p.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedId(p.id);
+                      }
+                    }}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       setSelectedId(p.id);
                       setContextMenu({ x: e.clientX, y: e.clientY, project: p });
                     }}
                   >
+                    {p.id === selectedId && (
+                      <span className={styles.cardSelectedMark}>
+                        <span className={browseStyles.selectedDot} />
+                      </span>
+                    )}
                     <div style={cardThumbnailStyle}>
                       <DataflowThumbnail preview={p.graph_preview} accentColor={accent(p.thumbnail_accent).fg} bgColor={accent(p.thumbnail_accent).bg} />
                     </div>
@@ -504,21 +528,6 @@ const newWorkflowBtnStyle: CSS.Properties = {
   fontWeight: 600,
   cursor: "pointer",
   whiteSpace: "nowrap",
-};
-
-const cardStyle: CSS.Properties = {
-  position: "relative",
-  height: "180px",
-  borderRadius: "8px",
-  overflow: "hidden",
-  cursor: "pointer",
-  border: "1px solid #E5E5E7",
-  transition: "box-shadow 0.15s, border-color 0.15s",
-};
-
-const cardSelectedStyle: CSS.Properties = {
-  borderColor: "#1E1F23",
-  boxShadow: "0 0 0 2px rgba(30, 31, 35, 0.18)",
 };
 
 const cardThumbnailStyle: CSS.Properties = {

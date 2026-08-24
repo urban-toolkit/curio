@@ -7,6 +7,8 @@
  * (wait_for_projects_page in backend/tests/test_frontend/utils.py), so that
  * link's accessible name matters.
  */
+import fs from 'fs';
+import path from 'path';
 import React from 'react';
 import { render, act, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -171,6 +173,56 @@ describe('projects filter rail', () => {
 
     expect(screen.getByText('No projects yet. Create a new dataflow!')).toBeTruthy();
     expect(container.querySelector('[data-curio-projects-scroll="true"]')).toBeNull();
+  });
+});
+
+describe('project card selection', () => {
+  const read = (rel: string) =>
+    fs.readFileSync(path.resolve(__dirname, '../../pages', rel), 'utf8');
+  /** The declarations of one rule, found textually — no escaping to get wrong. */
+  const ruleBody = (css: string, selector: string) => {
+    const start = css.indexOf('.' + selector + ' {');
+    expect(start).toBeGreaterThan(-1);
+    return css.slice(start, css.indexOf('}', start));
+  };
+  const boxShadow = (css: string, selector: string) => {
+    const declaration = ruleBody(css, selector)
+      .split(';')
+      .find((d) => d.includes('box-shadow'));
+    expect(declaration).toBeDefined();
+    // The two stylesheets space rgba() differently; only the values matter.
+    return (declaration as string).split('box-shadow:')[1].split(' ').join('');
+  };
+
+  test('only the selected card is marked, and it carries the shared dot', async () => {
+    const { container } = await renderPage();
+
+    const card = (id: string) =>
+      container.querySelector('[data-project-id="' + id + '"]') as HTMLElement;
+
+    expect(card('p1')).toHaveClass('cardActive');
+    expect(card('p1').querySelector('.selectedDot')).not.toBeNull();
+    expect(card('p2')).not.toHaveClass('cardActive');
+    expect(card('p2').querySelector('.selectedDot')).toBeNull();
+  });
+
+  test('the selected card lifts by the same shadow as a selected catalog card', () => {
+    // The reported mismatch: projects used a flat dark ring while the catalog
+    // raises the card and tints its border with the item's own accent.
+    expect(boxShadow(read('projects/ProjectsBrowseLayout.module.css'), 'cardActive')).toBe(
+      boxShadow(read('catalog/CatalogBrowseLayout.module.css'), 'cardActive')
+    );
+  });
+
+  test('the accent colour reaches the border via --projectAccent', async () => {
+    const { container } = await renderPage();
+
+    // p1's thumbnail_accent is "sky".
+    const card = container.querySelector('[data-project-id="p1"]') as HTMLElement;
+    expect(card.style.getPropertyValue('--projectAccent')).toBe('#3567C7');
+    expect(ruleBody(read('projects/ProjectsBrowseLayout.module.css'), 'cardActive')).toContain(
+      'border-color: var(--projectAccent'
+    );
   });
 });
 

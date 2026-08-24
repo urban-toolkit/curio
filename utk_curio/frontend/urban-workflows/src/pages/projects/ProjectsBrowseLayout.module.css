@@ -70,6 +70,54 @@
   color: #ffffff;
 }
 
+/* ── Project cards ──
+
+   The selection language is lifted from .card / .cardActive in
+   ../catalog/CatalogBrowseLayout.module.css so a picked dataflow reads exactly
+   like a picked catalog item: a raised shadow plus a border in the item's own
+   accent colour. The catalog keys that colour to the dataset/package kind;
+   projects key it to thumbnail_accent, passed in as --projectAccent. */
+
+.card {
+  position: relative;
+  height: 180px;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  cursor: pointer;
+  outline: none;
+  box-sizing: border-box;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.card:hover,
+.card:focus-visible {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.cardActive {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  border-color: var(--projectAccent, #1e1f23);
+}
+
+/* Backdrop for the reused .selectedDot, which is drawn white-on-colour and
+   would vanish against a project thumbnail on its own. */
+.cardSelectedMark {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--projectAccent, #1e1f23);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ── Detail drawer ── */
 
 .detailThumb {
