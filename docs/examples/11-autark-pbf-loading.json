@@ -36,6 +36,7 @@
       }
     ],
     "name": "Autark PBF loading",
+    "description": "Single autk-grammar node loading OSM layers from a local .pbf file; all parsing in the browser via DuckDB-WASM.",
     "task": "",
     "timestamp": 1780885972204,
     "provenance_id": "Autark PBF loading",

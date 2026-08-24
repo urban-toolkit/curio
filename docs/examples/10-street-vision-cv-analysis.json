@@ -158,6 +158,7 @@
       }
     ],
     "name": "Street-level computer vision",
+    "description": "curio.streetvision@1 Fetcher to HF Inference to Gallery to Spatial Join to Vega-Lite polygons + bars.",
     "task": "",
     "timestamp": 1778306678524,
     "provenance_id": "Street-level computer vision",

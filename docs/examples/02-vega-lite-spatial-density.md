@@ -49,17 +49,22 @@ A log-binned histogram of `TOTAL_ROOF_SQFT`, useful because rooftop sizes span s
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Histogram of total roof size (log-scaled)",
-  "data": {"name": "data"},
+  "description": "Histogram of Total Roof Size of Buildings in Chicago (log-scaled)",
+  "data": {
+    "name": "data"
+  },
   "transform": [
-    {"filter": "datum.TOTAL_ROOF_SQFT > 0"},
-    {"calculate": "log(datum.TOTAL_ROOF_SQFT) / log(10)", "as": "log_roof_size"}
+    { "filter": "datum.TOTAL_ROOF_SQFT > 0" },
+    {
+      "calculate": "log(datum.TOTAL_ROOF_SQFT) / log(10)",
+      "as": "log_roof_size"
+    }
   ],
   "mark": "bar",
   "encoding": {
     "x": {
       "field": "log_roof_size",
-      "bin": {"maxbins": 30},
+      "bin": { "maxbins": 30 },
       "axis": {
         "title": "Total Roof Size (sqft)",
         "values": [3, 4, 5, 6],
@@ -69,7 +74,9 @@ A log-binned histogram of `TOTAL_ROOF_SQFT`, useful because rooftop sizes span s
     "y": {
       "aggregate": "count",
       "type": "quantitative",
-      "axis": {"title": "Number of Buildings"}
+      "axis": {
+        "title": "Number of Buildings"
+      }
     }
   }
 }
@@ -105,39 +112,72 @@ Each circle is one rooftop, sized by vegetated area, plotted in lat/lon with bou
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Dot density of green-roof locations",
+  "description": "Dot Density Map of Green Roof Locations in Chicago with Zoom & Pan",
   "width": 500,
   "height": 600,
   "title": "Green Roof Locations in Chicago",
   "mark": "circle",
-  "params": [
-    {"name": "grid", "select": "interval", "bind": "scales"}
-  ],
   "encoding": {
     "x": {
       "field": "LONGITUDE",
       "type": "quantitative",
-      "scale": {"domain": [-88.0, -87.5]},
-      "axis": {"title": "Longitude"}
+      "scale": {
+        "domain": [
+          -88.0,
+          -87.5
+        ]
+      },
+      "axis": {
+        "title": "Longitude"
+      }
     },
     "y": {
       "field": "LATITUDE",
       "type": "quantitative",
-      "scale": {"domain": [41.6, 42.1]},
-      "axis": {"title": "Latitude"}
+      "scale": {
+        "domain": [
+          41.6,
+          42.1
+        ]
+      },
+      "axis": {
+        "title": "Latitude"
+      }
     },
     "size": {
       "field": "VEGETATED_SQFT",
       "type": "quantitative",
-      "legend": {"title": "Vegetated Sqft"}
+      "legend": {
+        "title": "Vegetated Sqft"
+      }
     },
     "tooltip": [
-      {"field": "VEGETATED_SQFT", "type": "quantitative"},
-      {"field": "TOTAL_ROOF_SQFT", "type": "quantitative"},
-      {"field": "zip", "type": "nominal"}
+      {
+        "field": "VEGETATED_SQFT",
+        "type": "quantitative"
+      },
+      {
+        "field": "TOTAL_ROOF_SQFT",
+        "type": "quantitative"
+      },
+      {
+        "field": "zip",
+        "type": "nominal"
+      }
     ]
   },
-  "config": {"view": {"stroke": "transparent"}}
+  "config": {
+    "view": {
+      "stroke": "transparent"
+    }
+  },
+  "params": [
+    {
+      "name": "grid",
+      "select": "interval",
+      "bind": "scales"
+    }
+  ]
 }
 ```
 
@@ -162,20 +202,26 @@ return top_10_largest
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Top 10 zips by green-roof area",
+  "description": "Top 10 largest zip codes by green roof area",
   "width": 400,
   "height": 200,
-  "params": [
-    {"name": "zip_select", "select": {"type": "point", "fields": ["zip"], "toggle": "event.shiftKey"}}
-  ],
-  "mark": {"type": "bar", "stroke": "black", "color": "green"},
+  "mark": {
+    "type": "bar",
+    "stroke": "black",
+    "color": "green"
+  },
   "encoding": {
     "x": {
       "field": "VEGETATED_SQFT",
       "type": "quantitative",
       "axis": {
         "title": "Total Vegetated Roof Size (sqft)",
-        "values": [100000, 250000, 500000, 1000000],
+        "values": [
+          100000,
+          250000,
+          500000,
+          1000000
+        ],
         "format": ",d"
       }
     },
@@ -183,18 +229,47 @@ return top_10_largest
       "field": "zip",
       "type": "nominal",
       "sort": "-x",
-      "axis": {"title": "Zip Code"}
+      "axis": {
+        "title": "Zip Code"
+      }
     },
-    "color": {"field": "zip", "type": "nominal", "scale": {"scheme": "category20"}},
+    "color": {
+      "field": "zip",
+      "type": "nominal",
+      "scale": {
+        "scheme": "category20"
+      }
+    },
     "opacity": {
-      "condition": {"param": "zip_select", "value": 1},
+      "condition": {
+        "param": "zip_select",
+        "value": 1
+      },
       "value": 0.3
     },
     "tooltip": [
-      {"field": "zip", "type": "nominal"},
-      {"field": "VEGETATED_SQFT", "type": "quantitative"}
+      {
+        "field": "zip",
+        "type": "nominal"
+      },
+      {
+        "field": "VEGETATED_SQFT",
+        "type": "quantitative"
+      }
     ]
-  }
+  },
+  "params": [
+    {
+      "name": "zip_select",
+      "select": {
+        "type": "point",
+        "fields": [
+          "zip"
+        ],
+        "toggle": "event.shiftKey"
+      }
+    }
+  ]
 }
 ```
 

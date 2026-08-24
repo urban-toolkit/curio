@@ -66,16 +66,92 @@ Reshape the dataset's wide monthly KWH columns (`KWH JANUARY 2010`, … `KWH DEC
 
 ```json
 {
-  "params": [{"name": "commPick", "select": {"type": "point", "fields": ["COMMUNITY AREA NAME"]}}],
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "params": [
+    {
+      "name": "commPick",
+      "select": {
+        "type": "point",
+        "fields": ["COMMUNITY AREA NAME"]
+      }
+    }
+  ],
   "vconcat": [
-    {"mark": "line",
-     "encoding": {
-       "x": {"field": "Month", "type": "nominal", "sort": ["JANUARY", "FEBRUARY", "..."]},
-       "y": {"field": "KWH", "type": "quantitative"},
-       "color": {"field": "COMMUNITY AREA NAME", "scale": {"scheme": "category20"}},
-       "opacity": {"condition": {"param": "commPick", "value": 1}, "value": 0.2}
-     }},
-    {"transform": [{"filter": {"param": "commPick"}}], "mark": "bar", "encoding": {"y": {"field": "COMMUNITY AREA NAME"}, "x": {"aggregate": "mean", "field": "KWH"}}}
+    {
+      "title": "Click on a Line to Highlight a Community",
+      "width": 650,
+      "height": 400,
+      "mark": {
+        "type": "line",
+        "interpolate": "monotone"
+      },
+      "encoding": {
+        "x": {
+          "field": "Month",
+          "type": "nominal",
+          "sort": [
+            "JANUARY",
+            "FEBRUARY",
+            "MARCH",
+            "APRIL",
+            "MAY",
+            "JUNE",
+            "JULY",
+            "AUGUST",
+            "SEPTEMBER",
+            "OCTOBER",
+            "NOVEMBER",
+            "DECEMBER"
+          ],
+          "axis": { "labelAngle": 45 }
+        },
+        "y": {
+          "field": "KWH",
+          "type": "quantitative",
+          "title": "Total KWH",
+          "scale": { "zero": false }
+        },
+        "color": {
+          "field": "COMMUNITY AREA NAME",
+          "type": "nominal",
+          "scale": { "scheme": "category20" },
+          "legend": { "columns": 2 }
+        },
+        "opacity": {
+          "condition": { "param": "commPick", "value": 1 },
+          "value": 0.2
+        },
+        "tooltip": [
+          { "field": "COMMUNITY AREA NAME", "title": "Community" },
+          { "field": "Month" },
+          { "field": "KWH", "format": ",.0f" }
+        ]
+      }
+    },
+    {
+      "title": "Average KWH of Selected Community",
+      "width": 650,
+      "height": 300,
+      "mark": "bar",
+      "encoding": {
+        "y": {
+          "field": "COMMUNITY AREA NAME",
+          "type": "nominal",
+          "sort": "-x"
+        },
+        "x": {
+          "aggregate": "mean",
+          "field": "KWH",
+          "type": "quantitative",
+          "title": "Avg KWH"
+        },
+        "color": {
+          "field": "COMMUNITY AREA NAME",
+          "type": "nominal"
+        }
+      },
+      "transform": [{ "filter": { "param": "commPick" } }]
+    }
   ]
 }
 ```
@@ -90,15 +166,108 @@ Load the CSV → categorise `AVERAGE STORIES` into `1 / 2 / 3-5 / 6-10 / 11+ sto
 
 ```json
 {
-  "params": [{"name": "storySelect", "bind": {"input": "select", "options": ["1 story", "2 stories", "3-5 stories", "6-10 stories", "11+ stories"]}, "value": "1 story"}],
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "params": [
+    {
+      "name": "storySelect",
+      "bind": {
+        "input": "select",
+        "options": [
+          "1 story",
+          "2 stories",
+          "3-5 stories",
+          "6-10 stories",
+          "11+ stories"
+        ]
+      },
+      "value": "1 story"
+    }
+  ],
   "vconcat": [
-    {"transform": [{"filter": "datum['STORY BRACKET'] == storySelect"}],
-     "mark": "boxplot",
-     "encoding": {"x": {"field": "AGE BRACKET", "sort": ["0-20 yrs", "21-40 yrs", "..."]}, "y": {"field": "TOTAL KWH"}}},
-    {"transform": [{"filter": "datum['STORY BRACKET'] == storySelect"}],
-     "mark": {"type": "line", "point": true},
-     "encoding": {"x": {"field": "Month"}, "y": {"aggregate": "mean", "field": "KWH"}, "color": {"field": "AGE BRACKET"}}}
-  ]
+    {
+      "width": 600,
+      "title": {
+        "text": "Distribution of Total KWH by Age (Box Plot)",
+        "align": "center"
+      },
+      "transform": [{ "filter": "datum['STORY BRACKET'] == storySelect" }],
+      "mark": "boxplot",
+      "encoding": {
+        "x": {
+          "field": "AGE BRACKET",
+          "type": "nominal",
+          "sort": ["0-20 yrs", "21-40 yrs", "41-60 yrs", "61-80 yrs", "81+ yrs"]
+        },
+        "y": {
+          "field": "TOTAL KWH",
+          "type": "quantitative",
+          "title": "Total KWH"
+        },
+        "color": {
+          "field": "AGE BRACKET",
+          "type": "nominal",
+          "legend": {
+            "orient": "right",
+            "anchor": "middle",
+            "direction": "vertical"
+          }
+        },
+        "tooltip": [{ "field": "AGE BRACKET" }, { "field": "TOTAL KWH" }]
+      }
+    },
+    {
+      "width": 600,
+      "title": {
+        "text": "Monthly Avg KWH Trend by Age (for Selected Stories)",
+        "align": "center"
+      },
+      "transform": [{ "filter": "datum['STORY BRACKET'] == storySelect" }],
+      "mark": { "type": "line", "point": true },
+      "encoding": {
+        "x": {
+          "field": "Month",
+          "type": "ordinal",
+          "sort": [
+            "JANUARY",
+            "FEBRUARY",
+            "MARCH",
+            "APRIL",
+            "MAY",
+            "JUNE",
+            "JULY",
+            "AUGUST",
+            "SEPTEMBER",
+            "OCTOBER",
+            "NOVEMBER",
+            "DECEMBER"
+          ]
+        },
+        "y": {
+          "aggregate": "mean",
+          "field": "KWH",
+          "type": "quantitative",
+          "title": "Avg Monthly KWH"
+        },
+        "color": {
+          "field": "AGE BRACKET",
+          "type": "nominal",
+          "legend": {
+            "orient": "right",
+            "anchor": "middle",
+            "direction": "vertical"
+          }
+        },
+        "tooltip": [
+          { "field": "Month" },
+          { "aggregate": "mean", "field": "KWH" },
+          { "field": "AGE BRACKET" }
+        ]
+      }
+    }
+  ],
+  "config": {
+    "concat": { "align": "center" }
+  }
 }
 ```
 

@@ -41,6 +41,25 @@ def _name_from_stem(stem: str) -> str:
     return cleaned[:1].upper() + cleaned[1:] if cleaned else stem
 
 
+def _name_from_spec(spec: dict) -> Optional[str]:
+    """The example's own ``dataflow.name``, if it has one.
+
+    Every curated example carries this field, and it is the title the docs table
+    and the walkthroughs use. Deriving the name from the filename instead turned
+    ``Vega-Lite chained transforms`` into ``Vega lite chained transforms`` and
+    ``Street-level computer vision`` into ``Street vision cv analysis`` (#148),
+    so the spec wins and the filename is only a fallback.
+    """
+    if not isinstance(spec, dict):
+        return None
+    dataflow = spec.get("dataflow")
+    name = dataflow.get("name") if isinstance(dataflow, dict) else None
+    if isinstance(name, str):
+        cleaned = name.strip()
+        return cleaned or None
+    return None
+
+
 def _description_from_spec(spec: dict) -> Optional[str]:
     if not isinstance(spec, dict):
         return None
@@ -89,13 +108,14 @@ def seed_example_projects(user) -> int:
 
         stem = json_path.stem
         project_id = _example_id(stem)
-        name = _name_from_stem(stem)
+        name = _name_from_spec(spec) or _name_from_stem(stem)
         description = _description_from_spec(spec)
         accent = _ACCENT_CYCLE[i % len(_ACCENT_CYCLE)]
 
-        # Stamp the canonical workflow name into the spec so the canvas shows
-        # the project name on load (the example JSONs don't carry a name field
-        # of their own, and TrillGenerator falls back to "DefaultWorkflow").
+        # Keep the canvas title in sync with the project name so TrillGenerator
+        # never falls back to "DefaultWorkflow". `name` is now the spec's own
+        # `dataflow.name` whenever it has one, so this is a no-op for every
+        # curated example and only fills in a name for a spec that lacks one.
         if isinstance(spec.get("dataflow"), dict):
             spec["dataflow"]["name"] = name
 

@@ -251,6 +251,7 @@
       }
     ],
     "name": "Heterogeneous data + linked views",
+    "description": "Python UTCI pipeline fanned out via Data Pool; autk-grammar map + Vega-Lite scatter with bidirectional brushing.",
     "task": "",
     "timestamp": 1781043243132,
     "provenance_id": "Heterogeneous data + linked views",

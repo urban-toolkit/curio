@@ -160,6 +160,7 @@
       }
     ],
     "name": "Autark spatial join + regression",
+    "description": "autk-grammar loads roads from PBF, a Python node samples a 24-band LST raster, then GPU per-road OLS regression + linked scatter.",
     "task": "",
     "timestamp": 1781048622492,
     "provenance_id": "Autark spatial join + regression",

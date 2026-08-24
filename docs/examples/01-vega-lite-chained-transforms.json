@@ -110,6 +110,7 @@
       }
     ],
     "name": "Vega-Lite chained transforms",
+    "description": "Multiple Vega-Lite views fed from a chain of Data Transformation cleanups.",
     "task": "",
     "timestamp": 1778217921503,
     "provenance_id": "Vega-Lite chained transforms",

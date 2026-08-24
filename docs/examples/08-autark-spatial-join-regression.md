@@ -76,13 +76,24 @@ A Python node fetches the 24-band LST GeoTIFF once and embeds the bytes as base6
 GeoDataFrame, so the join node can reuse them without a second HTTP request.
 
 ```python
-import base64, requests, geopandas as gpd
+import base64
+import geopandas as gpd
 from shapely.geometry import Point
 
-url = 'https://raw.githubusercontent.com/urban-toolkit/autark/main/usecases/public/data/niteroi_lst_verao_2001_2024.tif'
-resp = requests.get(url, timeout=120); resp.raise_for_status()
-geotiff_b64 = base64.b64encode(resp.content).decode('ascii')
-return gpd.GeoDataFrame({'geotiff_b64': [geotiff_b64], 'band_count': [24]}, geometry=[Point(0, 0)], crs='EPSG:4326')
+# Read the bundled Niteroi land surface temperature raster (24 yearly
+# bands, 2001-2024) and embed the bytes as base64 inside a single-row
+# GeoDataFrame so the downstream join can reuse them without refetching.
+# Vendored from urban-toolkit/autark (usecases/public/data) so the
+# example runs offline and deterministically.
+with open('docs/examples/data/niteroi_lst_verao_2001_2024.tif', 'rb') as f:
+    geotiff_b64 = base64.b64encode(f.read()).decode('ascii')
+
+gdf = gpd.GeoDataFrame(
+    {'geotiff_b64': [geotiff_b64], 'band_count': [24]},
+    geometry=[Point(0, 0)],
+    crs='EPSG:4326',
+)
+return gdf
 ```
 
 The two branches are bundled by a **`merge-flow`** node into a 2-element input: `arg[0]` is the OSM layer

@@ -13,9 +13,8 @@ flowchart LR
   L --> A[`Data Transformation`<br/>daily by season] --> AV[`Vega-Lite`<br/>seasonal line]
 
   L --> B1[`Data Transformation`<br/>monthly heatmap]
-  L --> B2[`Data Transformation`<br/>daily by season]
   B1 --> BM[`Merge Flow`]
-  B2 --> BM --> BC[`Python Computation`<br/>merge daily + monthly] --> BT[`Data Transformation`<br/>typecast] --> BV[`Vega-Lite`<br/>heatmap + line concat]
+  A --> BM --> BC[`Python Computation`<br/>merge daily + monthly] --> BT[`Data Transformation`<br/>typecast] --> BV[`Vega-Lite`<br/>heatmap + line concat]
 
   L --> C[`Data Transformation`<br/>yearly + season] --> CV[`Vega-Lite`<br/>stacked area]
 
@@ -58,18 +57,24 @@ import pandas as pd
 
 df = arg.copy()
 df['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'])
-df['Year']  = df['VIOLATION DATE'].dt.year
+df['Year'] = df['VIOLATION DATE'].dt.year
 df['Month'] = df['VIOLATION DATE'].dt.month
 
 def assign_season(month):
-    if month in [12, 1, 2]: return "Winter"
-    if month in [3, 4, 5]:  return "Spring"
-    if month in [6, 7, 8]:  return "Summer"
-    return "Fall"
+    if month in [12, 1, 2]:
+        return "Winter"
+    elif month in [3, 4, 5]:
+        return "Spring"
+    elif month in [6, 7, 8]:
+        return "Summer"
+    else:
+        return "Fall"
 
 df['Season'] = df['Month'].apply(assign_season)
+
 df_trend = df.groupby(['VIOLATION DATE', 'Year', 'Season'])['VIOLATIONS'].sum().reset_index()
 df_trend['VIOLATION DATE'] = df_trend['VIOLATION DATE'].astype(str)
+
 return pd.DataFrame(df_trend)
 ```
 
@@ -99,11 +104,66 @@ A second `Data Transformation` aggregates by `(Year, Month)` for the heatmap. It
 
 ```json
 {
-  "params": [{"name": "yearFilter", "select": {"type": "point", "fields": ["Year"], "on": "click"}}],
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "params": [
+    {
+      "name": "cameraFilter",
+      "bind": {
+        "input": "select",
+        "options": ["1", "2", "3", "4+"],
+        "labels": ["1 Camera", "2 Cameras", "3 Cameras", "4+ Cameras"]
+      }
+    }
+  ],
   "hconcat": [
-    {"mark": "rect", "encoding": {"x": {"field": "Month"}, "y": {"field": "Year"}, "color": {"aggregate": "sum", "field": "Yearly Total"}}},
-    {"transform": [{"filter": "yearFilter.Year == null || datum.Year == yearFilter.Year"}],
-     "mark": "line", "encoding": {"x": {"field": "VIOLATION DATE", "type": "temporal"}, "y": {"field": "Daily Violations"}}}
+    {
+      "width": 500,
+      "mark": "boxplot",
+      "encoding": {
+        "x": {
+          "field": "CAMERA_BIN",
+          "type": "nominal",
+          "title": "Camera Count"
+        },
+        "y": {
+          "field": "VIOLATIONS",
+          "type": "quantitative",
+          "title": "Violations"
+        },
+        "color": {
+          "field": "CAMERA_BIN",
+          "type": "nominal"
+        }
+      }
+    },
+    {
+      "width": 500,
+      "mark": {
+        "type": "bar",
+        "cursor": "pointer"
+      },
+      "transform": [
+        { "filter": "cameraFilter == null || datum.CAMERA_BIN == cameraFilter" }
+      ],
+      "encoding": {
+        "x": {
+          "field": "Percent_Reduction",
+          "type": "quantitative",
+          "title": "Percent Reduction"
+        },
+        "y": {
+          "field": "INTERSECTION",
+          "type": "nominal",
+          "sort": "-x",
+          "title": "Intersection"
+        },
+        "color": {
+          "field": "Percent_Reduction",
+          "type": "quantitative",
+          "scale": { "scheme": "blues" }
+        }
+      }
+    }
   ]
 }
 ```

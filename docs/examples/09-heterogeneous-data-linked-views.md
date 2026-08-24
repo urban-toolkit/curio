@@ -18,20 +18,23 @@ flowchart LR
   W[`Data Loading`<br/>meteo CSV]
   S[`Data Loading`<br/>census polygons]
 
-  R --> MG[`Merge Flow`]
+  R --> MG[`Merge Flow`<br/>2 inputs]
   W --> MG --> U[`Python Computation`<br/>UTCI]
-  R --> Z[`Python Computation`<br/>zonal stats]
-  U --> Z
-  S --> Z
+
+  U --> MZ[`Merge Flow`<br/>3 inputs]
+  R --> MZ
+  S --> MZ
+  MZ --> Z[`Python Computation`<br/>zonal stats]
   Z --> T[`Data Transformation`<br/>reproject + filter] --> P[`Data Pool`]
 
   P --> M[autk-grammar<br/>thematic map + picking]
   P --> SC[`Vega-Lite`<br/>linked scatter]
   P --> BX[`Data Transformation`<br/>gt_65 only] --> BV[`Vega-Lite`<br/>linked boxplot]
 
-  M  <-. Interaction .-> SC
-  SC <-. Interaction .-> BV
-  M  <-. Interaction .-> BV
+  %% Brushing is routed back through the Data Pool, which re-fans the selection
+  %% to every downstream view - the views are not wired to each other.
+  M  -. Interaction .-> P
+  SC -. Interaction .-> P
 ```
 
 ## Data
@@ -78,18 +81,26 @@ Read the noon weather row and call `pythermalcomfort.models.utci` to produce a U
 The output is the UTCI grid as a list-of-lists plus its `[width, height]` shape, packaged as a tuple so the downstream zonal-stats node can rebuild the array.
 
 ```python
+# Step 4 - Compute UTCI
+
 import numpy as np
 from pythermalcomfort import models
 from rasterio.warp import Resampling
 
-src    = arg[0]
+src = arg[0]
 sensor = arg[1]
+
 timestamp = 12
 
 # Bundled raster is already at the working resolution; no further downsample needed.
 upscale_factor = 1.0
-data = src.read(
-    out_shape=(src.count, int(src.height * upscale_factor), int(src.width * upscale_factor)),
+dataset = src
+data = dataset.read(
+    out_shape=(
+        dataset.count,
+        int(dataset.height * upscale_factor),
+        int(dataset.width * upscale_factor),
+    ),
     resampling=Resampling.nearest,
     masked=True,
 )
@@ -97,16 +108,19 @@ data = data.astype(float).filled(np.nan)
 
 sensor_filtered = sensor[sensor["it"] == timestamp]
 tdb = float(sensor_filtered["Td"].values[0])
-v   = float(sensor_filtered["Wind"].values[0])
-rh  = float(sensor_filtered["RH"].values[0])
+v = float(sensor_filtered["Wind"].values[0])
+rh = float(sensor_filtered["RH"].values[0])
 
+# `limit_inputs=False` keeps UTCI valid for tr - tdb > 30 (common at noon in Milan).
 utci_result = models.utci(tdb=tdb, tr=data[0], v=v, rh=rh, units="SI", limit_inputs=False)
 utci_grid = np.asarray(getattr(utci_result, "utci", utci_result), dtype=float)
 
 if utci_grid.ndim == 3 and utci_grid.shape[0] == 1:
     utci_grid = utci_grid[0]
+if utci_grid.ndim != 2:
+    raise ValueError(f"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}")
 
-utci_list  = utci_grid.tolist()
+utci_list = utci_grid.tolist()
 utci_shape = [utci_grid.shape[1], utci_grid.shape[0]]
 
 return (utci_list, utci_shape)
@@ -127,31 +141,44 @@ return gdf
 Receive the original raster (for its CRS / transform), the UTCI tuple from Step 4, and the census polygons from Step 5. Run `rasterstats.zonal_stats` to compute per-polygon UTCI statistics and attach the mean to each polygon.
 
 ```python
+# Step 5 - Zonal Statistics
+
 from rasterstats import zonal_stats
 import numpy as np
 
-dataset    = arg[0]
-utci_list  = arg[1][0]
+dataset = arg[0]
+utci_list = arg[1][0]
 utci_shape = arg[1][1]
-gdf        = arg[2]
+gdf = arg[2]
 
-utci      = np.asarray(utci_list, dtype=float)
+utci = np.asarray(utci_list, dtype=float)
+shape = utci_shape
+
+if utci.ndim != 2:
+    raise ValueError(f"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}")
+
 transform = dataset.transform * dataset.transform.scale(
-    (dataset.width / utci_shape[0]),
-    (dataset.height / utci_shape[1]),
+    (dataset.width / shape[0]),
+    (dataset.height / shape[1]),
 )
 
-nodata_value   = -999.0
+# Avoid nodata warning and make nodata explicit
+nodata_value = -999.0
 utci_for_stats = np.where(np.isnan(utci), nodata_value, utci)
 
 joined = zonal_stats(
-    gdf, utci_for_stats,
+    gdf,
+    utci_for_stats,
     stats=["min", "max", "mean", "median"],
-    affine=transform, nodata=nodata_value,
+    affine=transform,
+    nodata=nodata_value,
 )
 
 gdf["mean"] = [d["mean"] for d in joined]
-return gdf.loc[:, [gdf.geometry.name, "mean", "gt_65"]]
+result = gdf.loc[:, [gdf.geometry.name, "mean", "gt_65"]]
+
+
+return result
 ```
 
 ## Step 7: Reproject and filter (`Data Transformation`)

@@ -18,12 +18,12 @@ flowchart LR
   L[`Data Loading`<br/>neighborhood polygons]
 
   F --> I --> G --> SJ[Spatial Join]
-  L --> SJ
+  L --> T[`Data Transformation`<br/>rename pri_neigh to name] --> SJ
   SJ --> V1[`Vega-Lite`<br/>polygon map]
   SJ --> V2[`Vega-Lite`<br/>per-neighborhood bar]
 ```
 
-Four nodes do the work plus two `Vega-Lite` views consume the output. The split is deliberate: each node is independently useful (Spatial Join works for any spatial workflow, not just CV), and the imagery + inference are decoupled so you can swap one without touching the other.
+Six nodes do the work plus two `Vega-Lite` views consume the output. The split is deliberate: each node is independently useful (Spatial Join works for any spatial workflow, not just CV), and the imagery + inference are decoupled so you can swap one without touching the other.
 
 ## Origin
 
@@ -83,7 +83,14 @@ For Chicago, the city publishes a [Boundaries, Neighborhoods](https://data.cityo
 
 ```python
 import geopandas as gpd
-gdf = gpd.read_file('chicago_neighborhoods.geojson')
+
+# Chicago official neighborhoods boundary. Swap in any local file via
+# `gpd.read_file("docs/examples/data/<your-polygons>.geojson")` for non-Chicago runs.
+gdf = gpd.read_file(
+    "https://data.cityofchicago.org/api/geospatial/bbvr-jsnu?method=export&format=GeoJSON",
+)
+
+gdf.metadata = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
@@ -94,8 +101,13 @@ The Spatial Join node (built-in, in `curio.builtin@1`) renders as a small icon-o
 The node hardcodes the polygon tag column to `properties.name`. The Chicago neighborhoods file uses `pri_neigh`, the NYC boroughs file uses `BoroName`, etc., so insert a `Data Transformation` node between Data Loading and Spatial Join to rename the relevant property to `name`:
 
 ```python
-# Rename Chicago's `pri_neigh` to `name` so Spatial Join picks it up.
-gdf = arg.rename(columns={'pri_neigh': 'name'})
+# Spatial Join hardcodes the polygon tag column to `name`. Chicago's file uses
+# `pri_neigh`, so rename it here. For NYC boroughs use `BoroName` -> `name`,
+# for OSM admin polygons use `name` directly (this step becomes a no-op).
+import geopandas as gpd
+
+gdf = arg.rename(columns={"pri_neigh": "name"})
+gdf.metadata = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
