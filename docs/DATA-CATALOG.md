@@ -141,7 +141,7 @@ Only **Unpublish** and **Delete** ask for confirmation; Add to dataflow, Remove 
 
 **I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.shp`, `.pbf`). Import only *registers* the dataset in your account. Switch to the **In dataflow** or **Browse all** tab and click **Add to dataflow** to attach it to the open dataflow.
 
-**I want to reuse a node's output as an input somewhere else.** You don't have to do anything to save it: as long as the node's save-output toggle is on (it is by default), running the node saves its output as a computed dataset. Open the drawer's **Computed** tab and click **Add to dataflow** on it, either in this dataflow or in a different one.
+**I want to reuse a node's output as an input somewhere else.** Turn on the node's save-output toggle (the database icon next to its play button), then run it: the output is saved as a computed dataset. Open the drawer's **Computed** tab and click **Add to dataflow** on it, either in this dataflow or in a different one.
 
 **I want to remove a dataset from one dataflow but keep it.** Use **Remove from dataflow** in the drawer. This only drops the `dataflow.datasets` ref; the bytes stay in your account store and the dataset stays in the catalog.
 
@@ -185,7 +185,21 @@ Nodes tied to a dataset show a small pill on their title bar: **DATASET** when t
 
 ### The save-output toggle
 
-Every runnable node has a small database-icon toggle immediately to the right of its play button. When it is on (the default, controlled deployment-wide by `CURIO_DEFAULT_SAVE_NODE_OUTPUT`), running the node saves its tabular output into your per-user dataset store as `computed.<dataflowId>.<nodeId>@1`.
+Every runnable node has a small database-icon toggle immediately to the right of its play button. It is **off by default**, so saving is opt-in per node; the deployment-wide default is controlled by `CURIO_DEFAULT_SAVE_NODE_OUTPUT`. When it is on, running the node saves its output into your per-user dataset store as `computed.<dataflowId>.<nodeId>@1`.
+
+Every output type a node can declare is saved, not just tabular ones:
+
+| Node output | Saved as |
+|---|---|
+| DataFrame, GeoDataFrame | `parquet` |
+| Raster | `geotiff` |
+| A plain Python value: dict, list, string, number, boolean, or `None` | `json` |
+| A tuple | `bundle`, one part per item (see [Bundles](#bundles)) |
+| A list or dict *containing* DataFrames | `bundle`, one part per element; a dict keeps its keys as part labels |
+
+A scalar is stored as `{"value": ...}`, which is the same envelope a bundle's
+scalar parts use. JSON is written uncompressed, so the stored file is readable
+by a plain `json.load` and exports as-is.
 
 The toggle is forced **off**, and no dataset is saved, for:
 
@@ -292,7 +306,7 @@ The catalog root is **never created eagerly**. A missing root simply means nothi
 |---|---|---|
 | `CURIO_CATALOG_ROOT` | `<repo_root>/datasets/` | Shared catalog read source and publish target. |
 | `CURIO_LAUNCH_CWD` | process CWD | Anchors the per-user store at `.curio/users/<key>/datasets/`. |
-| `CURIO_DEFAULT_SAVE_NODE_OUTPUT` | `True` | Default state of every node's save-output toggle. |
+| `CURIO_DEFAULT_SAVE_NODE_OUTPUT` | `False` | Default state of every node's save-output toggle. |
 
 ### The dataset index
 

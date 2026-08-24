@@ -156,7 +156,7 @@ interface FlowContextProps {
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
     persistInstalledDataset: (inst: InstalledDatasetPayload | null | undefined) => Promise<void>;
-    persistDataflowForInstall: () => Promise<void>;
+    persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<void>;
     loadProject: (id: string) => Promise<any>;
     loadSharedProject: (id: string) => Promise<any>;
     discardProject: () => void;
@@ -1468,7 +1468,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         if (ids.length === 0) return;
         installSyncPendingIdsRef.current = new Set();
         void workflowOps
-            .persistDataflowForInstall()
+            // Scope the warning toast to the producers this sync covers: a save
+            // re-sends refs for every toggle-enabled node, so an unscoped toast
+            // names nodes the user never ran (#180).
+            .persistDataflowForInstall(ids)
             .finally(() => ids.forEach((id) => workflowOps.endPendingInstall(id)));
     };
 

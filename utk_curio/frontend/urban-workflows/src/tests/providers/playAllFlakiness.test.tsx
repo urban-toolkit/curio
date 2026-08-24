@@ -353,3 +353,108 @@ describe('Play All orchestration — flakiness vectors', () => {
     }
   });
 });
+
+describe('install-sync scoping (#180): the save is told which nodes it covers', () => {
+  // The unit coverage for the filter itself lives in
+  // useWorkflowOperations.installSync.test.ts. These pin the other half: that
+  // FlowProvider hands the hook the real pending set, and exactly that set.
+  async function mountWith(nodes: any[]) {
+    const rendered = renderFlow();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      nodes.forEach((n) => api.addNode(n, undefined, false));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    return rendered;
+  }
+
+  const output = (nodeId: string) =>
+    ({ nodeId, output: { dataType: 'dataframe', data: {} } }) as any;
+
+  test('a single producer scopes the save to its own id', async () => {
+    jest.useFakeTimers();
+    try {
+      await mountWith([makeNode('A', { saveOutputDataset: true })]);
+
+      act(() => {
+        api.applyNewOutput(output('A'));
+      });
+      act(() => {
+        jest.advanceTimersByTime(500);
+      });
+
+      expect(mockPersistDataflowForInstall).toHaveBeenCalledWith(['A']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a debounced burst scopes the one save to every producer in it', async () => {
+    // The Play All shape: two nodes finish inside the 500ms window and collapse
+    // into a single save, which must still be allowed to warn about BOTH.
+    jest.useFakeTimers();
+    try {
+      await mountWith([
+        makeNode('A', { saveOutputDataset: true }),
+        makeNode('B', { saveOutputDataset: true }),
+      ]);
+
+      act(() => {
+        api.applyNewOutput(output('A'));
+        jest.advanceTimersByTime(200); // still inside the window
+        api.applyNewOutput(output('B'));
+        jest.advanceTimersByTime(500);
+      });
+
+      expect(mockPersistDataflowForInstall).toHaveBeenCalledTimes(1);
+      const [ids] = mockPersistDataflowForInstall.mock.calls[0];
+      expect([...ids].sort()).toEqual(['A', 'B']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a node whose save-output toggle is OFF is never in the scope', async () => {
+    jest.useFakeTimers();
+    try {
+      await mountWith([
+        makeNode('A', { saveOutputDataset: true }),
+        makeNode('C', { saveOutputDataset: false }),
+      ]);
+
+      act(() => {
+        api.applyNewOutput(output('C'));
+        api.applyNewOutput(output('A'));
+        jest.advanceTimersByTime(500);
+      });
+
+      const [ids] = mockPersistDataflowForInstall.mock.calls[0];
+      expect([...ids]).toEqual(['A']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('the unmount flush keeps the scope (Vector 2 + #180 together)', async () => {
+    jest.useFakeTimers();
+    try {
+      const { unmount } = await mountWith([makeNode('A', { saveOutputDataset: true })]);
+
+      act(() => {
+        api.applyNewOutput(output('A'));
+      });
+      act(() => {
+        jest.advanceTimersByTime(499);
+      });
+      unmount();
+
+      expect(mockPersistDataflowForInstall).toHaveBeenCalledWith(['A']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

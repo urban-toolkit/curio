@@ -114,7 +114,7 @@ palette drag and the edge drag.
 | `play_node`, `wait_for_node_done`, `wait_for_node_settled`, `run_node_and_wait` | Press a node's play button and wait for it to settle. `wait_for_node_done` raises with the node's own error text; `wait_for_node_settled` returns `"done"` / `"error"` for a test where the failure *is* the expected outcome. |
 | `read_node_output_text(page, node_id)` | The inline output box's text: the `[N]:` counter, stdout, and `Saved to file: …`. The return value is never shown, so a result assertion has to `print` what it wants to check. |
 | `activate_header_icon(locator)` | Presses a node-header icon button (the title pencil, the settings gear). |
-| `dismiss_toasts(page)` | Closes visible toasts and waits for the toast region to stay quiet, so a late "couldn't be generated" warning cannot drift into a screenshot. Safe when there are none. |
+| `dismiss_toasts(page)` | Closes visible toasts and waits for the toast region to stay quiet, so a late toast cannot drift into a screenshot. Safe when there are none. **Never call it before an assertion about a toast** - `test_computed_json_output_e2e.py` records toasts through a MutationObserver instead, because `showToast` removes each one after 5 s. |
 
 Five things here are easy to get wrong:
 
@@ -177,9 +177,14 @@ exactly that.
 Call `dismiss_toasts(page)` before capturing anything that follows a node run.
 Toasts are bottom-right, up to 360px wide, and land exactly where canvas content
 usually is - and a node reaching "Done" does not mean its follow-up work has
-finished, so the debounced dataset install can raise a "couldn't be generated"
-warning *seconds* later. A single sweep dismisses nothing and the toast still
-makes the capture; the helper sweeps, waits for a quiet window, and sweeps again.
+finished: the dataset install-save is debounced 500 ms past it and answers
+seconds later, so any toast it raises lands well after the status flips. A single
+sweep dismisses nothing and the toast still makes the capture; the helper sweeps,
+waits for a quiet window, and sweeps again.
+
+A *"couldn't be generated"* warning is a **bug**, not routine noise (#180):
+`test_computed_json_output_e2e.py` fails on it. Sweeping is for the ordinary
+toasts (saves, installs), not for hiding that one.
 
 Two families of baseline live in that folder:
 
@@ -192,8 +197,8 @@ Two families of baseline live in that folder:
   `library-manager`, `node-catalog-drawer`, `data-catalog-drawer`,
   `dataset-export`, `dataset-lineage`, `autark-grammar-edit`,
   `merge-flow-authoring`, `canvas-delete-key`, `projects-page-scroll`,
-  `global-imports`, `uhvi-install` and
-  `workflow-deps-import`. These guard what the semantic assertions cannot see -
+  `global-imports`, `uhvi-install`, `data-pool-scroll`,
+  `computed-json-output` and `workflow-deps-import`. These guard what the semantic assertions cannot see -
   most usefully that an edge is actually *drawn*, not merely present in the
   React Flow store, and that a modal rendered the values the test typed in.
 
@@ -285,6 +290,8 @@ test_frontend/
   test_data_catalog.py        # Data Catalog drawer: hub datasets, search, add/remove, import
   test_dataset_export.py      # Data Catalog detail panel -> Export: the downloaded name and bytes
   test_dataset_lineage_e2e.py # one edge -> the dataset's lineage grows (panel, card badge, server)
+  test_computed_json_output_e2e.py # dict/scalar node output installs as json, no warning (#180)
+  test_data_pool_scroll_e2e.py     # the Data Pool node scrolls its own rows (#156)
   test_package_export_import.py   # palette export download -> re-import (dup + renamed clone)
   test_save_as_package.py     # node -> Save as package -> Export -> load back
   test_canvas_authoring_e2e.py     # build by hand: dataset -> drag -> connect -> run

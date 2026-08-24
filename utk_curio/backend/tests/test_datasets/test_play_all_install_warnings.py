@@ -119,3 +119,94 @@ def test_missing_dataflow_id_records_failures_and_writes_nothing():
     assert called == []  # installer never invoked
     assert len(failures) == 1
     assert "dataflow id" in failures[0]["reason"]
+
+
+# ---------------------------------------------------------------------------
+# #180: the reported symptom, at the save boundary.
+#
+# These deliberately do NOT mock ``install_node_output`` - the real one is the
+# subject. A Python Computation returning a scalar has no artifact file at all,
+# which used to be recorded as "output artifact not found at save time" and
+# raised at the user as ``Dataset for "Python Computation" couldn't be
+# generated. Re-run that node.`` The second test is the one that stops the fix
+# from degenerating into blanket suppression.
+# ---------------------------------------------------------------------------
+
+def _analysis_spec(node_id):
+    return {
+        "dataflow": {
+            "datasets": [],
+            "nodes": [{"id": node_id, "type": "curio.builtin/computation-analysis"}],
+        }
+    }
+
+
+def _ref(node_id, filename, data_type):
+    return OutputRef(
+        node_id=node_id,
+        filename=filename,
+        data_type=data_type,
+        node_name="Python Computation",
+    )
+
+
+def test_scalar_output_records_no_install_warning(app):
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+        store_sandbox_artifact,
+    )
+
+    art = store_sandbox_artifact(42)
+    failures: list = []
+
+    _auto_install_computed_outputs(
+        "1", [_ref("py-1", art, "int")], _analysis_spec("py-1"), failures,
+        dataflow_id="df-180",
+    )
+
+    assert failures == [], (
+        "a scalar return value is a declared Python Computation output (VALUE) "
+        "and must install, not be reported as a missing artifact (#180)"
+    )
+    dest = dataset_dir("1", computed_dataset_id("py-1", "df-180") + "@1")
+    assert (dest / "manifest.json").is_file()
+
+
+def test_genuinely_missing_artifact_still_records_a_warning(app):
+    failures: list = []
+
+    _auto_install_computed_outputs(
+        "1", [_ref("py-1", "1790000000000_deadbeef", "int")], _analysis_spec("py-1"),
+        failures, dataflow_id="df-180",
+    )
+
+    assert len(failures) == 1, (
+        "an artifact with no DuckDB row really is gone, and re-running the node "
+        "really does help - this warning must survive the #180 fix"
+    )
+    assert "not found" in failures[0]["reason"]
+
+
+def test_dataframe_without_its_parquet_still_records_a_warning(app):
+    import os
+    from pathlib import Path
+
+    import pandas as pd
+
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+        store_sandbox_artifact,
+    )
+
+    art = store_sandbox_artifact(pd.DataFrame({"a": [1]}))
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    for path in (shared / "artifacts").glob(art + "*"):
+        path.unlink()
+
+    failures: list = []
+    _auto_install_computed_outputs(
+        "1", [_ref("py-1", art, "dataframe")], _analysis_spec("py-1"), failures,
+        dataflow_id="df-180",
+    )
+
+    assert [f["node_id"] for f in failures] == ["py-1"]

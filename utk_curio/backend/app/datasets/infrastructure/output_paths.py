@@ -7,6 +7,10 @@ from pathlib import Path
 
 from utk_curio.backend.app.common.safe_paths import is_within
 
+# Kinds whose ``artifacts.value_str`` genuinely holds a path (shared with
+# ``install/bundle.py``'s reader so the two can never disagree).
+PATH_BEARING_KINDS = frozenset({"dataframe", "geodataframe", "dict", "list", "raster"})
+
 
 def _shared_data_dir() -> Path:
     from utk_curio.backend.app.projects.storage import _shared_data_dir as _sd
@@ -44,7 +48,13 @@ def _resolve_duckdb_artifact_path(art_id: str) -> Path | None:
     kind, value_str = row[0], row[1]
     shared = _shared_data_dir()
     candidates: list[Path] = []
-    if value_str:
+    # Only the kinds that STORE a path in ``value_str`` may contribute one. A
+    # ``str`` artifact holds the user's own return value there, so a node doing
+    # ``return "cities.csv"`` used to resolve to a real shared-data file and get
+    # it hard-linked in as that node's computed dataset (#180). Skipping it here
+    # lets the installer fall through to the DuckDB-row branch, which stores
+    # ``{"value": "cities.csv"}`` - the value the node actually returned.
+    if value_str and kind in PATH_BEARING_KINDS:
         candidates.extend([
             Path(value_str),
             shared / value_str,
@@ -52,6 +62,11 @@ def _resolve_duckdb_artifact_path(art_id: str) -> Path | None:
         ])
     if kind in ("dataframe", "geodataframe"):
         candidates.append(shared / "artifacts" / f"{art_id}.parquet")
+    elif kind in ("dict", "list"):
+        # Mirror ``bundle._resolve_artifact_source``: a JSON-native artifact lives
+        # at ``artifacts/<id>.json[.zlib]`` even when value_str is absent.
+        candidates.append(shared / "artifacts" / f"{art_id}.json.zlib")
+        candidates.append(shared / "artifacts" / f"{art_id}.json")
 
     for candidate in candidates:
         try:

@@ -86,3 +86,16 @@ def save_project_with_output(client, token, project_id, output_filename, node_id
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
     return resp.get_json()
+
+
+def store_sandbox_artifact(value, node_id: str = "test-node") -> str:
+    """Persist *value* through the REAL sandbox writer; return its artifact id.
+
+    Uses ``save_to_duckdb`` rather than a hand-written INSERT so the row/file
+    layout under test can never drift from what node execution actually writes -
+    that drift between writer and resolver IS #180. Requires the ``app`` fixture,
+    which wires ``CURIO_SHARED_DATA`` / ``CURIO_LAUNCH_CWD``.
+    """
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    return save_to_duckdb(value, node_id=node_id)
