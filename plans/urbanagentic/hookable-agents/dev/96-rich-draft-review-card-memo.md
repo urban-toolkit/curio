@@ -1,6 +1,6 @@
 # dev/96 — The rich package-draft review card: the diff, dependencies, and preview the Apply text already claims the user reviewed
 
-**Status: APPROVED (owner, 2026-08-24). Implementation in progress.**
+**Status: IMPLEMENTED (2026-08-24) — commits 1–3 landed (`2e8a343a`, `4d89c2cd`, + docs); BL-P5-20260824-39; no new DEC (DEC-059's promised surface delivered). The dev/89 "rich review card = deferred polish" gap is closed.**
 Prereqs: dev/89 (DEC-059 — the build service and its provenance), dev/91 (the card's backend trust-edge block, the pattern this extends), dev/95 complete. This memo implements a surface DEC-059 already promised — no new decision is minted; the dev/89 "rich review card = deferred polish" gap closes.
 
 ---
