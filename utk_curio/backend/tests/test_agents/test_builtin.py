@@ -230,9 +230,15 @@ class TestDataflowBuilderComposite:
             "agent.package-recommendation",  # dev/84: Recommend packages step
             "agent.package-builder",  # dev/89: package-scale plan steps
             "agent.generated-content-evaluator",  # dev/86: advisory semantic check
+            "agent.researcher",  # dev/95 (Follow-up D): research → reviewed notes
         ]
         assert [t.kind for t in m.compatible_targets] == ["canvas"]
-        assert [t.id for t in m.tools] == ["dataflow.read", "dataflow.plan.write", "node.runtime.read"]
+        # dev/95: node.create is the reviewed lane the delegated Researcher's
+        # note proposals mint on (grant-gated at the parent).
+        assert [t.id for t in m.tools] == [
+            "dataflow.read", "dataflow.plan.write", "node.runtime.read",
+            "node.create",
+        ]
         assert m.provenance.trust == "built-in"
 
     def test_net_new_instruction_resolves(self):
@@ -468,14 +474,17 @@ class TestResearcher:
         spec = builtin.get_builtin_spec(self.COORD)
         assert "Node Researcher" in spec.purpose
 
-    def test_dataflow_builder_stays_byte_identical(self):
-        # dev/90 Follow-up D: no prompt edit, no delegatesTo growth.
+    def test_dataflow_builder_prompt_stays_pinned_and_delegation_is_wired(self):
+        # dev/90 Follow-up D DELIVERED by dev/95: the delegatesTo growth this
+        # pin used to forbid is now the deliberate change (the dev/48 D4
+        # precedent — a byte-pin updates WITH its memo, never incidentally).
+        # The prompt sha updates only with the dev/95 prompt edit itself.
         import hashlib
 
         prompt = (builtin.PROMPT_SOURCE_DIR / "orchestration_instruction.txt").read_bytes()
         assert hashlib.sha256(prompt).hexdigest() == self.DATAFLOW_BUILDER_PROMPT_SHA256
         dfb = builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0")
-        assert "agent.researcher" not in dfb.delegates_to
+        assert "agent.researcher" in dfb.delegates_to  # dev/95 Follow-up D
 
     def test_net_new_instruction_carries_the_recipe(self):
         text = builtin.read_prompt_text(self.COORD, "instruction")

@@ -221,7 +221,11 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "orchestration_instruction.txt",
                      ("dataflow.orchestrate",), ("orchestration",),
                      reads=("mission", "graphContext", "installedTemplates"),
-                     tools=("dataflow.read", "dataflow.plan.write", "node.runtime.read"),
+                     # dev/95: node.create is the reviewed lane the delegated
+                     # Researcher's note proposals mint on (grant-gated —
+                     # nothing lands without the user's Apply).
+                     tools=("dataflow.read", "dataflow.plan.write",
+                            "node.runtime.read", "node.create"),
                      # dev/73: node-content-builder listed so node.content.generate
                      # is OFFERED in the delegation paragraph — the chat path for
                      # "change this node's content" (the runtime mints the review
@@ -241,7 +245,12 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.package-builder",
                                    # dev/86 (DEC-055): optional post-generation
                                    # semantic check — advisory, never approval.
-                                   "agent.generated-content-evaluator"),
+                                   "agent.generated-content-evaluator",
+                                   # dev/95 (Follow-up D): research questions in
+                                   # the DFB chat delegate research.notes.compose
+                                   # — runtime-gathered search inputs, schema
+                                   # reply, reviewed note sequence.
+                                   "agent.researcher"),
                      review_policy="review-before-apply"),
     # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
     # Net-new instruction. Deviations recorded in the memo: roster-generated

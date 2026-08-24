@@ -5877,6 +5877,76 @@ def _reuse_finding_text(user_key: str, project_id: str, finding: dict) -> str:
     )
 
 
+#: dev/95 (Follow-up D): the server-owned reply schema for a delegated
+#: ``research.notes.compose`` — taught via inputs (the A8 posture: the child
+#: answers to a schema it can SEE, never a shape it must invent) and
+#: recognized ONLY by this schema at the mint (DEC-063: never by reading
+#: intent out of prose).
+_NOTES_REPLY_CONTRACT: dict = {
+    "reply": (
+        "Reply with ONE JSON object of exactly this shape (optionally inside "
+        "a ```json fence), nothing after it."
+    ),
+    "shape": {
+        "answer": "<the prose answer to the question — always present>",
+        "nodeType": ("<one 'id' from inputs.notesTemplates — omit when that "
+                     "list is empty>"),
+        "notes": [{
+            "title": "<short note title>",
+            "content": "<the finding as clean markdown — bold fact labels, "
+                       "'- ' bullets, [source](https://...) links>",
+            "color": "yellow|pink|blue|green|orange|lavender|#rrggbb",
+        }],
+    },
+    "rules": [
+        "compose findings ONLY from inputs.searchResults — when it carries "
+        "an 'error', say in 'answer' that search was unavailable and reply "
+        "with an empty notes list; NEVER invent findings from memory",
+        "the reference row (dev/90 A13): the FIRST note carries the user's "
+        "question verbatim (title 'Question', color yellow); then one green "
+        "note per answer with a subject title and every web-gathered fact "
+        "linked to its source",
+        "an empty notes list is valid when nothing should be placed "
+        "(no template installed, or no findings)",
+    ],
+}
+
+#: Bounds on the runtime-gathered search rows injected into a delegation —
+#: the child's context is finite; five sourced rows beat fifty raw ones.
+_DELEGATED_SEARCH_MAX_ROWS = 5
+_DELEGATED_SEARCH_FIELD_CHARS = 300
+
+
+def _delegated_search_results(question: object) -> dict:
+    """dev/95: ONE egress-policed search, executed by the RUNTIME for a
+    tool-less ``research.notes.compose`` child (the dev/67-4 posture —
+    exactly how ``research.verify`` children get runtime-run validator
+    evidence). Failures ride in as their honest error text: the child must
+    SAY search was unavailable, never invent findings."""
+    if not isinstance(question, str) or not question.strip():
+        return {"error": "no 'question' input was supplied to the delegation"}
+    from utk_curio.backend.app.agents import tools as agent_tools
+
+    status, text = agent_tools._execute_web_search({"q": question.strip()})
+    if status != "ok":
+        return {"error": text}
+    import json as _json
+
+    try:
+        rows = _json.loads(text).get("results") or []
+    except (ValueError, AttributeError):
+        return {"error": "the search provider returned malformed JSON"}
+    bounded = []
+    for row in rows[:_DELEGATED_SEARCH_MAX_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        bounded.append({
+            key: str(row.get(key) or "")[:_DELEGATED_SEARCH_FIELD_CHARS]
+            for key in ("title", "url", "snippet")
+        })
+    return {"query": question.strip(), "results": bounded}
+
+
 def _extract_draft_params(child_text: str) -> dict | None:
     """The child reply's build-request payload, or None.
 
@@ -6327,6 +6397,25 @@ def _enriched_delegate_inputs(
             if evidence:
                 inputs = {**inputs, "existingPackages": evidence}
         return inputs
+    if capability == "research.notes.compose":
+        # dev/95 (Follow-up D) — the FIFTH runtime-supplied-inputs application
+        # (dev/67-4 verification, dev/67-6 nodeContext, A8 contract, dev/94
+        # existingPackages): a DEC-046 child holds no web tools and cannot
+        # browse the roster, so the runtime gathers the ONE policed search,
+        # offers the installed presentation templates as candidates, and
+        # teaches the reply schema. Model-supplied keys always win.
+        enriched = dict(inputs)
+        if "searchResults" not in enriched:
+            enriched["searchResults"] = _delegated_search_results(
+                enriched.get("question"))
+        if "notesTemplates" not in enriched:
+            from utk_curio.backend.app.packages import services as packages_services
+
+            enriched["notesTemplates"] = packages_services.presentation_templates(
+                user_key, project_id)
+        if "notesReplyContract" not in enriched:
+            enriched["notesReplyContract"] = _NOTES_REPLY_CONTRACT
+        return enriched
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs
     node_id = inputs.get("nodeId")

@@ -476,6 +476,54 @@ def available_templates_report(user_key: str, project_id: str) -> dict:
     }
 
 
+def presentation_templates(user_key: str, project_id: str) -> list[dict]:
+    """dev/95: the installed+enlisted PRESENTATION templates (a custom
+    ``behavior`` + editor ``"none"`` — the dev/90 A14 profile whose content
+    IS the note text its behavior renders).
+
+    These are the note-surface candidates the runtime offers a delegated
+    Researcher (a DEC-046 child cannot browse the roster itself); the child
+    picks one by id and the mint re-validates through the ONE template
+    vocabulary. Same enumeration and skip posture as
+    :func:`available_templates_report` — an unreadable package stays loud
+    there; here it simply contributes no candidates."""
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+
+    try:
+        wanted = set(get_project_lockfile(user_key, project_id))
+    except PackageServiceError:
+        wanted = set()
+    paths = sorted(
+        list_user_packageages(user_key), key=lambda p: p.name, reverse=True
+    )
+    out: list[dict] = []
+    seen: set[str] = set()
+    for path in paths:
+        pkg_id = path.name.split("@", 1)[0]
+        if pkg_id != BUILTIN_PACKAGE_ID and path.name not in wanted:
+            continue
+        try:
+            manifest = load_packageage_manifest(path)
+        except (ManifestError, OSError):
+            continue  # available_templates_report already logs this loudly
+        for t in manifest.templates:
+            if not (t.behavior and t.editor == "none"):
+                continue
+            canonical = f"{manifest.package_id}/{t.template_id}"
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            out.append({
+                "id": canonical,
+                "label": t.label,
+                "description": t.description,
+            })
+    return sorted(out, key=lambda e: e["id"])
+
+
 # Agent-drafted packages (memo dev/48 §3.2b) are namespaced so they can never
 # collide with the seeded builtin or a catalog publisher's id space.
 AGENT_PACKAGE_NAMESPACE = "curio.agent"
