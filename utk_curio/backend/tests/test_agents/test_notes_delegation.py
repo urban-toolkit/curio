@@ -350,3 +350,36 @@ class TestDataflowBuilderNotesLane:
             json={"message": "hi"}, headers=_auth(token))
         assert run.status_code == 200
         assert all(p["type"] != "proposal" for p in run.get_json()["content"])
+
+
+# ── the prompts carry the contract (commit 3) ────────────────────────────────
+class TestPromptsCarryTheDelegationContract:
+    def test_dfb_prompt_teaches_the_research_delegation(self):
+        from utk_curio.backend.app.agents import builtin
+
+        text = builtin.read_prompt_text("agent.dataflow-builder@1.0.0", "instruction")
+        for marker in (
+            '"research.notes.compose"',
+            '{"question": "<their question>"}',
+            "Never answer research questions from memory",
+            "the notes mirror the chat",
+            "notes were skipped",
+            "point the user at the Researcher",
+        ):
+            assert marker in text, marker
+
+    def test_researcher_prompt_carries_the_delegate_posture(self):
+        from utk_curio.backend.app.agents import builtin
+
+        text = builtin.read_prompt_text("agent.researcher@1.0.0", "instruction")
+        for marker in (
+            "[delegated task from",
+            "inputs.searchResults",
+            "inputs.notesTemplates",
+            "inputs.notesReplyContract",
+            "EXACTLY ONE JSON object",
+            "say search was unavailable",
+            "NEVER invent findings",
+            "never emit a tool request",
+        ):
+            assert marker in text, marker
