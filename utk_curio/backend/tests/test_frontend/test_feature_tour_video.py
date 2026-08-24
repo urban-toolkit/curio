@@ -999,7 +999,7 @@ def _warm_up(browser, frontend: str) -> None:
         page.goto(f"{frontend}/auth/signin", timeout=120000)
         page.wait_for_load_state("domcontentloaded")
         try:
-            page.get_by_text("Sign In", exact=False).first.wait_for(timeout=60000)
+            page.get_by_text("Sign in", exact=False).first.wait_for(timeout=60000)
         except Exception:
             pass
     finally:

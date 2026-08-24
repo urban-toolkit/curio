@@ -242,7 +242,7 @@ def curio_servers(session_app, request):
     # backend must run with user auth enabled. ``curio.py start`` defaults to
     # ``CURIO_NO_AUTH=1`` (auto-guest mode, no login UI), which would send the
     # browser straight to ``/projects`` and make every auth-gated test time
-    # out looking for ``Sign In`` / ``Create an account`` / ``Continue as
+    # out looking for ``Sign in`` / ``Create an account`` / ``Continue as
     # Guest``. ``--auth`` flips ``CURIO_NO_AUTH=0`` so the login UI renders;
     # tests that opt out (e.g. ``test_frontend_server``) branch on
     # ``auth_enabled_env()`` and will follow the no-auth path only when the
