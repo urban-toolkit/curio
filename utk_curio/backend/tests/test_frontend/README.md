@@ -114,6 +114,7 @@ palette drag and the edge drag.
 | `play_node`, `wait_for_node_done`, `wait_for_node_settled`, `run_node_and_wait` | Press a node's play button and wait for it to settle. `wait_for_node_done` raises with the node's own error text; `wait_for_node_settled` returns `"done"` / `"error"` for a test where the failure *is* the expected outcome. |
 | `read_node_output_text(page, node_id)` | The inline output box's text: the `[N]:` counter, stdout, and `Saved to file: …`. The return value is never shown, so a result assertion has to `print` what it wants to check. |
 | `activate_header_icon(locator)` | Presses a node-header icon button (the title pencil, the settings gear). |
+| `dismiss_toasts(page)` | Closes visible toasts and waits for the toast region to stay quiet, so a late "couldn't be generated" warning cannot drift into a screenshot. Safe when there are none. |
 
 Five things here are easy to get wrong:
 
@@ -165,6 +166,21 @@ always share one fitView'd viewport. Comparison allows 20% of pixels to differ b
 more than 30/255 per channel; that budget exists because every executed code node
 renders `Saved to file: <timestamp>_<hash>`, which changes on every run.
 
+Pass `fit_reactflow=False` for a page that has no canvas - the projects list, the
+catalog. That fitView step waits on `.react-flow__node`, so it would otherwise
+burn its whole timeout waiting for a node that is never going to appear. Note
+that `_capture_full_page` measures the *document*, so a page whose scrolling
+lives in an inner `overflow-y: auto` container needs two captures, at the top and
+at the bottom, to show anything moved; `test_project_page_scroll_e2e.py` does
+exactly that.
+
+Call `dismiss_toasts(page)` before capturing anything that follows a node run.
+Toasts are bottom-right, up to 360px wide, and land exactly where canvas content
+usually is - and a node reaching "Done" does not mean its follow-up work has
+finished, so the debounced dataset install can raise a "couldn't be generated"
+warning *seconds* later. A single sweep dismisses nothing and the toast still
+makes the capture; the helper sweeps, waits for a quiet window, and sweeps again.
+
 Two families of baseline live in that folder:
 
 - one per bundled dataflow JSON, for `TestWorkflowCanvas` (two per workflow,
@@ -173,7 +189,10 @@ Two families of baseline live in that folder:
 - one per hand-built surface, keyed by the stem the test passes in place of a
   workflow path: `canvas-authoring`, `package-roundtrip`,
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
-  `library-manager`, `node-catalog-drawer`, `data-catalog-drawer` and
+  `library-manager`, `node-catalog-drawer`, `data-catalog-drawer`,
+  `dataset-export`, `dataset-lineage`, `autark-grammar-edit`,
+  `merge-flow-authoring`, `canvas-delete-key`, `projects-page-scroll`,
+  `global-imports`, `uhvi-install` and
   `workflow-deps-import`. These guard what the semantic assertions cannot see -
   most usefully that an edge is actually *drawn*, not merely present in the
   React Flow store, and that a modal rendered the values the test typed in.
@@ -264,9 +283,18 @@ test_frontend/
   test_dataset_palette.py     # computed dataset shows in the dataset palette and persists
   test_node_catalog.py        # Node Catalog drawer: list, search, add/remove -> palette
   test_data_catalog.py        # Data Catalog drawer: hub datasets, search, add/remove, import
+  test_dataset_export.py      # Data Catalog detail panel -> Export: the downloaded name and bytes
+  test_dataset_lineage_e2e.py # one edge -> the dataset's lineage grows (panel, card badge, server)
   test_package_export_import.py   # palette export download -> re-import (dup + renamed clone)
   test_save_as_package.py     # node -> Save as package -> Export -> load back
   test_canvas_authoring_e2e.py     # build by hand: dataset -> drag -> connect -> run
+  test_merge_flow_authoring_e2e.py # palette-dragged Merge Flow feeds `arg` downstream (#159)
+  test_canvas_delete_key_e2e.py    # Delete and Backspace both delete; neither does inside Monaco (#153)
+  test_autark_grammar_edit_e2e.py  # a mid-document grammar edit sticks on the first keystroke (#157)
+  test_project_page_scroll_e2e.py  # the projects grid scrolls inside the viewport (#161) - no canvas
+  test_global_imports_e2e.py       # an upstream import reaches downstream; np/wkt need none (#158)
+  test_uhvi_install_e2e.py         # the UHVI package installs next to curio.builtin (#154)
+  test_example_docs_parity.py      # examples vs their walkthroughs and README (#148) - no browser
   test_library_manager_e2e.py      # Installed-libraries modal -> a node imports the lib
   test_package_roundtrip_e2e.py    # canvas node -> package -> archive -> import -> run it
   test_package_metadata_roundtrip_e2e.py  # Node settings + package metadata survive the archive
@@ -274,11 +302,15 @@ test_frontend/
   test_library_install_integration.py  # library install -> sandbox import (NO browser)
 ```
 
-Two of these deliberately do not drive a browser. `test_examples.py` is a
-structural check on the bundled dataflow JSON. `test_library_install_integration.py`
-requests no `page` fixture: it lives here only to reuse `curio_servers` /
-`current_server` / `sandbox_server`, and isolates the backend-to-sandbox process
-boundary from every UI concern, so a failure says immediately which half broke.
+Three of these deliberately do not drive a browser. `test_examples.py` is a
+structural check on the bundled dataflow JSON, and `test_example_docs_parity.py`
+is its documentation counterpart - it holds each example's walkthrough and its
+`docs/README.md` row to what the JSON actually contains, comparing parsed
+structures rather than text so the prose can stay hand-condensed.
+`test_library_install_integration.py` requests no `page` fixture: it lives here
+only to reuse `curio_servers` / `current_server` / `sandbox_server`, and isolates
+the backend-to-sandbox process boundary from every UI concern, so a failure says
+immediately which half broke.
 
 ## CURIO_NO_PROJECT-mode tests
 
