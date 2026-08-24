@@ -100,7 +100,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
             <div className={styles.installProgressHint}>
               Installing package + pip-installing its Python deps. Heavy
               ML packages (torch, transformers) can take several minutes
-              on a cold env — keep this window open.
+              on a cold env, so keep this window open.
             </div>
           </div>
         )}

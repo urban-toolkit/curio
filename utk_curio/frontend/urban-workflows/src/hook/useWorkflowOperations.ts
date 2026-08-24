@@ -822,8 +822,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             const list = names.join(", ");
             showToast(
                 warnings.length === 1
-                    ? `Dataset for "${list}" couldn't be generated — re-run that node.`
-                    : `${warnings.length} datasets couldn't be generated (${list}) — re-run those nodes.`,
+                    ? `Dataset for "${list}" couldn't be generated. Re-run that node.`
+                    : `${warnings.length} datasets couldn't be generated (${list}). Re-run those nodes.`,
                 "warning",
             );
         },

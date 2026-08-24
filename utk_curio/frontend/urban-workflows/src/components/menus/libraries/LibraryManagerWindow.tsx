@@ -241,7 +241,7 @@ export default function LibraryManagerWindow({
       <div className={styles.container}>
         <h2 className={styles.title}>Installed libraries</h2>
         <p className={styles.subtitle}>
-          Python and JavaScript libraries available to Curio — added directly here, or pulled in by installed node packages.
+          Python and JavaScript libraries available to Curio, either added directly here or pulled in by installed node packages.
         </p>
 
         <div className={styles.addRow}>

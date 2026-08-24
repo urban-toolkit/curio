@@ -266,5 +266,5 @@ def test_loading_a_dataflow_with_no_declared_packages_installs_nothing(
     # even /check should be hit.
     assert install_calls == [], f"unexpected workflow-deps traffic: {install_calls}"
     expect(
-        page.get_by_label("Notifications").get_by_text(re.compile("installing them now"))
+        page.get_by_label("Notifications").get_by_text(re.compile("installing them now", re.I))
     ).to_have_count(0)

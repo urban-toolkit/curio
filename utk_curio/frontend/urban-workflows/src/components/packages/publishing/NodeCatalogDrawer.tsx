@@ -390,7 +390,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const unsavedBanner = !projectId ? (
     <div className={styles.errorBanner} role="status">
       <span className={styles.errorBannerText}>
-        This dataflow isn't saved yet — adding will save it first.
+        This dataflow isn't saved yet; adding will save it first.
       </span>
     </div>
   ) : null;

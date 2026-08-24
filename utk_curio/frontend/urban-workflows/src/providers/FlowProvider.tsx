@@ -985,7 +985,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             const stuck = state.pending.size;
             if (stuck > 0) {
                 showToast(
-                    `${stuck} node(s) didn't finish in time — continuing with the rest of the run`,
+                    `${stuck} node(s) didn't finish in time; continuing with the rest of the run`,
                     "warning",
                 );
             }
