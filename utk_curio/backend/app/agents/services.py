@@ -5947,6 +5947,124 @@ def _delegated_search_results(question: object) -> dict:
     return {"query": question.strip(), "results": bounded}
 
 
+def _extract_notes_reply(child_text: str) -> dict | None:
+    """The child reply's ``notesReplyContract`` payload, or None.
+
+    Schema-only recognition (DEC-063): a JSON object — bare, or inside one
+    ```/```json fence — whose ``notes`` key is a LIST counts; nothing else
+    does. Answer-only replies still carry ``"notes": []`` per the contract,
+    so arbitrary chat JSON never matches by accident."""
+    import json as _json
+    import re as _re2
+
+    if not isinstance(child_text, str) or not child_text.strip():
+        return None
+    candidates = [child_text.strip()]
+    candidates += [m.group(1).strip() for m in _re2.finditer(
+        r"```(?:json)?[ \t]*\n(.*?)\n?```", child_text, _re2.DOTALL)]
+    for candidate in candidates:
+        try:
+            payload = _json.loads(candidate)
+        except ValueError:
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("notes"), list):
+            return payload
+    return None
+
+
+#: dev/95: the A13 defaults the runtime fills when a reply row omits its
+#: color — question note yellow, answer notes green (user/model-chosen colors
+#: always win; defaults only fill absences).
+_NOTES_DEFAULT_COLORS = ("yellow", "green")
+
+
+def _mint_notes_from_delegate(
+    user_key: str, project_id: str, loop_ctx: dict, child_text: str,
+) -> tuple[list, str, str]:
+    """dev/95 (Follow-up D): the one-mint-policy extended to note sequences.
+
+    A successful ``research.notes.compose`` delegation whose bounded child
+    reply matches the notes schema becomes reviewed ``node.create``
+    proposals minted by the RUNTIME at the parent's attachment — one per
+    note, a same-run A16 jointly-pending sequence (apply in any order), each
+    row re-validated through ``_mint_node_create`` (the ONE creation lane:
+    dev/93 template vocabulary, A12 content bounds, dev/89 appearance
+    normalization). Gated on the PARENT's ``node.create`` grant (the
+    ``_mint_package_draft_from_delegate`` posture). Degradations land as
+    text with the way out named: no grant, no/invalid template (→ the
+    Researcher's own attachment owns the enlist/author ladder — depth-1
+    keeps it out of reach here), every row refused.
+
+    Returns ``(proposal_parts, text_for_model, outcome)`` — outcome "ok"
+    when the delegation produced its answer (notes minted, legitimately
+    empty, or honestly skipped for a missing template), "failed" when the
+    reply broke the contract or notes existed but nothing could mint.
+    """
+    payload = _extract_notes_reply(child_text)
+    if payload is None:
+        return [], (
+            "the delegate's reply did not match the notes reply contract "
+            "(ONE JSON object with 'answer' and a 'notes' list) — nothing "
+            "was placed; the reply was kept as text"
+        ), "failed"
+    answer = payload.get("answer")
+    answer = answer.strip() if isinstance(answer, str) else ""
+    rows = _notes_from_delegate_inputs({"notes": payload.get("notes")}) or []
+    if not rows:
+        # Empty notes is a VALID reply (no findings / no template offered) —
+        # the answer is the product (dev/93 D5: this run produced it).
+        return [], (answer or "the delegate returned no answer and no notes"), "ok"
+    if "node.create" not in (loop_ctx.get("granted") or []):
+        return [], (
+            (f"{answer}\n\n" if answer else "")
+            + "the delegate composed notes but this agent is not granted "
+              "node.create — the notes were kept as text only"
+        ), "failed"
+    node_type = payload.get("nodeType")
+    entry = err = None
+    if isinstance(node_type, str) and node_type.strip():
+        entry, err = _available_template(user_key, project_id, node_type.strip())
+    if entry is None:
+        reason = (
+            f"the chosen notes template was not available ({err})"
+            if err else "no installed notes template was available"
+        )
+        return [], (
+            (f"{answer}\n\n" if answer else "")
+            + f"notes skipped: {reason} — ask the Researcher (attached to a "
+              "node or the canvas) to enlist or author a notes package; its "
+              "own runs hold the reuse ladder a delegate cannot reach"
+        ), "ok"
+    parts: list = []
+    last_refusal = ""
+    for index, row in enumerate(rows):
+        appearance = row.get("appearance") or {
+            "backgroundColor": _NOTES_DEFAULT_COLORS[min(index, 1)]}
+        req = {"params": {
+            "nodeType": entry["id"],
+            "content": row["content"],
+            **({"goal": row["title"]} if row.get("title") else {}),
+            "appearance": appearance,
+        }}
+        status, text, part = _mint_node_create(user_key, project_id, loop_ctx, req)
+        if status == "proposed" and part is not None:
+            parts.append(part)
+        else:
+            last_refusal = text
+    if not parts:
+        return [], (
+            (f"{answer}\n\n" if answer else "")
+            + f"no notes could be proposed: {last_refusal}"
+        ), "failed"
+    summary = (
+        (f"{answer}\n\n" if answer else "")
+        + f"{len(parts)} reviewed note proposal(s) created"
+        + (f" ({last_refusal})" if last_refusal else "")
+        + " — they await the user's explicit Apply; do NOT claim the notes exist"
+    )
+    return parts, summary, "ok"
+
+
 def _extract_draft_params(child_text: str) -> dict | None:
     """The child reply's build-request payload, or None.
 
@@ -6624,6 +6742,21 @@ def run_attachment(
                         # not merely that the child ran — "ok" beside "returned
                         # no parseable draft" is how the parent learned nothing.
                         status = draft_outcome
+                    elif status == "ok" and req["capability"] == "research.notes.compose":
+                        # dev/95 (Follow-up D): notes success ⇒ the reviewed
+                        # A16 sequence EXISTS — runtime-minted from the
+                        # child's schema reply, never the model's second step.
+                        note_parts, text, notes_outcome = _mint_notes_from_delegate(
+                            user_key, project_id, loop_ctx, text,
+                        )
+                        delegate_summary = text
+                        if note_parts:
+                            minted.extend(note_parts)
+                            delegate_summary = (
+                                f"{len(note_parts)} reviewed note proposal(s) "
+                                "— await Apply"
+                            )
+                        status = notes_outcome
                     # dev/72: the parent keeps the compact, linkable entry.
                     minted.append(_delegation_part_for(
                         resolution, req["capability"], status, delegate_summary, home_att
@@ -6961,6 +7094,19 @@ def stream_attachment(
                             # dev/93 D5: the card reports the OUTCOME (see the
                             # non-streaming path).
                             status = draft_outcome
+                        elif status == "ok" and req["capability"] == "research.notes.compose":
+                            # dev/95: see the non-streaming path.
+                            note_parts, text, notes_outcome = _mint_notes_from_delegate(
+                                user_key, project_id, loop_ctx, text,
+                            )
+                            delegate_summary = text
+                            if note_parts:
+                                minted.extend(note_parts)
+                                delegate_summary = (
+                                    f"{len(note_parts)} reviewed note "
+                                    "proposal(s) — await Apply"
+                                )
+                            status = notes_outcome
                         # dev/72: the parent keeps the compact, linkable entry.
                         minted.append(_delegation_part_for(
                             resolution, req["capability"], status, delegate_summary, home_att

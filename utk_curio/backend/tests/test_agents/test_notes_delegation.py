@@ -138,3 +138,215 @@ class TestPresentationTemplates:
 
         self._install(tmp_path, monkeypatch)  # no project lockfile entry
         assert presentation_templates("guest", "p-other") == []
+
+
+# ── the reply parser (commit 2) ──────────────────────────────────────────────
+class TestExtractNotesReply:
+    def test_bare_and_fenced_objects_parse(self):
+        from utk_curio.backend.app.agents.services import _extract_notes_reply
+
+        payload = {"answer": "A", "notes": [{"title": "Q", "content": "c"}]}
+        assert _extract_notes_reply(json.dumps(payload)) == payload
+        fenced = "Here you go:\n```json\n" + json.dumps(payload) + "\n```"
+        assert _extract_notes_reply(fenced) == payload
+        answer_only = {"answer": "search unavailable", "notes": []}
+        assert _extract_notes_reply(json.dumps(answer_only)) == answer_only
+
+    def test_schema_only_never_prose_intent(self):
+        from utk_curio.backend.app.agents.services import _extract_notes_reply
+
+        for text in (
+            "I made two notes for you!",
+            json.dumps({"answer": "no notes key"}),
+            json.dumps({"notes": "not-a-list"}),
+            json.dumps([{"notes": []}]),
+            "", None,
+        ):
+            assert _extract_notes_reply(text) is None
+
+
+# ── the mint's degraded paths (unit — they return before any store) ─────────
+class TestMintDegradedPaths:
+    def _mint(self, text, granted=("node.create",), tmp_path=None, monkeypatch=None):
+        from utk_curio.backend.app.agents.services import _mint_notes_from_delegate
+
+        if monkeypatch is not None and tmp_path is not None:
+            monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+        return _mint_notes_from_delegate(
+            "guest", "p1", {"granted": list(granted)}, text)
+
+    def test_contract_miss_is_failed_with_the_contract_named(self):
+        parts, text, outcome = self._mint("prose, not the schema")
+        assert parts == [] and outcome == "failed"
+        assert "notes reply contract" in text
+
+    def test_empty_notes_is_a_valid_answer_only_reply(self):
+        parts, text, outcome = self._mint(
+            json.dumps({"answer": "It is 21°C.", "notes": []}))
+        assert parts == [] and outcome == "ok" and text == "It is 21°C."
+
+    def test_missing_grant_keeps_notes_as_text(self):
+        parts, text, outcome = self._mint(
+            json.dumps({"answer": "A", "notes": [{"content": "c"}]}), granted=())
+        assert parts == [] and outcome == "failed"
+        assert "not granted node.create" in text and text.startswith("A")
+
+    def test_no_template_skips_notes_and_names_the_researcher(
+            self, tmp_path, monkeypatch):
+        parts, text, outcome = self._mint(
+            json.dumps({"answer": "A", "notes": [{"content": "c"}]}),
+            tmp_path=tmp_path, monkeypatch=monkeypatch)
+        assert parts == [] and outcome == "ok"
+        assert "notes skipped" in text and "Researcher" in text
+        parts2, text2, outcome2 = self._mint(
+            json.dumps({"answer": "A", "nodeType": "ghost/tpl",
+                        "notes": [{"content": "c"}]}),
+            tmp_path=tmp_path, monkeypatch=monkeypatch)
+        assert parts2 == [] and outcome2 == "ok" and "not available" in text2
+
+
+# ── the DFB E2E lane (commit 2 wiring + A16 sequence) ────────────────────────
+DFB = "agent.dataflow-builder@1.0.0"
+RESEARCHER = "agent.researcher@1.0.0"
+
+
+def _notes_pkg_manifest() -> dict:
+    return {
+        "id": "curio.notes", "version": "1.0.0", "name": "Notes",
+        "publisher": "t", "description": "d", "compatibility": {"major": 1},
+        "permissions": [],
+        "templates": [{
+            "id": "note-surface", "label": "Note", "category": "visualization",
+            "engine": "javascript", "editor": "none", "hasCode": False,
+            "behavior": "note-behavior", "inputPorts": [], "outputPorts": [],
+            "description": "a post-it note",
+        }],
+    }
+
+
+class TestDataflowBuilderNotesLane:
+    def _setup(self, client, user, token, monkeypatch, replies):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        resp = client.post("/api/projects", json={
+            "name": "p",
+            "spec": {"dataflow": {"nodes": [], "edges": [],
+                                  "packages": ["curio.notes@1"]}},
+            "outputs": [],
+        }, headers=_auth(token))
+        assert resp.status_code == 201
+        pid = resp.get_json()["id"]
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        import os
+        from pathlib import Path
+
+        pkg = (Path(os.environ["CURIO_LAUNCH_CWD"]) / ".curio" / "users"
+               / user_key / "packages" / "curio.notes@1")
+        pkg.mkdir(parents=True, exist_ok=True)
+        (pkg / "manifest.json").write_text(
+            json.dumps(_notes_pkg_manifest()), encoding="utf-8")
+        for coord in (DFB, RESEARCHER):
+            client.post(f"/api/agents/projects/{pid}/install",
+                        json={"coord": coord}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": DFB, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr(
+            agent_tools, "_execute_web_search",
+            lambda params: ("ok", json.dumps({"results": [
+                {"title": "Paris weather", "url": "https://w.test",
+                 "snippet": "21C clear"}]})))
+        return pid, att_id, calls
+
+    def _delegate_tail(self):
+        return ('```curio.v1\n{"delegateRequest": {"capability": '
+                '"research.notes.compose", "inputs": '
+                '{"question": "what\'s the weather in Paris?"}}}\n```')
+
+    def _child_reply(self):
+        return json.dumps({
+            "answer": "It is about 21°C and clear in Paris.",
+            "nodeType": "curio.notes/note-surface",
+            "notes": [
+                {"title": "Question",
+                 "content": "what's the weather in Paris?", "color": "yellow"},
+                {"title": "Weather in Paris",
+                 "content": "**Now:** ~21°C, clear\n\n- [source](https://w.test)",
+                 "color": "green"},
+            ],
+        })
+
+    def test_full_lane_delegate_two_cards_apply_both(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid, att_id, calls = self._setup(client, user, token, monkeypatch, replies=[
+            self._delegate_tail(),   # parent round 1: delegate
+            self._child_reply(),     # CHILD (Researcher): the schema reply
+            "Answered — review the notes above.",  # parent round 2
+        ])
+        run = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/run",
+            json={"message": "what's the weather in Paris?"},
+            headers=_auth(token))
+        assert run.status_code == 200, run.get_data(as_text=True)
+        parts = run.get_json()["content"]
+        proposals = [p for p in parts if p["type"] == "proposal"]
+        assert len(proposals) == 2  # the A13 row, jointly pending (A16)
+        assert all(p["tool"] == "node.create" and p["status"] == "pending"
+                   for p in proposals)
+        assert proposals[0]["preview"] == "what's the weather in Paris?"
+        assert "21°C" in proposals[1]["preview"]
+        # The child saw runtime-gathered inputs, not tools.
+        child_prompt = json.dumps(calls[1])
+        assert "searchResults" in child_prompt and "21C clear" in child_prompt
+        assert "notesReplyContract" in child_prompt
+        # The delegation card reports ok with the answer riding the summary.
+        delegation = next(p for p in parts if p["type"] == "delegation")
+        assert delegation["status"] == "ok"
+
+        # Apply BOTH — out of order, per A16.
+        for proposal in reversed(proposals):
+            resp = client.post(
+                f"/api/agents/projects/{pid}/attachments/{att_id}"
+                f"/proposals/{proposal['proposalId']}/apply",
+                headers=_auth(token))
+            assert resp.status_code == 200, resp.get_data(as_text=True)
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        spec = projects_storage.read_spec(user_key, pid)
+        nodes = spec["dataflow"]["nodes"]
+        assert len(nodes) == 2
+        colors = sorted(n["metadata"]["appearance"]["backgroundColor"]
+                        for n in nodes)
+        assert colors == sorted(["#fff9b1", "#c7f5c4"]) or len(set(colors)) == 2
+
+    def test_notes_shaped_prose_outside_delegation_never_mints(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid, att_id, _ = self._setup(client, user, token, monkeypatch, replies=[
+            self._child_reply(),  # the model TEXT carries a notes payload
+            "done",
+        ])
+        run = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/run",
+            json={"message": "hi"}, headers=_auth(token))
+        assert run.status_code == 200
+        assert all(p["type"] != "proposal" for p in run.get_json()["content"])
