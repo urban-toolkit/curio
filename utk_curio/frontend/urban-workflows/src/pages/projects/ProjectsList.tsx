@@ -170,97 +170,100 @@ const ProjectsList: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main style={mainStyle}>
-        <div style={pageHeaderStyle}>
-          <h1 style={pageTitleStyle}>Projects</h1>
-          <div style={headerActionsStyle}>
-            <input
-              type="text"
-              placeholder="Search projects..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={searchInputStyle}
-            />
-            <button
-              style={importNotebookBtnStyle}
-              onClick={() => importNotebookRef.current?.click()}
-            >
-              Import Jupyter notebook
-            </button>
-            <button
-              style={newWorkflowBtnStyle}
-              onClick={() => navigate("/dataflow/new")}
-            >
-              + New Dataflow
-            </button>
-          </div>
-        </div>
-
-        {/* Filter Tabs + View Toggle */}
-        <div style={controlsRowStyle}>
-          <div style={tabsStyle}>
-            {(["all", "recent", "archived"] as FilterTab[]).map((tab) => (
+      <main style={mainStyle} data-curio-projects-scroll="true">
+        <div style={mainInnerStyle}>
+          <div style={pageHeaderStyle}>
+            <h1 style={pageTitleStyle}>Projects</h1>
+            <div style={headerActionsStyle}>
+              <input
+                type="text"
+                placeholder="Search projects..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={searchInputStyle}
+              />
               <button
-                key={tab}
-                style={{
-                  ...tabBtnStyle,
-                  ...(filter === tab ? tabActiveStyle : {}),
-                }}
-                onClick={() => setFilter(tab)}
+                style={importNotebookBtnStyle}
+                onClick={() => importNotebookRef.current?.click()}
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                Import Jupyter notebook
               </button>
+              <button
+                style={newWorkflowBtnStyle}
+                onClick={() => navigate("/dataflow/new")}
+              >
+                + New Dataflow
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Tabs + View Toggle */}
+          <div style={controlsRowStyle}>
+            <div style={tabsStyle}>
+              {(["all", "recent", "archived"] as FilterTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  style={{
+                    ...tabBtnStyle,
+                    ...(filter === tab ? tabActiveStyle : {}),
+                  }}
+                  onClick={() => setFilter(tab)}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </div>
+            <div style={viewToggleStyle}>
+              <button
+                style={{
+                  ...viewBtnStyle,
+                  ...(viewMode === "grid" ? viewActiveStyle : {}),
+                }}
+                onClick={() => setViewMode("grid")}
+              >
+                Grid
+              </button>
+              <button
+                style={{
+                  ...viewBtnStyle,
+                  ...(viewMode === "list" ? viewActiveStyle : {}),
+                }}
+                onClick={() => setViewMode("list")}
+              >
+                List
+              </button>
+            </div>
+          </div>
+
+          {/* Project Cards */}
+          <div style={viewMode === "grid" ? gridStyle : listGridStyle}>
+            {filtered.length === 0 && (
+              <p style={emptyStyle}>No projects yet. Create a new dataflow!</p>
+            )}
+            {filtered.map((p) => (
+              <div
+                key={p.id}
+                style={cardStyle}
+                onClick={() => navigate(`/dataflow/${p.id}`)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ x: e.clientX, y: e.clientY, project: p });
+                }}
+              >
+                <div style={cardThumbnailStyle}>
+                  <DataflowThumbnail preview={p.graph_preview} accentColor={accent(p.thumbnail_accent).fg} bgColor={accent(p.thumbnail_accent).bg} />
+                </div>
+                <div style={cardBodyStyle}>
+                  <span style={cardTitleStyle}>{p.name}</span>
+                  <span style={cardSubStyle}>
+                    {p.description || `Rev ${p.spec_revision}`}
+                    {p.last_opened_at ? ` · ${new Date(p.last_opened_at).toLocaleDateString()}` : ""}
+                  </span>
+                </div>
+              </div>
             ))}
           </div>
-          <div style={viewToggleStyle}>
-            <button
-              style={{
-                ...viewBtnStyle,
-                ...(viewMode === "grid" ? viewActiveStyle : {}),
-              }}
-              onClick={() => setViewMode("grid")}
-            >
-              Grid
-            </button>
-            <button
-              style={{
-                ...viewBtnStyle,
-                ...(viewMode === "list" ? viewActiveStyle : {}),
-              }}
-              onClick={() => setViewMode("list")}
-            >
-              List
-            </button>
-          </div>
-        </div>
 
-        {/* Project Cards */}
-        <div style={viewMode === "grid" ? gridStyle : listGridStyle}>
-          {filtered.length === 0 && (
-            <p style={emptyStyle}>No projects yet. Create a new dataflow!</p>
-          )}
-          {filtered.map((p) => (
-            <div
-              key={p.id}
-              style={cardStyle}
-              onClick={() => navigate(`/dataflow/${p.id}`)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setContextMenu({ x: e.clientX, y: e.clientY, project: p });
-              }}
-            >
-              <div style={cardThumbnailStyle}>
-                <DataflowThumbnail preview={p.graph_preview} accentColor={accent(p.thumbnail_accent).fg} bgColor={accent(p.thumbnail_accent).bg} />
-              </div>
-              <div style={cardBodyStyle}>
-                <span style={cardTitleStyle}>{p.name}</span>
-                <span style={cardSubStyle}>
-                  {p.description || `Rev ${p.spec_revision}`}
-                  {p.last_opened_at ? ` · ${new Date(p.last_opened_at).toLocaleDateString()}` : ""}
-                </span>
-              </div>
-            </div>
-          ))}
         </div>
 
         {contextMenu && (
@@ -309,13 +312,21 @@ const ctxItemStyle: CSS.Properties = {
 };
 
 const pageStyle: CSS.Properties = {
-  minHeight: "100vh",
+  // Bounded height, not minHeight: html/body never scroll (overflow:hidden in
+  // MainCanvas.css, injected app-wide), so this page has to own its scroll
+  // within the viewport or overflowing content is unreachable (#161). Same
+  // shape as .pageShell in pages/catalog/CatalogMasterPage.module.css.
+  height: "100vh",
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
   backgroundColor: "#f0f0f0",
   fontFamily:
     "Rubik, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif",
 };
 
 const topBarStyle: CSS.Properties = {
+  flexShrink: 0,
   height: "65px",
   backgroundColor: "#1E1F23",
   display: "flex",
@@ -410,6 +421,12 @@ const llmSettingsBtnStyle: CSS.Properties = {
 };
 
 const mainStyle: CSS.Properties = {
+  flex: 1,
+  minHeight: 0,
+  overflowY: "auto",
+};
+
+const mainInnerStyle: CSS.Properties = {
   maxWidth: "1200px",
   margin: "0 auto",
   padding: "32px 24px",
