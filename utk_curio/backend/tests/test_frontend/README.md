@@ -300,6 +300,8 @@ test_frontend/
   test_package_metadata_roundtrip_e2e.py  # Node settings + package metadata survive the archive
   test_workflow_deps_e2e.py   # loading a dataflow auto-installs its declared packages
   test_library_install_integration.py  # library install -> sandbox import (NO browser)
+  tour.py                     # screencast toolkit: caption/cursor overlay, pacing, video output
+  test_feature_tour_video.py  # records the feature-tour screencast (CURIO_TOUR=1; not a test)
 ```
 
 Three of these deliberately do not drive a browser. `test_examples.py` is a
@@ -436,6 +438,45 @@ live stub user (and a valid token) to authenticate its DELETE calls with. Go
 through the real routes rather than deleting files - for libraries that matters,
 because the route runs in the backend process, the only interpreter guaranteed to
 match the sandbox's.
+
+## Feature-tour screencast
+
+`test_feature_tour_video.py` is not a test. It borrows this harness - the stack
+boot, the WebGPU-capable Chrome, the canvas helpers - to record a narrated
+screencast of Curio's features, and it is skipped unless `CURIO_TOUR=1`, so a
+normal suite run never pays for it.
+
+```bash
+# from utk_curio/backend, with PYTHONPATH=<repo root>
+CURIO_TOUR=1 pytest tests/test_frontend/test_feature_tour_video.py -s
+
+# re-record two scenes, slower
+CURIO_TOUR=1 CURIO_TOUR_SCENES=linkedviews,dashboard CURIO_TOUR_SPEED=0.8 \
+  pytest tests/test_frontend/test_feature_tour_video.py -s
+```
+
+The take is one continuous Playwright recording of a single page, so the whole
+tour runs in one browser session: signup, the projects page, authoring a
+dataflow from a catalog dataset, dataset lineage, the Node Catalog, Vega-Lite
+views, dashboard mode, provenance, linked interactions, an Autark/WebGPU map,
+and the catalog pages. Captions, a synthetic cursor and the spotlight ring come
+from [`tour.py`](tour.py), which paints them into the page above the app -
+Playwright records the page and nothing else, so a real pointer would be
+invisible and a click would look unmotivated.
+
+| Variable | Purpose |
+|---|---|
+| `CURIO_TOUR` | Must be `1`; the module skips otherwise. |
+| `CURIO_TOUR_SCENES` | Comma-separated scene ids (see `SCENES`); default all. A subset that starts mid-tour stub-logs-in and opens a scratch dataflow first. |
+| `CURIO_TOUR_OUT` | Output directory (default `.curio/tour/`, which is gitignored). |
+| `CURIO_TOUR_SPEED` | Pacing multiplier: `2` halves every hold, `0.8` lengthens them. Caption holds are derived from their word count, so this scales reading time too. |
+
+Output is `curio-feature-tour.webm`. An `.mp4` is written alongside it when a
+**system** ffmpeg is on `PATH`; Playwright's bundled ffmpeg is compiled down to
+vp8/webm and cannot do it. A scene that raises is reported (with a
+`failed-<scene>.png` next to the video) and the tour continues, so one broken
+step costs a chapter rather than the whole take - the run then fails at the end
+naming the scenes that broke.
 
 ## Environment Variables
 
