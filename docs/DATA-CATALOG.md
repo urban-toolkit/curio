@@ -197,9 +197,12 @@ Every output type a node can declare is saved, not just tabular ones:
 | A tuple | `bundle`, one part per item (see [Bundles](#bundles)) |
 | A list or dict *containing* DataFrames | `bundle`, one part per element; a dict keeps its keys as part labels |
 
-A scalar is stored as `{"value": ...}`, which is the same envelope a bundle's
-scalar parts use. JSON is written uncompressed, so the stored file is readable
-by a plain `json.load` and exports as-is.
+JSON is written uncompressed, and a scalar is stored bare rather than wrapped,
+so the stored file is readable by a plain `json.load` and exports as-is. That
+matters when you drag the dataset back onto the canvas: the generated loader
+hands the node the value its producer returned. (Inside a *bundle*, scalar parts
+keep a `{"value": ...}` wrapper, because `bundle.json` records each part's kind
+and the bundle loader unwraps by it.)
 
 The toggle is forced **off**, and no dataset is saved, for:
 

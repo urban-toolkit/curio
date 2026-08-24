@@ -153,37 +153,58 @@ def _artifact_value_row(art_id: str) -> tuple | None:
         con.close()
 
 
-def _row_value_bytes(kind: str, row: tuple) -> bytes:
-    """JSON bytes for a row-only artifact: the ``{"value": <scalar>}`` envelope.
+def _row_value(kind: str, row: tuple) -> Any:
+    """Reconstruct the Python value a row-only artifact holds.
 
-    Shared by the bundle part writer and the single-output installer so both
-    materialize a scalar byte-identically - the same envelope the bundle loader
-    already unwraps and the JSON preview renders as a one-row ``value`` column.
+    One reader for both materializers below, so the scalar a bundle part stores
+    and the scalar a single-output dataset stores can never drift apart.
     """
     _kind, v_int, v_float, v_str, v_json = row
     if kind == "bool":
-        # MUST precede int: value_int stores 0/1, and a bare read would emit
-        # ``{"value": 0}`` for a node that returned ``False``.
-        payload: Any = {"value": bool(v_int)}
-    elif kind == "int":
-        payload = {"value": v_int}
-    elif kind == "float":
-        payload = {"value": v_float}
-    elif kind == "str":
-        payload = {"value": v_str}
-    else:
-        # ``null`` (no value column) and any unexpected kind: value_json when the
-        # row carries one, else the null-valued envelope.
-        payload = json.loads(v_json) if v_json else {"value": v_str}
-    return json.dumps(payload, indent=2, default=str).encode("utf-8")
+        # MUST precede int: value_int stores 0/1, and reading it as an int
+        # yields ``0`` for a node that returned ``False``.
+        return bool(v_int)
+    if kind == "int":
+        return v_int
+    if kind == "float":
+        return v_float
+    if kind == "str":
+        return v_str
+    if kind == "null":
+        return None
+    # Defensive: an unexpected kind keeps whatever the row carries.
+    return json.loads(v_json) if v_json else v_str
+
+
+def _row_value_bytes(kind: str, row: tuple) -> bytes:
+    """JSON bytes for a SINGLE-FILE computed dataset: the bare value.
+
+    Stored unwrapped on purpose. The generated loader for ``format: "json"`` is
+    a plain ``json.load``, and a single-file manifest carries no sandbox kind for
+    it to branch on, so an envelope would hand a Dataset node ``{"value": 42}``
+    where its producer returned ``42``. A bundle part CAN be unwrapped (its
+    ``bundle.json`` records each part's kind, and ``_BUNDLE_LOADER_CODE`` uses
+    it), which is why ``_serialize_scalar_part`` still writes the envelope.
+
+    Preview is unaffected either way: ``_preview_json`` renders a non-dict as a
+    one-row ``value`` column already.
+    """
+    return json.dumps(_row_value(kind, row), indent=2, default=str).encode("utf-8")
 
 
 def _serialize_scalar_part(dest: Path, kind: str, art_id: str) -> None:
+    """Write a bundle part's scalar as ``{"value": <scalar>}``.
+
+    The envelope stays here: ``bundle.json`` records the part's kind and
+    ``_BUNDLE_LOADER_CODE`` unwraps by it, so the shape round-trips. Only the
+    single-file path (``_row_value_bytes``) stores the value bare.
+    """
     row = _artifact_value_row(art_id)
     if row is None:
         dest.write_text(json.dumps({"artifactId": art_id, "kind": kind}), encoding="utf-8")
         return
-    dest.write_bytes(_row_value_bytes(kind, row))
+    payload = {"value": _row_value(kind, row)}
+    dest.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
 
 
 def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
