@@ -114,6 +114,8 @@ describe("PackageCard - author actions", () => {
     renderCard({
       pkg: pkg({ readOnly: true }),
       isInstalled: true,
+      // Published, so only readOnly can be what suppresses Unpublish here.
+      isPublished: true,
       catalogPublishAllowed: true,
       onUninstall: jest.fn(),
       onUnpublish: jest.fn(),
@@ -123,9 +125,10 @@ describe("PackageCard - author actions", () => {
     expect(button("Remove from dataflow")).toBeTruthy();
   });
 
-  it("shows Unpublish on an authorable package when publishing is allowed", () => {
+  it("shows Unpublish on a published authorable package when publishing is allowed", () => {
     renderCard({
       isInstalled: true,
+      isPublished: true,
       catalogPublishAllowed: true,
       onUninstall: jest.fn(),
       onUnpublish: jest.fn(),
@@ -133,9 +136,23 @@ describe("PackageCard - author actions", () => {
     expect(button("Unpublish")).toBeTruthy();
   });
 
+  it("hides Unpublish on a package that was never published", () => {
+    // Nothing to remove from the catalog — offering Unpublish here invited a
+    // call the backend would reject.
+    renderCard({
+      isInstalled: true,
+      isPublished: false,
+      catalogPublishAllowed: true,
+      onUninstall: jest.fn(),
+      onUnpublish: jest.fn(),
+    });
+    expect(button("Unpublish")).toBeNull();
+  });
+
   it("hides Unpublish when the server forbids catalog writes", () => {
     renderCard({
       isInstalled: true,
+      isPublished: true,
       catalogPublishAllowed: false,
       onUninstall: jest.fn(),
       onUnpublish: jest.fn(),

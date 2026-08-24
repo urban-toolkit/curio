@@ -358,19 +358,6 @@
 .chipDot_vis          { background: #7A4BD1; }
 .chipDot_package      { background: #888888; }
 
-.newChip {
-  height: 26px;
-  border: 1px solid #FBAA69;
-  border-radius: 13px;
-  background: #FDF0E8;
-  color: #FBAA69;
-  padding: 0 12px;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
 
 .filterSpacer { flex: 1; }
 
@@ -501,25 +488,6 @@
 .cardActive.card_bundle  { border-color: #5B6472; }
 .cardActive.card_osm  { border-color: #7ab648; }
 
-.selectedDot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.selectedDot::after {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #ffffff;
-}
-
 .cardFormatBadge {
   height: 16px;
   border-radius: 8px;
@@ -553,6 +521,8 @@
   padding: 0 8px;
   font-size: 9px;
   font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   display: inline-flex;
   align-items: center;
 }
@@ -934,11 +904,11 @@
 .dfmt_bundle  { background: #E4E7EC; color: #475467; }
 .dfmt_osm  { background: #eaf5df; color: #4c7a1f; }
 
-.drawerHubBadge {
+.drawerInstalledBadge {
   height: 20px;
   border-radius: 10px;
-  background: #F0F0F0;
-  color: #888888;
+  background: #DFF2E1;
+  color: #2F8F4A;
   padding: 0 10px;
   font-size: 10px;
   font-weight: 600;
@@ -947,31 +917,23 @@
   gap: 4px;
 }
 
-.drawerPublishStatusPublished {
+/* Package category pill. Distinct from .drawerFormatBadge: a category is not a
+   file format, so it must not borrow a dfmt_* colour (the package drawer used to
+   render its category in the parquet orange). */
+.drawerCategoryBadge {
   height: 20px;
   border-radius: 10px;
-  background: #eef3f8;
-  color: #405da4;
+  background: #ECEEF2;
+  color: #1E1F23;
   padding: 0 10px;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   display: inline-flex;
   align-items: center;
 }
 
-.drawerPublishStatusUnpublished {
-  height: 20px;
-  border-radius: 10px;
-  background: #fff4e5;
-  color: #996300;
-  padding: 0 10px;
-  font-size: 10px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-}
+
 
 /* Publisher row */
 .drawerPublisher {
@@ -1051,6 +1013,18 @@
   color: #888888;
 }
 
+/* Bulleted list inside a drawer section (e.g. "Nodes in pack"). */
+.drawerList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #555555;
+}
+
+.drawerListMore {
+  color: #999999;
+}
+
 /* Tags in drawer */
 .drawerTagsRow {
   display: flex;
@@ -1098,21 +1072,10 @@
 
 .addToPaletteBtn:hover { background: #2a2b30; }
 
-.drawerPublishedPrimary {
-  width: 100%;
-  min-height: 42px;
-  border-radius: 8px;
-  background: #f0f0f0;
-  color: #555555;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+
+.drawerPillRow {
   display: flex;
-  align-items: center;
   justify-content: center;
-  box-sizing: border-box;
 }
 
 .viewSampleBtn {

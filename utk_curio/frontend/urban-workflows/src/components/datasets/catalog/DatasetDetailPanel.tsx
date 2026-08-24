@@ -349,10 +349,10 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     try {
       await datasetCatalogApi.publishDataset(activeDataset.id, { dataflowId, liveOutputs });
       notifyDatasetCatalogRefresh();
-      showToast("Dataset published to the Data Catalog.", "success");
+      showToast(`Published ${activeDataset.title}.`, "success");
       onMutated?.();
     } catch (err) {
-      showToast((err as Error)?.message || "Could not publish dataset.", "error");
+      showToast(`Couldn't publish ${activeDataset.title}`, "error");
     } finally {
       setPublishBusy(false);
     }
@@ -368,10 +368,10 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     try {
       await datasetCatalogApi.unpublishDataset(activeDataset.id, { dataflowId });
       notifyDatasetCatalogRefresh();
-      showToast(`${activeDataset.title} unpublished from the Data Catalog.`, "success");
+      showToast(`Unpublished ${activeDataset.title}.`, "success");
       onMutated?.();
     } catch (err) {
-      showToast((err as Error)?.message || "Could not unpublish dataset.", "error");
+      showToast(`Couldn't unpublish ${activeDataset.title}`, "error");
     } finally {
       setPublishBusy(false);
     }
@@ -444,7 +444,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 onClick={handleUnpublish}
                 disabled={publishBusy}
               >
-                {publishBusy ? "Working…" : "Unpublish"}
+                {publishBusy ? "Unpublishing…" : "Unpublish"}
               </button>
             ) : (
               <button
@@ -453,7 +453,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 onClick={handlePublish}
                 disabled={publishBusy}
               >
-                {publishBusy ? "Publishing…" : "Publish to Catalog"}
+                {publishBusy ? "Publishing…" : "Publish"}
               </button>
             )}
             <button

@@ -1,7 +1,10 @@
 import React from "react";
 import { PackagePayload } from "../../api/packagesApi";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
-import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
+import {
+  CatalogPublishPill,
+  shouldShowPublishPill,
+} from "../../components/packages/CatalogPublishPill";
 import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import styles from "./PackageBrowseCard.module.css";
 
@@ -63,7 +66,11 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
   const cat = primaryCategory(pkg);
   const cardBusy = busy;
   const isAuthorable = pkg.readOnly !== true;
-  const showPublishPill = isPublished === true || (onPublish != null && catalogPublishAllowed && isAuthorable);
+  const showPublishPill = shouldShowPublishPill({
+    isPublished,
+    allowPublish: catalogPublishAllowed,
+    canPublish: onPublish != null && isAuthorable,
+  });
 
   return (
     <article
@@ -84,10 +91,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
           kind="package"
           badge={<span className={styles.kindBadge}>{cat}</span>}
           trailing={
-            <>
-              {isInstalled ? <span className={styles.stripBadge}>✓ DEFAULTS</span> : null}
-              {selected ? <span className={styles.selectedDot} /> : null}
-            </>
+            isInstalled ? <span className={styles.stripBadge}>✓ Defaults</span> : null
           }
         />
       </div>

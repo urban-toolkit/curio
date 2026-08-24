@@ -6,6 +6,7 @@ import {
   refreshPackageRegistry,
 } from "../../../api/packagesApi";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useToastContext } from "../../../providers/ToastProvider";
 import { setCurrentProjectPackages } from "../../../registry/projectPackagesStore";
 import { draftFromInstalledPackagePayload } from "../../../utils/palettePackageFactoryDraft";
 import { toApiPayload } from "../../../pages/nodes/factoryDraftModel";
@@ -42,6 +43,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   // (user landed on /dataflow/new and hasn't saved yet), Install auto-saves
   // the dataflow first so the user isn't forced to interrupt their flow.
   const { projectId, packages: projectPackages, saveCurrentProject } = useFlowContext();
+  const { showToast } = useToastContext();
 
   const [catalog, setCatalog] = useState<PackagePayload[]>([]);
   const [installed, setInstalled] = useState<PackagePayload[]>([]);
@@ -282,7 +284,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     async (pkg: PackagePayload) => {
       if (
         !window.confirm(
-          `Unpublish ${pkg.name} (${pkg.dirName}) from the shared catalog?\n\nThis removes the entry under packages/. Copies already added to dataflows are not removed.`,
+          `Unpublish ${pkg.name} from the Node Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`,
         )
       ) {
         return;
@@ -292,13 +294,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       try {
         await packagesApi.unpublishFromCatalog(pkg.dirName);
         await reload();
+        showToast(`Unpublished ${pkg.name}.`, "success");
       } catch (err) {
         reportActionError(`Couldn't unpublish ${pkg.name}`, err);
       } finally {
         setCardActionDir(null);
       }
     },
-    [reload, reportActionError],
+    [reload, reportActionError, showToast],
   );
 
   const onPublishToCatalog = useCallback(async (dirName: string) => {
@@ -313,12 +316,13 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         replace: true,
       });
       await reload();
+      showToast(`Published ${row.name}.`, "success");
     } catch (err) {
       reportActionError(`Couldn't publish ${row.name}`, err);
     } finally {
       setPublishingPackageKey(null);
     }
-  }, [reload, reportActionError]);
+  }, [reload, reportActionError, showToast]);
 
   /**
    * Re-copy a package from the shared catalog over the user's installed copy.

@@ -194,16 +194,17 @@ describe('project card selection', () => {
     return (declaration as string).split('box-shadow:')[1].split(' ').join('');
   };
 
-  test('only the selected card is marked, and it carries the shared dot', async () => {
+  test('only the selected card is marked, by the card itself', async () => {
     const { container } = await renderPage();
 
     const card = (id: string) =>
       container.querySelector('[data-project-id="' + id + '"]') as HTMLElement;
 
     expect(card('p1')).toHaveClass('cardActive');
-    expect(card('p1').querySelector('.selectedDot')).not.toBeNull();
     expect(card('p2')).not.toHaveClass('cardActive');
-    expect(card('p2').querySelector('.selectedDot')).toBeNull();
+    // The corner dot was a second, redundant selection marker; the accented
+    // border and lift are the only indicator now, on all three browse tabs.
+    expect(container.querySelector('.selectedDot')).toBeNull();
   });
 
   test('the selected card lifts by the same shadow as a selected catalog card', () => {
@@ -232,9 +233,33 @@ describe('projects detail drawer', () => {
 
     expect(getByRole('heading', { name: 'Air quality' })).toBeTruthy();
     expect(getByRole('button', { name: 'Open dataflow' })).toBeTruthy();
-    // graph_preview carries one node and no edges.
-    expect(screen.getByText('Nodes').nextElementSibling?.textContent).toBe('1');
-    expect(screen.getByText('Connections').nextElementSibling?.textContent).toBe('0');
+    // graph_preview carries one node and no edges; the meta row states both,
+    // in the slot where the catalogs put "N nodes · packageId".
+    expect(screen.getByText('1 nodes · 0 connections')).toBeTruthy();
+    expect(screen.getByText('Sensor readings')).toBeTruthy();
+  });
+
+  test('the drawer is the shared catalog body, not a projects-only one', async () => {
+    const { container, getByRole } = await renderPage();
+
+    // Both catalogs render through CatalogBrowseDrawerBody; this page used to
+    // hand-assemble its own markup, which is how the drawers drifted apart.
+    expect(container.querySelector('.drawerKindHero')).not.toBeNull();
+    expect(container.querySelector('.drawerDatasetName')).not.toBeNull();
+    expect(container.querySelector('.drawerMeta')).not.toBeNull();
+    expect(container.querySelector('.drawerCtas')).not.toBeNull();
+    // Standard uppercase section label plus infoRow pairs, not bespoke rows.
+    expect(screen.getByText('Dataflow info')).toBeTruthy();
+    expect(container.querySelectorAll('.infoRow').length).toBeGreaterThan(0);
+    // The primary action uses the catalog's own primary-button class.
+    expect(getByRole('button', { name: 'Open dataflow' })).toHaveClass('addToPaletteBtn');
+  });
+
+  test('the header names the kind and the badges carry the revision', async () => {
+    const { container } = await renderPage();
+
+    expect(screen.getByText('Dataflow details')).toBeTruthy();
+    expect(container.querySelector('.drawerCategoryBadge')?.textContent).toBe('Rev 4');
   });
 
   test('clicking a card moves the selection', async () => {
@@ -259,7 +284,8 @@ describe('projects detail drawer', () => {
     const { getByRole, queryByRole } = await renderPage();
 
     await act(async () => {
-      fireEvent.click(getByRole('button', { name: 'Close details' }));
+      // CatalogBrowseDrawerBody labels its close button "Close", as on both catalogs.
+      fireEvent.click(getByRole('button', { name: 'Close' }));
     });
 
     expect(queryByRole('button', { name: 'Open dataflow' })).toBeNull();

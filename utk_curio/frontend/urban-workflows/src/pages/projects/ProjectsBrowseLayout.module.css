@@ -90,6 +90,52 @@
   outline: none;
   box-sizing: border-box;
   transition: box-shadow 0.15s, border-color 0.15s;
+  /* Same top-down order as the catalog browse cards: accent strip, then the
+     title block, then the artwork fills whatever height is left. The title used
+     to sit at the bottom over a gradient, which read nothing like the other
+     browse pages. */
+  display: flex;
+  flex-direction: column;
+}
+
+.cardStrip {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  flex-shrink: 0;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px 8px;
+  flex-shrink: 0;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e1f23;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardSub {
+  font-size: 12px;
+  color: #9e9e9e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardThumbnail {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .card:hover,
@@ -102,95 +148,9 @@
   border-color: var(--projectAccent, #1e1f23);
 }
 
-/* Backdrop for the reused .selectedDot, which is drawn white-on-colour and
-   would vanish against a project thumbnail on its own. */
-.cardSelectedMark {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 1;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--projectAccent, #1e1f23);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* ── Detail drawer ── */
-
-.detailThumb {
-  position: relative;
-  height: 148px;
-  margin: 16px 20px 0;
-  border: 1px solid #e5e5e7;
-  border-radius: 8px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.detailName {
-  margin: 14px 20px 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: #1e1f23;
-  word-break: break-word;
-}
-
-.detailDescription {
-  margin: 6px 20px 14px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #6b6b76;
-}
-
-.detailRow {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 11px;
-  padding: 5px 0;
-}
-
-.detailKey {
-  color: #888888;
-  flex-shrink: 0;
-}
-
-.detailValue {
-  color: #1e1f23;
-  font-weight: 500;
-  text-align: right;
-  word-break: break-word;
-}
-
-.detailActions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 20px 20px;
-  margin-top: auto;
-  border-top: 1px solid #f2f2f2;
-  flex-shrink: 0;
-}
-
-.openButton {
-  height: 34px;
-  border: 0;
-  border-radius: 6px;
-  background: #1e1f23;
-  color: #fbfcf6;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.openButton:hover {
-  background: #2a2b31;
-}
+/* Detail drawer: only the projects-specific action buttons live here. The rest
+   of the drawer is ../catalog/CatalogBrowseDrawerBody, shared with both
+   catalogs, so a layout change there necessarily lands on this page too. */
 
 .detailButtonRow {
   display: flex;

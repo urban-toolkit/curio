@@ -4,10 +4,16 @@ import { useNavigate } from "react-router-dom";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
 import { notebookToTrill } from "../../NotebookConvertor";
 import DataflowThumbnail from "../../components/DataflowThumbnail";
+import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
+import {
+  catalogIsFresh,
+  catalogRelativeTime,
+} from "../../components/catalog/catalogTimeFormat";
 import AppSectionTabs from "../../components/layout/AppSectionTabs";
 import { GlobalPageHeader } from "../../components/layout/GlobalPageHeader";
 import VersionBadge from "../../components/VersionBadge";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
+import { CatalogBrowseDrawerBody } from "../catalog/CatalogBrowseDrawerBody";
 import { CatalogBrowseDrawerShell } from "../catalog/CatalogBrowseDrawerShell";
 import styles from "./ProjectsBrowseLayout.module.css";
 
@@ -45,8 +51,16 @@ function joined(...parts: (string | false | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
-/** Feeds a project's accent colour to .cardActive / .cardSelectedMark, mirroring
- *  how the catalog keys a selected card's border to the item's kind. */
+function nodeCount(project: ProjectSummary): number {
+  return project.graph_preview?.nodes.length ?? 0;
+}
+
+function edgeCount(project: ProjectSummary): number {
+  return project.graph_preview?.edges.length ?? 0;
+}
+
+/** Feeds a project's accent colour to .cardActive, mirroring how the catalog
+ *  keys a selected card's border to the item's kind. */
 function accentVar(color: string): React.CSSProperties {
   return { "--projectAccent": color } as React.CSSProperties;
 }
@@ -303,22 +317,34 @@ const ProjectsList: React.FC = () => {
                       setContextMenu({ x: e.clientX, y: e.clientY, project: p });
                     }}
                   >
-                    {p.id === selectedId && (
-                      <span className={styles.cardSelectedMark}>
-                        <span className={browseStyles.selectedDot} />
-                      </span>
-                    )}
-                    <div style={cardThumbnailStyle}>
-                      <DataflowThumbnail preview={p.graph_preview} accentColor={accent(p.thumbnail_accent).fg} bgColor={accent(p.thumbnail_accent).bg} />
+                    <div
+                      className={styles.cardStrip}
+                      style={{ background: accent(p.thumbnail_accent).fg }}
+                    >
+                      <CatalogItemStripHeader
+                        kind="dataflow"
+                        badge={
+                          <span className={browseStyles.stripBadgePopular}>
+                            Rev {p.spec_revision}
+                          </span>
+                        }
+                      />
                     </div>
-                    <div style={cardBodyStyle}>
-                      <span style={cardTitleStyle}>{p.name}</span>
-                      <span style={cardSubStyle}>
+                    <div className={styles.cardBody}>
+                      <span className={styles.cardTitle}>{p.name}</span>
+                      <span className={styles.cardSub}>
                         {p.description || "Rev " + p.spec_revision}
                         {p.last_opened_at
                           ? " · " + new Date(p.last_opened_at).toLocaleDateString()
                           : ""}
                       </span>
+                    </div>
+                    <div className={styles.cardThumbnail}>
+                      <DataflowThumbnail
+                        preview={p.graph_preview}
+                        accentColor={accent(p.thumbnail_accent).fg}
+                        bgColor={accent(p.thumbnail_accent).bg}
+                      />
                     </div>
                   </div>
                 ))}
@@ -329,116 +355,99 @@ const ProjectsList: React.FC = () => {
 
         <CatalogBrowseDrawerShell presented={selected !== null} onLayoutChange={setDrawerSlotOpen}>
           {selected && (
-            <>
-              <div className={browseStyles.drawerHeader}>
-                <p className={browseStyles.drawerTitle}>Dataflow details</p>
-                <button
-                  className={browseStyles.drawerClose}
-                  type="button"
-                  aria-label="Close details"
-                  onClick={() => setSelectedId(null)}
-                >
-                  ×
-                </button>
-              </div>
-
-              <div className={styles.detailThumb}>
-                <DataflowThumbnail
-                  preview={selected.graph_preview}
-                  accentColor={accent(selected.thumbnail_accent).fg}
-                  bgColor={accent(selected.thumbnail_accent).bg}
-                />
-              </div>
-              <h2 className={styles.detailName}>{selected.name}</h2>
-              {selected.description && (
-                <p className={styles.detailDescription}>{selected.description}</p>
-              )}
-
-              <div className={browseStyles.drawerSection}>
-                <div className={styles.detailRow}>
-                  <span className={styles.detailKey}>Nodes</span>
-                  <span className={styles.detailValue}>
-                    {selected.graph_preview?.nodes.length ?? 0}
+            <CatalogBrowseDrawerBody
+              kind="dataflow"
+              headerTitle="Dataflow details"
+              onClose={() => setSelectedId(null)}
+              hero={
+                <div className={browseStyles.drawerKindHero}>
+                  <DataflowThumbnail
+                    preview={selected.graph_preview}
+                    accentColor={accent(selected.thumbnail_accent).fg}
+                    bgColor={accent(selected.thumbnail_accent).bg}
+                  />
+                </div>
+              }
+              title={selected.name}
+              badges={
+                <>
+                  <span className={browseStyles.drawerCategoryBadge}>
+                    Rev {selected.spec_revision}
                   </span>
-                </div>
-                <div className={styles.detailRow}>
-                  <span className={styles.detailKey}>Connections</span>
-                  <span className={styles.detailValue}>
-                    {selected.graph_preview?.edges.length ?? 0}
-                  </span>
-                </div>
-                <div className={styles.detailRow}>
-                  <span className={styles.detailKey}>Revision</span>
-                  <span className={styles.detailValue}>{selected.spec_revision}</span>
-                </div>
-              </div>
-
-              <div className={browseStyles.drawerSection}>
-                <div className={styles.detailRow}>
-                  <span className={styles.detailKey}>Last opened</span>
-                  <span className={styles.detailValue}>{formatDate(selected.last_opened_at)}</span>
-                </div>
-                <div className={styles.detailRow}>
-                  <span className={styles.detailKey}>Updated</span>
-                  <span className={styles.detailValue}>{formatDate(selected.updated_at)}</span>
-                </div>
-                <div className={styles.detailRow}>
-                  <span className={styles.detailKey}>Created</span>
-                  <span className={styles.detailValue}>{formatDate(selected.created_at)}</span>
-                </div>
-                {selected.archived_at && (
-                  <div className={styles.detailRow}>
-                    <span className={styles.detailKey}>Archived</span>
-                    <span className={styles.detailValue}>{formatDate(selected.archived_at)}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className={styles.detailActions}>
+                  {selected.archived_at ? (
+                    <span className={browseStyles.drawerInstalledBadge}>Archived</span>
+                  ) : null}
+                </>
+              }
+              subtitle={selected.slug}
+              metaLeft={
+                nodeCount(selected) +
+                " nodes · " +
+                edgeCount(selected) +
+                " connections"
+              }
+              metaRight={catalogRelativeTime(selected.updated_at)}
+              fresh={catalogIsFresh(selected.updated_at)}
+              description={selected.description}
+              infoLabel="Dataflow info"
+              infoRows={[
+                { label: "Revision", value: selected.spec_revision },
+                { label: "Last opened", value: catalogRelativeTime(selected.last_opened_at) },
+                { label: "Updated", value: formatDate(selected.updated_at) },
+                { label: "Created", value: formatDate(selected.created_at) },
+                selected.archived_at
+                  ? { label: "Archived", value: formatDate(selected.archived_at) }
+                  : null,
+              ]}
+              primaryAction={
                 <button
-                  className={styles.openButton}
                   type="button"
+                  className={browseStyles.addToPaletteBtn}
                   onClick={() => openProject(selected.id)}
                 >
                   Open dataflow
                 </button>
-                <div className={styles.detailButtonRow}>
-                  <button
-                    className={styles.secondaryButton}
-                    type="button"
-                    onClick={() => handleRename(selected)}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    className={styles.secondaryButton}
-                    type="button"
-                    onClick={() => handleDuplicate(selected)}
-                  >
-                    Duplicate
-                  </button>
-                </div>
-                <div className={styles.detailButtonRow}>
-                  {selected.archived_at ? (
-                    <button
-                      className={joined(styles.secondaryButton, styles.dangerButton)}
-                      type="button"
-                      onClick={() => handleDeleteForever(selected)}
-                    >
-                      Delete forever
-                    </button>
-                  ) : (
+              }
+              secondaryAction={
+                <>
+                  <div className={styles.detailButtonRow}>
                     <button
                       className={styles.secondaryButton}
                       type="button"
-                      onClick={() => handleArchive(selected)}
+                      onClick={() => handleRename(selected)}
                     >
-                      Archive
+                      Rename
                     </button>
-                  )}
-                </div>
-              </div>
-            </>
+                    <button
+                      className={styles.secondaryButton}
+                      type="button"
+                      onClick={() => handleDuplicate(selected)}
+                    >
+                      Duplicate
+                    </button>
+                  </div>
+                  <div className={styles.detailButtonRow}>
+                    {selected.archived_at ? (
+                      <button
+                        className={joined(styles.secondaryButton, styles.dangerButton)}
+                        type="button"
+                        onClick={() => handleDeleteForever(selected)}
+                      >
+                        Delete forever
+                      </button>
+                    ) : (
+                      <button
+                        className={styles.secondaryButton}
+                        type="button"
+                        onClick={() => handleArchive(selected)}
+                      >
+                        Archive
+                      </button>
+                    )}
+                  </div>
+                </>
+              }
+            />
           )}
         </CatalogBrowseDrawerShell>
       </div>
@@ -530,30 +539,3 @@ const newWorkflowBtnStyle: CSS.Properties = {
   whiteSpace: "nowrap",
 };
 
-const cardThumbnailStyle: CSS.Properties = {
-  position: "absolute",
-  inset: 0,
-};
-
-const cardBodyStyle: CSS.Properties = {
-  position: "absolute",
-  bottom: 0,
-  left: 0,
-  right: 0,
-  padding: "28px 14px 14px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "3px",
-  background: "linear-gradient(to bottom, transparent 0%, rgba(255,255,255,0.93) 35%, rgba(255,255,255,1) 65%)",
-};
-
-const cardTitleStyle: CSS.Properties = {
-  fontSize: "14px",
-  fontWeight: 600,
-  color: "#1E1F23",
-};
-
-const cardSubStyle: CSS.Properties = {
-  fontSize: "12px",
-  color: "#9E9E9E",
-};

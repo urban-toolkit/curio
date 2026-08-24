@@ -5,7 +5,7 @@ import {
   CatalogItemRowHeader,
   CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
-import { CatalogPublishPill } from "../CatalogPublishPill";
+import { CatalogPublishPill, shouldShowPublishPill } from "../CatalogPublishPill";
 import { packageInitial,primaryCategory } from "./packageUtils";
 import styles from "./PackageCard.module.css";
 
@@ -82,14 +82,16 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   // ``uninstall_from_project``).
   const isUninstallable = !pkg.dirName.startsWith("curio.builtin@");
   const showUninstall = isInstalled && onUninstall != null && isUninstallable;
-  const showUnpublish = catalogPublishAllowed && onUnpublish != null && isAuthorable;
-  const showPublishButton = onPublish != null && catalogPublishAllowed && isAuthorable;
-  // The pill renders for two distinct cases:
-  //   - The package is already published — show the "Published" badge (purely
-  //     informational; no click handler needed, so onPublish may be omitted).
-  //   - The user has a local copy AND the operator allows publish AND the
-  //     package isn't read-only — show the "Publish" button.
-  const showPublishPill = isPublished === true || showPublishButton;
+  // Unpublish only makes sense for a package that IS in the shared catalog —
+  // without the isPublished check it offered to unpublish packages that had
+  // never been published.
+  const showUnpublish =
+    isPublished === true && catalogPublishAllowed && onUnpublish != null && isAuthorable;
+  const showPublishPill = shouldShowPublishPill({
+    isPublished,
+    allowPublish: catalogPublishAllowed,
+    canPublish: onPublish != null && isAuthorable,
+  });
 
   const cat = primaryCategory(pkg);
 

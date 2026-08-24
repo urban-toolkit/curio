@@ -90,7 +90,7 @@ export const DataCatalogBrowse: React.FC = () => {
         await catalog.reload();
         showToast(`Published ${dataset.title}.`, "success");
       } catch (err) {
-        showToast((err as Error)?.message || "Could not publish dataset.", "error");
+        showToast(`Couldn't publish ${dataset.title}`, "error");
       } finally {
         setPublishingId(null);
       }
@@ -201,10 +201,6 @@ export const DataCatalogBrowse: React.FC = () => {
               {DATASET_FORMAT_LABEL[key]}
             </button>
           ))}
-          <button className={styles.newChip} type="button" onClick={() => setSort("recent")}>
-            NEW
-          </button>
-
           <span className={styles.filterSpacer} />
 
           <select
@@ -246,6 +242,7 @@ export const DataCatalogBrowse: React.FC = () => {
       <DataCatalogBrowseDrawer
         dataset={drawerDataset}
         publishingId={publishingId}
+        catalogPublishAllowed={catalogPublishAllowed}
         onPublish={handlePublish}
         onClose={() => setSelectedId(null)}
         onViewSample={(dataset) => setSampleDatasetId(dataset.id)}

@@ -10,7 +10,8 @@
 }
 
 .kindIcon_dataset,
-.kindIcon_package {
+.kindIcon_package,
+.kindIcon_dataflow {
   background: #eceef2;
   color: #1e1f23;
 }

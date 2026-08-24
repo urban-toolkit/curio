@@ -1,6 +1,9 @@
 import React from "react";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
-import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
+import {
+  CatalogPublishPill,
+  shouldShowPublishPill,
+} from "../../components/packages/CatalogPublishPill";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
@@ -35,7 +38,11 @@ export function DataCatalogBrowseCard({
   const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 3) : [dataset.format];
   const lastTagIdx = tags.length - 1;
   const published = isDatasetPublishedToCatalog(dataset);
-  const showPublishPill = published || catalogPublishAllowed;
+  const showPublishPill = shouldShowPublishPill({
+    isPublished: published,
+    allowPublish: catalogPublishAllowed,
+    canPublish: true,
+  });
 
   return (
     <article
@@ -58,12 +65,9 @@ export function DataCatalogBrowseCard({
             <span className={styles.cardFormatBadge}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
           }
           trailing={
-            <>
-              {dataset.installed ? (
-                <span className={styles.stripBadgePopular}>✓ IN DATAFLOW</span>
-              ) : null}
-              {selected ? <span className={styles.selectedDot} /> : null}
-            </>
+            dataset.installed ? (
+              <span className={styles.stripBadgePopular}>✓ In dataflow</span>
+            ) : null
           }
         />
       </div>
