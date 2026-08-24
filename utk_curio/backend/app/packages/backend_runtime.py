@@ -74,6 +74,11 @@ _BACKEND_TREE_MAX_BYTES = 8 * 1024 * 1024
 
 _LEDGER_DIRNAME = "package-backend-ledger"
 _DATA_DIRNAME = "package-backend-data"
+# dev/97: the per-package dependency overlay (§0.1 Option 2 delivered) —
+# built at Apply via pip --target (wipe-before-build), handed to workers on
+# PYTHONPATH, swept at uninstall. Derived state: rebuilt from the manifest
+# at every promote, never edited in place.
+_OVERLAY_DIRNAME = "package-backend-overlays"
 
 #: dev/92 B-3 — the crash-loop quarantine breaker. Counted per
 #: (user, package, handler): only INFRASTRUCTURE failures count
@@ -156,6 +161,44 @@ def _data_dir(user_key: str, dir_name: str) -> Path:
 
 def _ledger_dir(user_key: str, dir_name: str) -> Path:
     return _user_root(user_key) / _LEDGER_DIRNAME / dir_name
+
+
+def overlay_dir_for(user_key: str, dir_name: str) -> Path:
+    """dev/97: the package's dependency-overlay home (existence = the
+    package has isolated handler deps; invocation auto-resolves it)."""
+    return _user_root(user_key) / _OVERLAY_DIRNAME / dir_name
+
+
+def remove_backend_residue(user_key: str, dir_name: str) -> dict[str, bool]:
+    """dev/97: the uninstall sweep dev/91 §6.7 promised — overlay, data dir,
+    and pin entry go; the invocation LEDGER deliberately survives (append-only
+    audit history is retention's to expire, never uninstall's). Best-effort
+    per item, loud on failure, returns what was actually removed."""
+    import shutil
+
+    removed = {"overlay": False, "dataDir": False, "pin": False}
+    for key, path in (("overlay", overlay_dir_for(user_key, dir_name)),
+                      ("dataDir", _data_dir(user_key, dir_name))):
+        if path.is_dir():
+            try:
+                shutil.rmtree(path)
+                removed[key] = True
+            except OSError:
+                log.warning("backend residue: could not remove %s", path, exc_info=True)
+    pins_path = _pins_path(user_key)
+    try:
+        pins = json.loads(pins_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pins = None
+    if isinstance(pins, dict) and dir_name in pins:
+        pins.pop(dir_name)
+        try:
+            pins_path.write_text(json.dumps(pins, indent=2, sort_keys=True) + "\n",
+                                 encoding="utf-8")
+            removed["pin"] = True
+        except OSError:
+            log.warning("backend residue: could not rewrite %s", pins_path, exc_info=True)
+    return removed
 
 
 def _dir_size_bytes(path: Path) -> int:
@@ -412,6 +455,14 @@ def invoke_handler(
 
         files = _backend_tree(pkg_path)
         net_allowed = bc.PERMISSION_SERVER_NETWORK in manifest.permissions
+        # dev/97: auto-resolve the package's dependency overlay INSIDE the
+        # B-1 lock (a promote wiping/rebuilding it holds the same lock, so an
+        # invocation never sees a half-built overlay). The explicit parameter
+        # stays the test seam and always wins.
+        if overlay_dir is None:
+            candidate = overlay_dir_for(user_key, dir_name)
+            if candidate.is_dir():
+                overlay_dir = candidate
     worker_limits = limits or LIMITS_BY_TIMEOUT_CLASS.get(
         timeout_class, LIMITS_BY_TIMEOUT_CLASS["standard"]
     )

@@ -471,3 +471,101 @@ class TestQuarantineBreaker:
         with pytest.raises(rt.BackendRuntimeError) as exc_again:
             rt.invoke_handler(USER, PKG, "word-count", {}, limits=FAST)
         assert exc_again.value.status == 503
+
+
+class TestDependencyOverlay:
+    """dev/97 (§0.1 Option 2 delivered): handler deps live in a per-package
+    overlay built by REAL pip --target (the A9 real-toolchain rule — a
+    hand-built minimal wheel, installed offline via pip's env knobs), handed
+    to workers on PYTHONPATH by AUTO-resolution, and swept at uninstall."""
+
+    def _build_wheel(self, tmp_path) -> "Path":
+        # A minimal valid wheel: one module + dist-info (METADATA/WHEEL/RECORD).
+        import zipfile
+
+        wheel = tmp_path / "wheelhouse" / "tinylib-1.0.0-py3-none-any.whl"
+        wheel.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(wheel, "w") as zf:
+            zf.writestr("tinylib.py", "VALUE = 'from-the-overlay'\n")
+            zf.writestr("tinylib-1.0.0.dist-info/METADATA",
+                        "Metadata-Version: 2.1\nName: tinylib\nVersion: 1.0.0\n")
+            zf.writestr("tinylib-1.0.0.dist-info/WHEEL",
+                        "Wheel-Version: 1.0\nGenerator: test\n"
+                        "Root-Is-Purelib: true\nTag: py3-none-any\n")
+            zf.writestr("tinylib-1.0.0.dist-info/RECORD",
+                        "tinylib.py,,\ntinylib-1.0.0.dist-info/METADATA,,\n"
+                        "tinylib-1.0.0.dist-info/WHEEL,,\n"
+                        "tinylib-1.0.0.dist-info/RECORD,,\n")
+        return wheel.parent
+
+    def test_real_pip_target_overlay_end_to_end(self, monkeypatch, tmp_path):
+        from utk_curio.backend.app.packages import pip_runner
+
+        _install_pkg(
+            monkeypatch, tmp_path,
+            handler_src=(
+                "def handle(payload):\n"
+                "    import tinylib  # lazy per the dev/97 contract\n"
+                "    return {'value': tinylib.VALUE}\n"
+            ),
+        )
+        # Offline discipline: pip resolves ONLY from the local wheelhouse.
+        monkeypatch.setenv("PIP_NO_INDEX", "1")
+        monkeypatch.setenv("PIP_FIND_LINKS", str(self._build_wheel(tmp_path)))
+        overlay = rt.overlay_dir_for(USER, PKG)
+        overlay.mkdir(parents=True, exist_ok=True)
+        report = pip_runner.install_python_deps_to_target(
+            {"tinylib": "1.0.0"}, str(overlay))
+        assert report.installed == ["tinylib==1.0.0"] and report.skipped == []
+        assert (overlay / "tinylib.py").is_file()
+        # The host interpreter is untouched.
+        with pytest.raises(ImportError):
+            import tinylib  # noqa: F401
+        # AUTO-resolution: no overlay parameter — the worker still sees it.
+        out = rt.invoke_handler(USER, PKG, "word-count", {}, limits=FAST)
+        assert out["reply"] == {"contract": "curio.pkgbackend.v1", "ok": True,
+                                "result": {"value": "from-the-overlay"}}
+
+    def test_explicit_overlay_parameter_wins_over_auto(self, monkeypatch, tmp_path):
+        _install_pkg(
+            monkeypatch, tmp_path,
+            handler_src="import overlay_probe\n"
+                        "def handle(payload):\n"
+                        "    return {'which': overlay_probe.WHICH}\n")
+        auto = rt.overlay_dir_for(USER, PKG)
+        auto.mkdir(parents=True)
+        (auto / "overlay_probe.py").write_text("WHICH = 'auto'\n", encoding="utf-8")
+        explicit = tmp_path / "explicit-overlay"
+        explicit.mkdir()
+        (explicit / "overlay_probe.py").write_text("WHICH = 'explicit'\n",
+                                                   encoding="utf-8")
+        out = rt.invoke_handler(USER, PKG, "word-count", {},
+                                overlay_dir=explicit, limits=FAST)
+        assert out["reply"]["result"] == {"which": "explicit"}
+
+    def test_residue_sweep_removes_overlay_data_and_pin_keeps_ledger(
+            self, monkeypatch, tmp_path):
+        _install_pkg(monkeypatch, tmp_path)
+        # Populate all four backend homes.
+        rt.invoke_handler(USER, PKG, "remember", {"write": "kept"}, limits=FAST)
+        rt.record_entry_pin(USER, PKG)
+        overlay = rt.overlay_dir_for(USER, PKG)
+        overlay.mkdir(parents=True)
+        (overlay / "dep.py").write_text("X = 1\n", encoding="utf-8")
+        assert rt.pinned_entry_digest(USER, PKG)
+        assert _ledger_rows(tmp_path)
+
+        removed = rt.remove_backend_residue(USER, PKG)
+
+        assert removed == {"overlay": True, "dataDir": True, "pin": True}
+        assert not overlay.exists()
+        assert not (tmp_path / ".curio" / "users" / USER
+                    / "package-backend-data" / PKG).exists()
+        assert rt.pinned_entry_digest(USER, PKG) is None
+        # The append-only audit history SURVIVES uninstall (retention owns it).
+        assert _ledger_rows(tmp_path)
+
+    def test_sweep_on_a_clean_slate_is_a_quiet_noop(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+        assert rt.remove_backend_residue(USER, "curio.ghost@1") == {
+            "overlay": False, "dataDir": False, "pin": False}
