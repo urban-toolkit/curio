@@ -334,3 +334,42 @@
   font-size: 0.78rem;
   font-weight: 600;
 }
+
+/* dev/96: the rich draft sections — native disclosure, calm by default. */
+.draftSection {
+    margin: 8px 12px 0;
+    font-size: var(--curio-font-size-sm);
+    font-family: var(--curio-font-family);
+    color: var(--curio-text-secondary, #4b5563);
+}
+
+.draftSection summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--curio-text, #1f2a37);
+}
+
+.draftList {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    overflow-wrap: anywhere;
+}
+
+.draftOverflow {
+    font-style: italic;
+}
+
+.findingBlock {
+    color: var(--curio-danger-strong, #b3261e);
+    font-weight: 600;
+}
+
+.findingWarn {
+    color: var(--curio-warning-strong, #8a6d00);
+}
+
+.draftNodesRow {
+    margin: 8px 12px 0;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-secondary, #4b5563);
+}

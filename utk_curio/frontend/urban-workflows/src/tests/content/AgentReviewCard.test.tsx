@@ -630,3 +630,104 @@ describe("AgentReviewCard backend trust edge (memo dev/91 §5)", () => {
     ).toBeNull();
   });
 });
+
+describe("AgentReviewCard rich draft sections (memo dev/96)", () => {
+  const draftPart = (
+    overrides: Partial<NonNullable<AgentProposalPart["draft"]>> = {},
+  ): AgentProposalPart => ({
+    type: "proposal",
+    proposalId: "p10",
+    tool: "package.draft.apply",
+    summary: "Build package · Card",
+    preview: "2 added / 0 modified / 0 preserved files; 1 node(s) after install",
+    pins: { artifactDigest: "d".repeat(64), target: "ai.test.card@1" },
+    status: "pending",
+    draft: {
+      mode: "create",
+      target: "ai.test.card@1",
+      files: { added: ["sources/note.tsx", "backend/handler.py"], modified: [],
+               addedTotal: 2, modifiedTotal: 0, preservedTotal: 0 },
+      templates: { added: ["note-kind"], modified: [], addedTotal: 1,
+                   modifiedTotal: 0, preservedTotal: 0 },
+      ...overrides,
+    },
+  });
+
+  it("renders the three counts summaries collapsed, names on expand", () => {
+    render(<AgentReviewCard part={draftPart()} onApply={jest.fn()} />);
+    expect(screen.getByText("Files — 2 added · 0 modified · 0 preserved")).toBeInTheDocument();
+    expect(screen.getByText("added sources/note.tsx")).toBeInTheDocument();
+    expect(screen.getByText(/templates: 1 added/)).toBeInTheDocument();
+  });
+
+  it("states overflow honestly — never silent truncation", () => {
+    const part = draftPart({
+      files: { added: ["a.py"], modified: [], addedTotal: 21,
+               modifiedTotal: 0, preservedTotal: 3 },
+      templates: { added: [], modified: [], addedTotal: 0,
+                   modifiedTotal: 0, preservedTotal: 0 },
+    });
+    render(<AgentReviewCard part={part} onApply={jest.fn()} />);
+    expect(screen.getByText("…and 20 more added")).toBeInTheDocument();
+  });
+
+  it("a blocking finding renders OPEN with block styling", () => {
+    const part = draftPart({
+      dependencies: {
+        python: [{ name: "torch", constraint: "2.4.0" }], pythonTotal: 1,
+        js: [], jsTotal: 0,
+        findings: [{ severity: "block", code: "py-conflict",
+                     message: "torch conflicts with installed packages" }],
+        findingsTotal: 1, blocked: true,
+      },
+    });
+    const { container } = render(<AgentReviewCard part={part} onApply={jest.fn()} />);
+    const deps = screen.getByText(/Dependencies — 1 python/).closest("details");
+    expect(deps).toHaveAttribute("open");
+    expect(screen.getByText("block: torch conflicts with installed packages")).toBeInTheDocument();
+    expect(container.textContent).toContain("python · torch 2.4.0");
+  });
+
+  it("the skipped-preview honesty line renders verbatim", () => {
+    const part = draftPart({
+      preview: {
+        status: "skipped",
+        reasons: ["preview SKIPPED BY OPERATOR POLICY (CURIO_BUILD_PREVIEW_POLICY=skip; no pinned runner is configured) — this custom behavior was NOT rendered before review"],
+        reasonsTotal: 1, templates: [], runnerVersion: "",
+      },
+    });
+    render(<AgentReviewCard part={part} onApply={jest.fn()} />);
+    expect(screen.getByText("Preview — skipped")).toBeInTheDocument();
+    expect(screen.getByText(/NOT rendered before review/)).toBeInTheDocument();
+  });
+
+  it("a failed preview opens with its failed states named", () => {
+    const part = draftPart({
+      preview: {
+        status: "failed", reasons: ["note-kind/error: console errors"],
+        reasonsTotal: 1,
+        templates: [{ templateId: "note-kind", ok: false, failedStates: ["error"] }],
+        runnerVersion: "preview-runner/1",
+      },
+    });
+    render(<AgentReviewCard part={part} onApply={jest.fn()} />);
+    const preview = screen.getByText("Preview — failed").closest("details");
+    expect(preview).toHaveAttribute("open");
+    expect(screen.getByText("note-kind: failed states — error")).toBeInTheDocument();
+  });
+
+  it("requested nodes line carries titles and colors", () => {
+    const part = draftPart({
+      requestedNodes: { rows: [{ title: "Question", color: "#fef3c0" }], total: 3 },
+    });
+    render(<AgentReviewCard part={part} onApply={jest.fn()} />);
+    expect(screen.getByText(/Creates 3 nodes after install: Question \(#fef3c0\), …and 2 more/)).toBeInTheDocument();
+  });
+
+  it("pre-dev/96 parts (no draft field) render exactly as before", () => {
+    const legacy = { ...draftPart(), draft: undefined };
+    render(<AgentReviewCard part={legacy} onApply={jest.fn()} />);
+    expect(screen.queryByText(/Files —/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
+  });
+});

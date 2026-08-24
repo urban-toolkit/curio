@@ -250,6 +250,34 @@ export interface AgentProposalPart {
     permissions: string[];
     network: boolean;
   };
+  /** package.draft.apply only (dev/96): the bounded diff/dependencies/preview
+   * slice the card renders — every capped list carries its TRUE total, so
+   * overflow is always statable ("…and N more"), never silent. */
+  draft?: {
+    mode: string;
+    target: string;
+    files: { added: string[]; modified: string[]; addedTotal: number;
+             modifiedTotal: number; preservedTotal: number };
+    templates: { added: string[]; modified: string[]; addedTotal: number;
+                 modifiedTotal: number; preservedTotal: number };
+    dependencies?: {
+      python: Array<{ name: string; constraint: string }>;
+      pythonTotal: number;
+      js: Array<{ name: string; version: string }>;
+      jsTotal: number;
+      findings: Array<{ severity: string; code: string; message: string }>;
+      findingsTotal: number;
+      blocked: boolean;
+    };
+    preview?: {
+      status: string;
+      reasons: string[];
+      reasonsTotal: number;
+      templates: Array<{ templateId: string; ok: boolean; failedStates: string[] }>;
+      runnerVersion: string;
+    };
+    requestedNodes?: { rows: Array<{ title: string; color: string }>; total: number };
+  };
   /** node.template.create only: the proposed type definition summary. */
   template?: { label: string; engine: string; description?: string };
   /** dev/67-7: the validation verdict riding a validated content proposal. */

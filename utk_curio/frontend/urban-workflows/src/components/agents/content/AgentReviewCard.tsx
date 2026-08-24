@@ -323,6 +323,139 @@ export const AgentReviewCard: React.FC<{
           </ul>
         </div>
       ) : null}
+      {part.tool === "package.draft.apply" && part.draft ? (
+        // dev/96: the diff, dependencies, and preview the Apply text claims
+        // the user reviewed — collapsed to counts by default; blocking
+        // findings and failed previews render OPEN (impossible to miss).
+        // Every capped list states its overflow; all text renders inert.
+        <>
+          <details className={styles.draftSection}>
+            <summary>
+              Files — {part.draft.files.addedTotal} added ·{" "}
+              {part.draft.files.modifiedTotal} modified ·{" "}
+              {part.draft.files.preservedTotal} preserved
+            </summary>
+            <ul className={styles.draftList}>
+              {part.draft.files.added.map((name) => (
+                <li key={`a:${name}`}>added {name}</li>
+              ))}
+              {part.draft.files.addedTotal > part.draft.files.added.length ? (
+                <li className={styles.draftOverflow}>
+                  …and {part.draft.files.addedTotal - part.draft.files.added.length} more added
+                </li>
+              ) : null}
+              {part.draft.files.modified.map((name) => (
+                <li key={`m:${name}`}>modified {name}</li>
+              ))}
+              {part.draft.files.modifiedTotal > part.draft.files.modified.length ? (
+                <li className={styles.draftOverflow}>
+                  …and {part.draft.files.modifiedTotal - part.draft.files.modified.length} more modified
+                </li>
+              ) : null}
+              <li>
+                templates: {part.draft.templates.addedTotal} added ·{" "}
+                {part.draft.templates.modifiedTotal} modified ·{" "}
+                {part.draft.templates.preservedTotal} preserved
+                {part.draft.templates.added.length
+                  ? ` (${part.draft.templates.added.join(", ")}${
+                      part.draft.templates.addedTotal > part.draft.templates.added.length
+                        ? ", …" : ""})`
+                  : ""}
+              </li>
+            </ul>
+          </details>
+          {part.draft.dependencies ? (
+            <details className={styles.draftSection} open={part.draft.dependencies.blocked}>
+              <summary>
+                Dependencies — {part.draft.dependencies.pythonTotal} python ·{" "}
+                {part.draft.dependencies.jsTotal} js ·{" "}
+                {part.draft.dependencies.findingsTotal} finding
+                {part.draft.dependencies.findingsTotal === 1 ? "" : "s"}
+              </summary>
+              <ul className={styles.draftList}>
+                {part.draft.dependencies.python.map((row) => (
+                  <li key={`py:${row.name}`}>python · {row.name} {row.constraint}</li>
+                ))}
+                {part.draft.dependencies.js.map((row) => (
+                  <li key={`js:${row.name}`}>js · {row.name} {row.version}</li>
+                ))}
+                {part.draft.dependencies.pythonTotal + part.draft.dependencies.jsTotal >
+                 part.draft.dependencies.python.length + part.draft.dependencies.js.length ? (
+                  <li className={styles.draftOverflow}>
+                    …and {part.draft.dependencies.pythonTotal
+                      + part.draft.dependencies.jsTotal
+                      - part.draft.dependencies.python.length
+                      - part.draft.dependencies.js.length} more dependencies
+                  </li>
+                ) : null}
+                {part.draft.dependencies.findings.map((finding, index) => (
+                  <li
+                    key={`f:${finding.code}:${index}`}
+                    className={
+                      finding.severity === "block"
+                        ? styles.findingBlock
+                        : finding.severity === "warn"
+                          ? styles.findingWarn
+                          : undefined
+                    }
+                  >
+                    {finding.severity}: {finding.message}
+                  </li>
+                ))}
+                {part.draft.dependencies.findingsTotal >
+                 part.draft.dependencies.findings.length ? (
+                  <li className={styles.draftOverflow}>
+                    …and {part.draft.dependencies.findingsTotal
+                      - part.draft.dependencies.findings.length} more findings
+                  </li>
+                ) : null}
+              </ul>
+            </details>
+          ) : null}
+          {part.draft.preview ? (
+            <details
+              className={styles.draftSection}
+              open={part.draft.preview.status === "failed"}
+            >
+              <summary>Preview — {part.draft.preview.status}</summary>
+              <ul className={styles.draftList}>
+                {part.draft.preview.reasons.map((reason, index) => (
+                  <li
+                    key={`r:${index}`}
+                    className={part.draft!.preview!.status === "ok"
+                      ? undefined : styles.findingWarn}
+                  >
+                    {reason}
+                  </li>
+                ))}
+                {part.draft.preview.templates.map((row) => (
+                  <li key={`t:${row.templateId}`}>
+                    {row.templateId}:{" "}
+                    {row.ok ? "all states rendered" :
+                      `failed states — ${row.failedStates.join(", ")}`}
+                  </li>
+                ))}
+                {part.draft.preview.runnerVersion ? (
+                  <li>runner {part.draft.preview.runnerVersion}</li>
+                ) : null}
+              </ul>
+            </details>
+          ) : null}
+          {part.draft.requestedNodes ? (
+            <div className={styles.draftNodesRow}>
+              Creates {part.draft.requestedNodes.total} node
+              {part.draft.requestedNodes.total === 1 ? "" : "s"} after install:{" "}
+              {part.draft.requestedNodes.rows
+                .map((row) => `${row.title}${row.color ? ` (${row.color})` : ""}`)
+                .join(", ")}
+              {part.draft.requestedNodes.total > part.draft.requestedNodes.rows.length
+                ? `, …and ${part.draft.requestedNodes.total
+                    - part.draft.requestedNodes.rows.length} more`
+                : ""}
+            </div>
+          ) : null}
+        </>
+      ) : null}
       {part.tool === "package.draft.apply" && part.backend ? (
         // dev/91 §5: the trust edge is stated ON the card, before Apply —
         // server-side handlers + declared permissions, impossible to miss.
