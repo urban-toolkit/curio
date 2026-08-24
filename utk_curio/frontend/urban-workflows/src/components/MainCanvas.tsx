@@ -20,6 +20,7 @@ import { useToastContext } from "../providers/ToastProvider";
 import { packageKeyFromCanonicalNodeType } from "../registry/packageKeys";
 import { NodeType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
+import { DEFAULT_DELETE_KEY_CODES } from "./canvasKeyBindings";
 import UniversalNode from "./UniversalNode";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { useCode } from "../hook/useCode";
@@ -322,7 +323,7 @@ export function MainCanvas() {
                 for (const edge of currentEdges) {
                     if (edge.source === change.id || edge.target === change.id) {
                         showToast(
-                            "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing backspace.",
+                            "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing Delete or Backspace.",
                             "warning"
                         );
                         allowed = false;
@@ -525,7 +526,10 @@ export function MainCanvas() {
                 elementsSelectable={true}
                 nodesConnectable={!isSharedView && !dashboardOn}
                 edgesUpdatable={!isSharedView}
-                deleteKeyCode={isSharedView ? null : undefined}
+                // React Flow defaults to "Backspace" alone, so Windows users pressing
+                // Delete got no response (#153). useKeyPress bails on isInputDOMNode,
+                // so neither key can fire while the caret is in Monaco or an input.
+                deleteKeyCode={isSharedView ? null : DEFAULT_DELETE_KEY_CODES}
                 style={dashboardOn ? { backgroundColor: "#ffffff" } : undefined}
             >
                 {!dashboardOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}

@@ -398,7 +398,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                     edge.target == change.id
                 ) {
                     showToast(
-                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing backspace.",
+                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing Delete or Backspace.",
                         "warning"
                     );
                     allowed = false;
