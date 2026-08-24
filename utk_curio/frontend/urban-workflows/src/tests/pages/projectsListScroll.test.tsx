@@ -7,7 +7,15 @@
  * document scroll, so once the grid passed the viewport the rest was
  * unreachable. The catalog pages already solve this by owning their scroll
  * within the viewport; this pins ProjectsList to the same shape.
+ *
+ * The page is now laid out like the catalog browse pages (rail | cards |
+ * drawer), so the scrolling region is the card area rather than the whole main
+ * column, and its overflow lives in a CSS module. jsdom applies no CSS, so the
+ * geometry half is asserted against the stylesheet on disk — the same approach
+ * as tests/catalog/removedCatalogChrome.test.ts.
  */
+import fs from 'fs';
+import path from 'path';
 import React from 'react';
 import { render, act } from '@testing-library/react';
 
@@ -16,7 +24,21 @@ jest.mock('../../providers/UserProvider', () => ({
 }));
 jest.mock('../../api/projectsApi', () => ({
   projectsApi: {
-    list: jest.fn().mockResolvedValue([]),
+    list: jest.fn().mockResolvedValue([
+      {
+        id: 'p1',
+        name: 'Only project',
+        slug: 'only-project',
+        description: null,
+        thumbnail_accent: 'peach',
+        spec_revision: 1,
+        last_opened_at: null,
+        created_at: '2026-01-01T10:00:00Z',
+        updated_at: '2026-01-01T10:00:00Z',
+        archived_at: null,
+        graph_preview: null,
+      },
+    ]),
     update: jest.fn(),
     duplicate: jest.fn(),
     delete: jest.fn(),
@@ -33,11 +55,22 @@ jest.mock('react-router-dom', () => ({
   // GlobalPageHeader / AppSectionTabs render outside a Router here.
   NavLink: ({ children }: any) => <a>{children}</a>,
 }));
-jest.mock('assets/curio-2.png', () => 'logo.png');
 
 import ProjectsList from '../../pages/projects/ProjectsList';
 
-/** Render and let the initial projectsApi.list() promise settle. */
+const LAYOUT_CSS = fs.readFileSync(
+  path.resolve(__dirname, '../../pages/projects/ProjectsBrowseLayout.module.css'),
+  'utf8'
+);
+
+/** The declarations inside one rule of the layout stylesheet. */
+function rule(selector: string): string {
+  const match = LAYOUT_CSS.match(new RegExp('\\.' + selector + '\\s*\\{([^}]*)\\}'));
+  expect(match).not.toBeNull();
+  return (match as RegExpMatchArray)[1];
+}
+
+/** Render and let the initial projectsApi.list() promises settle. */
 async function renderSettled() {
   let utils: ReturnType<typeof render>;
   await act(async () => {
@@ -47,7 +80,7 @@ async function renderSettled() {
 }
 
 describe('ProjectsList scroll ownership', () => {
-  test('the main region scrolls inside a viewport-bounded shell', async () => {
+  test('the shell is bounded to the viewport', async () => {
     const { container } = await renderSettled();
 
     const page = container.firstElementChild as HTMLElement;
@@ -57,14 +90,30 @@ describe('ProjectsList scroll ownership', () => {
     expect(page.style.overflow).toBe('hidden');
     expect(page.style.display).toBe('flex');
     expect(page.style.flexDirection).toBe('column');
+  });
 
-    const main = container.querySelector('[data-curio-projects-scroll="true"]') as HTMLElement;
-    expect(main).not.toBeNull();
-    expect(main.style.overflowY).toBe('auto');
+  test('the card area is the scrolling region', async () => {
+    const { container } = await renderSettled();
+
+    const scroller = container.querySelector('[data-curio-projects-scroll="true"]');
+    expect(scroller).not.toBeNull();
+    // identity-obj-proxy maps CSS modules to their own key names.
+    expect(scroller).toHaveClass('cardScroll');
+
+    const cardScroll = rule('cardScroll');
+    expect(cardScroll).toMatch(/overflow-y:\s*auto/);
     // Without `min-height: 0` a flex child refuses to shrink below its content,
     // so the overflow never engages and the scrollbar never appears.
-    expect(main.style.minHeight).toBe('0px');
-    expect(main.style.flex).toContain('1');
+    expect(cardScroll).toMatch(/min-height:\s*0/);
+    expect(cardScroll).toMatch(/flex:\s*1/);
+  });
+
+  test('the column around it does not scroll instead', () => {
+    // Two scrollbars, or the header scrolling away with the cards, both come
+    // from the main column also being scrollable.
+    const main = rule('main');
+    expect(main).toMatch(/overflow:\s*hidden/);
+    expect(main).toMatch(/min-width:\s*0/);
   });
 
   test('the header does not shrink when the list is long', async () => {

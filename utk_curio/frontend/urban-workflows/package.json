@@ -97,7 +97,7 @@
     ],
     "moduleNameMapper": {
       "\\.(css|less|scss|sass)$": "identity-obj-proxy",
-      "\\.(jpg|jpeg|png|gif|svg)$": "identity-obj-proxy",
+      "\\.(jpg|jpeg|png|gif|svg)$": "<rootDir>/src/jestMocks/fileMock.ts",
       "^uuid$": "<rootDir>/src/jestMocks/uuid.ts",
       "^api/(.*)$": "<rootDir>/src/api/$1",
       "^components/(.*)$": "<rootDir>/src/components/$1",

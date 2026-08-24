@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CSS from "csstype";
 import { useNavigate } from "react-router-dom";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
@@ -7,9 +7,26 @@ import DataflowThumbnail from "../../components/DataflowThumbnail";
 import AppSectionTabs from "../../components/layout/AppSectionTabs";
 import { GlobalPageHeader } from "../../components/layout/GlobalPageHeader";
 import VersionBadge from "../../components/VersionBadge";
+import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
+import { CatalogBrowseDrawerShell } from "../catalog/CatalogBrowseDrawerShell";
+import styles from "./ProjectsBrowseLayout.module.css";
 
 type ViewMode = "grid" | "list";
 type FilterTab = "all" | "recent" | "archived";
+
+const FILTER_TABS: FilterTab[] = ["all", "recent", "archived"];
+
+const SCOPE_BY_TAB: Record<FilterTab, "mine" | "recent" | "archived"> = {
+  all: "mine",
+  recent: "recent",
+  archived: "archived",
+};
+
+const TAB_LABELS: Record<FilterTab, string> = {
+  all: "All projects",
+  recent: "Recent",
+  archived: "Archived",
+};
 
 const ACCENT_COLORS: Record<string, { bg: string; fg: string }> = {
   peach:  { bg: "#FFE3DA", fg: "#E86A3C" },
@@ -18,24 +35,43 @@ const ACCENT_COLORS: Record<string, { bg: string; fg: string }> = {
   lilac:  { bg: "#EADCFB", fg: "#7A4BD1" },
 };
 
+function formatDate(value: string | null): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString();
+}
+
+function joined(...parts: (string | false | undefined)[]): string {
+  return parts.filter(Boolean).join(" ");
+}
+
 const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  // Every scope is held at once so the rail can show counts and switching
+  // filters does not wait on a round trip.
+  const [byTab, setByTab] = useState<Record<FilterTab, ProjectSummary[]>>({
+    all: [],
+    recent: [],
+    archived: [],
+  });
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [filter, setFilter] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectSummary } | null>(null);
   const importNotebookRef = useRef<HTMLInputElement>(null);
 
   const loadProjects = useCallback(async () => {
-    try {
-      const scope = filter === "archived" ? "archived" : filter === "recent" ? "recent" : "mine";
-      const data = await projectsApi.list({ scope, sort: "last_opened" });
-      setProjects(data);
-    } catch {
-      setProjects([]);
-    }
-  }, [filter]);
+    const results = await Promise.all(
+      FILTER_TABS.map((tab) =>
+        projectsApi
+          .list({ scope: SCOPE_BY_TAB[tab], sort: "last_opened" })
+          .catch(() => [] as ProjectSummary[])
+      )
+    );
+    setByTab({ all: results[0], recent: results[1], archived: results[2] });
+  }, []);
 
   useEffect(() => {
     loadProjects();
@@ -47,9 +83,29 @@ const ProjectsList: React.FC = () => {
     return () => document.removeEventListener("click", dismiss);
   }, [contextMenu]);
 
-  const filtered = projects.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
+  const filtered = useMemo(
+    () =>
+      byTab[filter].filter((p) =>
+        p.name.toLowerCase().includes(search.toLowerCase())
+      ),
+    [byTab, filter, search]
   );
+
+  // Mirrors the catalog browse pages: the first item is selected so the detail
+  // drawer arrives populated instead of empty.
+  useEffect(() => {
+    if (filtered.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+    setSelectedId((prev) =>
+      prev && filtered.some((p) => p.id === prev) ? prev : filtered[0].id
+    );
+  }, [filtered]);
+
+  const selected = filtered.find((p) => p.id === selectedId) ?? null;
+
+  const openProject = (id: string) => navigate("/dataflow/" + id);
 
   const handleRename = async (project: ProjectSummary) => {
     const newName = window.prompt("Rename project:", project.name);
@@ -81,7 +137,7 @@ const ProjectsList: React.FC = () => {
   };
 
   const handleDeleteForever = async (project: ProjectSummary) => {
-    if (!window.confirm(`Permanently delete "${project.name}"?`)) return;
+    if (!window.confirm('Permanently delete "' + project.name + '"?')) return;
     try {
       await projectsApi.delete(project.id, { purge: true });
       loadProjects();
@@ -125,129 +181,275 @@ const ProjectsList: React.FC = () => {
       <GlobalPageHeader />
       <AppSectionTabs />
 
-      {/* Main Content */}
-      <main style={mainStyle} data-curio-projects-scroll="true">
-        <div style={mainInnerStyle}>
-          <div style={headerActionsStyle}>
-            <input
-              type="text"
-              placeholder="Search projects..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={searchInputStyle}
-            />
+      <div className={joined(browseStyles.page, drawerSlotOpen && browseStyles.pageWithDrawer)}>
+        <aside className={browseStyles.categoryRail} aria-label="Project filters">
+          <p className={browseStyles.railLabel}>By status</p>
+          {FILTER_TABS.map((tab) => (
             <button
-              style={importNotebookBtnStyle}
-              onClick={() => importNotebookRef.current?.click()}
+              key={tab}
+              className={joined(
+                browseStyles.railButton,
+                filter === tab && browseStyles.railButtonActive
+              )}
+              type="button"
+              aria-pressed={filter === tab}
+              onClick={() => setFilter(tab)}
             >
-              Import Jupyter notebook
+              <span>{TAB_LABELS[tab]}</span>
+              <span className={tab === "all" ? browseStyles.railCountBadge : browseStyles.railCount}>
+                {byTab[tab].length}
+              </span>
             </button>
-            <button
-              style={newWorkflowBtnStyle}
-              onClick={() => navigate("/dataflow/new")}
-            >
-              + New Dataflow
-            </button>
-          </div>
+          ))}
+        </aside>
 
-          {/* Filter Tabs + View Toggle */}
-          <div style={controlsRowStyle}>
-            <div style={tabsStyle}>
-              {(["all", "recent", "archived"] as FilterTab[]).map((tab) => (
+        <main className={styles.main}>
+          <section className={browseStyles.browseHeader}>
+            <p className={browseStyles.crumb}>Projects</p>
+            <div className={browseStyles.titleRow}>
+              <h1>Projects</h1>
+              <span className={browseStyles.titleCount}>{filtered.length}</span>
+            </div>
+            <div className={browseStyles.headerTools}>
+              <input
+                className={browseStyles.hubSearch}
+                type="search"
+                placeholder="Search projects..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <button
+                style={importNotebookBtnStyle}
+                onClick={() => importNotebookRef.current?.click()}
+              >
+                Import Jupyter notebook
+              </button>
+              <button
+                style={newWorkflowBtnStyle}
+                onClick={() => navigate("/dataflow/new")}
+              >
+                + New Dataflow
+              </button>
+            </div>
+          </section>
+
+          <div className={browseStyles.filterBar}>
+            {FILTER_TABS.map((tab) => (
+              <button
+                key={tab}
+                className={joined(browseStyles.chip, filter === tab && browseStyles.chipActive)}
+                type="button"
+                onClick={() => setFilter(tab)}
+              >
+                {TAB_LABELS[tab]}
+              </button>
+            ))}
+            <span className={browseStyles.filterSpacer} />
+            <div className={styles.viewSwitch}>
+              {(["grid", "list"] as ViewMode[]).map((mode) => (
                 <button
-                  key={tab}
-                  style={{
-                    ...tabBtnStyle,
-                    ...(filter === tab ? tabActiveStyle : {}),
-                  }}
-                  onClick={() => setFilter(tab)}
+                  key={mode}
+                  className={joined(
+                    styles.viewButton,
+                    viewMode === mode && styles.viewButtonActive
+                  )}
+                  type="button"
+                  onClick={() => setViewMode(mode)}
                 >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {mode === "grid" ? "Grid" : "List"}
                 </button>
               ))}
             </div>
-            <div style={viewToggleStyle}>
-              <button
-                style={{
-                  ...viewBtnStyle,
-                  ...(viewMode === "grid" ? viewActiveStyle : {}),
-                }}
-                onClick={() => setViewMode("grid")}
-              >
-                Grid
-              </button>
-              <button
-                style={{
-                  ...viewBtnStyle,
-                  ...(viewMode === "list" ? viewActiveStyle : {}),
-                }}
-                onClick={() => setViewMode("list")}
-              >
-                List
-              </button>
-            </div>
           </div>
 
-          {/* Project Cards */}
-          <div style={viewMode === "grid" ? gridStyle : listGridStyle}>
-            {filtered.length === 0 && (
-              <p style={emptyStyle}>No projects yet. Create a new dataflow!</p>
-            )}
-            {filtered.map((p) => (
-              <div
-                key={p.id}
-                style={cardStyle}
-                onClick={() => navigate(`/dataflow/${p.id}`)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setContextMenu({ x: e.clientX, y: e.clientY, project: p });
-                }}
-              >
-                <div style={cardThumbnailStyle}>
-                  <DataflowThumbnail preview={p.graph_preview} accentColor={accent(p.thumbnail_accent).fg} bgColor={accent(p.thumbnail_accent).bg} />
-                </div>
-                <div style={cardBodyStyle}>
-                  <span style={cardTitleStyle}>{p.name}</span>
-                  <span style={cardSubStyle}>
-                    {p.description || `Rev ${p.spec_revision}`}
-                    {p.last_opened_at ? ` · ${new Date(p.last_opened_at).toLocaleDateString()}` : ""}
+          {filtered.length === 0 ? (
+            <div className={browseStyles.empty}>
+              {search
+                ? "No projects match the current filters."
+                : "No projects yet. Create a new dataflow!"}
+            </div>
+          ) : (
+            <div className={styles.cardScroll} data-curio-projects-scroll="true">
+              <div className={viewMode === "grid" ? styles.cardGrid : styles.cardList}>
+                {filtered.map((p) => (
+                  <div
+                    key={p.id}
+                    style={{ ...cardStyle, ...(p.id === selectedId ? cardSelectedStyle : {}) }}
+                    data-project-id={p.id}
+                    onClick={() => setSelectedId(p.id)}
+                    onDoubleClick={() => openProject(p.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setSelectedId(p.id);
+                      setContextMenu({ x: e.clientX, y: e.clientY, project: p });
+                    }}
+                  >
+                    <div style={cardThumbnailStyle}>
+                      <DataflowThumbnail preview={p.graph_preview} accentColor={accent(p.thumbnail_accent).fg} bgColor={accent(p.thumbnail_accent).bg} />
+                    </div>
+                    <div style={cardBodyStyle}>
+                      <span style={cardTitleStyle}>{p.name}</span>
+                      <span style={cardSubStyle}>
+                        {p.description || "Rev " + p.spec_revision}
+                        {p.last_opened_at
+                          ? " · " + new Date(p.last_opened_at).toLocaleDateString()
+                          : ""}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </main>
+
+        <CatalogBrowseDrawerShell presented={selected !== null} onLayoutChange={setDrawerSlotOpen}>
+          {selected && (
+            <>
+              <div className={browseStyles.drawerHeader}>
+                <p className={browseStyles.drawerTitle}>Dataflow details</p>
+                <button
+                  className={browseStyles.drawerClose}
+                  type="button"
+                  aria-label="Close details"
+                  onClick={() => setSelectedId(null)}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className={styles.detailThumb}>
+                <DataflowThumbnail
+                  preview={selected.graph_preview}
+                  accentColor={accent(selected.thumbnail_accent).fg}
+                  bgColor={accent(selected.thumbnail_accent).bg}
+                />
+              </div>
+              <h2 className={styles.detailName}>{selected.name}</h2>
+              {selected.description && (
+                <p className={styles.detailDescription}>{selected.description}</p>
+              )}
+
+              <div className={browseStyles.drawerSection}>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailKey}>Nodes</span>
+                  <span className={styles.detailValue}>
+                    {selected.graph_preview?.nodes.length ?? 0}
                   </span>
                 </div>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailKey}>Connections</span>
+                  <span className={styles.detailValue}>
+                    {selected.graph_preview?.edges.length ?? 0}
+                  </span>
+                </div>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailKey}>Revision</span>
+                  <span className={styles.detailValue}>{selected.spec_revision}</span>
+                </div>
               </div>
-            ))}
-          </div>
 
+              <div className={browseStyles.drawerSection}>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailKey}>Last opened</span>
+                  <span className={styles.detailValue}>{formatDate(selected.last_opened_at)}</span>
+                </div>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailKey}>Updated</span>
+                  <span className={styles.detailValue}>{formatDate(selected.updated_at)}</span>
+                </div>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailKey}>Created</span>
+                  <span className={styles.detailValue}>{formatDate(selected.created_at)}</span>
+                </div>
+                {selected.archived_at && (
+                  <div className={styles.detailRow}>
+                    <span className={styles.detailKey}>Archived</span>
+                    <span className={styles.detailValue}>{formatDate(selected.archived_at)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className={styles.detailActions}>
+                <button
+                  className={styles.openButton}
+                  type="button"
+                  onClick={() => openProject(selected.id)}
+                >
+                  Open dataflow
+                </button>
+                <div className={styles.detailButtonRow}>
+                  <button
+                    className={styles.secondaryButton}
+                    type="button"
+                    onClick={() => handleRename(selected)}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    className={styles.secondaryButton}
+                    type="button"
+                    onClick={() => handleDuplicate(selected)}
+                  >
+                    Duplicate
+                  </button>
+                </div>
+                <div className={styles.detailButtonRow}>
+                  {selected.archived_at ? (
+                    <button
+                      className={joined(styles.secondaryButton, styles.dangerButton)}
+                      type="button"
+                      onClick={() => handleDeleteForever(selected)}
+                    >
+                      Delete forever
+                    </button>
+                  ) : (
+                    <button
+                      className={styles.secondaryButton}
+                      type="button"
+                      onClick={() => handleArchive(selected)}
+                    >
+                      Archive
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </CatalogBrowseDrawerShell>
+      </div>
+
+      {contextMenu && (
+        <div
+          style={{
+            position: "fixed",
+            top: contextMenu.y,
+            left: contextMenu.x,
+            backgroundColor: "#1E1F23",
+            border: "1px solid #333",
+            borderRadius: "4px",
+            zIndex: 9999,
+            minWidth: "160px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          }}
+        >
+          <div style={ctxItemStyle} onClick={() => openProject(contextMenu.project.id)}>
+            Open
+          </div>
+          <div style={ctxItemStyle} onClick={() => { handleRename(contextMenu.project); setContextMenu(null); }}>
+            Rename
+          </div>
+          <div style={ctxItemStyle} onClick={() => { handleDuplicate(contextMenu.project); setContextMenu(null); }}>
+            Duplicate
+          </div>
+          <div style={ctxItemStyle} onClick={() => { handleArchive(contextMenu.project); setContextMenu(null); }}>
+            Archive
+          </div>
+          <div style={{ ...ctxItemStyle, color: "#ff6b6b" }} onClick={() => { handleDeleteForever(contextMenu.project); setContextMenu(null); }}>
+            Delete forever
+          </div>
         </div>
-
-        {contextMenu && (
-          <div
-            style={{
-              position: "fixed",
-              top: contextMenu.y,
-              left: contextMenu.x,
-              backgroundColor: "#1E1F23",
-              border: "1px solid #333",
-              borderRadius: "4px",
-              zIndex: 9999,
-              minWidth: "160px",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-            }}
-          >
-            <div style={ctxItemStyle} onClick={() => { handleRename(contextMenu.project); setContextMenu(null); }}>
-              Rename
-            </div>
-            <div style={ctxItemStyle} onClick={() => { handleDuplicate(contextMenu.project); setContextMenu(null); }}>
-              Duplicate
-            </div>
-            <div style={ctxItemStyle} onClick={() => { handleArchive(contextMenu.project); setContextMenu(null); }}>
-              Archive
-            </div>
-            <div style={{ ...ctxItemStyle, color: "#ff6b6b" }} onClick={() => { handleDeleteForever(contextMenu.project); setContextMenu(null); }}>
-              Delete forever
-            </div>
-          </div>
-        )}
-      </main>
+      )}
       <VersionBadge />
     </div>
   );
@@ -278,114 +480,30 @@ const pageStyle: CSS.Properties = {
     "Rubik, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif",
 };
 
-const searchInputStyle: CSS.Properties = {
-  width: "240px",
-  height: "38px",
-  padding: "0 12px",
-  borderRadius: "6px",
-  border: "1px solid #D0D0D5",
-  backgroundColor: "#fff",
-  color: "#1E1F23",
-  fontSize: "13px",
-  outline: "none",
-};
-
-const mainStyle: CSS.Properties = {
-  flex: 1,
-  minHeight: 0,
-  overflowY: "auto",
-};
-
-const mainInnerStyle: CSS.Properties = {
-  // Full-bleed, like the catalog pages. The 20px of side padding matches
-  // .tabBar in components/layout/AppSectionTabs.module.css, so the content
-  // shares a left edge with the section tabs above it.
-  padding: "32px 20px",
-};
-
-const headerActionsStyle: CSS.Properties = {
-  // Actions only — the active tab in AppSectionTabs names the page now, so
-  // this row no longer has a title to sit opposite.
-  display: "flex",
-  justifyContent: "flex-end",
-  alignItems: "center",
-  gap: "12px",
-  marginBottom: "24px",
-};
-
 const importNotebookBtnStyle: CSS.Properties = {
-  height: "38px",
-  padding: "0 16px",
+  height: "34px",
+  padding: "0 14px",
   backgroundColor: "#fff",
   color: "#1E1F23",
   border: "1px solid #D0D0D5",
   borderRadius: "6px",
-  fontSize: "14px",
+  fontSize: "12px",
   fontWeight: 500,
   cursor: "pointer",
+  whiteSpace: "nowrap",
 };
 
 const newWorkflowBtnStyle: CSS.Properties = {
-  height: "38px",
-  padding: "0 20px",
+  height: "34px",
+  padding: "0 16px",
   backgroundColor: "#1E1F23",
   color: "#fbfcf6",
   border: "none",
   borderRadius: "6px",
-  fontSize: "14px",
+  fontSize: "12px",
   fontWeight: 600,
   cursor: "pointer",
-};
-
-const controlsRowStyle: CSS.Properties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginBottom: "20px",
-};
-
-const tabsStyle: CSS.Properties = { display: "flex", gap: "4px" };
-const tabBtnStyle: CSS.Properties = {
-  padding: "6px 14px",
-  border: "none",
-  background: "none",
-  fontSize: "13px",
-  fontWeight: 500,
-  cursor: "pointer",
-  borderRadius: "4px",
-  color: "#6B6B76",
-};
-const tabActiveStyle: CSS.Properties = {
-  backgroundColor: "#1E1F23",
-  color: "#fbfcf6",
-};
-
-const viewToggleStyle: CSS.Properties = { display: "flex", gap: "4px" };
-const viewBtnStyle: CSS.Properties = {
-  padding: "6px 12px",
-  border: "1px solid #D0D0D5",
-  background: "#fff",
-  fontSize: "12px",
-  borderRadius: "4px",
-  cursor: "pointer",
-  color: "#6B6B76",
-};
-const viewActiveStyle: CSS.Properties = {
-  backgroundColor: "#1E1F23",
-  color: "#fbfcf6",
-  borderColor: "#1E1F23",
-};
-
-const gridStyle: CSS.Properties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-  gap: "16px",
-};
-
-const listGridStyle: CSS.Properties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px",
+  whiteSpace: "nowrap",
 };
 
 const cardStyle: CSS.Properties = {
@@ -395,7 +513,12 @@ const cardStyle: CSS.Properties = {
   overflow: "hidden",
   cursor: "pointer",
   border: "1px solid #E5E5E7",
-  transition: "box-shadow 0.15s",
+  transition: "box-shadow 0.15s, border-color 0.15s",
+};
+
+const cardSelectedStyle: CSS.Properties = {
+  borderColor: "#1E1F23",
+  boxShadow: "0 0 0 2px rgba(30, 31, 35, 0.18)",
 };
 
 const cardThumbnailStyle: CSS.Properties = {
@@ -424,12 +547,4 @@ const cardTitleStyle: CSS.Properties = {
 const cardSubStyle: CSS.Properties = {
   fontSize: "12px",
   color: "#9E9E9E",
-};
-
-const emptyStyle: CSS.Properties = {
-  color: "#9E9E9E",
-  fontSize: "14px",
-  gridColumn: "1 / -1",
-  textAlign: "center",
-  padding: "40px 0",
 };
