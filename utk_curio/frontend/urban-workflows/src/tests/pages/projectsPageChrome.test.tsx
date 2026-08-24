@@ -65,6 +65,18 @@ describe('projects page chrome', () => {
     ]);
   });
 
+  test('the content spans the full width, like the catalog pages', async () => {
+    const { getByPlaceholderText } = await renderPage();
+
+    // The body used to sit in a centered 1200px column while the section tabs
+    // above ran the full width — the two never shared a left edge.
+    const inner = getByPlaceholderText('Search projects...').closest('main')
+      ?.firstElementChild as HTMLElement;
+    expect(inner.style.maxWidth).toBe('');
+    expect(inner.style.margin).toBe('');
+    expect(inner.style.padding).toBe('32px 20px');
+  });
+
   test('exactly one link is named Projects, so the e2e locator is unambiguous', async () => {
     await renderPage();
 

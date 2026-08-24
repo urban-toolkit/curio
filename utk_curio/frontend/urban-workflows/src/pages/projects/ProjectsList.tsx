@@ -297,9 +297,10 @@ const mainStyle: CSS.Properties = {
 };
 
 const mainInnerStyle: CSS.Properties = {
-  maxWidth: "1200px",
-  margin: "0 auto",
-  padding: "32px 24px",
+  // Full-bleed, like the catalog pages. The 20px of side padding matches
+  // .tabBar in components/layout/AppSectionTabs.module.css, so the content
+  // shares a left edge with the section tabs above it.
+  padding: "32px 20px",
 };
 
 const headerActionsStyle: CSS.Properties = {
