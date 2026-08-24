@@ -336,7 +336,7 @@
 .lineageSection {
   flex: 1;
   min-height: 180px;
-  background: #fafafa;
+  background: #fff;
   padding: 16px 20px 24px;
 }
 
@@ -352,8 +352,8 @@
 
 .liveBadge {
   border-radius: 9px;
-  background: #f0faf2;
-  color: #2f8f4a;
+  background: #f2f2f4;
+  color: #85858f;
   padding: 2px 8px;
   font-size: 10px;
   font-weight: 700;
@@ -377,11 +377,9 @@
 
 .lineagePartialNote {
   margin: 0 0 10px;
-  border: 1px solid #f5e3c2;
-  border-radius: 6px;
-  background: #fdf6ec;
-  color: #8a5b16;
-  padding: 8px 10px;
+  border-left: 2px solid #e3bf85;
+  color: #6b6b76;
+  padding: 2px 0 2px 8px;
   font-size: 11px;
 }
 
@@ -418,19 +416,14 @@
   white-space: nowrap;
 }
 
-.statusActive {
-  background: #f0faf2;
-  color: #2f8f4a;
-}
-
 .statusStale {
-  background: #fdf6ec;
-  color: #a06a10;
+  border: 1px solid #e8d7ba;
+  color: #8a6a30;
 }
 
 .statusBroken {
-  background: #fdecec;
-  color: #9f3f3f;
+  border: 1px solid #e8cfcf;
+  color: #97595a;
 }
 
 .lineageLabel {
@@ -444,39 +437,22 @@
 
 .lineageCard,
 .originCard,
-.consumedCard {
+.consumedCard,
+.hubSourceCard {
   position: relative;
   display: grid;
-  grid-template-columns: 4px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  min-height: 54px;
-  margin-bottom: 8px;
-  border: 1px solid #ebebeb;
-  border-radius: 8px;
-  background: #fff;
-  padding: 10px 12px 10px 0;
+  min-height: 40px;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid #f0f0f0;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 0;
   overflow: hidden;
 }
-
-.originCard,
-.consumedCard {
-  grid-template-columns: 4px minmax(0, 1fr) auto;
-  min-height: 44px;
-  padding: 8px 12px 8px 0;
-}
-
-.lineageCardAccentWarm,
-.lineageCardAccentMuted,
-.lineageCardAccentBlue {
-  align-self: stretch;
-  border-radius: 2px;
-  margin-left: 0;
-}
-
-.lineageCardAccentWarm { background: #fbaa69; }
-.lineageCardAccentMuted { background: #6b6b76; }
-.lineageCardAccentBlue { background: #3b6fd4; }
 
 .lineageCardBody {
   display: flex;
@@ -487,16 +463,18 @@
 
 .lineageCardBody strong,
 .originCard strong,
-.consumedCard strong {
+.consumedCard strong,
+.hubSourceCard strong {
   color: #1e1f23;
   font-size: 11px;
   font-weight: 600;
 }
 
-.lineageNodeBadge,
-.lineageNodeBadgeMuted {
+.lineageNodeBadge {
   align-self: flex-start;
   border-radius: 7px;
+  background: #f2f2f4;
+  color: #85858f;
   padding: 1px 7px;
   font-size: 8px;
   font-weight: 700;
@@ -504,19 +482,10 @@
   text-transform: uppercase;
 }
 
-.lineageNodeBadge {
-  background: #fdf0e8;
-  color: #fbaa69;
-}
-
-.lineageNodeBadgeMuted {
-  background: #f1f5f9;
-  color: #6b6b76;
-}
-
 .lineageFlowName,
 .originCard span,
-.consumedCard span {
+.consumedCard span,
+.hubSourceCard span {
   color: #777;
   font-size: 11px;
 }
@@ -590,27 +559,23 @@
   text-align: right;
 }
 
-.originCard > div:last-child,
-.consumedCard > div:nth-child(2) {
+.originCard > div:first-child,
+.consumedCard > div:first-child {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
+/* hubSourceCard puts its name and caption straight in the row. */
 .hubSourceCard {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border: 1px solid #dff2e1;
-  border-radius: 8px;
-  background: #f8fdf9;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  row-gap: 2px;
 }
 
 .hubSourceCard strong {
-  color: #2f8f4a;
+  color: #1e1f23;
   font-size: 11px;
   font-weight: 600;
 }

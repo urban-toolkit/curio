@@ -337,7 +337,7 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
     });
 
     expect(usageSpy).toHaveBeenCalledWith(dataset.id);
-    expect(confirmMessage).toContain("used in 3 data flows");
+    expect(confirmMessage).toContain("used in 3 dataflows");
     expect(confirmMessage).toContain("consumed by 2 nodes");
     // The old wording keyed on consumerNodeCount is gone.
     expect(confirmMessage).not.toContain("referenced by 5 nodes");

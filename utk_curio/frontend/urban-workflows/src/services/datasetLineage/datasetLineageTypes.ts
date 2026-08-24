@@ -49,8 +49,13 @@ export interface DatasetDownstreamUsage {
 export interface DatasetUpstreamLineage {
   /** Node that produced this dataset (from ``producerNodeId``), when known. */
   generatingNode?: DatasetLineageNodeRef | null;
-  /** Reserved for the source-dataset phase of the lineage Epic. */
+  /** Datasets that fed the producing node, from the ``{datasetId}`` entries of
+   * the dataset's persisted ``upstreamInputs``. */
   sourceDatasets: DatasetLineageDatasetRef[];
+  /** Nodes that fed the producing node, from the ``{nodeId, nodeType}`` entries
+   * of ``upstreamInputs``. Optional so a caller (or a test fixture) predating
+   * the field still typechecks; treat a missing value as none. */
+  inputNodes?: DatasetLineageNodeRef[];
   origin: DatasetOrigin;
   /** User-facing provenance label ("Imported" | "Computed"). */
   originLabel: string;

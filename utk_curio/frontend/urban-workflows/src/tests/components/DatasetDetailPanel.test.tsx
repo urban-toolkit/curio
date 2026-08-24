@@ -326,6 +326,62 @@ describe("DatasetDetailPanel lineage", () => {
     expect(screen.queryByText("Added from Data Catalog")).not.toBeInTheDocument();
   });
 
+  it("lists the inputs that fed the producing node", () => {
+    // upstreamInputs is the only record of what a computed dataset was built
+    // from; before this it was persisted on every manifest and rendered nowhere.
+    renderPanel(
+      lineageFixture({
+        upstream: {
+          generatingNode: { nodeId: "producer-1", nodeName: "Python Computation" },
+          inputNodes: [
+            { nodeId: "feeder-1", nodeName: "Data Loading", nodeType: "DATA_LOADING" },
+          ],
+          sourceDatasets: [
+            { datasetId: "data.urbanlab.acs", title: "acs" },
+          ],
+          origin: "computed",
+          originLabel: "Computed",
+        },
+      }),
+      catalogItem({ origin: "computed" }),
+    );
+
+    // Both columns render UpstreamCards, so count instead of asserting one node.
+    expect(screen.getAllByText("Inputs (2)").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Data Loading").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Node input").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("acs").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Dataset input").length).toBeGreaterThan(0);
+  });
+
+  it("names an input node by its id when nothing resolved a label", () => {
+    renderPanel(
+      lineageFixture({
+        upstream: {
+          generatingNode: null,
+          inputNodes: [{ nodeId: "abcdefgh-1234-5678" }],
+          sourceDatasets: [],
+          origin: "computed",
+          originLabel: "Computed",
+        },
+      }),
+      catalogItem({ origin: "computed" }),
+    );
+
+    expect(screen.getAllByText("Inputs (1)").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("node abcdefgh").length).toBeGreaterThan(0);
+  });
+
+  it("shows no inputs section for a dataset that records none", () => {
+    // The imported case, which is most datasets: no Inputs label at all rather
+    // than an empty one.
+    renderPanel(lineageFixture());
+
+    expect(screen.queryByText(/^Inputs \(/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Node input")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dataset input")).not.toBeInTheDocument();
+  });
+
   it("switches to the expanded lineage view on the Lineage tab", async () => {
     const user = userEvent.setup();
     renderPanel(
@@ -351,7 +407,7 @@ describe("DatasetDetailPanel lineage", () => {
     await user.click(screen.getByRole("button", { name: "Lineage" }));
 
     expect(screen.queryByTestId("table-preview")).not.toBeInTheDocument();
-    expect(screen.getByText("Data Flows")).toBeInTheDocument();
+    expect(screen.getByText("Dataflows")).toBeInTheDocument();
     expect(
       screen.getByText("Dataflows that generate or consume this dataset"),
     ).toBeInTheDocument();

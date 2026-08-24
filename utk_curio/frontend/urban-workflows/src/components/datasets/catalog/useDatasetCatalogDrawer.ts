@@ -337,7 +337,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
             nodeCount > 0
               ? ` (consumed by ${nodeCount} node${nodeCount === 1 ? "" : "s"})`
               : "";
-          usageNote = `\n\nIt is used in ${usage.length} data flow${usage.length === 1 ? "" : "s"}${nodeNote}; its references there will be removed.`;
+          usageNote = `\n\nIt is used in ${usage.length} dataflow${usage.length === 1 ? "" : "s"}${nodeNote}; its references there will be removed.`;
         }
       } catch {
         const usageCount = dataset.consumerNodeCount ?? 0;

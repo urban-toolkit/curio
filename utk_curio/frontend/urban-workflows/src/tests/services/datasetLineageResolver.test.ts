@@ -427,6 +427,113 @@ describe("selectDatasetUpstreamLineage", () => {
     });
     expect(upstream.generatingNode?.dataflowName).toBeNull();
   });
+
+  // ── upstreamInputs: what fed the producing node ─────────────────────────────
+  // Written by the backend installers (resolve_upstream_inputs): one entry per
+  // incoming edge of the producer, plus one per dataset bound to it.
+
+  it("names an input node from the open canvas", () => {
+    const upstream = selectDatasetUpstreamLineage({
+      dataset: catalogItem({
+        origin: "computed",
+        producerNodeId: "producer-1",
+        upstreamInputs: [{ nodeId: "feeder-1" }],
+      }),
+      nodes: [
+        canvasNode({ nodeId: "producer-1" }),
+        canvasNode({ nodeId: "feeder-1", nodeType: "DATA_TRANSFORMATION" }),
+      ],
+    });
+    expect(upstream.inputNodes).toEqual([
+      { nodeId: "feeder-1", nodeName: "Data Transformation", nodeType: "DATA_TRANSFORMATION" },
+    ]);
+  });
+
+  it("falls back to the manifest node type when the input node is off canvas", () => {
+    // The dataset was opened from a dataflow that only imported it, so the node
+    // that fed its producer is not here. The recorded type still names it.
+    const upstream = selectDatasetUpstreamLineage({
+      dataset: catalogItem({
+        origin: "computed",
+        upstreamInputs: [{ nodeId: "feeder-1", nodeType: "DATA_LOADING" }],
+      }),
+      nodes: [],
+    });
+    expect(upstream.inputNodes).toEqual([
+      { nodeId: "feeder-1", nodeName: "Data Loading", nodeType: "DATA_LOADING" },
+    ]);
+  });
+
+  it("leaves an input node unnamed when nothing records its type", () => {
+    const upstream = selectDatasetUpstreamLineage({
+      dataset: catalogItem({ origin: "computed", upstreamInputs: [{ nodeId: "feeder-1" }] }),
+      nodes: [],
+    });
+    expect(upstream.inputNodes).toEqual([
+      { nodeId: "feeder-1", nodeName: undefined, nodeType: undefined },
+    ]);
+  });
+
+  it("labels a computed dataset input by its producing node, not its uuid pair", () => {
+    const upstream = selectDatasetUpstreamLineage({
+      dataset: catalogItem({
+        origin: "computed",
+        upstreamInputs: [{ datasetId: "computed.n1899da0e-5d7a.n836a3219-01ab@1" }],
+      }),
+      nodes: [],
+    });
+    expect(upstream.sourceDatasets).toEqual([
+      {
+        datasetId: "computed.n1899da0e-5d7a.n836a3219-01ab@1",
+        title: "Output of node n836a321",
+      },
+    ]);
+  });
+
+  it("labels a hub dataset input by its last id segment", () => {
+    const upstream = selectDatasetUpstreamLineage({
+      dataset: catalogItem({
+        origin: "computed",
+        upstreamInputs: [{ datasetId: "data.urbanlab.acs-neighborhood-profile" }],
+      }),
+      nodes: [],
+    });
+    expect(upstream.sourceDatasets).toEqual([
+      {
+        datasetId: "data.urbanlab.acs-neighborhood-profile",
+        title: "acs-neighborhood-profile",
+      },
+    ]);
+  });
+
+  it("splits node and dataset inputs and de-duplicates each", () => {
+    const upstream = selectDatasetUpstreamLineage({
+      dataset: catalogItem({
+        origin: "computed",
+        upstreamInputs: [
+          { nodeId: "feeder-1", nodeType: "DATA_LOADING" },
+          { nodeId: "feeder-1", nodeType: "DATA_LOADING" },
+          { datasetId: "data.a" },
+          { datasetId: "data.a" },
+          {},
+        ],
+      }),
+      nodes: [],
+    });
+    expect(upstream.inputNodes?.map((n) => n.nodeId)).toEqual(["feeder-1"]);
+    expect(upstream.sourceDatasets.map((d) => d.datasetId)).toEqual(["data.a"]);
+  });
+
+  it("has no inputs for a dataset that records none", () => {
+    // Every imported dataset, and any computed one saved before the lineage
+    // fields existed.
+    const upstream = selectDatasetUpstreamLineage({
+      dataset: catalogItem({ origin: "hub" }),
+      nodes: [],
+    });
+    expect(upstream.inputNodes).toEqual([]);
+    expect(upstream.sourceDatasets).toEqual([]);
+  });
 });
 
 describe("selectDatasetLineage", () => {
@@ -483,6 +590,19 @@ describe("formatting helpers", () => {
     expect(formatNodeTypeLabel("DATA_LOADING")).toBe("Data Loading");
     expect(formatNodeTypeLabel("pkg:spatial-filter")).toBe("Spatial Filter");
     expect(formatNodeTypeLabel(undefined)).toBe("Node");
+  });
+
+  it("drops the package path and version from a qualified node type", () => {
+    // What the canvas actually stores for a builtin node. Printed raw the badge
+    // read "CURIO.BUILTIN/DATA TRANSFORMATION@1" - the package and the version
+    // are addressing detail, and the type is the only part worth showing.
+    expect(formatNodeTypeLabel("curio.builtin/data-transformation@1")).toBe(
+      "Data Transformation",
+    );
+    expect(formatNodeTypeLabel("curio.builtin/data-transformation")).toBe(
+      "Data Transformation",
+    );
+    expect(formatNodeTypeLabel("acme.geo/spatial_join@12")).toBe("Spatial Join");
   });
 
   it("summarizes usage counts", () => {

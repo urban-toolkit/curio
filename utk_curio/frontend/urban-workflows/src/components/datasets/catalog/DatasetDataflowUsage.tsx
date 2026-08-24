@@ -52,7 +52,7 @@ function consumerLabel(flow: DatasetDataflowUsageRef): string | null {
 }
 
 /**
- * "Used in data flows" section: one row per dataflow that consumes the dataset,
+ * "Used in dataflows" section: one row per dataflow that consumes the dataset,
  * linking to the dataflow and naming its consumer (downstream) nodes. Renders
  * nothing when the dataset isn't used anywhere.
  */
@@ -64,7 +64,7 @@ export const DatasetDataflowUsageSection: React.FC<{
 
   return (
     <section className={styles.section} aria-label="Dataflows using this dataset">
-      <p className={styles.label}>Used in data flows ({usage.length})</p>
+      <p className={styles.label}>Used in dataflows ({usage.length})</p>
       <ul className={styles.list}>
         {usage.map((flow) => {
           const consumers = consumerLabel(flow);

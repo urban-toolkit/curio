@@ -22,6 +22,8 @@ import {
   DatasetDownstreamUsage,
   DatasetLineage,
   DatasetLineageDataflowUsageRef,
+  DatasetLineageDatasetRef,
+  DatasetLineageNodeRef,
   DatasetLineageNodeUsageRef,
   DatasetUpstreamLineage,
   LineageStatus,
@@ -56,11 +58,18 @@ export type NodeExecStatusMap = Record<string, "stale" | "executed">;
 
 export type NodeLabelResolver = (nodeType: string | undefined) => string | undefined;
 
-/** Fallback prettifier for raw node type ids (e.g. "DATA_LOADING" → "Data Loading"). */
+/**
+ * Fallback prettifier for raw node type ids (e.g. "DATA_LOADING" → "Data
+ * Loading"). Package-qualified, versioned ids reduce to the type alone
+ * ("curio.builtin/data-transformation@1" → "Data Transformation"): the package
+ * and version are addressing detail, not something to print in a badge.
+ */
 export function formatNodeTypeLabel(nodeType: string | undefined): string {
   if (!nodeType) return "Node";
   const cleaned = nodeType
     .replace(/^[^:]*:/, "")
+    .replace(/@[^@/]*$/, "")
+    .replace(/^.*\//, "")
     .replace(/[_-]+/g, " ")
     .trim();
   if (!cleaned) return "Node";
@@ -368,11 +377,77 @@ export interface UpstreamLineageParams {
     | "producerNodeType"
     | "producerDataflowId"
     | "producerDataflowName"
+    | "upstreamInputs"
   >;
   nodes: LineageCanvasNode[];
   /** Current canvas dataflow id — gates cross-dataflow producer attribution. */
   dataflowId?: string | null;
   resolveNodeLabel?: NodeLabelResolver;
+}
+
+/** Readable label for a dataset referenced only by id.
+ *
+ * A computed id is a pair of uuids (``computed.<dataflow>.<node>``), which is
+ * unreadable in a card, so name it by its producing node the way the rest of
+ * the lineage view names nodes. Anything else (a hub/imported id like
+ * ``data.urbanlab.acs-neighborhood-profile``) reads fine as its last segment.
+ */
+export function sourceDatasetLabel(datasetId: string): string {
+  const nodeSeg = nodeSegmentFromComputedId(datasetId);
+  if (nodeSeg) return `Output of node ${nodeSeg.slice(0, 8)}`;
+  const parts = datasetId.split(".");
+  return parts[parts.length - 1] || datasetId;
+}
+
+/**
+ * Split a dataset's persisted ``upstreamInputs`` into node refs and dataset
+ * refs, naming each node against the open canvas where it is there.
+ *
+ * ``upstreamInputs`` is written by the installers when a node output is saved
+ * (backend ``resolve_upstream_inputs``): one entry per incoming edge of the
+ * producing node, plus one per dataset bound to it. Only computed datasets
+ * carry any, so this is empty for everything imported.
+ */
+export function upstreamInputsFromDataset(
+  dataset: Pick<DatasetCatalogItem, "upstreamInputs">,
+  nodes: LineageCanvasNode[],
+  resolveNodeLabel?: NodeLabelResolver,
+): { inputNodes: DatasetLineageNodeRef[]; sourceDatasets: DatasetLineageDatasetRef[] } {
+  const inputNodes: DatasetLineageNodeRef[] = [];
+  const sourceDatasets: DatasetLineageDatasetRef[] = [];
+  const seenNodes = new Set<string>();
+  const seenDatasets = new Set<string>();
+
+  for (const input of dataset?.upstreamInputs || []) {
+    const datasetId = input?.datasetId;
+    if (datasetId) {
+      if (!seenDatasets.has(datasetId)) {
+        seenDatasets.add(datasetId);
+        sourceDatasets.push({ datasetId, title: sourceDatasetLabel(datasetId) });
+      }
+      // An entry is a node ref OR a dataset ref, never both.
+      continue;
+    }
+    const nodeId = input?.nodeId;
+    if (!nodeId || seenNodes.has(nodeId)) continue;
+    seenNodes.add(nodeId);
+    const onCanvas = (nodes || []).find((node) => node?.data?.nodeId === nodeId);
+    // Prefer the node as it exists on this canvas, then the type the manifest
+    // recorded - so an input from a dataflow that isn't open, or from a node
+    // since deleted, is still named instead of shown as a bare uuid.
+    const nodeType = onCanvas?.data?.nodeType ?? input?.nodeType ?? undefined;
+    inputNodes.push({
+      nodeId,
+      nodeName: nodeType
+        ? resolveNodeLabel?.(nodeType) ||
+          onCanvas?.data?.templateName ||
+          formatNodeTypeLabel(nodeType)
+        : onCanvas?.data?.templateName,
+      nodeType,
+    });
+  }
+
+  return { inputNodes, sourceDatasets };
 }
 
 /** Resolve what generated the dataset: producer node (computed) or import origin. */
@@ -411,9 +486,16 @@ export function selectDatasetUpstreamLineage(
     };
   }
 
+  const { inputNodes, sourceDatasets } = upstreamInputsFromDataset(
+    dataset,
+    nodes,
+    resolveNodeLabel,
+  );
+
   return {
     generatingNode,
-    sourceDatasets: [],
+    sourceDatasets,
+    inputNodes,
     origin: dataset.origin,
     originLabel: datasetProvenanceLabel(dataset.origin, dataset.format),
   };
