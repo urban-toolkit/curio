@@ -510,17 +510,6 @@ def test_save_export_import_and_run_package_nodes(
 
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Saving a second canvas node into the same package overwrites the first "
-        "kind's code: inferSourceFilename (palettePackageFactoryDraft.ts) returns "
-        "'default.py' for any descriptor with no package-relative source, which "
-        "every built-in canvas node is, so both kinds point at sources/default.py "
-        "and the later save wins. The manifest keeps two distinct kinds, so the "
-        "palette shows two rows that run the same code."
-    ),
-)
 def test_two_kinds_saved_into_one_package_keep_their_own_code(
     app_frontend: "FrontendPage",
     current_server: str,
