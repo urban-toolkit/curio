@@ -1,21 +1,25 @@
 import React from "react";
 import { PackagePayload } from "../../api/packagesApi";
-import { CatalogDrawerTitle, CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
+import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
+import {
+  catalogIsFresh,
+  catalogRelativeTime,
+} from "../../components/catalog/catalogTimeFormat";
 import { CatalogBrowseDrawerShell } from "./CatalogBrowseDrawerShell";
-import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
+import {
+  CatalogBrowseDrawerBody,
+  CatalogDrawerList,
+  CatalogDrawerSection,
+} from "./CatalogBrowseDrawerBody";
+import {
+  CatalogPublishPill,
+  shouldShowPublishPill,
+} from "../../components/packages/CatalogPublishPill";
 import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 
-function relativeFromMs(ms?: number): string {
-  if (ms == null || ms <= 0) return "—";
-  const delta = Date.now() - ms;
-  if (!Number.isFinite(delta)) return "—";
-  const minutes = Math.max(1, Math.round(delta / 60_000));
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
+/** Cap the "Nodes in pack" list; the remainder collapses into a "…and N more" row. */
+const TEMPLATE_PREVIEW_LIMIT = 12;
 
 export interface PackageBrowseDrawerProps {
   pkg: PackagePayload | null;
@@ -57,92 +61,59 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
   catalogPublishAllowed,
   isPublished,
   publishingDir,
-  showPublish,
   onInstall,
   onPublish,
   onClose,
 }) => {
   const cat = primaryCategory(pkg);
-  const isAuthorable = pkg.readOnly !== true;
-  const showPublishPill = isPublished === true || (onPublish != null && catalogPublishAllowed && isAuthorable);
+  const showPublishPill = shouldShowPublishPill({
+    isPublished,
+    allowPublish: catalogPublishAllowed,
+    canPublish: onPublish != null && pkg.readOnly !== true,
+  });
+  const shown = pkg.templates.slice(0, TEMPLATE_PREVIEW_LIMIT);
+  const hidden = pkg.templates.length - shown.length;
 
   return (
-    <>
-      <div className={browseStyles.drawerHeader}>
-        <CatalogDrawerTitle kind="package" title="Package details" />
-        <button className={browseStyles.drawerClose} type="button" aria-label="Close" onClick={onClose}>
-          ✕
-        </button>
-      </div>
-
-      <div className={browseStyles.drawerKindHero}>
-        <CatalogKindIcon kind="package" size="lg" title="Node package" />
-      </div>
-
-      <div className={browseStyles.drawerDatasetName}>
-        <h2>{pkg.name}</h2>
-        <div className={browseStyles.drawerBadgesRow}>
-          <span className={`${browseStyles.drawerFormatBadge} ${browseStyles.dfmt_parquet}`}>
-            {cat}
-          </span>
-          <span className={browseStyles.drawerHubBadge}>Node pack</span>
+    <CatalogBrowseDrawerBody
+      kind="package"
+      headerTitle="Package details"
+      onClose={onClose}
+      hero={
+        <div className={browseStyles.drawerKindHero}>
+          <CatalogKindIcon kind="package" size="lg" title="Node package" />
+        </div>
+      }
+      title={pkg.name}
+      badges={
+        <>
+          <span className={browseStyles.drawerCategoryBadge}>{cat}</span>
           {isInstalled ? (
-            <span className={`${browseStyles.drawerFormatBadge} ${browseStyles.dfmt_geojson}`}>✓ In defaults</span>
+            <span className={browseStyles.drawerInstalledBadge}>✓ In defaults</span>
           ) : null}
-        </div>
-      </div>
-
-      <div className={browseStyles.drawerPublisher}>
-        <span className={browseStyles.drawerPublisherText}>
-          {pkg.publisher || pkg.packageId} · v{pkg.version}
-        </span>
-      </div>
-
-      <div className={browseStyles.drawerMeta}>
-        <span>
-          {pkg.templates.length} nodes · {pkg.packageId}
-        </span>
-        <span className={browseStyles.drawerMetaRight}>{relativeFromMs(pkg.createdAtMs)}</span>
-      </div>
-
-      {pkg.description ? (
-        <div className={browseStyles.drawerSection}>
-          <p className={browseStyles.drawerDescription}>{pkg.description}</p>
-        </div>
-      ) : null}
-
-      <div className={browseStyles.drawerSection}>
-        <p className={browseStyles.drawerSectionLabel}>Package info</p>
-        <div className={browseStyles.infoRow}>
-          <span className={browseStyles.infoRowLabel}>Channel</span>
-          <span className={browseStyles.infoRowValue}>{pkg.channel ?? "stable"}</span>
-        </div>
-        <div className={browseStyles.infoRow}>
-          <span className={browseStyles.infoRowLabel}>Templates</span>
-          <span className={browseStyles.infoRowValue}>{pkg.templates.length}</span>
-        </div>
-        {pkg.license ? (
-          <div className={browseStyles.infoRow}>
-            <span className={browseStyles.infoRowLabel}>License</span>
-            <span className={browseStyles.infoRowValue}>{pkg.license}</span>
-          </div>
-        ) : null}
-      </div>
-
-      <div className={browseStyles.drawerSection}>
-        <p className={browseStyles.drawerSectionLabel}>Nodes in pack</p>
-        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#555" }}>
-          {pkg.templates.slice(0, 12).map((t) => (
-            <li key={t.id}>{t.label}</li>
-          ))}
-          {pkg.templates.length > 12 ? (
-            <li style={{ color: "#999" }}>…and {pkg.templates.length - 12} more</li>
-          ) : null}
-        </ul>
-      </div>
-
-      <div className={browseStyles.drawerCtas}>
-        {!isInstalled ? (
+        </>
+      }
+      subtitle={`${pkg.publisher || pkg.packageId} · v${pkg.version}`}
+      metaLeft={`${pkg.templates.length} nodes · ${pkg.packageId}`}
+      metaRight={catalogRelativeTime(pkg.createdAtMs)}
+      fresh={catalogIsFresh(pkg.createdAtMs)}
+      description={pkg.description}
+      infoLabel="Package info"
+      infoRows={[
+        { label: "Channel", value: pkg.channel ?? "stable" },
+        { label: "Templates", value: pkg.templates.length },
+        pkg.license ? { label: "License", value: pkg.license } : null,
+      ]}
+      sections={
+        <CatalogDrawerSection label="Nodes in pack">
+          <CatalogDrawerList
+            items={shown.map((t) => <li key={t.id}>{t.label}</li>)}
+            moreLabel={hidden > 0 ? `…and ${hidden} more` : null}
+          />
+        </CatalogDrawerSection>
+      }
+      primaryAction={
+        !isInstalled ? (
           <button
             type="button"
             className={browseStyles.addToPaletteBtn}
@@ -164,20 +135,20 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
           <p className={browseStyles.drawerDescription} style={{ textAlign: "center" }}>
             This package is in your defaults list for new and existing projects.
           </p>
-        )}
-        {showPublishPill ? (
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <CatalogPublishPill
-              variant="hub"
-              dirName={pkg.dirName}
-              published={!!isPublished}
-              allowPublish={catalogPublishAllowed}
-              busy={publishingDir === pkg.dirName}
-              onPublish={onPublish ?? (() => {})}
-            />
-          </div>
-        ) : null}
-      </div>
-    </>
+        )
+      }
+      publishPill={
+        showPublishPill ? (
+          <CatalogPublishPill
+            variant="hub"
+            dirName={pkg.dirName}
+            published={!!isPublished}
+            allowPublish={catalogPublishAllowed}
+            busy={publishingDir === pkg.dirName}
+            onPublish={onPublish ?? (() => {})}
+          />
+        ) : null
+      }
+    />
   );
 };

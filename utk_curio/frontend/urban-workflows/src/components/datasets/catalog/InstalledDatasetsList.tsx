@@ -7,6 +7,7 @@ import {
   PendingInstall,
   datasetDisplayTitle,
   datasetProvenanceLabel,
+  isDatasetPublishedToCatalog,
 } from "../../../services/datasetCatalog";
 import {
   CatalogFormatBadge,
@@ -52,7 +53,7 @@ function InstalledDatasetRow({
   onDragStart?: (dataset: DatasetCatalogItem, event: React.DragEvent<HTMLElement>) => void;
   onDragEnd?: () => void;
 }) {
-  const isPublished = dataset.origin === "hub" || dataset.publishedToHub === true;
+  const isPublished = isDatasetPublishedToCatalog(dataset);
   const hasActions = onUninstall != null || onPublish != null || onUnpublish != null;
 
   return (
@@ -79,7 +80,6 @@ function InstalledDatasetRow({
           {DATASET_FORMAT_LABEL[dataset.format]}
           {" · "}
           {datasetProvenanceLabel(dataset.origin, dataset.format)}
-          {isPublished ? " · Published" : ""}
         </span>
       </div>
       {hasActions ? (

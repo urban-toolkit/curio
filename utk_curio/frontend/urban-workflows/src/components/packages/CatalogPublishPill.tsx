@@ -3,6 +3,27 @@ import styles from "./CatalogPublishPill.module.css";
 
 export type CatalogPublishPillVariant = "dock" | "hub";
 
+/**
+ * Shared visibility rule for the publish pill, used by every catalog card, row
+ * and drawer in both catalogs so the affordance appears under identical
+ * conditions. The pill renders for two distinct cases:
+ *   - The item is already published — show the "Published" badge (purely
+ *     informational; no click handler needed, so ``canPublish`` may be false).
+ *   - The operator allows publishing AND the caller can act on this item
+ *     (it has a publish handler and is not read-only) — show the "Publish" button.
+ */
+export function shouldShowPublishPill({
+    isPublished,
+    allowPublish,
+    canPublish,
+}: {
+    isPublished?: boolean;
+    allowPublish: boolean;
+    canPublish: boolean;
+}): boolean {
+    return isPublished === true || (allowPublish && canPublish);
+}
+
 export const CatalogPublishPill = memo(function CatalogPublishPill({
     dirName,
     published,
@@ -28,11 +49,12 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
     const badgeCls = variant === "hub" ? styles.badgeHub : styles.badgeDock;
 
     if (published) {
+        const title = publishedTitle ?? "Listed in the shared catalog (packages/)";
+        // role="status" so the state change is announced when a publish action
+        // swaps the button out for this badge — the Data Catalog drawer used to
+        // do this on its own bespoke element; every surface gets it now.
         return (
-            <span
-                className={badgeCls}
-                title={publishedTitle ?? "Listed in the shared catalog (packages/)"}
-            >
+            <span className={badgeCls} role="status" aria-label={title} title={title}>
                 Published
             </span>
         );

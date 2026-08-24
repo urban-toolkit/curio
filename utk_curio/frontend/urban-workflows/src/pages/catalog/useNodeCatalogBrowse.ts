@@ -13,9 +13,11 @@ import {
 import type { SortMode } from "../../components/packages/publishing/packageTypes";
 import { draftFromInstalledPackagePayload } from "../../utils/palettePackageFactoryDraft";
 import { toApiPayload } from "../nodes/factoryDraftModel";
+import { useToastContext } from "../../providers/ToastProvider";
 import type { NodeCatalogFilterTab } from "./nodeCatalogBrowseTypes";
 
 export function useNodeCatalogBrowse() {
+  const { showToast } = useToastContext();
   const [catalog, setCatalog] = useState<PackagePayload[]>([]);
   const [installed, setInstalled] = useState<PackagePayload[]>([]);
   const [defaults, setDefaults] = useState<Set<string>>(new Set());
@@ -205,13 +207,14 @@ export function useNodeCatalogBrowse() {
           replace: true,
         });
         await reload();
+        showToast(`Published ${row.name}.`, "success");
       } catch (err) {
         reportError(`Couldn't publish ${row.name}`, err);
       } finally {
         setPublishingPackageKey(null);
       }
     },
-    [installedByDir, reload, reportError],
+    [installedByDir, reload, reportError, showToast],
   );
 
   const dismissInstallSummary = useCallback(() => setLastInstallSummary(null), []);

@@ -11,7 +11,7 @@ import {
   CatalogItemRowHeader,
   CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
-import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
+import { CatalogPublishPill, shouldShowPublishPill } from "../../packages/CatalogPublishPill";
 import {
   datasetCountCompact as datasetCount,
   relativeTimeOrEmpty as relativeTime,
@@ -100,8 +100,11 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   // their Delete affordance is unaffected. The backend publisher check is the
   // real gate; this just hides an action the user cannot perform.
   const showDelete = onDelete != null && isComputedAsset && dataset.origin !== "hub";
-  const showPublishButton = onPublish != null && publishAllowed && !isPublished;
-  const showPublishPill = isPublished || showPublishButton;
+  const showPublishPill = shouldShowPublishPill({
+    isPublished,
+    allowPublish: publishAllowed,
+    canPublish: onPublish != null,
+  });
 
   const count = datasetCount(dataset);
   const time = relativeTime(dataset.updatedAt);

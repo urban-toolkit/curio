@@ -58,25 +58,6 @@
   border-color: #7a4bd1;
 }
 
-.selectedDot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.selectedDot::after {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #ffffff;
-}
-
 .kindBadge {
   height: 16px;
   border-radius: 8px;
@@ -98,6 +79,8 @@
   padding: 0 8px;
   font-size: 9px;
   font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   display: inline-flex;
   align-items: center;
 }

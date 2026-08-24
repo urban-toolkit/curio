@@ -116,17 +116,17 @@ describe("DatasetDetailPanel header actions", () => {
     renderPanel(lineageFixture(), catalogItem({ origin: "hub", installed: true }));
     expect(screen.getByRole("button", { name: "Unpublish" })).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Publish to Catalog" }),
+      screen.queryByRole("button", { name: "Publish" }),
     ).not.toBeInTheDocument();
   });
 
-  it("shows Publish to Catalog for an unpublished dataset", () => {
+  it("shows Publish for an unpublished dataset", () => {
     renderPanel(
       lineageFixture(),
       catalogItem({ origin: "computed", installed: false, publishedToHub: false }),
     );
     expect(
-      screen.getByRole("button", { name: "Publish to Catalog" }),
+      screen.getByRole("button", { name: "Publish" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Unpublish" })).not.toBeInTheDocument();
   });
