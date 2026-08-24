@@ -70,15 +70,42 @@ log = logging.getLogger(__name__)
 
 _STAGING_PREFIX = "stage-"
 
+# A staging dir younger than this is assumed to belong to a live install and is
+# never swept, whatever the caller passed as ``keep``. ``keep`` only protects the
+# sweeper's *own* directory, which is no help against a sweeper that is not
+# installing anything: ``seed_dev_packageages`` runs on every ``GET
+# /api/packages`` (see ``routes.py``), and the drawer's import flow fires that
+# listing from ``refreshPackageRegistry`` while the upload it just posted is
+# still extracting. The sweep then deletes the extraction mid-flight and the
+# install fails with ENOENT on a file it had already written. Age is the right
+# discriminator because an orphan is by definition one nothing is writing to;
+# anything genuinely abandoned is still collected on the next sweep after this
+# window.
+_STAGING_ORPHAN_MIN_AGE_S = 600.0
+
+
+def _is_recent(entry: "Path", now: float) -> bool:
+    """True when *entry* was touched inside the live-install window."""
+    try:
+        return (now - entry.stat().st_mtime) < _STAGING_ORPHAN_MIN_AGE_S
+    except OSError:
+        # Vanished under us, or unreadable. Either way, leave it alone.
+        return True
+
 
 def _purge_stale_staging(user_key: str, keep: "Path | None" = None) -> None:
     """Remove any orphaned staging directories for ``user_key``.
 
-    *keep* is the caller's own in-flight staging directory, which must never be
-    swept: Flask serves requests concurrently, so a second install starting while
-    the first is mid-extract would otherwise delete the first's tree out from
-    under it (surfacing as ``WinError 2`` from the manifest-validation copytree
-    on a file that had just been written).
+    Two guards keep a live install safe, and both are needed:
+
+    * *keep* is the caller's own in-flight staging directory, which must never be
+      swept: Flask serves requests concurrently, so a second install starting
+      while the first is mid-extract would otherwise delete the first's tree out
+      from under it (surfacing as ``WinError 2`` from the manifest-validation
+      copytree on a file that had just been written).
+    * Age (``_STAGING_ORPHAN_MIN_AGE_S``) covers everyone *else*'s in-flight
+      directory, which ``keep`` cannot: a sweeper that is not installing has no
+      ``keep`` to pass. The seeder is exactly that case.
 
     Two sources need sweeping:
 
@@ -94,9 +121,13 @@ def _purge_stale_staging(user_key: str, keep: "Path | None" = None) -> None:
     """
     staging_base = user_packageage_staging_dir(user_key)
     keep_resolved = keep.resolve() if keep is not None else None
+    now = time.time()
     if staging_base.is_dir():
         for entry in staging_base.iterdir():
             if not entry.is_dir():
+                continue
+            if _is_recent(entry, now):
+                # Someone else's live install (see _STAGING_ORPHAN_MIN_AGE_S).
                 continue
             if not entry.name.startswith(_STAGING_PREFIX):
                 # Only sweep what this module created. A concurrent install's
@@ -117,6 +148,8 @@ def _purge_stale_staging(user_key: str, keep: "Path | None" = None) -> None:
             if not entry.is_dir():
                 continue
             if not entry.name.startswith(".staging-") and not entry.name.startswith(".stage-"):
+                continue
+            if _is_recent(entry, now):
                 continue
             try:
                 shutil.rmtree(entry, ignore_errors=True)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import time
 import zipfile
 
 import pytest
@@ -254,6 +255,23 @@ def test_install_packageage_from_directory_uses_committed_fixture(tmp_curio):
 # Orphan staging directory cleanup
 # ---------------------------------------------------------------------------
 
+def _make_orphan(*paths):
+    """Backdate *paths* past the sweep's live-install window.
+
+    ``_purge_stale_staging`` only collects staging dirs older than
+    ``_STAGING_ORPHAN_MIN_AGE_S``, because age is the only thing that
+    distinguishes a crashed install's leftovers from a tree another request is
+    extracting into right now. A dir created by the test a millisecond ago is
+    indistinguishable from the latter, so anything that is meant to *be* an
+    orphan has to say so.
+    """
+    from utk_curio.backend.app.packages.installer import _STAGING_ORPHAN_MIN_AGE_S
+
+    stale = time.time() - (_STAGING_ORPHAN_MIN_AGE_S * 2)
+    for path in paths:
+        os.utime(path, (stale, stale))
+
+
 def test_install_purges_orphan_staging_dirs(tmp_curio, make_archive):
     """A previous install that was SIGKILL'd / lost power leaves a
     ``stage-XXXX`` directory in ``<user>/.package-staging/``. The next
@@ -279,6 +297,7 @@ def test_install_purges_orphan_staging_dirs(tmp_curio, make_archive):
     legacy_orphan = legacy_base / ".staging-legacy"
     legacy_orphan.mkdir()
     (legacy_orphan / "leftover.py").write_text("# old")
+    _make_orphan(orphan_a, orphan_b, legacy_orphan)
 
     install_packageage_from_archive("guest", make_archive())
 
@@ -339,6 +358,7 @@ def test_seeder_purges_orphan_staging_dirs(tmp_curio):
     legacy_base.mkdir(parents=True, exist_ok=True)
     legacy_orphan = legacy_base / ".staging-legacy"
     legacy_orphan.mkdir()
+    _make_orphan(new_orphan, legacy_orphan)
 
     seed_dev_packageages(user_key="guest")
     assert not new_orphan.exists()
@@ -411,10 +431,14 @@ def test_purge_stale_staging_keeps_the_in_flight_dir(tmp_curio):
     """A concurrent install must not delete a staging tree still being extracted.
 
     The sweep is indiscriminate by design (a crashed install leaves no marker to
-    distinguish it from a live one), so the only safe discriminator is the
-    caller's own directory. Without ``keep`` this races: Flask serves requests
+    distinguish it from a live one), so the caller's own directory has to be
+    named explicitly. Without ``keep`` this races: Flask serves requests
     concurrently, and the victim fails much later - as a WinError 2 from the
     manifest-validation copytree on a file it had just written.
+
+    ``keep`` is only half the protection; see
+    ``test_purge_stale_staging_spares_a_fresh_dir_it_was_not_told_to_keep`` for
+    the other half, which covers sweepers that have no ``keep`` to give.
     """
     from utk_curio.backend.app.packages.installer import _purge_stale_staging
     from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
@@ -426,6 +450,7 @@ def test_purge_stale_staging_keeps_the_in_flight_dir(tmp_curio):
     for d in (orphan, in_flight):
         (d / "scripts").mkdir(parents=True)
         (d / "scripts" / "behaviors.js.map").write_text("{}", encoding="utf-8")
+    _make_orphan(orphan)
 
     _purge_stale_staging("guest", keep=in_flight)
 
@@ -442,10 +467,64 @@ def test_purge_stale_staging_sweeps_everything_when_nothing_is_kept(tmp_curio):
     base = user_packageage_staging_dir("guest")
     (base / "stage-a").mkdir(parents=True)
     (base / "stage-b").mkdir(parents=True)
+    _make_orphan(base / "stage-a", base / "stage-b")
 
     _purge_stale_staging("guest")
 
     assert list(base.iterdir()) == []
+
+
+def test_purge_stale_staging_spares_a_fresh_dir_it_was_not_told_to_keep(tmp_curio):
+    """A live install survives a sweeper that has no ``keep`` to give.
+
+    ``keep`` only protects the sweeper's *own* staging dir, which is no help
+    against a sweeper that is not installing anything. ``seed_dev_packageages``
+    is exactly that: it sweeps with no ``keep`` and it runs on every
+    ``GET /api/packages`` (routes.py), which the drawer's import flow fires
+    from ``refreshPackageRegistry`` while the upload it just posted is still
+    extracting. The victim then dies with ENOENT on a file it had already
+    written, from a request that looks unrelated.
+
+    Age is the discriminator: an orphan is by definition one nothing is
+    writing to.
+    """
+    from utk_curio.backend.app.packages.installer import _purge_stale_staging
+    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+
+    base = user_packageage_staging_dir("guest")
+    base.mkdir(parents=True, exist_ok=True)
+    live = base / "stage-live"
+    orphan = base / "stage-orphan"
+    for d in (live, orphan):
+        (d / "sources").mkdir(parents=True)
+        (d / "sources" / "default.py").write_text("return arg", encoding="utf-8")
+    _make_orphan(orphan)
+
+    # No keep at all - the seeder's call shape.
+    _purge_stale_staging("guest")
+
+    assert (live / "sources" / "default.py").is_file(), (
+        "a staging tree being extracted right now must survive a keep-less sweep"
+    )
+    assert not orphan.exists(), "a genuine orphan must still be collected"
+
+
+def test_seeder_spares_an_in_flight_install(tmp_curio):
+    """The same guard, through the caller that actually triggers it."""
+    from utk_curio.backend.app.packages.seed import seed_dev_packageages
+    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+
+    base = user_packageage_staging_dir("guest")
+    base.mkdir(parents=True, exist_ok=True)
+    live = base / "stage-live"
+    (live / "sources").mkdir(parents=True)
+    (live / "sources" / "default.py").write_text("return arg", encoding="utf-8")
+
+    seed_dev_packageages(user_key="guest")
+
+    assert (live / "sources" / "default.py").is_file(), (
+        "seeding must not delete an install that is mid-extract"
+    )
 
 
 def test_purge_stale_staging_only_sweeps_its_own_prefix(tmp_curio):
@@ -466,6 +545,7 @@ def test_purge_stale_staging_only_sweeps_its_own_prefix(tmp_curio):
     for d in (ours, theirs):
         d.mkdir(parents=True)
         (d / "manifest.json").write_text("{}", encoding="utf-8")
+    _make_orphan(ours)
 
     _purge_stale_staging("guest")
 
