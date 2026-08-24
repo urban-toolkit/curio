@@ -896,6 +896,41 @@ def test_resolve_catalog_fallback_still_reports_conflicts(
     assert any(c["package"] == "rasterio" for c in body["conflicts"])
 
 
+def test_resolve_catalog_candidate_alongside_the_builtin_package(
+    client, user_and_token, tmp_curio,
+):
+    """The install probe the UI actually sends: candidate **plus** builtin.
+
+    This is the gap that let #154 ship. The test above resolves
+    ``ai.urbanlab.uhvi@1`` on its own, but no real install ever looks like
+    that - ``useNodeCatalogBrowse.onInstall`` posts every installed package plus
+    the candidate, and ``curio.builtin@1`` is force-reseeded for every user, so
+    it is always in that list.
+
+    UHVI used to declare ``geopandas ^0.14`` (i.e. ``<1.0.0``) against builtin's
+    ``>=1.1.3``. Disjoint, so the resolver correctly 409'd and the Install button
+    stayed disabled - permanently, because builtin is ``readOnly`` and refuses to
+    uninstall. Resolving the candidate alone could never see it.
+    """
+    _, token = user_and_token
+    resp = client.post(
+        "/api/packages/resolve",
+        data=json.dumps({"packages": ["curio.builtin@1", "ai.urbanlab.uhvi@1"]}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200, resp.get_json()
+    body = resp.get_json()
+    assert body["conflicts"] == [], (
+        "a shipped catalog package must be installable next to the mandatory "
+        "built-in package; the install dialog's advice to 'uninstall one of the "
+        "conflicting packages' is impossible to follow when one of them is "
+        "curio.builtin@1"
+    )
+    # The merged range must still be builtin's floor - relaxing the candidate
+    # must not have quietly loosened what actually gets pip-installed.
+    assert body["lockfile"]["pythonDeps"]["geopandas"] == ">=1.1.3"
+
+
 def test_resolve_unknown_packageage_still_errors(client, user_and_token, tmp_curio):
     """A package that is neither installed nor in the catalog must still
     surface the precise 'is malformed' error so the wizard / probe gets

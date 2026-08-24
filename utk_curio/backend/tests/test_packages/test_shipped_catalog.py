@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.packages.manifest import load_packageage_manifest
+from utk_curio.backend.app.packages.resolver import merge_python_deps
 from utk_curio.backend.app.packages.routes import _catalog_root, _manifest_to_payload
 
 CATALOG = _catalog_root()
@@ -67,3 +68,63 @@ def test_declared_sources_and_behavior_bundle_exist(package_root: Path):
             assert (package_root / source).is_file(), (
                 f"template {template['id']} declares a missing source {source}"
             )
+
+# ---------------------------------------------------------------------------
+# Co-installability with the mandatory built-in package (#154)
+# ---------------------------------------------------------------------------
+#
+# ``curio.builtin@1`` is force-reseeded for every user and refuses to uninstall,
+# so it is present in every ``/resolve`` probe. A shipped package whose Python
+# ranges do not intersect builtin's is therefore not "conflicting", it is
+# *uninstallable* - and the install dialog's only advice ("uninstall one of the
+# conflicting packages") cannot be followed.
+#
+# ``ai.urbanlab.uhvi@1`` shipped that way: ``geopandas ^0.14`` against builtin's
+# ``>=1.1.3``. Generalized here so the next package with a stray upper bound
+# fails in CI instead of in a user's install dialog.
+
+BUILTIN_DIR = "curio.builtin@1"
+
+
+def _raw_python_deps(package_root: Path) -> dict[str, str]:
+    raw = json.loads((package_root / "manifest.json").read_text(encoding="utf-8"))
+    return (raw.get("dependencies") or {}).get("python") or {}
+
+
+@pytest.mark.parametrize(
+    "package_root",
+    [p for p in PACKAGE_DIRS if p.name != BUILTIN_DIR],
+    ids=[p.name for p in PACKAGE_DIRS if p.name != BUILTIN_DIR],
+)
+def test_python_deps_are_co_installable_with_the_builtin_package(package_root: Path):
+    builtin = CATALOG / BUILTIN_DIR
+    assert builtin.is_dir(), f"{BUILTIN_DIR} missing from {CATALOG}"
+
+    _, conflicts = merge_python_deps([
+        (BUILTIN_DIR, _raw_python_deps(builtin)),
+        (package_root.name, _raw_python_deps(package_root)),
+    ])
+    assert not conflicts, (
+        f"{package_root.name} cannot be installed alongside {BUILTIN_DIR}: "
+        + ", ".join(
+            c.package + " (" + " vs ".join(r for _, r in c.ranges) + ")"
+            for c in conflicts
+        )
+        + ". Relax this package's range - the built-in package is mandatory and "
+        "read-only, so the user has no way to resolve this themselves."
+    )
+
+
+def test_the_whole_shipped_catalog_resolves_together():
+    """Not just pairwise: installing everything at once must also resolve.
+
+    Two packages can each be fine against builtin and still disagree with each
+    other (uhvi's rasterio floor vs curio.weather's, for instance).
+    """
+    _, conflicts = merge_python_deps(
+        [(p.name, _raw_python_deps(p)) for p in PACKAGE_DIRS]
+    )
+    assert not conflicts, (
+        "the shipped catalog cannot be fully installed: "
+        + ", ".join(c.package for c in conflicts)
+    )

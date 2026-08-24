@@ -316,3 +316,57 @@ def test_lockfile_to_dict(tmp_curio, install_packageage, manifest_dict):
     assert row["dirName"] == "ai.test.demo@1"
     assert row["familyKey"] == "ai.test.demo@1"
     assert "lineageRoot" not in row
+
+# ---------------------------------------------------------------------------
+# #154: the resolver was right, the manifest was wrong
+# ---------------------------------------------------------------------------
+
+def test_a_caret_zero_x_range_conflicts_with_a_one_x_floor():
+    """``^0.14`` and ``>=1.1.3`` are genuinely disjoint.
+
+    This pins the resolver's *correct* behaviour, because the tempting way to
+    "fix" #154 was to loosen the resolver until the UHVI package installed. That
+    would have let real, unsatisfiable conflicts through for every package. The
+    fix belonged in the manifest, and this test exists so a future recurrence is
+    fixed there too.
+
+    ``^0.14`` means ``>=0.14.0,<1.0.0`` here (parse_range applies npm's 1.x caret
+    semantics to 0.x), which cannot intersect a ``>=1.1.3`` floor.
+    """
+    merged, conflicts = merge_python_deps([
+        ("curio.builtin@1", {"geopandas": ">=1.1.3"}),
+        ("ai.urbanlab.uhvi@1", {"geopandas": "^0.14"}),
+    ])
+    assert [c.package for c in conflicts] == ["geopandas"]
+    assert "geopandas" not in merged, (
+        "a conflicting package is dropped from the merged set entirely, so the "
+        "launcher would stop pip-installing it for the built-in package too"
+    )
+
+
+def test_an_open_ended_floor_below_the_builtin_floor_is_satisfiable():
+    """The shape UHVI ships now: a floor with no upper bound.
+
+    Intersecting ``>=0.14`` with ``>=1.1.3`` keeps the higher floor, so the
+    package resolves and the environment still honours what builtin needs.
+    """
+    merged, conflicts = merge_python_deps([
+        ("curio.builtin@1", {"geopandas": ">=1.1.3"}),
+        ("ai.urbanlab.uhvi@1", {"geopandas": ">=0.14"}),
+    ])
+    assert conflicts == []
+    assert merged["geopandas"] == ">=1.1.3"
+
+
+def test_an_empty_range_means_any_version():
+    """builtin declares ``numpy: ""``, so a capped numpy elsewhere would win.
+
+    Worth pinning: it means a stray ``^1.26`` in one package silently constrains
+    numpy for the entire shared environment rather than conflicting with anything.
+    """
+    merged, conflicts = merge_python_deps([
+        ("curio.builtin@1", {"numpy": ""}),
+        ("ai.urbanlab.uhvi@1", {"numpy": ">=1.26"}),
+    ])
+    assert conflicts == []
+    assert merged["numpy"] == ">=1.26.0"
