@@ -139,3 +139,78 @@ class TestPromptCarriesTheBackendContract:
             assert marker in text, marker
         # The shape names the handler grammar and the payload contract.
         assert "'content': <editor text>" in text
+
+
+class TestLazyImportContract:
+    """dev/97 (Option A): the probe runs before deps install — a
+    module-level import of a DECLARED dep refuses naming the lazy-import
+    fix in the model's face, and the lazy version of the same draft passes;
+    prompt and buildRequestContract teach the rule (A15: both places pinned)."""
+
+    def _dep_params(self, entry_src: str) -> dict:
+        params = TestBackendDraftEndToEnd()._backend_draft_params()
+        params["dependencies"] = {"python": {"tiny-lib": "1.0.0"}}
+        params["files"]["backend/handler.py"]["text"] = entry_src
+        return params
+
+    def test_module_level_declared_dep_refuses_naming_the_fix(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        helper = TestPackageBuilderTools()
+        att_id, calls = helper._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[helper._draft_tail(self._dep_params(
+                # dist 'tiny-lib' → import 'tiny_lib' (the -/_ drift tolerated)
+                "import tiny_lib\ndef handle(payload):\n    return {}\n")),
+                "Understood."],
+        )
+        run = helper._run(client, token, alice_project, att_id)
+        assert all(p["type"] != "proposal" for p in run.get_json()["content"])
+        refusal = calls[1][-1]["content"]
+        assert "backend probe failed" in refusal
+        assert "DECLARED python dependency" in refusal
+        assert "INSIDE your handler function" in refusal
+        assert "does NOT exist at build time" in refusal
+
+    def test_lazy_import_of_the_same_dep_passes_the_probe(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        helper = TestPackageBuilderTools()
+        att_id, _ = helper._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[helper._draft_tail(self._dep_params(
+                "def handle(payload):\n"
+                "    import tiny_lib  # lazy per the dev/97 contract\n"
+                "    return {'v': tiny_lib.V}\n")),
+                "Proposed."],
+        )
+        run = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in run.get_json()["content"]
+                        if p["type"] == "proposal")
+        assert proposal["status"] == "pending"
+        assert proposal["draft"]["dependencies"]["home"] == "overlay"
+
+    def test_undeclared_missing_module_gets_no_lazy_advice(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        helper = TestPackageBuilderTools()
+        att_id, calls = helper._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[helper._draft_tail(self._dep_params(
+                "import totally_undeclared\ndef handle(payload):\n    return {}\n")),
+                "Understood."],
+        )
+        helper._run(client, token, alice_project, att_id)
+        refusal = calls[1][-1]["content"]
+        assert "totally_undeclared" in refusal
+        assert "DECLARED python dependency" not in refusal  # honest: not declared
+
+    def test_prompt_and_contract_teach_the_rule(self):
+        from utk_curio.backend.app.agents.services import _BUILD_REQUEST_CONTRACT
+
+        text = _PROMPT_PATH.read_text(encoding="utf-8")
+        assert "Import declared python dependencies INSIDE your handler function" in text
+        assert "fails the probe by construction" in text
+        contract = json.dumps(_BUILD_REQUEST_CONTRACT)
+        assert "INSIDE the handler function" in contract
+        assert "isolated overlay" in contract

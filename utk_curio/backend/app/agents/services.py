@@ -5912,6 +5912,11 @@ _BUILD_REQUEST_CONTRACT: dict = {
         "def handle(payload) (or a HANDLERS dict {name: callable}); a node run "
         "delivers payload {'content': <editor text>, 'input': <upstream JSON "
         "or null>} and the returned value must be JSON-serializable",
+        "import declared python dependencies INSIDE the handler function "
+        "(lazily), never at module level — they install at Apply into the "
+        "package's isolated overlay and do not exist when the build's probe "
+        "loads the entry (a module-level import of a declared dependency "
+        "fails the probe by construction)",
         "backend code is pure Python + declared python dependencies, executed "
         "in a per-invocation sandboxed worker with strict limits: NO "
         "subprocess/multiprocessing/ctypes, NO eval/exec/compile/__import__/"

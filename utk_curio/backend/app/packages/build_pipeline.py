@@ -219,6 +219,28 @@ def run_build(
             if not row["ok"]:
                 detail = (envelope or {}).get("error") or worker.stderr_tail \
                     or worker.stdout_tail or worker.status
+                # dev/97 (Option A): the probe runs BEFORE deps install (they
+                # land at Apply, into the overlay) — a module-level import of
+                # a DECLARED dep is a timing mistake, and the refusal must
+                # name the fix (A4), not blame the import. Import-name vs
+                # dist-name drift is tolerated with -/_ equivalence.
+                import re as _re
+
+                declared = {
+                    str(name).lower().replace("-", "_")
+                    for name in (request.dependencies.get("python") or {})
+                }
+                missing = _re.search(r"No module named '([^']+)'", str(detail))
+                if missing:
+                    module_root = missing.group(1).split(".")[0]
+                    if module_root.lower().replace("-", "_") in declared:
+                        detail = (
+                            f"{detail} — {module_root!r} is a DECLARED python "
+                            "dependency: it installs at Apply into the package's "
+                            "isolated overlay and does NOT exist at build time. "
+                            "Import it INSIDE your handler function (lazily), "
+                            "never at module level."
+                        )
                 row["error"] = detail
                 probes.append(row)
                 ctx["backend_probe"] = probes
