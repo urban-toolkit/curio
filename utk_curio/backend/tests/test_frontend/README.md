@@ -170,12 +170,29 @@ Two families of baseline live in that folder:
 - one per bundled dataflow JSON, for `TestWorkflowCanvas` (two per workflow,
   `test_node_type_and_content` and `test_node_execution`), each paired with a
   `_browser_log.txt` because autk swallows its errors into React state;
-- three for the hand-built canvases: `canvas-authoring`, `package-roundtrip` and
-  `library-manager`. These guard what the semantic assertions cannot see - most
-  usefully that an edge is actually *drawn*, not merely present in the React Flow
-  store.
+- one per hand-built surface, keyed by the stem the test passes in place of a
+  workflow path: `canvas-authoring`, `package-roundtrip`,
+  `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
+  `library-manager`, `node-catalog-drawer`, `data-catalog-drawer` and
+  `workflow-deps-import`. These guard what the semantic assertions cannot see -
+  most usefully that an edge is actually *drawn*, not merely present in the
+  React Flow store, and that a modal rendered the values the test typed in.
 
-Measured run-to-run drift for the three canvas baselines is 1.24% (library
+One test may capture more than once by varying `test_name`, and a *file* may
+capture under one stem from several tests.
+`test_package_metadata_roundtrip_e2e.py` takes three under the
+`package-metadata-roundtrip` stem, because its subject is a sequence of modals
+and a single end-state shot would show none of them. Capture while the modal is
+still open: `_capture_full_page` uses `full_page=True` and `ModalShell` portals
+into `document.body`, so an open modal is in the shot.
+
+Non-determinism inside a capture is normal and the 20% budget is what absorbs it.
+The metadata modal, for instance, renders the generated coordinate
+(`curio.canvas.draft.<random>@1`) in its subtitle, which differs on every run. Do
+not tighten the tolerance to chase a crisper diff.
+
+Measured run-to-run drift for the three full-canvas baselines
+(`canvas-authoring`, `package-roundtrip`, `library-manager`) is 1.24% (library
 manager) and under 0.1% (the other two) against the 20% budget, so the headroom is
 wide. They were captured with the executable `browser_type_launch_args` resolves
 to - **system Google Chrome** when it is installed, bundled Chromium otherwise -
@@ -252,6 +269,7 @@ test_frontend/
   test_canvas_authoring_e2e.py     # build by hand: dataset -> drag -> connect -> run
   test_library_manager_e2e.py      # Installed-libraries modal -> a node imports the lib
   test_package_roundtrip_e2e.py    # canvas node -> package -> archive -> import -> run it
+  test_package_metadata_roundtrip_e2e.py  # Node settings + package metadata survive the archive
   test_workflow_deps_e2e.py   # loading a dataflow auto-installs its declared packages
   test_library_install_integration.py  # library install -> sandbox import (NO browser)
 ```
@@ -313,6 +331,35 @@ Other things that surprise people here:
   aria-label.
 - Card roots carry `data-pkg-dir` / `data-dataset-id`. Prefer them over display
   copy, which has been renamed repeatedly.
+- **`packagesApi` percent-encodes the dirName**, so the `@` in
+  `curio.canvas.draft.<slug>@1` reaches the wire as `%40`. An
+  `expect_response` predicate built from the raw dirName never fires; match on
+  the method and a path prefix instead.
+- **Two authoring fields are write-only and cannot be round-tripped.**
+  `#pkg-meta-runtime` (`compatibility.curioRuntime`) is not carried on
+  `PackagePayload`, so `PackageMetadataModal` opens it blank every time and a
+  reopened modal can never show what was saved. The Node settings modal's
+  `Provenance tab` / `Explanation tab` checkboxes are canvas-local:
+  `applyCanvasTemplateConfigToTemplateDraft` does not copy `hasProvenance` /
+  `hasExplanation` into the template draft and `toApiPayload` emits no such
+  manifest field. Asserting either through an archive fails for reasons that
+  have nothing to do with the archive.
+- **Node settings port rows have no label, id or test id**, and their class
+  names are hashed CSS modules. Locate the section by its heading text and step
+  up one level (`get_by_text("Input ports", exact=True).locator("xpath=..")`),
+  then index `input` / `select` per row.
+- **The Node settings -> Save As handoff crosses a store sync.** Node settings'
+  `onSave` calls `updateDataNode` and `setSaveAsOpen(true)` in one batch, but
+  `updateDataNode` writes FlowProvider's `useNodesState` array, which reaches
+  React Flow's store only when its prop-sync effect runs - after the render
+  where `show` flips true. `NodeSaveAsModal` used to `useMemo` the node on
+  `[show, nodeId, getNodes]` and so packaged the pre-edit one, dropping every
+  edit; it now selects off the store with `useStore`. Guarded by
+  `test_package_metadata_roundtrip_e2e.py::test_node_settings_configuration_reaches_the_saved_package`
+  and, in milliseconds, by `src/tests/components/nodeSaveAsModalNodeSource.test.tsx`.
+  Worth knowing when reading `test_package_roundtrip_e2e.py`, which sets its
+  labels through the node header pencil in a *separate* interaction and so never
+  exercises the same-batch handoff.
 - Palette kind rows carry `data-pkg-template-id` - the same descriptor id the
   row writes into `dataTransfer`, so addressing a row and dropping that kind
   cannot drift apart. Canvas nodes carry `data-curio-node-status`
