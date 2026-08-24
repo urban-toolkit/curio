@@ -35,9 +35,13 @@ function portDefToDraft(
 
 function defaultSourceFilename(desc: NodeDescriptor): string {
   const path = desc.package?.source;
-  if (!path) return "default.py";
-  const last = path.split("/").pop() ?? "";
-  return last || "default.py";
+  // Blank when the descriptor names no file, because
+  // `applyCanvasTemplateConfigToTemplateDraft` reads a blank as "no override"
+  // and keeps the per-kind name the draft derived from the template id.
+  // Inventing a constant here would win that merge and reintroduce the
+  // collision the draft's fallback exists to avoid.
+  if (!path) return "";
+  return path.split("/").pop()?.trim() ?? "";
 }
 
 export function canvasTemplateConfigFromDescriptor(

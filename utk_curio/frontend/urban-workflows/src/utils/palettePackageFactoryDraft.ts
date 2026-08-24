@@ -87,11 +87,22 @@ export function canonicalTemplateSlugForDescriptor(desc: NodeDescriptor): string
   return id.toLowerCase().replace(/_/g, "-");
 }
 
-function inferSourceFilename(packageRelativePath?: string): string {
-  if (!packageRelativePath) return "default.py";
-  const parts = packageRelativePath.split("/").filter(Boolean);
-  const last = parts[parts.length - 1];
-  return last || "default.py";
+function inferSourceFilename(packageRelativePath: string | undefined, templateId: string): string {
+  if (packageRelativePath) {
+    const parts = packageRelativePath.split("/").filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last) return last;
+  }
+  // Per kind, never a shared "default.py". A canvas node has no
+  // package-relative source, so every node saved out of the canvas lands here:
+  // with a constant fallback, saving a second node into the same package wrote
+  // over the first kind's source (`toApiPayload` maps each kind to
+  // `sources/<sourceFilename>`, so the later save simply won). The manifest kept
+  // both kinds, which made it invisible until you ran them - the palette showed
+  // two rows executing identical code. `templateId` already carries the
+  // collision suffix that keeps two same-typed nodes apart, and this mirrors the
+  // wizard's own fallback in factoryDraftModel.
+  return `${templateId}.py`;
 }
 
 function deriveEngine(desc: NodeDescriptor): Engine {
@@ -151,7 +162,7 @@ export function descriptorToTemplateDraft(
   labelOverride?: string,
 ): TemplateDraft {
   const templateId = kindIdOverride ?? canonicalTemplateSlugForDescriptor(desc);
-  const sourceFilename = inferSourceFilename(desc.package?.source);
+  const sourceFilename = inferSourceFilename(desc.package?.source, templateId);
 
   const { inP, outP } = ensurePorts(desc);
 
