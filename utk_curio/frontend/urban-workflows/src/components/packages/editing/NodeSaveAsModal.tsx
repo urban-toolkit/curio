@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { useReactFlow } from "reactflow";
+import { useReactFlow, useStore } from "reactflow";
 import ModalShell from "../../ModalShell";
 import { packagesApi, refreshPackageRegistry, triggerBlobDownload } from "../../../api/packagesApi";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
@@ -48,7 +48,7 @@ export function NodeSaveAsModal({
   nodeId: string;
   onClose: () => void;
 }) {
-  const { getNodes, setNodes } = useReactFlow();
+  const { setNodes } = useReactFlow();
   const { getStarters } = useStarterContext();
   const { showToast } = useToastContext();
   const { projectId } = useFlowContext();
@@ -74,10 +74,26 @@ export function NodeSaveAsModal({
       }));
   }, [registryKey]);
 
-  const canvasNode = useMemo(() => {
-    if (!show) return null;
-    return getNodes().find((n) => String(n.id) === nodeId) ?? null;
-  }, [show, nodeId, getNodes]);
+  // Subscribed, not sampled. The only way in here is the Node settings modal's
+  // "Save as package node...", whose onSave (styles.tsx) calls updateDataNode
+  // and setSaveAsOpen(true) in one batch. updateDataNode writes FlowProvider's
+  // useNodesState array, which reaches React Flow's store only when its
+  // prop-sync effect runs, i.e. after the render in which `show` flips true. A
+  // useMemo keyed on [show, nodeId, getNodes] therefore captured the *pre-edit*
+  // node and, since none of those deps ever change again, held it for the
+  // modal's whole lifetime: every edit just made in Node settings was dropped
+  // from the saved package. Selecting off the store fixes that and keeps the
+  // draft honest if the node changes again while the modal is open.
+  //
+  // The `show` guard matters for cost as much as correctness: this modal is
+  // rendered once per canvas node, and returning a stable null for the closed
+  // ones keeps them from re-rendering on every store change.
+  const canvasNode = useStore(
+    useCallback(
+      (s: any) => (show ? s.nodeInternals.get(nodeId) ?? null : null),
+      [show, nodeId],
+    ),
+  );
 
   const nodeLabel = useMemo(() => {
     if (!canvasNode) return "Node";
