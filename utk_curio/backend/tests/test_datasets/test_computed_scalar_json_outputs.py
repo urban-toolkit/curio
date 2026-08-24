@@ -93,7 +93,7 @@ def _frames():
     ],
     ids=["int", "float", "true", "false", "str", "null"],
 )
-def test_row_only_kinds_install_with_a_value_envelope(app, value, data_type, expected):
+def test_row_only_kinds_install_as_the_bare_value(app, value, data_type, expected):
     art = store_sandbox_artifact(value)
     result = _install(art, data_type=data_type)
 
@@ -103,7 +103,11 @@ def test_row_only_kinds_install_with_a_value_envelope(app, value, data_type, exp
     )
     assert result.manifest.format == "json"
     assert result.manifest.data_file == "data/{}.json".format(art)
-    assert _installed_json() == {"value": expected}
+    # Bare, not ``{"value": ...}``: the json loader snippet is a plain json.load
+    # and a single-file manifest carries no kind for it to unwrap by, so an
+    # envelope would hand a Dataset node a dict where the producer returned a
+    # scalar. Bundles keep the envelope, because bundle.json records the kind.
+    assert _installed_json() == expected
 
 
 def test_scalar_data_file_is_a_safe_single_segment(app):
@@ -200,6 +204,26 @@ def test_installed_json_dataset_loads_with_the_generated_loader_snippet(app):
     assert namespace[snippet["returnVariable"]] == payload
 
 
+@pytest.mark.parametrize(
+    "value,data_type",
+    [(42, "int"), (3.5, "float"), (True, "bool"), (False, "bool"), ("hi", "str"), (None, "null")],
+    ids=["int", "float", "true", "false", "str", "null"],
+)
+def test_scalar_dataset_reloads_as_the_producer_value(app, value, data_type):
+    """Dragging a saved scalar dataset back onto the canvas must hand the node
+    the value its producer returned, not a wrapper around it."""
+    from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
+
+    _install(store_sandbox_artifact(value), data_type=data_type)
+
+    snippet = loader_snippet("json", str(_data_path()))
+    namespace: dict = {}
+    source = "\n".join(snippet["imports"] + [snippet["code"]])
+    exec(source, namespace)  # noqa: S102 - this is what a Dataset node runs
+    assert namespace[snippet["returnVariable"]] == value
+    assert type(namespace[snippet["returnVariable"]]) is type(value)
+
+
 def test_json_dataset_downloads_with_a_json_extension(app):
     from utk_curio.backend.app.datasets.application.export import (
         _DOWNLOAD_MIMETYPES,
@@ -221,7 +245,7 @@ def test_str_output_naming_a_real_file_stores_the_value_not_the_file(app):
     result = _install(store_sandbox_artifact("cities.csv"), data_type="str")
 
     assert result is not None
-    assert _installed_json() == {"value": "cities.csv"}, (
+    assert _installed_json() == "cities.csv", (
         "a str artifact keeps the user's return value in value_str, so treating "
         "it as a path hard-links an unrelated file in as the node's dataset (#180)"
     )
@@ -229,7 +253,11 @@ def test_str_output_naming_a_real_file_stores_the_value_not_the_file(app):
 
 # -- Group 6: the helper extraction is behaviour-preserving -----------------
 
-def test_scalar_bundle_part_and_single_output_agree(app):
+def test_scalar_bundle_part_and_single_output_agree_on_the_value(app):
+    """Both materializers read the row through ``_row_value``, so the VALUE is
+    the same even though the on-disk shapes differ deliberately: a bundle part
+    keeps the ``{"value": ...}`` envelope its loader unwraps by kind, and a
+    single-file dataset stores the value bare for a plain ``json.load``."""
     bundle = _install(store_sandbox_artifact((1, "x")), node_id="tup", data_type="outputs")
     single = _install(store_sandbox_artifact(1), node_id="scalar", data_type="int")
 
@@ -237,7 +265,9 @@ def test_scalar_bundle_part_and_single_output_agree(app):
     part = json.loads(
         (bundle_dir / "data" / "parts" / "00_int.json").read_text(encoding="utf-8")
     )
-    assert part == _installed_json("scalar")
+    assert part == {"value": 1}
+    assert _installed_json("scalar") == 1
+    assert part["value"] == _installed_json("scalar")
     assert single.manifest.format == "json"
 
 

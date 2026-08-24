@@ -80,8 +80,8 @@ DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 POS_LEFT = (150, 150)
 POS_RIGHT = (760, 150)
 
-# Deliberately NOT shaped ``{"value": ...}``: the scalar serializer wraps its
-# payload in that envelope, and the unwrap helper below would then be ambiguous.
+# Nested and multi-key on purpose: a computed JSON dataset must round-trip the
+# whole structure, not just survive as some flattened shape.
 DICT_PAYLOAD = {"city": "Chicago", "pm25": 12.5, "zones": [1, 2, 3]}
 DICT_CODE = "return " + json.dumps(DICT_PAYLOAD) + "\n"
 
@@ -164,18 +164,6 @@ def _install_save_response(project_id: str, node_id: str):
     return _match
 
 
-def _unwrap_value(payload):
-    """Scalars are stored as ``{"value": ...}``; dicts are stored as themselves.
-
-    Tolerating both keeps the assertion about the round-trip rather than about
-    which envelope the installer happened to pick. DICT_PAYLOAD is chosen so it
-    can never be mistaken for the envelope.
-    """
-    if isinstance(payload, dict) and set(payload) == {"value"}:
-        return payload["value"]
-    return payload
-
-
 def _parse_json_bytes(raw: bytes, label: str):
     try:
         return json.loads(raw.decode("utf-8"))
@@ -194,6 +182,28 @@ def _computed_id(node_id: str, project_id: str) -> str:
     from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 
     return computed_dataset_id(node_id, project_id)
+
+
+def _purge_existing_computed(server: str, token: str) -> int:
+    """Delete every computed dataset already in this user's store.
+
+    ``/api/testing/reset-db`` truncates SQL only, and ``user.id`` is a bare
+    sqlite rowid alias that recycles from 1, so ``.curio/users/1/datasets/``
+    carries computed datasets left by earlier tests and earlier pytest runs
+    (``test_dataset_palette.py`` mints one and does not remove it). Without this
+    the Computed tab shows those too, which would make both the count assertion
+    and the drawer baseline depend on run history.
+    """
+    catalog = api_json(
+        "{}/api/datasets/catalog?includeHub=false".format(server), token
+    )
+    stale = [i["id"] for i in catalog["items"] if i.get("origin") == "computed"]
+    for dataset_id in stale:
+        try:
+            api_json("{}/api/datasets/{}".format(server, dataset_id), token, method="DELETE")
+        except Exception as exc:  # noqa: BLE001 - best effort, asserted below
+            print("[setup] could not purge {}: {}".format(dataset_id, exc))
+    return len(stale)
 
 
 def _catalog_item(server: str, token: str, project_id: str, dataset_id: str) -> dict:
@@ -319,6 +329,10 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
     token = session["token"]
     project_id = session["project"]["id"]
 
+    # Start from a known store, so "the Computed tab holds exactly this test's
+    # two datasets" is a statement about this run and not about run history.
+    _purge_existing_computed(current_server, token)
+
     _record_toasts(page)
 
     dict_node = _author_analysis_node(page, POS_LEFT, DICT_CODE)
@@ -327,8 +341,9 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
     # node makes every interaction on it time out with no useful message.
     _wait_for_reactflow_ready(page)
 
-    for node_id in (dict_node, scalar_node):
-        delete_computed_datasets(token, _computed_id(node_id, project_id))
+    computed_ids = [_computed_id(node_id, project_id) for node_id in (dict_node, scalar_node)]
+    for dataset_id in computed_ids:
+        delete_computed_datasets(token, dataset_id)
 
     # 1. The dict node.
     dict_output, dict_save = _run_and_capture_save(page, project_id, dict_node)
@@ -381,7 +396,11 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
             token,
             raw=True,
         )
-        assert _unwrap_value(_parse_json_bytes(raw, dataset_id)) == expected, (
+        # Exact equality, no unwrapping: a single-file computed dataset stores
+        # the producer's value bare, so what a Dataset node reloads is what the
+        # node returned. (Bundles keep a {"value": ...} envelope, which their
+        # own loader unwraps by part kind.)
+        assert _parse_json_bytes(raw, dataset_id) == expected, (
             "{} downloaded {!r}, expected the node's return value {!r}".format(
                 dataset_id, raw[:200], expected
             )
@@ -413,7 +432,7 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
         test_name="test_a_dict_and_a_scalar_output_install_without_a_warning",
     )
 
-    _open_computed_tab(page)
+    _open_computed_tab(page, computed_ids)
     dismiss_toasts(page)
     save_workflow_test_screenshot(
         page,
@@ -422,7 +441,7 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
     )
 
 
-def _open_computed_tab(page) -> None:
+def _open_computed_tab(page, dataset_ids) -> None:
     """Open the Data Catalog drawer on its Computed tab.
 
     The visual counterpart to the API assertions: nothing else in the suite pins
@@ -439,6 +458,13 @@ def _open_computed_tab(page) -> None:
 
     tab = page.get_by_role("button", name=re.compile(r"^Computed"))
     tab.click()
-    # The badge only renders with a non-zero count, so waiting for it is also an
-    # assertion that both datasets reached the drawer.
-    expect(tab).to_contain_text("2", timeout=20000)
+    # Key on the two dataset ids rather than the badge count: the count also
+    # counts anything left in the user store by an earlier run, so it says
+    # nothing about THIS test and fails with "Computed3" instead of naming what
+    # is missing. The setup purge keeps the drawer at exactly these two, which is
+    # what makes the baseline below deterministic.
+    for dataset_id in dataset_ids:
+        card = root.locator(
+            'article:not([role="status"])[data-dataset-id="{}"]'.format(dataset_id)
+        )
+        expect(card).to_have_count(1, timeout=20000)
