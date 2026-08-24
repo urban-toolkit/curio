@@ -105,3 +105,35 @@ class TestBackendRouteMatrix:
                         data=json.dumps({"payload": blob}), headers=_auth(token))
         assert r.status_code == 413
         assert "request bound" in r.get_json()["error"]
+
+
+class TestUninstallSweepsBackendResidue:
+    """dev/97: DELETE /api/packages/<dir> sweeps overlay + data dir + pin;
+    the invocation ledger survives (retention owns its expiry)."""
+
+    def test_delete_route_sweeps(self, client, installed_backend_pkg, tmp_curio):
+        from utk_curio.backend.app.packages import backend_runtime as rt
+
+        user_key, token = installed_backend_pkg
+        # Populate every backend home: an invocation (data via 'remember'
+        # is not in this fixture's handlers — use the ledger via a run),
+        # the pin (fixture), an overlay, and a data dir.
+        r = client.post(f"/api/packages/{PKG}/backend/word-count",
+                        json={"payload": {"text": "a"}}, headers=_auth(token))
+        assert r.status_code == 200
+        overlay = rt.overlay_dir_for(user_key, PKG)
+        overlay.mkdir(parents=True, exist_ok=True)
+        (overlay / "dep.py").write_text("X = 1\n", encoding="utf-8")
+        data_dir = rt._data_dir(user_key, PKG)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / "note.txt").write_text("kept", encoding="utf-8")
+        assert rt.pinned_entry_digest(user_key, PKG)
+
+        resp = client.delete(f"/api/packages/{PKG}", headers=_auth(token))
+        assert resp.status_code == 204
+
+        assert not overlay.exists()
+        assert not data_dir.exists()
+        assert rt.pinned_entry_digest(user_key, PKG) is None
+        ledger = rt._ledger_dir(user_key, PKG)
+        assert ledger.is_dir() and list(ledger.glob("*.jsonl"))  # survives

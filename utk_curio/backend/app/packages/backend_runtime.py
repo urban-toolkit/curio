@@ -169,6 +169,96 @@ def overlay_dir_for(user_key: str, dir_name: str) -> Path:
     return _user_root(user_key) / _OVERLAY_DIRNAME / dir_name
 
 
+#: dev/97: overlay size cap — handler overlays are for small pure-Python
+#: deps; torch-scale trees fail the promote honestly (operator-tunable).
+OVERLAY_MAX_MB_ENV = "CURIO_BACKEND_OVERLAY_MAX_MB"
+OVERLAY_DEFAULT_MAX_MB = 512
+
+
+def overlay_max_bytes() -> int:
+    raw = (os.environ.get(OVERLAY_MAX_MB_ENV) or "").strip()
+    try:
+        mb = int(raw) if raw else OVERLAY_DEFAULT_MAX_MB
+    except ValueError:
+        mb = OVERLAY_DEFAULT_MAX_MB
+    return max(1, mb) * 1024 * 1024
+
+
+def _dep_route(has_backend: bool, has_warm_python: bool) -> tuple[str, str]:
+    """dev/97: THE routing rule, one core with two manifest adapters below —
+    ``"overlay"`` for a backend-bearing package (handlers are the consumer;
+    workers see PYTHONPATH), ``"both"`` when the same manifest ALSO carries a
+    python-engine ``hasCode`` template (its node code runs in the warm
+    sandbox, which cannot see overlays), ``"host"`` when there is no backend.
+    Derived — no new schema key; ``dependencies.python`` stays the one
+    declaration."""
+    if not has_backend:
+        return "host", "no backend surface — deps serve the warm sandbox"
+    if has_warm_python:
+        return "both", (
+            "backend handlers use the isolated overlay; the package's python "
+            "node templates also need the shared interpreter"
+        )
+    return "overlay", (
+        "backend handlers only — the shared interpreter is not touched"
+    )
+
+
+def dep_destinations(manifest) -> tuple[str, str]:
+    """The routing rule over a TYPED ``PackageManifest``."""
+    return _dep_route(
+        manifest.backend is not None,
+        any(t.engine == "python" and t.has_code for t in manifest.templates),
+    )
+
+
+def dep_destinations_raw(manifest: Mapping[str, Any]) -> tuple[str, str]:
+    """The routing rule over a RAW draft-manifest dict (the dev/96 card
+    composer's input) — same core, so the card can never disagree with the
+    promote (the A15 one-spelling rule)."""
+    templates = manifest.get("templates") or []
+    return _dep_route(
+        bool(manifest.get("backend")),
+        any(isinstance(t, dict) and t.get("engine") == "python"
+            and bool(t.get("hasCode")) for t in templates),
+    )
+
+
+def build_overlay(user_key: str, dir_name: str, deps: dict,
+                  on_line=None) -> dict[str, Any]:
+    """dev/97: wipe-and-rebuild the package's dependency overlay via the ONE
+    pip primitive. Returns ``{"libs": [specs], "bytes": n}``; raises
+    :class:`~.pip_runner.PipInstallError` on pip failure and
+    :class:`BackendRuntimeError` (507) when the built overlay exceeds the
+    operator cap — the caller compensates (promotion rollback). The overlay
+    is derived state: never edited in place, a crashed write cannot go stale
+    because the next build wipes first."""
+    import shutil
+
+    from utk_curio.backend.app.packages import pip_runner
+
+    overlay = overlay_dir_for(user_key, dir_name)
+    if overlay.is_dir():
+        shutil.rmtree(overlay)
+    overlay.mkdir(parents=True, exist_ok=True)
+    try:
+        report = pip_runner.install_python_deps_to_target(
+            deps, str(overlay), on_line=on_line)
+    except pip_runner.PipInstallError:
+        shutil.rmtree(overlay, ignore_errors=True)  # never leave a half-build
+        raise
+    size = _dir_size_bytes(overlay)
+    cap = overlay_max_bytes()
+    if size > cap:
+        shutil.rmtree(overlay, ignore_errors=True)
+        raise BackendRuntimeError(
+            f"the built dependency overlay is {size // (1024 * 1024)} MiB — over "
+            f"the {cap // (1024 * 1024)} MiB cap ({OVERLAY_MAX_MB_ENV}); "
+            "torch-scale dependencies do not fit a handler overlay", 507,
+        )
+    return {"libs": list(report.installed), "bytes": size}
+
+
 def remove_backend_residue(user_key: str, dir_name: str) -> dict[str, bool]:
     """dev/97: the uninstall sweep dev/91 §6.7 promised — overlay, data dir,
     and pin entry go; the invocation LEDGER deliberately survives (append-only

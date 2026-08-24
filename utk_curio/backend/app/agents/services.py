@@ -2414,7 +2414,16 @@ def _draft_card_payload(request, result) -> dict:
     # Blocks sort first: the cap must never hide a block behind notes.
     findings.sort(key=lambda f: _FINDING_SEVERITY_ORDER.get(f["severity"], 3))
     if python_rows or js_rows or findings:
+        # dev/97: where the python deps will LIVE — the same routing rule
+        # promote applies (one core, two adapters — the card can never
+        # disagree with the install).
+        from utk_curio.backend.app.packages.backend_runtime import (
+            dep_destinations_raw,
+        )
+
+        home, _home_reason = dep_destinations_raw(request.manifest or {})
         card["dependencies"] = {
+            "home": home,
             "python": python_rows[:_DRAFT_CARD_MAX_DEP_ROWS],
             "pythonTotal": len(python_rows),
             "js": js_rows[:_DRAFT_CARD_MAX_DEP_ROWS],

@@ -261,6 +261,10 @@ export interface AgentProposalPart {
     templates: { added: string[]; modified: string[]; addedTotal: number;
                  modifiedTotal: number; preservedTotal: number };
     dependencies?: {
+      /** dev/97: where the python deps will live — "overlay" (isolated,
+       * backend handlers only), "both" (plus the shared interpreter for
+       * warm-sandbox python templates), or "host". */
+      home?: string;
       python: Array<{ name: string; constraint: string }>;
       pythonTotal: number;
       js: Array<{ name: string; version: string }>;

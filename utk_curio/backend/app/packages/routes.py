@@ -487,6 +487,11 @@ def remove_packageage(dir_name: str):
         return _error(str(exc))
     if not removed:
         return _error("package not installed", 404)
+    # dev/97: backend residue goes with the package (overlay, data dir,
+    # pin); the invocation ledger survives — retention owns its expiry.
+    from utk_curio.backend.app.packages.backend_runtime import remove_backend_residue
+
+    remove_backend_residue(user_key, dir_name)
     return "", 204
 
 

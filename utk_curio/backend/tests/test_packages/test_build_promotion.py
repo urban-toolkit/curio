@@ -275,3 +275,133 @@ class TestRestartHonesty:
         digest = _stage_build(manifest_dict)
         journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
         assert "restartRecommended" not in journal
+
+
+def _stage_backend_build(manifest_dict, *, entry_src, python_deps=None,
+                         warm_python_kind=False, user_key="guest") -> str:
+    """A staged backend-bearing archive (dev/97 routing/probe tests)."""
+    kinds = [{
+        "id": "counter-kind", "label": "Counter", "category": "computation",
+        "engine": "python", "editor": "none", "hasCode": False,
+        "hasWidgets": False, "hasGrammar": False,
+        "inputPorts": [], "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+        "backendHandler": "word-count",
+    }]
+    if warm_python_kind:
+        kinds.append({
+            "id": "warm-kind", "label": "Warm", "category": "computation",
+            "engine": "python", "editor": "code", "hasCode": True,
+            "hasWidgets": False, "hasGrammar": False,
+            "inputPorts": [], "outputPorts": [],
+        })
+    manifest = manifest_dict(kinds=kinds, python_deps=python_deps)
+    manifest["permissions"] = ["server-code"]
+    manifest["backend"] = {"entry": "backend/handler.py",
+                           "handlers": [{"name": "word-count",
+                                         "timeoutClass": "quick"}]}
+    request = parse_build_request({
+        "mode": "create", "target": "ai.test.demo@1", "manifest": manifest,
+        "files": {"backend/handler.py": {"text": entry_src}},
+    })
+    archive, _ = assemble_archive(request, request.files, None, {
+        "python": python_deps or {}, "js": {}, "packages": {},
+    })
+    return build_staging.stage_artifact(user_key, archive)
+
+
+class TestOverlayRoutingAndPostApplyProbe:
+    """dev/97: ONE routing rule at Apply (overlay / host / both), the
+    journal's overlay provenance, dev/92's restart signal narrowed to the
+    HOST portion, and the post-Apply probe (REAL worker) gating activation
+    with rollback compensation."""
+
+    _OK_ENTRY = "def handle(payload):\n    return {'ok': True}\n"
+
+    def test_backend_only_deps_go_overlay_only_no_restart(
+            self, tmp_curio, manifest_dict, monkeypatch):
+        from utk_curio.backend.app.packages import backend_runtime, pip_runner
+
+        calls = {}
+
+        def _fake_overlay(user_key, dir_name, deps, on_line=None):
+            calls["overlay"] = (dir_name, dict(deps))
+            return {"libs": [f"{n}=={v}" for n, v in sorted(deps.items())],
+                    "bytes": 1234}
+
+        def _never_host(deps, on_line=None):  # pragma: no cover
+            raise AssertionError("host pip must not run for overlay-only routing")
+
+        monkeypatch.setattr(backend_runtime, "build_overlay", _fake_overlay)
+        monkeypatch.setattr(pip_runner, "install_python_deps", _never_host)
+        digest = _stage_backend_build(manifest_dict, entry_src=self._OK_ENTRY,
+                                      python_deps={"tinylib": "1.0.0"})
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+        assert journal["status"] == "awaiting-activation"
+        assert calls["overlay"] == ("ai.test.demo@1", {"tinylib": "1.0.0"})
+        assert journal["overlay"]["libs"] == ["tinylib==1.0.0"]
+        assert journal["overlay"]["bytes"] == 1234
+        assert "shared interpreter is not touched" in journal["overlay"]["reason"]
+        # dev/92 narrowed: overlay changes never split-brain fresh workers.
+        assert "restartRecommended" not in journal
+
+    def test_mixed_manifest_routes_both_restart_from_host_half(
+            self, tmp_curio, manifest_dict, monkeypatch):
+        from utk_curio.backend.app.packages import backend_runtime, pip_runner
+
+        calls = {"overlay": False, "host": False}
+        monkeypatch.setattr(
+            backend_runtime, "build_overlay",
+            lambda uk, dn, deps, on_line=None: calls.__setitem__("overlay", True)
+            or {"libs": ["tinylib==1.0.0"], "bytes": 10})
+        monkeypatch.setattr(
+            pip_runner, "install_python_deps",
+            lambda deps, on_line=None: calls.__setitem__("host", True)
+            or pip_runner.InstallReport(installed=["tinylib"], skipped=[]))
+        digest = _stage_backend_build(manifest_dict, entry_src=self._OK_ENTRY,
+                                      python_deps={"tinylib": "1.0.0"},
+                                      warm_python_kind=True)
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+        assert calls == {"overlay": True, "host": True}
+        assert journal["restartRecommended"] == {"libs": ["tinylib"]}
+        assert "python node templates" in journal["overlay"]["reason"]
+
+    def test_post_apply_probe_passes_a_healthy_backend(
+            self, tmp_curio, manifest_dict):
+        digest = _stage_backend_build(manifest_dict, entry_src=self._OK_ENTRY)
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+        assert journal["status"] == "awaiting-activation"
+
+    def test_post_apply_probe_failure_rolls_back(self, tmp_curio, manifest_dict):
+        digest = _stage_backend_build(
+            manifest_dict, entry_src="import not_a_real_module\n" + self._OK_ENTRY)
+        with pytest.raises(PromotionError) as exc:
+            promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+        assert exc.value.status == 422
+        assert "failed its post-apply probe" in str(exc.value)
+        assert "not_a_real_module" in str(exc.value)
+        assert "restored" in str(exc.value)
+        # The fresh create rolled back — nothing remains installed.
+        assert not (package_dir("guest", "ai.test.demo@1")).exists()
+
+    def test_overlay_reaches_the_post_apply_probe(self, tmp_curio, manifest_dict,
+                                                  monkeypatch):
+        # Module-level import of a dep that exists ONLY in the overlay: the
+        # probe passes exactly because the overlay rides PYTHONPATH — the
+        # shadowing edge exercised end to end with a real worker.
+        from utk_curio.backend.app.packages import backend_runtime
+
+        def _fake_overlay(user_key, dir_name, deps, on_line=None):
+            overlay = backend_runtime.overlay_dir_for(user_key, dir_name)
+            overlay.mkdir(parents=True, exist_ok=True)
+            (overlay / "ovl_dep.py").write_text("X = 1\n", encoding="utf-8")
+            return {"libs": ["ovl-dep==1.0"], "bytes": 8}
+
+        monkeypatch.setattr(backend_runtime, "build_overlay", _fake_overlay)
+        digest = _stage_backend_build(
+            manifest_dict,
+            entry_src="import ovl_dep\ndef handle(payload):\n"
+                      "    return {'x': ovl_dep.X}\n",
+            python_deps={"ovl-dep": "1.0"})
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+        assert journal["status"] == "awaiting-activation"
+        assert journal["overlay"]["libs"] == ["ovl-dep==1.0"]

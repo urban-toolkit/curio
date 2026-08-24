@@ -373,6 +373,19 @@ export const AgentReviewCard: React.FC<{
                 {part.draft.dependencies.findingsTotal === 1 ? "" : "s"}
               </summary>
               <ul className={styles.draftList}>
+                {part.draft.dependencies.home === "overlay" ? (
+                  // dev/97: the isolation statement — same routing rule the
+                  // install applies, so the card can never disagree with it.
+                  <li>
+                    python deps install into the package's isolated overlay —
+                    the shared interpreter is not touched
+                  </li>
+                ) : part.draft.dependencies.home === "both" ? (
+                  <li>
+                    python deps install into the package's isolated overlay,
+                    plus the shared interpreter for its python node templates
+                  </li>
+                ) : null}
                 {part.draft.dependencies.python.map((row) => (
                   <li key={`py:${row.name}`}>python · {row.name} {row.constraint}</li>
                 ))}

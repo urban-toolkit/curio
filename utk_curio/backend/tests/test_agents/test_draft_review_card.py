@@ -209,3 +209,51 @@ class TestDraftCardOnTheMintedPart:
         persisted = next(p for t in turns for p in t.get("content", [])
                          if p.get("type") == "proposal")
         assert persisted["draft"]["files"]["addedTotal"] >= 1
+
+
+class TestDependencyHomeOnTheCard:
+    """dev/97: the card states where the python deps will LIVE — the same
+    routing core the install applies (one rule, two adapters)."""
+
+    def _backend_request(self, *, warm=False):
+        kinds = [{
+            "id": "counter-kind", "label": "Counter", "category": "computation",
+            "engine": "python", "editor": "none", "hasCode": False,
+            "hasWidgets": False, "hasGrammar": False,
+            "inputPorts": [], "outputPorts": [],
+            "backendHandler": "word-count",
+        }]
+        if warm:
+            kinds.append({
+                "id": "warm-kind", "label": "Warm", "category": "computation",
+                "engine": "python", "editor": "code", "hasCode": True,
+                "hasWidgets": False, "hasGrammar": False,
+                "inputPorts": [], "outputPorts": [],
+            })
+        return parse_build_request({
+            "mode": "create",
+            "manifest": {
+                "id": "ai.test.card", "version": "1.0.0", "name": "Card",
+                "publisher": "t", "description": "d",
+                "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+                "permissions": ["server-code"],
+                "dependencies": {"packages": {}, "python": {}, "js": {}},
+                "backend": {"entry": "backend/handler.py",
+                            "handlers": [{"name": "word-count"}]},
+                "templates": kinds,
+            },
+            "files": {"backend/handler.py": {"text": "def handle(p):\n    return {}\n"}},
+        })
+
+    def _sbom(self):
+        return {"python": [{"name": "tinylib", "constraint": "1.0.0"}],
+                "js": {"direct": [], "lock": {}}, "findings": [], "blocked": False}
+
+    def test_overlay_both_and_host_homes(self):
+        overlay = _draft_card_payload(self._backend_request(), _result(sbom=self._sbom()))
+        assert overlay["dependencies"]["home"] == "overlay"
+        both = _draft_card_payload(self._backend_request(warm=True),
+                                   _result(sbom=self._sbom()))
+        assert both["dependencies"]["home"] == "both"
+        host = _draft_card_payload(_request(), _result(sbom=self._sbom()))
+        assert host["dependencies"]["home"] == "host"

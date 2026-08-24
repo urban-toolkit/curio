@@ -222,31 +222,95 @@ def promote(
             _save_journal(user_key, journal)
 
         # Python deps install at Apply — the reviewed installer step the
-        # build phase deliberately never ran (dev/89 §3.4). A pip failure
-        # compensates immediately.
+        # build phase deliberately never ran (dev/89 §3.4). dev/97: ONE
+        # routing decision (dep_destinations) sends a backend-bearing
+        # package's deps to its isolated OVERLAY (wipe-and-rebuild under
+        # this lock — invocations wait, B-1); the shared interpreter is
+        # touched only when the manifest also carries warm-sandbox python
+        # templates. Any failure compensates immediately.
         py_deps = dict(manifest.python_deps or {})
         if py_deps:
-            from utk_curio.backend.app.packages import pip_runner
+            from utk_curio.backend.app.packages import backend_runtime, pip_runner
 
-            try:
-                pip_report = pip_runner.install_python_deps(py_deps)
-                # dev/92 B-2: the report's installed-vs-skipped split IS the
-                # restart signal — a lib that actually landed/changed in the
-                # shared interpreter leaves the running warm sandbox executing
-                # its boot-time imports until Curio restarts (dev/91 §0.1).
-                # Skipped-only (idempotent re-Apply) recommends nothing.
-                if pip_report.installed:
-                    journal["restartRecommended"] = {
-                        "libs": sorted(pip_report.installed)}
+            destination, dest_reason = backend_runtime.dep_destinations(manifest)
+            if destination in ("overlay", "both"):
+                try:
+                    overlay_info = backend_runtime.build_overlay(
+                        user_key, target, py_deps)
+                except (pip_runner.PipInstallError,
+                        backend_runtime.BackendRuntimeError) as exc:
+                    journal["error"] = f"overlay build failed: {exc}"
                     _save_journal(user_key, journal)
-            except pip_runner.PipInstallError as exc:
-                journal["error"] = f"pip install failed: {exc}"
+                    _rollback_locked(user_key, journal, f"overlay build failed: {exc}")
+                    raise PromotionError(
+                        "dependency overlay build failed and the prior state was "
+                        f"{'restored' if journal['rollback']['status'] == 'rolled-back' else 'NOT fully restored — manual repair required'}: {exc}",
+                        502) from exc
+                journal["overlay"] = {**overlay_info, "reason": dest_reason}
                 _save_journal(user_key, journal)
-                _rollback_locked(user_key, journal, f"pip install failed: {exc}")
+            if destination in ("host", "both"):
+                try:
+                    pip_report = pip_runner.install_python_deps(py_deps)
+                    # dev/92 B-2, narrowed by dev/97: the restart signal fires
+                    # for the SHARED interpreter only — overlay changes never
+                    # split-brain anything (workers are freshly spawned).
+                    if pip_report.installed:
+                        journal["restartRecommended"] = {
+                            "libs": sorted(pip_report.installed)}
+                        _save_journal(user_key, journal)
+                except pip_runner.PipInstallError as exc:
+                    journal["error"] = f"pip install failed: {exc}"
+                    _save_journal(user_key, journal)
+                    _rollback_locked(user_key, journal, f"pip install failed: {exc}")
+                    raise PromotionError(
+                        "python dependency install failed and the prior state was "
+                        f"{'restored' if journal['rollback']['status'] == 'rolled-back' else 'NOT fully restored — manual repair required'}: {exc}",
+                        502) from exc
+
+        # dev/97: the post-Apply probe — ONE invocation of the INSTALLED
+        # entry with the real overlay on PYTHONPATH, catching the overlay
+        # shadowing edge at Apply (rollback compensation) instead of at the
+        # user's first Run. Load + resolution is the health check (dev/91).
+        if manifest.backend is not None and manifest.backend.handlers:
+            from utk_curio.backend.app.packages import backend_contract as bc
+            from utk_curio.backend.app.packages import backend_runtime
+            from utk_curio.backend.app.packages.build_workspace import (
+                LIMITS_BY_TIMEOUT_CLASS,
+            )
+            from utk_curio.backend.app.packages.storage import package_dir
+
+            probe_error = None
+            try:
+                pkg_path = package_dir(user_key, target)
+                files = {
+                    f"backend/{p.relative_to(pkg_path / 'backend').as_posix()}":
+                        p.read_bytes()
+                    for p in sorted((pkg_path / "backend").rglob("*"))
+                    if p.is_file()
+                }
+                overlay_path = backend_runtime.overlay_dir_for(user_key, target)
+                envelope, worker = backend_runtime.invoke_from_files(
+                    files, manifest.backend.entry,
+                    manifest.backend.handlers[0].name, bc.probe_payload(),
+                    net_allowed=bc.PERMISSION_SERVER_NETWORK in manifest.permissions,
+                    limits=LIMITS_BY_TIMEOUT_CLASS["quick"],
+                    overlay_dir=overlay_path if overlay_path.is_dir() else None,
+                    build_id=f"apply-probe-{artifact_digest[:12]}",
+                )
+                if worker.status != "ok" or not (envelope and envelope.get("ok")):
+                    probe_error = ((envelope or {}).get("error")
+                                   or worker.stderr_tail or worker.status)
+            except Exception as exc:  # noqa: BLE001 — a broken probe is data
+                probe_error = str(exc)
+            if probe_error:
+                journal["error"] = f"post-apply probe failed: {probe_error}"
+                _save_journal(user_key, journal)
+                _rollback_locked(user_key, journal,
+                                 f"post-apply probe failed: {probe_error}")
                 raise PromotionError(
-                    "python dependency install failed and the prior state was "
-                    f"{'restored' if journal['rollback']['status'] == 'rolled-back' else 'NOT fully restored — manual repair required'}: {exc}",
-                    502) from exc
+                    "the installed backend failed its post-apply probe and the "
+                    f"prior state was {'restored' if journal['rollback']['status'] == 'rolled-back' else 'NOT fully restored — manual repair required'}: "
+                    f"{probe_error}", 422) from None
 
         if project_id is not None:
             from utk_curio.backend.app.packages import services as packages_services

@@ -392,3 +392,47 @@ class TestRestartHonestyOnCatalogInstall:
         assert "restartRecommended" not in result  # UHVI declares no python deps
         again = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
         assert "restartRecommended" not in again
+
+
+class TestCatalogOverlayRouting:
+    """dev/97: the catalog authority routes through the SAME rule as promote
+    — overlay for backend-bearing packages, host portion only in the restart
+    signal."""
+
+    def test_backend_only_catalog_install_builds_overlay_no_restart(
+            self, app, user_and_token, alice_project, monkeypatch):
+        from types import SimpleNamespace
+
+        from utk_curio.backend.app.packages import backend_runtime, pip_runner
+        from utk_curio.backend.app.packages import services as svc
+
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        calls = {"overlay": None}
+        fake_manifest = SimpleNamespace(
+            python_deps={"tinylib": "1.0.0"},
+            backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
+            templates=[SimpleNamespace(engine="javascript", has_code=False)],
+            permissions=[],
+        )
+        monkeypatch.setattr(
+            svc, "install_packageage_from_directory",
+            lambda uk, src, replace=False: SimpleNamespace(manifest=fake_manifest))
+        monkeypatch.setattr(
+            svc, "_is_installed_in_user_store", lambda uk, dn: False)
+        monkeypatch.setattr(
+            "utk_curio.backend.app.packages.backend_runtime.record_entry_pin",
+            lambda uk, dn: None)
+        monkeypatch.setattr(
+            backend_runtime, "build_overlay",
+            lambda uk, dn, deps, on_line=None: calls.__setitem__("overlay", (dn, dict(deps)))
+            or {"libs": ["tinylib==1.0.0"], "bytes": 5})
+
+        def _never_host(deps, on_line=None):  # pragma: no cover
+            raise AssertionError("host pip must not run for overlay-only routing")
+
+        monkeypatch.setattr(pip_runner, "install_python_deps", _never_host)
+        result = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        assert calls["overlay"] == (UHVI_DIR, {"tinylib": "1.0.0"})
+        # Host portion empty → no restart notice (dev/92 narrowed by dev/97).
+        assert "restartRecommended" not in result

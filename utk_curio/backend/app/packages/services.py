@@ -142,25 +142,39 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> list[str]:
     py_deps = dict(result.manifest.python_deps or {})
     if not py_deps:
         return []
+    # dev/97: the catalog authority routes exactly as promote does — ONE
+    # rule (backend_runtime.dep_destinations): overlay for backend-bearing
+    # packages, host only when warm-sandbox python templates coexist. The
+    # returned list stays the HOST portion only (the dev/92 restart signal,
+    # narrowed by dev/97 — overlay changes never split-brain fresh workers).
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.pip_runner import (
+        PipInstallError, install_python_deps,
+    )
+
+    destination, _reason = backend_runtime.dep_destinations(result.manifest)
+    host_installed: list[str] = []
     try:
-        from utk_curio.backend.app.packages.pip_runner import (
-            PipInstallError, install_python_deps,
-        )
-        pip_report = install_python_deps(py_deps)
-    except PipInstallError as exc:
+        if destination in ("overlay", "both"):
+            backend_runtime.build_overlay(user_key, dir_name, py_deps)
+        if destination in ("host", "both"):
+            pip_report = install_python_deps(py_deps)
+            host_installed = sorted(pip_report.installed)
+    except (PipInstallError, backend_runtime.BackendRuntimeError) as exc:
         # Roll the just-installed files back so the user-store doesn't
         # show a package that's unusable. Best-effort: log + continue on
-        # cleanup failure (the original pip error is the one we surface).
+        # cleanup failure (the original error is the one we surface).
         try:
             import shutil
             from utk_curio.backend.app.packages.storage import package_dir
             shutil.rmtree(package_dir(user_key, dir_name), ignore_errors=True)
+            backend_runtime.remove_backend_residue(user_key, dir_name)
         except Exception:  # noqa: BLE001
-            log.warning("Failed to roll back %s after pip failure", dir_name, exc_info=True)
+            log.warning("Failed to roll back %s after dep failure", dir_name, exc_info=True)
         raise PackageServiceError(
-            f"package files installed but pip install failed: {exc}",
+            f"package files installed but its dependencies failed: {exc}",
         ) from exc
-    return sorted(pip_report.installed)
+    return host_installed
 
 
 def ensure_user_packages_initialized(user_key: str) -> None:
@@ -833,6 +847,12 @@ def prune_unreferenced_packages(
         try:
             if uninstall_packageage(user_key, dn):
                 pruned.add(dn)
+                # dev/97: the sweep dev/91 §6.7 promised — overlay + data
+                # dir + pin go with the package; the audit ledger survives.
+                from utk_curio.backend.app.packages.backend_runtime import (
+                    remove_backend_residue,
+                )
+                remove_backend_residue(user_key, dn)
         except Exception as exc:  # noqa: BLE001
             log.warning("prune: uninstall of %s failed: %s", dn, exc)
             continue

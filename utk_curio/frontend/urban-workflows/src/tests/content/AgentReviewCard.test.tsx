@@ -731,3 +731,38 @@ describe("AgentReviewCard rich draft sections (memo dev/96)", () => {
     expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
   });
 });
+
+describe("dependency home line (memo dev/97)", () => {
+  const withDeps = (home: string): AgentProposalPart => ({
+    type: "proposal",
+    proposalId: "p11",
+    tool: "package.draft.apply",
+    summary: "Build package · Card",
+    preview: "counts",
+    pins: { artifactDigest: "d".repeat(64), target: "ai.test.card@1" },
+    status: "pending",
+    draft: {
+      mode: "create", target: "ai.test.card@1",
+      files: { added: [], modified: [], addedTotal: 0, modifiedTotal: 0, preservedTotal: 0 },
+      templates: { added: [], modified: [], addedTotal: 0, modifiedTotal: 0, preservedTotal: 0 },
+      dependencies: { home, python: [{ name: "tinylib", constraint: "1.0.0" }],
+                      pythonTotal: 1, js: [], jsTotal: 0, findings: [],
+                      findingsTotal: 0, blocked: false },
+    },
+  });
+
+  it("overlay routing states the isolation", () => {
+    render(<AgentReviewCard part={withDeps("overlay")} onApply={jest.fn()} />);
+    expect(screen.getByText(/isolated overlay —.*shared interpreter is not touched/s)).toBeInTheDocument();
+  });
+
+  it("both routing names the warm-sandbox half", () => {
+    render(<AgentReviewCard part={withDeps("both")} onApply={jest.fn()} />);
+    expect(screen.getByText(/plus the shared interpreter for its python node templates/)).toBeInTheDocument();
+  });
+
+  it("host routing adds no line (status quo)", () => {
+    render(<AgentReviewCard part={withDeps("host")} onApply={jest.fn()} />);
+    expect(screen.queryByText(/isolated overlay/)).toBeNull();
+  });
+});
