@@ -1,6 +1,6 @@
 # dev/95 — Dataflow Builder → Researcher delegation (dev/90 Follow-up D): runtime-gathered findings, schema replies, grant-gated note minting; Follow-up C (agent recolor) deferred demand-driven
 
-**Status: APPROVED (owner, 2026-08-23) — Option 3 adopted; Follow-up C deferred. Implementation in progress.**
+**Status: IMPLEMENTED (2026-08-23) — commits 1–4 landed (`af88f1d1`, `ee9c3371`, `9d5efc56`, + docs); DEC-065 minted; BL-P5-20260823-38. Follow-up D delivered; Follow-up C deferred with re-open conditions.**
 Prereqs: dev/90 (Researcher, DEC-060), dev/93 (one template vocabulary + the reuse ladder, DEC-062), dev/94 (executable-instruction rule, DEC-063), A16 (jointly-pending same-run proposal sequences).
 
 ---
