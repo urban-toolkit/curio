@@ -50,6 +50,12 @@ export default function GrammarEditor({
         // CodeEditor has always had this guard; GrammarEditor did not.
         if (defaultValue != undefined && defaultValueBypass.current) {
             setGrammar(defaultValue);
+            // Same call CodeEditor makes, and for the same reason: WidgetsEditor
+            // only recomputes its marker list when `markersDirty` toggles, and
+            // this is the only thing that toggles it outside a run. Without it a
+            // grammar spec's `[!! … !!]` markers render no widgets until the node
+            // has been played once.
+            sendCodeToWidgets(defaultValue);
             baselineRef.current = defaultValue;
         }
         defaultValueBypass.current = true;

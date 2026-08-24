@@ -92,9 +92,20 @@ function NodeEditor({
     const effectiveTab = dashboardOn ? "output" : activeTab;
 
     const contentComponentBypass = useRef(false);
+    // Set while a *load* is priming the widgets, so the marker round-trip it
+    // triggers does not steal the active tab. Only the load path sets it; a play
+    // leaves it false and still focuses the output pane.
+    //
+    // Deliberately a flag rather than inferring "is this a run?" from
+    // `output.code === "exec"`: play sets exec and calls sendCode in the same
+    // tick, so a hasWidgets=false node's synchronous route reads the stale prop
+    // and would never focus its output pane again.
+    const primingWidgetsRef = useRef(false);
 
     const sendReplacedCode = (code: string) => {
-        if ((fullscreen == "" || fullscreen == undefined) && (outputId != undefined || contentComponent != undefined)) setActiveTab("output");
+        const priming = primingWidgetsRef.current;
+        primingWidgetsRef.current = false;
+        if (!priming && (fullscreen == "" || fullscreen == undefined) && (outputId != undefined || contentComponent != undefined)) setActiveTab("output");
         setReplacedCode(code);
         setReplacedCodeDirty((prev: boolean) => {
             return !prev;
@@ -119,7 +130,19 @@ function NodeEditor({
         });
     };
 
+    /** ``sendCodeToWidgets`` for the load path: resolve markers, keep the tab.
+     *
+     * CodeEditor and GrammarEditor call this from their ``defaultValue`` effect
+     * so a templated node's widgets exist before the first run. Switching tabs
+     * there would drop the user on the output pane of a node they just opened.
+     */
+    const primeWidgets = (code: string) => {
+        primingWidgetsRef.current = true;
+        sendCodeToWidgets(code);
+    };
+
     useEffect(() => {
+        // The play path deliberately gets the un-suppressed version.
         setSendCodeCallback(sendCodeToWidgets);
     }, []);
 
@@ -218,9 +241,7 @@ function NodeEditor({
                                                 replacedCodeDirty
                                             }
                                             replacedCode={replacedCode}
-                                            sendCodeToWidgets={
-                                                sendCodeToWidgets
-                                            }
+                                            sendCodeToWidgets={primeWidgets}
                                             setOutputCallback={
                                                 setOutputCallback
                                             }
@@ -264,9 +285,7 @@ function NodeEditor({
                                             }
                                             output={output}
                                             replacedCode={replacedCode}
-                                            sendCodeToWidgets={
-                                                sendCodeToWidgets
-                                            }
+                                            sendCodeToWidgets={primeWidgets}
                                             nodeId={data.nodeId}
                                             applyGrammar={applyGrammar}
                                             schema={schema}
