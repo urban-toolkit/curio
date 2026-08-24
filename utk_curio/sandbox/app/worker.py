@@ -13,12 +13,101 @@ execute_js_code() runs JavaScript via a Node.js subprocess. No lock is needed
 because each call is fully isolated in a child process.
 """
 
+import collections
 import contextlib
 import os
 import threading
 
 _globals_cache: dict = {}
 _exec_lock = threading.Lock()
+
+# Module bindings created by user `import` statements, keyed by session. This is
+# what makes an upstream node's `import numpy as np` visible downstream (#158).
+#
+# Deliberately narrow: only names produced by executing top-level Import /
+# ImportFrom statements land here, never ordinary user variables. So a dataflow
+# shares its imports but two nodes still cannot leak `df` into each other.
+#
+# Consequence worth knowing: a node that relies on an upstream import now depends
+# on execution order. Run it alone in a fresh session and it fails, exactly as it
+# did before. That is inherent to the requested behaviour, not a bug here.
+#
+# There is no session-close signal in this process (artifacts are session-scoped
+# in DuckDB and simply persist), so this is an LRU capped at _MAX_IMPORT_SESSIONS
+# rather than something evicted on disconnect. Mutated only under _exec_lock.
+_session_imports: "collections.OrderedDict[str, dict]" = collections.OrderedDict()
+_MAX_IMPORT_SESSIONS = 32
+
+
+def _import_bindings_for(session_id):
+    """Return the accumulated import bindings for ``session_id`` (never None).
+
+    Marks the session most-recently-used. Call under ``_exec_lock``.
+    """
+    key = session_id or ''
+    bindings = _session_imports.get(key)
+    if bindings is None:
+        return {}
+    _session_imports.move_to_end(key)
+    return bindings
+
+
+def _hoist_user_imports(code, ns, session_id):
+    """Execute the user's top-level imports into ``ns`` and remember them.
+
+    ``code`` is the node body as the frontend sends it - every line already
+    indented by four spaces, ready to be dropped into ``def userCode(arg):`` -
+    so it has to be dedented before it will parse.
+
+    Only ``import`` / ``from ... import`` statements at the *top level* of the
+    body are hoisted. Imports nested inside ``try`` / ``if`` / a function are
+    left alone: they are conditional by intent, and running them here would turn
+    a guarded optional dependency into a hard failure.
+
+    A failing import is swallowed. The statement is still present in the function
+    body, so it raises there - at the line the user wrote, with the traceback they
+    expect - instead of failing the node from inside this helper.
+
+    Call under ``_exec_lock``.
+    """
+    import ast
+    import textwrap
+
+    try:
+        tree = ast.parse(textwrap.dedent(code))
+    except SyntaxError:
+        # Let the real exec report it, so the user sees one coherent error.
+        return
+
+    statements = [
+        node for node in tree.body
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+    ]
+    if not statements:
+        return
+
+    captured: dict = {}
+    for statement in statements:
+        module = ast.Module(body=[statement], type_ignores=[])
+        try:
+            exec(compile(module, '<curio-imports>', 'exec'), ns, captured)
+        except Exception:
+            continue
+
+    if not captured:
+        return
+
+    ns.update(captured)
+
+    key = session_id or ''
+    bindings = _session_imports.get(key)
+    if bindings is None:
+        bindings = {}
+        _session_imports[key] = bindings
+        while len(_session_imports) > _MAX_IMPORT_SESSIONS:
+            _session_imports.popitem(last=False)
+    bindings.update(captured)
+    _session_imports.move_to_end(key)
 
 
 @contextlib.contextmanager
@@ -81,6 +170,21 @@ def _worker_init():
     import hashlib
     import ast
     import io
+    # The names below are not used by this module - they exist purely to be
+    # pre-seeded into every node's namespace. The legacy subprocess wrapper
+    # (utk_curio/sandbox/python_wrapper.txt) did `from ...util.parsers import *`,
+    # and parsers.py has no __all__, so it leaked exactly these into user scope.
+    # Moving execution in-process replaced that star-import with the explicit
+    # 5-name import below and silently dropped them, which is why `np` and
+    # shapely stopped working while `pd`/`gpd` kept working (#158). Keep this
+    # list explicit rather than restoring `import *` so the contract is greppable.
+    import datetime
+    import math
+    import shapely
+    import duckdb
+    import numpy as np
+    from pathlib import Path
+    from shapely import wkt
 
     from utk_curio.sandbox.util.parsers import (
         load_from_duckdb,
@@ -103,6 +207,15 @@ def _worker_init():
         'hashlib': hashlib,
         'ast': ast,
         'io': io,
+        # Restored star-import leakage - see the import block above (#158).
+        'np': np,
+        'numpy': np,
+        'shapely': shapely,
+        'wkt': wkt,
+        'math': math,
+        'datetime': datetime,
+        'Path': Path,
+        'duckdb': duckdb,
         'load_from_duckdb': load_from_duckdb,
         'save_to_duckdb': save_to_duckdb,
         'detect_kind': detect_kind,
@@ -225,9 +338,18 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
             with contextlib.redirect_stdout(captured_stdout), \
                  contextlib.redirect_stderr(captured_stderr):
 
-                # Fresh namespace per call - prevents name leakage between executions.
+                # Fresh namespace per call, so user *variables* never leak between
+                # executions. Imports are the deliberate exception: this session's
+                # accumulated import bindings are layered in so an upstream node's
+                # `import numpy as np` reaches downstream nodes (#158).
                 ns = dict(_globals_cache)
+                ns.update(_import_bindings_for(session_id))
                 ns['curio_dataset_path'] = _make_curio_dataset_path(dataset_paths)
+                # Hoist this node's own top-level imports before defining userCode,
+                # so they are recorded for later nodes in the same session. The
+                # statements stay in the function body too - re-importing is a
+                # sys.modules hit, and it keeps a standalone run of this node working.
+                _hoist_user_imports(code, ns, session_id)
                 exec(f"def userCode(arg):\n{code}", ns)
 
                 # Load input from DuckDB.
