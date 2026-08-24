@@ -1,6 +1,6 @@
 # dev/97 — Backend dependency overlays (dev/91 §0.1 Option 2): handler deps leave the host interpreter; the shipped seam becomes the boundary
 
-**Status: APPROVED (owner, 2026-08-24) — Option A probe posture adopted. Implementation in progress.**
+**Status: IMPLEMENTED (2026-08-24) — commits 1–4 landed (`5020f9d4`, `09fe7e14`, `91d3b55b`, + docs); DEC-066 minted; BL-P5-20260824-40. DEC-064's resident-services prerequisite is met.**
 Prereqs: dev/91 (the sandbox + the Option-3 parameterized seam: `overlay_dir → PYTHONPATH`, proven live by test), dev/92 (restart honesty — whose blast-radius evidence this memo finally shrinks), dev/96 complete. This memo is the recorded §0.1 Option-2 hardening — the prerequisite DEC-064 set for ever re-opening resident services.
 
 ---

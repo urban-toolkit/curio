@@ -533,8 +533,18 @@ exactly as a failed preview. Both install authorities pin the entry's digest; in
 verify-on-read refuses drift with reinstall guidance. Every invocation appends an audit row
 (sizes and outcomes, never payloads) under `package-backend-ledger/`, archived by the
 operator's `packageBackend.ledgerArchiveAfterDays` retention declaration (`docs/RETENTION.md`).
-Operator seams: `CURIO_BACKEND_SANDBOX_PYTHON` pins the worker interpreter (the dev/91 §0.1
-Option-3 parameter — per-package dependency overlays land later as parameter values).
+Operator seams: `CURIO_BACKEND_SANDBOX_PYTHON` pins the worker interpreter, and
+`CURIO_BACKEND_OVERLAY_MAX_MB` (default 512) caps the per-package dependency overlay.
+**Handler dependencies are isolated** (dev/97): a backend-bearing package's declared python
+deps install at Apply into `.curio/users/<key>/package-backend-overlays/<pkg>/` via
+`pip --target` — the shared interpreter is touched only when the manifest also carries
+warm-sandbox python templates, so the dev/91 §0.1 upgrade blast radius no longer applies to
+handler deps, and the restart notice fires only for the shared-interpreter portion. Workers
+receive the overlay on `PYTHONPATH` automatically; a post-Apply probe with the real overlay
+gates activation (rollback on failure). Handlers therefore import declared dependencies
+LAZILY inside `handle()` — they do not exist at build time, and the probe's refusal names
+exactly that fix when an author forgets. Uninstall sweeps the overlay, data dir, and entry
+pin; the invocation ledger survives for retention.
 
 **Activation lifecycle** (dev/92, delivering dev/89 Follow-up B as re-scoped): invocations and
 promotes serialize on one per-target lock, so an Apply and a node Run never interleave
