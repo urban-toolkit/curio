@@ -32,6 +32,28 @@ export interface AgentCard {
   /** Eligible for Publish: an owned, store-backed definition (not a built-in). */
   publishable: boolean;
   scope: "global" | "my-imports" | "installed";
+  /** dev/106: server-resolved hard dependencies (``requiresAgents``) — what an
+   * Install adds alongside this agent. ``[]`` for every leaf agent. */
+  requiresAgents: AgentRequirement[];
+}
+
+/** One direct hard dependency of an agent (dev/106). */
+export interface AgentRequirement {
+  id: string;
+  name: string;
+  /** The visible coordinate an install would add; null when visible nowhere. */
+  coord: string | null;
+  visible: boolean;
+  installedInProject: boolean;
+}
+
+/** dev/106: the install response — the lockfile plus what this call added. */
+export interface AgentInstallResponse {
+  agents: string[];
+  /** Coords newly added by this call, root first (empty on an idempotent re-install). */
+  installed: string[];
+  /** The root's required closure (installed or not). */
+  required: string[];
 }
 
 interface AgentListResponse {
@@ -688,8 +710,10 @@ export const agentsApi = {
     return apiFetch(`/api/agents/projects/${encodeURIComponent(projectId)}`);
   },
 
-  /** Install a definition into a project (explicit; never auto-imports). */
-  installToProject(projectId: string, coord: string): Promise<{ agents: string[] }> {
+  /** Install a definition into a project (explicit; never auto-imports).
+   * dev/106: the server installs the agent's ``requiresAgents`` closure with
+   * it in one write, or 409s naming an unresolvable dependency. */
+  installToProject(projectId: string, coord: string): Promise<AgentInstallResponse> {
     return apiFetch(`/api/agents/projects/${encodeURIComponent(projectId)}/install`, {
       method: "POST",
       body: JSON.stringify({ coord }),

@@ -34,6 +34,7 @@ function card(id: string) {
     installedInProject: false,
     published: false,
     publishable: false,
+    requiresAgents: [],
     scope: "global" as const,
   };
 }
@@ -44,7 +45,7 @@ beforeEach(() => {
   api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent")] });
   api.listProjectAgents.mockResolvedValue({ agents: [card("agent.debug-agent")] });
   api.import.mockResolvedValue({ coord: "x", imported: true });
-  api.installToProject.mockResolvedValue({ agents: [] });
+  api.installToProject.mockResolvedValue({ agents: [], installed: [], required: [] });
   api.publish.mockResolvedValue({ coord: "x", published: true });
 });
 

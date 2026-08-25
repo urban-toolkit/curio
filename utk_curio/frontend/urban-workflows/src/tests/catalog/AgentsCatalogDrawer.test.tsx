@@ -40,6 +40,7 @@ function card(id: string, over: Record<string, unknown> = {}) {
     installedInProject: false,
     published: false,
     publishable: false,
+    requiresAgents: [],
     scope: "global",
     ...over,
   };
@@ -138,6 +139,65 @@ describe("AgentsCatalogDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Install" }));
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
+    );
+  });
+
+  it("discloses a missing required dependency on the card and the Install button (dev/106)", async () => {
+    api.catalog.mockResolvedValue({
+      agents: [
+        card("agent.dataflow-builder", {
+          name: "Dataflow Builder",
+          category: "canvas",
+          requiresAgents: [{
+            id: "agent.node-content-builder", name: "Node Content Builder",
+            coord: "agent.node-content-builder@1.0.0", visible: true, installedInProject: false,
+          }],
+        }),
+      ],
+    } as any);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("Dataflow Builder")).toBeInTheDocument());
+    expect(screen.getByText(/Requires:/)).toBeInTheDocument();
+    expect(screen.getByText("Node Content Builder (not installed)")).toBeInTheDocument();
+    const btn = screen.getByRole("button", { name: "Install +1 required" });
+    expect(btn).toHaveAttribute("title", "Also installs Node Content Builder (required)");
+    fireEvent.click(btn);
+    await waitFor(() =>
+      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.dataflow-builder@1.0.0"),
+    );
+  });
+
+  it("a satisfied dependency renders a check and a plain Install (dev/106)", async () => {
+    api.catalog.mockResolvedValue({
+      agents: [
+        card("agent.dataflow-builder", {
+          name: "Dataflow Builder",
+          requiresAgents: [{
+            id: "agent.node-content-builder", name: "Node Content Builder",
+            coord: "agent.node-content-builder@1.0.0", visible: true, installedInProject: true,
+          }],
+        }),
+      ],
+    } as any);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("Dataflow Builder")).toBeInTheDocument());
+    expect(screen.getByText("Node Content Builder ✓")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Install" })).toBeInTheDocument();
+  });
+
+  it("a 409 from uninstalling a required dependency surfaces verbatim (dev/106)", async () => {
+    api.listProjectAgents.mockResolvedValue({
+      agents: [card("agent.node-content-builder", { scope: "installed", installedInProject: true })],
+    } as any);
+    api.uninstallFromProject.mockRejectedValue(
+      new Error("agent.node-content-builder@1.0.0 is required by Dataflow Builder (agent.dataflow-builder@1.0.0) — uninstall that agent first"),
+    );
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    fireEvent.click(screen.getByText("Installed in this project"));
+    await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
+    await waitFor(() =>
+      expect(screen.getByText(/is required by Dataflow Builder/)).toBeInTheDocument(),
     );
   });
 

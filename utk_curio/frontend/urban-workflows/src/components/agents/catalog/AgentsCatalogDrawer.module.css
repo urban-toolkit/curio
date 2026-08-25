@@ -194,3 +194,12 @@
 .importPackageBtn:focus-visible {
   background: #2c2d33;
 }
+
+/* dev/106: the hard-dependency disclosure line under a card's tags. */
+.requiresLine {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+.requireMet { color: #2d7a4f; }
+.requireMissing { color: #b3651c; font-weight: 600; }

@@ -11,7 +11,7 @@ import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryS
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import cardStyles from "../../packages/publishing/PackageCard.module.css";
 import styles from "./AgentsCatalogDrawer.module.css";
-import { matchesAgentSearch, sortAgentCards } from "./agentListUtils";
+import { matchesAgentSearch, sortAgentCards, installLabel, installTitle } from "./agentListUtils";
 import { AgentScope, useAgentsCatalogDrawer } from "./useAgentsCatalogDrawer";
 
 export interface AgentsCatalogDrawerProps {
@@ -261,6 +261,21 @@ const AgentRow: React.FC<{
           ))}
           <span className={cardStyles.versionBadge}>v{card.version.split(".")[0]}</span>
         </div>
+        {/* dev/106: hard dependencies, disclosed before the click. */}
+        {(card.requiresAgents ?? []).length ? (
+          <div className={styles.requiresLine}>
+            Requires:{" "}
+            {(card.requiresAgents ?? []).map((r, i) => (
+              <span key={r.id}>
+                {i ? ", " : ""}
+                <span className={r.installedInProject ? styles.requireMet : styles.requireMissing}>
+                  {r.name}
+                  {r.installedInProject ? " ✓" : r.visible ? " (not installed)" : " (unavailable)"}
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className={cardStyles.cardAction}>
@@ -295,10 +310,10 @@ const AgentRow: React.FC<{
             type="button"
             className={cardStyles.btnInstall}
             disabled={busy || !hasProject}
-            title={hasProject ? undefined : "Open a project to install"}
+            title={hasProject ? installTitle(card) : "Open a project to install"}
             onClick={() => state.install(card.dirName)}
           >
-            Install
+            {installLabel(card)}
           </button>
         )}
 

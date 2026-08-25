@@ -17,6 +17,7 @@ function card(over: Partial<any> = {}): any {
     installedInProject: true,
     published: false,
     publishable: false,
+    requiresAgents: [],
     scope: "installed",
     ...over,
   };

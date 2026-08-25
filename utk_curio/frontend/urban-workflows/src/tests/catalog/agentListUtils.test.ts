@@ -1,6 +1,9 @@
 import type { AgentCard } from "../../api/agentsApi";
 import {
+  installLabel,
+  installTitle,
   matchesAgentSearch,
+  missingRequiredAgents,
   sortAgentCards,
 } from "../../components/agents/catalog/agentListUtils";
 
@@ -19,6 +22,7 @@ function card(over: Partial<AgentCard> = {}): AgentCard {
     installedInProject: false,
     published: false,
     publishable: false,
+    requiresAgents: [],
     scope: "global",
     ...over,
   };
@@ -75,5 +79,38 @@ describe("sortAgentCards", () => {
     const out = sortAgentCards(input, "name");
     expect(out).not.toBe(input);
     expect(input.map((x) => x.name)).toEqual(["beta", "charlie", "Alpha"]);
+  });
+});
+
+describe("requiresAgents helpers (dev/106)", () => {
+  const ncb = { id: "agent.node-content-builder", name: "Node Content Builder", coord: "agent.node-content-builder@1.0.0", visible: true, installedInProject: false };
+
+  it("a leaf card installs plainly", () => {
+    expect(missingRequiredAgents(card())).toEqual([]);
+    expect(installLabel(card())).toBe("Install");
+    expect(installTitle(card())).toBeUndefined();
+  });
+
+  it("tolerates a payload without the field", () => {
+    const legacy = card();
+    delete (legacy as Partial<AgentCard>).requiresAgents;
+    expect(installLabel(legacy)).toBe("Install");
+  });
+
+  it("names what the click adds when a dependency is missing", () => {
+    const c = card({ requiresAgents: [ncb] });
+    expect(installLabel(c)).toBe("Install +1 required");
+    expect(installTitle(c)).toBe("Also installs Node Content Builder (required)");
+  });
+
+  it("a satisfied dependency counts as plain Install", () => {
+    const c = card({ requiresAgents: [{ ...ncb, installedInProject: true }] });
+    expect(installLabel(c)).toBe("Install");
+  });
+
+  it("an unresolvable dependency is called out (the server will refuse)", () => {
+    const c = card({ requiresAgents: [{ ...ncb, id: "agent.ghost", name: "agent.ghost", coord: null, visible: false }] });
+    expect(installLabel(c)).toBe("Install +1 required");
+    expect(installTitle(c)).toContain("Cannot install: requires agent.ghost");
   });
 });

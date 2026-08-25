@@ -40,6 +40,7 @@ function card(id: string) {
     installedInProject: true,
     published: false,
     publishable: true,
+    requiresAgents: [],
     scope: "installed" as const,
   };
 }
