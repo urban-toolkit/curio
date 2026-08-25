@@ -41,45 +41,36 @@ import sys
 SENSITIVE_PATHS = (
     ("instance", "the user database: password hashes and session tokens"),
     (".curio/data", "the artifact store: every session's data"),
+    (".curio/users", "every user's imported datasets, projects and packages"),
+    ("datasets", "the shared Data Catalog's published files"),
     (".env", "the deployment's secrets, including SECRET_KEY"),
 )
 
-# Why ``datasets/`` is deliberately absent, since it looks like it belongs:
-# ``staging.stage_dataset_paths`` reaches a dataset file into a child's scratch
-# directory with ``os.link``, and a hardlink shares the inode -- and therefore
-# the mode -- with its source. Tightening ``datasets/`` to 0600 root-owned would
-# tighten the staged copy the child is meant to read, breaking every
-# ``curio_dataset_path`` call. The alternative is copying instead of linking,
-# which that module avoids on purpose ("avoids duplicating a multi-gigabyte
-# raster or parquet for every node run"). Denying it needs the staging design to
-# change first; adding it here alone would just break dataset loading.
+# Directories whose contents reach a child as a hardlink, and which therefore
+# must NOT have their files tightened.
+#
+# The whole model turns on one Unix fact: reaching a file needs both a
+# permitted mode *and* traversal of every directory on the path used to get
+# there. A hardlink is a second path to the same inode -- and the inode's mode
+# is shared, so a staged copy cannot be less permissive than its source.
+#
+# Tightening the files here therefore tightens the staged copy the child is
+# meant to read. ``.curio/data/artifacts/<id>.parquet`` is hardlinked into the
+# scratch directory by ``staging.stage_input``; at 0600 root-owned the child
+# could not read its own input, and every dataframe node would have failed
+# under an --exec-user. (CI never saw it: the isolated job runs without one, so
+# its children are root and root ignores mode bits.)
+#
+# So the *directory* is the control. At 0700 root-owned, nothing under it can
+# be reached by path at all -- not by guessing an artifact id, not by listing.
+# The files keep whatever mode they had, which is exactly what the hardlink
+# needs. Copying instead of linking would allow per-copy permissions, at the
+# cost of duplicating a multi-gigabyte raster for every node run.
+HARDLINK_SOURCES = frozenset({".curio/data", ".curio/users", "datasets"})
 
-# What we want each of those to be. Owner-only, and directories need execute to
-# be traversable by their owner.
+# What we want each of those to be. Owner-only: no read, no list, no traverse.
 DIRECTORY_MODE = 0o700
 FILE_MODE = 0o600
-
-# One of them cannot be owner-only, and getting this wrong breaks isolation
-# completely rather than subtly.
-#
-# Every execution's scratch directory lives *inside* the artifact store
-# (``supervisor.SCRATCH_SUBDIR`` under ``.curio/data``), and the child chdirs
-# into it as the last step of ``child.confine``. At 0700 root-owned the child --
-# which by then has dropped to the execution user -- cannot traverse the store
-# to reach it, so `confine` fails and every isolated node dies before running a
-# line of user code.
-#
-# 0711 grants exactly what is needed and nothing more: traverse, but no read and
-# no list. The execution user cannot enumerate the store, and the files in it
-# stay FILE_MODE (0600, root-owned), so guessing an artifact name still gets
-# EACCES. ``describe_exposure`` agrees -- it asks about *read* access, which
-# 0711 does not grant -- so the startup audit stays clean.
-#
-# ``test_isolation_linux.py::isolated_dropped`` has always had to do this by
-# hand ("0711 up the chain: the child must traverse to its scratch dir without
-# being able to list any level of it"), which is how this surfaced.
-TRAVERSABLE_DIRECTORIES = frozenset({".curio/data"})
-TRAVERSE_MODE = 0o711
 
 
 def can_access(path_stat, *, uid, gid, write=False):
@@ -170,27 +161,18 @@ def harden_paths(launch_dir, *, paths=SENSITIVE_PATHS, recurse_files=True):
     if not hasattr(os, "chmod") or sys.platform == "win32":
         return {"changed": [], "failed": [], "skipped": "not a POSIX host"}
 
-    from utk_curio.sandbox.isolation.supervisor import SCRATCH_SUBDIR
-
     changed, failed = [], []
     for relative, _reason in paths:
         target = os.path.join(launch_dir, relative)
         if not os.path.exists(target):
             continue
         if os.path.isdir(target):
-            directory_mode = (
-                TRAVERSE_MODE if relative in TRAVERSABLE_DIRECTORIES
-                else DIRECTORY_MODE
-            )
-            (changed if _tighten(target, directory_mode) else failed).append(relative)
-            if recurse_files:
+            (changed if _tighten(target, DIRECTORY_MODE) else failed).append(relative)
+            # Tightening the contents of a hardlink source would tighten the
+            # staged copies the child must read; the 0700 above already makes
+            # everything under it unreachable by path. See HARDLINK_SOURCES.
+            if recurse_files and relative not in HARDLINK_SOURCES:
                 for root, directories, files in os.walk(target):
-                    # The scratch tree belongs to the execution user, not to us.
-                    # Walking into it would undo prepare_scratch_root's 0711 on
-                    # the root, and would re-own any live execution's directory
-                    # out from under the child currently running in it.
-                    if SCRATCH_SUBDIR in directories:
-                        directories.remove(SCRATCH_SUBDIR)
                     for name in directories:
                         _tighten(os.path.join(root, name), DIRECTORY_MODE)
                     for name in files:
@@ -209,9 +191,9 @@ def prepare_scratch_root(shared_data_dir, *, exec_uid=None):
     root, so one execution cannot enumerate another's scratch directory by
     reading the parent.
     """
-    from utk_curio.sandbox.isolation.supervisor import SCRATCH_SUBDIR
+    from utk_curio.sandbox.isolation.supervisor import scratch_root
 
-    root = os.path.join(shared_data_dir, SCRATCH_SUBDIR)
+    root = scratch_root(shared_data_dir)
     os.makedirs(root, exist_ok=True)
     if sys.platform == "win32":
         return root
