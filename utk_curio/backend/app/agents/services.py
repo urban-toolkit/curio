@@ -4963,7 +4963,12 @@ def _prepare_run(
             landscape = packages_services.template_landscape(user_key, project_id)
         except Exception:  # a broken registry degrades to no listing, not a 500
             landscape = None
-        templates_block = _available_templates_block(project_id, landscape)
+        templates_block = _available_templates_block(
+            project_id, landscape,
+            notes_agent="research.notes.compose" in (
+                getattr(manifest, "capability_ids", None) or []
+            ),
+        )
         if templates_block:
             system_content = f"{system_content}\n\n{templates_block}"
         # dev/93 D4: the second half of the roster — what the user owns but
@@ -5055,7 +5060,17 @@ def _template_line(entry: dict, *, suffix: str = "") -> str:
     return f"- {entry['id']} — {entry['label']}" + (f": {desc}" if desc else "") + suffix
 
 
-def _available_templates_block(project_id: str, landscape: dict | None) -> str | None:
+_NO_NOTE_TEMPLATE_LINE = (
+    "None of these renders a note (no presentation template is enlisted in this "
+    "project): code templates and node types you see on the canvas cannot hold "
+    "note content — take the 'Installed but NOT enlisted in this project' rung "
+    "(when offered) or delegate authoring; do not node.create on any of the above."
+)
+
+
+def _available_templates_block(
+    project_id: str, landscape: dict | None, *, notes_agent: bool = False
+) -> str | None:
     """The grant-aware node-template listing appended to a node.create or
     dataflow.plan.write run's system content, composed from the
     packages-domain helpers so it is never stale (memo dev/48).
@@ -5079,13 +5094,32 @@ def _available_templates_block(project_id: str, landscape: dict | None) -> str |
             project_id, len(shown), len(entries),
         )
     if not shown:
-        return None
-    return (
+        # dev/105 S1: an EMPTY roster is said, not omitted. The live failure:
+        # this project's only available template was a Python compute node
+        # (not authorable, so filtered out above), the section vanished, and
+        # the model reached for the node type it could see on the canvas via
+        # dataflow.read — refused, one round spent. Silence read as "no rule
+        # here"; the explicit line names the rule and the way out.
+        return (
+            "Available node templates: none — nothing enlisted in this project "
+            "can hold authored content. Node types you see on the canvas or in "
+            "dataflow.read that are not listed here cannot take content; use the "
+            "'Installed but NOT enlisted in this project' list (when offered) or "
+            "delegate authoring instead of creating a node."
+        )
+    block = (
         "Available node templates (a node.create nodeType or a plan nodeType "
         "MUST be one of these ids; the versioned form "
         "'<packageId>/<templateId>@<major>' is also accepted):\n"
         + "\n".join(_template_line(t) for t in shown)
     )
+    # dev/105 S1: the live roster held twelve built-in CODE templates and no
+    # note template; the model took the post-it compute node it saw on the
+    # canvas — refused, one round spent. A note-composing run is told, in the
+    # roster itself, that nothing here renders a note and where the rung is.
+    if notes_agent and not any(t.get("presentation") for t in shown):
+        block = f"{block}\n{_NO_NOTE_TEMPLATE_LINE}"
+    return block
 
 
 def _enlistable_templates_block(project_id: str, landscape: dict | None, budget: int) -> str | None:

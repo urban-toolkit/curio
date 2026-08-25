@@ -472,6 +472,11 @@ def _template_entry(package_id: str, template) -> dict:
             template.has_code or template.has_grammar
             or (template.behavior and template.editor == "none")
         ),
+        # dev/105 S1 (additive): a PRESENTATION template renders content
+        # without code — the note profile. The roster tells a note-composing
+        # agent when none of the available templates is one, so it never
+        # reaches for a code template (or a canvas node's type) to hold a note.
+        "presentation": bool(template.behavior and template.editor == "none"),
         "inputs": inputs,
         "maxIncomingEdges": max_incoming,
     }

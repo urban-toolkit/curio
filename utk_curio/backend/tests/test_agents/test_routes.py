@@ -3545,6 +3545,71 @@ class TestReuseLadder:
         assert len(execution["toolCalls"]) == 3  # the 4th request hit the cap
         assert "refusedRounds" not in execution
 
+    # dev/105 S1 — the live roster: twelve built-in CODE templates plus an
+    # enlisted Python compute node (not authorable, filtered from Available),
+    # and no note template anywhere on the list — so the model reached for the
+    # node type it saw on the canvas. A note-composing run is now told, in the
+    # roster itself, that nothing listed renders a note and where the rung is.
+    def test_roster_says_when_nothing_available_renders_a_note(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        import json as _json
+
+        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        # A compute-only package, enlisted: authorable=False → not listable.
+        d = user_packageages_dir(key) / "curio.postits@1"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "manifest.json").write_text(_json.dumps({
+            "id": "curio.postits", "version": "1.0.0", "name": "Post-it Notes",
+            "publisher": "Package Builder", "description": "", "license": "MIT",
+            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+            "permissions": [], "dependencies": {"packages": {}, "python": {}, "js": {}},
+            "templates": [{
+                "id": "post-it-note", "label": "Post-it Note", "category": "computation",
+                "engine": "python", "editor": "none", "hasCode": False,
+                "inputPorts": [], "outputPorts": [{"cardinality": "1", "types": ["JSON"]}],
+                "source": "sources/default.py",
+            }],
+            "createdAt": "2026-08-21T16:42:23Z",
+        }), encoding="utf-8")
+        (d / "sources").mkdir(exist_ok=True)
+        (d / "sources" / "default.py").write_text("def main(): return {}\n")
+        packages_services.install_to_project(key, alice_project, "curio.postits@1")
+        # And the real note template sits in the store, not enlisted.
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+
+        att_id, calls = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=["ok"],
+        )
+        self._run(client, token, alice_project, att_id)
+        system = calls[0][0]["content"]
+        assert "Available node templates" in system  # the built-ins are listed…
+        assert "None of these renders a note" in system  # …and named as not-notes
+        assert "curio.postits/post-it-note" not in system  # the trap is not offered
+        assert "(package curio.notes@1)" in system  # the way out still is
+
+        # The line is for note-composing runs only: enlist the note package and
+        # it disappears; a Dataflow Builder never sees it.
+        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        att2, calls2 = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=["ok"],
+        )
+        self._run(client, token, alice_project, att2)
+        assert "None of these renders a note" not in calls2[0][0]["content"]
+        helper = TestDataflowPlanMint()
+        att3, calls3 = helper._setup(
+            client, user, token, alice_project, monkeypatch, replies=["ok"],
+        )
+        helper._run(client, token, alice_project, att3)
+        assert "None of these renders a note" not in calls3[0][0]["content"]
+
     def test_enlist_miss_hint_names_only_sources_this_run_can_read(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):

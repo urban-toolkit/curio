@@ -110,6 +110,9 @@ class TestAvailableTemplates:
         assert by_id["curio.builtin/code-kind"]["authorable"] is True
         assert by_id["curio.builtin/grammar-kind"]["authorable"] is True
         assert by_id["curio.builtin/widget-kind"]["authorable"] is False
+        # dev/105 S1: code templates hold code, not a note — none is a
+        # presentation template (behavior + editor "none").
+        assert not any(t["presentation"] for t in by_id.values())
 
     def test_unreadable_package_is_skipped(self, user_and_token, alice_project, tmp_curio):
         user, _ = user_and_token
@@ -260,7 +263,7 @@ class TestInstalledTemplatesNotInProject:
         assert row["label"] == "Note"
         assert row["description"] == "a note surface"
         assert set(row) == {
-            "id", "label", "description", "authorable", "inputs",
+            "id", "label", "description", "authorable", "presentation", "inputs",
             "maxIncomingEdges", "dirName",
         }
 

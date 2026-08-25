@@ -523,6 +523,18 @@ class TestResearcher:
         assert "yellow note carrying the user's question" in low
         assert "green note per answer" in low
         assert "as clean markdown" in low
+        # dev/105 D3/S1/S3: the live 2026-08-25 run. The ENLIST rung names the
+        # exact dirName spelling (the model sent the bare id); a REFUSED
+        # request is a correction to act on, distinct from a FAILED build
+        # (the old single sentence taught "stop" for both); a refusal is never
+        # evidence of absence (the model said "not in the catalog" — false);
+        # a canvas node type is not a template choice; no mechanics narration.
+        assert "the versioned dirname, e.g. curio.notes@1" in low
+        assert "never the bare package id" in low
+        assert "a correction, not a dead end" in low
+        assert "a refused request is not evidence of absence" in low
+        assert "is not a note template unless it appears there" in low
+        assert "never narrate the request mechanics" in low
         assert "notes mirror the chat" in low
         # dev/90 A1: gather-first via the web tools, sources in the note,
         # honest stop when no provider is configured.
