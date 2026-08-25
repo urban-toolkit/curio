@@ -11,6 +11,7 @@ on:
       # Define the CI stack itself (ports, volumes, and the --auth boot flags).
       - 'docker-compose.yml'
       - 'docker-compose.ci.yml'
+      - 'docker-compose.ci-isolated.yml'
       - '.github/workflows/docker-compose.yml'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -30,6 +31,7 @@ on:
       # Define the CI stack itself (ports, volumes, and the --auth boot flags).
       - 'docker-compose.yml'
       - 'docker-compose.ci.yml'
+      - 'docker-compose.ci-isolated.yml'
       - '.github/workflows/docker-compose.yml'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -127,17 +129,35 @@ jobs:
       # The sandbox executes arbitrary node code. Production must never
       # publish its port; only the CI overlay does, and only on loopback.
       # Guards the configuration the live instances actually run.
-      - name: 🔒 Assert the sandbox port is not published in production
+      - name: 🔒 Assert the production deploy configuration
         shell: bash
         run: |
           set -euo pipefail
           config=$(docker compose -f docker-compose.yml -f docker-compose.deploy.yml config)
+
+          # The sandbox executes arbitrary node code. Production must never
+          # publish its port; only the CI overlays do, and only on loopback.
           if echo "$config" | grep -qE 'published: "?2000"?'; then
             echo "::error::docker-compose.deploy.yml publishes sandbox port 2000" >&2
             echo "$config" | grep -B 2 -A 2 'published' >&2
             exit 1
           fi
           echo "OK: the deploy configuration does not publish the sandbox port."
+
+          # Isolation is what stops a node author reading every password hash.
+          # Dropping either flag would silently return the live instances to
+          # in-process execution, and nothing at runtime would complain --
+          # `off` is a valid mode. Read from `compose config` rather than the
+          # file so an override that removes the command is caught too.
+          for flag in -- --isolation fork --exec-user curio-exec; do
+            [ "$flag" = "--" ] && continue
+            if ! echo "$config" | grep -qF -- "$flag"; then
+              echo "::error::the deploy command no longer carries '$flag'; the live instances would run node code in-process" >&2
+              echo "$config" | grep -A 30 'command:' >&2
+              exit 1
+            fi
+          done
+          echo "OK: the deploy configuration runs node execution isolated."
 
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio-ci build --parallel
@@ -285,4 +305,132 @@ jobs:
           # Hand the container-written (root-owned) files back to the runner
           # user so they don't accumulate; the pre-checkout step is the real
           # safety net for the next run.
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+  # Second stack, same runner, booted with --isolation=fork so a real workload
+  # runs through the confined path. Runs after test-gpu rather than beside it:
+  # the runner takes one job at a time, and both want the GPU and the bind
+  # mounts. See docker-compose.ci-isolated.yml for why this stack drops --auth
+  # and --exec-user, and what that does and does not cover.
+  #
+  # Scoped to the workflows whose nodes are Python, because isolation wraps
+  # /exec only -- /execJs spawns Node either way (sandbox/app/api.py). Running
+  # the full matrix here would double a 23-minute e2e pass to re-prove the JS
+  # and WebGPU paths the first job already covered.
+  test-gpu-isolated:
+    needs: test-gpu
+    # Even if the in-process suite failed, this one's result is independent
+    # information and worth having -- unless the run was cancelled.
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, linux, gpu, curio]
+    timeout-minutes: 45
+
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
+      CURIO_WEBGPU_BACKEND: hardware
+      CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
+      # A fourth port triple: prod is 2000/5002/8080, curio-dev 2010/5012/8090,
+      # the in-process CI stack 2020/5022/8100.
+      CURIO_CONTAINER_NAME: curio-ci-iso
+      CURIO_PORT_2000: "2030"
+      CURIO_PORT_5002: "5032"
+      CURIO_PORT_8080: "8110"
+      BACKEND_URL: "http://localhost:5032"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5032"
+      CURIO_E2E_SANDBOX_PORT: "2030"
+      CURIO_E2E_FRONTEND_PORT: "8110"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2030"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      # Python nodes only; see the note above the job.
+      ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json
+
+    steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔨 Build all service images in parallel
+        run: docker compose -p curio-ci-iso build --parallel
+
+      - name: ▶️ Start containers
+        run: docker compose -p curio-ci-iso up -d
+
+      - name: 🧪 Wait for services to become healthy
+        id: stack_healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 300 bash -euo pipefail -c '
+            while true; do
+              cid="$(docker compose -p curio-ci-iso ps -a -q curio | head -n1 || true)"
+              if [[ -z "${cid}" ]]; then sleep 2; continue; fi
+              state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
+              health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
+              if [[ "${health}" == "healthy" ]]; then echo "healthy"; break; fi
+              if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then break; fi
+              if [[ "${state}" == "exited" ]]; then
+                echo "the isolated stack exited during startup. Logs:"
+                docker compose -p curio-ci-iso logs --no-color --tail=200 curio || true
+                exit 1
+              fi
+              sleep 2
+            done
+          '
+
+      # The whole point of the job: prove the stack is actually isolated before
+      # reading anything into the test results. Without this a silently
+      # degraded boot (fork unavailable, pyseccomp missing) would run the
+      # in-process path and report a green "isolated" run.
+      - name: 🔒 Assert node execution is actually isolated
+        shell: bash
+        run: |
+          set -euo pipefail
+          logs="$(docker compose -p curio-ci-iso logs --no-color curio)"
+          if ! echo "$logs" | grep -q "node execution isolation: fork"; then
+            echo "::error::the stack did not come up isolated" >&2
+            echo "$logs" | grep -i "isolation" >&2 || true
+            exit 1
+          fi
+          echo "OK: node execution isolation: fork"
+
+      - name: 🐍 Set up Python (for e2e)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 🔧 Give .curio/ permissions for host-side tests
+        run: |
+          docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c \
+            || mkdir -p .curio/playwright/expected
+
+      - name: 🎭 Run the Python-node workflows against the isolated stack
+        run: |
+          bash scripts/test.sh --e2e-only --use-existing \
+            --workflows "$ISOLATED_WORKFLOWS"
+
+      - name: 📋 Capture sandbox/backend logs
+        if: always()
+        run: |
+          docker compose -p curio-ci-iso logs --no-color --tail=8000 \
+            > "$GITHUB_WORKSPACE/isolated-container-logs.txt" 2>&1 || true
+
+      - name: 📤 Upload isolated-stack logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: isolated-container-logs
+          path: isolated-container-logs.txt
+          retention-days: 7
+
+      - name: 🧹 Tear down containers
+        if: always()
+        run: |
+          docker compose -p curio-ci-iso down -v --remove-orphans || true
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
