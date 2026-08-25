@@ -3441,6 +3441,110 @@ class TestReuseLadder:
         assert proposal["pins"]["dirName"] == "curio.notes@1"  # canonical, not the model's spelling
         assert "not in the Nodes Catalog" not in calls[1][-1]["content"]
 
+    # dev/105 D2 — a parameter refusal is a millisecond correction, not a
+    # provider round. Live: search + two refusals = MAX_TOOL_ROUNDS, and the
+    # ladder's AUTHOR rung was unreachable. Here two misses cost nothing and
+    # the third request still mints.
+    def _install_req(self, dir_name):
+        import json as _json
+
+        return (
+            "```curio.v1\n"
+            + _json.dumps({"toolRequest": {"tool": "package.install", "params": {
+                "dirName": dir_name, "reason": "x",
+            }}})
+            + "\n```"
+        )
+
+    def _execution(self, client, token, project_id, att_id):
+        turns = client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        return turns[-1]["execution"]
+
+    def test_parameter_refusals_do_not_spend_rounds(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents import services as agent_services
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        assert agent_services.MAX_TOOL_ROUNDS == 3  # the arithmetic below assumes it
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        att_id, calls = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[
+                self._install_req("curio.nothing"),   # free correction 1
+                self._install_req("curio.nada"),      # free correction 2
+                self._install_req("curio.notes@1"),   # round 1 — mints
+                "Proposed.",
+            ],
+        )
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+        resp = self._run(client, token, alice_project, att_id)
+        assert resp.status_code == 200
+        proposal = next(p for p in resp.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["pins"]["dirName"] == "curio.notes@1"
+        # Neither refusal told the model the budget was gone.
+        for i in (1, 2, 3):
+            assert "No further tool calls" not in calls[i][-1]["content"]
+        execution = self._execution(client, token, alice_project, att_id)
+        assert [c["status"] for c in execution["toolCalls"]] == ["refused", "refused", "proposed"]
+        assert execution["refusedRounds"] == 2
+
+    def test_refusal_cap_then_refusals_count_as_rounds_until_the_cutoff(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """A model that never corrects still hits dev/73's cap: refusals 3–5
+        spend the three rounds, and the request at the cap gets the cutoff
+        card instead of silently vanishing."""
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        att_id, calls = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[
+                self._install_req(f"curio.miss{i}") for i in range(5)
+            ] + [self._install_req("curio.notes@1"), "never reached"],
+        )
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+        resp = self._run(client, token, alice_project, att_id)
+        parts = resp.get_json()["content"]
+        assert all(p["type"] != "proposal" for p in parts)
+        assert any("package.install" in json.dumps(p) and p["type"] != "proposal" for p in parts), parts
+        assert "No further tool calls" in calls[5][-1]["content"]  # the 5th miss was the last round
+        execution = self._execution(client, token, alice_project, att_id)
+        assert len(execution["toolCalls"]) == 5
+        assert execution["refusedRounds"] == 2
+
+    def test_catalog_unavailable_refusal_still_counts_as_a_round(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """A refusal that cost real work (a broken catalog) is not a parameter
+        error — it keeps spending rounds so a dead store can never loop."""
+        from utk_curio.backend.app.packages import services as packages_services
+
+        def boom(*_a, **_k):
+            raise RuntimeError("store on fire")
+
+        monkeypatch.setattr(packages_services, "agent_catalog_overview", boom)
+        user, token = user_and_token
+        att_id, calls = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[
+                self._install_req("curio.notes@1") for _ in range(4)
+            ] + ["never reached"],
+        )
+        resp = self._run(client, token, alice_project, att_id)
+        assert resp.status_code == 200
+        assert "Nodes Catalog is unavailable" in calls[1][-1]["content"]
+        assert "No further tool calls" in calls[3][-1]["content"]  # round 3 of 3
+        execution = self._execution(client, token, alice_project, att_id)
+        assert len(execution["toolCalls"]) == 3  # the 4th request hit the cap
+        assert "refusedRounds" not in execution
+
     def test_enlist_miss_hint_names_only_sources_this_run_can_read(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):

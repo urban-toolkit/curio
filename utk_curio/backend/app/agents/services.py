@@ -2348,7 +2348,7 @@ def _mint_package_install(
     params = req.get("params") or {}
     dir_name = params.get("dirName")
     if not isinstance(dir_name, str) or not dir_name.strip():
-        return "refused", "params.dirName must be a non-empty package dirName string", None
+        return _refuse_params("params.dirName must be a non-empty package dirName string")
     dir_name = dir_name.strip()
     try:
         rows = {
@@ -2359,26 +2359,26 @@ def _mint_package_install(
         return "refused", f"the Nodes Catalog is unavailable: {exc}", None
     row, candidates = _resolve_catalog_dir_name(dir_name, rows)
     if row is None and candidates:
-        return "refused", (
+        return _refuse_params(
             f"package {dir_name!r} names more than one major in the Nodes Catalog — "
             f"propose exactly one of: {', '.join(candidates)}"
-        ), None
+        )
     if row is None:
-        return "refused", (
+        return _refuse_params(
             f"package {dir_name!r} is not in the Nodes Catalog — "
             f"{_package_install_miss_hint(loop_ctx.get('granted'))}"
-        ), None
+        )
     dir_name = row["dirName"]  # the canonical dirName is what gets pinned
     if row["builtin"]:
-        return "refused", (
+        return _refuse_params(
             f"package {row['name']!r} is built-in — always present, never proposed; "
             "tell the user it is already available"
-        ), None
+        )
     if row["installed"]:
-        return "refused", (
+        return _refuse_params(
             f"package {row['name']!r} is already installed in this project — "
             "tell the user instead of proposing"
-        ), None
+        )
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None
@@ -4852,6 +4852,7 @@ def _execution_record(
     tool_calls: list | None = None,
     cost_usd: float | None = None,
     delegations: list | None = None,
+    refused_rounds: int = 0,
 ) -> dict:
     """Assemble the per-run execution record persisted on the agent turn
     (memo dev/37). ``usage`` is Actual counts or ``None``, never estimated
@@ -4873,6 +4874,11 @@ def _execution_record(
         record["toolCalls"] = list(tool_calls)
     if delegations:
         record["delegations"] = list(delegations)
+    if refused_rounds:
+        # dev/105 D2 (additive): parameter refusals that did NOT spend a round
+        # — auditable beside toolCalls[].status so a run that leaned on the
+        # free corrections is legible after the fact.
+        record["refusedRounds"] = refused_rounds
     return record
 
 
@@ -5150,6 +5156,34 @@ def _persist_exchange(
 # that follow their instructions to answer in prose instead of proposing.
 MAX_TOOL_ROUNDS = 3
 
+# dev/105 D2: a PARAMETER refusal — the mint rejected the request's params
+# before touching any store, provider, or delegate — is a millisecond
+# round-trip that produced exactly the correction the model needs. It does
+# not spend a MAX_TOOL_ROUNDS round (that budget is provider cost; a refusal
+# costs none) — up to this many per run, after which refusals count as rounds
+# again so a model that never corrects still hits the dev/73 cap and its
+# cutoff card. The live failure this fixes: search + two refusals = cap, and
+# the reuse ladder's last rung (AUTHOR) was unreachable no matter what the
+# model decided next.
+MAX_REFUSED_ROUNDS = 2
+
+
+class ParamRefusal(str):
+    """The typed marker for a parameter refusal's text (dev/105 D2).
+
+    A ``str`` subclass so every existing consumer — the tool-result message,
+    the execution record, tests asserting on the text — sees a plain string;
+    only the loop's round accounting asks ``isinstance``. A refusal caused by
+    a broken store/catalog/spec is deliberately NOT one of these: that cost
+    real work and must keep counting as a round so a dead store cannot loop.
+    """
+
+
+def _refuse_params(text: str) -> tuple[str, str, None]:
+    """``("refused", ParamRefusal(text), None)`` — the mint return for a
+    request the model can fix by changing its params."""
+    return "refused", ParamRefusal(text), None
+
 # The mutate tools _mint_proposal dispatches (dev/73): a request for one of
 # these dangling at the round cap is a cut-off PROPOSAL — surfaced as an
 # error card, never silently dropped under the reply's confident prose.
@@ -5406,12 +5440,12 @@ def _mint_node_create(
     # Any model-supplied "id" is ignored: ids are server-minted at apply only.
     entry, err = _available_template(user_key, project_id, params.get("nodeType"))
     if entry is None:
-        return "refused", err, None
+        return _refuse_params(err)
     proposed = content.extract_node_content(params.get("content"))
     if not proposed:
-        return "refused", "params.content must be a non-empty string", None
+        return _refuse_params("params.content must be a non-empty string")
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
-        return "refused", "params.content exceeds the proposal size bound", None
+        return _refuse_params("params.content exceeds the proposal size bound")
     goal = params.get("goal")
     goal = goal.strip() if isinstance(goal, str) and goal.strip() else None
     # dev/89 (additive): optional appearance, normalized by the ONE shared
@@ -5421,7 +5455,7 @@ def _mint_node_create(
     try:
         appearance = node_appearance.normalize_appearance(params.get("appearance"))
     except node_appearance.AppearanceError as exc:
-        return "refused", f"params.appearance: {exc}", None
+        return _refuse_params(f"params.appearance: {exc}")
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None
@@ -6817,6 +6851,7 @@ def run_attachment(
     final_parts: list = []
     messages_work = list(messages)
     rounds_used = 0
+    refusals_used = 0  # dev/105 D2: free parameter corrections taken
     started = time.monotonic()
     try:
         # The bounded tool loop (memos dev/41/48): parse → execute granted
@@ -6863,9 +6898,9 @@ def run_attachment(
                 if req["type"] == "toolRequest" and req.get("tool") in MUTATE_PROPOSAL_TOOLS:
                     minted.append(_round_cap_cutoff_card(req["tool"]))
                 break  # dangling read request at the cap: dropped, text kept
-            rounds_used += 1
-            final = rounds_used >= MAX_TOOL_ROUNDS
             if req["type"] == "delegateRequest":
+                rounds_used += 1
+                final = rounds_used >= MAX_TOOL_ROUNDS
                 status, text, resolution = _resolve_delegate_request(
                     user_key, project_id, loop_ctx, req, minted
                 )
@@ -6967,6 +7002,11 @@ def run_attachment(
             status, text = _execute_tool_request(
                 user_key, project_id, loop_ctx, req, tool_calls, minted
             )
+            if isinstance(text, ParamRefusal) and refusals_used < MAX_REFUSED_ROUNDS:
+                refusals_used += 1  # dev/105 D2: a free correction, not a round
+            else:
+                rounds_used += 1
+            final = rounds_used >= MAX_TOOL_ROUNDS
             messages_work.append({"role": "assistant", "content": reply})
             messages_work.append(
                 _tool_result_message(req["tool"], status, text, final=final)
@@ -6997,6 +7037,7 @@ def run_attachment(
     execution = _execution_record(
         execution_id, pins, usage_total, started, "ok", tool_calls,
         cost_usd=settled["costUsd"], delegations=delegations,
+        refused_rounds=refusals_used,
     )
     _persist_exchange(
         user_key,
@@ -7142,6 +7183,7 @@ def stream_attachment(
         final_parts: list = []
         messages_work = list(messages)
         rounds_used = 0
+        refusals_used = 0  # dev/105 D2: free parameter corrections taken
         usage_sink: dict = {}
         started = time.monotonic()
         # The typed-envelope handshake (memo dev/37): the execution identity
@@ -7209,9 +7251,9 @@ def stream_attachment(
                     if req["type"] == "toolRequest" and req.get("tool") in MUTATE_PROPOSAL_TOOLS:
                         minted.append(_round_cap_cutoff_card(req["tool"]))
                     break  # dangling read request at the cap: dropped, text kept
-                rounds_used += 1
-                final = rounds_used >= MAX_TOOL_ROUNDS
                 if req["type"] == "delegateRequest":
+                    rounds_used += 1
+                    final = rounds_used >= MAX_TOOL_ROUNDS
                     yield ("delegate_requested", {"capability": req["capability"]})
                     status, text, resolution = _resolve_delegate_request(
                         user_key, project_id, loop_ctx, req, minted
@@ -7339,6 +7381,11 @@ def stream_attachment(
                     user_key, project_id, loop_ctx, req, tool_calls, minted
                 )
                 yield ("tool_result", {"tool": req["tool"], "status": status})
+                if isinstance(text, ParamRefusal) and refusals_used < MAX_REFUSED_ROUNDS:
+                    refusals_used += 1  # dev/105 D2: a free correction, not a round
+                else:
+                    rounds_used += 1
+                final = rounds_used >= MAX_TOOL_ROUNDS
                 messages_work.append({"role": "assistant", "content": result["reply"]})
                 messages_work.append(
                     _tool_result_message(req["tool"], status, text, final=final)
@@ -7371,6 +7418,7 @@ def stream_attachment(
         execution = _execution_record(
             execution_id, pins, usage_total, started, "ok", tool_calls,
             cost_usd=settled["costUsd"], delegations=delegations,
+            refused_rounds=refusals_used,
         )
         _persist_exchange(
             user_key,
