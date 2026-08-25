@@ -487,10 +487,51 @@ def _production_template_ids(user_key: str) -> set[str]:
     }
 
 
+def _lockfile_dirs(user_key: str) -> set[str]:
+    from utk_curio.backend.app.packages.resolver import lockfile_for_user
+
+    return {e["dirName"] for e in lockfile_for_user(user_key)["installedPackages"]}
+
+
+def _starter_ids(user_key: str) -> set[str]:
+    from utk_curio.backend.app.packages.starters import generate_packageage_starters
+
+    # The builtin ships no ``source`` files, so the roster is legitimately
+    # empty; the count sentinel keeps the probe non-empty — the load-bearing
+    # assertion for this reader is that it BLOCKS during the window.
+    return {f"starters:{len(generate_packageage_starters(user_key))}"}
+
+
+def _library_sources(user_key: str) -> set[str]:
+    from utk_curio.backend.app.packages.libraries import package_derived
+
+    # The builtin declares no libraries; enumeration is still the snapshot.
+    from utk_curio.backend.app.packages.build_deps import installed_manifests
+
+    return set(installed_manifests(user_key)) | {e.source for e in package_derived(user_key)}
+
+
+def _installed_majors(user_key: str) -> dict:
+    from utk_curio.backend.app.packages import services as packages_services
+
+    return packages_services._installed_majors_by_pkg(user_key)
+
+
+_PRODUCTION_READERS = {
+    "available_templates": _production_template_ids,
+    "resolver.lockfile_for_user": _lockfile_dirs,
+    "starters": _starter_ids,
+    "libraries+build_deps": _library_sources,
+    "installed_majors": _installed_majors,
+}
+
+
+@pytest.mark.parametrize("reader_name", sorted(_PRODUCTION_READERS))
 def test_reader_waits_out_the_swap_window_instead_of_seeing_nothing(
-    tmp_curio, real_fixtures_root, monkeypatch
+    tmp_curio, real_fixtures_root, monkeypatch, reader_name
 ):
-    """The gap dev/93 left and dev/99 closes, pinned deterministically.
+    """The gap dev/93 left and dev/99 closes, pinned deterministically — for
+    every production reader the §2 audit migrated, not only the template roster.
 
     `_swap_in_package` moves the old tree aside and then moves the staged tree
     in; POSIX cannot do that in one rename. Parked between those two renames,
@@ -501,9 +542,10 @@ def test_reader_waits_out_the_swap_window_instead_of_seeing_nothing(
     """
     from utk_curio.backend.app.packages import seed as packages_seed
 
+    read = _PRODUCTION_READERS[reader_name]
     seed_dev_packageages(user_key="guest")
-    expected = _production_template_ids("guest")
-    assert expected, "fixture should provide templates"
+    expected = read("guest")
+    assert expected, "fixture should give the reader something to see"
 
     builtin_name = _builtin_dir_name()
     moved_aside = threading.Event()
@@ -531,9 +573,7 @@ def test_reader_waits_out_the_swap_window_instead_of_seeing_nothing(
     assert not (user_packageages_dir("guest") / builtin_name).exists()
 
     result: dict = {}
-    reader = threading.Thread(
-        target=lambda: result.update(ids=_production_template_ids("guest"))
-    )
+    reader = threading.Thread(target=lambda: result.update(ids=read("guest")))
     reader.start()
     reader.join(timeout=0.5)
     assert reader.is_alive(), (

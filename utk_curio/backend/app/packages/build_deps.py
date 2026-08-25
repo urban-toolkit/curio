@@ -54,6 +54,7 @@ from utk_curio.backend.app.packages.resolver import (
     parse_range,
     parse_version,
 )
+from utk_curio.backend.app.packages.locks import package_seed_lock
 from utk_curio.backend.app.packages.storage import list_user_packageages
 
 log = logging.getLogger(__name__)
@@ -484,18 +485,42 @@ def resolve_js_dependencies(
 # Python review (no installation) + package-to-package review
 # ---------------------------------------------------------------------------
 
+def installed_manifests(user_key: str) -> dict[str, Any]:
+    """``dirName -> PackageManifest`` for every readable installed package,
+    taken as ONE snapshot under the per-user seed lock (memo dev/99).
+
+    Both review functions below consume this; :func:`resolve_dependencies`
+    takes it once and hands the same snapshot to both, so a report never
+    describes two different instants of the store.
+    """
+    out: dict[str, Any] = {}
+    with package_seed_lock(user_key):
+        for package_path in list_user_packageages(user_key):
+            try:
+                out[package_path.name] = load_packageage_manifest(package_path)
+            except ManifestError:
+                continue
+    return out
+
+
 def review_python_dependencies(
     python_entries: Mapping[str, Mapping[str, Any]],
     user_key: str,
     *,
     is_satisfied: Callable[[str, str], bool] | None = None,
+    installed: Mapping[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[Finding]]:
     """Validate constraints + intersect against installed packages' declared
     python deps. Reports presence via ``pip_runner.is_satisfied`` (a metadata
-    check) — nothing is installed or executed here (dev/89 §3.4)."""
+    check) — nothing is installed or executed here (dev/89 §3.4).
+
+    ``installed`` is the :func:`installed_manifests` snapshot; omitted, one is
+    taken here."""
     from utk_curio.backend.app.packages import pip_runner
 
     satisfied = is_satisfied or pip_runner.is_satisfied
+    if installed is None:
+        installed = installed_manifests(user_key)
     findings: list[Finding] = []
     rows: list[dict[str, Any]] = []
     parseable: dict[str, str] = {}
@@ -531,13 +556,9 @@ def review_python_dependencies(
     # Conflict check against every installed package's declared python deps —
     # the same intersection the project resolver locks (one grammar, one truth).
     installed_decls: list[tuple[str, dict[str, str]]] = []
-    for package_path in list_user_packageages(user_key):
-        try:
-            m = load_packageage_manifest(package_path)
-        except ManifestError:
-            continue
+    for dir_name, m in installed.items():
         if m.python_deps:
-            installed_decls.append((package_path.name, dict(m.python_deps)))
+            installed_decls.append((dir_name, dict(m.python_deps)))
     if parseable and installed_decls:
         _, conflicts = merge_python_deps(installed_decls + [("<draft>", parseable)])
         for conflict in conflicts:
@@ -554,23 +575,25 @@ def review_python_dependencies(
 
 
 def review_package_dependencies(
-    package_deps: Mapping[str, str], user_key: str
+    package_deps: Mapping[str, str],
+    user_key: str,
+    *,
+    installed: Mapping[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[Finding]]:
     """Check ``dependencies.packages`` against the installed store: each dep
-    must be installed at a version inside the declared range."""
+    must be installed at a version inside the declared range.
+
+    ``installed`` is the :func:`installed_manifests` snapshot; omitted, one is
+    taken here."""
     findings: list[Finding] = []
     rows: list[dict[str, Any]] = []
-    installed: dict[str, Any] = {}
-    for package_path in list_user_packageages(user_key):
-        try:
-            m = load_packageage_manifest(package_path)
-        except ManifestError:
-            continue
-        installed[m.package_id] = m
+    if installed is None:
+        installed = installed_manifests(user_key)
+    by_package_id: dict[str, Any] = {m.package_id: m for m in installed.values()}
     for name in sorted(package_deps):
         constraint = package_deps[name]
         row: dict[str, Any] = {"name": name, "constraint": constraint}
-        m = installed.get(name)
+        m = by_package_id.get(name)
         if m is None:
             row["status"] = "missing"
             findings.append(Finding(
@@ -626,9 +649,14 @@ def resolve_dependencies(
     js_direct, js_lock, js_findings = resolve_js_dependencies(
         js_entries, fetcher=fetcher, policy=policy, cache_dir=cache_dir,
     )
-    python_rows, py_findings = review_python_dependencies(python_entries, user_key)
+    # ONE store snapshot for both reviews (memo dev/99 §4) — taken after the
+    # registry work above so the seed lock is never held across network I/O.
+    installed = installed_manifests(user_key)
+    python_rows, py_findings = review_python_dependencies(
+        python_entries, user_key, installed=installed,
+    )
     package_rows, pkg_findings = review_package_dependencies(
-        request.dependencies.get("packages") or {}, user_key,
+        request.dependencies.get("packages") or {}, user_key, installed=installed,
     )
     return DependencyReport(
         python=tuple(python_rows),

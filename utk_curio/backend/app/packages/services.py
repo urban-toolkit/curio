@@ -78,8 +78,16 @@ class PackageServiceError(Exception):
 # ---------------------------------------------------------------------------
 
 def _is_installed_in_user_store(user_key: str, dir_name: str) -> bool:
+    """Presence probe, taken under the per-user seed lock (memo dev/99).
+
+    This answer decides whether an install COPIES: a false "not installed"
+    for the seeded builtin — the swap window — would send
+    :func:`_ensure_user_store_install` to re-copy it from the catalog against
+    the seeder's own replacement.
+    """
     try:
-        return (package_dir(user_key, dir_name) / "manifest.json").is_file()
+        with package_seed_lock(user_key):
+            return (package_dir(user_key, dir_name) / "manifest.json").is_file()
     except Exception:  # noqa: BLE001 — invalid dir_name etc.
         return False
 
@@ -89,15 +97,22 @@ def _installed_majors_by_pkg(user_key: str) -> dict[str, list[int]]:
 
     Feeds the spec-packages backfill so unversioned node types in legacy
     specs resolve to a concrete dirName when possible.
+
+    Names-only snapshot under the per-user seed lock (memo dev/99): a
+    backfill that missed the builtin's major during the swap window would
+    resolve a legacy spec's node types to nothing.
     """
     base = user_packageages_dir(user_key)
     if not base.is_dir():
         return {}
     out: dict[str, list[int]] = {}
-    for entry in base.iterdir():
-        if not entry.is_dir() or not PACKAGE_DIR_RE.match(entry.name):
-            continue
-        pkg_id, _, major = entry.name.rpartition("@")
+    with package_seed_lock(user_key):
+        names = [
+            entry.name for entry in base.iterdir()
+            if entry.is_dir() and PACKAGE_DIR_RE.match(entry.name)
+        ]
+    for name in names:
+        pkg_id, _, major = name.rpartition("@")
         try:
             out.setdefault(pkg_id, []).append(int(major))
         except ValueError:
@@ -1004,18 +1019,10 @@ def _python_deps_unique_to_pruned(
     if not candidate_dep_names:
         return []
     still_needed: set[str] = set()
-    for package_path in list_user_packageages(user_key):
-        if package_path.name in pruned_names:
-            continue  # this one was just removed
-        from utk_curio.backend.app.packages.manifest import (
-            ManifestError,
-            load_packageage_manifest,
-        )
-        try:
-            m = load_packageage_manifest(package_path)
-        except ManifestError:
-            continue
-        still_needed.update(dict(m.python_deps or {}).keys())
+    for dir_name, manifest in _locked_store_index(user_key).items():
+        if dir_name in pruned_names or isinstance(manifest, Exception):
+            continue  # just removed, or unreadable — declares nothing we can see
+        still_needed.update(dict(manifest.python_deps or {}).keys())
     return sorted(candidate_dep_names - still_needed)
 
 
@@ -1174,35 +1181,35 @@ def agent_resolve_report(user_key: str, dir_names: list[str]) -> dict:
     """
     from utk_curio.backend.app.packages.resolver import (
         ResolverError,
-        resolve_for_project,
+        resolve_for_project_unlocked,
     )
 
+    # The committed catalog is not package-store data: read it before the
+    # lock (memo dev/99 §3.3). Then ONE acquisition covers the installed set,
+    # the resolver's two store reads and the per-package manifests — the
+    # report describes a single instant of the store.
     catalog = _catalog_manifests()
-    installed = {p.name for p in list_user_packageages(user_key)}
-    unknown = [dn for dn in dir_names if dn not in installed and dn not in catalog]
-    if unknown:
-        raise PackageServiceError(f"unknown package(s): {', '.join(sorted(unknown))}", 404)
-    probe = sorted(set(dir_names) | installed)
-    overrides = {
-        dn: catalog_root() / dn for dn in probe if dn not in installed and dn in catalog
-    }
-    try:
-        result = resolve_for_project(user_key, probe, overrides=overrides)
-    except ResolverError as exc:
-        raise PackageServiceError(str(exc), 400) from exc
+    with package_seed_lock(user_key):
+        store = _store_index(user_key)
+        installed = set(store)
+        unknown = [dn for dn in dir_names if dn not in installed and dn not in catalog]
+        if unknown:
+            raise PackageServiceError(
+                f"unknown package(s): {', '.join(sorted(unknown))}", 404,
+            )
+        probe = sorted(set(dir_names) | installed)
+        overrides = {
+            dn: catalog_root() / dn for dn in probe if dn not in installed and dn in catalog
+        }
+        try:
+            result = resolve_for_project_unlocked(user_key, probe, overrides=overrides)
+        except ResolverError as exc:
+            raise PackageServiceError(str(exc), 400) from exc
 
     def _manifest_for(dir_name: str) -> "PackageManifest | None":
-        for path in list_user_packageages(user_key):
-            if path.name == dir_name:
-                from utk_curio.backend.app.packages.manifest import (
-                    ManifestError,
-                    load_packageage_manifest,
-                )
-
-                try:
-                    return load_packageage_manifest(path)
-                except ManifestError:
-                    return None
+        if dir_name in store:
+            manifest = store[dir_name]
+            return None if isinstance(manifest, Exception) else manifest
         return catalog.get(dir_name)
 
     packages: list[dict] = []

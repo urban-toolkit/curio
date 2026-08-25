@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from utk_curio.backend.app.packages.locks import package_seed_lock
 from utk_curio.backend.app.packages.storage import (
     _user_key_segment,
     _users_base,
@@ -142,21 +143,30 @@ def package_derived(user_key: str) -> list[LibraryEntry]:
     )
     from utk_curio.backend.app.packages.pip_runner import is_satisfied
 
+    # Snapshot the declarations under the seed lock (memo dev/99); the
+    # presence probes below are importlib-metadata work, not store reads, and
+    # run after release so the hold stays bounded to local manifest I/O.
+    declared: list[tuple[str, dict[str, str], dict[str, str]]] = []
+    with package_seed_lock(user_key):
+        for package_path in list_user_packageages(user_key):
+            try:
+                m = load_packageage_manifest(package_path)
+            except ManifestError:
+                continue
+            declared.append(
+                (package_path.name, dict(m.python_deps or {}), dict(m.js_deps or {}))
+            )
+
     out: list[LibraryEntry] = []
-    for package_path in list_user_packageages(user_key):
-        try:
-            m = load_packageage_manifest(package_path)
-        except ManifestError:
-            continue
-        source = package_path.name
-        for name, spec in (m.python_deps or {}).items():
+    for source, python_deps, js_deps in declared:
+        for name, spec in python_deps.items():
             # A package can declare a dep that isn't actually present (never
             # installed, or pip-uninstalled later) — surface real state.
             out.append(LibraryEntry(
                 name=name, spec=spec, kind="python", source=source,
                 installed=is_satisfied(name, spec),
             ))
-        for name, spec in (m.js_deps or {}).items():
+        for name, spec in js_deps.items():
             out.append(LibraryEntry(name=name, spec=spec, kind="js", source=source))
     return out
 
