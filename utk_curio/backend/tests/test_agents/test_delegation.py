@@ -83,6 +83,62 @@ def _run(client, token, project_id, att_id, message="build the content"):
     )
 
 
+class TestRequiredClosure:
+    """dev/106: delegation.required_closure / required_by — pure helpers."""
+
+    DFB = "agent.dataflow-builder@1.0.0"
+
+    def test_dataflow_builder_closure_is_the_content_builder(self, client, user_and_token, tmp_curio):
+        user, _ = user_and_token
+        coords, missing = delegation.required_closure(
+            _user_dir_key(user), builtin.get_builtin_manifest(self.DFB)
+        )
+        assert coords == [NCB]
+        assert missing == []
+
+    def test_leaf_has_empty_closure(self, client, user_and_token, tmp_curio):
+        user, _ = user_and_token
+        coords, missing = delegation.required_closure(
+            _user_dir_key(user), builtin.get_builtin_manifest(NCB)
+        )
+        assert (coords, missing) == ([], [])
+
+    def test_missing_dependency_reported_not_raised(self, client, user_and_token, tmp_curio):
+        user, _ = user_and_token
+        import dataclasses
+
+        root = dataclasses.replace(
+            builtin.get_builtin_manifest(self.DFB),
+            delegates_to=["agent.node-content-builder", "agent.nowhere"],
+            requires_agents=["agent.node-content-builder", "agent.nowhere"],
+        )
+        coords, missing = delegation.required_closure(_user_dir_key(user), root)
+        assert coords == [NCB]
+        assert missing == ["agent.nowhere"]
+
+    def test_transitive_and_cycle_safe(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, _ = user_and_token
+        import dataclasses
+
+        ncb = builtin.get_builtin_manifest(NCB)
+        # NCB (pretend) requires NB, NB (pretend) requires NCB — a cycle.
+        fake_ncb = dataclasses.replace(ncb, delegates_to=["agent.node-builder"], requires_agents=["agent.node-builder"])
+        nb = builtin.get_builtin_manifest(NB)
+        fake_nb = dataclasses.replace(nb, delegates_to=["agent.node-content-builder"], requires_agents=["agent.node-content-builder"])
+        table = {"agent.node-content-builder": (NCB, fake_ncb), "agent.node-builder": (NB, fake_nb)}
+        monkeypatch.setattr(delegation, "find_visible", lambda key, aid: table.get(aid, (None, None)))
+        coords, missing = delegation.required_closure(_user_dir_key(user), builtin.get_builtin_manifest(self.DFB))
+        assert coords == [NCB, NB]
+        assert missing == []
+
+    def test_required_by_names_installed_dependents(self, client, user_and_token, tmp_curio):
+        user, _ = user_and_token
+        key = _user_dir_key(user)
+        assert delegation.required_by(key, [self.DFB, NCB], NCB) == [self.DFB]
+        assert delegation.required_by(key, [NCB], NCB) == []
+        assert delegation.required_by(key, [self.DFB, NCB], self.DFB) == []
+
+
 class TestResolution:
     """delegation.resolve — pure, current-project-only, order-deterministic."""
 

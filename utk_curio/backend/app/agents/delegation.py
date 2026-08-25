@@ -251,3 +251,53 @@ def run_delegate(
     # The child's reply is returned verbatim as data — NEVER parsed for
     # toolRequest/delegateRequest (depth-1 by construction).
     return ("ok", text, _record("ok", usage_sink, settled["costUsd"], pins))
+
+
+# ── dev/106: the hard-dependency closure ─────────────────────────────────────
+
+_REQUIRED_CLOSURE_MAX_DEPTH = 8
+
+
+def required_closure(user_key: str, root: AgentManifest) -> tuple[list[str], list[str]]:
+    """The transitive ``requiresAgents`` closure of *root*, resolved through
+    the same visibility rule the run time uses (``find_visible``).
+
+    Returns ``(coords, missing)``: the visible coords to install, in
+    deterministic walk order (root's declaration order, then each dependency's
+    own), root excluded; and the agent ids declared required but visible
+    nowhere. Cycle-safe and depth-bounded. Pure — installs nothing."""
+    coords: list[str] = []
+    missing: list[str] = []
+    seen: set[str] = {root.agent_id}
+    frontier: list[tuple[AgentManifest, int]] = [(root, 0)]
+    while frontier:
+        parent, depth = frontier.pop(0)
+        if depth >= _REQUIRED_CLOSURE_MAX_DEPTH:
+            continue
+        for agent_id in parent.requires_agents:
+            if agent_id in seen:
+                continue
+            seen.add(agent_id)
+            coord, m = find_visible(user_key, agent_id)
+            if m is None or coord is None:
+                missing.append(agent_id)
+                continue
+            coords.append(coord)
+            frontier.append((m, depth + 1))
+    return coords, missing
+
+
+def required_by(user_key: str, installed: list[str], coord: str) -> list[str]:
+    """Installed coords whose ``requiresAgents`` names *coord*'s agent id —
+    the dependents an uninstall of *coord* would break."""
+    from utk_curio.backend.app.agents import services
+
+    agent_id = coord.split("@", 1)[0]
+    dependents: list[str] = []
+    for other in sorted(installed):
+        if other == coord:
+            continue
+        m = services._resolve_definition(user_key, other)
+        if m is not None and agent_id in m.requires_agents:
+            dependents.append(other)
+    return dependents

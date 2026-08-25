@@ -78,6 +78,11 @@ class BuiltinAgentSpec:
     # §3.2). Expresses composition only — grants nothing; resolution is
     # current-project-only at run time.
     delegates_to: tuple[str, ...] = field(default_factory=tuple)
+    # Hard dependencies (memo dev/106): the subset of delegates_to a SERVER
+    # code path of this agent invokes without model choice. Installing the
+    # agent installs the closure at the user's explicit click; uninstalling a
+    # required one while a dependent is installed is refused.
+    requires_agents: tuple[str, ...] = field(default_factory=tuple)
     # runtime.reviewPolicy. The default keeps the thirteen migrated manifests
     # byte-identical; composites that mint mutation proposals declare
     # "review-before-apply".
@@ -251,6 +256,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    # — runtime-gathered search inputs, schema
                                    # reply, reviewed note sequence.
                                    "agent.researcher"),
+                     # dev/106: Solve/Validate hard-invoke node.content.generate.
+                     requires_agents=("agent.node-content-builder",),
                      review_policy="review-before-apply"),
     # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
     # Net-new instruction. Deviations recorded in the memo: roster-generated
@@ -386,6 +393,8 @@ def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
     # byte-identical (memo dev/48 regression requirement).
     if spec.delegates_to:
         manifest["delegatesTo"] = list(spec.delegates_to)
+    if spec.requires_agents:
+        manifest["requiresAgents"] = list(spec.requires_agents)
     return manifest
 
 

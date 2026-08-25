@@ -216,6 +216,11 @@ class AgentManifest:
     roles: list[str]
     capabilities: list[CapabilityDeclaration]
     delegates_to: list[str]
+    # dev/106: hard dependencies — a SUBSET of delegates_to whose capability a
+    # server code path of this agent invokes without model choice (e.g. the
+    # Dataflow Builder's Solve). The agent is not functional in a project
+    # without them; install resolves the closure (services.install_in_project).
+    requires_agents: list[str]
     prompts: dict[str, PromptAsset]
     compatible_targets: list[CompatibleTarget]
     inputs_reads: list[str]
@@ -284,6 +289,26 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
         if d_id == agent_id:
             raise AgentManifestError(f"{where}.delegatesTo must not reference the agent itself")
         delegates_to.append(d_id)
+
+    requires_raw = raw.get("requiresAgents", [])
+    if not isinstance(requires_raw, list):
+        raise AgentManifestError(f"{where}.requiresAgents must be a list")
+    requires_agents: list[str] = []
+    for i, d in enumerate(requires_raw):
+        r_id = _require_str(d, where=f"{where}.requiresAgents[{i}]")
+        if not AGENT_ID_RE.match(r_id):
+            raise AgentManifestError(
+                f"{where}.requiresAgents[{i}] {r_id!r} must be an agent id matching {AGENT_ID_RE.pattern}"
+            )
+        if r_id == agent_id:
+            raise AgentManifestError(f"{where}.requiresAgents must not reference the agent itself")
+        if r_id not in delegates_to:
+            raise AgentManifestError(
+                f"{where}.requiresAgents[{i}] {r_id!r} must also be listed in delegatesTo"
+            )
+        if r_id in requires_agents:
+            raise AgentManifestError(f"{where}.requiresAgents: duplicate {r_id!r}")
+        requires_agents.append(r_id)
 
     prompts_raw = raw.get("prompts", {})
     if not isinstance(prompts_raw, dict):
@@ -364,6 +389,7 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
         roles=[r for r in raw.get("roles", []) if isinstance(r, str)],
         capabilities=capabilities,
         delegates_to=delegates_to,
+        requires_agents=requires_agents,
         prompts=prompts,
         compatible_targets=compatible_targets,
         inputs_reads=list(reads),

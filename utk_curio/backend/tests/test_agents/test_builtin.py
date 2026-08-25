@@ -210,6 +210,22 @@ class TestDatasetFinderComposite:
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
 
 
+class TestRequiresAgentsRoster:
+    """dev/106 roster-wide invariant: hard dependencies are declared delegates
+    and resolve to a roster agent."""
+
+    def test_requires_subset_of_delegates_and_visible(self):
+        ids = {m.agent_id for m in builtin.list_builtin_manifests()}
+        for m in builtin.list_builtin_manifests():
+            for r in m.requires_agents:
+                assert r in m.delegates_to, (m.agent_id, r)
+                assert r in ids, (m.agent_id, r)
+
+    def test_only_the_dataflow_builder_requires(self):
+        requiring = [m.agent_id for m in builtin.list_builtin_manifests() if m.requires_agents]
+        assert requiring == ["agent.dataflow-builder"]
+
+
 class TestDataflowBuilderComposite:
     """The dev/52 roster entry — spec per dev/15 §3.4 minus recorded deviations."""
 
@@ -240,6 +256,12 @@ class TestDataflowBuilderComposite:
             "node.create",
         ]
         assert m.provenance.trust == "built-in"
+
+    def test_requires_only_the_solve_specialist(self):
+        # dev/106: Solve/Validate hard-invoke node.content.generate; every
+        # other delegate stays optional (no 15-agent install fan-out).
+        m = builtin.get_builtin_manifest(self.COORD)
+        assert m.requires_agents == ["agent.node-content-builder"]
 
     def test_net_new_instruction_resolves(self):
         text = builtin.read_prompt_text(self.COORD, "instruction")

@@ -120,6 +120,52 @@ class TestAgentId:
             parse_agent_manifest(raw)
 
 
+class TestRequiresAgents:
+    """dev/106: hard dependencies are a validated subset of delegatesTo."""
+
+    def test_absent_defaults_to_empty(self):
+        assert parse_agent_manifest(_valid_manifest()).requires_agents == []
+
+    def test_subset_of_delegates_parses(self):
+        raw = _valid_manifest()
+        raw["delegatesTo"] = ["agent.node-content-builder", "agent.node-researcher"]
+        raw["requiresAgents"] = ["agent.node-content-builder"]
+        assert parse_agent_manifest(raw).requires_agents == ["agent.node-content-builder"]
+
+    def test_not_in_delegates_rejected(self):
+        raw = _valid_manifest()
+        raw["delegatesTo"] = ["agent.node-researcher"]
+        raw["requiresAgents"] = ["agent.node-content-builder"]
+        with pytest.raises(AgentManifestError, match="must also be listed in delegatesTo"):
+            parse_agent_manifest(raw)
+
+    def test_self_rejected(self):
+        raw = _valid_manifest()
+        raw["requiresAgents"] = ["agent.node-explainer"]
+        with pytest.raises(AgentManifestError, match="must not reference the agent itself"):
+            parse_agent_manifest(raw)
+
+    def test_non_agent_id_rejected(self):
+        raw = _valid_manifest()
+        raw["delegatesTo"] = ["agent.node-content-builder"]
+        raw["requiresAgents"] = ["curio.builtin"]
+        with pytest.raises(AgentManifestError, match="must be an agent id"):
+            parse_agent_manifest(raw)
+
+    def test_duplicate_rejected(self):
+        raw = _valid_manifest()
+        raw["delegatesTo"] = ["agent.node-content-builder"]
+        raw["requiresAgents"] = ["agent.node-content-builder", "agent.node-content-builder"]
+        with pytest.raises(AgentManifestError, match="duplicate"):
+            parse_agent_manifest(raw)
+
+    def test_not_a_list_rejected(self):
+        raw = _valid_manifest()
+        raw["requiresAgents"] = "agent.node-content-builder"
+        with pytest.raises(AgentManifestError, match="must be a list"):
+            parse_agent_manifest(raw)
+
+
 class TestCapabilityIdRules:
     """The core invariant: capability ids are behavior contracts, never asset paths."""
 
