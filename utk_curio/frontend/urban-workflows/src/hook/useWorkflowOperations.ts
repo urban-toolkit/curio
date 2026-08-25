@@ -46,7 +46,11 @@ export interface WorkflowOperationsDeps {
     setNodes: any;
     setEdges: any;
     setOutputs: any;
-    outputsRef: React.MutableRefObject<Array<{ nodeId: string; output: string }>>;
+    // `output` is `unknown`, matching IOutput in FlowProvider (which is what is
+    // actually passed) and SaveableOutput in saveOutputDataset (which is what
+    // actually consumes it). Declaring it `string` here made the provider's own
+    // ref unassignable to the hook it feeds.
+    outputsRef: React.MutableRefObject<Array<{ nodeId: string; output: unknown }>>;
     setInteractions: any;
     setDashboardPins: (value: any) => void;
     setPositionsInDashboard: (data: any) => void;
@@ -693,7 +697,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             //     ``curio.builtin@1`` (and anything else in defaults) as
             //     installed in the new project — without this the user sees
             //     "Install" buttons for packages they "just got".
-            const seededPackages: string[] | undefined = detail?.spec?.dataflow?.packages;
+            const dataflowSpec = detail?.spec?.dataflow as
+                | { packages?: string[] }
+                | undefined;
+            const seededPackages = dataflowSpec?.packages;
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }

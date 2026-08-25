@@ -13,8 +13,10 @@ const colors: Record<DatasetFormat, { fill: string; stroke: string; bg: string }
   csv: { fill: "rgba(59,111,212,0.1)", stroke: "rgba(59,111,212,0.25)", bg: "#F0F4FF" },
   json: { fill: "rgba(122,75,209,0.1)", stroke: "rgba(122,75,209,0.25)", bg: "#F7F2FF" },
   parquet: { fill: "rgba(251,170,105,0.12)", stroke: "rgba(251,170,105,0.3)", bg: "#FFF8F0" },
-  geotiff: { fill: "rgba(122,75,209,0.1)", stroke: "rgba(122,75,209,0.25)", bg: "#F7F2FF" },
-  shp: { fill: "rgba(136,136,136,0.1)", stroke: "rgba(136,136,136,0.25)", bg: "#F5F5F5" },
+  geotiff: { fill: "rgba(46,104,116,0.1)", stroke: "rgba(46,104,116,0.25)", bg: "#F0F6F7" },
+  shp: { fill: "rgba(122,72,101,0.1)", stroke: "rgba(122,72,101,0.25)", bg: "#F7F2F5" },
+  bundle: { fill: "rgba(91,100,114,0.1)", stroke: "rgba(91,100,114,0.25)", bg: "#F2F3F5" },
+  osm: { fill: "rgba(122,182,72,0.12)", stroke: "rgba(122,182,72,0.3)", bg: "#F4FAEF" },
 };
 
 function formatCell(value: unknown): string {

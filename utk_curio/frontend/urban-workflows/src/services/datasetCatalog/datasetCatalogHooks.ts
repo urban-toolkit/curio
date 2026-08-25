@@ -11,16 +11,18 @@ const EMPTY_RESPONSE: DatasetCatalogResponse = {
   items: [],
   facets: {
     origin: { source_node: 0, computed: 0, imported: 0, hub: 0 },
-    format: { csv: 0, geojson: 0, json: 0, parquet: 0, geotiff: 0, shp: 0 },
+    format: { csv: 0, geojson: 0, json: 0, parquet: 0, geotiff: 0, shp: 0, bundle: 0, osm: 0 },
   },
 };
 
+/** A query flattened for use as a memo key. Field types mirror
+ *  DatasetCatalogQuery: this exists to stabilise identity, not to widen. */
 type StableCatalogQuery = {
   dataflowId?: string;
   search?: string;
-  format?: string;
-  origin?: string;
-  sort?: string;
+  format?: DatasetCatalogQuery["format"];
+  origin?: DatasetCatalogQuery["origin"];
+  sort?: DatasetCatalogQuery["sort"];
   includeHub?: boolean;
   groupOsm?: boolean;
   liveOutputs?: DatasetCatalogQuery["liveOutputs"];

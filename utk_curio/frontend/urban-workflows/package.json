@@ -12,6 +12,7 @@
     "build": "webpack --mode development && npm run build:packages",
     "build:packages": "webpack --config webpack.packages.config.js",
     "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
     "format": "npx prettier . --write",
     "format-check": "npx prettier . --check"
   },

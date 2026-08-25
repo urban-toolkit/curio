@@ -1,6 +1,7 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { PackageCard } from "../../components/packages/publishing/PackageCard";
+import type { PackageCardProps } from "../../components/packages/publishing/PackageCard";
 import type { PackagePayload } from "../../api/packagesApi";
 
 /**
@@ -37,8 +38,8 @@ const base = {
   onInstall: jest.fn(),
 };
 
-const renderCard = (over: Record<string, unknown> = {}) =>
-  render(<PackageCard {...(base as never)} pkg={pkg()} {...(over as never)} />);
+const renderCard = (over: Partial<PackageCardProps> = {}) =>
+  render(<PackageCard {...base} pkg={pkg()} {...over} />);
 
 const button = (name: string) => screen.queryByRole("button", { name });
 
@@ -94,7 +95,7 @@ describe("PackageCard - curio.builtin", () => {
   it("offers no buttons at all", () => {
     render(
       <PackageCard
-        {...(base as never)}
+        {...base}
         pkg={builtin}
         isInstalled
         onUninstall={jest.fn()}

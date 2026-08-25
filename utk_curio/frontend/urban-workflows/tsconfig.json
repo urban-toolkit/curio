@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
-    "target": "es2021",
+    // Check-only. The bundle is built by webpack via babel-loader (see
+    // webpack.config.js), so nothing here reaches shipped code — `tsc` exists
+    // to type-check, which `npm run typecheck` does.
+    "target": "es2022",
     "module": "esnext",
     "allowJs": true,
     "jsx": "react",
@@ -9,7 +12,17 @@
     "strict": true,
     "esModuleInterop": true,
     "sourceMap": true,
-    "baseUrl": "src"
+    "baseUrl": "src",
+    // `moduleResolution: node10` and `baseUrl` are both deprecated in TS 7.
+    // Without this, tsc reports those two config errors and exits *before*
+    // checking a single source file — so `tsc --noEmit` looked like it passed
+    // while checking nothing at all. Revisit when moving to
+    // `moduleResolution: bundler` and explicit `paths`.
+    "ignoreDeprecations": "6.0",
+    // Third-party .d.ts files are not ours to fix; @duckdb/duckdb-wasm's
+    // bindings reference emscripten types this project does not install, and
+    // those errors would otherwise bury every real one.
+    "skipLibCheck": true
   },
   "include": ["src/**/*"]
 }
