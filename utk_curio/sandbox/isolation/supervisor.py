@@ -33,10 +33,28 @@ from utk_curio.sandbox.isolation import protocol
 from utk_curio.sandbox.isolation.child import RESULT_FILENAME
 from utk_curio.sandbox.isolation.protocol import ProtocolError
 
-# Scratch directories live under the shared data dir so they share a filesystem
-# with the artifact store; that is what lets input staging use a hardlink and
-# output persistence use a rename instead of a copy.
+# Scratch directories sit BESIDE the shared data dir, not inside it.
+#
+# Same filesystem either way, which is what lets input staging use a hardlink
+# and output persistence use a rename instead of a copy. But inside the store,
+# the store itself had to stay traversable by the execution user for a child to
+# reach its own scratch directory -- and a directory the child can traverse is
+# one where an artifact whose name it can guess is one open() away. Beside the
+# store, `.curio/data` can be 0700 with nothing to reach through it.
+#
+# That is also what makes hardlinking safe under an --exec-user. A hardlink
+# shares its source's inode, so the staged copy cannot have permissions of its
+# own: whatever the child may read here, it may read at the source. Access is
+# denied by the *path* instead -- the store is unreachable, the scratch
+# directory is the child's own -- which is a property of the directories, not
+# of the file. See hardening.HARDLINK_SOURCES.
 SCRATCH_SUBDIR = "exec-scratch"
+
+
+def scratch_root(shared_data_dir):
+    """The directory holding every execution's scratch directory."""
+    return os.path.join(os.path.dirname(os.path.abspath(shared_data_dir)),
+                        SCRATCH_SUBDIR)
 
 DEFAULT_LIMITS = {
     "memory_mb": 4096,
@@ -168,7 +186,7 @@ def make_scratch_dir(shared_data_dir, *, exec_uid=None):
     uid (so this is not a boundary between them), there is no reason to widen
     it further.
     """
-    root = os.path.join(shared_data_dir, SCRATCH_SUBDIR)
+    root = scratch_root(shared_data_dir)
     os.makedirs(root, exist_ok=True)
     path = tempfile.mkdtemp(prefix="exec-", dir=root)
     os.chmod(path, 0o700)

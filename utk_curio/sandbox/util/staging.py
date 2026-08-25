@@ -225,9 +225,13 @@ def read_outputs_wrapper(art_id, *, session_id=None):
 def stage_dataset_paths(dataset_paths, scratch_dir):
     """Stage the files behind ``curio_dataset_path`` calls.
 
-    The child has no read access outside its scratch directory, so each dataset
-    file is linked in and the mapping the child receives points at the staged
-    copy. A missing file is dropped rather than raised: the injected
+    The child cannot reach the dataset stores by path -- ``datasets/`` and
+    ``.curio/users`` are 0700 root-owned once isolation is on
+    (``hardening.SENSITIVE_PATHS``) -- so each file is linked in and the mapping
+    the child receives points at the staged copy. Note the link shares the
+    source's inode and therefore its mode: what makes this a boundary is the
+    unreachable *path*, not a tighter file. A missing file is dropped rather
+    than raised: the injected
     ``curio_dataset_path`` already raises a clear per-id error, and resolution
     is documented as fail-open (see docs/ARCHITECTURE.md).
     """

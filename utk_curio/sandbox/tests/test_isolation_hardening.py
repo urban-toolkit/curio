@@ -253,22 +253,27 @@ class TestWindowsIsANoop(unittest.TestCase):
 
 
 class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
-    """Hardening must not lock the child out of the directory it must run in.
+    """Hardening must not lock the child out of the directory it runs in.
 
-    This is the failure the module's own two halves could hide from each other.
-    ``harden_paths`` set ``.curio/data`` to 0700 root-owned; the per-execution
-    scratch directory lives *inside* it, and ``child.confine`` chdirs there
-    after dropping to the execution user. The audit stayed clean (0700 grants
-    no read, which is all it asks about) and every unit test passed, but no
-    isolated node could have run: ``confine`` would fail at the chdir, before
-    user code.
+    Two ways that went wrong, both found rather than predicted.
 
-    ``test_isolation_linux.py::isolated_dropped`` sidesteps it by chmod'ing
-    0711 up the chain to a workspace of its own, which is why the Linux suite
-    could pass while the deployed configuration was broken.
+    First, the scratch directory used to live *inside* ``.curio/data``, so the
+    store had to stay traversable for a child to reach it -- and hardening set
+    it to 0700 root-owned anyway, then walked it and reset the scratch root
+    too. ``confine`` would have failed at its final chdir and no isolated node
+    could have run. The audit stayed clean throughout, because it asks about
+    *read* access, which 0700 correctly denies.
 
-    Traversal is an execute bit, so ``can_access`` (which is about reading)
-    cannot express it and the check is done here directly.
+    Second, the store's files were tightened to 0600 root-owned. Staging
+    hardlinks an artifact into the scratch directory, and a hardlink shares its
+    source's inode, so the staged copy became unreadable too: the child could
+    not read its own input.
+
+    The scratch root now sits beside the store instead of inside it, which lets
+    the store be 0700 with nothing to reach through it, and the files inside a
+    hardlink source are left alone. Traversal is an execute bit, so
+    ``can_access`` (which is about reading) cannot express it and those checks
+    are done directly here.
     """
 
     @staticmethod
@@ -279,102 +284,101 @@ class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
             return bool(mode & stat.S_IXUSR)
         return bool(mode & stat.S_IXOTH)
 
-    def test_the_store_is_traversable_but_not_readable(self):
-        """0711: reach the scratch dir, but never list or read the store."""
-        self.assertEqual(hardening.TRAVERSE_MODE, 0o711)
-        self.assertIn(".curio/data", hardening.TRAVERSABLE_DIRECTORIES)
+    def test_the_scratch_root_is_not_inside_the_store(self):
+        """The property that lets the store be 0700 at all."""
+        store = os.path.join("/srv", "curio", ".curio", "data")
+        root = supervisor.scratch_root(store)
 
-        store = FakeStat(stat.S_IFDIR | hardening.TRAVERSE_MODE, 0, 0)
-        self.assertTrue(
-            self._traversable(hardening.TRAVERSE_MODE, 0, 1001),
-            "the execution user must be able to traverse into the store",
-        )
         self.assertFalse(
-            hardening.can_access(store, uid=1001, gid=1001),
-            "but it must not be able to read it",
+            os.path.abspath(root).startswith(os.path.abspath(store) + os.sep),
+            f"{root} is inside {store}",
+        )
+        # Same parent, so the same filesystem: hardlink in, rename out.
+        self.assertEqual(
+            os.path.dirname(root), os.path.dirname(os.path.abspath(store))
         )
 
-    def test_the_user_database_stays_owner_only(self):
-        """instance/ has nothing inside it anyone needs to traverse to."""
-        self.assertNotIn("instance", hardening.TRAVERSABLE_DIRECTORIES)
-        self.assertFalse(
-            self._traversable(hardening.DIRECTORY_MODE, 0, 1001),
-            "nothing should be able to traverse into instance/",
-        )
+    def test_every_sensitive_directory_is_fully_denied(self):
+        """No read, no list, no traverse, for all of them."""
+        self.assertEqual(hardening.DIRECTORY_MODE, 0o700)
+        self.assertFalse(self._traversable(hardening.DIRECTORY_MODE, 0, 1001))
+        denied = FakeStat(stat.S_IFDIR | hardening.DIRECTORY_MODE, 0, 0)
+        self.assertFalse(hardening.can_access(denied, uid=1001, gid=1001))
+
+    def test_the_hardlink_sources_keep_their_file_modes(self):
+        """Tightening them would tighten the staged copy the child reads."""
+        for relative in (".curio/data", ".curio/users", "datasets"):
+            with self.subTest(relative=relative):
+                self.assertIn(relative, hardening.HARDLINK_SOURCES)
+        # instance/ is not staged from, so its files are still tightened.
+        self.assertNotIn("instance", hardening.HARDLINK_SOURCES)
 
     @posix_only
-    def test_hardening_leaves_the_scratch_root_reachable(self):
-        """End to end on a real filesystem: harden, prepare, then walk down.
+    def test_a_staged_artifact_stays_readable_after_hardening(self):
+        """The regression, end to end on a real filesystem.
 
-        The assertion is the one that matters operationally -- every directory
-        between the launch directory and a per-execution scratch directory has
-        to be traversable by the execution user.
+        A hardlink cannot carry permissions of its own, so if hardening
+        tightens the source it tightens the staged copy with it.
         """
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            store = os.path.join(tmp, ".curio", "data")
-            os.makedirs(store)
-            os.makedirs(os.path.join(tmp, "instance"))
-            # A stale scratch root from a previous boot, already correct.
-            scratch_root = os.path.join(store, supervisor.SCRATCH_SUBDIR)
-            os.makedirs(scratch_root)
-            os.chmod(scratch_root, 0o711)
+            artifacts = os.path.join(tmp, ".curio", "data", "artifacts")
+            os.makedirs(artifacts)
+            source = os.path.join(artifacts, "a1.parquet")
+            with open(source, "w", encoding="utf-8") as handle:
+                handle.write("frame")
+            os.chmod(source, 0o644)
+
+            scratch = os.path.join(tmp, "scratch")
+            os.makedirs(scratch)
+            staged = os.path.join(scratch, "in_0.parquet")
+            os.link(source, staged)
 
             hardening.harden_paths(tmp)
-            hardening.prepare_scratch_root(store, exec_uid=None)
 
-            store_mode = stat.S_IMODE(os.stat(store).st_mode)
-            root_mode = stat.S_IMODE(os.stat(scratch_root).st_mode)
-
-            self.assertEqual(store_mode, hardening.TRAVERSE_MODE)
+            mode = stat.S_IMODE(os.stat(staged).st_mode)
             self.assertTrue(
-                root_mode & stat.S_IXOTH,
-                f"the walk stripped the scratch root's traverse bit (0o{root_mode:03o})",
+                mode & stat.S_IROTH,
+                f"the staged copy lost its read bit (0o{mode:03o}); the child "
+                "could not read its own input",
             )
 
     @posix_only
-    def test_an_artifact_in_the_store_is_still_unreadable(self):
-        """Traversable is not readable: the files stay 0600."""
+    def test_the_store_directory_is_still_locked(self):
+        """Leaving the files alone must not leave the store reachable."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
             store = os.path.join(tmp, ".curio", "data")
-            os.makedirs(store)
-            artifact = os.path.join(store, "curio_data.duckdb")
-            with open(artifact, "w", encoding="utf-8") as handle:
-                handle.write("secrets")
-            os.chmod(artifact, 0o666)
+            os.makedirs(os.path.join(store, "artifacts"))
+            os.chmod(store, 0o755)
 
             hardening.harden_paths(tmp)
 
-            self.assertEqual(
-                stat.S_IMODE(os.stat(artifact).st_mode), hardening.FILE_MODE
-            )
+            mode = stat.S_IMODE(os.stat(store).st_mode)
+            self.assertEqual(mode, hardening.DIRECTORY_MODE)
+            self.assertFalse(self._traversable(mode, 0, 1001))
 
     @posix_only
-    def test_a_live_execution_directory_is_left_alone(self):
-        """A restart must not re-own a directory a running child is using."""
+    def test_the_user_database_is_tightened_to_its_files(self):
+        """instance/ is not a hardlink source, so recursion still applies."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            store = os.path.join(tmp, ".curio", "data")
-            live = os.path.join(store, supervisor.SCRATCH_SUBDIR, "exec-live")
-            os.makedirs(live)
-            os.chmod(live, 0o700)
-            marker = os.path.join(live, "input.parquet")
-            with open(marker, "w", encoding="utf-8") as handle:
-                handle.write("staged")
-            os.chmod(marker, 0o644)
+            target = os.path.join(tmp, "instance")
+            os.makedirs(target)
+            db = os.path.join(target, "urban_workflow.db")
+            with open(db, "w", encoding="utf-8") as handle:
+                handle.write("x")
+            os.chmod(db, 0o666)
 
             hardening.harden_paths(tmp)
 
-            # Untouched: the walk does not descend into the scratch tree.
-            self.assertEqual(stat.S_IMODE(os.stat(marker).st_mode), 0o644)
+            self.assertEqual(stat.S_IMODE(os.stat(db).st_mode), hardening.FILE_MODE)
 
     def test_the_audit_still_passes_after_hardening(self):
-        """The two halves must agree, with the store at its new mode."""
-        store = FakeStat(stat.S_IFDIR | hardening.TRAVERSE_MODE, 0, 0)
+        store = FakeStat(stat.S_IFDIR | hardening.DIRECTORY_MODE, 0, 0)
         self.assertIsNone(
             hardening.describe_exposure(
                 ".curio/data", store, uid=1001, gid=1001, reason="the artifact store"
