@@ -9,6 +9,8 @@ export interface DatasetDetailModalProps {
   liveOutputs?: DatasetCatalogQuery["liveOutputs"];
   fallbackDataset?: DatasetCatalogItem | null;
   initialTab?: "Overview" | "Schema" | "Table Preview" | "Lineage";
+  /** Set only by the in-canvas drawer; see DatasetDetailPanel. */
+  canvasAvailable?: boolean;
   onClose: () => void;
 }
 
@@ -18,6 +20,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
   liveOutputs,
   fallbackDataset = null,
   initialTab = "Overview",
+  canvasAvailable = false,
   onClose,
 }) => {
   const [dataset, setDataset] = useState<DatasetCatalogItem | null>(fallbackDataset);
@@ -56,6 +59,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
         loading={loading}
         error={error}
         variant="modal"
+        canvasAvailable={canvasAvailable}
         dataflowId={dataflowId}
         liveOutputs={liveOutputs}
         initialTab={initialTab}

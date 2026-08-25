@@ -338,7 +338,7 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
         expect(
             page.get_by_role("heading", name="Data Catalog", level=1)
         ).to_be_visible(timeout=20000)
-        page.get_by_role("button", name="View sample data").click(timeout=15000)
+        page.get_by_role("button", name="View details").first.click(timeout=15000)
         gallery.shot("modal-dataset-detail")
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-dataset-detail", str(exc))

@@ -270,6 +270,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
 
       {detailDatasetId ? (
         <DatasetDetailModal
+          canvasAvailable
           datasetId={detailDatasetId}
           dataflowId={projectId}
           liveOutputs={liveOutputs}

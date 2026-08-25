@@ -253,6 +253,14 @@ export interface DatasetDetailPanelProps {
   loading?: boolean;
   error?: string | null;
   variant?: "page" | "modal";
+  /**
+   * True only where a live ReactFlow canvas is mounted behind this panel —
+   * i.e. the in-canvas Data Catalog drawer. Drives whether lineage is read
+   * from the canvas or from the backend's saved specs. Not the same thing
+   * as `variant`: the browse page opens this panel as a modal too, and has
+   * no canvas.
+   */
+  canvasAvailable?: boolean;
   dataflowId?: string | null;
   liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
   initialTab?: (typeof TABS)[number];
@@ -266,6 +274,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   loading = false,
   error = null,
   variant = "modal",
+  canvasAvailable = false,
   dataflowId = null,
   liveOutputs,
   initialTab = "Overview",
@@ -278,7 +287,6 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   const [publishBusy, setPublishBusy] = useState(false);
   // The standalone catalog page renders without a canvas, so live usage
   // cannot be resolved there and lineage is flagged as partial.
-  const canvasAvailable = variant === "modal";
   const lineage = useDatasetLineage(dataset, { dataflowId, canvasAvailable });
   // Backend cross-dataflow usage (resolved from saved specs) — used to populate
   // the downstream-nodes list on canvas-less surfaces (the standalone catalog/
