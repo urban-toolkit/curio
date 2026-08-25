@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Iterable
 
 from utk_curio.backend.app.packages import defaults as defaults_io
+from utk_curio.backend.app.packages.locks import package_seed_lock
 from utk_curio.backend.app.packages.installer import (
     InstallerError,
     install_packageage_from_directory,
@@ -374,6 +375,19 @@ def _store_index(user_key: str) -> dict[str, object]:
     return out
 
 
+def _locked_store_index(user_key: str) -> dict[str, object]:
+    """:func:`_store_index` taken under the per-user seed lock (memo dev/99).
+
+    The lock covers exactly the walk and nothing else. What comes back is
+    already detached — parsed manifest objects in memory, not live paths — so
+    every caller's transform, filtering and sorting runs unlocked. That keeps
+    the critical section to bounded local I/O, which is what lets readers share
+    a writer's lock without becoming a latency problem.
+    """
+    with package_seed_lock(user_key):
+        return _store_index(user_key)
+
+
 def _lockfile_or_empty(user_key: str, project_id: str) -> set[str]:
     """The project's declared package dirNames, or empty when the project has
     no readable lockfile. A genuine (non-``PackageServiceError``) fault still
@@ -424,8 +438,9 @@ def installed_templates_not_in_project(user_key: str, project_id: str) -> list[d
     are excluded (always present, never proposable) and so is anything the
     lockfile already names.
     """
+    wanted = _lockfile_or_empty(user_key, project_id)  # project-spec I/O: outside
     return _installed_templates_not_in_project_unlocked(
-        _lockfile_or_empty(user_key, project_id), _store_index(user_key),
+        wanted, _locked_store_index(user_key),
     )
 
 
@@ -486,9 +501,8 @@ def available_templates_report(user_key: str, project_id: str) -> dict:
     skip is also logged at WARNING; an unreadable installed package is an
     abnormal state, not routine.
     """
-    return _available_templates_report_unlocked(
-        _lockfile_or_empty(user_key, project_id), _store_index(user_key),
-    )
+    wanted = _lockfile_or_empty(user_key, project_id)  # project-spec I/O: outside
+    return _available_templates_report_unlocked(wanted, _locked_store_index(user_key))
 
 
 def _available_templates_report_unlocked(
@@ -544,27 +558,23 @@ def presentation_templates(user_key: str, project_id: str) -> list[dict]:
     vocabulary. Same enumeration and skip posture as
     :func:`available_templates_report` — an unreadable package stays loud
     there; here it simply contributes no candidates."""
-    from utk_curio.backend.app.packages.manifest import (
-        ManifestError,
-        load_packageage_manifest,
-    )
+    wanted = _lockfile_or_empty(user_key, project_id)  # project-spec I/O: outside
+    return _presentation_templates_unlocked(wanted, _locked_store_index(user_key))
 
-    try:
-        wanted = set(get_project_lockfile(user_key, project_id))
-    except PackageServiceError:
-        wanted = set()
-    paths = sorted(
-        list_user_packageages(user_key), key=lambda p: p.name, reverse=True
-    )
+
+def _presentation_templates_unlocked(
+    wanted: set[str], store: dict[str, object],
+) -> list[dict]:
+    """:func:`presentation_templates` over an existing store snapshot
+    (dev/99 R2). Takes no locks and performs no I/O."""
     out: list[dict] = []
     seen: set[str] = set()
-    for path in paths:
-        pkg_id = path.name.split("@", 1)[0]
-        if pkg_id != BUILTIN_PACKAGE_ID and path.name not in wanted:
+    for dir_name in sorted(store, reverse=True):
+        pkg_id = dir_name.split("@", 1)[0]
+        if pkg_id != BUILTIN_PACKAGE_ID and dir_name not in wanted:
             continue
-        try:
-            manifest = load_packageage_manifest(path)
-        except (ManifestError, OSError):
+        manifest = store[dir_name]
+        if isinstance(manifest, Exception):
             continue  # available_templates_report already logs this loudly
         for t in manifest.templates:
             if not (t.behavior and t.editor == "none"):
@@ -1043,8 +1053,9 @@ def agent_catalog_overview(user_key: str, project_id: str | None) -> list[dict]:
             lockfile = get_project_lockfile(user_key, project_id)
         except Exception:  # noqa: BLE001 — an unreadable project reads as empty
             lockfile = set()
+    catalog = _catalog_manifests()  # committed catalog, not the store: outside
     return _agent_catalog_overview_unlocked(
-        lockfile, _store_index(user_key), _catalog_manifests(),
+        lockfile, _locked_store_index(user_key), catalog,
     )
 
 
@@ -1101,9 +1112,10 @@ def template_landscape(user_key: str, project_id: str) -> dict:
     directly, never the public readers, so the non-reentrant seed lock can be
     acquired exactly once on every path.
     """
+    # Non-store I/O first, so the lock covers only the store snapshot (§3.3).
     wanted = _lockfile_or_empty(user_key, project_id)
     catalog = _catalog_manifests()
-    store = _store_index(user_key)
+    store = _locked_store_index(user_key)
     report = _available_templates_report_unlocked(wanted, store)
     return {
         "available": report["templates"],

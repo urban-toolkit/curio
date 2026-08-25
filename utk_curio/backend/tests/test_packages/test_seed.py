@@ -470,3 +470,133 @@ def test_weather_uninstall_is_sticky_under_examples_flag(
     finally:
         packages_seed.CURIO_RESEED_PACKAGES = original
     assert "curio.weather@1" in _installed_names()
+
+
+# ---------------------------------------------------------------------------
+# dev/99: readers share the seeder's lock, so the two-renames interval stops
+# being observable
+# ---------------------------------------------------------------------------
+
+def _production_template_ids(user_key: str) -> set[str]:
+    """Read through a real production path — the same call an agent's roster,
+    plan mint and node.create all sit on."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    return {
+        t["id"] for t in packages_services.available_templates(user_key, "no-such-project")
+    }
+
+
+def test_reader_waits_out_the_swap_window_instead_of_seeing_nothing(
+    tmp_curio, real_fixtures_root, monkeypatch
+):
+    """The gap dev/93 left and dev/99 closes, pinned deterministically.
+
+    `_swap_in_package` moves the old tree aside and then moves the staged tree
+    in; POSIX cannot do that in one rename. Parked between those two renames,
+    the package path does not exist. Before this change a production reader
+    overlapping that instant saw a healthy package as missing — downstream, a
+    false "not an available template for this project" refusal. Now it blocks
+    on the seeder's lock and returns a complete snapshot.
+    """
+    from utk_curio.backend.app.packages import seed as packages_seed
+
+    seed_dev_packageages(user_key="guest")
+    expected = _production_template_ids("guest")
+    assert expected, "fixture should provide templates"
+
+    builtin_name = _builtin_dir_name()
+    moved_aside = threading.Event()
+    release = threading.Event()
+    real_replace = packages_seed.os.replace
+
+    def _parking_replace(src, dst):
+        result = real_replace(src, dst)
+        # Park on the MOVE-ASIDE specifically (`<pkg>.displaced`), not on the
+        # first os.replace to run: patching the module patches it globally, and
+        # seed_state's atomic marker write gets there first.
+        if str(dst).endswith(".displaced"):
+            moved_aside.set()
+            release.wait(timeout=10)
+        return result
+
+    monkeypatch.setattr(packages_seed.os, "replace", _parking_replace)
+    monkeypatch.setattr(packages_seed, "CURIO_RESEED_PACKAGES", True)
+
+    seeder = threading.Thread(target=seed_dev_packageages, kwargs={"user_key": "guest"})
+    seeder.start()
+    assert moved_aside.wait(timeout=10), "seeder never reached the swap window"
+
+    # The package really is absent on disk right now — this is the window.
+    assert not (user_packageages_dir("guest") / builtin_name).exists()
+
+    result: dict = {}
+    reader = threading.Thread(
+        target=lambda: result.update(ids=_production_template_ids("guest"))
+    )
+    reader.start()
+    reader.join(timeout=0.5)
+    assert reader.is_alive(), (
+        "the reader returned DURING the swap window — it must wait for the lock"
+    )
+
+    release.set()
+    reader.join(timeout=10)
+    seeder.join(timeout=10)
+    assert not reader.is_alive() and not seeder.is_alive()
+    assert result["ids"] == expected, "the reader must see a complete snapshot"
+
+
+def _builtin_dir_name() -> str:
+    base = user_packageages_dir("guest")
+    return next(p.name for p in base.iterdir() if p.name.startswith("curio.builtin@"))
+
+
+def test_production_readers_never_see_an_absent_package_under_stress(
+    tmp_curio, real_fixtures_root, monkeypatch
+):
+    """dev/99 §7.3: the same 8-seeder/8-reader forced-reseed stress as the
+    dev/93 test, but through a PRODUCTION reader — and now requiring zero
+    absent reads, not merely zero broken ones. The dev/93 test deliberately
+    tolerated absence because nothing shared the lock; that tolerance is what
+    this change removes."""
+    from utk_curio.backend.app.packages import seed as packages_seed
+
+    seed_dev_packageages(user_key="guest")
+    expected = _production_template_ids("guest")
+    monkeypatch.setattr(packages_seed, "CURIO_RESEED_PACKAGES", True)
+
+    failures: list[str] = []
+    reads = {"n": 0}
+    stop = threading.Event()
+
+    def seeder():
+        try:
+            for _ in range(4):
+                seed_dev_packageages(user_key="guest")
+        except Exception as exc:  # noqa: BLE001 — recorded, not raised, in a thread
+            failures.append(f"seeder raised {exc!r}")
+        finally:
+            stop.set()
+
+    def reader():
+        while not stop.is_set():
+            try:
+                ids = _production_template_ids("guest")
+            except Exception as exc:  # noqa: BLE001
+                failures.append(f"reader raised {exc!r}")
+                continue
+            reads["n"] += 1
+            if ids != expected:
+                failures.append(f"reader saw {len(ids)} templates, expected {len(expected)}")
+
+    threads = [threading.Thread(target=seeder) for _ in range(8)]
+    threads += [threading.Thread(target=reader) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+
+    assert not failures, failures[:5]
+    assert reads["n"] > 0
+    assert _production_template_ids("guest") == expected

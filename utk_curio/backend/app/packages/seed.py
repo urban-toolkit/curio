@@ -47,7 +47,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from utk_curio.backend.app.common.file_locks import exclusive_lock
+from utk_curio.backend.app.packages.locks import package_seed_lock
 from utk_curio.backend.app.packages import seed_state
 from utk_curio.backend.app.packages.storage import (
     PACKAGE_DIR_RE,
@@ -60,9 +60,9 @@ log = logging.getLogger(__name__)
 # One seeding pass per user at a time (memo dev/93 D1). Four request handlers
 # call the seeder (``GET /api/packages``, ``/catalog``, ``/defaults``, and the
 # defaults POST), and the frontend fires several of them around canvas mount —
-# so concurrent passes are the normal case, not a corner one.
-_SEED_LOCK_FILENAME = ".seed.lock"
-_SEED_LOCK_NAMESPACE = "package-seed"
+# so concurrent passes are the normal case, not a corner one. The contract
+# itself lives in ``packages.locks`` (memo dev/99): readers hold the SAME lock,
+# so neither side can drift from the other's filename or namespace.
 
 # Staging lives INSIDE the package store so the swap rename is guaranteed
 # same-filesystem. The prefix deliberately matches neither ``PACKAGE_DIR_RE``
@@ -300,11 +300,7 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
     except Exception:  # noqa: BLE001 — cleanup must never crash startup
         log.warning("Stale-staging sweep failed", exc_info=True)
 
-    with exclusive_lock(
-        dest_base / _SEED_LOCK_FILENAME,
-        namespace=_SEED_LOCK_NAMESPACE,
-        key=user_key,
-    ):
+    with package_seed_lock(user_key):
         return _seed_locked(user_key, src_root, dest_base)
 
 
