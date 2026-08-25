@@ -131,6 +131,12 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
 
       {/* Body */}
       <div className={styles.cardBody}>
+        {/* Presentational, like every other CatalogItemRowHeader caller
+            (InstalledDatasetsList, PackageCard). Making it a second button
+            named `detailsLabel` gave one card two controls with the same
+            accessible name, which is both a duplicate way into the same modal
+            and a strict-mode ambiguity for anything selecting by that name.
+            The format avatar above is the one way in. */}
         <CatalogItemRowHeader
           kind="dataset"
           badge={
@@ -139,8 +145,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
               formatKey={dataset.format}
             />
           }
-          onClick={onOpenDetails ? () => onOpenDetails(dataset) : undefined}
-          buttonLabel={detailsLabel}
         />
         <h3 className={styles.cardTitle}>{title}</h3>
 
