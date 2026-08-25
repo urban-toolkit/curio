@@ -52,6 +52,34 @@ needs_seccomp = pytest.mark.skipif(
     not HAS_PYSECCOMP, reason="pyseccomp is not installed"
 )
 
+# Headroom above the interpreter's own footprint (see child._apply_rlimits),
+# not an absolute ceiling.
+MEMORY_HEADROOM_MB = 256
+
+# Created by the Dockerfile. Only exists inside the image.
+EXEC_USER = "curio-exec"
+
+
+def _all_process_cmdlines():
+    """Every visible process's command line, read from /proc.
+
+    ``ps`` is not installed in the image (no procps), which is why this reads
+    /proc directly instead. Names come from argv, so a process started with
+    ``exec -a <marker>`` is findable by that marker.
+    """
+    cmdlines = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/cmdline", "rb") as handle:
+                cmdlines.append(
+                    handle.read().replace(b"\x00", b" ").decode("utf-8", "replace")
+                )
+        except OSError:
+            continue
+    return cmdlines
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -82,10 +110,10 @@ def isolated(workspace, monkeypatch):
     socket_path = str(workspace / "zygote.sock")
     monkeypatch.setenv("CURIO_EXEC_SOCKET", socket_path)
     monkeypatch.setenv("CURIO_EXEC_TIMEOUT", "20")
-    # Small on purpose. If setrlimit silently failed, which is exactly what
-    # these tests exist to detect, the allocation test would really allocate
-    # this much on a host that also runs the live instances.
-    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", "256")
+    # Headroom above the warm interpreter's own footprint, not a total: see
+    # child._apply_rlimits. Small, so a runaway allocation is caught quickly,
+    # but the interpreter's baseline is excluded so ordinary pandas work fits.
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", str(MEMORY_HEADROOM_MB))
 
     config = runner.IsolationConfig.from_environment()
     lifecycle.ensure_running(config, exec_user=None, require_seccomp=HAS_PYSECCOMP)
@@ -93,6 +121,65 @@ def isolated(workspace, monkeypatch):
         yield config
     finally:
         lifecycle.shutdown()
+
+
+@pytest.fixture
+def isolated_dropped(tmp_path_factory, monkeypatch):
+    """A zygote whose children run as an unprivileged user.
+
+    The default ``isolated`` fixture configures no execution user, so inside the
+    container the child runs as root, exactly as a launch without
+    ``--exec-user`` would. That is the right default to test, but it means the
+    filesystem half of the boundary is not exercised: root ignores mode bits.
+
+    This fixture drops to ``curio-exec`` (created by the Dockerfile) so the
+    privilege and filesystem tests mean something. It needs its own workspace
+    because pytest's ``tmp_path`` is mode 0700 and root-owned, so a dropped
+    child could not even traverse into its own scratch directory.
+    """
+    import pwd
+
+    from utk_curio.sandbox.isolation import lifecycle, runner
+    from utk_curio.sandbox.util.db import init_db, release_connection
+
+    if os.getuid() != 0:
+        pytest.skip("dropping privileges requires starting as root")
+    try:
+        pwd.getpwnam(EXEC_USER)
+    except KeyError:
+        pytest.skip(f"the {EXEC_USER} account does not exist on this host")
+
+    root = tmp_path_factory.mktemp("dropped", numbered=True)
+    # 0711 up the chain: the child must traverse to its scratch dir without
+    # being able to list any level of it.
+    current = root
+    while str(current) != os.path.dirname(str(current)):
+        try:
+            os.chmod(current, 0o711)
+        except OSError:
+            break
+        current = current.parent
+
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(root))
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(root / "data"))
+    monkeypatch.setenv("CURIO_EXEC_SOCKET", str(root / "zygote.sock"))
+    monkeypatch.setenv("CURIO_EXEC_TIMEOUT", "20")
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", str(MEMORY_HEADROOM_MB))
+    monkeypatch.setenv("CURIO_EXEC_USER", EXEC_USER)
+
+    release_connection()
+    init_db()
+    os.chmod(root / "data", 0o711)
+
+    config = runner.IsolationConfig.from_environment()
+    lifecycle.ensure_running(
+        config, exec_user=EXEC_USER, require_seccomp=HAS_PYSECCOMP
+    )
+    try:
+        yield config
+    finally:
+        lifecycle.shutdown()
+        release_connection()
 
 
 def run_isolated(config, code, **kwargs):
@@ -159,28 +246,55 @@ def test_each_execution_gets_a_fresh_process(isolated):
 # Escapes. The reason this work exists.
 # ---------------------------------------------------------------------------
 
-def test_the_user_database_is_unreachable(isolated, workspace):
-    """instance/urban_workflow.db holds every password hash and session token."""
-    target = workspace / "instance"
-    target.mkdir(exist_ok=True)
-    secret = target / "urban_workflow.db"
+def test_the_user_database_is_unreachable(isolated_dropped, tmp_path):
+    """instance/urban_workflow.db holds every password hash and session token.
+
+    Uses the dropped-privilege fixture deliberately. Without an ``--exec-user``
+    the child runs as the sandbox's own user, and inside the container that is
+    root, which ignores mode bits: the test would pass or fail for reasons that
+    have nothing to do with the boundary.
+
+    Asserts on the *artifact*, not on the response. An earlier version checked
+    that the secret was absent from the response JSON, which it always is
+    because a node's return value is stored and only its id comes back. That
+    version passed no matter what the child could read.
+    """
+    secret = tmp_path / "urban_workflow.db"
     secret.write_text("SUPER SECRET", encoding="utf-8")
     os.chmod(secret, 0o600)
+    os.chmod(tmp_path, 0o711)
 
     result = run_isolated(
-        isolated,
-        f"    return open({str(secret)!r}).read()\n",
-    )
-    assert "SUPER SECRET" not in json.dumps(result), (
-        "an isolated node read the user database"
+        isolated_dropped, f"    return open({str(secret)!r}).read()\n"
     )
 
+    if result["output"]["path"]:
+        from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-def test_the_artifact_store_is_unreachable(isolated, workspace):
-    db = workspace / "data" / "curio_data.duckdb"
-    result = run_isolated(isolated, f"    return open({str(db)!r}, 'rb').read()[:4]\n")
+        assert load_from_duckdb(result["output"]["path"]) != "SUPER SECRET", (
+            "an isolated node read a root-owned 0600 file"
+        )
+    else:
+        assert "Permission denied" in result["stderr"] or "Errno 13" in result["stderr"], (
+            f"expected a permission error, got: {result['stderr'][:400]}"
+        )
+
+
+def test_the_artifact_store_is_unreachable(isolated_dropped):
+    """Reading curio_data.duckdb directly would bypass session scoping entirely."""
+    from utk_curio.sandbox.util.parsers import _shared_data_dir
+
+    db = _shared_data_dir() / "curio_data.duckdb"
+    os.chmod(db, 0o600)
+
+    result = run_isolated(
+        isolated_dropped, f"    return open({str(db)!r}, 'rb').read()[:4].hex()\n"
+    )
     assert result["output"]["path"] == "", (
-        "an isolated node opened the DuckDB artifact store"
+        f"an isolated node opened the DuckDB artifact store: {result['stderr'][:300]}"
+    )
+    assert "Permission denied" in result["stderr"] or "Errno 13" in result["stderr"], (
+        f"expected a permission error, got: {result['stderr'][:400]}"
     )
 
 
@@ -216,18 +330,57 @@ def test_ptrace_is_denied(isolated):
         assert load_from_duckdb(result["output"]["path"]) != 0, "ptrace succeeded"
 
 
-def test_regaining_privilege_is_denied(isolated):
-    result = run_isolated(isolated, "    os.setuid(0)\n    return 'root'\n")
+def test_the_child_actually_runs_as_the_execution_user(isolated_dropped):
+    """The privilege drop is the foundation the filesystem tests rest on."""
+    result = run_isolated(isolated_dropped, "    return os.getuid()\n")
+    assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    assert load_from_duckdb(result["output"]["path"]) != 0, (
+        "the child is still root, so no filesystem boundary exists"
+    )
+
+
+def test_regaining_privilege_is_denied(isolated_dropped):
+    """setuid back to root must fail once privileges are dropped.
+
+    Needs the dropped fixture: with no --exec-user the child runs as the
+    sandbox's own user, which inside the container is root, and setuid(0)
+    trivially succeeds. That is correct behaviour for that configuration, not a
+    boundary failure, so asserting it there tested nothing.
+    """
+    result = run_isolated(isolated_dropped, "    os.setuid(0)\n    return 'root'\n")
     assert result["output"]["path"] == "", "an isolated node became root"
 
 
-def test_writing_outside_the_scratch_directory_is_denied(isolated, workspace):
-    """Only relevant once --exec-user is in play; harmless to assert always."""
-    target = workspace / "should-not-exist.txt"
-    run_isolated(isolated, f"    open({str(target)!r}, 'w').write('x')\n    return 1\n")
-    if os.getuid() != 0:
-        pytest.skip("without a dropped uid the child shares our own permissions")
+def test_writing_outside_the_scratch_directory_is_denied(isolated_dropped, tmp_path):
+    target = tmp_path / "should-not-exist.txt"
+    os.chmod(tmp_path, 0o700)  # root-owned, so the exec user cannot write here
+    result = run_isolated(
+        isolated_dropped,
+        f"    open({str(target)!r}, 'w').write('x')\n    return 1\n",
+    )
     assert not target.exists(), "an isolated node wrote outside its scratch dir"
+    assert result["output"]["path"] == "", result["stderr"][:300]
+
+
+def test_the_child_can_write_inside_its_own_scratch_directory(isolated_dropped):
+    """The other half: confinement must not break legitimate work.
+
+    A node that writes a temporary file in its working directory is ordinary,
+    and the dropped uid owns its scratch dir precisely so that keeps working.
+    """
+    result = run_isolated(
+        isolated_dropped,
+        "    open('scratch-probe.txt', 'w').write('ok')\n"
+        "    return open('scratch-probe.txt').read()\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    assert load_from_duckdb(result["output"]["path"]) == "ok"
 
 
 # ---------------------------------------------------------------------------
@@ -257,10 +410,28 @@ def test_the_limits_are_actually_applied_in_the_child(isolated):
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     limits = load_from_duckdb(result["output"]["path"])
-    assert limits["as"] == 256 * 1024 * 1024, limits
+    headroom = MEMORY_HEADROOM_MB * 1024 * 1024
+
+    # RLIMIT_AS is the interpreter's own footprint plus the configured budget
+    # (child._apply_rlimits), so it must exceed the budget but stay sane. An
+    # equality check here is what previously hid the fact that the cap was
+    # below the interpreter's baseline, which made every allocation fail and
+    # the runaway-allocation test pass for the wrong reason.
+    assert limits["as"] != resource_unlimited(), "RLIMIT_AS was not applied"
+    assert limits["as"] > headroom, limits
+    assert limits["as"] < headroom + (8 << 30), (
+        f"RLIMIT_AS looks like it lost the budget: {limits}"
+    )
+
     assert limits["cpu"] == isolated.limits["cpu_seconds"], limits
     assert limits["nproc"] == isolated.limits["nproc"], limits
     assert limits["core"] == 0, limits
+
+
+def resource_unlimited():
+    import resource
+
+    return resource.RLIM_INFINITY
 
 
 def test_a_runaway_allocation_hits_the_memory_limit(isolated):
@@ -311,8 +482,8 @@ def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated):
         "    while True:\n        pass\n",
     )
     time.sleep(2)
-    listing = subprocess.run(["ps", "-eo", "args"], capture_output=True, text=True)
-    assert marker not in listing.stdout, "a grandchild outlived the killed node"
+    survivors = [line for line in _all_process_cmdlines() if marker in line]
+    assert not survivors, f"a grandchild outlived the killed node: {survivors}"
 
 
 @pytest.mark.skipif(
