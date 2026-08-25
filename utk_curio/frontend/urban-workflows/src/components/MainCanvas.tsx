@@ -50,8 +50,6 @@ import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";
 
-const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
-
 export function MainCanvas() {
     const { showToast } = useToastContext();
     const { setActivePackageKey } = usePackagePalette();
@@ -559,7 +557,6 @@ export function MainCanvas() {
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
 
-                translateExtent={CANVAS_EXTENT}
                 panOnDrag={!dashboardOn || !dashboardLocked}
                 zoomOnScroll={!dashboardOn || !dashboardLocked}
                 zoomOnPinch={!dashboardOn || !dashboardLocked}
