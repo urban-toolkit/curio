@@ -392,13 +392,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          logs="$(docker compose -p curio-ci-iso logs --no-color curio)"
-          if ! echo "$logs" | grep -q "node execution isolation: fork"; then
-            echo "::error::the stack did not come up isolated" >&2
-            echo "$logs" | grep -i "isolation" >&2 || true
+          # Ask the sandbox, do not read the logs. The startup banner goes to
+          # the sandbox subprocess's stderr, which curio.py routes into
+          # .curio/messages.log -- `docker compose logs` only carries the
+          # launcher's own output, so grepping it here found nothing and failed
+          # a stack that may well have been isolated.
+          #
+          # /version reports the mode the sandbox *resolved*, which is the
+          # question being asked, and it is the same answer the UI badge shows.
+          mode="$(curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version" \
+                  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("isolation",""))')"
+          if [ "$mode" != "fork" ]; then
+            echo "::error::the stack did not come up isolated (/version reported '${mode:-nothing}')" >&2
+            docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+              'grep -i isolation .curio/messages.log 2>/dev/null | tail -20' >&2 || true
             exit 1
           fi
-          echo "OK: node execution isolation: fork"
+          echo "OK: the sandbox reports node execution isolation = fork"
 
       - name: 🐍 Set up Python (for e2e)
         uses: actions/setup-python@v6
@@ -420,13 +430,22 @@ jobs:
         run: |
           docker compose -p curio-ci-iso logs --no-color --tail=8000 \
             > "$GITHUB_WORKSPACE/isolated-container-logs.txt" 2>&1 || true
+          # Where the sandbox's own stderr actually lands, including the
+          # isolation banner, every [isolation] warning, and a child's
+          # faulthandler traceback when one dies on a signal. Root-owned on the
+          # mounted workspace, so read it out through a root container.
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null' \
+            > "$GITHUB_WORKSPACE/isolated-messages.txt" 2>&1 || true
 
       - name: 📤 Upload isolated-stack logs
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: isolated-container-logs
-          path: isolated-container-logs.txt
+          path: |
+            isolated-container-logs.txt
+            isolated-messages.txt
           retention-days: 7
 
       - name: 🧹 Tear down containers
