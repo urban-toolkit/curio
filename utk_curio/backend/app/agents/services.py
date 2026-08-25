@@ -3676,6 +3676,12 @@ def _solve_events(
     started = time.monotonic()
     state = {"finished": False}
     payload_out: dict = {}
+    # dev/106: a batch-level reason (the missing-specialist case) and the
+    # proposal parts minted for it — the Solve turn carries them, so the
+    # reviewed install is visible where the failure is, not only in the
+    # attachment mirror.
+    batch_reason: str | None = None
+    extra_parts: list[dict] = []
 
     def _flag_requested() -> bool:
         # The durable cancel signal, read lazily at node boundaries only.
@@ -3788,6 +3794,9 @@ def _solve_events(
             ]
             if cancelled:
                 lines.append(f"cancelled — {len(unstarted)} node(s) not attempted")
+            if batch_reason:
+                # ONE reason line for the batch (not six identical ones).
+                lines.append(f"reason: {batch_reason}")
             sessions.append_turns(
                 user_key, project_id, session_id, attachment_id,
                 [
@@ -3804,7 +3813,7 @@ def _solve_events(
                             "kind": "result",
                             "title": f"Solve: {solved} of {len(targets)} nodes",
                             "lines": lines,
-                        }],
+                        }, *extra_parts],
                         execution=_execution_record(
                             solve_execution_id,
                             {"coord": coord, "provider": config.api_type,
@@ -3824,6 +3833,8 @@ def _solve_events(
             "notAttempted": sorted(unstarted),
             "mode": mode,
         })
+        if batch_reason:
+            payload_out["reason"] = batch_reason
         return payload_out
 
     try:
@@ -3840,15 +3851,27 @@ def _solve_events(
                     "attachment_id": attachment_id,
                     "session_id": session_id,
                 }
+                specialist = resolution.manifest.name if resolution.manifest else resolution.coord
                 status, text, part = _mint_project_install(
                     user_key, project_id, loop_ctx,
                     resolution.coord,
-                    resolution.manifest.name if resolution.manifest else resolution.coord,
+                    specialist,
                     "node.content.generate",
                 )
-                reason = "specialist not installed — an install proposal awaits review"
+                if status == "proposed" and part is not None:
+                    extra_parts.append(part)
+                    reason = (
+                        f"specialist not installed — {specialist} ({resolution.coord}) is not "
+                        "installed in this project; an install proposal awaits review below — "
+                        "Apply it, then Retry"
+                    )
+                else:
+                    # dev/106: an unminted proposal is never claimed (the
+                    # refusal text says what to do instead).
+                    reason = f"specialist not installed — {text}"
             else:
                 reason = "no installed agent declares node.content.generate"
+            batch_reason = reason
             for node_id in targets:
                 results[node_id] = {"status": "failed", "error": reason}
                 yield "node_result", {"nodeId": node_id, "status": "failed", "error": reason}

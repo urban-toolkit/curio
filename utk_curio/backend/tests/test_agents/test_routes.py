@@ -5091,6 +5091,67 @@ class TestSolve:
         active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
         assert active["tool"] == "project.install"
         assert active["status"] == "pending"
+        # dev/106 D1: the proposal RIDES THE SOLVE TURN — the assertion whose
+        # absence let an invisible proposal ship. One reason line, not six.
+        assert body["reason"].startswith("specialist not installed")
+        assert "Node Content Builder" in body["reason"]
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        solve_turn = next(t for t in reversed(turns) if (t.get("text") or "").startswith("Solved"))
+        kinds = [p["type"] for p in solve_turn["content"]]
+        assert kinds == ["card", "proposal"]
+        assert solve_turn["content"][1]["tool"] == "project.install"
+        assert solve_turn["content"][1]["proposalId"] == active["proposalId"]
+        reason_lines = [l for l in solve_turn["content"][0]["lines"] if l.startswith("reason:")]
+        assert len(reason_lines) == 1
+        assert "Apply it, then Retry" in reason_lines[0]
+
+    def test_missing_specialist_apply_then_retry_solves(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The migration path for every pre-dev/106 project (edge 8).
+        user, token = user_and_token
+        att_id, applied, _ = self._applied_plan(
+            client, user, token, alice_project, monkeypatch, install_ncb=False,
+        )
+        body = self._solve(client, token, alice_project, att_id).get_json()
+        failed = [nid for nid, r in body["results"].items() if r["status"] == "failed"]
+        assert failed
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{active['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        installed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()["agents"]
+        assert self.NCB in {a["dirName"] for a in installed}
+        retry = self._solve(client, token, alice_project, att_id, node_ids=failed).get_json()
+        assert {r["status"] for r in retry["results"].values()} == {"solved"}
+        assert "reason" not in retry
+        assert retry["builderSession"]["phase"] == "ready"
+
+    def test_refused_install_mint_is_never_claimed_as_awaiting_review(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, applied, _ = self._applied_plan(
+            client, user, token, alice_project, monkeypatch, install_ncb=False,
+        )
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services._mint_project_install",
+            lambda *a, **k: ("refused", "no saved project spec is available", None),
+        )
+        body = self._solve(client, token, alice_project, att_id).get_json()
+        assert all(r["status"] == "failed" for r in body["results"].values())
+        assert "awaits review" not in body["reason"]
+        assert "no saved project spec is available" in body["reason"]
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        solve_turn = next(t for t in reversed(turns) if (t.get("text") or "").startswith("Solved"))
+        assert [p["type"] for p in solve_turn["content"]] == ["card"]
 
     def test_no_text_path_can_solve(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # Injection resistance: a model reply claiming a solve changes nothing —
