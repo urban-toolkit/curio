@@ -282,6 +282,15 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         # other tests' artifacts.
         env["CURIO_SHARED_DATA"] = WATCHDOG_DATA_REL
         env["PYTHONUNBUFFERED"] = "1"
+        # The supervisor/worker pair IS the thing under test, so ask for the
+        # reloader explicitly instead of inheriting whatever the environment
+        # happens to say. Inside the Docker image os.environ carries
+        # FLASK_USE_RELOADER=0 (docker-compose.yml disables it, because runtime
+        # file writes trip the watcher and drop in-flight requests), which left
+        # this test asserting that a reloader it had just disabled had spawned a
+        # worker. It never surfaced because psutil was undeclared, so the skip
+        # above fired in CI; declaring psutil made the test real.
+        env["FLASK_USE_RELOADER"] = "1"
 
         proc = subprocess.Popen(
             [sys.executable, "-m", "utk_curio.sandbox.server"],
