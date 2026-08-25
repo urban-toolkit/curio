@@ -41,7 +41,18 @@ import sys
 SENSITIVE_PATHS = (
     ("instance", "the user database: password hashes and session tokens"),
     (".curio/data", "the artifact store: every session's data"),
+    (".env", "the deployment's secrets, including SECRET_KEY"),
 )
+
+# Why ``datasets/`` is deliberately absent, since it looks like it belongs:
+# ``staging.stage_dataset_paths`` reaches a dataset file into a child's scratch
+# directory with ``os.link``, and a hardlink shares the inode -- and therefore
+# the mode -- with its source. Tightening ``datasets/`` to 0600 root-owned would
+# tighten the staged copy the child is meant to read, breaking every
+# ``curio_dataset_path`` call. The alternative is copying instead of linking,
+# which that module avoids on purpose ("avoids duplicating a multi-gigabyte
+# raster or parquet for every node run"). Denying it needs the staging design to
+# change first; adding it here alone would just break dataset loading.
 
 # What we want each of those to be. Owner-only, and directories need execute to
 # be traversable by their owner.

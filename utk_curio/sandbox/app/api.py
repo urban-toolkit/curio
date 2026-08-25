@@ -372,8 +372,11 @@ def exec():
     isolated = _isolated_runner()
     if isolated is not None:
         run, config = isolated
+        # launch_dir is passed to both paths in the same position: it is the
+        # child's working directory, so node code addressing a file relatively
+        # finds it where the in-process path would.
         result = run(
-            code, str(file_path), str(node_type), str(data_type),
+            code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, config=config,
         )

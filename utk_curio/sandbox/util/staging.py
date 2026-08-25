@@ -196,6 +196,32 @@ def stage_outputs_list(refs, scratch_dir, *, session_id=None):
     return {"kind": "sequence", "container": "tuple", "items": items}
 
 
+def read_outputs_wrapper(art_id, *, session_id=None):
+    """Return the inner ref list when *art_id* holds a persisted merge output.
+
+    A merge output that was persisted is stored as the whole
+    ``{'dataType': 'outputs', 'data': [refs]}`` envelope, and a node downstream
+    of it receives one ref to that envelope rather than the list. The parent
+    resolves it here -- reading the store is exactly what the child cannot do --
+    and hands the child the same per-slot list the live shape produces.
+
+    Returns None when the artifact is anything else, so the caller can fall
+    back to staging it as an ordinary input.
+    """
+    kind, _v_int, _v_float, v_str, v_json, _blob = _read_row(art_id, session_id)
+    if kind not in ("list", "dict"):
+        return None
+    try:
+        value = _read_json_artifact(v_str) if v_str else json.loads(v_json)
+    except (OSError, ValueError):
+        return None
+    if (isinstance(value, dict)
+            and value.get("dataType") == "outputs"
+            and isinstance(value.get("data"), list)):
+        return value["data"]
+    return None
+
+
 def stage_dataset_paths(dataset_paths, scratch_dir):
     """Stage the files behind ``curio_dataset_path`` calls.
 

@@ -118,15 +118,54 @@ def _persist_and_release(descriptor, *, node_type, session_id, save_dataset):
     return art_id, dataset_file
 
 
+def _parse_outputs_refs(file_path):
+    """Return the list of refs a merge input names, or None if it names one.
+
+    A merge output reaches a node in two shapes, both documented on
+    ``worker._expand_outputs_wrapper``:
+
+    * **live** -- a list literal of ``{'path': id}`` dicts, which is what the
+      ``eval`` here was written for.
+    * **reloaded** -- when the upstream merge output was persisted (a project
+      save, or the JS-node round trip through DuckDB), the node receives a
+      single bare ref to it instead.
+
+    Evaluating the second shape parses an artifact id as a Python expression:
+    ``1787698132616_820e772c`` is a decimal literal followed by a name, so it
+    raised ``SyntaxError: invalid decimal literal`` and the node failed before
+    running. Returning None says "this is one ref, not a list" and lets the
+    caller load it the way the in-process path does.
+    """
+    text = (file_path or "").strip()
+    if not text.startswith("["):
+        return None
+    # Empty builtins, the same guard execute_code uses.
+    refs = eval(text, {"__builtins__": {}})  # noqa: S307
+    return refs if isinstance(refs, list) else None
+
+
 def _build_input_spec(file_path, data_type, scratch_dir, session_id):
     """Stage whatever this node's input references, returning its spec."""
     from utk_curio.sandbox.util import staging
 
     if data_type == "outputs":
-        # The backend sends a list literal of {'path': id} dicts. Parsed with
-        # empty builtins, the same guard execute_code uses.
-        refs = eval(file_path, {"__builtins__": {}})  # noqa: S307
-        return staging.stage_outputs_list(refs, scratch_dir, session_id=session_id)
+        refs = _parse_outputs_refs(file_path)
+        if refs is not None:
+            return staging.stage_outputs_list(
+                refs, scratch_dir, session_id=session_id
+            )
+        # The reloaded shape. What is stored under this id is the whole
+        # ``{'dataType': 'outputs', 'data': [refs]}`` wrapper, so expand it to
+        # the per-slot list user code expects -- staging it as a plain artifact
+        # would hand the node the wrapper dict and break destructuring, which is
+        # the same bug ``_expand_outputs_wrapper`` exists to prevent in-process.
+        wrapper = staging.read_outputs_wrapper(file_path, session_id=session_id)
+        if wrapper is not None:
+            return staging.stage_outputs_list(
+                wrapper, scratch_dir, session_id=session_id
+            )
+        # Tagged 'outputs' but holding something else. Stage it as it is rather
+        # than failing: the in-process path is equally permissive here.
     if file_path:
         return staging.stage_input(
             file_path, scratch_dir, session_id=session_id, slot="in_0"
@@ -139,6 +178,7 @@ def execute_isolated(
     file_path,
     node_type,
     data_type,
+    launch_dir=None,
     *,
     session_id=None,
     save_dataset=True,
@@ -149,6 +189,10 @@ def execute_isolated(
 
     *config* is an :class:`IsolationConfig`, carrying the socket path, limits
     and execution uid resolved once at startup.
+
+    *launch_dir* becomes the child's working directory, matching the
+    in-process path's ``cwd``. Positional and third-from-last so this signature
+    lines up with ``worker.execute_code``, which the caller picks between.
     """
     from utk_curio.sandbox.util import staging
     from utk_curio.sandbox.util.parsers import _shared_data_dir
@@ -180,6 +224,7 @@ def execute_isolated(
             data_type=data_type,
             scratch_dir=scratch_dir,
             input_spec=input_spec,
+            work_dir=launch_dir,
             dataset_paths=staged_datasets,
             session_imports=_imports_for(session_id),
             limits=config.limits,
