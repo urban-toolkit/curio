@@ -1,5 +1,7 @@
 # Implementation Memo: Agent Configuration Modals and Prompt Governance
 
+Status update (2026-08-24): **partially implemented**. Cost/Quotas/Resource policy screens ship at account, project-template, and attachment scopes; the DEC-055 report-only evaluator ships independently. Prompt Editor/Quality/Audit, evaluation/release evidence, and append-only governance history remain under `DEC-058`. OQ-008 is closed by `DEC-057`/`DEC-058`.
+
 ## 1. Problem Statement
 
 The current plan supports attachment configuration through chat and mentions runtime cost, quota, and resource limits, but it does not define clear configuration screens, per-agent defaults, prompt authoring, repeatable prompt-quality evaluation, or prompt-governance history. Treating these concerns as chat commands or one untyped configuration object would make effective limits difficult to understand, allow concurrent runs to overspend, weaken immutable prompt provenance, and expose sensitive prompt content or audit records through inappropriate caches and shared views.
@@ -10,7 +12,7 @@ The application needs clear cog/settings entry points and six dedicated modal sc
 
 Included: account policy, imported-definition, project-template, and attached-instance settings scopes; per-project-agent defaults; cost estimation/reservation/settlement; quotas/resources; imported-definition prompt drafts; deterministic evaluation; versioned compliance/security audits and append-only governance history; authorization; APIs; persistence; module ownership; accessibility; tests; rollout; and traceability.
 
-Out of scope: marketplace billing, clients raising deployment ceilings, provider-credential editing in these screens, mutating released/published prompt bytes, project-private prompt overrides, publishing/sharing project templates or instances, account-wide installed palettes, silently using the unresolved evaluator, final retention decisions outside `OQ-008`, or application implementation.
+Out of scope: marketplace billing, clients raising deployment ceilings, provider-credential editing in these screens, mutating released/published prompt bytes, project-private prompt overrides, publishing/sharing project templates or instances, account-wide installed palettes, silently substituting the DEC-055 report-only evaluator as a platform release judge, or application implementation. Retention is now governed by `DEC-057`/`DEC-058`.
 
 ## 3. Recommended Implementation Approach
 
@@ -61,7 +63,7 @@ Portable manifests must not hardcode one universal dollar amount, provider price
 | `planning-analysis` | `agent.dataset-finder`, `agent.execution-subtask-planner`, `agent.dataflow-task-planner`, `agent.workflow-suggester`, `agent.plan-coherence-validator`, `agent.syntax-analysis-agent`, `agent.task-refresh-agent`, `agent.keyword-binding-agent` | Structured output, bounded background work, no direct mutation, deterministic regression suite required before release. |
 | `mutation-proposal` | `agent.node-builder`, `agent.debug-agent`, `agent.node-content-builder`, `agent.connection-builder`, `agent.package-recommendation` | Review-before-apply, stricter tool/resource limits, quality gate plus authorized human approval before releasing/publishing an owned imported definition. |
 | `orchestration-mutation` | `agent.dataflow-builder` | Parent and child work share an aggregate reservation, delegated agents keep their own tighter policies, concurrency is bounded, and every install or graph mutation remains review-gated. |
-| `evaluation-disabled` | `agent.generated-content-evaluator` | Definition remains unavailable and cannot run or self-certify until `OQ-007` supplies an approved prompt and contract. |
+| ~~`evaluation-disabled`~~ | `agent.generated-content-evaluator` | Retired by `DEC-055`: the definition ships report-only with read-only evidence tools and cannot mutate or self-certify. |
 
 These mappings are portable definition seeds. Every later definition validates a bounded seed, and every explicit project installation materializes its own reviewed profile; no account-wide installed profile exists.
 
@@ -140,7 +142,7 @@ Prompt editor content stays in memory-only local state and is never stored in lo
 - Cost/quota: price revisions, estimate-versus-actual settlement, unknown prices, currency/window boundaries, idempotent atomic reservations, concurrent overspend prevention, child/retry/evaluation charging, cancellation, stale-reservation reconciliation, `429` plus `retryAfter`.
 - Resource: provider/model/locality intersections, context/output/tool/timeout/CPU/RAM/GPU bounds, queue behavior, egress/SSRF checks, and no remote fallback.
 - Prompt editor: explicit-import ownership authorization and denial for every other source, memory-only state, contained path/schema validation, conflicts, immutable released imported artifacts, SemVer/digest collision, and project-template/instance preservation.
-- Prompt quality: deterministic checks, exact-digest evidence, suite/evaluator/policy pinning, stale detection, evaluation-budget denial, sensitive-fixture minimization, evaluator isolation with tools/network disabled, OQ-007 unavailable state, and no auto-activate/publish.
+- Prompt quality: deterministic checks, exact-digest evidence, suite/evaluator/policy pinning, stale detection, evaluation-budget denial, sensitive-fixture minimization, evaluator isolation with tools/network disabled, DEC-055 report-only/no-self-approval separation, and no auto-activate/publish.
 - Prompt audit: exact-digest/ruleset pinning, static security/compliance/provenance findings, severity/remediation gates, stale-result invalidation, append-only order/integrity, mandatory event categories, redaction, non-enumerating authorization, filters/pagination, step-up export/reveal, export auditing, retention/tombstone behavior, and tamper detection.
 - Component/accessibility: all cog names/tooltips, correct scope and authorization, six dedicated screens, inherited/effective displays, dirty-close guard, focus trap/return, keyboard navigation, error summary/field focus, live announcements, zoom/reflow, reduced motion, and forced colors.
 - Integration/E2E: owned import edit → validate → evaluate → audit → review → release new private definition → separate project Install/update and/or Publish. Existing templates/instances remain unchanged; Cost/Quota/Resource denial precedes provider work.

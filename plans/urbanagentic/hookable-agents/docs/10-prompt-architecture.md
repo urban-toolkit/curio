@@ -1,5 +1,9 @@
 # Prompt Architecture: Prompts as Manifest-Defined Hookable Agents
 
+Current status (2026-08-24): all thirteen source-backed prompt packages and the DEC-055 authored
+Generated Content Evaluator ship. Twelve non-grandfathered raw frontend prompt callers still require
+parity-backed cutover; the retained Node Explanation direct caller is the DEC-041 exception.
+
 The application's existing prompts become **versioned hookable agents**. Each prompt-backed
 agent is a self-contained artifact under `agents/`, with a manifest that links to its
 package-local system and instruction prompt files, input/output schemas, compatible hook
@@ -66,7 +70,7 @@ Debugging · Explanation · Evaluation · Refinement.
 | `agent.keyword-binding-agent` | `workflow.keyword.bind` | `prompts/keywords_binding_prompt.txt` | Workflow Construction / Analysis |
 | `agent.plan-coherence-validator` | `workflow.coherence.validate` | `prompts/evaluate_coherence_subtasks_prompt.txt` | Validation |
 | `agent.syntax-analysis-agent` | `code.syntax.analyze` | `prompts/syntax_analysis_prompt.txt` | Validation / code analysis |
-| `agent.generated-content-evaluator` | `content.quality.evaluate` | `prompts/evaluate_generated_content_prompt.txt` | Evaluation; blocked until missing asset is approved |
+| `agent.generated-content-evaluator` | `content.quality.evaluate` | `prompts/evaluate_generated_content_prompt.txt` | DEC-055 authored report-only evaluation; advisory, never approval |
 | `agent.debug-agent` | `code.debug.diagnose`, `code.fix.propose` | `prompts/debug_prompt.txt` | Debugging |
 | `agent.dataflow-explainer` | `dataflow.explain` | `prompts/explanation_prompt.txt` | Dataflow explanation |
 | `agent.node-explainer` | `node.explain`, `node.output.interpret` | `prompts/single_box_explanation_prompt.txt` | Node explanation |
@@ -75,11 +79,11 @@ Debugging · Explanation · Evaluation · Refinement.
 
 | High-level agent | Prompt-backed agents delegated to |
 | --- | --- |
-| **Dataflow Builder** | Dataflow Task Planner, Execution Subtask Planner, Task Refresh, Workflow Suggester, Plan Coherence Validator, and other specialists required by its plan. |
+| **Dataflow Builder** | Dataset Finder, Node Builder, Node Content Builder, Connection Builder, the planning/validation/explanation specialists, Node Researcher, Package Recommendation, Package Builder, Generated Content Evaluator, and Researcher as required by its plan. |
 | Dataset Finder | Workflow Suggester and Keyword Binding Agent. |
 | Node Builder | Node Content Builder and Execution Subtask Planner. |
-| Validation | Plan Coherence Validator, Generated Content Evaluator, and Syntax Analysis Agent. |
-| Optimization | Generated Content Evaluator and Task Refresh Agent. |
+| Validation category (not an agent) | Plan Coherence Validator, Generated Content Evaluator, Syntax Analysis Agent, and other shipped validation specialists (`DEC-056`). |
+| Optimization | No agent or delegation. Descoped demand-driven by `DEC-056`; reopen only with the recorded demand and runtime-duration evidence. |
 
 Direct attachment is also supported where a manifest declares a compatible target. The user first
 chooses `Install in project` from Global Catalog or My Imports, then attaches from that project's
@@ -93,10 +97,10 @@ references prompts with safe relative paths and SHA-256 digests. Most agents lin
 `prompts/syntax_analysis_preamble.txt`. Absolute paths, traversal, symlink escape, missing
 files, and digest mismatches are invalid.
 
-The current checkout does not contain `evaluate_generated_content_prompt.txt` or a call site.
-That agent is not registered until authoritative prompt content and input/output contracts are
-approved; another prompt must not be silently substituted. The other thirteen independently
-valid packages can be registered, tested, and released without it.
+The 2026-07-16 inventory did not contain `evaluate_generated_content_prompt.txt` or a legacy call
+site. `DEC-055` closed that gap by approving a net-new report-only contract, and dev/86 added the
+asset and registered the evaluator. It remains deliberately distinct from the thirteen migrated
+source behaviors and from the platform Prompt Quality release gate.
 
 ## Prompt Settings And Governance Lifecycle
 
@@ -164,8 +168,8 @@ governance history.
   privately importable, publishable only through eligible ownership, explicitly installable in a
   project, attachable, configurable, and independently testable through its versioned manifest.
   Attached instances themselves are not versioned artifacts.
-- **Framework-agnostic** — manifests and prompt assets are framework-neutral; the LangChain
-  adapter loads them behind `AgentRuntime`.
+- **Framework-agnostic** — manifests and prompt assets are framework-neutral; the current direct
+  provider/delegation runtime loads them behind `AgentRuntime`, and a future adapter may use the same boundary.
 - **Capability-based composition** — orchestrators request semantic capabilities and typed
   contracts; explicit agent IDs are used only for required/preferred delegates, never raw filenames.
 - **Fail closed** — missing/untrusted prompt assets prevent publication, installation, and run.

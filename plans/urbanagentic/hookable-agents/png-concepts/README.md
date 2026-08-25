@@ -1,10 +1,11 @@
 # PNG Concepts
 
-These twenty PNGs are presentation-ready concept screens for the Hookable Agents UI,
-regenerated to the finalized model: the three-scope lifecycle drawer (Global Catalog /
+These twenty PNGs are preserved concept screens for the Hookable Agents UI. They predate dev/39–97
+and are **not** the current implementation baseline; where a text specification or `DEC-041` differs,
+the specification/decision is authoritative. They were regenerated for the earlier model: the three-scope lifecycle drawer (Global Catalog /
 My Imports / Installed in this project), project-scoped `Install in project` with no
 auto-install, the six governed agent settings screens plus a scope-applicability matrix,
-and the removal of the node Explanation tab. Agents use the system's **existing** sharing
+and an obsolete concept that removed the node Explanation tab. Agents use the system's **existing** sharing
 behavior; there is no dedicated agent-sharing screen. They use the current Curio workspace
 as the visual baseline. Where a text specification and an image differ, the specification
 is authoritative.
@@ -87,7 +88,7 @@ Built-in palette and common UI icons are rendered from the same Font Awesome ico
     - Matrix of how each settings screen applies across Account policy, owned Imported definition, Project agent default, and Attached instance (own / inherit / read-only).
 
 20. `20-node-explainer-only-workflow.png`
-    - A node with no built-in Explanation tab; `Explain with Node Explainer` opens the normal install → attach → chat workflow, not a bespoke node panel.
+    - **Stale under `DEC-041`:** this image omits the built-in Explanation tab. The real UI retains that tab/direct path and also offers the normal Node Explainer install → attach → chat workflow.
 
 ## Regenerating
 

@@ -44,7 +44,7 @@ Expected behavior: each attachment's conversation persists server-side under its
    - `GET /api/agents/projects/<pid>/attachments/<attachment_id>/session` → `{sessionId, turns}` (404 unknown attachment).
    - `DELETE …/session` → clears turns (keeps the session file/id) — powers "Clear conversation".
    - `run` response unchanged (`reply`), so memo-19 frontend code composes without a contract break.
-4. GC: `detach_agent` deletes the record's session file; in `projects/services.update_project`, the records returned by `prune_orphaned_attachments` (already wired, already returns removed records) get their session files deleted in the same pass. Interim retention default (fail-closed, `OQ-008` owns final durations): a transcript lives exactly as long as its attachment.
+4. GC: `detach_agent` deletes the record's session file; in `projects/services.update_project`, the records returned by `prune_orphaned_attachments` (already wired, already returns removed records) get their session files deleted in the same pass. The original fail-closed rule—a transcript lives exactly as long as its attachment—is now part of the `DEC-057` lifecycle-bound deletion model; OQ-008 is closed.
 
 **Frontend — server as source of truth, provider as cache.**
 

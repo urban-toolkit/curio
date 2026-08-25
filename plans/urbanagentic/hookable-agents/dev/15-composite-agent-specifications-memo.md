@@ -1,5 +1,7 @@
 # Implementation Memo: Composite Agent Specifications (Dataflow Builder, Dataset Finder, Node Builder)
 
+Status update (2026-08-24): **implemented**. Node Builder shipped in dev/48, Dataset Finder in dev/50, and Dataflow Builder in dev/52, with later orchestration refinements through dev/67 and dev/95. The current product roster is 21 built-ins; this memo's future-tense and 18-agent inventory describe its July specification baseline.
+
 This memo closes hardening item **H-5** (`14-plan-hardening-and-open-decisions-memo.md`). It specifies
 the three net-new **composite** agents that Phase 5 ships but that have no prompt-migration source and no
 manifest: `agent.dataflow-builder`, `agent.dataset-finder`, and `agent.node-builder`. It uses the
@@ -10,11 +12,12 @@ capability model (`08-semantic-agent-capabilities-memo.md`), and the sharing sco
 
 ## 1. Problem Statement
 
-The full product roster is **eighteen agents**: fourteen prompt-migration identities (`dev/06`), the
-three composites specified here, and `agent.package-recommendation` (specified in
-`16-agent-node-package-capabilities-memo.md`). The fourteen are migrated one-to-one from an existing
-prompt file; the three composites are **net-new orchestrations over migrated capabilities** and are
-therefore under-specified:
+At this memo's baseline the planned product roster was **eighteen agents**: fourteen prompt-backed
+identities (`dev/06`), the three composites specified here, and `agent.package-recommendation`
+(`dev/16`). Thirteen prompt-backed identities are migrated one-to-one from source files; the evaluator
+was later authored under `DEC-055`. The current roster is 21 after Node Researcher, Package Builder,
+and Researcher were added. At the baseline, the three composites were **net-new orchestrations over
+migrated capabilities** and were under-specified:
 
 - `docs/11` profile-family tables and the concept screens (`png-concepts/01`, `10`, `03`, `05`) show the
   three composites, but **no manifest, capability contract, `delegatesTo` composition, or prompt
@@ -104,10 +107,9 @@ agent.dataflow-builder  (declares dataflow.orchestrate)
     agent.plan-coherence-validator (workflow.coherence.validate)
     agent.dataflow-explainer      (dataflow.explain)
     agent.package-recommendation  (package.recommend)   # the "Recommend packages" plan step — see dev/16
-    # Flow 3 also names Validation / Optimization as spawnable specialists; those
-    # are still unspecified product agents (OQ-011) and are resolved only if
-    # installed — never assumed present. (Package Recommendation is now specified
-    # in dev/16.)
+    # DEC-056 resolution: Validation is a category view over the shipped family,
+    # not a separate agent; Optimization is descoped demand-driven. Neither is
+    # assumed as an installed delegate.
 
 agent.dataset-finder  (declares dataset.discover, dataset.select)
   delegatesTo →
@@ -447,4 +449,4 @@ from an `IMPORTED · Data Catalog` auto-installed dataset (`docs/05-png-concepts
 - [ ] Node Builder previews are reviewable before mutation; secrets are never rendered; external nodes are provenance-labeled.
 - [ ] Templates/instances expose no Publish/Share/version action; no composite adds agent-private data to existing flow-sharing (D-0 = B).
 - [ ] Each composite binds its reviewed settings profile family with immutable seed suggestions only.
-- [ ] Package Recommendation is resolved only if installed (specified in dev/16); Validation / Optimization are not assumed present (OQ-011 tracked separately).
+- [x] Package Recommendation resolves only when installed and ships under `DEC-035`; `DEC-056` closes OQ-011 by making Validation a category view and Optimization demand-gated.

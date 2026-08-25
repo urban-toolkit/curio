@@ -1,6 +1,6 @@
 # Hookable Agents Planning Package
 
-This directory contains the current implementation plan and approved UI direction for hookable agents in Curio. It is a planning package; application implementation has not yet been performed.
+This directory contains the current implementation plan, implementation evidence, and approved UI direction for hookable agents in Curio. The committed implementation is current through **dev/97** (`DEC-066`, `BL-P5-20260824-40`) on `feat/agentscatalog`; remaining work and documentation status are summarized in [`dev/00-development-phase-index.md`](dev/00-development-phase-index.md) and reconciled by [`dev/100`](dev/100-planning-document-reconciliation-memo.md).
 
 ## Current Product Direction
 
@@ -39,15 +39,15 @@ The numbered product specifications under `docs/01-...` through `docs/11-...` pr
 
 ## Current Application Evidence
 
-The existing application still contains legacy paths that the plan migrates rather than treats as target behavior:
+The application now ships the filesystem-backed catalog/import/install/attach lifecycle, unified agent chat and settings, the typed streaming/tool/review runtime, all three composite agents, Package Recommendation, Node Researcher, the authored Generated Content Evaluator, Package Builder, Researcher, reviewed package authoring, the package backend sandbox, activation hardening, rich package-draft review, and per-package backend dependency overlays. The current roster is **21 built-in agents**; [`docs/AGENTS.md`](../../../docs/AGENTS.md) is the user-facing implementation overview, while the append-only Stage-3 logs carry verification evidence.
 
-- direct `llmRequest(...)` calls in general frontend components;
-- prompt files in `utk_curio/llm-prompts/` rather than manifest packages;
-- a project-ID public share route that hydrates the project into a shared-guest workspace and can expose a Save-a-copy flow.
+Concrete implementation work still remains:
 
-(The node Explanation tab and its direct `single_box_explanation_prompt` caller were formerly in this migrate-then-remove list; per `DEC-041` (`dev/18`) they are **retained target behavior**, not a legacy path.)
+- twelve non-grandfathered direct `llmRequest(...)` call paths in general frontend components still pass raw prompt filenames and require the dev/06 parity-backed caller cutover;
+- the package-store seeder's two-rename absence interval has an implementation-ready reader-lock plan in [`dev/99`](dev/99-package-seed-reader-locking-memo.md), but implementation has not started;
+- ProviderProfile/encrypted-secret-store T4, prompt Editor/Quality/Audit governance (DEC-058), and the OQ-009/OQ-010 deployment gates remain outside the completed slices.
 
-The plan requires parity and regression coverage before removing those paths. Thirteen requested prompt assets currently exist. `evaluate_generated_content_prompt.txt` and a current caller do not; the corresponding agent remains disabled under `OQ-007` until authoritative content and contracts are supplied.
+The node Explanation tab and its direct `single_box_explanation_prompt` caller are the deliberate `DEC-041` exemption: they remain functional and coexist with the installed/attached Node Explainer agent. `agent.generated-content-evaluator` is no longer blocked: it was authored and shipped under `DEC-055` (dev/85–86), rather than fabricated as a migration source.
 
 ## UI and Generated Artifacts
 
@@ -60,7 +60,7 @@ The plan requires parity and regression coverage before removing those paths. Th
 - `sources/build_functionality_workbook.py`: deterministic workbook builder.
 - `png-ideas/`: visual references from the current Curio UI.
 
-The generated screens and workbook now reflect the finalized model: the three-scope lifecycle drawer (Global Catalog / My Imports / Installed in this project), the six governed settings screens, the settings scope-applicability matrix, the reviewed `Install in project` orchestration (no auto-install), and the `DEC-042` header split (agent identity + cycling + Close in the opened agent view's single top header, no Pin there; the static `Agents Catalog` header is roster-drawer-exclusive with the Pin only). (Generated screens that depict the node Explanation tab as removed are stale on that point: per `DEC-041` (`dev/18`) the tab is retained and coexists with Node Explainer chat.) Agents rely on the system's **existing** sharing behavior described in the specs — there is no dedicated agent-sharing screen or flow. Where visual details and text specifications differ, the specifications remain authoritative.
+The generated screens and workbook reflect the finalized core lifecycle and `DEC-042` header model, but they predate much of dev/39–97 (structured review cards, composite orchestration, simulation/progressive build flows, later chat polish, agent-authored packages, and backend activation/dependency surfaces). They are supporting evidence, not a dev/97 visual baseline, until regenerated. Any screen depicting the node Explanation tab as removed is stale under `DEC-041`. Agents rely on the system's **existing** sharing behavior — there is no dedicated agent-sharing screen or flow. Where visual details and text specifications differ, the specifications remain authoritative.
 
 ## Supporting Visual Decisions
 

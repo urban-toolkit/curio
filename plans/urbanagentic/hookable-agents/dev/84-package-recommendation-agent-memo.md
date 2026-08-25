@@ -89,8 +89,9 @@ Tests on both sides (§7).
 - Authoring/forking/publishing packages by agents; any change to the package
   install/lockfile/resolve mechanism or to `useEnsureWorkflowDeps` auto-provisioning
   (dev/16's standing rule: unchanged, still excluded for shared/passively-opened specs).
-- The Validation and Optimization agents (OQ-011 remains open for them) and the
-  `agent.generated-content-evaluator` (OQ-007).
+- Historical at dev/84 close: Validation/Optimization and the evaluator still awaited decisions.
+  `DEC-055`/`DEC-056` (dev/85–86) subsequently closed both questions: the evaluator ships,
+  Validation is a category view, and Optimization is demand-gated.
 - The `connection` attach target for Node Builder (the other `builtin.py:162` deferral —
   separate concern, untouched).
 - Dataset discovery, agent sharing mechanics (D-0 = B), settings-profile machinery

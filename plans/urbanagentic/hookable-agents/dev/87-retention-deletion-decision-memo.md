@@ -8,7 +8,7 @@ production-release block reduces to its mechanical form: the operator declares t
 backup posture in `.curio/agents-retention.json` (§3.4). The asks in §6 are answered:
 both decisions approved as proposed.
 
-OQ-008 (`dev/03:162`) is the last open question of the hookable-agents program that a
+Before this decision, OQ-008 (`dev/03:162`) was the last open question of the hookable-agents program that a
 decision can close (OQ-009/OQ-010 are deployment-topology and remote-egress gates with
 their own owners). It asks for *"the approved retention, deletion, backup-expiry,
 export/reveal, and account-closure rules"* across every agent artifact class, under a

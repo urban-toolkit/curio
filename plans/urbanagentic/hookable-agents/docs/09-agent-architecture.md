@@ -6,23 +6,24 @@ Two **independent** concerns. Changing one must not require changing the other.
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ (2) AGENT ASSIGNMENT  — application UI & interaction (framework-agnostic)  │
 │     Catalog · palette attach · dock · chat · shared settings modal          │
-│     configure · enable/disable · status · background execution             │
+│     configure · enable/disable · status · streamed execution                │
 └───────────────▲────────────────────────────────────────────────────────────┘
                 │ stable interface (run / stream / status / cancel)
 ┌───────────────┴──────────────────────────────────────────────────────────┐
 │ (1) AGENT DEFINITION — how agents are implemented                          │
-│     Framework abstraction  →  LangChain adapter (initial)                  │
+│     AgentRuntime/provider ports  →  direct-code orchestration               │
 │     tools · manifest-linked prompts · memory · execution lifecycle          │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The UI talks to agents only through the stable interface, so the LangChain layer can
-be replaced with another framework without touching any screen.
+The UI talks to agents only through the stable interface. The current implementation uses a direct
+provider port and direct-code orchestration; a future framework adapter can be added behind the same
+boundary without changing screens.
 
-## (1) Agent Definition — LangChain (initial implementation)
+## (1) Agent Definition — provider-port runtime
 
 Every agent — the master **Dataflow Builder** orchestrator and each specialized agent —
-is instantiated through **LangChain** and exposes the same interface:
+runs through the agent-owned runtime/provider boundary and exposes the same interface:
 
 ```text
 Agent
@@ -43,22 +44,25 @@ Agent
 
 Design rules:
 
-- **Framework behind an abstraction.** A thin `AgentRuntime` interface wraps LangChain
-  (chains, tools, memory, agent executors). Only the adapter imports LangChain.
+- **Runtime behind an abstraction.** The agent-owned runtime resolves providers, prompts, typed
+  content, tool grants, reviews, and delegation behind stable ports. No UI/domain module imports a
+  provider SDK or orchestration framework.
 - **Independently executable.** Each agent runs on its own given a context; it does not
   depend on the orchestrator being present.
 - **Composable.** Agents expose the same interface so the orchestrator can treat them
   uniformly and future multi-agent workflows can nest them.
-- **Swappable.** Replacing LangChain means writing a new adapter to the same interface.
+- **Swappable.** A future framework integration belongs behind the existing provider/delegation
+  seams. `DEC-048` retired the planned LangChain adapter; `DEC-021` background execution is its
+  explicit re-open condition.
 - **Exact artifact resolution.** Runtime construction receives a validated immutable
   coordinate `(publisher namespace, agent ID, exact version, digest)`, never a mutable
   catalog name or browser-supplied path.
 - **Provider privacy boundary.** Runtime receives an authorized provider-profile reference,
   not a secret. Local-to-remote fallback is never implicit, and minimum context is checked
   against data-egress policy before invocation.
-- **Recoverable, not replayed.** Executions persist ordered events and a lease/heartbeat.
-  Expired nonterminal work becomes `interrupted`; Retry creates a linked new execution and
-  never automatically repeats provider or tool side effects.
+- **Recoverable, not replayed.** Current streamed foreground runs persist execution records and
+  cancellation state and never silently replay provider/tool work. Durable leases, startup
+  reconciliation, and multi-instance scheduling remain gated by `DEC-021`/`OQ-009`.
 - **Server-authoritative effective policy.** Runtime receives one authorized snapshot derived
   from deployment/account limits, project-template defaults, attachment overrides, and an atomic
   execution reservation. Manifest requirements and browser fields cannot relax inherited cost,
@@ -95,7 +99,7 @@ User intent
 Dataflow Builder (orchestrator)
    ├─ plan: decompose intent into subtasks
    ├─ select: which specialized agents are needed
-   ├─ spawn:  instantiate LangChain agents
+   ├─ spawn:  resolve installed specialist definitions
    ├─ delegate ──► Dataset Finder ─┐
    │             ► Node Builder     │  run / stream / status
    │             ► Connection Builder
@@ -114,7 +118,7 @@ Complete, executable dataflow  +  recommendations & explanations
 1. Analyze the user's objective.
 2. Generate an execution plan.
 3. Determine which specialized agents are required.
-4. Instantiate the required LangChain agents.
+4. Resolve the required installed specialist definitions and runtime grants.
 5. Delegate work to each specialized agent.
 6. Merge intermediate outputs.
 7. Evaluate completeness and coherence.
@@ -145,10 +149,10 @@ concepts (see `03-ui-decisions`, `04-interaction-states`, `08-unified-agent-chat
 - **Visualize active agents** — dock tiles; the orchestrator lists spawned agents.
 - **Execution status** — per-agent status (queued / running / review required /
   interrupted / done / cancelled / error) via dock running dots and status chips.
-- **Background execution** — long-running agents keep running; status persists in the
-  dock and the orchestrator's chat.
+- **Streamed foreground execution** — progress and cancellation stay visible in the dock/chat.
+  Durable background/multi-instance execution is not claimed until `DEC-021`/`OQ-009` is resolved.
 
-This layer never references LangChain; it only uses the stable agent interface.
+This layer never references provider SDKs or orchestration frameworks; it only uses the stable agent interface.
 
 ## Policy And Prompt Governance Boundary
 
@@ -178,9 +182,9 @@ to agent default` changes only the selected project template and reuses the revi
 ceilings current at reset time. Attached-instance overrides may only tighten it.
 
 Prompt Quality pins the artifact or draft revision, suite version, thresholds, provider profile,
-and any approved evaluator. It does not silently substitute `agent.generated-content-evaluator`
-while that package is blocked, and an evaluation cannot auto-release, activate, install, migrate,
-or publish. Prompt Editor is writable only for an owned imported definition; release creates a new
+and any approved evaluator. The DEC-055 `agent.generated-content-evaluator` is shipped but remains
+an advisory report-only agent, not a silently substituted platform release judge; an evaluation
+cannot auto-release, activate, install, migrate, or publish. Prompt Editor is writable only for an owned imported definition; release creates a new
 private definition version/digest and does not retarget project templates or attachments. Project
 and attachment prompt screens are read-only provenance/evidence. Prompt Audit pins versioned privacy/security/compliance
 rules, records audit findings, and appends a governance stream distinct from the session transcript
@@ -200,11 +204,11 @@ appear in the public result view.
 
 ## Node Explanation Ownership
 
-Node UI has no built-in `Explanation` tab, explanation cache/state, or direct raw prompt/provider
-path. `agent.node-explainer` must be explicitly installed in the project and attached; its dock tile
-opens unified chat for requests, responses, history, policy, and provenance. A discoverability
-affordance may enter this standard flow but cannot recreate a node panel. The separate
-`agent.dataflow-explainer` remains a canvas/full-flow behavior.
+Per `DEC-041`, Node UI permanently retains the built-in `Explanation` tab, its cache/state, and its
+direct caller. `agent.node-explainer` is a separate coexisting path: it must be explicitly installed
+in the project and attached, and its dock tile opens unified chat for requests, responses, history,
+policy, and provenance. Neither surface implicitly falls back to or double-runs the other. The
+separate `agent.dataflow-explainer` remains a canvas/full-flow behavior.
 
 ## Extensibility
 
@@ -227,5 +231,5 @@ affordance may enter this standard flow but cannot recreate a node panel. The se
 - **Prompt governance services** — drafts, versioned quality evaluations, versioned compliance
   audits/findings, releases, and append-only audit events use stable contracts independent of the
   runtime framework.
-- **Framework adapters** — LangChain today; a different runtime later via a new adapter
-  to the same interface.
+- **Runtime adapters** — direct provider/delegation ports today; a future framework adapter may be
+  added at the `DEC-021` background-execution revisit without changing the UI contract.

@@ -11,7 +11,7 @@
 
 Curio currently invokes named prompt files directly from general LLM call sites. Those prompts are not independently discoverable, installable, attachable, versioned, or traceable through the Agents Catalog. The fourteen requested prompt behaviors must become manifest-defined hookable agent packages whose manifests link to prompt assets stored inside their own `agents/` artifact directories.
 
-Repository inspection confirms thirteen named `.txt` files and their current call sites. `evaluate_generated_content_prompt` is documented conceptually but has no prompt file or call site in the current checkout; its content must be sourced and approved before its package can be valid. That blocker applies only to `agent.generated-content-evaluator`; the other thirteen independently valid packages can be registered, migrated, tested, and released without it.
+The original repository inspection confirmed thirteen named `.txt` files and their call sites but no `evaluate_generated_content_prompt` asset or caller. `DEC-055` later closed that gap by approving a net-new report-only evaluator contract, and dev/86 shipped it. The other thirteen remain the source-backed migration set; twelve non-grandfathered raw callers still require parity-backed cutover.
 
 ## 2. Scope
 
@@ -100,7 +100,7 @@ An imported-definition cog opens Prompt Editor/Quality/Audit only for an owned d
 
 ## 7. Testing Strategy
 
-Add manifest fixture tests for thirteen valid packages plus the blocked evaluator fixture. Add asset containment/digest, variables, schemas, and migration parity for thirteen legacy behaviors. Lifecycle coverage must prove explicit Import/project Install/Attach separation, project palette/default isolation, imported-only Publish, and attachments without version contracts.
+Add manifest fixture tests for thirteen source-backed packages plus the authored DEC-055 evaluator fixture. Add asset containment/digest, variables, schemas, evaluator report-only behavior, and migration parity for thirteen legacy behaviors. Lifecycle coverage must prove explicit Import/project Install/Attach separation, project palette/default isolation, imported-only Publish, and attachments without version contracts.
 
 Migration parity is not byte-for-byte model output equality. Under deterministic provider/tool adapters, parity requires the same prompt/preamble composition, input variables and context selection, input/output schemas, provider parameters, semantic capability contract, requested tool requirements, review gates, and normalized error behavior. Output quality is assessed separately with a curated semantic rubric.
 
@@ -110,7 +110,7 @@ Add Node Explainer agent tests proving the unified chat handles request/context/
 
 ## 8. Acceptance Criteria
 
-- Fourteen planned manifest identities are specified; the thirteen source-backed packages link to package-local prompt assets, while `agent.generated-content-evaluator` remains unregistered until its authoritative asset and contract exist.
+- Fourteen manifest identities are registered; the thirteen source-backed packages link to package-local prompt assets, while `agent.generated-content-evaluator` uses the separately authored DEC-055 asset/contract and is not represented as a migration.
 - Thirteen existing prompt behaviors have an explicit legacy-call-to-agent migration mapping.
 - The missing evaluation prompt blocks only `agent.generated-content-evaluator`; the other thirteen packages can ship independently.
 - Runtime callers use agent IDs/contracts rather than raw prompt names after migration.
@@ -150,4 +150,4 @@ Add Node Explainer agent tests proving the unified chat handles request/context/
 - [ ] Prompt editing uses private revisions and immutable new-version release rather than in-place asset mutation.
 - [ ] Evaluation evidence is pinned, isolated, cost/quota constrained, and unable to self-approve or auto-publish.
 - [ ] Prompt Audit has exact-digest rules/runs/findings and separately append-only governance events; both are redacted, authorized, and distinct from the execution transcript.
-- [x] ~~OQ-007 blocks only the generated-content evaluator package~~ *(OQ-007 resolved by `DEC-055` — the evaluator shipped, dev/85/86)*; OQ-008 owns final prompt/evaluation/audit retention policy.
+- [x] OQ-007 is resolved by `DEC-055` and the evaluator shipped in dev/86; OQ-008 is resolved by `DEC-057`/`DEC-058`, with the governance-artifact lifecycle retained as future build input.

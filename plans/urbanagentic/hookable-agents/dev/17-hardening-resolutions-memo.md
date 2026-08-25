@@ -1,10 +1,12 @@
 # Implementation Memo: Hardening Resolutions (H-2, H-3, H-4, H-6, H-7)
 
+Status update (2026-08-24): this remains the interim hardening decision record. `DEC-057`/`DEC-058` (dev/87–88) subsequently closed OQ-008 with lifecycle-bound deletion, operator-declared retention/backup posture, and a governance-artifact lifecycle contract.
+
 This memo resolves the remaining open hardening items in `14-plan-hardening-and-open-decisions-memo.md`
 (H-5 was closed by `dev/15`, and its OQ-011 offshoot partly closed by `dev/16` — fully closed by `DEC-056`, dev/85). It records four new decisions (`DEC-036` provenance boundary,
 `DEC-037` evaluation-budget scope, `DEC-038` v1/v2 phasing, `DEC-039` `aiconn/` as the default provider
 source), one architecture decision record (`ADR-AG-012` provider-credential migration), and interim
-retention defaults that keep `OQ-008`'s final durations with Product/Security. It uses the reconciled model (`DEC-029`–`DEC-035`), D-0 = B, and the
+retention defaults that originally kept `OQ-008`'s final policy with Product/Security; `DEC-057`/`DEC-058` later closed it without inventing durations. It uses the reconciled model (`DEC-029`–`DEC-035`), D-0 = B, and the
 existing package/credential/lifecycle facts. Where this memo and an image differ, this specification is
 authoritative.
 
@@ -247,8 +249,8 @@ surface: evaluation cost is genuinely an account concern, and account scope alre
 - `DEC-037`: the evaluation sub-budget is bound to account Cost scope and absent from project/attachment
   scopes.
 - H-7: mandatory purge-on-revoke and purge-on-underlying-delete, a per-account import quota, explanation-
-  content migration, and old-artifact-retention-for-pinned-attachments are specified as fail-closed
-  interim defaults; `OQ-008` retains final durations.
+  content migration, and old-artifact-retention-for-pinned-attachments were specified as fail-closed
+  interim defaults; `DEC-057`/`DEC-058` later closed OQ-008 without inventing durations.
 
 ## 9. Recommended Commit Breakdown
 

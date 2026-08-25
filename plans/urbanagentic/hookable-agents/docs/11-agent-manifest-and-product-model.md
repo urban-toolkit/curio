@@ -235,7 +235,7 @@ The trusted profile families are reviewed application configuration, not manifes
 | Profile family | Planned agents | Required posture |
 | --- | --- | --- |
 | `interactive-report` | `agent.chat-agent`, `agent.dataflow-explainer`, `agent.node-explainer` | Foreground/report-only execution, no mutation tools, and quality evaluation after prompt changes. |
-| `planning-analysis` | `agent.dataset-finder`, `agent.execution-subtask-planner`, `agent.dataflow-task-planner`, `agent.workflow-suggester`, `agent.plan-coherence-validator`, `agent.syntax-analysis-agent`, `agent.task-refresh-agent`, `agent.keyword-binding-agent` | Structured output, bounded background work, no direct mutation, and deterministic regression before release. |
+| `planning-analysis` | `agent.dataset-finder`, `agent.execution-subtask-planner`, `agent.dataflow-task-planner`, `agent.workflow-suggester`, `agent.plan-coherence-validator`, `agent.syntax-analysis-agent`, `agent.task-refresh-agent`, `agent.keyword-binding-agent` | Structured output, bounded streamed work, no direct mutation, and deterministic regression before release. Durable background execution remains separately gated. |
 | `mutation-proposal` | `agent.node-builder`, `agent.debug-agent`, `agent.node-content-builder`, `agent.connection-builder`, `agent.package-recommendation`, `agent.package-builder`, `agent.researcher` | Review before apply, stricter tool/resource limits, prompt-quality evidence, and human approval. |
 | `orchestration-mutation` | `agent.dataflow-builder` | Aggregate reservation, tighter child policies, bounded delegate concurrency, and review for installs or graph mutations. |
 | ~~`evaluation-disabled`~~ | `agent.generated-content-evaluator` | Retired by `DEC-055` (OQ-007 resolved, dev/85/86): the evaluator ships report-only with read-only tools — advisory judgment that can never mutate or self-certify; the `DEC-028` platform-quality firewall stands and nothing is silently substituted. |
@@ -253,8 +253,8 @@ are net-new **compositions** over migrated capabilities (via `delegatesTo`), spe
 specialist over the isolated build service, deliberately separate from recommendation) shipped via
 dev/89 (`DEC-059`); `agent.researcher` ("Researcher" — the notes-scenario owner: web-gathered
 findings composed as post-it note nodes, authoring delegated; disjoint from `agent.node-researcher`
-verification) shipped via dev/90 (`DEC-060`, prompt-driven looks — its delegation from the Dataflow
-Builder is deferred Follow-up D).
+verification) shipped via dev/90 (`DEC-060`, prompt-driven looks); its delegation from Dataflow
+Builder shipped in dev/95 (`DEC-065`, Follow-up D delivered).
 Package Recommendation, Validation, and Optimization were originally named-only; Package Recommendation
 shipped, and `DEC-056` (dev/85) resolved the other two — Validation is a category view over the shipped
 family (never a single agent), Optimization is descoped demand-driven. The "fourteen-agent planned
@@ -276,7 +276,7 @@ owned `AccountImportedAgent` created through explicit Import can create a revisi
 The authoring service validates package-local paths, variables, and schemas and produces a diff. Prompt Quality pins that
 draft/artifact revision, suite/rubric version,
 thresholds, provider profile, and any explicitly approved evaluator. It does not silently use the
-blocked generated-content evaluator and does not auto-release or publish. Release creates a new
+DEC-055 report-only generated-content evaluator as a platform release judge and does not auto-release or publish. Release creates a new
 private imported immutable version/digest; `Install in project`, a project-template source update,
 attachment migration, and `Publish` are separate reviewed actions, so existing project templates
 and attachments stay unchanged.
@@ -319,7 +319,7 @@ error association, and non-color state communication.
     "options": ["sourceScope", "maxSources", "tokenBudget"],
     "defaults": { "sourceScope": "all" }
   },
-  "runtime": { "execution": "background", "reviewPolicy": "review-before-apply" },
+  "runtime": { "execution": "foreground", "reviewPolicy": "review-before-apply" },
   "providerRequirements": { "capabilities": ["structured-output"] },
   "settingsDefaults": {
     "profileId": "planning-analysis",
@@ -338,9 +338,9 @@ Prompt-backed agents use the same manifest and lifecycle. Their package contains
 system/instruction files under `prompts/` plus input/output schemas. Paths are relative to the
 versioned agent artifact and digest-verified, following the same self-contained principle as a
 dataset manifest's `dataFile` and node-package template/code assets. See
-`10-prompt-architecture.md` for the fourteen-agent planned roster. Thirteen source-backed
-packages may be enabled independently; `agent.generated-content-evaluator` remains disabled
-until its authoritative prompt and output contract are approved.
+`10-prompt-architecture.md` for the fourteen-agent prompt-backed roster. Thirteen source-backed
+packages and the separately authored DEC-055 `agent.generated-content-evaluator` are enabled;
+the evaluator is report-only and has no migrated legacy caller.
 
 `capabilities` and `prompts` are intentionally independent: `node.explain` is a semantic
 capability, while `prompts/single_box_explanation_prompt.txt` is one version's implementation
@@ -361,5 +361,5 @@ does not authorize automatic installation of an agent. See
 `06-dataset-finder-source-review.md` for the canonical two-lane workflow.
 
 See `01-consolidated-plan` for the roster and `09-agent-architecture` for how the
-manifest's prompt assets, delegates, and runtime policy are implemented (LangChain) behind the swappable
-runtime abstraction.
+manifest's prompt assets, delegates, and runtime policy are implemented by the direct provider/delegation
+ports behind the swappable runtime abstraction.

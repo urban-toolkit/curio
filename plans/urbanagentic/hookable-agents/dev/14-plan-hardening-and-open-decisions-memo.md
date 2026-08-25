@@ -1,5 +1,7 @@
 # Plan-Hardening and Open Decisions Memo
 
+Status update (2026-08-24): D-0 remains active; H-2 through H-7 are resolved. `OQ-007`, `OQ-008`, and `OQ-011` are closed by dev/85–88; only deployment-gated `OQ-009`/`OQ-010` remain open. Historical open-language below is retained only where it explains the decision sequence.
+
 ## Purpose
 
 This memo records the unresolved design decisions and hardening items surfaced by a four-part
@@ -171,7 +173,7 @@ scopes omit it. A per-import cap may only tighten the account budget.
 
 ---
 
-## H-7 (P1) — Convert deferred OQ-008 into concrete share/retention defaults — RESOLVED by `dev/17` (interim; final durations remain `OQ-008`)
+## H-7 (P1) — Convert deferred OQ-008 into concrete share/retention defaults — RESOLVED by `dev/17`; finalized by `DEC-057`/`DEC-058` (dev/87–88)
 
 **Problem.** Retention/expiry is punted wholesale: no default share TTL, no snapshot-purge-on-revoke,
 no purge-on-underlying-delete, no backup handling. Missing edge cases: per-account import quota /

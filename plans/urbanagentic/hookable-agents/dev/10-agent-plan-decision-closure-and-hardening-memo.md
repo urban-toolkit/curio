@@ -1,8 +1,10 @@
 # Implementation Memo: Agent Plan Decision Closure and Privacy Hardening
 
+Status update (2026-08-24): decision record partially implemented. `DEC-041` supersedes every former Explanation-removal instruction; `DEC-055` and `DEC-057`/`DEC-058` close OQ-007/OQ-008. ProviderProfile/encrypted-secret migration, durable multi-instance recovery, governance surfaces, and deployment gates remain.
+
 ## 1. Problem Statement
 
-The plan must preserve exact immutable definition identity, provider/egress safety, recovery, hostile-input handling, settings governance, and prompt audit while adopting memo `12`'s superseding lifecycle. Retaining account-wide installation pointers, attachment SemVer/publication, or the node Explanation direct caller would reintroduce ambiguous ownership, cross-project state leakage, double LLM calls, and private dependency exposure.
+The plan must preserve exact immutable definition identity, provider/egress safety, recovery, hostile-input handling, settings governance, and prompt audit while adopting memo `12`'s superseding lifecycle. Retaining account-wide installation pointers or attachment SemVer/publication would reintroduce ambiguous ownership and cross-project leakage. The node Explanation direct caller is the explicit exception: `DEC-041` retains it as an independent surface and tests prevent double execution with Node Explainer chat.
 
 ## 2. Scope
 
@@ -53,7 +55,7 @@ Retain prior hardening: content-address immutable definitions; reject publisher/
 - Project uninstall races with attach/review/execution; concurrent instance edits conflict without creating a version.
 - Remote provider is forbidden, local provider unavailable, credentials revoked, or custom endpoint targets restricted networks.
 - Server restarts after uncertain provider/tool work; no automatic replay.
-- Node Explainer missing/provider-blocked/over quota; no legacy Explanation fallback.
+- Node Explainer missing/provider-blocked/over quota; its chat path does not silently fall back to the independent retained Explanation-tab caller.
 - Prompt candidate self-evaluates, audit evidence is stale, or secret remediation/retention/backup rules interact.
 
 ## 7. Testing Strategy
@@ -70,14 +72,14 @@ Add Node UI/import-boundary tests proving the retained Explanation tab still wor
 - Attached instances are private project derivations with `attachmentId` plus concurrency revision only and no SemVer/Release/Publish.
 - Node Explainer chat is a coexisting node-explanation path alongside the retained Explanation tab (`DEC-041`).
 - Credentials/egress/tools/import/rendering/recovery/settings/prompt governance remain fail-closed and auditable.
-- `OQ-007` blocks only the missing evaluator package; `OQ-008` governs all transcript/prompt/evaluation/audit retention, export, deletion, remediation, and backup claims.
+- `OQ-007` and `OQ-008` are closed by `DEC-055` and `DEC-057`/`DEC-058`; the evaluator is report-only, and retention/deletion claims follow lifecycle-bound deletion plus operator-declared backup posture.
 
 ## 9. Recommended Commit Breakdown
 
 1. Align lifecycle/identity/privacy decisions and remove account-install/attachment-version assumptions.
 2. Add bounded private Import and imported-only publication authorization.
 3. Add explicit project template/palette/default lifecycle and private instances.
-4. Remove Explanation/direct caller and migrate Node Explainer chat.
+4. Retain and regression-test the Explanation tab/direct caller while adding Node Explainer chat as an independent governed path (`DEC-041`).
 5. Add provider/recovery/import/render hardening and lifecycle regressions.
 6. Align settings/prompt governance at imported-definition/project-template/instance scopes.
 7. Reconcile KGGraph/docs and later regenerate design/workbook artifacts.
@@ -89,7 +91,7 @@ Add Node UI/import-boundary tests proving the retained Explanation tab still wor
 - [ ] Only owned validated imports are user-publishable.
 - [ ] Project palette/defaults never leak across projects.
 - [ ] Attachments are unversioned private derivations; executions hold reproducibility pins.
-- [ ] Explanation UI/direct caller is removed; Node Explainer chat is exclusive.
+- [x] Explanation UI/direct caller is retained and regression-tested; Node Explainer chat coexists without implicit fallback or double execution (`DEC-041`).
 - [ ] Secrets, egress, tools, hostile imports/content, and recovery fail closed.
 - [ ] Settings and prompt governance use the revised scopes without weakening policy.
 - [ ] Retention/backup questions remain explicit and no deletion claim is overstated.

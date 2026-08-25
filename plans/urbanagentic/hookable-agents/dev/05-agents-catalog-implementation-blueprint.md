@@ -1,6 +1,6 @@
 # Agents Catalog Cursor-Style Implementation Blueprint
 
-Status: detailed pre-implementation plan  
+Status: historical implementation blueprint with current overlay — implementation verified through dev/97; remaining work is listed below
 Depends on: `03-agents-catalog-development-plan.md`  
 Architecture amendment: `04-agents-module-encapsulation-memo.md`  
 Settings and prompt-governance amendment: `11-agent-configuration-modals-and-prompt-governance-memo.md`  
@@ -10,6 +10,8 @@ Node-package capabilities: `16-agent-node-package-capabilities-memo.md`
 Traceability: `kggraph/Stage-2-Design-Phase/2.1-Agents-Catalog-Design-Traceability.md`
 
 This blueprint translates the approved product and architecture plan into concrete modules, contracts, flows, files, tests, and incremental implementation steps. It contains illustrative pseudocode only; names should be confirmed against repository conventions during implementation.
+
+**Current overlay (2026-08-24).** The lifecycle/catalog/chat/settings foundation, typed runtime, all three composites, Package Recommendation, Node Researcher, the DEC-055 authored evaluator, Package Builder, Researcher, sandboxed package backends, activation hardening, rich review, and dependency overlays ship through dev/97. Future-tense sequencing below is the original blueprint, not a current backlog. Concrete remainders are the twelve non-grandfathered raw prompt-caller cutovers, the package-seed reader lock, ProviderProfile/encrypted-secret T4, DEC-058 governance surfaces, and deployment gates `OQ-009`/`OQ-010`; explicitly demand-gated items remain optional.
 
 ## 1. Problem Statement
 
@@ -40,7 +42,7 @@ The implementation must introduce an explicit `agents/` feature boundary on the 
 - Exposing LangChain objects, provider SDK objects, or credentials to the frontend.
 - Migrating unrelated AI/ML inference features that are not part of the agent/LLM runtime.
 - Marketplace billing/payment collection, client-controlled safety ceilings, or provider-credential editing inside agent settings.
-- In-place prompt mutation, account-wide installed palettes, automatic lifecycle chaining or policy activation/publication, publishable project/attachment state, or silent use of the unresolved OQ-007 generated-content evaluator.
+- In-place prompt mutation, account-wide installed palettes, automatic lifecycle chaining or policy activation/publication, publishable project/attachment state, or silent substitution of the DEC-055 authored evaluator for an unrelated platform quality gate.
 
 ## 3. Architecture Decisions and Tradeoffs
 
@@ -190,7 +192,7 @@ Tradeoff: the application stores protected draft content separately and must han
 
 ### ADR-AG-019 — Reproducible prompt quality and integrity-linked audit
 
-Decision: static and approved model-based evaluations persist exact draft, suite, fixture, evaluator, provider-profile, policy, usage, and cost pins. Any input change makes evidence stale. Prompt audit is mandatory, append-only, integrity-linked, separately authorized from transcripts, and redacted by default; reveal/export is itself audited. Platform prompt-quality infrastructure is independent of the unavailable `agent.generated-content-evaluator` governed by OQ-007 and never substitutes it silently.
+Decision: static and approved model-based evaluations persist exact draft, suite, fixture, evaluator, provider-profile, policy, usage, and cost pins. Any input change makes evidence stale. Prompt audit is mandatory, append-only, integrity-linked, separately authorized from transcripts, and redacted by default; reveal/export is itself audited. Platform prompt-quality infrastructure remains independent of the DEC-055 report-only `agent.generated-content-evaluator` and never substitutes it silently as a release judge.
 
 Rationale: exact evidence can gate Release without self-certification, and protected audit metadata proves governance events without copying rendered prompts/context into broad logs.
 
@@ -1372,7 +1374,7 @@ Error mapping examples:
 
 ### Decision and flow
 
-The roster contains fourteen planned prompt-backed behaviors. Thirteen have authoritative prompt assets and can ship independently as first-class hookable agents; `agent.generated-content-evaluator` remains disabled until its missing source and output contract are approved. A high-level agent may delegate to an enabled package, but every enabled behavior has its own manifest, version, artifact, input/output contract, compatible targets, provider requirements, runtime policy, and catalog/install/attachment lifecycle.
+The prompt-backed roster contains fourteen shipped behaviors: thirteen source-backed packages and the DEC-055 evaluator authored net-new to an approved report-only contract. A high-level agent may delegate to an enabled package, but every enabled behavior has its own manifest, version, artifact, input/output contract, compatible targets, provider requirements, runtime policy, and catalog/install/attachment lifecycle.
 
 ```mermaid
 flowchart LR
@@ -1462,7 +1464,7 @@ The `capabilities` array is semantic registry metadata. It answers what behavior
 | `agent.connection-builder` | `connection.propose` | `new_connection_prompt.txt` | `default_preamble.txt` | `workflowGoal`, `nodeId`, `subtask`, `connectionSide`, `dataflowContext` | Connection/selected nodes | Connection proposal; review before apply. |
 | `agent.workflow-suggester` | `workflow.suggest` | `workflow_suggestions_prompt.txt` | `default_preamble.txt` | `dataflowContext`, `workflowGoal` | Canvas | Ranked workflow/resource suggestions. |
 | `agent.plan-coherence-validator` | `workflow.coherence.validate` | `evaluate_coherence_subtasks_prompt.txt` | `default_preamble.txt` | `workflowGoal`, `dataflowContext` | Canvas | Findings, severity, affected task IDs. |
-| `agent.generated-content-evaluator` | `content.quality.evaluate` | `evaluate_generated_content_prompt.txt` | `default_preamble.txt` | *(blocked with the contract — `OQ-007`)* | Node/canvas | Typed quality evaluation; blocked pending source asset/contract. |
+| `agent.generated-content-evaluator` | `content.quality.evaluate` | `evaluate_generated_content_prompt.txt` | `default_preamble.txt` | `nodeContext`, `targetContext` | Node/canvas | DEC-055 authored report-only quality evaluation; advisory and never approval. |
 | `agent.syntax-analysis-agent` | `code.syntax.analyze` | `syntax_analysis_prompt.txt` | `syntax_analysis_preamble.txt` | `codeContext` | Code node | Syntax findings with locations/severity. |
 | `agent.task-refresh-agent` | `workflow.plan.refresh` | `task_refresh_prompt.txt` | `default_preamble.txt` | `currentTask`, `keywords`, `dataflowContext` | Canvas | Revised task-plan proposal. |
 | `agent.keyword-binding-agent` | `workflow.keyword.bind` | `keywords_binding_prompt.txt` | `default_preamble.txt` | `keywords`, `dataflowContext` | Canvas/nodes | Keyword-to-node binding proposals. |
@@ -1481,7 +1483,7 @@ The `capabilities` array is semantic registry metadata. It answers what behavior
 | `components/styles.tsx` | `new_connection_prompt` | `agent.connection-builder` proposal/review flow |
 | `WorkflowGoal.tsx` | `workflow_suggestions_prompt` | `agent.workflow-suggester` |
 | `WorkflowGoal.tsx` | `evaluate_coherence_subtasks_prompt` | `agent.plan-coherence-validator` |
-| No current call site found | `evaluate_generated_content_prompt` | blocked evaluator; do not invent behavior |
+| No legacy call site (authored in dev/86) | `evaluate_generated_content_prompt` | `agent.generated-content-evaluator`; DEC-055 report-only behavior, not a migration |
 | `WorkflowGoal.tsx` | `syntax_analysis_prompt` | `agent.syntax-analysis-agent` |
 | `WorkflowGoal.tsx` | `task_refresh_prompt` | `agent.task-refresh-agent` |
 | `WorkflowGoal.tsx` | `keywords_binding_prompt` | `agent.keyword-binding-agent` |
@@ -1515,7 +1517,7 @@ class PromptAgentFactory:
 
 ### Known inventory gap
 
-As of 2026-07-16, the checkout contains thirteen requested instruction files plus `default_preamble.txt` and `syntax_analysis_preamble.txt`. It does not contain `evaluate_generated_content_prompt.txt`, and no current call site references that name. OQ-007 blocks only `agent.generated-content-evaluator`; other packages may proceed independently. The missing content must come from an authoritative source, be reviewed, receive explicit input/output schemas, and be committed before its manifest is enabled.
+**Historical inventory gap (closed).** On 2026-07-16 the checkout contained thirteen requested instruction files but not `evaluate_generated_content_prompt.txt`. `DEC-055` closed OQ-007 by approving a net-new report-only contract, and dev/86 added the asset and registered the validated evaluator. It is intentionally not represented as a migrated legacy caller.
 
 ## 14. Existing-Code Migration Plan
 
@@ -1567,11 +1569,11 @@ Implement using existing lint/test tooling where possible, plus a focused archit
 | Cost/quota/resource admission | Price revisions/unknown prices/currency/window boundaries, estimate versus actual settlement, child/retry/evaluation attribution, concurrent last-slot reservation, cancellation, stale/ambiguous reconciliation, `429`/retryAfter, provider/model/locality/context/output/tool/time/CPU/RAM/GPU/queue bounds, egress/SSRF, and no fallback. |
 | Artifact import pipeline | Media/type denial, compressed/expanded/file-count/ratio limits, traversal and absolute paths, Unicode/case-normalized duplicates, symlink/hardlink/device/FIFO rejection, truncated/corrupt input, atomic visibility, and staging cleanup. |
 | Artifact coordinates/lifecycle | Publisher/ID/exact-version digest collision, side-by-side versions, active-pointer update, attachment pins, publication ownership, unpublish versus quarantine, retained-reference garbage-collection fence. |
-| Prompt asset resolver/contracts | Path containment, absolute/`..`/symlink rejection, missing file, digest mismatch, variables, preamble selection, input/output schemas, thirteen enabled manifests, and the evaluator's fail-closed disabled fixture. |
+| Prompt asset resolver/contracts | Path containment, absolute/`..`/symlink rejection, missing file, digest mismatch, variables, preamble selection, input/output schemas, and fourteen validated prompt-backed manifests including the DEC-055 evaluator fixture. |
 | Capability registry/resolver | Semantic ID syntax, prompt-name rejection, contract versions, multiple implementations, deterministic choice, delegate preference, target/provider/tool/trust/install filtering, and persisted selection. |
-| Prompt-agent migration | Behavioral parity for thirteen existing calls, no double execution, no raw prompt names in migrated UI, and missing evaluator fails closed. |
+| Prompt-agent migration | Behavioral parity for the thirteen source-backed behaviors, no double execution, no raw prompt names in migrated UI, and explicit proof that the authored evaluator has no legacy caller. |
 | Prompt authoring/release | Explicit-import ownership authorization and denial for every other lifecycle source, protected contained assets, variable/schema/encoding validation, optimistic save conflicts, secret remediation, immutable SemVer/digest collision, Release gate transaction, separate project-template update/publication, and attachment pin preservation. |
-| Prompt quality | Deterministic checks, exact draft/suite/fixture/evaluator/profile/policy pins, stale detection, candidate/evaluator isolation, disabled tools/network, egress/budget denial, cancellation, unavailable OQ-007 state, and no self-approve/auto-activate/release/publish. |
+| Prompt quality | Deterministic checks, exact draft/suite/fixture/evaluator/profile/policy pins, stale detection, candidate/evaluator isolation, disabled tools/network, egress/budget denial, cancellation, DEC-055 report-only separation, and no self-approve/auto-activate/release/publish. |
 | Prompt audit | Exact draft/ruleset/policy pins, versioned security/compliance/provenance checks, typed category/severity/location findings, stale detection, Run/Cancel, revisioned remediation, unresolved-required-finding Release gate, plus separate append-only event order/hash integrity, mandatory events, metadata redaction, transcript separation, non-enumeration, filters/pagination, rate-limited reveal/diff/export and self-audit, retention/tombstone/crypto-shredding behavior, and tamper detection. |
 | `AttachmentPolicy` / `attachmentCompatibility` | Each target kind, predicate mismatch, malformed descriptor, keyboard/pointer parity. |
 | `ProviderCompatibilityPolicy` | Required capabilities, unsupported model, stale health snapshot, local resource constraints. |
@@ -1593,7 +1595,7 @@ Integration fixtures should use deterministic fake provider/runtime/evaluator/pr
 
 ### Step 0 — freeze contracts and decisions
 
-- Record owners and blocking phases only for genuinely unresolved policy/content items, including OQ-008 retention/deletion/export/backup rules and OQ-007's missing evaluator source/contract. Platform quality infrastructure proceeds independently and shows OQ-007 as unavailable rather than inventing it.
+- Record owners and blocking phases only for genuinely unresolved policy/content items. OQ-007 and OQ-008 are now closed by DEC-055/DEC-057/DEC-058; OQ-009 and OQ-010 remain deployment gates. Platform quality infrastructure remains independent of the report-only evaluator.
 - Approve ADR-AG-001 through ADR-AG-019 and trace DEC-025 through DEC-028 plus RISK-POLICY-001, RISK-COST-001, RISK-PROMPT-EDIT-001, RISK-EVAL-001, RISK-AUDIT-001, and RISK-MODAL-001.
 - Finalize manifest `settingsDefaults`, reviewed default-profile fixtures, typed settings/revision/effective-policy/reservation/ledger/authoring/evaluation/audit schemas, exact artifact coordinates, resource IDs, authenticated nested dataflow routes, public projections, and module entry points.
 - Finalize the semantic capability taxonomy, capability contract versioning, and deterministic implementation-selection policy.
@@ -1607,7 +1609,7 @@ Exit: schemas and dependency rules reviewed; no runtime implementation required.
 - Add account-import, global-publication, project-template/default, trust, provider-profile, private attachment, session, leased execution, event, and review entities/repositories.
 - Add independent typed settings bindings/revisions, reviewed per-agent default profiles, prompt workspaces/draft files, evaluation suite/run, prompt-audit policy/run/finding plus separate append-only event, price/reservation/ledger entities/filesystem repositories with additive on-disk formats.
 - Add account-import/catalog read APIs, project-template locks and same-project usage lookup, and exact-pinned attachment migration support.
-- Add agent artifact schema, prompt asset resolver, package-local schema references, thirteen enabled built-in manifest fixtures, and one fail-closed disabled evaluator fixture.
+- Add agent artifact schema, prompt asset resolver, package-local schema references, thirteen source-backed built-in fixtures, and the separately authored DEC-055 evaluator fixture. This roster work is implemented.
 - Add capability registry/resolver and semantic capability declarations for every built-in manifest.
 
 Exit: domain/repository tests and on-disk load/validate/write round trips pass.
@@ -1646,8 +1648,8 @@ Exit: persistence, state-race, accessibility, and session recovery tests pass.
 - Implement the three composite agents per `15-composite-agent-specifications-memo.md` — `agent.dataflow-builder` (`dataflow.orchestrate`), `agent.dataset-finder` (`dataset.discover`/`dataset.select`), and `agent.node-builder` (`node.build`/`dataset.fetch.author`) — with their manifests, `delegatesTo` composition, net-new prompts, and hooks. (Node Explainer is a migrated prompt agent from `dev/06`.)
 - Implement the node-package capabilities per `16-agent-node-package-capabilities-memo.md`: the `package.recommend`/`package.identify` capability family and the `agent.package-recommendation` agent (`mutation-proposal` family), plus the `delegatesTo: [agent.package-recommendation]` wiring on Node Builder, Connection Builder, and Dataflow Builder. Agent-suggested package installs route through the EXISTING reviewed package flow (`InstallPermissionsDialog` → `installToProject` on the current-project lockfile) — never silent, never a new mechanism, never a `curio.builtin@*` package (`REQ-PACKAGE-001`).
 - Add Node Builder handoff, child executions, reviewed missing-agent installation, merge/evaluate loop, and review gates.
-- Replace thirteen direct prompt callers with installed prompt-agent commands and verify deterministic request/contract parity; keep the generated-content evaluator disabled until OQ-007 is resolved.
-- **Release-cut note (`DEC-038`).** Of this step, only the thirteen prompt-caller migrations belong to **v1**; the Prompt Editor/Quality/Audit screens, the three composite agents, and `agent.package-recommendation` are **v2** (demand-gated). Sequence v1 items with Steps 0–4 and gate the v2 items behind the v2 flag.
+- Replace the thirteen source-backed direct prompt callers with installed prompt-agent commands and verify deterministic request/contract parity. Twelve non-grandfathered raw frontend callers remain; the Node Explanation caller is retained by DEC-041. The generated-content evaluator is already enabled as a net-new DEC-055 package and has no legacy caller.
+- **Historical release-cut note (`DEC-038`).** The original v1/v2 partition guided sequencing, but later approvals delivered the composites and Package Recommendation. Treat each current status in `dev/00` and Stage 3 independently; Prompt Editor/Quality/Audit remain under DEC-058.
 
 Exit: three approved end-to-end flows, node-package identify/suggest/reviewed-install, and orchestration failure tests pass.
 
@@ -1715,7 +1717,7 @@ Each commit must update its KGGraph Build Log entry with requirement/task/test I
 - [ ] Every execution/evaluation persists an immutable effective-policy snapshot and atomic cost/quota/resource reservations before provider/tool work; settlement and ambiguous reservation reconciliation are idempotent and race-tested.
 - [ ] Cost, quota, and resource screens cannot loosen deployment/account/inherited provider, egress, context, tool, mutation, retention, or local-compute limits and show accurate inherited/ceiling/effective provenance.
 - [ ] Prompt browser state is memory-only and purged on close/logout/account switch; private Save is authorized only for an owned explicit import, uses optimistic concurrency, and Release creates a new exact artifact without publishing, project-template update, or attachment retargeting.
-- [ ] Prompt evaluation evidence is exact-input reproducible, stale-aware, isolated, independently authorized/budgeted, non-self-approving, and visibly unavailable when no approved evaluator exists; OQ-007 is never substituted.
+- [ ] Prompt evaluation evidence is exact-input reproducible, stale-aware, isolated, independently authorized/budgeted, and non-self-approving; the DEC-055 report-only agent is never silently substituted as the platform release judge.
 - [ ] Prompt audit is append-only/integrity-checked, separate from transcripts, redacted by default, non-enumerating, retention-aware, and audits protected reveal/diff/export/remediation itself.
 - [ ] Labeled cog/settings controls and the one-dialog six-screen flow pass focus, keyboard, dirty/conflict/error, announcement, 44-pixel target, zoom/reflow, reduced-motion, and forced-colors tests.
 - [ ] Every attachment derives from a same-project template and every execution resolves exact source/settings/prompt/provider pins; explicit project-template source updates preserve existing attachment pins, and attach/project-uninstall races are fenced by the shared template lock/transaction policy.
@@ -1726,7 +1728,7 @@ Each commit must update its KGGraph Build Log entry with requirement/task/test I
 - [ ] Project uninstall, detach, private-import deletion, unpublish, quarantine/revocation, and garbage collection remain separate, authorized, auditable operations with retained-reference and backup/restore evidence.
 - [ ] Provider/tool/prompt/security boundaries are enforced and tested.
 - [ ] Every enabled prompt-backed manifest resolves contained, digest-verified assets and passes input/output contract tests.
-- [ ] Thirteen authoritative prompt packages can ship independently and the generated-content evaluator remains fail-closed until OQ-007 is resolved.
+- [x] Thirteen source-backed prompt packages and the separately authored DEC-055 evaluator ship as validated artifacts; remaining raw-caller cutover is tracked independently.
 - [ ] Every enabled agent declares semantic capabilities, and selected implementations are resolved and persisted independently of prompt filenames.
 - [ ] Module-linked tests and full regressions pass.
 - [ ] Documentation and KGGraph Build Logs record files, decisions, deviations, tests, commits, issues, and evidence.

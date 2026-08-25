@@ -1,7 +1,7 @@
 # Agents Catalog Development Plan
 
-Status: implementation-ready planning baseline  
-Date: 2026-07-15  
+Status: implementation specification with current overlay — implementation verified through dev/97; remaining gates are identified below
+Baseline date: 2026-07-15; current overlay: 2026-08-24
 Source instructions: `02-development-plan-brief.md`  
 Traceability companion: `kggraph/Stage-2-Design-Phase/2.1-Agents-Catalog-Design-Traceability.md`  
 Build log template: `kggraph/Stage-3-Build-Phase/3.1-Agents-Catalog-Build-Log.md`
@@ -22,13 +22,13 @@ Composite-agent specifications (H-5): `15-composite-agent-specifications-memo.md
 
 Node-package capabilities (`REQ-PACKAGE-001`): `16-agent-node-package-capabilities-memo.md`
 
-This document is the actionable implementation specification for the Agents Catalog. It does not authorize or contain implementation code. Existing concept documents remain the design source of truth; conflicts are resolved by the decisions and open questions recorded below.
+This document is the actionable implementation specification for the Agents Catalog. It does not authorize or contain implementation code. Existing concept documents remain the design source of truth; conflicts are resolved by the decisions and open questions recorded below. The original problem/scope prose records the July baseline; current status comes from the active decision table, the open-question table, `00-development-phase-index.md`, and the Stage-3 build evidence through `BL-P5-20260824-40`.
 
 For file-level module contracts, architecture tradeoffs, Mermaid diagrams, pseudocode, persistence/API patterns, and step-by-step source migration, use `05-agents-catalog-implementation-blueprint.md` together with this specification.
 
 ## 1. Problem Statement
 
-Curio has mature private account storage, catalog publishing, project/dataflow persistence, and dataset/package patterns, but agents currently exist only as design concepts and scattered LLM behaviors. There is no persisted reusable definition, explicit private account import, project-installed template palette, private attached-instance model, unified attachment session, runtime lifecycle, or provider-neutral execution boundary.
+At the July 2026 baseline, Curio had mature private account storage, catalog publishing, project/dataflow persistence, and dataset/package patterns, but agents existed only as design concepts and scattered LLM behaviors. The persisted definition/import/project-template/attachment lifecycle, unified sessions, provider-neutral runtime, and the approved 21-agent roster have since shipped. The principal implementation remainders are the twelve non-grandfathered raw prompt-caller cutovers, the package-seed reader lock, ProviderProfile/encrypted-secret storage, DEC-058 governance surfaces, and deployment gates `OQ-009`/`OQ-010`.
 
 The change affects the Agents drawer, project-only AGENTS palette, canvas/node attachment affordances, attached-agent dock, unified chat drawer, six dedicated governed-settings screens, project/dataflow persistence, backend catalog/runtime/projection services, LLM configuration, prompt authoring/evaluation/audit, and tests. (The built-in node Explanation tab is retained permanently — `DEC-041`, `dev/18` — and is not modified by this change.) Users explicitly import reusable manifest packages into a private account library, explicitly install a visible definition as a project template, attach a private instance to a compatible target, and refine/run it through unified chat. Import, project installation, attachment, Release, and user publication never chain implicitly.
 
@@ -319,7 +319,7 @@ All enabled profiles inherit account budgets, use the deployment `standard` reso
 
 ### Required prompt-backed built-in agents
 
-The following thirteen available prompt behaviors and one planned evaluator become hookable-agent packages rather than raw prompt invocations. Only validated packages are registered. (The evaluator row's OQ-007 block is resolved: `DEC-055` authored it net-new to the approved contract — dev/85/86.)
+The following thirteen source-backed prompt behaviors and one authored evaluator are registered hookable-agent packages. Only validated packages are registered. `DEC-055` resolved the evaluator's former OQ-007 block by authoring it net-new to the approved report-only contract (dev/85/86). Registration is complete; parity-backed removal of twelve non-grandfathered raw frontend callers remains separate migration work, while the Node Explanation direct caller is retained by `DEC-041`.
 
 | Agent ID | Semantic capabilities | Prompt asset | Primary hook | Responsibility |
 | --- | --- | --- | --- | --- |
@@ -338,7 +338,7 @@ The following thirteen available prompt behaviors and one planned evaluator beco
 | `agent.task-refresh-agent` | `workflow.plan.refresh` | `prompts/task_refresh_prompt.txt` | Canvas | Re-plan after context or execution changes. |
 | `agent.keyword-binding-agent` | `workflow.keyword.bind` | `prompts/keywords_binding_prompt.txt` | Canvas/nodes | Bind task keywords to graph elements. |
 
-All except syntax analysis link `prompts/default_preamble.txt` as the system asset unless a reviewed manifest declares a different system prompt. Syntax analysis links `prompts/syntax_analysis_preamble.txt`. Repository inspection on 2026-07-16 found no `evaluate_generated_content_prompt.txt` or current call site; `OQ-007` tracks sourcing/approval and that agent cannot ship until its artifact and contracts exist.
+All except syntax analysis link `prompts/default_preamble.txt` as the system asset unless a reviewed manifest declares a different system prompt. Syntax analysis links `prompts/syntax_analysis_preamble.txt`. The 2026-07-16 inspection found no `evaluate_generated_content_prompt.txt`; that historical blocker was closed by `DEC-055`, and dev/86 ships the authored asset, manifest, report-only contract, and tests.
 
 Live fields such as installation state, publication state, and execution status must not be stored in the immutable manifest. They are joined into view models by application mappers. This corrects the conceptual shorthand in `11-agent-manifest-and-product-model.md` while preserving its UI mapping.
 
@@ -405,7 +405,7 @@ Dataflow Builder uses the same runtime contract as specialized agents. Delegatio
 - Install requires an explicit visible exact source plus selected authorized `projectId`/current `dataflowId`, then atomically creates one `ProjectAgentTemplate` and independent `ProjectAgentSettingsProfile`. Only that project's drawer/palette cache changes; import is not a prerequisite for globally visible definitions and Install never publishes.
 - Project update is explicit: preview compatibility, retain new exact definition bytes side-by-side, and change the project template's selected source only for future attachments. Existing instances retain their operational source/template facts until an explicit migration/detach.
 - Attach starts only from the active project's palette and creates a private `AttachedAgentInstance` plus session from that project's template. It has a stable `attachmentId` and optimistic `revision`, never a SemVer/publication/share record.
-- Detach removes/tombstones only that private instance according to OQ-008; the project template remains installed. Project Uninstall removes only the selected template after a serialized same-project attachment/review/nonterminal-execution check and never detaches silently.
+- Detach removes/tombstones only that private instance according to `DEC-057`/`DEC-058`; the project template remains installed. Project Uninstall removes only the selected template after a serialized same-project attachment/review/nonterminal-execution check and never detaches silently.
 - Private imported-definition deletion and unpublish are distinct. Exact bytes remain retained or deletion is blocked while project templates, attachments, histories, publications, or backups require them; unpublish changes only global discovery.
 - Quarantine/revocation is a security action distinct from unpublish: it blocks new installs and execution of affected copies, exposes a safe `Revoked/Blocked` state, preserves evidence, and requires an authorized remediation/unblock action.
 - Garbage collection is internal and reference/retention aware; it is not an alias for uninstall, delete, or unpublish.
@@ -745,9 +745,9 @@ Each must resolve to a stable state, retain auditability, avoid duplicate side e
 - Unit: manifest parser/validator/migrations; bounded import; exact artifact coordinates/collisions; definition → account import → project template → attachment legal transitions; imported-only publication; unversioned attachment revision; retained refs/GC; target compatibility; view selectors; prompt/tool/provider policy; event reducer/leases/retry; stable errors.
 - Settings/policy unit and contract: six setting kinds, profile fixtures, independent per-project-template materialization, strict deployment/account/project-template/attached-instance intersection, downward-only overrides, project-specific Reset provenance, prompt-screen read-only applicability, effective snapshots, stale ETags, and stable admission errors.
 - Cost/quota/resource: pricing revisions and unknown prices; currency/time-window boundaries; estimate versus actual settlement; concurrent/idempotent execution, child, retry, and evaluation reservations; last-slot races; cancellation and stale-reservation reconciliation; provider/model/locality, context/output/tool/timeout/CPU/RAM/GPU constraints; queue behavior; egress/SSRF; and no remote fallback.
-- Prompt editor/quality/audit: explicit-import ownership checks and denial for built-in/global/project-template/attachment sources, memory-only UI state, path/variable/schema validation, save conflicts, immutable release/SemVer/digest collision, attachment pins, deterministic quality gates, exact evaluation pins/staleness, evaluator isolation/unavailable OQ-007 state, evaluation budget denial, versioned security/compliance/provenance rules, exact audit-run pins, typed findings/severity/location/remediation/release gates, append-only event ordering/integrity, redaction, reveal/export authorization and audit, retention tombstones, and tamper detection.
+- Prompt editor/quality/audit: explicit-import ownership checks and denial for built-in/global/project-template/attachment sources, memory-only UI state, path/variable/schema validation, save conflicts, immutable release/SemVer/digest collision, attachment pins, deterministic quality gates, exact evaluation pins/staleness, DEC-055 report-only evaluator isolation/no-self-approval, evaluation budget denial, versioned security/compliance/provenance rules, exact audit-run pins, typed findings/severity/location/remediation/release gates, append-only event ordering/integrity, redaction, reveal/export authorization and audit, retention tombstones, and tamper detection.
 - Capability registry/resolution: semantic ID syntax, taxonomy and contract versions, multiple implementations, deterministic selection, explicit delegate preference, target/provider/tool filtering, deprecated/unknown capabilities, and rejection of prompt filenames as capability IDs.
-- Prompt-agent contracts: thirteen enabled manifest fixtures plus an explicit blocked-evaluator fixture until OQ-007 is resolved; package-local path containment, asset digests, preamble/instruction linkage, required variables, output schemas, and deterministic legacy request-contract parity.
+- Prompt-agent contracts: fourteen validated fixtures (thirteen source-backed packages plus the authored evaluator); package-local path containment, asset digests, preamble/instruction linkage, required variables, output schemas, evaluator report-only behavior, and deterministic legacy request-contract parity for each caller being cut over.
 - Contract: every provider adapter against a shared suite; LangChain runtime port; manifest fixtures; API schemas; execution event ordering/resume.
 - Component: three-view Agents drawer/action eligibility, active-project palette, DnD/keyboard attach, unversioned private instance/dock/chat, six scope-aware settings screens, the retained node Explanation tab rendering (`DEC-041` regression guard), Node Explainer agent standard path, hostile content, focus and empty/error/retry states.
 - Integration: Import (no project mutation) → explicit Install in selected project → defaults → Attach → tighten → reserve/run/review; imported draft → audit/evaluate/review/Release → separate project update and/or imported-only Publish; project switch isolation; project uninstall/detach/delete/unpublish/quarantine separation; attach/uninstall and reservation races.
@@ -768,13 +768,13 @@ Each must resolve to a stable state, retain auditability, avoid duplicate side e
 - Phase 4: private unversioned attachment/chat, downward-only instance settings, project switching, modal accessibility, event-resume, and concurrency suites pass.
 - Phase 5: prompt governance/immutable imported release, three first-release flows, and orchestration failure tests pass. (The former "Node Explainer direct-caller/tab removal" gate is cancelled — `DEC-041`.)
 - Phase 6: no sharing build (D-0 = B); the only sharing gate is a regression suite proving the agents feature adds no agent-private data as a new shared surface in the existing share.
-- Release: full backend/frontend regression suites, migration and backup/restore rehearsals, privacy/security review, WCAG 2.2 AA audit, provider release smoke tests, operational threshold review, resolved OQ-008/OQ-010 policy gates, and traceability check pass.
+- Release: full backend/frontend regression suites, migration and backup/restore rehearsals, privacy/security review, WCAG 2.2 AA audit, provider release smoke tests, operational threshold review, the `DEC-057` operator backup declaration plus resolved `OQ-010` policy gate, and traceability check pass. (`OQ-008` itself is closed.)
 
 ## 20. Migration and Incremental Implementation Phases
 
 ### Phase 0 — design closure and foundations
 
-- Resolve or explicitly gate OQ-007 through OQ-011; DEC-029 through DEC-032 define the canonical lifecycle (DEC-033 is superseded by DEC-041 — Explanation tab retained), DEC-034/DEC-035 the composite and node-package capabilities, while platform prompt quality remains independent of OQ-007.
+- Resolve or explicitly gate OQ-007 through OQ-011; this is complete for OQ-007/OQ-008/OQ-011, while OQ-009/OQ-010 remain deployment-gated. DEC-029 through DEC-032 define the canonical lifecycle (DEC-033 is superseded by DEC-041 — Explanation tab retained), and DEC-034/DEC-035 define the now-shipped composite and node-package capabilities.
 - Pin dependency versions and write ADRs for exact-coordinate persistence, streaming, deployment topology, retention/backup policy, and data classification/egress enforcement.
 - Finalize definition/import/project-template/attachment/publication schemas and legal commands; manifest `settingsDefaults`; project profile/effective-policy/reservation/authoring/evaluation/audit schemas; canonical risks/requirements; and traceability.
 - Define frontend/backend agent public APIs, dependency rules, allowed shared imports, and automated import-boundary checks before moving behavior.
@@ -783,7 +783,7 @@ Each must resolve to a stable state, retain auditability, avoid duplicate side e
 
 - Add exact definition artifacts, account imports, imported-only publications, project templates, private unversioned attached instances, execution pins, bounded import, validators/filesystem repositories, and project/dataflow spec (`dataflow.agents` lockfile / graph) updates.
 - Add settings revisions, independently materialized project profiles, prompt workspaces/drafts, audit/evaluation evidence, and additive on-disk format evolution; keep prompt bodies/private resources out of shared storage.
-- Add side-by-side content-addressed artifacts and the manifest prompt resolver; seed the thirteen valid definitions independently. Do not register `agent.generated-content-evaluator` until OQ-007 is resolved and its package validates.
+- Add side-by-side content-addressed artifacts and the manifest prompt resolver; seed the thirteen source-backed definitions independently. This gate was later satisfied: `DEC-055` resolved OQ-007 and dev/86 registered the validated authored evaluator as the fourteenth prompt-backed package.
 - No UI beyond development fixtures.
 
 ### Phase 2 — provider/runtime vertical slice
@@ -804,10 +804,9 @@ Each must resolve to a stable state, retain auditability, avoid duplicate side e
 
 ### Phase 5 — first-release agents and orchestration
 
-- Deliver Dataset Finder → Data Load, Node Explainer → node, and Dataflow Builder → canvas.
-- Add Node Builder handoff, orchestrator child executions and reviewed missing-agent installation, validation/evaluation loop, and explicit apply gates.
+- **Delivered:** Dataset Finder → reviewed dataset install, Node Explainer → node, and Dataflow Builder → canvas, plus the Node Builder handoff, orchestrator child executions, reviewed missing-agent installation, Simulation Mode, validation/evaluation, and explicit apply gates.
 - Add Prompt Editor, Prompt Quality, and Prompt Audit screens and services for owned explicit imports only; save/validate/static-audit/remediate/evaluate/review/release flow; read-only provenance for every other lifecycle scope; exact audit/evaluation evidence staleness; platform evaluators independent of OQ-007; and guarded append-only event reveal/export.
-- Migrate the thirteen available prompt behaviors from raw dispatch to manifest-defined agents in functional slices; prove deterministic request-contract parity and curated semantic quality before removing each legacy call. Add the fourteenth only after OQ-007 is resolved.
+- The thirteen source-backed manifest packages and the DEC-055 authored evaluator ship. Continue the one-call-site-at-a-time parity cutover for the twelve non-grandfathered raw frontend callers; remove a raw path only after its request-contract and semantic-quality gates pass, with no double execution.
 - Keep the `NodeEditor` Explanation tab, `NodeExplanation` direct request/cache, and `hasExplanation` configuration/propagation unchanged (`DEC-041` — no removal, no parity-migration); migrate flow-level explanation separately to Dataflow Explainer.
 
 ### Phase 6 — provider expansion and hardening
@@ -894,11 +893,11 @@ Requirements are immutable once implementation starts. Superseded entries retain
 - `REQ-ORCH-001`: Dataflow Builder resolves only active-project templates and gates selected-project Install/mutations; it never silently imports, installs, attaches, publishes, shares, or uses another project's template.
 - `REQ-AGENT-001`: Dataset Finder, Node Explainer, and Dataflow Builder complete their approved attachment workflows.
 - `REQ-PACKAGE-001`: `agent.package-recommendation` (`package.recommend`/`package.identify`) and the build agents that delegate to it (`agent.node-builder`, `agent.connection-builder`, `agent.dataflow-builder`) identify a required node package, surface it as a reviewed install proposal, and install it only through the existing package flow (`InstallPermissionsDialog` permissions/dependencies/conflicts → `installToProject` on the current project lockfile). Agents never install silently, never propose a `curio.builtin@*` package, never author/publish a package, and recommended/identified packages stay agent-private and out of shares (D-0 = B). See `16-agent-node-package-capabilities-memo.md`.
-- `REQ-PROMPT-001`: Each enabled prompt behavior has a versioned hookable-agent manifest with package-local, digest-verified prompt links, typed inputs/outputs, compatible targets, provider requirements, and runtime/review policy; thirteen may ship independently while the fourteenth remains blocked.
+- `REQ-PROMPT-001`: Each enabled prompt behavior has a versioned hookable-agent manifest with package-local, digest-verified prompt links, typed inputs/outputs, compatible targets, provider requirements, and runtime/review policy. Fourteen prompt-backed packages ship: thirteen source-backed plus the DEC-055 authored evaluator.
 - `REQ-PROMPT-002`: The thirteen current prompt callers preserve exact request construction, provider parameters, context selection, independently evaluated grants, review gates, schemas, and normalized errors under deterministic adapters plus approved semantic-quality thresholds; raw dispatch is removed only after parity passes with no double execution.
-- `REQ-PROMPT-003`: `agent.generated-content-evaluator` cannot be published, installed, or run until the missing approved prompt asset and output contract resolve OQ-007 and pass manifest validation.
+- `REQ-PROMPT-003`: **SATISFIED by `DEC-055`/dev/86** — `agent.generated-content-evaluator` uses the approved authored asset and report-only output contract, passes manifest validation, and cannot mutate or self-certify.
 - `REQ-PROMPT-EDIT-001`: Prompt Save changes only an authorized account-private draft owned by an `AccountImportedAgent` created through explicit Import, using contained asset IDs and optimistic concurrency. Built-in/global/project-template/attachment sources are read-only. Release creates a new immutable exact imported-definition artifact and never mutates source bytes, publishes, updates a project template, or retargets an attachment implicitly; future fork/export packaging and re-import are out of scope.
-- `REQ-PROMPT-QUALITY-001`: Static and approved model-based quality evidence pins exact draft/suite/evaluator/provider-profile/fixture/policy revisions, becomes stale after any input change, cannot self-approve or auto-activate/release/publish, and shows an unavailable state rather than substituting the OQ-007 package.
+- `REQ-PROMPT-QUALITY-001`: Static and approved model-based quality evidence pins exact draft/suite/evaluator/provider-profile/fixture/policy revisions, becomes stale after any input change, and cannot self-approve or auto-activate/release/publish. Governance work must use the DEC-055 evaluator contract explicitly and never substitute an arbitrary package.
 - `REQ-PROMPT-AUDIT-001`: Prompt Audit runs versioned static security/compliance/provenance rules pinned to exact draft/ruleset/policy revisions, exposes typed findings and authorized remediation, and blocks Release for required unresolved findings. Its separate mandatory governance-event history is append-only, ordered, integrity-checked, separately authorized from transcripts, redacted/retention-aware, and audits narrow rate-limited reveal/export itself.
 - `REQ-CAP-001`: Every agent manifest declares semantic capabilities that describe behavior independently of agent IDs, roles, tools, prompt filenames, and framework/provider implementation.
 - `REQ-CAP-002`: Capability resolution filters active-project templates by contract/target/provider/tools/trust/source and persists selected project-template plus exact execution pins.
@@ -970,9 +969,9 @@ Every commit updates its modular Build Log entry. Avoid mixing provider, UI, per
 - [ ] Tools and mutations are authorized, schema-validated, sandboxed where needed, and review-gated.
 - [ ] Imported packages pass bounded staging/extraction tests and cannot escape, expand without limits, create link/special-file entries, or leave visible partial artifacts.
 - [ ] All agent/tool rich content passes one tested safe renderer; hostile HTML, URL, and Markdown fixtures cannot execute browser content.
-- [ ] Provider and LangChain adapters pass shared contract and failure-injection suites.
+- [ ] Provider and direct runtime-port adapters pass shared contract and failure-injection suites; LangChain remains retired unless `DEC-021` background execution reopens the seam.
 - [ ] The three first-release workflows pass end to end.
-- [ ] The thirteen enabled prompt-backed packages resolve only contained, digest-verified assets and pass manifest/contract/parity tests; the evaluator remains absent and blocked until OQ-007 is resolved, after which the same gates apply to the fourteenth package.
+- [x] The fourteen prompt-backed packages resolve only contained, digest-verified assets and pass manifest/contract tests; the evaluator ships under `DEC-055`. Raw-caller parity/cutover remains tracked separately under `REQ-PROMPT-002`.
 - [ ] Project uninstall, attachment detach, private import deletion, unpublish, quarantine/revocation, and garbage collection remain separate, authorized lifecycle operations.
 - [ ] First-slice server flags, kill switches, quotas, privacy-safe telemetry, lease recovery, and read-only rollback are verified before execution is enabled.
 - [ ] All enabled agents declare semantic capabilities, and capability resolution/validation tests prove prompt assets are implementation details rather than capability identities.

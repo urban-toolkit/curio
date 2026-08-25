@@ -2,6 +2,8 @@
 
 > **Amendment (2026-07-21, `DEC-041` — `18-node-explainer-tab-retention-memo.md`).** This brief is the preserved original planning record. Its requirements to remove the built-in node Explanation tab and make Node Explainer chat the sole explanation path (formerly `DEC-033`) are **superseded and must not be implemented**: the Explanation tab is retained permanently, and the Node Explainer agent chat coexists as an additional surface. Read every removal statement below through that supersession.
 
+> **Current implementation amendment (2026-08-24).** This brief remains historical input, not the current backlog. `DEC-048` retired the proposed LangChain-first implementation in favor of the shipped direct provider/delegation ports (reopen only with `DEC-021` background execution); `DEC-055` and `DEC-057`/`DEC-058` close OQ-007/OQ-008; all three composites and the 21-agent roster ship through dev/97. Use `00-development-phase-index.md` and dev/100 for current status.
+
 Given the current concepts documented in /Users/karla/coding/curio-feat/plans/urbanagentic/hookable-agents/, use the existing artifacts as the source of truth for the next planning and implementation steps.
 Create a comprehensive, friendly, modular development planning for the Agents Catalog based on the design concepts, planning materials, and existing documentation located at:
 
@@ -32,7 +34,7 @@ The spec must clearly separate the following responsibilities.
 
 ### 1. Agent Creation
 
-Agents should be created using LangChain for the current implementation phase.
+The original brief requested LangChain for the initial implementation phase. `DEC-048` superseded that implementation choice: the shipped runtime uses direct provider/delegation ports, with a framework revisit only when `DEC-021` background execution requires it.
 
 Update all relevant design concepts and technical plans to reflect:
 
@@ -66,7 +68,7 @@ The AGENTS palette is populated only from `ProjectAgentTemplate` records for the
 
 An attachment has no version/release/publish lifecycle. Each execution instead pins the resolved source definition digest, project-template settings revision, attachment concurrency revision, prompt digest, provider-profile revision, and effective-policy snapshot for reproducibility. Updating an imported definition, publication, or project template never silently mutates an existing attachment.
 
-Remove the built-in node Explanation tab, state/cache, and direct prompt/provider caller. Node explanation requires explicit Node Explainer project installation, attachment, and unified chat; no hidden fallback path remains after migration parity passes.
+~~Remove the built-in node Explanation tab, state/cache, and direct prompt/provider caller.~~ **Superseded by `DEC-041`:** retain that surface unchanged. Node Explainer project installation/attachment/unified chat is an additional independent path with no implicit fallback or double execution.
 
 Every project installation materializes an independent revisioned per-agent settings profile. Deployment ceilings, account safety/privacy policy, the selected project-template profile, attached-instance downward-only overrides, and an atomic reservation resolve to one effective policy snapshot. Settings remain separate from immutable manifests and private runtime/history state.
 
@@ -94,7 +96,7 @@ Policy values are typed and independently revisioned rather than stored in one g
 
 Prompt Save must create a private draft revision only for an owned `AccountImportedAgent` created through explicit Import and must never mutate a published artifact, project template, or attachment. Built-in/global/project-template/attachment sources remain read-only; any future fork/export must be packaged and explicitly re-imported and is out of scope. Prompt bodies stay out of generic catalog DTOs, transcripts, logs, telemetry, URLs, persistent browser storage, and shared/global caches. Static/security validation and reproducible prompt-quality evidence are pinned to the exact draft digest, suite, fixtures, evaluator/provider revision, and policy snapshot. Release creates a new private imported definition artifact; subsequent project Install/update and Publish are separate explicit actions, and existing templates/attachments remain unchanged.
 
-Prompt quality is a platform governance workflow, not an implicit use of `agent.generated-content-evaluator`. `OQ-007` continues to block that agent until its authoritative prompt and contract exist. A candidate prompt cannot evaluate or approve itself; model-based judgment is advisory, isolated, typed, budgeted, egress-authorized, and unable to activate or publish. Prompt Audit runs versioned security, privacy, compliance, and provenance rules against an exact draft digest, records typed findings and remediation state, and also exposes a separate append-only governance event history. Neither facet is an execution transcript. Full-content reveal/export requires narrower authorization and is itself audited. Final prompt/audit/evaluation retention remains governed by `OQ-008`.
+Prompt quality is a platform governance workflow, not an implicit use of `agent.generated-content-evaluator`. `DEC-055` closed OQ-007 by shipping that agent as an authored advisory report-only evaluator; it still cannot evaluate/approve itself or silently become the platform release judge. Model-based judgment is isolated, typed, budgeted, egress-authorized, and unable to activate or publish. Prompt Audit runs versioned security, privacy, compliance, and provenance rules against an exact draft digest, records typed findings and remediation state, and also exposes a separate append-only governance event history. Neither facet is an execution transcript. Full-content reveal/export requires narrower authorization and is itself audited. `DEC-057`/`DEC-058` now govern retention/deletion rather than open OQ-008.
 
 ## KGGraph Documentation and Traceability Requirements
 
@@ -213,7 +215,7 @@ Document:
 - Clear `Global Catalog`, `My Imports`, and `Installed in this project` states and separate `Import package`, `Install in project`, eligible imported-definition `Publish`, and `Attach` commands
 - Project-only palette replacement and scope announcements on project switch
 - Absence of Version/Release/Publish actions on attached instances and absence of Publish on project templates/global items
-- Removal of the node Explanation tab and a standard Node Explainer install/attach/chat discoverability path
+- ~~Removal of the node Explanation tab~~ **Cancelled by `DEC-041`**; retain the tab and add the standard Node Explainer install/attach/chat discoverability path
 - Labeled settings cog placement at account, agent, and attachment scopes without adding controls to draggable palette rows
 - Six directly addressable, non-nested modal screens that show scope, effective value, inherited source, immutable ceiling, revision, authorization, dirty/conflict state, and recovery action
 - Prompt-content privacy, unsaved-change protection, evaluation progress/cancellation, read-only audit navigation, and focus restoration to the exact cog opener
@@ -273,7 +275,7 @@ Define required:
 - Cost/quota/resource tests for atomic reservations, concurrent overspend prevention, estimate/settlement, unknown price, retry/child/evaluation charging, resource exhaustion, stable `429`/recovery responses, and no remote fallback
 - Prompt-governance tests for memory-only editor state, private draft concurrency, contained assets, immutable release, exact-digest evaluation, isolated advisory judges, stale evidence, versioned audit rules and exact-digest findings/remediation gates, append-only/tamper-evident governance events, authorized reveal/export, and OQ-007 fail-closed behavior
 - Component and accessibility tests for each cog and dedicated screen, scope/effective/inherited values, dirty-close confirmation, focus trap/return, keyboard editor fallback, error focus, live evaluation status, responsive full-screen behavior, and non-color state communication
-- Node UI/migration tests proving the Explanation tab/menu/state/cache/direct request is absent, Node Explainer chat uses one execution, and its discoverability route follows normal explicit project install/attach behavior
+- Node UI/migration tests proving the Explanation tab/menu/state/cache/direct request remains present (`DEC-041`), Node Explainer chat uses one execution, and its discoverability route follows normal explicit project install/attach behavior
 - Migration and backward-compatibility tests
 - Traceability checks linking requirements and design decisions to implementation and test coverage
 
@@ -306,7 +308,7 @@ Provide specific, verifiable, implementation-ready acceptance criteria covering:
 - What behavior must no longer occur
 - How definition artifacts, account imports, publications, project templates/defaults, unversioned private attachments, and executions remain distinct and consistent
 - How exact definition coordinates and execution pins preserve reproducibility without giving attachments SemVer/release/publication identity
-- How the Explanation tab/direct caller is removed and Node Explainer unified chat becomes the sole path
+- How the Explanation tab/direct caller is retained under `DEC-041` and Node Explainer unified chat coexists as an additional path
 - How LangChain agents are created from validated manifests
 - How providers can be added or changed without rewriting agent-domain or UI logic
 - How failures are surfaced and recovered from
@@ -354,7 +356,7 @@ Before considering the plan complete, verify that it ensures:
 - Every explicit project installation has an isolated reviewed default profile; no account-wide installed palette/pointer remains.
 - Only owned validated account imports are user-publishable, and Import/Install/Publish never auto-chain.
 - Attachments are project-private derivations with concurrency revision only and no SemVer/Release/Publish action.
-- Node Explainer chat is the only node-explanation workflow; no Explanation tab/direct LLM path remains.
+- Node Explainer chat and the retained Explanation tab/direct path are independent coexisting workflows (`DEC-041`); neither double-runs the other.
 - Prompt content remains private and memory-only on the client; Save creates a private draft, and Release creates a new immutable artifact.
 - Prompt quality cannot self-approve or silently use the unresolved generated-content evaluator; Prompt Audit records exact-digest compliance/security findings and append-only governance history, both separately authorized from transcripts.
 - Six dedicated modal screens are owned by `agents/`, authorization-aware, conflict-safe, and WCAG 2.2 AA accessible.
