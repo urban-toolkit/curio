@@ -25,15 +25,8 @@ services:
       - 0.0.0.0
       - --backend-port
       - "5002"
-      - --sandbox-host
-      - 0.0.0.0
-      - --sandbox-port
-      - "2000"
-      - --backend-host
-      - 0.0.0.0
-      - --backend-port
-      - "5002"
-      - --sandbox-host
-      - 0.0.0.0
+      # No --sandbox-host: the sandbox keeps its 127.0.0.1 default. It runs
+      # arbitrary user code and the backend reaches it over loopback in this
+      # same container.
       - --sandbox-port
       - "2000"

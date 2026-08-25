@@ -61,7 +61,7 @@ The system is designed around three principles:
                        │ HTTP (REST)
 ┌──────────────────────▼──────────────────────────────┐
 │  Sandbox (Flask / Python)                            │
-│  Executes user code in isolation                    │
+│  Executes user code in a separate process           │
 │  Port: 2000                                         │
 └─────────────────────────────────────────────────────┘
 ```
@@ -401,11 +401,90 @@ Data loading, saving, and type detection logic lives in `utk_curio/sandbox/util/
 
 ### Sandbox Isolation
 
-The sandbox runs as a completely separate Flask process. It:
+The sandbox runs as a separate Flask process. It:
 
-- Is not directly reachable from the browser (only the backend calls it).
-- Has its own Python environment for package installation (`POST /install`).
+- Binds `127.0.0.1` by default and is not published by the Docker image, so
+  only the backend on the same host can reach it.
+- Requires a shared secret on every route that can run code or read artifacts
+  (`/exec`, `/execJs`, `/get`, `/install`). The secret is minted per launch by
+  `main.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
+  the backend in `_sandbox_call`, and checked in `sandbox/app/auth.py`. An
+  instance started with `--auth` or `--deploy` refuses to boot without one.
+- Sends no CORS headers, because no browser calls it directly.
 - Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
+
+> [!WARNING]
+> **By default this is a network boundary, not an execution boundary.** Unless
+> `--isolation=fork` is passed, node code runs with `exec()` inside the sandbox
+> process itself (`worker.py::execute_code`), with unrestricted builtins, as the
+> same OS user, with no memory cap and no timeout. Anyone who can author or edit
+> a node can read and write everything that process can, including
+> `instance/urban_workflow.db`. Treat node-authoring rights as equivalent to
+> shell access on the host, and do not offer them to untrusted users.
+
+### Isolated node execution (opt-in, Linux only)
+
+`--isolation=fork` runs each node's Python in a short-lived child process
+instead of in-process. `utk_curio/sandbox/isolation/`:
+
+| Module | Role |
+|---|---|
+| `mode.py` | Resolves whether isolation is active, and whether a missing capability is fatal |
+| `protocol.py` | The JSON manifest crossing the boundary, and the validation applied to anything a child returns |
+| `zygote.py` | A warm, single-threaded process that forks one child per execution |
+| `child.py` | The confinement steps and the node run itself |
+| `supervisor.py` | Parent side: scratch directories, the wall-clock deadline, process-group kill |
+| `runner.py` | One execution end to end |
+| `lifecycle.py` | Starting and replacing the zygote |
+| `util/staging.py` | Artifacts in and out of a child's scratch directory |
+| `hardening.py` | Filesystem permissions, and the startup audit that verifies them |
+
+Three design points worth knowing:
+
+- **The parent keeps every privilege the child must not have.** It owns the
+  DuckDB connection, resolves artifacts, and enforces session scoping. The child
+  sees only a scratch directory of staged files. Frames are already stored as
+  parquet files, so staging an input is a hardlink and persisting an output is a
+  rename: the parent never parses bytes a child produced.
+- **No pickle in either direction.** A child's manifest carries a kind tag,
+  JSON scalars, and flat filenames only. Unpickling a hostile child's output in
+  the privileged parent would hand back most of what isolation removed.
+- **Node code loses direct store access.** The in-process path seeds
+  `load_from_duckdb` / `save_to_duckdb` / `save_dataset_parquet` into user
+  scope; under isolation those names raise instead. Nodes exchange data through
+  inputs and return values.
+
+**Syscall confinement is not enough on its own.** seccomp does not stop
+`open()`, and reading files is what a data node legitimately does, so a
+world-readable `instance/urban_workflow.db` is readable by node code with no
+escape required. `hardening.py` tightens those paths to owner-only at startup
+and then audits them; a hosted instance that is still exposed refuses to serve
+rather than pretend. This is also why `--exec-user` matters: without an
+unprivileged execution account the child shares the sandbox's own filesystem
+access, and only the resource limits and syscall filter apply.
+
+Network denial uses a seccomp **denylist** (`socket`, `connect`, `ptrace`,
+`mount`, and friends), not an allowlist. An allowlist for arbitrary Python with
+arbitrary C extensions would break constantly and get widened until it meant
+nothing. The denylist promises less and is honest about it. `unshare(CLONE_NEWNET)`
+would be stronger but needs `CAP_SYS_ADMIN`, which Docker does not grant by
+default.
+
+> [!IMPORTANT]
+> **Implementation status.** `mode.py`, `protocol.py`, the child's execution
+> logic, and `util/staging.py` are covered by tests that run on every platform
+> today. The confinement itself (`child.confine`), the zygote's fork loop, and
+> the supervisor's socket and kill paths have **not been executed anywhere yet**
+> and are exercised only by `tests/test_isolation_linux.py`, which skips off
+> Linux. This is why `--isolation` defaults to `auto`, and why `auto` currently
+> resolves to `off`: nothing changes for an existing deployment until an
+> operator opts in. Do not rely on the boundary until that suite has passed in
+> CI.
+
+`POST /install` (`pip install` into the sandbox's interpreter) is off unless
+`--allow-runtime-install` is passed. It defaults on for a local single-user
+launch and off once `--auth` / `--deploy` is in play. Nothing in Curio calls
+it; library installs go through the backend's `packages/pip_runner.py`.
 
 ### Portable dataset paths
 

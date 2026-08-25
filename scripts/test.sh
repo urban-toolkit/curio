@@ -9,6 +9,9 @@
 #
 # Options:
 #   --use-existing      Skip start/stop and clean; use already-running Curio servers
+#                       (export CURIO_SANDBOX_TOKEN to the value that
+#                        stack was started with, or the two e2e tests
+#                        calling the sandbox directly will get 401s)
 #   --headed            Open a visible browser window during E2E tests
 #   --workflows A,B     Run only the named workflow files (e.g. Vega.json,Regression.json)
 #   --backend-only      Run only backend unit tests
@@ -196,6 +199,13 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # process group so cleanup() can signal the whole server tree by negative pid
   # on POSIX. Without it the job shares this script's group and a group-kill
   # would take the script down with it.
+  # Pin the sandbox shared secret. The sandbox requires it on /exec,
+  # /execJs, /get and /install (utk_curio/sandbox/app/auth.py), and
+  # 'curio.py start' would otherwise mint a random one into the server's
+  # environment only, which this script and the pytest process could not
+  # then read. Two e2e tests call the sandbox directly. main.py honours a
+  # pre-set value.
+  export CURIO_SANDBOX_TOKEN="${CURIO_SANDBOX_TOKEN:-$(python -c 'import secrets; print(secrets.token_urlsafe(32))')}"
   set -m
   CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_LAUNCH_CWD="$REPO_ROOT" \
     python "$REPO_ROOT/curio.py" start --with-examples &
@@ -227,8 +237,15 @@ fi
 if [[ $RUN_SANDBOX -eq 1 ]]; then
   echo ""
   echo "==> Running sandbox unit tests..."
-  PYTHONPATH="$REPO_ROOT" python -m unittest discover \
-    -s "$REPO_ROOT/utk_curio/sandbox/tests" -t "$REPO_ROOT" -p "test_*.py" -v
+  # pytest, not `unittest discover`. Discover only collects
+  # unittest.TestCase subclasses, so every pytest-style test in this
+  # directory (module-level `def test_*` using fixtures) was silently not
+  # running: 211 tests collected against 271 under pytest. That quietly
+  # excluded the whole test_isolation_linux.py suite, which exists
+  # precisely to be run here on Linux, plus test_isolation_staging.py and
+  # test_json_artifact_writer.py. pytest runs TestCase classes too, so
+  # nothing is lost by switching.
+  PYTHONPATH="$REPO_ROOT" python -m pytest "$REPO_ROOT/utk_curio/sandbox/tests" -v
   record "Sandbox unit tests" $?
 fi
 
@@ -256,6 +273,10 @@ if [[ $RUN_E2E -eq 1 ]]; then
   [[ -n "$ALLURE_DIR" ]] && PYTEST_ARGS="$PYTEST_ARGS --alluredir=$ALLURE_DIR"
 
   E2E_ENV="PYTHONUNBUFFERED=1 CURIO_E2E_USE_EXISTING=1 PYTHONPATH=$REPO_ROOT"
+  # Pass the isolation opt-in through to the e2e stack (see the
+  # CURIO_E2E_ISOLATION hook in tests/test_frontend/fixtures.py).
+  [[ -n "${CURIO_E2E_ISOLATION:-}" ]] && E2E_ENV="$E2E_ENV CURIO_E2E_ISOLATION=$CURIO_E2E_ISOLATION"
+  [[ -n "${CURIO_E2E_EXEC_USER:-}" ]] && E2E_ENV="$E2E_ENV CURIO_E2E_EXEC_USER=$CURIO_E2E_EXEC_USER"
   [[ -n "$E2E_WORKFLOWS" ]] && E2E_ENV="$E2E_ENV CURIO_E2E_WORKFLOWS=$E2E_WORKFLOWS"
 
   echo ""

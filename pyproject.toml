@@ -28,6 +28,8 @@ dependencies = [
   "altair>=6.1.0",
   "tqdm>=4.67.3",
   "pygments>=2.20.0",
+  "psutil>=5.9",
+  "pyseccomp>=0.1.2; sys_platform == 'linux'",
   "pytest==9.0.3",
   "pytest-cov==7.1.0",
   "pytest-playwright==0.7.2",

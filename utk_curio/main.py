@@ -7,6 +7,7 @@ import time
 import threading
 import queue
 import argparse
+import secrets
 import signal
 import platform
 import logging
@@ -95,12 +96,21 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, allow_runtime_install=None, isolation=None, exec_user=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
     os.environ["FLASK_SANDBOX_HOST"] = sandbox_host
     os.environ["FLASK_SANDBOX_PORT"] = str(sandbox_port)
+    # Shared secret proving to the sandbox that a caller is this backend. The
+    # sandbox runs arbitrary user code, so its /exec, /execJs, /get and
+    # /install routes require it (utk_curio/sandbox/app/auth.py). Minted per
+    # launch and inherited by both children; a hosted instance refuses to boot
+    # without one. Respect a pre-set value so an operator running the two
+    # processes separately can pair them by hand.
+    os.environ["CURIO_SANDBOX_TOKEN"] = (
+        os.environ.get("CURIO_SANDBOX_TOKEN") or secrets.token_urlsafe(32)
+    )
     os.environ["CURIO_SEED_EXAMPLES"] = "1" if (with_examples or deploy) else "0"
     os.environ["CURIO_RESEED_PACKAGES"] = "1" if reseed else "0"
     os.environ["CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"] = "1" if allow_publish else "0"
@@ -126,6 +136,37 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         )
         os.environ["CURIO_NO_PROJECT"] = "1" if no_project else "0"
 
+    # Follows the --allow-publish precedent: permissive for a local single-user
+    # install, locked down once the instance is multi-user. On a local launch
+    # the endpoint grants nothing the user's own shell does not already have;
+    # on a shared one it is an unrecorded 'pip install' into the interpreter
+    # that executes node code. An explicit flag wins over both defaults.
+    hosted = os.environ["CURIO_NO_AUTH"] == "0"
+    if allow_runtime_install is None:
+        allow_runtime_install = not hosted
+    os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] = "1" if allow_runtime_install else "0"
+
+    # Node-execution isolation (utk_curio/sandbox/isolation/). Opt-in: 'auto'
+    # resolves to off, so nothing changes for an existing deployment until an
+    # operator asks for it with --isolation=fork.
+    os.environ["CURIO_ISOLATION"] = isolation or "auto"
+    if exec_user:
+        os.environ["CURIO_EXEC_USER"] = str(exec_user)
+    if exec_memory_mb:
+        os.environ["CURIO_EXEC_MEMORY_MB"] = str(exec_memory_mb)
+    if exec_parallelism:
+        os.environ["CURIO_EXEC_PARALLELISM"] = str(exec_parallelism)
+    if exec_timeout:
+        # Must stay under the backend's SANDBOX_EXEC_TIMEOUT (600s), or the
+        # browser gives up before the sandbox can report the real reason.
+        if int(exec_timeout) >= 600:
+            log_warning(
+                f"--exec-timeout {exec_timeout}s is at or above the backend's "
+                "600s sandbox deadline. A node hitting it will surface as a "
+                "generic gateway timeout instead of a clear per-node message."
+            )
+        os.environ["CURIO_EXEC_TIMEOUT"] = str(exec_timeout)
+
     os.environ["ENABLE_COLLAB"] = "1" if collab else "0"
 
     log_always(f"Environment Variables Set:")
@@ -141,6 +182,10 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_RESEED_PACKAGES={os.environ['CURIO_RESEED_PACKAGES']}")
     log_always(f"CURIO_ALLOW_FACTORY_CATALOG_PUBLISH={os.environ['CURIO_ALLOW_FACTORY_CATALOG_PUBLISH']}")
     log_always(f"CURIO_DEFAULT_SAVE_NODE_OUTPUT={os.environ['CURIO_DEFAULT_SAVE_NODE_OUTPUT']}")
+    log_always(f"CURIO_ALLOW_RUNTIME_INSTALL={os.environ['CURIO_ALLOW_RUNTIME_INSTALL']}")
+    log_always(f"CURIO_ISOLATION={os.environ['CURIO_ISOLATION']}")
+    # The token itself is deliberately not logged.
+    log_always("CURIO_SANDBOX_TOKEN=<set>")
     if catalog_root:
         log_always(f"CURIO_CATALOG_ROOT={os.environ['CURIO_CATALOG_ROOT']}")
     log_always(f"ENABLE_COLLAB={os.environ['ENABLE_COLLAB']}")
@@ -995,6 +1040,59 @@ def main():
         ),
     )
     parser.add_argument(
+        "--allow-runtime-install", action=argparse.BooleanOptionalAction, default=None,
+        help=(
+            "Allow the sandbox's POST /install endpoint (sets "
+            "CURIO_ALLOW_RUNTIME_INSTALL=1). Defaults to on for a local "
+            "single-user launch and off once user auth is enabled (--auth / "
+            "--deploy), where it would be a second, unrecorded path to "
+            "'pip install' inside the interpreter that executes node code. "
+            "Pass either form to override the default explicitly."
+        ),
+    )
+    parser.add_argument(
+        "--isolation", choices=["auto", "fork", "off"], default=None,
+        help=(
+            "Run each node's Python in an isolated child process instead of "
+            "in-process (sets CURIO_ISOLATION). 'fork' opts in; 'off' forces "
+            "the in-process path; 'auto' (the default) currently resolves to "
+            "off. Requires Linux. On a hosted instance (--auth / --deploy) "
+            "'fork' is fail-closed: the sandbox refuses to start rather than "
+            "run unisolated."
+        ),
+    )
+    parser.add_argument(
+        "--exec-user", default=None,
+        help=(
+            "Unprivileged OS user to run isolated node code as (sets "
+            "CURIO_EXEC_USER). Only takes effect when the sandbox runs as "
+            "root, i.e. inside the Docker image."
+        ),
+    )
+    parser.add_argument(
+        "--exec-memory-mb", type=int, default=None,
+        help=(
+            "Memory ceiling per isolated node, in MB (sets "
+            "CURIO_EXEC_MEMORY_MB, default 4096). Note the real host ceiling "
+            "is this times --exec-parallelism."
+        ),
+    )
+    parser.add_argument(
+        "--exec-timeout", type=int, default=None,
+        help=(
+            "Wall-clock and CPU allowance per isolated node, in seconds (sets "
+            "CURIO_EXEC_TIMEOUT, default 300). Keep it below the backend's "
+            "600s deadline so a slow node reports a clear message."
+        ),
+    )
+    parser.add_argument(
+        "--exec-parallelism", type=int, default=None,
+        help=(
+            "How many isolated nodes may run at once (sets "
+            "CURIO_EXEC_PARALLELISM, default 2)."
+        ),
+    )
+    parser.add_argument(
         "--save-node-outputs", action=argparse.BooleanOptionalAction, default=False,
         help=(
             "Persist every node run's output as a Computed dataset in the "
@@ -1053,6 +1151,12 @@ def main():
         collab=args.collab,
         save_node_outputs=args.save_node_outputs,
         catalog_root=args.catalog_root,
+        allow_runtime_install=args.allow_runtime_install,
+        isolation=args.isolation,
+        exec_user=args.exec_user,
+        exec_memory_mb=args.exec_memory_mb,
+        exec_timeout=args.exec_timeout,
+        exec_parallelism=args.exec_parallelism,
     )
 
     # if os.getenv("CURIO_DEV") != "1":

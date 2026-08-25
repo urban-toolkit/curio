@@ -60,10 +60,16 @@ curio setup                  # install deps and exit
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
 | `--with-examples` | off | Seed the example projects from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
+| `--isolation auto\|fork\|off` | `auto` (resolves to off) | Run each node's Python in an isolated child process. Linux only. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only) |
+| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` / `--exec-user` | 4096 / 300 / 2 / none | Limits for isolated execution. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
+| `--allow-runtime-install` / `--no-allow-runtime-install` | on locally, off with `--auth` / `--deploy` | Whether the sandbox's `POST /install` endpoint accepts `pip install` requests |
 
 **Hosts, ports, and diagnostics**
 
 `--backend-host` / `--backend-port` (127.0.0.1:5002), `--sandbox-host` / `--sandbox-port` (127.0.0.1:2000), `--frontend-host` / `--frontend-port` (localhost:8080), and `--verbose N` (0=silent, 1=normal, 2=debug).
+
+> [!WARNING]
+> Leave `--sandbox-host` at `127.0.0.1` unless you are genuinely running the backend on another machine. The sandbox executes arbitrary node code and, while it now requires a shared secret, there is no reason to offer that surface to the network.
 
 > [!NOTE]
 > `--force-rebuild` and `--force-db-init` exist only in dev mode, which `curio.py` sets and the pip entry point does not. From a pip install or inside Docker they are rejected as unknown arguments; rebuild by other means there.

@@ -27,6 +27,18 @@ flask-socketio==5.6.0
 python-socketio==5.16.2
 python-engineio==4.13.2
 
+# Process supervision and node-execution isolation
+# ------------------------------------------------------------------------------
+# psutil was already imported by utk_curio/sandbox/server.py (descendant
+# cleanup and the parent watchdog) but declared nowhere, so both quietly
+# no-opped wherever it happened to be absent.
+psutil>=5.9
+# Syscall filtering for isolated node execution. Linux-only by nature: it
+# binds libseccomp, which has no Windows or macOS equivalent. The marker
+# keeps `pip install -r` working on a developer's Windows machine, where
+# isolation is unavailable anyway (see utk_curio/sandbox/isolation/mode.py).
+pyseccomp>=0.1.2; sys_platform == "linux"
+
 # Testing
 # ------------------------------------------------------------------------------
 pytest==9.0.3

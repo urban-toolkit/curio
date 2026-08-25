@@ -102,6 +102,13 @@ jobs:
       CURIO_E2E_FRONTEND_PORT: "8100"
       FLASK_SANDBOX_HOST: localhost
       FLASK_SANDBOX_PORT: "2020"
+      # The sandbox requires a shared secret on its code-execution routes
+      # (utk_curio/sandbox/app/auth.py). Host-side Playwright calls it
+      # directly, so container and pytest must agree on the value. A literal
+      # is fine here and not a credential: docker-compose.ci.yml publishes the
+      # sandbox on the runner's loopback only, and the stack is torn down with
+      # the job. Every other launch mints a random token per start.
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
 
     steps:
       # On the persistent self-hosted runner, the previous run's container
@@ -116,6 +123,21 @@ jobs:
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
+
+      # The sandbox executes arbitrary node code. Production must never
+      # publish its port; only the CI overlay does, and only on loopback.
+      # Guards the configuration the live instances actually run.
+      - name: 🔒 Assert the sandbox port is not published in production
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=$(docker compose -f docker-compose.yml -f docker-compose.deploy.yml config)
+          if echo "$config" | grep -qE 'published: "?2000"?'; then
+            echo "::error::docker-compose.deploy.yml publishes sandbox port 2000" >&2
+            echo "$config" | grep -B 2 -A 2 'published' >&2
+            exit 1
+          fi
+          echo "OK: the deploy configuration does not publish the sandbox port."
 
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio-ci build --parallel

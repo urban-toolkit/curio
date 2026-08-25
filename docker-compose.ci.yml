@@ -23,11 +23,38 @@
 #    backend/sandbox/frontend children curio.py spawns. `exec` keeps python as
 #    PID 1 so `docker compose down` still signals it directly.
 #
+# 3. The sandbox is reachable from the host. The image default keeps the
+#    sandbox on 127.0.0.1 inside the container and publishes no port for it,
+#    because it executes arbitrary user code and only the backend needs to
+#    reach it. CI is the one context that genuinely needs more: Playwright
+#    runs on the HOST and test_alive.py / test_library_install_integration.py
+#    call the sandbox directly. So this overlay -- and only this overlay --
+#    binds it to 0.0.0.0 and publishes it to the host's loopback (never
+#    0.0.0.0, so it stays off the runner's network). CURIO_SANDBOX_TOKEN is
+#    pinned to a known value so the host-side pytest can authenticate; the
+#    workflow exports the same value into the pytest environment.
+#
 # Deliberately NOT docker-compose.deploy.yml: that overlay also passes
 # --no-allow-publish, which would disable the two catalog mutators that the
 # publish-catalog tests exercise. CI wants auth on and publish still allowed.
 services:
   curio:
+    # Blast radius caps for the isolation test suite.
+    #
+    # test_isolation_linux.py deliberately provokes resource exhaustion:
+    # runaway allocations and, if enabled, fork bombs. The self-hosted
+    # runner shares a host with the live curio and curio-dev instances,
+    # and inside the container those tests run as root, which bypasses
+    # RLIMIT_NPROC. Without a pids cap a bug in that (as yet unverified)
+    # code could exhaust the host's PID space and take production with
+    # it. These bound the container instead of trusting the code under
+    # test to bound itself.
+    pids_limit: 4096
+    mem_limit: 12g
+    environment:
+      - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+    ports:
+      - "127.0.0.1:${CURIO_PORT_2000:-2000}:2000"
     command:
       - sh
       - -c
