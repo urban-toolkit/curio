@@ -43,10 +43,46 @@ def root():
 def live():
     return 'Sandbox is live.'
 
+_resolved_isolation_label = None
+
+
+def _isolation_label():
+    """The isolation mode actually in force, as one word, cached.
+
+    The *resolved* mode, never the requested one: `auto` resolves to `off`, and
+    a `fork` that the platform cannot support degrades to `off` on a local
+    launch. Reporting `CURIO_ISOLATION` instead would tell an operator what was
+    asked for rather than what they got, which is the opposite of useful.
+
+    Cached because the badge asks on every page load and resolution probes the
+    platform's capabilities.
+    """
+    global _resolved_isolation_label
+    if _resolved_isolation_label is not None:
+        return _resolved_isolation_label
+
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+    try:
+        resolved, _reason = isolation_mode.resolve_from_environment()
+        _resolved_isolation_label = resolved
+    except isolation_mode.IsolationUnavailable:
+        # A hosted instance in this state never finishes booting (server.py
+        # raises), so reaching here means a local launch asked for something
+        # unavailable. Say so rather than implying either mode.
+        _resolved_isolation_label = 'unavailable'
+    return _resolved_isolation_label
+
+
 @app.route('/version', methods=['GET'])
 def version():
     from utk_curio import __version__
-    return jsonify({'version': __version__})
+    # Deliberately un-gated, like /live and /health: this is what the UI's
+    # version badge reads through the backend, and it discloses nothing a
+    # caller could not learn by watching whether node code can open a socket.
+    return jsonify({
+        'version': __version__,
+        'isolation': _isolation_label(),
+    })
 
 @app.route('/get', methods=['GET'])
 @require_sandbox_token

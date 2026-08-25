@@ -15,6 +15,9 @@ _sandbox_session = requests.Session()
 SANDBOX_EXEC_TIMEOUT     = 600  # /processPythonCode and /processJavaScriptCode
 SANDBOX_GET_TIMEOUT      = 300  # /get (full artifact JSON)
 SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
+# /version is a cached constant on the sandbox side, and the version badge is
+# waiting on it, so it gets a short deadline rather than a generous one.
+SANDBOX_VERSION_TIMEOUT  = 5
 
 
 SANDBOX_TOKEN_HEADER = "X-Curio-Sandbox-Token"
@@ -204,8 +207,28 @@ def live():
 
 @bp.route('/version')
 def version():
+    """Version, plus how node code is actually being executed.
+
+    The isolation mode comes from the sandbox rather than from this process's
+    own environment: the sandbox is where the requested mode is resolved
+    against what the platform can actually do, so `CURIO_ISOLATION` here would
+    report an intention, not a fact. Degrades to 'unknown' rather than failing
+    -- the version badge must still render when the sandbox is slow or down.
+    """
     from utk_curio import __version__
-    return jsonify({'version': __version__})
+
+    isolation = 'unknown'
+    try:
+        response = _sandbox_session.get(
+            api_address + ":" + str(api_port) + '/version',
+            timeout=SANDBOX_VERSION_TIMEOUT,
+        )
+        if response.status_code == 200:
+            isolation = response.json().get('isolation', 'unknown')
+    except (requests.RequestException, ValueError):
+        pass
+
+    return jsonify({'version': __version__, 'isolation': isolation})
 
 @bp.route('/file/<path:filename>', methods=['GET'])
 def serve_launch_cwd_file(filename: str):
