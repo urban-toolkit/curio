@@ -315,17 +315,56 @@ def resolve_template(
     available", which is how a corrupted install (dev/93 D1) reached a model
     as its own mistake.
     """
-    if not isinstance(node_type, str) or not node_type.strip():
-        return None, "params.nodeType must be a non-empty template id string"
+    return resolve_templates(
+        user_key, project_id, [node_type], require_authorable=require_authorable,
+    )[0]
+
+
+def resolve_templates(
+    user_key: str,
+    project_id: str,
+    node_types: list,
+    *,
+    require_authorable: bool = False,
+) -> list[tuple[dict | None, str]]:
+    """:func:`resolve_template` for many node types against ONE snapshot
+    (memo dev/99 R1.2).
+
+    Returns ``(entry | None, error_text)`` per input, positionally. The point
+    is the snapshot, not the batching: a plan mint resolves every node it
+    proposes, so resolving them one at a time re-walked the package store —
+    and once readers hold the seed lock, re-acquired it — once per node. A
+    12-node plan meant 13 walks and 13 acquisitions. Here the store is read
+    once however many types are asked about, so the cost stops scaling with
+    plan size and every node is judged against the same instant.
+    """
     try:
         report = available_templates_report(user_key, project_id)
     except Exception as exc:  # unavailable registry is data, not a run error
-        return None, f"the node template registry is unavailable: {exc}"
-    canonical = canonical_template_id(node_type)
-    entry = next((t for t in report["templates"] if t["id"] == canonical), None)
+        message = f"the node template registry is unavailable: {exc}"
+        return [(None, message) for _ in node_types]
+    by_id = {t["id"]: t for t in report["templates"]}
+    out: list[tuple[dict | None, str]] = []
+    for node_type in node_types:
+        out.append(
+            _resolve_one(node_type, by_id, report["skipped"], require_authorable)
+        )
+    return out
+
+
+def _resolve_one(
+    node_type: object,
+    by_id: dict,
+    skipped: list,
+    require_authorable: bool,
+) -> tuple[dict | None, str]:
+    """One resolution against an existing availability snapshot. No I/O."""
+    if not isinstance(node_type, str) or not node_type.strip():
+        return None, "params.nodeType must be a non-empty template id string"
+    entry = by_id.get(canonical_template_id(node_type))
     if entry is None:
-        if report["skipped"]:
-            unreadable = ", ".join(sorted(report["skipped"]))
+        if skipped:
+            unreadable = ", ".join(sorted(skipped))
             return None, (
                 f"nodeType {node_type!r} is not available AND this project's "
                 f"package store is degraded — {unreadable} could not be read, so "

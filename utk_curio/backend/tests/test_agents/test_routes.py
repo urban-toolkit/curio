@@ -4030,6 +4030,87 @@ class TestRosterGrantCoverage:
         assert "Available node templates" not in calls[0][0]["content"]
 
 
+class TestSnapshotCostAndCoherence:
+    """dev/99 R1.1/R1.2 through the real agent paths: one snapshot per run,
+    and a cost that does not grow with plan size."""
+
+    def _walks_for_plan_of(self, size, client, user_and_token, tmp_curio,
+                           alice_project, monkeypatch):
+        from utk_curio.backend.app.packages import services as packages_services
+
+        helper = TestDataflowPlanMint()
+        user, token = user_and_token
+        nodes = [
+            {"ref": f"n{i}", "nodeType": "curio.builtin/computation-analysis",
+             "title": f"Step {i}", "intent": "work"}
+            for i in range(size)
+        ]
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["plan.\n" + helper._plan_tail(nodes=nodes, edges=[])],
+        )
+        walks = {"n": 0}
+        real = packages_services._store_index
+        monkeypatch.setattr(
+            packages_services, "_store_index",
+            lambda uk: (walks.__setitem__("n", walks["n"] + 1), real(uk))[1],
+        )
+        body = helper._run(client, token, alice_project, att_id).get_json()
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert len(proposal["plan"]["nodes"]) == size
+        return walks["n"]
+
+    def test_plan_mint_cost_does_not_grow_with_plan_size(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """The R1.2 invariant, stated as the thing that actually matters: a
+        run takes a small CONSTANT number of store snapshots (the roster, the
+        fan-in view, the batch resolution) and resolving twelve nodes costs no
+        more than resolving two. Before batching, each node re-walked the
+        store — and once readers hold the seed lock, re-acquired it."""
+        small = self._walks_for_plan_of(
+            2, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+        )
+        large = self._walks_for_plan_of(
+            12, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+        )
+        assert small == large, (
+            f"cost scaled with plan size: {small} walks for 2 nodes, {large} for 12"
+        )
+
+    def test_roster_halves_come_from_one_snapshot(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """Both roster sections must describe the same instant: fetched
+        separately, a package could appear in one half and be missing from the
+        other."""
+        from utk_curio.backend.app.packages import services as packages_services
+
+        user, token = user_and_token
+        ladder = TestReuseLadder()
+        att_id, calls = ladder._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=["ok"],
+        )
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        ladder._write_store_package(
+            _user_dir_key(user), "curio.notes@1", "curio.notes", "note-surface", "Note",
+        )
+
+        landscapes = {"n": 0}
+        real = packages_services.template_landscape
+        monkeypatch.setattr(
+            packages_services, "template_landscape",
+            lambda uk, pid: (landscapes.__setitem__("n", landscapes["n"] + 1), real(uk, pid))[1],
+        )
+        ladder._run(client, token, alice_project, att_id)
+        system = calls[0][0]["content"]
+
+        assert "Available node templates" in system
+        assert "Installed but NOT enlisted in this project" in system
+        assert landscapes["n"] == 1, "both roster halves must share ONE snapshot"
+
+
 class TestPlanTemplateSpellings:
     """dev/93 D3 — the reported loop, and the regression that had never been
     written: no test had ever fed a VERSIONED nodeType into a dataflowPlan.

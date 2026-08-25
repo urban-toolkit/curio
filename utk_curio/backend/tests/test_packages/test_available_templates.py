@@ -578,3 +578,82 @@ class TestTemplateLandscape:
         landscape = packages_services.template_landscape(key, alice_project)
         assert landscape["skipped"] == []
         assert {t["id"] for t in landscape["available"]} == {"curio.builtin/data-loading"}
+
+
+class TestBatchResolution:
+    """dev/99 R1.2 — a plan mint resolves every node it proposes, so resolving
+    one at a time re-walked the store (and, once readers hold the seed lock,
+    re-acquired it) once per node."""
+
+    def _project(self, user_and_token, alice_project):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.builtin", 1, [
+            _template("data-loading", "Load"),
+            _template("data-pool", "Pool", editor="none", has_code=False),
+        ])
+        return key, alice_project
+
+    def test_cost_does_not_scale_with_the_number_of_types(
+        self, user_and_token, alice_project, tmp_curio, monkeypatch
+    ):
+        key, pid = self._project(user_and_token, alice_project)
+        walks = {"n": 0}
+        real = packages_services._store_index
+        monkeypatch.setattr(
+            packages_services, "_store_index",
+            lambda uk: (walks.__setitem__("n", walks["n"] + 1), real(uk))[1],
+        )
+
+        node_types = ["curio.builtin/data-loading"] * 12
+        outcomes = packages_services.resolve_templates(key, pid, node_types)
+        assert len(outcomes) == 12
+        assert all(entry is not None for entry, _ in outcomes)
+        assert walks["n"] == 1, "twelve node types must cost ONE store walk"
+
+    def test_results_are_positional_and_match_single_resolution(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        """Equivalence with the single gate, including the per-item errors —
+        one bad id must not poison its neighbours."""
+        key, pid = self._project(user_and_token, alice_project)
+        types = [
+            "curio.builtin/data-loading",
+            "curio.builtin/nope",
+            "curio.builtin/data-loading@1",
+            "",
+        ]
+        batch = packages_services.resolve_templates(key, pid, types)
+        for node_type, (entry, err) in zip(types, batch):
+            single_entry, single_err = packages_services.resolve_template(key, pid, node_type)
+            assert (entry, err) == (single_entry, single_err), node_type
+        assert batch[0][0]["id"] == "curio.builtin/data-loading"
+        assert batch[1][0] is None and "not an available template" in batch[1][1]
+        assert batch[2][0]["id"] == "curio.builtin/data-loading"
+        assert batch[3][0] is None and "non-empty template id" in batch[3][1]
+
+    def test_require_authorable_applies_per_batch(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        key, pid = self._project(user_and_token, alice_project)
+        types = ["curio.builtin/data-loading", "curio.builtin/data-pool"]
+        plan_side = packages_services.resolve_templates(key, pid, types)
+        assert all(entry is not None for entry, _ in plan_side)
+        create_side = packages_services.resolve_templates(
+            key, pid, types, require_authorable=True,
+        )
+        assert create_side[0][0] is not None
+        assert create_side[1][0] is None
+        assert "does not hold authored content" in create_side[1][1]
+
+    def test_a_broken_registry_reports_per_item_without_raising(
+        self, user_and_token, alice_project, tmp_curio, monkeypatch
+    ):
+        key, pid = self._project(user_and_token, alice_project)
+        monkeypatch.setattr(
+            packages_services, "available_templates_report",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk on fire")),
+        )
+        outcomes = packages_services.resolve_templates(key, pid, ["a", "b", "c"])
+        assert len(outcomes) == 3
+        assert all(e is None and "registry is unavailable" in msg for e, msg in outcomes)

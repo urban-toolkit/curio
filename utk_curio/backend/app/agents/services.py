@@ -1390,10 +1390,18 @@ def _mint_dataflow_plan(
     # nodeType is already canonical here (canonicalised at the parse boundary),
     # so this used to be an exact-match dict lookup that refused the versioned
     # spelling the model was handed by its own run context.
-    for node in plan["nodes"]:
-        entry, err = packages_services.resolve_template(
-            user_key, project_id, node["nodeType"], require_authorable=False
-        )
+    #
+    # dev/99 R1.2: resolved as a BATCH — one store snapshot for the whole plan
+    # instead of one per node. Resolving per node re-walked the store (and,
+    # once readers hold the seed lock, re-acquired it) once per plan node, so
+    # the cost scaled with plan size; it also judged each node against a
+    # different instant.
+    outcomes = packages_services.resolve_templates(
+        user_key, project_id,
+        [node["nodeType"] for node in plan["nodes"]],
+        require_authorable=False,
+    )
+    for node, (entry, err) in zip(plan["nodes"], outcomes):
         if entry is None:
             return "refused", f"plan node {node['ref']!r}: {err}", None
     spec = projects_storage.read_spec(user_key, project_id)
@@ -4883,7 +4891,18 @@ def _prepare_run(
     # what already exists, since not seeing it is how one weather question
     # produced two near-identical note packages.
     if not _ROSTER_GRANTS.isdisjoint(granted):
-        templates_block = _available_templates_block(user_key, project_id)
+        # dev/99 R1.1: ONE snapshot feeds both halves of the roster. Fetching
+        # them separately left the two lists able to describe different
+        # instants — a package could appear as "not enlisted" in one and be
+        # missing from the other — which is the tear the composite exists to
+        # remove.
+        from utk_curio.backend.app.packages import services as packages_services
+
+        try:
+            landscape = packages_services.template_landscape(user_key, project_id)
+        except Exception:  # a broken registry degrades to no listing, not a 500
+            landscape = None
+        templates_block = _available_templates_block(project_id, landscape)
         if templates_block:
             system_content = f"{system_content}\n\n{templates_block}"
         # dev/93 D4: the second half of the roster — what the user owns but
@@ -4893,7 +4912,7 @@ def _prepare_run(
         # duplicate package instead.
         if "package.install" in granted:
             enlistable = _enlistable_templates_block(
-                user_key, project_id, _TEMPLATES_BLOCK_MAX_ENTRIES
+                project_id, landscape, _TEMPLATES_BLOCK_MAX_ENTRIES
             )
             if enlistable:
                 system_content = f"{system_content}\n\n{enlistable}"
@@ -4975,7 +4994,7 @@ def _template_line(entry: dict, *, suffix: str = "") -> str:
     return f"- {entry['id']} — {entry['label']}" + (f": {desc}" if desc else "") + suffix
 
 
-def _available_templates_block(user_key: str, project_id: str) -> str | None:
+def _available_templates_block(project_id: str, landscape: dict | None) -> str | None:
     """The grant-aware node-template listing appended to a node.create or
     dataflow.plan.write run's system content, composed from the
     packages-domain helpers so it is never stale (memo dev/48).
@@ -4990,13 +5009,7 @@ def _available_templates_block(user_key: str, project_id: str) -> str | None:
     package. The second section is offered only to a run that can act on it
     (a ``package.install`` grant); everyone else sees the roster unchanged.
     """
-    from utk_curio.backend.app.packages import services as packages_services
-
-    try:
-        templates = packages_services.available_templates(user_key, project_id)
-    except Exception:  # a broken registry degrades to no listing, not a 500
-        return None
-    entries = [t for t in templates if t.get("authorable")]
+    entries = [t for t in (landscape or {}).get("available", []) if t.get("authorable")]
     shown = entries[:_TEMPLATES_BLOCK_MAX_ENTRIES]
     if len(entries) > len(shown):
         log.warning(
@@ -5014,22 +5027,18 @@ def _available_templates_block(user_key: str, project_id: str) -> str | None:
     )
 
 
-def _enlistable_templates_block(user_key: str, project_id: str, budget: int) -> str | None:
+def _enlistable_templates_block(project_id: str, landscape: dict | None, budget: int) -> str | None:
     """The "installed but not enlisted" half of the roster (memo dev/93 D4).
 
     Separate function, one shared line format: the sections are composed
     together but only this one is grant-gated, and it names the dirName the
     ``package.install`` proposal takes so the model never has to guess it.
     """
-    from utk_curio.backend.app.packages import services as packages_services
-
     if budget <= 0:
         return None
-    try:
-        rows = packages_services.installed_templates_not_in_project(user_key, project_id)
-    except Exception:  # same posture as the available half
-        return None
-    rows = [r for r in rows if r.get("authorable")]
+    rows = [
+        r for r in (landscape or {}).get("notEnlisted", []) if r.get("authorable")
+    ]
     shown = rows[:budget]
     if len(rows) > len(shown):
         log.warning(
