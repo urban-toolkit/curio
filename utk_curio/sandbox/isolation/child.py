@@ -144,12 +144,41 @@ def _drop_privileges(uid, gid):
     return True
 
 
+def _address_space_baseline_bytes():
+    """Virtual address space this process already occupies, or None.
+
+    A forked child starts with everything the zygote had mapped: pandas,
+    pyarrow, geopandas, GDAL/PROJ and duckdb. That is hundreds of megabytes of
+    *virtual* space before user code runs a single line, most of it reservations
+    and mapped shared libraries rather than resident memory.
+    """
+    try:
+        with open("/proc/self/statm", encoding="ascii") as handle:
+            pages = int(handle.read().split()[0])
+        return pages * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 def _apply_rlimits(limits):
     """Cap memory, CPU, processes, file size, fds, and core dumps.
 
     ``RLIMIT_AS`` is what turns a runaway allocation into a ``MemoryError``
     inside the child instead of the kernel's OOM killer picking a victim, which
     on a busy host is as likely to be the backend as the offending child.
+
+    **``memory_mb`` is headroom, not a total.** RLIMIT_AS bounds virtual address
+    space, and a child forked from the warm zygote already has the whole
+    scientific stack mapped, so a small absolute cap leaves nothing for user
+    code: a 256 MB total made ``pd.DataFrame({'a': [1, 2, 3]})`` fail with
+    ``ArrowMemoryError: malloc of size 64 failed``. Worse, it made a
+    runaway-allocation test pass for the wrong reason, because *every*
+    allocation was failing.
+
+    So the limit is the interpreter's current footprint plus the configured
+    budget. That makes the knob mean "how much may this node allocate", which
+    is the question an operator can actually answer, and it cannot be set below
+    what the interpreter already needs to exist.
     """
     import resource
 
@@ -162,8 +191,16 @@ def _apply_rlimits(limits):
             raise ChildSetupError(f"could not set {name}: {exc}") from exc
 
     memory_mb = limits.get("memory_mb")
-    _set(resource.RLIMIT_AS, memory_mb * 1024 * 1024 if memory_mb else None,
-         "RLIMIT_AS")
+    if memory_mb:
+        budget = memory_mb * 1024 * 1024
+        baseline = _address_space_baseline_bytes()
+        # Without /proc there is no way to read the baseline. Skip the cap
+        # rather than apply a total that would break the interpreter; the
+        # wall-clock deadline and the other limits still apply, and
+        # hardening/mode reporting is where an operator learns what is active.
+        _set(resource.RLIMIT_AS,
+             baseline + budget if baseline is not None else None,
+             "RLIMIT_AS")
 
     cpu_seconds = limits.get("cpu_seconds")
     _set(resource.RLIMIT_CPU, cpu_seconds, "RLIMIT_CPU")
