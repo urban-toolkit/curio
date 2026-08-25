@@ -65,7 +65,7 @@ function TrillVersionCard({ data }: NodeProps) {
                 }}
             >
                 <div style={{ width: "100%", height: 90 }}>
-                    <DataflowThumbnail preview={preview ?? null} accentColor="" bgColor="#e8e8e8" />
+                    <DataflowThumbnail preview={preview ?? null} />
                 </div>
                 <div
                     style={{

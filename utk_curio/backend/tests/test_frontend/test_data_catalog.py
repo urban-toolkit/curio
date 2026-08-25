@@ -44,7 +44,7 @@ DATASET_TITLE = "Chicago Community Areas"
 OTHER_HUB_TITLES = ("Chicago Boundary", "ACS Neighborhood Profile")
 
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
-SEARCH_PLACEHOLDER = "Search datasets, publishers, tags..."
+SEARCH_PLACEHOLDER = "Search datasets, publishers, tags…"
 # The "Adding…" placeholder is an <article role="status"> carrying the same
 # title as the real card, so every card locator has to exclude it.
 CARD = 'article:not([role="status"])'

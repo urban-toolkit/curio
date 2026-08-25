@@ -16,6 +16,7 @@ import { InstalledDatasetsList } from "./InstalledDatasetsList";
 import { TAB_LABEL } from "./datasetCatalogDrawerTypes";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
+import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
 import styles from "./DatasetCatalogDrawer.module.css";
 
 export interface DatasetCatalogDrawerProps {
@@ -84,13 +85,15 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   return (
     <>
       <div
-        className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
+        className={`${shell.overlayRoot} ${styles.overlayRoot} ${
+          presented ? shell.overlayRootPresented : ""
+        }`}
         data-curio-dataset-catalog-drawer="true"
         aria-hidden={!presented}
       >
         <button
           type="button"
-          className={styles.scrim}
+          className={shell.scrim}
           aria-label="Close dataset catalog"
           onClick={() => {
             if (!pinned) onRequestClose();
@@ -98,7 +101,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
         />
         <aside
           ref={drawerRef}
-          className={styles.drawer}
+          className={shell.drawer}
           role="dialog"
           aria-modal="true"
           aria-labelledby="dataset-catalog-title"
@@ -121,7 +124,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             sort={sort}
             onSearchChange={(value) => startUiTransition(() => setSearch(value))}
             onSortChange={(value) => setSort(value as DatasetSortMode)}
-            placeholder="Search datasets, publishers, tags..."
+            placeholder="Search datasets, publishers, tags…"
             sortAriaLabel="Sort datasets"
             sortOptions={[
               { value: "recent", label: "Sort: Recent activity" },
@@ -172,8 +175,8 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             </button>
           </nav>
 
-          <main className={styles.content}>
-            {catalog.error ? <div className={styles.error}>{catalog.error}</div> : null}
+          <main className={shell.scrollBody}>
+            {catalog.error ? <div className={shell.error}>{catalog.error}</div> : null}
             {catalog.loading && items.length === 0 ? (
               <div className={styles.skeletonList} aria-busy="true" aria-label="Loading datasets">
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -183,7 +186,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             ) : null}
             {tab === "installed" ? (
               !catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
-                <div className={styles.empty}>No datasets added to this dataflow yet.</div>
+                <div className={shell.empty}>No datasets added to this dataflow yet.</div>
               ) : (
                 <InstalledDatasetsList
                   datasets={items}
@@ -199,15 +202,15 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
               )
             ) : (
               <>
-                {!catalog.error ? <p className={styles.sectionLabel}>{TAB_LABEL[tab]}</p> : null}
+                {!catalog.error ? <p className={shell.sectionLabel}>{TAB_LABEL[tab]}</p> : null}
                 {!catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
-                  <div className={styles.empty}>
+                  <div className={shell.empty}>
                     {tab === "computed"
                       ? "No computed datasets yet. Run a dataflow node that outputs a table - it is saved to your Data Catalog and can be added to a dataflow from here."
                       : "No datasets match the current filters."}
                   </div>
                 ) : null}
-                <div className={styles.cardList}>
+                <div className={shell.cardList}>
                   {installingRows.map((pending) => (
                     <DatasetInstallingCard key={`pending:${pending.key}`} pending={pending} />
                   ))}

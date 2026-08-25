@@ -4,7 +4,10 @@ import { useNavigate } from "react-router-dom";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
 import { notebookToTrill } from "../../NotebookConvertor";
 import DataflowThumbnail from "../../components/DataflowThumbnail";
-import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
+import {
+  CatalogItemStripHeader,
+  CatalogKindIcon,
+} from "../../components/catalog/CatalogKindVisuals";
 import {
   catalogIsFresh,
   catalogRelativeTime,
@@ -15,10 +18,19 @@ import VersionBadge from "../../components/VersionBadge";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { CatalogBrowseDrawerBody } from "../catalog/CatalogBrowseDrawerBody";
 import { CatalogBrowseDrawerShell } from "../catalog/CatalogBrowseDrawerShell";
+import shellStyles from "../catalog/CatalogMasterPage.module.css";
 import styles from "./ProjectsBrowseLayout.module.css";
 
 type ViewMode = "grid" | "list";
 type FilterTab = "all" | "recent" | "archived";
+/** Mirrors the sorts projectsApi and `list_for_user` already implement. */
+type ProjectSort = "last_opened" | "name" | "created";
+
+const SORT_OPTIONS: { value: ProjectSort; label: string }[] = [
+  { value: "last_opened", label: "Sort: Recent activity" },
+  { value: "name", label: "Sort: Name" },
+  { value: "created", label: "Sort: Created" },
+];
 
 const FILTER_TABS: FilterTab[] = ["all", "recent", "archived"];
 
@@ -32,13 +44,6 @@ const TAB_LABELS: Record<FilterTab, string> = {
   all: "All projects",
   recent: "Recent",
   archived: "Archived",
-};
-
-const ACCENT_COLORS: Record<string, { bg: string; fg: string }> = {
-  peach:  { bg: "#FFE3DA", fg: "#E86A3C" },
-  sky:    { bg: "#DCE8FF", fg: "#3567C7" },
-  mint:   { bg: "#DFF2E1", fg: "#2F8F4A" },
-  lilac:  { bg: "#EADCFB", fg: "#7A4BD1" },
 };
 
 function formatDate(value: string | null): string {
@@ -59,12 +64,6 @@ function edgeCount(project: ProjectSummary): number {
   return project.graph_preview?.edges.length ?? 0;
 }
 
-/** Feeds a project's accent colour to .cardActive, mirroring how the catalog
- *  keys a selected card's border to the item's kind. */
-function accentVar(color: string): React.CSSProperties {
-  return { "--projectAccent": color } as React.CSSProperties;
-}
-
 const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
   // Every scope is held at once so the rail can show counts and switching
@@ -75,6 +74,7 @@ const ProjectsList: React.FC = () => {
     archived: [],
   });
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [sort, setSort] = useState<ProjectSort>("last_opened");
   const [filter, setFilter] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -86,12 +86,12 @@ const ProjectsList: React.FC = () => {
     const results = await Promise.all(
       FILTER_TABS.map((tab) =>
         projectsApi
-          .list({ scope: SCOPE_BY_TAB[tab], sort: "last_opened" })
+          .list({ scope: SCOPE_BY_TAB[tab], sort })
           .catch(() => [] as ProjectSummary[])
       )
     );
     setByTab({ all: results[0], recent: results[1], archived: results[2] });
-  }, []);
+  }, [sort]);
 
   useEffect(() => {
     loadProjects();
@@ -186,10 +186,8 @@ const ProjectsList: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const accent = (a: string) => ACCENT_COLORS[a] || ACCENT_COLORS.peach;
-
   return (
-    <div style={pageStyle}>
+    <div className={shellStyles.pageShell}>
       <input
         type="file"
         accept=".ipynb"
@@ -227,25 +225,35 @@ const ProjectsList: React.FC = () => {
           <section className={browseStyles.browseHeader}>
             <p className={browseStyles.crumb}>Projects</p>
             <div className={browseStyles.titleRow}>
+              <CatalogKindIcon kind="dataflow" size="md" title="Dataflows" />
               <h1>Projects</h1>
               <span className={browseStyles.titleCount}>{filtered.length}</span>
             </div>
+            <p className={browseStyles.pageIntro}>
+              Your dataflows. Open one to keep working on it, or start a new one.
+            </p>
             <div className={browseStyles.headerTools}>
+              <span className={browseStyles.hubStatusChip}>
+                <span className={browseStyles.hubStatusDot} />
+                My dataflows
+              </span>
               <input
                 className={browseStyles.hubSearch}
                 type="search"
-                placeholder="Search projects..."
+                placeholder="Search projects…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
               <button
-                style={importNotebookBtnStyle}
+                type="button"
+                className={browseStyles.publishButton}
                 onClick={() => importNotebookRef.current?.click()}
               >
                 Import Jupyter notebook
               </button>
               <button
-                style={newWorkflowBtnStyle}
+                type="button"
+                className={browseStyles.primaryHeaderButton}
                 onClick={() => navigate("/dataflow/new")}
               >
                 + New Dataflow
@@ -265,6 +273,18 @@ const ProjectsList: React.FC = () => {
               </button>
             ))}
             <span className={browseStyles.filterSpacer} />
+            <select
+              className={browseStyles.sortSelect}
+              aria-label="Sort projects"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as ProjectSort)}
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             <div className={styles.viewSwitch}>
               {(["grid", "list"] as ViewMode[]).map((mode) => (
                 <button
@@ -296,9 +316,9 @@ const ProjectsList: React.FC = () => {
                     key={p.id}
                     className={joined(
                       styles.card,
+                      viewMode === "list" && styles.cardRow,
                       p.id === selectedId && styles.cardActive
                     )}
-                    style={accentVar(accent(p.thumbnail_accent).fg)}
                     data-project-id={p.id}
                     role="button"
                     tabIndex={0}
@@ -317,10 +337,7 @@ const ProjectsList: React.FC = () => {
                       setContextMenu({ x: e.clientX, y: e.clientY, project: p });
                     }}
                   >
-                    <div
-                      className={styles.cardStrip}
-                      style={{ background: accent(p.thumbnail_accent).fg }}
-                    >
+                    <div className={styles.cardStrip}>
                       <CatalogItemStripHeader
                         kind="dataflow"
                         badge={
@@ -340,11 +357,7 @@ const ProjectsList: React.FC = () => {
                       </span>
                     </div>
                     <div className={styles.cardThumbnail}>
-                      <DataflowThumbnail
-                        preview={p.graph_preview}
-                        accentColor={accent(p.thumbnail_accent).fg}
-                        bgColor={accent(p.thumbnail_accent).bg}
-                      />
+                      <DataflowThumbnail preview={p.graph_preview} />
                     </div>
                   </div>
                 ))}
@@ -361,11 +374,7 @@ const ProjectsList: React.FC = () => {
               onClose={() => setSelectedId(null)}
               hero={
                 <div className={browseStyles.drawerKindHero}>
-                  <DataflowThumbnail
-                    preview={selected.graph_preview}
-                    accentColor={accent(selected.thumbnail_accent).fg}
-                    bgColor={accent(selected.thumbnail_accent).bg}
-                  />
+                  <DataflowThumbnail preview={selected.graph_preview} />
                 </div>
               }
               title={selected.name}
@@ -458,12 +467,12 @@ const ProjectsList: React.FC = () => {
             position: "fixed",
             top: contextMenu.y,
             left: contextMenu.x,
-            backgroundColor: "#1E1F23",
-            border: "1px solid #333",
-            borderRadius: "4px",
+            backgroundColor: "var(--curio-top-bar-bg)",
+            border: "1px solid var(--curio-border-context-menu)",
+            borderRadius: "var(--curio-radius-sm)",
             zIndex: 9999,
             minWidth: "160px",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+            boxShadow: "var(--curio-shadow-context-menu)",
           }}
         >
           <div style={ctxItemStyle} onClick={() => openProject(contextMenu.project.id)}>
@@ -478,7 +487,7 @@ const ProjectsList: React.FC = () => {
           <div style={ctxItemStyle} onClick={() => { handleArchive(contextMenu.project); setContextMenu(null); }}>
             Archive
           </div>
-          <div style={{ ...ctxItemStyle, color: "#ff6b6b" }} onClick={() => { handleDeleteForever(contextMenu.project); setContextMenu(null); }}>
+          <div style={{ ...ctxItemStyle, color: "var(--curio-danger)" }} onClick={() => { handleDeleteForever(contextMenu.project); setContextMenu(null); }}>
             Delete forever
           </div>
         </div>
@@ -494,48 +503,10 @@ export default ProjectsList;
 
 const ctxItemStyle: CSS.Properties = {
   padding: "8px 16px",
-  color: "#fff",
-  fontSize: "13px",
+  color: "var(--curio-text-on-dark)",
+  fontSize: "var(--curio-font-size-md)",
   cursor: "pointer",
 };
 
-const pageStyle: CSS.Properties = {
-  // Bounded height, not minHeight: html/body never scroll (overflow:hidden in
-  // MainCanvas.css, injected app-wide), so this page has to own its scroll
-  // within the viewport or overflowing content is unreachable (#161). Same
-  // shape as .pageShell in pages/catalog/CatalogMasterPage.module.css.
-  height: "100vh",
-  display: "flex",
-  flexDirection: "column",
-  overflow: "hidden",
-  backgroundColor: "#f0f0f0",
-  fontFamily:
-    "Rubik, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif",
-};
 
-const importNotebookBtnStyle: CSS.Properties = {
-  height: "34px",
-  padding: "0 14px",
-  backgroundColor: "#fff",
-  color: "#1E1F23",
-  border: "1px solid #D0D0D5",
-  borderRadius: "6px",
-  fontSize: "12px",
-  fontWeight: 500,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
-
-const newWorkflowBtnStyle: CSS.Properties = {
-  height: "34px",
-  padding: "0 16px",
-  backgroundColor: "#1E1F23",
-  color: "#fbfcf6",
-  border: "none",
-  borderRadius: "6px",
-  fontSize: "12px",
-  fontWeight: 600,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
 

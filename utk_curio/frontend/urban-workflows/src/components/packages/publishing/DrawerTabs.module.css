@@ -62,8 +62,8 @@
 }
 
 .tabBadgeAccent {
-    background: var(--curio-accent-peach-bg);
-    color: var(--curio-accent-peach-fg);
+    background: var(--curio-role-update-bg);
+    color: var(--curio-role-update-fg);
 }
 
 .tabMuted {

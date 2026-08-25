@@ -340,7 +340,7 @@ def scene_projects(ctx: Ctx) -> None:
         "Dataflows as cards, with search, filters and a grid or list view.",
         hold=2600,
     )
-    tour.focus(page.get_by_placeholder("Search projects..."), hold=900)
+    tour.focus(page.get_by_placeholder("Search projects…"), hold=900)
     tour.focus(page.get_by_role("button", name="List", exact=True), hold=500)
     tour.click(page.get_by_role("button", name="List", exact=True))
     tour.click(page.get_by_role("button", name="Grid", exact=True))
@@ -634,7 +634,7 @@ def scene_node_catalog(ctx: Ctx) -> None:
         "Mix them freely in one dataflow; a lockfile pins the exact set.",
         hold=3000,
     )
-    search = drawer.get_by_placeholder("Search packages, authors, keywords...")
+    search = drawer.get_by_placeholder("Search packages, publishers, tags…")
     tour.type_into(search, "example", delay=90)
     tour.beat(1200)
 

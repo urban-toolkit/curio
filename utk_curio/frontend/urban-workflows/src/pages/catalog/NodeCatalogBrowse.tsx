@@ -108,7 +108,7 @@ export const NodeCatalogBrowse: React.FC = () => {
             <h1>Node Catalog</h1>
             <span className={browseStyles.titleCount}>{filtered.length}</span>
           </div>
-          <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6B6B76", maxWidth: 720 }}>
+          <p className={browseStyles.pageIntro}>
             Add packages to <strong>all your projects</strong>, present and future.
             Removing a package from a single project can be done in that project&apos;s Node Catalog.
           </p>

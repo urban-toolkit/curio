@@ -61,7 +61,7 @@
 
 .permIcon {
     font-size: var(--curio-font-size-md);
-    color: var(--curio-accent-peach-fg);
+    color: var(--curio-role-update-fg);
 }
 
 .depsBox {

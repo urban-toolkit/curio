@@ -34,7 +34,15 @@ interface Surface {
   prefixes: string[];
 }
 
-/** Every surface that selects a CSS class by dataset format. */
+/**
+ * Every surface that selects a CSS class by dataset format.
+ *
+ * Keep this list complete. It is not incidental that the two defects this file
+ * exists to catch both lived on a surface it did not cover: the canvas dataset
+ * palette's `.chip_osm` was byte-identical to `.chip_geojson` (so OSM and
+ * GeoJSON rendered the same), and its `.fmt_*` block had no `bundle` or `osm`
+ * rule at all — which went unnoticed because nothing rendered `.fmt_*` either.
+ */
 const SURFACES: Surface[] = [
   {
     // Hub browse card (strip header, active border, tag accent, link),
@@ -48,7 +56,7 @@ const SURFACES: Surface[] = [
     prefixes: ["formatBadge"],
   },
   {
-    // Dataset detail panel format chip.
+    // Dataset detail panel format chip (also the dataset detail modal).
     file: "components/datasets/catalog/DatasetDetailPanel.module.css",
     prefixes: ["format"],
   },
@@ -56,6 +64,13 @@ const SURFACES: Surface[] = [
     // Project-catalog DatasetCard avatar + accent bar.
     file: "components/packages/publishing/PackageCard.module.css",
     prefixes: ["avatar", "accent"],
+  },
+  {
+    // Canvas dataset palette dropdown. A dark surface, so it renders the same
+    // format identity differently — derived from the same `-fg` token rather
+    // than from a second set of hexes.
+    file: "components/menus/nodes/datasetPalette/DatasetPaletteRows.module.css",
+    prefixes: ["chip"],
   },
 ];
 
@@ -81,6 +96,15 @@ const cases: Case[] = SURFACES.flatMap(({ file, prefixes }) =>
   prefixes.flatMap((prefix) => FORMATS.map((format): Case => [file, prefix, format])),
 );
 
+/** The declarations inside one format-keyed rule. */
+function ruleBody(css: string, prefix: string, format: string): string {
+  const match = css.match(
+    new RegExp("\\." + prefix + "_" + format + "(?![\\w-])[^{]*\\{([^}]*)\\}"),
+  );
+  expect(match).not.toBeNull();
+  return (match as RegExpMatchArray)[1];
+}
+
 describe("dataset format CSS completeness", () => {
   it("derives at least one format from DATASET_FORMAT_LABEL", () => {
     expect(FORMATS.length).toBeGreaterThan(0);
@@ -88,5 +112,36 @@ describe("dataset format CSS completeness", () => {
 
   test.each(cases)("%s declares .%s_%s", (file, prefix, format) => {
     expect(hasFormatRule(readCss(file), prefix, format)).toBe(true);
+  });
+});
+
+describe("dataset format colours come from the tokens", () => {
+  /**
+   * One colour per format, defined once.
+   *
+   * These rules used to hold literal hexes, and the copies disagreed: GeoTIFF
+   * was purple on a browse card, teal in the drawer badge and cyan on an
+   * in-canvas card, and it collided exactly with JSON on the card strip and
+   * rail dot. Requiring a token reference is what keeps "one format, one
+   * colour" true across all six surfaces rather than true by coincidence.
+   */
+  test.each(cases)("%s .%s_%s resolves to a token", (file, prefix, format) => {
+    const body = ruleBody(readCss(file), prefix, format);
+    expect(body).toContain("var(--curio-format-" + format + "-");
+    expect(body).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  });
+
+  it("gives every format a distinct fill", () => {
+    // GeoTIFF shared JSON's #7A4BD1, so the rail could not tell them apart;
+    // OSM shared GeoJSON's green in the canvas palette.
+    const tokens = readCss("styles/curioTokens.css");
+    const fills = FORMATS.map((format) => {
+      const match = tokens.match(
+        new RegExp("--curio-format-" + format + "-fg:\\s*(#[0-9a-fA-F]{3,8})"),
+      );
+      expect(match).not.toBeNull();
+      return (match as RegExpMatchArray)[1].toLowerCase();
+    });
+    expect(new Set(fills).size).toBe(FORMATS.length);
   });
 });

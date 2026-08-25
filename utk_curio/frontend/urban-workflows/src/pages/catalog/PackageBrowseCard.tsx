@@ -6,18 +6,18 @@ import {
   shouldShowPublishPill,
 } from "../../components/packages/CatalogPublishPill";
 import { primaryCategory } from "../../components/packages/publishing/packageUtils";
+import browseStyles from "./CatalogBrowseLayout.module.css";
 import styles from "./PackageBrowseCard.module.css";
 
-type StripVariant = "warm" | "cool" | "violet";
-
-const STRIP_VARIANTS: StripVariant[] = ["warm", "cool", "violet"];
-
-function stripVariantForPack(dirName: string): StripVariant {
-  let hash = 0;
-  for (let i = 0; i < dirName.length; i++) {
-    hash = (hash + dirName.charCodeAt(i)) % STRIP_VARIANTS.length;
-  }
-  return STRIP_VARIANTS[hash]!;
+/**
+ * The card's colour is its node category — the same palette the canvas paints a
+ * node's left border with, and the same one behind the category chips in the
+ * filter bar. It used to be a character-sum hash of `dirName`, so the colour
+ * told you nothing: three `data` packages rendered orange, violet and blue,
+ * and a `computation` package shared the blue.
+ */
+function stripClass(styleMap: Record<string, string>, prefix: string, category: string): string {
+  return styleMap[`${prefix}_${category}`] ?? styleMap[`${prefix}_package`] ?? "";
 }
 
 function relativeFromMs(ms?: number): string {
@@ -62,8 +62,8 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
   onInstall,
   onPublish,
 }) => {
-  const strip = stripVariantForPack(pkg.dirName);
   const cat = primaryCategory(pkg);
+  const cardStyles = styles as Record<string, string>;
   const cardBusy = busy;
   const isAuthorable = pkg.readOnly !== true;
   const showPublishPill = shouldShowPublishPill({
@@ -75,9 +75,10 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
   return (
     <article
       className={[
-        styles.card,
+        browseStyles.card,
+        selected ? browseStyles.cardActive : "",
         selected ? styles.cardActive : "",
-        styles[`card_${strip}`],
+        stripClass(cardStyles, "card", cat),
       ].join(" ")}
       role="button"
       tabIndex={0}
@@ -86,53 +87,57 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         if (e.key === "Enter" || e.key === " ") onSelect();
       }}
     >
-      <div className={`${styles.cardStrip} ${styles[`strip_${strip}`]}`}>
+      <div className={`${browseStyles.cardStrip} ${stripClass(cardStyles, "strip", cat)}`}>
         <CatalogItemStripHeader
           kind="package"
-          badge={<span className={styles.kindBadge}>{cat}</span>}
+          badge={<span className={browseStyles.cardFormatBadge}>{cat}</span>}
           trailing={
-            isInstalled ? <span className={styles.stripBadge}>✓ Defaults</span> : null
+            isInstalled ? <span className={browseStyles.stripBadgePopular}>✓ In defaults</span> : null
           }
         />
       </div>
 
-      <div className={styles.cardBody}>
-        <h2 className={styles.cardTitle}>{pkg.name}</h2>
-        <p className={styles.publisher}>
+      <div className={browseStyles.cardBody}>
+        <h2 className={browseStyles.cardTitle}>{pkg.name}</h2>
+        <p className={browseStyles.publisher}>
           {pkg.publisher || pkg.packageId} · v{pkg.version}
           {pkg.license ? ` · ${pkg.license}` : ""}
         </p>
         <p
-          className={styles.cardDescription}
+          className={browseStyles.cardDescription}
           {...(!pkg.description ? { "aria-hidden": true } : {})}
         >
           {pkg.description || "\u00a0"}
         </p>
-        <div className={styles.tagRow}>
-          <span className={styles.tag}>
+        <div className={browseStyles.tagRow}>
+          <span className={browseStyles.tag}>
             {pkg.templates.length} node{pkg.templates.length === 1 ? "" : "s"}
           </span>
-          <span className={`${styles.tag} ${styles.tagAccent}`}>{cat}</span>
+          <span
+            className={`${browseStyles.tag} ${stripClass(cardStyles, "tagAccent", cat)}`}
+          >
+            {cat}
+          </span>
           {(pkg.channel ?? "stable") !== "stable" ? (
-            <span className={styles.tag}>{pkg.channel}</span>
+            <span className={browseStyles.tag}>{pkg.channel}</span>
           ) : null}
           {hasUpdate && catalogRow ? (
-            <span className={`${styles.tag} ${styles.tagUpdate}`}>
+            <span className={`${browseStyles.tag} ${styles.tagUpdate}`}>
               Update to {catalogRow.version}
             </span>
           ) : null}
         </div>
       </div>
 
-      <div className={styles.cardMeta}>
-        <span className={styles.metaLeft}>
+      <div className={browseStyles.cardMeta}>
+        <span className={browseStyles.metaLeft}>
           {pkg.templates.length} templates · {pkg.packageId}
         </span>
-        <span className={styles.metaRight}>{relativeFromMs(pkg.createdAtMs)}</span>
+        <span className={browseStyles.metaRight}>{relativeFromMs(pkg.createdAtMs)}</span>
       </div>
 
-      <div className={styles.cardActions}>
-        <div className={styles.cardActionsLeft}>
+      <div className={browseStyles.cardActions}>
+        <div className={browseStyles.cardActionsLeft}>
           {showPublishPill ? (
             <CatalogPublishPill
               variant="hub"
@@ -144,7 +149,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
             />
           ) : null}
         </div>
-        <div className={styles.cardActionsRight}>
+        <div className={browseStyles.cardActionsRight}>
           {!isInstalled ? (
             <button
               type="button"

@@ -152,15 +152,15 @@
   color: #415363;
 }
 
-.format_geojson { background: #dff2e1; color: #2f8f4a; }
-.format_csv { background: #edf0fb; color: #405da4; }
-/* Match DatasetCard / catalog rail: JSON = purple, Parquet = amber */
-.format_json { background: #ece4f8; color: #5c3fa0; }
-.format_parquet { background: #fdf0dc; color: #a06a10; }
-.format_geotiff { background: #e3f1f3; color: #2e6874; }
-.format_shp { background: #f0e5ec; color: #7a4865; }
-.format_bundle { background: #f3ebe0; color: #8a4f1a; }
-.format_osm { background: #eaf5df; color: #4c7a1f; }
+/* Format identity, shared with every other surface that shows one. */
+.format_geojson { background: var(--curio-format-geojson-bg); color: var(--curio-format-geojson-on-tint); }
+.format_csv { background: var(--curio-format-csv-bg); color: var(--curio-format-csv-on-tint); }
+.format_json { background: var(--curio-format-json-bg); color: var(--curio-format-json-on-tint); }
+.format_parquet { background: var(--curio-format-parquet-bg); color: var(--curio-format-parquet-on-tint); }
+.format_geotiff { background: var(--curio-format-geotiff-bg); color: var(--curio-format-geotiff-on-tint); }
+.format_shp { background: var(--curio-format-shp-bg); color: var(--curio-format-shp-on-tint); }
+.format_bundle { background: var(--curio-format-bundle-bg); color: var(--curio-format-bundle-on-tint); }
+.format_osm { background: var(--curio-format-osm-bg); color: var(--curio-format-osm-on-tint); }
 
 .installedBadge {
   background: #1e1f23;

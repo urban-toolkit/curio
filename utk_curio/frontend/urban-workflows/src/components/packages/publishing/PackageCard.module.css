@@ -19,7 +19,8 @@
     border-color: var(--curio-border-strong);
 }
 
-/* Icon tile — accent palette mirrors the project list thumbnails */
+/* Icon tile — keyed to the package's node category, the same palette the
+   canvas paints a node's left border with. */
 
 .cardIcon {
     width: 72px;
@@ -32,19 +33,24 @@
     background: var(--curio-page-bg);
 }
 
-.cardIconWarm {
-    background: var(--curio-accent-peach-bg);
-    color: var(--curio-accent-peach-fg);
+.cardIcon_data {
+    background: var(--curio-category-data-bg);
+    color: var(--curio-category-data-on-tint);
 }
 
-.cardIconCool {
-    background: var(--curio-accent-sky-bg);
-    color: var(--curio-accent-sky-fg);
+.cardIcon_computation {
+    background: var(--curio-category-computation-bg);
+    color: var(--curio-category-computation-on-tint);
 }
 
-.cardIconViolet {
-    background: var(--curio-accent-lilac-bg);
-    color: var(--curio-accent-lilac-fg);
+.cardIcon_vis {
+    background: var(--curio-category-vis-bg);
+    color: var(--curio-category-vis-on-tint);
+}
+
+.cardIcon_package {
+    background: var(--curio-category-package-bg);
+    color: var(--curio-category-package-on-tint);
 }
 
 .cardIconText {
@@ -75,7 +81,7 @@
 .cardSource {
     margin: 0;
     font-size: 11px;
-    color: var(--curio-text-muted, #86878c);
+    color: var(--curio-text-meta);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -88,8 +94,8 @@
     flex-shrink: 0;
     font-size: 10px;
     font-weight: 600;
-    color: var(--curio-text-muted, #86878c);
-    background: var(--curio-surface-alt, #f0efeb);
+    color: var(--curio-text-meta);
+    background: var(--curio-surface-alt);
     border-radius: 4px;
     padding: 0 4px;
     line-height: 16px;
@@ -107,7 +113,7 @@
 .cardMetaText {
     width: 100%;
     font-size: 11px;
-    color: var(--curio-text-muted, #86878c);
+    color: var(--curio-text-meta);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -116,8 +122,8 @@
 .connBadge {
     flex-shrink: 0;
     border-radius: 8px;
-    background: #f0efeb;
-    color: #74757b;
+    background: var(--curio-surface-alt);
+    color: var(--curio-text-secondary);
     padding: 2px 8px;
     font-size: 10px;
     font-weight: 600;
@@ -141,14 +147,14 @@
 }
 
 .tagUpdate {
-    background: var(--curio-accent-peach-bg);
-    color: var(--curio-accent-peach-fg);
+    background: var(--curio-role-update-bg);
+    color: var(--curio-role-update-fg);
     font-weight: 700;
 }
 
 .tagChannel {
-    background: var(--curio-accent-sky-bg);
-    color: var(--curio-accent-sky-fg);
+    background: var(--curio-role-published-bg);
+    color: var(--curio-role-published-fg);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -186,11 +192,11 @@
 }
 
 .btnInstall:hover:not(:disabled) {
-    background: #2c2d32;
+    background: var(--curio-top-bar-bg-hover);
 }
 
 .btnInstallAccent {
-    background: var(--curio-accent-peach-fg);
+    background: var(--curio-role-update-fg);
     color: var(--curio-card-bg);
 }
 
@@ -250,14 +256,14 @@
   background: #d9d7d1;
 }
 
-.accent_geojson  { background: #4caf72; }
-.accent_csv      { background: #5b9bd5; }
-.accent_json     { background: #9b7fda; }
-.accent_parquet  { background: #f5a623; }
-.accent_geotiff  { background: #26c6da; }
-.accent_shp      { background: #a0836a; }
-.accent_bundle   { background: #5B6472; }
-.accent_osm      { background: #7ab648; }
+.accent_geojson { background: var(--curio-format-geojson-fg); }
+.accent_csv { background: var(--curio-format-csv-fg); }
+.accent_json { background: var(--curio-format-json-fg); }
+.accent_parquet { background: var(--curio-format-parquet-fg); }
+.accent_geotiff { background: var(--curio-format-geotiff-fg); }
+.accent_shp { background: var(--curio-format-shp-fg); }
+.accent_bundle { background: var(--curio-format-bundle-fg); }
+.accent_osm { background: var(--curio-format-osm-fg); }
 
 /* ── Format avatar ───────────────────────────────────────────────────────────── */
 
@@ -299,12 +305,12 @@
 }
 
 /* Format-specific avatar colours (light surface) */
-.avatar_geojson  { background: #e3f4eb !important; color: #2d7a4f; }
-.avatar_csv      { background: #e0eaf8 !important; color: #2a5fa0; }
-.avatar_json     { background: #ece4f8 !important; color: #5c3fa0; }
-.avatar_parquet  { background: #fdf0dc !important; color: #a06a10; }
-.avatar_geotiff  { background: #ddf4f6 !important; color: #1a8a9a; }
-.avatar_shp      { background: #f0e8e2 !important; color: #7a4f30; }
-.avatar_bundle   { background: #e4e7ec !important; color: #475467; }
-.avatar_osm      { background: #eaf5df !important; color: #4c7a1f; }
+.avatar_geojson { background: var(--curio-format-geojson-bg) !important; color: var(--curio-format-geojson-on-tint); }
+.avatar_csv { background: var(--curio-format-csv-bg) !important; color: var(--curio-format-csv-on-tint); }
+.avatar_json { background: var(--curio-format-json-bg) !important; color: var(--curio-format-json-on-tint); }
+.avatar_parquet { background: var(--curio-format-parquet-bg) !important; color: var(--curio-format-parquet-on-tint); }
+.avatar_geotiff { background: var(--curio-format-geotiff-bg) !important; color: var(--curio-format-geotiff-on-tint); }
+.avatar_shp { background: var(--curio-format-shp-bg) !important; color: var(--curio-format-shp-on-tint); }
+.avatar_bundle { background: var(--curio-format-bundle-bg) !important; color: var(--curio-format-bundle-on-tint); }
+.avatar_osm { background: var(--curio-format-osm-bg) !important; color: var(--curio-format-osm-on-tint); }
 

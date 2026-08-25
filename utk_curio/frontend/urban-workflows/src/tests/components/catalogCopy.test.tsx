@@ -89,7 +89,7 @@ describe("PackageSearchRow per-surface options", () => {
     // "new"|"name", so the control rendered with no matching option.
     renderRow({
       sort: "recent",
-      placeholder: "Search datasets, publishers, tags...",
+      placeholder: "Search datasets, publishers, tags…",
       sortAriaLabel: "Sort datasets",
       sortOptions: [
         { value: "recent", label: "Sort: Recent activity" },

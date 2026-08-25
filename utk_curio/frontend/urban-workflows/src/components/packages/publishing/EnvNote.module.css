@@ -16,7 +16,7 @@
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: var(--curio-accent-sky-fg);
+    background: var(--curio-role-published-fg);
     color: var(--curio-text-on-dark);
     font-size: var(--curio-font-size-xs);
     font-weight: 700;

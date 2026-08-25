@@ -42,13 +42,13 @@
 }
 
 .tabLinkActive:hover {
-  color: #fbfcf6;
-  background: #2a2b31;
-  border-color: #2a2b31;
+  color: var(--curio-text-on-dark);
+  background: var(--curio-top-bar-bg-hover);
+  border-color: var(--curio-top-bar-bg-hover);
   opacity: 1;
 }
 
 .tabLink:focus-visible {
-  outline: 2px solid #3567c7;
+  outline: 2px solid var(--curio-focus-ring);
   outline-offset: 2px;
 }

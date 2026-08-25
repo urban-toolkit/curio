@@ -20,6 +20,7 @@ import { EnvNote } from "./EnvNote";
 import { DrawerFooter } from "./DrawerFooter";
 import { DrawerTab, SortMode } from "./packageTypes";
 import { sortPackages, matchesSearch } from "./packageUtils";
+import shell from "./CatalogDrawerShell.module.css";
 import styles from "./NodeCatalogDrawer.module.css";
 
 
@@ -385,15 +386,15 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   };
 
   const tabLabel: Record<DrawerTab, string> = {
-    featured: "Browse",  // legacy: collapsed Featured into Browse
-    browse: "Browse",
+    featured: "Browse all",  // legacy: collapsed Featured into Browse all
+    browse: "Browse all",
     installed: "In dataflow",
     updates: "In dataflow",  // legacy: Updates badge shows on In dataflow
   };
 
   const unsavedBanner = !projectId ? (
-    <div className={styles.errorBanner} role="status">
-      <span className={styles.errorBannerText}>
+    <div className={shell.errorBanner} role="status">
+      <span className={shell.errorBannerText}>
         This dataflow isn't saved yet; adding will save it first.
       </span>
     </div>
@@ -402,12 +403,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   return (
     <>
       <div
-        className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
+        className={`${shell.overlayRoot} ${styles.overlayRoot} ${
+          presented ? shell.overlayRootPresented : ""
+        }`}
         data-curio-node-catalog-drawer="true"
       >
         <button
           type="button"
-          className={styles.scrim}
+          className={shell.scrim}
           aria-label="Close Node Catalog drawer"
           onClick={() => {
             if (!pinned) onRequestClose();
@@ -415,7 +418,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         />
         <aside
           ref={drawerRef}
-          className={styles.drawer}
+          className={shell.drawer}
           role="dialog"
           aria-modal="true"
           aria-labelledby="node-catalog-drawer-title"
@@ -442,14 +445,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             onChange={setTab}
           />
 
-          <div className={styles.scrollBody}>
+          <div className={shell.scrollBody}>
             {unsavedBanner}
             {actionError ? (
-              <div className={styles.errorBanner} role="alert">
-                <span className={styles.errorBannerText}>{actionError}</span>
+              <div className={shell.errorBanner} role="alert">
+                <span className={shell.errorBannerText}>{actionError}</span>
                 <button
                   type="button"
-                  className={styles.errorBannerDismiss}
+                  className={shell.errorBannerDismiss}
                   aria-label="Dismiss error"
                   onClick={() => setActionError(null)}
                 >
@@ -459,22 +462,22 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             ) : null}
             {tab === "installed" ? (
               filteredInstalled.length === 0 ? (
-                <div className={styles.empty}>
+                <div className={shell.empty}>
                   {projectInstalledDirs.size === 0
                     ? "No packages added to this dataflow yet."
-                    : "No packages match the current filter."}
+                    : "No packages match the current filters."}
                 </div>
               ) : (
                 <MyPackagesList {...myPackagesListProps} />
               )
             ) : (
               <>
-                <p className={styles.sectionLabel}>{tabLabel[tab]}</p>
+                <p className={shell.sectionLabel}>{tabLabel[tab]}</p>
 
                 {filteredCatalog.length === 0 ? (
-                  <div className={styles.empty}>No packages match the current filter.</div>
+                  <div className={shell.empty}>No packages match the current filters.</div>
                 ) : (
-                  <div className={styles.cardList}>
+                  <div className={shell.cardList}>
                     {filteredCatalog.map((pkg) => {
                       // "Installed" in the drawer means "in this project's
                       // lockfile" — the user-store presence is irrelevant

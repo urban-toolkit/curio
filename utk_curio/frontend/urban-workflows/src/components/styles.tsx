@@ -16,6 +16,7 @@ import {
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
+import { CATEGORY_FALLBACK_FG, categoryFg } from "../constants/nodeCategoryPalette";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
@@ -1218,16 +1219,19 @@ const headerIconStyle: CSS.Properties = {
     flexShrink: 0,
 };
 
+// Node border colour = node category, read from the shared palette rather than
+// restated here. DataflowThumbnail used to carry a hand-kept copy of the same
+// hexes, and the Node Catalog picked a third set by hashing a directory name.
 const nodeTypeBorderColor: Record<string, string> = {
-    [NodeType.DATA_LOADING]: "#3498db",
-    [NodeType.DATA_EXPORT]: "#3498db",
-    [NodeType.DATA_TRANSFORMATION]: "#3498db",
-    [NodeType.DATA_SUMMARY]: "#3498db",
-    [NodeType.COMPUTATION_ANALYSIS]: "#8e44ad",
-    [NodeType.MERGE_FLOW]: "#8e44ad",
-    [NodeType.DATA_POOL]: "#8e44ad",
-    [NodeType.VIS_VEGA]: "#1abc9c",
-    [NodeType.VIS_SIMPLE]: "#1abc9c",
+    [NodeType.DATA_LOADING]: categoryFg("data"),
+    [NodeType.DATA_EXPORT]: categoryFg("data"),
+    [NodeType.DATA_TRANSFORMATION]: categoryFg("data"),
+    [NodeType.DATA_SUMMARY]: categoryFg("data"),
+    [NodeType.COMPUTATION_ANALYSIS]: categoryFg("computation"),
+    [NodeType.MERGE_FLOW]: categoryFg("computation"),
+    [NodeType.DATA_POOL]: categoryFg("computation"),
+    [NodeType.VIS_VEGA]: categoryFg("vis"),
+    [NodeType.VIS_SIMPLE]: categoryFg("vis"),
 };
 
 const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({
@@ -1236,7 +1240,7 @@ const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({
     // `nodeType` arrives versioned for palette-dragged nodes
     // (`curio.builtin/merge-flow@1`) but this map is keyed by the unversioned
     // NodeType enum, so an unnormalized lookup silently falls back to grey (#159).
-    borderLeft: `4px solid ${nodeTypeBorderColor[unversionedNodeType(nodeType)] ?? "#95a5a6"}`,
+    borderLeft: `4px solid ${nodeTypeBorderColor[unversionedNodeType(nodeType)] ?? CATEGORY_FALLBACK_FG}`,
     borderRadius: "10px",
     padding: "5px",
     boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",

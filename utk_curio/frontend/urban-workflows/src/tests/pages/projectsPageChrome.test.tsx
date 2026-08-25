@@ -119,7 +119,7 @@ describe('projects page chrome', () => {
   test('the projects actions and sign-out testid survive the header swap', async () => {
     const { getByRole, getByPlaceholderText, getByTestId } = await renderPage();
 
-    expect(getByPlaceholderText('Search projects...')).toBeTruthy();
+    expect(getByPlaceholderText('Search projects…')).toBeTruthy();
     expect(getByRole('button', { name: 'Import Jupyter notebook' })).toBeTruthy();
     expect(getByRole('button', { name: '+ New Dataflow' })).toBeTruthy();
     // backend/tests/test_frontend/test_auth_flow.py clicks this testid.
@@ -215,15 +215,37 @@ describe('project card selection', () => {
     );
   });
 
-  test('the accent colour reaches the border via --projectAccent', async () => {
+  test('every dataflow card carries the same colour, whatever its accent', async () => {
+    // Dataflows have no categorization, so colour here cannot mean anything.
+    // The catalog pages key a card's colour to something real (a dataset's
+    // format, a package's node category); this page used to key it to
+    // `thumbnail_accent`, which is set by nothing and read as noise beside
+    // them. p1 is "sky" and p2 is "peach" in the fixture; neither reaches the
+    // DOM.
     const { container } = await renderPage();
 
-    // p1's thumbnail_accent is "sky".
-    const card = container.querySelector('[data-project-id="p1"]') as HTMLElement;
-    expect(card.style.getPropertyValue('--projectAccent')).toBe('#3567C7');
-    expect(ruleBody(read('projects/ProjectsBrowseLayout.module.css'), 'cardActive')).toContain(
-      'border-color: var(--projectAccent'
+    for (const id of ['p1', 'p2']) {
+      const card = container.querySelector('[data-project-id="' + id + '"]') as HTMLElement;
+      expect(card.style.getPropertyValue('--projectAccent')).toBe('');
+      expect(card.getAttribute('style')).toBeNull();
+    }
+
+    const layout = read('projects/ProjectsBrowseLayout.module.css');
+    expect(ruleBody(layout, 'cardActive')).toContain(
+      'border-color: var(--curio-kind-dataflow-fg)'
     );
+    expect(ruleBody(layout, 'cardStrip')).toContain('background: var(--curio-kind-dataflow-fg)');
+  });
+
+  test('the header carries the same chrome as the catalog browse pages', async () => {
+    // The three browse pages are peers, so /projects grows the kind icon, the
+    // scope chip beside the search box and the sort select that both catalogs
+    // already had.
+    const { container, getByRole } = await renderPage();
+
+    expect(container.querySelector('.titleRow .kindIcon')).not.toBeNull();
+    expect(container.querySelector('.hubStatusChip')).not.toBeNull();
+    expect(getByRole('combobox', { name: 'Sort projects' })).toBeTruthy();
   });
 });
 

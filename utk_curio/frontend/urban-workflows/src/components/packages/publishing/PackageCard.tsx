@@ -9,26 +9,15 @@ import { CatalogPublishPill, shouldShowPublishPill } from "../CatalogPublishPill
 import { packageInitial,primaryCategory } from "./packageUtils";
 import styles from "./PackageCard.module.css";
 
-/** Accent keys cycled deterministically per package dirName. */
-const PACK_ACCENT_KEYS = ["warm", "cool", "violet"] as const;
-type PackAccentKey = (typeof PACK_ACCENT_KEYS)[number];
-
-const CARD_ICON_VARIANTS: Record<PackAccentKey, string> = {
-  warm: styles.cardIconWarm,
-  cool: styles.cardIconCool,
-  violet: styles.cardIconViolet,
-};
-
-function packAccentKey(dirName: string): PackAccentKey {
-  let hash = 0;
-  for (let i = 0; i < dirName.length; i++) {
-    hash = (hash + dirName.charCodeAt(i)) % PACK_ACCENT_KEYS.length;
-  }
-  return PACK_ACCENT_KEYS[hash]!;
-}
-
-function iconVariantForPack(dirName: string): string {
-  return CARD_ICON_VARIANTS[packAccentKey(dirName)];
+/**
+ * The icon tile is coloured by the package's node category, so it matches both
+ * the chip you filtered with and the left border the canvas paints on a node of
+ * that category. It used to be a character-sum hash of `dirName`, which meant
+ * three `data` packages could render in three unrelated colours while a
+ * `computation` package borrowed one of them.
+ */
+function iconVariantForCategory(category: string): string {
+  return (styles as Record<string, string>)[`cardIcon_${category}`] ?? styles.cardIcon_package;
 }
 
 
@@ -105,7 +94,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
     >
       <div className={`${styles.cardIcon}`}>
         <CatalogKindIcon
-          className={`${styles.cardIcon} ${styles.cardIconPackage} ${iconVariantForPack(pkg.dirName)} `}
+          className={`${styles.cardIcon} ${styles.cardIconPackage} ${iconVariantForCategory(cat)} `}
           kind="package" 
           size="md"
           title="Node package" 
@@ -119,7 +108,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
       <div className={styles.cardBody}>
         <CatalogItemRowHeader
           kind="package"
-          badge={<CatalogCategoryBadge label={cat} accentKey={packAccentKey(pkg.dirName)} />}
+          badge={<CatalogCategoryBadge label={cat} accentKey={cat} />}
         />
         <h3 className={styles.cardTitle}>{pkg.name}</h3>
         <p className={styles.cardMeta}>

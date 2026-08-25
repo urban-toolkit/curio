@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 499;
+  z-index: var(--curio-z-modal-base-backdrop);
 }
 
 .modal {
@@ -13,10 +13,10 @@
   width: 480px;
   max-width: 90vw;
   max-height: 80vh;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-  z-index: 500;
+  background: var(--curio-card-bg);
+  border-radius: var(--curio-radius-lg);
+  box-shadow: var(--curio-shadow-modal);
+  z-index: var(--curio-z-modal-base);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -60,7 +60,7 @@
   background: none;
   border: none;
   line-height: 1;
-  color: #1E1F23;
+  color: var(--curio-text-primary);
   padding: 0;
   z-index: 1;
   display: flex;
@@ -69,5 +69,5 @@
 }
 
 .closeX:hover {
-  color: #555;
+  color: var(--curio-text-secondary);
 }

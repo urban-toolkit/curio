@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo } from "react";
 import type { NodeCategory, NodePackageMeta } from "../../../registry/types";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../constants/nodeCategoryShortLabels";
+import { NODE_CATEGORY_KEY } from "../../../constants/nodeCategoryPalette";
 import { formatForkOfSubtitle } from "../../../utils/forkPackageLineage";
 import { usePackagePalette } from "../../../providers/PackagePaletteContext";
 import { useHeaderIconDragClick } from "../../../utils/headerIconDragClick";
@@ -42,7 +43,15 @@ export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMe
 
   return (
     <div className={styles.pills} style={suggestionActive ? { pointerEvents: "none" } : undefined}>
-      <span className={styles.categoryBadge} title={NODE_CATEGORY_SHORT_LABEL[category]}>
+      {/* Coloured by category, like the node's own left border. It used to be
+          one flat peach for every category, so the pill named the category
+          while the border beside it was the only thing showing it. */}
+      <span
+        className={`${styles.categoryBadge} ${
+          (styles as Record<string, string>)[`categoryBadge_${NODE_CATEGORY_KEY[category]}`] ?? ""
+        }`}
+        title={NODE_CATEGORY_SHORT_LABEL[category]}
+      >
         {NODE_CATEGORY_SHORT_LABEL[category]}
       </span>
       <button

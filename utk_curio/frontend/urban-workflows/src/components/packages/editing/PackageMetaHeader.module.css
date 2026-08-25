@@ -6,17 +6,41 @@
   font-family: var(--curio-font-family);
 }
 
+/* The node's category, in the node's category colour — the same palette the
+   canvas paints its left border with. This was a single flat peach for every
+   category, so the pill named the category while the border beside it was the
+   only thing that showed it. */
 .categoryBadge {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--curio-accent-peach-fg);
-  background-color: var(--curio-accent-peach-bg);
+  color: var(--curio-category-package-on-tint);
+  background-color: var(--curio-category-package-bg);
   padding: 2px 8px;
   border-radius: var(--curio-radius-pill);
   line-height: 1.15;
   white-space: nowrap;
+}
+
+.categoryBadge_data {
+  color: var(--curio-category-data-on-tint);
+  background-color: var(--curio-category-data-bg);
+}
+
+.categoryBadge_computation {
+  color: var(--curio-category-computation-on-tint);
+  background-color: var(--curio-category-computation-bg);
+}
+
+.categoryBadge_vis {
+  color: var(--curio-category-vis-on-tint);
+  background-color: var(--curio-category-vis-bg);
+}
+
+.categoryBadge_package {
+  color: var(--curio-category-package-on-tint);
+  background-color: var(--curio-category-package-bg);
 }
 
 .packageBadge {
@@ -24,8 +48,8 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--curio-accent-sky-fg);
-  background-color: var(--curio-accent-sky-bg);
+  color: var(--curio-role-published-fg);
+  background-color: var(--curio-role-published-bg);
   border: 1px solid rgba(53, 103, 199, 0.4);
   border-radius: var(--curio-radius-pill);
   padding: 2px 8px;
@@ -37,10 +61,10 @@
 
 .packageBadge:hover {
   background-color: rgba(53, 103, 199, 0.25);
-  border-color: var(--curio-accent-sky-fg);
+  border-color: var(--curio-role-published-fg);
 }
 
 .packageBadge:focus-visible {
-  outline: 2px solid var(--curio-accent-sky-fg);
+  outline: 2px solid var(--curio-role-published-fg);
   outline-offset: 1px;
 }

@@ -20,7 +20,7 @@ export interface PackageSearchRowProps {
 }
 
 const PACKAGE_SORT_OPTIONS: SearchRowSortOption[] = [
-  { value: "new", label: "Sort: New" },
+  { value: "new", label: "Sort: Newest" },
   { value: "name", label: "Sort: Name" },
 ];
 
@@ -30,7 +30,7 @@ export const PackageSearchRow: React.FC<PackageSearchRowProps> = ({
   sort,
   onSearchChange,
   onSortChange,
-  placeholder = "Search packages, authors, keywords...",
+  placeholder = "Search packages, publishers, tags…",
   sortAriaLabel = "Sort packages",
   sortOptions = PACKAGE_SORT_OPTIONS,
 }) => (

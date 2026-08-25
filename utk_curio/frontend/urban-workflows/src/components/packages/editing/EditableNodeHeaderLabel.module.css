@@ -66,7 +66,7 @@
 }
 
 .execMark {
-    color: var(--curio-accent-mint-fg);
+    color: var(--curio-role-installed-fg);
     margin-right: 2px;
     font-size: 10px;
     flex-shrink: 0;
