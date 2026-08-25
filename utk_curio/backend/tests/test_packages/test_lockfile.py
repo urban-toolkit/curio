@@ -24,7 +24,9 @@ from utk_curio.backend.app.packages import defaults as defaults_io
 from utk_curio.backend.app.packages import services as packages_services
 from utk_curio.backend.app.packages.spec_packages import (
     dir_name_from_node_type,
+    preserve_project_packages,
     project_packages,
+    referencing_nodes,
     set_project_packages,
 )
 from utk_curio.backend.app.packages.storage import (
@@ -436,3 +438,61 @@ class TestCatalogOverlayRouting:
         assert calls["overlay"] == (UHVI_DIR, {"tinylib": "1.0.0"})
         # Host portion empty → no restart notice (dev/92 narrowed by dev/97).
         assert "restartRecommended" not in result
+
+
+# ---------------------------------------------------------------------------
+# memo dev/101 — the lockfile is backend-owned on update
+# ---------------------------------------------------------------------------
+
+class TestPreserveProjectPackages:
+    def test_disk_wins_over_the_client_mirror(self):
+        disk = {"dataflow": {"nodes": [], "packages": [UHVI_DIR]}}
+        client = {"dataflow": {"nodes": [], "packages": []}}
+        preserve_project_packages(client, disk)
+        assert client["dataflow"]["packages"] == [UHVI_DIR]
+
+    def test_client_cannot_add_what_disk_lacks(self):
+        disk = {"dataflow": {"nodes": [], "packages": []}}
+        client = {"dataflow": {"nodes": [], "packages": ["stale.tab@1"]}}
+        preserve_project_packages(client, disk)
+        assert client["dataflow"]["packages"] == []
+
+    def test_legacy_empty_list_with_nodes_becomes_explicit(self):
+        """The reported state: ``[]`` on disk, a node of the package's type on
+        the canvas. The carried-forward value is the EFFECTIVE lockfile, so the
+        next save writes it down instead of leaving the backfill implicit."""
+        disk = {"dataflow": {"nodes": [{"type": UHVI_TEMPLATE_REF}], "packages": []}}
+        client = {"dataflow": {"nodes": [{"type": UHVI_TEMPLATE_REF}], "packages": []}}
+        preserve_project_packages(client, disk)
+        assert client["dataflow"]["packages"] == [UHVI_DIR]
+
+    def test_no_dataflow_on_disk_leaves_the_client_value(self):
+        client = {"dataflow": {"nodes": [], "packages": ["fresh.pkg@1"]}}
+        preserve_project_packages(client, None)
+        assert client["dataflow"]["packages"] == ["fresh.pkg@1"]
+        preserve_project_packages(client, {"dataflow": "corrupt"})
+        assert client["dataflow"]["packages"] == ["fresh.pkg@1"]
+
+    def test_none_effective_is_a_no_op(self):
+        assert preserve_project_packages(None, {"dataflow": {}}) is None
+
+
+class TestReferencingNodes:
+    def test_versioned_and_unversioned_types_are_counted(self):
+        spec = {"dataflow": {"nodes": [
+            {"id": "a", "type": UHVI_TEMPLATE_REF},
+            {"id": "b", "type": "ai.urbanlab.uhvi/uhvi-load"},
+            {"id": "c", "type": "curio.builtin/data-loading@1"},
+            "garbage",
+        ]}}
+        assert referencing_nodes(spec, UHVI_DIR, {"ai.urbanlab.uhvi": [1]}) == ["a", "b"]
+        # Without a resolver the unversioned reference cannot be attributed.
+        assert referencing_nodes(spec, UHVI_DIR) == ["a"]
+
+    def test_nodes_without_ids_still_count(self):
+        spec = {"dataflow": {"nodes": [{"type": UHVI_TEMPLATE_REF}]}}
+        assert referencing_nodes(spec, UHVI_DIR) == ["#0"]
+
+    def test_no_dataflow_is_empty(self):
+        assert referencing_nodes(None, UHVI_DIR) == []
+        assert referencing_nodes({"dataflow": None}, UHVI_DIR) == []

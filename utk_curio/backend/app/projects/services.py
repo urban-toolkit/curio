@@ -460,6 +460,19 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                 preserve_dataset_refs,
             )
             preserve_agent_state(effective_spec, existing_spec)
+            # ``dataflow.packages`` is backend-owned on update too (memo
+            # dev/101): the client's mirror of the lockfile could overwrite
+            # what a promotion or the drawer had just written. The on-disk
+            # effective lockfile (backfill included) is what survives.
+            from utk_curio.backend.app.packages.services import (
+                _installed_majors_by_pkg,
+            )
+            from utk_curio.backend.app.packages.spec_packages import (
+                preserve_project_packages,
+            )
+            preserve_project_packages(
+                effective_spec, existing_spec, _installed_majors_by_pkg(ukey),
+            )
             # ``dataflow.datasets`` is backend-owned on update (dev/81 Fix 2):
             # the on-disk section overwrites whatever the client sent, so a
             # stale client mirror can neither resurrect an uninstalled ref nor
