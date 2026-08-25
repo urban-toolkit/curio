@@ -535,6 +535,17 @@ class TestResearcher:
         assert "a refused request is not evidence of absence" in low
         assert "is not a note template unless it appears there" in low
         assert "never narrate the request mechanics" in low
+        # dev/105 A2: the REUSE rung names the exact node.create params — and
+        # the tool contract the model reads at the tail admits every one of
+        # them (the second live test's notes were white and headed "Note"
+        # because the contract named only nodeType/content/goal).
+        assert '"title": "<short header>"' in text
+        assert '"appearance": {"backgroundColor"' in text
+        from utk_curio.backend.app.agents import tools as tools_mod
+
+        contract = tools_mod.REGISTRY["node.create"].description
+        for name in ('"title"', '"goal"', '"appearance": {"backgroundColor"'):
+            assert name in contract
         assert "notes mirror the chat" in low
         # dev/90 A1: gather-first via the web tools, sources in the note,
         # honest stop when no provider is configured.

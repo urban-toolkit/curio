@@ -3283,6 +3283,7 @@ def _apply_node_create(
     created = _insert_node(
         spec, node_type, proposal.get("content", ""), proposal.get("goal"),
         appearance=proposal.get("appearance"),  # dev/89: typed round-trip
+        title=proposal.get("title"),  # dev/105 A2: the header the note renders
     )
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
@@ -5489,19 +5490,34 @@ def _mint_node_create(
         return _refuse_params("params.content exceeds the proposal size bound")
     goal = params.get("goal")
     goal = goal.strip() if isinstance(goal, str) and goal.strip() else None
+    # dev/105 A2 (additive): the node's HEADER. The note behavior renders
+    # `title` (falling back to "Note"); `goal` is the purpose line. The mint
+    # used to drop this param while the prompt asked for it — the second
+    # live test's notes were all headed "Note".
+    title = params.get("title")
+    title = title.strip()[:_NODE_TITLE_MAX_CHARS] if isinstance(title, str) and title.strip() else None
     # dev/89 (additive): optional appearance, normalized by the ONE shared
     # utility — an invalid or inaccessible color refuses at mint, loudly.
     from utk_curio.backend.app.packages import node_appearance
 
+    raw_appearance = params.get("appearance")
+    if raw_appearance is None and _notes_agent_run(loop_ctx) and entry.get("presentation"):
+        # dev/105 A2: the A13 default on the Researcher's OWN attachment path
+        # — dev/95 already filled it on the delegate path. First note of the
+        # run yellow (the question), the rest green (answers). Only a
+        # note-composing run on a PRESENTATION template; a supplied color
+        # always wins; every other agent/template is byte-unchanged.
+        k = loop_ctx.get("_note_creates", 0)
+        raw_appearance = {"backgroundColor": _NOTES_DEFAULT_COLORS[min(k, 1)]}
     try:
-        appearance = node_appearance.normalize_appearance(params.get("appearance"))
+        appearance = node_appearance.normalize_appearance(raw_appearance)
     except node_appearance.AppearanceError as exc:
         return _refuse_params(f"params.appearance: {exc}")
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None
     proposal_id = uuid.uuid4().hex
-    summary = f"Create a new {entry['label']} node"
+    summary = f"Create a new {entry['label']} node" + (f" · {title}" if title else "")
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="node.create",
@@ -5519,9 +5535,12 @@ def _mint_node_create(
     }
     if goal:
         proposal["goal"] = goal
+    if title:
+        proposal["title"] = title
     if appearance:
         proposal["appearance"] = appearance
     _store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
+    loop_ctx["_note_creates"] = loop_ctx.get("_note_creates", 0) + 1  # A13 index
     return (
         "proposed",
         f"proposal {proposal_id} created for a new {entry['label']} node; it awaits "
@@ -6240,6 +6259,17 @@ def _extract_notes_reply(child_text: str) -> dict | None:
 #: always win; defaults only fill absences).
 _NOTES_DEFAULT_COLORS = ("yellow", "green")
 
+#: dev/105 A2: a node header is a short line — bounded like the goal.
+_NODE_TITLE_MAX_CHARS = 120
+
+
+def _notes_agent_run(loop_ctx: dict) -> bool:
+    """True when the run's manifest declares ``research.notes.compose`` — the
+    ONE capability whose node.create defaults follow the A13 row (dev/105
+    A2). Keyed on the capability, never the agent id."""
+    manifest = loop_ctx.get("manifest")
+    return "research.notes.compose" in (getattr(manifest, "capability_ids", None) or [])
+
 
 def _mint_notes_from_delegate(
     user_key: str, project_id: str, loop_ctx: dict, child_text: str,
@@ -6306,7 +6336,9 @@ def _mint_notes_from_delegate(
         req = {"params": {
             "nodeType": entry["id"],
             "content": row["content"],
-            **({"goal": row["title"]} if row.get("title") else {}),
+            # dev/105 A2: the row's title is the note's HEADER (what the
+            # behavior renders), not its purpose line.
+            **({"title": row["title"]} if row.get("title") else {}),
             "appearance": appearance,
         }}
         status, text, part = _mint_node_create(user_key, project_id, loop_ctx, req)

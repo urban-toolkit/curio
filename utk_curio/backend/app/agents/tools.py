@@ -229,7 +229,11 @@ REGISTRY: dict[str, ToolContract] = {
         description=(
             "Propose adding ONE new node to the canvas. Params: "
             '{"nodeType": "<packageId>/<templateId>", "content": "...", '
-            '"goal": "..."} (goal optional). nodeType must be an id from the '
+            '"title": "<short header shown on the node>", "goal": "<one-line '
+            'purpose>", "appearance": {"backgroundColor": "<palette name or '
+            '#RRGGBB>"}} — title, goal and appearance are optional; a note '
+            "template renders title and backgroundColor, so give both for "
+            "notes. nodeType must be an id from the "
             '"Available node templates" list — never invented. The user '
             "reviews the proposal; nothing is added without their approval."
         ),

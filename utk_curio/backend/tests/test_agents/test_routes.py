@@ -3628,6 +3628,95 @@ class TestReuseLadder:
         helper._run(client, token, alice_project, att3)
         assert "None of these renders a note" not in calls3[0][0]["content"]
 
+    # dev/105 A2 — the A13 default is narrow: a research.notes.compose run, a
+    # PRESENTATION template, no color given. Everything else is byte-unchanged.
+    def _create_req(self, node_type, **extra):
+        import json as _json
+
+        return (
+            "```curio.v1\n"
+            + _json.dumps({"toolRequest": {"tool": "node.create", "params": {
+                "nodeType": node_type, "content": "hello", **extra,
+            }}})
+            + "\n```"
+        )
+
+    def test_a13_default_fills_only_an_omitted_color_on_a_note_template(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.packages import node_appearance
+        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        att_id, calls = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[
+                self._create_req("curio.notes/note-surface", title="Question"),        # → yellow
+                self._create_req("curio.notes/note-surface", appearance={"backgroundColor": "pink"}),  # wins
+                self._create_req("curio.notes/note-surface"),                          # → green (index 2)
+                "done",
+            ],
+        )
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        resp = self._run(client, token, alice_project, att_id)
+        spec_nodes_before = None  # proposals only; nothing lands without Apply
+        proposals = [p for p in resp.get_json()["content"] if p["type"] == "proposal"]
+        assert len(proposals) == 3
+        # The mirrored proposals carry the normalized colors + the title.
+        att = next(
+            a for a in self._spec(client, token, alice_project)["dataflow"]["agentAttachments"]
+            if a["attachmentId"] == att_id
+        )
+        mirrored = [att["activeProposal"]] + list(att.get("queuedProposals") or [])
+        by_id = {p["proposalId"]: p for p in mirrored}
+        ordered = [by_id[p["proposalId"]] for p in proposals]
+        norm = lambda c: node_appearance.normalize_appearance({"backgroundColor": c})
+        assert [p.get("appearance") for p in ordered] == [norm("yellow"), norm("pink"), norm("green")]
+        assert ordered[0]["title"] == "Question" and "title" not in ordered[1]
+        assert spec_nodes_before is None
+
+    def test_a13_default_never_touches_other_agents_or_code_templates(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        # A Researcher creating a CODE node: no default.
+        att_id, _ = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[self._create_req("curio.builtin/computation-analysis"), "done"],
+        )
+        resp = self._run(client, token, alice_project, att_id)
+        (proposal,) = [p for p in resp.get_json()["content"] if p["type"] == "proposal"]
+        att = next(
+            a for a in self._spec(client, token, alice_project)["dataflow"]["agentAttachments"]
+            if a["attachmentId"] == att_id
+        )
+        assert "appearance" not in att["activeProposal"]
+        # A Node Builder creating a NOTE without a color: no default either.
+        helper = TestNodeCreate()
+        att2, _ = helper._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[self._create_req("curio.notes/note-surface"), "done"],
+        )
+        resp2 = helper._run(client, token, alice_project, att2)
+        (proposal2,) = [p for p in resp2.get_json()["content"] if p["type"] == "proposal"]
+        att2_row = next(
+            a for a in self._spec(client, token, alice_project)["dataflow"]["agentAttachments"]
+            if a["attachmentId"] == att2
+        )
+        assert "appearance" not in att2_row["activeProposal"]
+
+    def _spec(self, client, token, project_id):
+        return client.get(f"/api/projects/{project_id}", headers=_auth(token)).get_json()["spec"]
+
     def test_enlist_miss_hint_names_only_sources_this_run_can_read(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):

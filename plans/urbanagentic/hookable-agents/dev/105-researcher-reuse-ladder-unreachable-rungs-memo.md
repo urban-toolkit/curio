@@ -235,3 +235,46 @@ Applying the live **Install package · Simple Notes** card opens the package ins
 ### A1.6 Commit
 
 - **Commit 5 — frontend review gate reads the store too**: the hook change + the four jest lanes; BL-44 gains a "found by the live test" deviation line; this amendment's status → IMPLEMENTED.
+
+---
+
+## Amendment A2 (2026-08-25, after the second live test) — D5: the notes land, white and untitled — `node.create` never carries what the note behavior renders
+
+**Status: IMPLEMENTED (2026-08-25) — commit 6: `node.create` contract names `title`/`goal`/`appearance.backgroundColor`; `_mint_node_create` stores a bounded `title` (echoed in the summary) and fills the A13 default (`_NOTES_DEFAULT_COLORS`, indexed by the run's `_note_creates` counter) only for a `research.notes.compose` run on a `presentation` template with no color given; `_apply_node_create` forwards `title` to `_insert_node`; dev/95's delegate rows map `title → title`; prompt REUSE rung names the exact params. Tests: field variant C (two uncolored creates → `Question`/yellow, `Weather in Paris`/green on the applied nodes), A13 narrowness lanes (explicit color wins; Researcher on a code template and Node Builder on a note template stay uncolored), contract + prompt markers; `test_agents` + `test_packages` 1460 passed / 4 skipped.**
+
+### A2.1 Live result of commits 1–5
+
+Session `90f6fccc…` (screenshot `Desktop/Screenshot 2026-08-25 at 2.09.15 PM.png`): after enlisting `curio.notes@1`, the Researcher minted TWO `node.create` proposals in one run (`toolCalls`: `ok, proposed, proposed` — the A16 sequence), both applied, and two `curio.notes/note-surface` nodes exist on the canvas with the right content (question; markdown answer with the source link). **The ladder is closed end to end.** But both notes render **white** with the header **"Note"** instead of yellow "Question" / green "Weather in Paris".
+
+### A2.2 Root cause — three gaps on ONE path, all server-side
+
+The stored nodes carry `goal: "User Question"` / `goal: "Weather Answer"`, `content`, and **no `title`, no `metadata.appearance`**. The `curio.notes` behavior renders `data.title || 'Note'` and `nodeState.appearance?.backgroundColor || 'white'`, and the frontend already round-trips exactly `node.title` and `node.metadata.appearance` for agent-created nodes (`useAgentCanvasMutations.ts:57-66`, the dev/89 typed round-trip). Nothing put them there:
+
+- **G1 — the contract never names them.** The `node.create` tool contract the model reads at the tail (`agents/tools.py:229-233`) documents `{"nodeType", "content", "goal"}` only. The Researcher prompt asks for "a short title, and an appearance color" (`researcher_notes_instruction.txt:7`) — a parameter the tool's own description does not admit. The model did the reasonable thing: it sent `goal`. DEC-063/DEC-067 shape again — an instruction not executable through the contract it is given.
+- **G2 — the mint drops `title` and apply never forwards it.** `_mint_node_create` reads `content`, `goal`, `appearance` (dev/89) and ignores `params.title`; `_apply_node_create` calls `_insert_node(spec, node_type, content, goal, appearance=…)` although `_insert_node` already accepts `title=` (used by the package-draft apply). `goal` is the node's purpose line, not its header.
+- **G3 — no A13 default on the attachment path.** dev/95's delegate mint fills `_NOTES_DEFAULT_COLORS[min(index, 1)]` (question yellow, answers green) when a row omits its color; the Researcher's OWN attachment runs — the path the user actually uses — have no equivalent, so an omitted color means white.
+
+(Not a defect: dev/93/95's E2E lanes asserted `metadata.appearance` in the spec when the model DID pass it; nothing asserted the path where it did not.)
+
+### A2.3 Fix
+
+1. **Contract (G1)** — `tools.py` `node.create` description names the full accepted shape: `{"nodeType", "content", "goal" (optional purpose line), "title" (optional header), "appearance": {"backgroundColor": "<palette name or #RRGGBB>"} (optional)}` — the same vocabulary `package.draft.apply`'s `nodes[]` already teaches at :257-260, so one shape, twice stated.
+2. **Mint + apply (G2)** — `_mint_node_create` reads `params.title` (string, stripped, bounded like `goal`), stores it on the proposal (`proposal["title"]`) and echoes it in the summary (`Create a new Note node · Question`); `_apply_node_create` passes `title=proposal.get("title")` to `_insert_node`. Both proposal mirror and turn part are additive (absent when not given). dev/95's delegate mint switches its row mapping from `goal: row["title"]` to `title: row["title"]` so the header renders there too — `goal` stays for a row that carries one.
+3. **A13 default on the attachment path (G3)** — in `_mint_node_create`, when `appearance` is absent AND the run's manifest declares `research.notes.compose` AND the resolved template is a `presentation` template (the dev/105 S1 flag), fill `_NOTES_DEFAULT_COLORS[min(k, 1)]` where `k` = the number of `node.create` proposals already minted in this run (`loop_ctx["minted"]`-derived — the first note yellow, the rest green). Model/user-supplied colors always win; other agents and non-presentation templates are byte-unchanged. The defaults live in ONE tuple (`_NOTES_DEFAULT_COLORS`) shared with dev/95.
+4. **Prompt** — one clause on the REUSE rung: the exact `node.create` params `{"nodeType", "title", "content", "appearance": {"backgroundColor": …}}`, mirroring the contract.
+
+### A2.4 Tests
+
+- Contract test: the description names `title` and `appearance.backgroundColor`.
+- Mint: `title` stored and bounded; absent title → no key; summary carries it. Apply: `title` and `metadata.appearance` land on the node (`_insert_node` round-trip).
+- A13 default: Researcher run, presentation template, no `appearance` → first note `yellow`, second `green` (normalized hex via `node_appearance`); explicit color wins; a Dataflow Builder / Node Builder `node.create` without appearance stays without; a non-presentation template stays without.
+- dev/95 delegate lane: rows now produce `title` (and `goal` only when given).
+- Field lane `test_reuse_ladder_field.py` gains a third variant: the enlisted-store run (`curio.notes@1` in the lockfile) → two `node.create` requests without colors → applied nodes carry `title` and `yellow`/`green` appearance.
+
+### A2.5 Acceptance
+
+Re-running the live sequence yields a yellow note headed **Question** and a green note headed **Weather in Paris** (or the model's title), content unchanged; the DFB/Node Builder create flows are unchanged; the delegate path's notes gain headers.
+
+### A2.6 Commit
+
+- **Commit 6 — `node.create` carries title + appearance, A13 defaults on the attachment path**: tools contract, mint/apply, delegate row mapping, prompt clause, tests incl. field variant C; BL-44 deviation line; this amendment → IMPLEMENTED.

@@ -138,7 +138,8 @@ def _execution(client, token, project_id, att_id):
         f"/api/agents/projects/{project_id}/attachments/{att_id}/session",
         headers=_auth(token),
     ).get_json()["turns"]
-    return turns[-1]["execution"]
+    # The last RUN turn — applied-proposal log turns carry no execution.
+    return next(t["execution"] for t in reversed(turns) if "execution" in t)
 
 
 def _spec_nodes(client, token, project_id):
@@ -147,7 +148,64 @@ def _spec_nodes(client, token, project_id):
     ).get_json()["spec"]["dataflow"]["nodes"]
 
 
+def _create_note(title, body):
+    # dev/105 A2: the way the live model spoke after commit 5 — title and
+    # content, NO appearance (the contract had never named it).
+    return _tool("node.create", {
+        "nodeType": "curio.notes/note-surface", "title": title, "content": body,
+    })
+
+
+def _apply(client, token, project_id, att_id, proposal_id):
+    return client.post(
+        f"/api/agents/projects/{project_id}/attachments/{att_id}"
+        f"/proposals/{proposal_id}/apply",
+        headers=_auth(token),
+    )
+
+
 class TestFieldReplay:
+    def test_variant_c_enlisted_notes_land_titled_and_colored(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The 14:09 live run (after commit 5): the ladder closed, two notes
+        landed — white and headed "Note". Now: titles round-trip and the A13
+        defaults fill the colors the model omitted (question yellow, answer
+        green) on the Researcher's own attachment path."""
+        from utk_curio.backend.app.packages import node_appearance
+        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            _create_note("Question", "what's the weather in Paris?"),
+            _create_note("Weather in Paris", "### Weather in Paris\n- **Now:** ~21°C"),
+            "Two notes await your review.",
+        ])
+        key = _user_dir_key(user)
+        _field_store(key, pid, with_notes=True)
+        packages_services.install_to_project(key, pid, "curio.notes@1")  # enlisted
+
+        run = _run(client, token, pid, att_id)
+        assert run.status_code == 200, run.get_data(as_text=True)
+        proposals = [p for p in run.get_json()["content"] if p["type"] == "proposal"]
+        assert [p["tool"] for p in proposals] == ["node.create", "node.create"]
+        assert proposals[0]["summary"].endswith("· Question")
+        for p in proposals:
+            assert _apply(client, token, pid, att_id, p["proposalId"]).status_code == 200
+
+        yellow = node_appearance.normalize_appearance({"backgroundColor": "yellow"})
+        green = node_appearance.normalize_appearance({"backgroundColor": "green"})
+        notes = [n for n in _spec_nodes(client, token, pid) if "note-surface" in n["type"]]
+        assert [(n.get("title"), n["metadata"]["appearance"]) for n in notes] == [
+            ("Question", yellow), ("Weather in Paris", green),
+        ]
+        assert "goal" not in notes[0]  # title is the header, not the purpose line
+
+        execution = _execution(client, token, pid, att_id)
+        assert [c["status"] for c in execution["toolCalls"]] == ["proposed", "proposed"]
+
     def test_live_sequence_ends_in_an_install_proposal_not_a_chat_answer(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
