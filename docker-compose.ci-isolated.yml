@@ -1,0 +1,54 @@
+# Compose override for the isolated-execution CI job
+# (.github/workflows/docker-compose.yml, job `test-gpu-isolated`).
+#
+# Boots the same image with `--isolation=fork`, so a real workload runs through
+# the confined path instead of in-process. The unit suite proves the boundary
+# holds (test_isolation_linux.py); this proves ordinary nodes still produce the
+# right answers on the other side of it, which no unit test can show.
+#
+# Three deliberate differences from docker-compose.ci.yml. Each is forced.
+#
+# 1. NO --auth. `--auth` makes the instance "hosted", and a hosted instance
+#    that asks for fork isolation without an --exec-user is fatal by design
+#    (isolation/hardening.py::apply_and_report): it refuses to start rather
+#    than claim a filesystem boundary it does not have. See 2 for why the
+#    exec user cannot be set here. Losing auth costs the ~26 owner-gated e2e
+#    tests, which docker-compose.ci.yml already covers on the in-process path.
+#
+# 2. NO --exec-user. Setting it makes the sandbox chmod ./instance and
+#    ./.curio/data to 0700/0600 root-owned. The e2e harness computes its
+#    ground truth by executing every code node IN THE HOST TEST PROCESS
+#    (test_frontend/utils.py::execute_workflow_programmatically) and writing
+#    the artifacts into .curio/data as the runner user -- so hardening those
+#    paths makes the comparison step fail with EACCES before the browser is
+#    ever driven. The filesystem half of the boundary is therefore NOT covered
+#    here; it is covered by the unit suite
+#    (test_a_node_cannot_read_another_sessions_artifact, and hardening's
+#    permission truth table). What this job does cover is everything else:
+#    the fork, the seccomp filter, the rlimits, the scratch directory, the
+#    protocol across the boundary, and the staging of inputs and outputs.
+#
+# 3. A fourth port triple. The runner shares its host with prod curio
+#    (2000/5002/8080), curio-dev (2010/5012/8090) and the in-process CI stack
+#    (2020/5022/8100), so this one takes 2030/5032/8110 and its own compose
+#    project (-p curio-ci-iso).
+services:
+  curio:
+    # Same reasoning as docker-compose.ci.yml: the isolation tests can provoke
+    # process exhaustion, root inside the container bypasses RLIMIT_NPROC, and
+    # this host also runs the live stacks.
+    pids_limit: 4096
+    environment:
+      - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+    ports:
+      - "127.0.0.1:${CURIO_PORT_2000:-2030}:2000"
+    command:
+      - sh
+      - -c
+      # umask 000 for the same reason as the in-process overlay: host-side
+      # Playwright writes into the bind-mounted .curio as the runner user.
+      - >-
+        umask 000 && exec python curio.py start all --with-examples
+        --backend-host 0.0.0.0 --backend-port 5002
+        --sandbox-host 0.0.0.0 --sandbox-port 2000
+        --isolation fork

@@ -159,6 +159,44 @@ jobs:
           mkdir -p instance .curio
           docker compose -p curio-dev build --no-cache
           docker compose -p curio-dev up -d --force-recreate --remove-orphans
+          # Wait for the container to report healthy, and FAIL if it does not.
+          #
+          # `up -d` returns as soon as the container is created, so every check
+          # below used to run against a stack that might never have served a
+          # request. That was survivable while a bad boot was unlikely; it is
+          # not now that the deploy runs --isolation=fork, which is fail-closed:
+          # a sandbox that cannot confine exits rather than serve, and without
+          # this gate the deploy would go green over a dead stack.
+          #
+          # The image's HEALTHCHECK has --start-period=180s (it curls backend,
+          # sandbox and frontend), so allow generously more than that.
+          echo "=== waiting for health ==="
+          deadline=$((SECONDS + 420))
+          while true; do
+            health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || echo missing)"
+            state="$(docker inspect -f '{{.State.Status}}' "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || echo missing)"
+            if [ "$health" = "healthy" ]; then
+              echo "healthy"
+              break
+            fi
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+              echo "::error::the stack exited during startup (state=$state)"
+              docker compose -p curio-dev logs --no-color --tail=200 curio || true
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::the stack never became healthy (state=$state health=$health)"
+              docker compose -p curio-dev logs --no-color --tail=200 curio || true
+              exit 1
+            fi
+            sleep 5
+          done
+          # Isolation is fail-closed, so a healthy stack has already proved it
+          # came up isolated -- but say so in the log, because "in-process"
+          # here would mean the overlay stopped being applied.
+          docker compose -p curio-dev logs --no-color curio 2>/dev/null \
+            | grep -m1 "node execution isolation:" || true
+
           echo "=== docker ps (post-deploy) ==="
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true
           echo "=== serving container ==="
@@ -227,6 +265,44 @@ jobs:
           docker rm -f "${CURIO_CONTAINER_NAME:-curio}" 2>/dev/null || true
           docker compose -p curio build --no-cache
           docker compose -p curio up -d --force-recreate --remove-orphans
+          # Wait for the container to report healthy, and FAIL if it does not.
+          #
+          # `up -d` returns as soon as the container is created, so every check
+          # below used to run against a stack that might never have served a
+          # request. That was survivable while a bad boot was unlikely; it is
+          # not now that the deploy runs --isolation=fork, which is fail-closed:
+          # a sandbox that cannot confine exits rather than serve, and without
+          # this gate the deploy would go green over a dead stack.
+          #
+          # The image's HEALTHCHECK has --start-period=180s (it curls backend,
+          # sandbox and frontend), so allow generously more than that.
+          echo "=== waiting for health ==="
+          deadline=$((SECONDS + 420))
+          while true; do
+            health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${CURIO_CONTAINER_NAME:-curio}" 2>/dev/null || echo missing)"
+            state="$(docker inspect -f '{{.State.Status}}' "${CURIO_CONTAINER_NAME:-curio}" 2>/dev/null || echo missing)"
+            if [ "$health" = "healthy" ]; then
+              echo "healthy"
+              break
+            fi
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+              echo "::error::the stack exited during startup (state=$state)"
+              docker compose -p curio logs --no-color --tail=200 curio || true
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::the stack never became healthy (state=$state health=$health)"
+              docker compose -p curio logs --no-color --tail=200 curio || true
+              exit 1
+            fi
+            sleep 5
+          done
+          # Isolation is fail-closed, so a healthy stack has already proved it
+          # came up isolated -- but say so in the log, because "in-process"
+          # here would mean the overlay stopped being applied.
+          docker compose -p curio logs --no-color curio 2>/dev/null \
+            | grep -m1 "node execution isolation:" || true
+
           echo "=== docker ps (post-deploy) ==="
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true
           echo "=== serving container ==="

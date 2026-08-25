@@ -471,15 +471,25 @@ would be stronger but needs `CAP_SYS_ADMIN`, which Docker does not grant by
 default.
 
 > [!IMPORTANT]
-> **Implementation status.** `mode.py`, `protocol.py`, the child's execution
-> logic, and `util/staging.py` are covered by tests that run on every platform
-> today. The confinement itself (`child.confine`), the zygote's fork loop, and
-> the supervisor's socket and kill paths have **not been executed anywhere yet**
-> and are exercised only by `tests/test_isolation_linux.py`, which skips off
-> Linux. This is why `--isolation` defaults to `auto`, and why `auto` currently
-> resolves to `off`: nothing changes for an existing deployment until an
-> operator opts in. Do not rely on the boundary until that suite has passed in
-> CI.
+> **Implementation status.** The confinement code now runs in CI. Two jobs
+> cover it, and they cover different halves:
+>
+> - `test-gpu` runs `tests/test_isolation_linux.py` on the Linux runner: the
+>   fork, the seccomp filter (socket, connect and ptrace denied), the rlimits,
+>   the deadline kill, session scoping across the boundary, and the zygote
+>   holding no DuckDB handle. This is where the *boundary* is demonstrated.
+> - `test-gpu-isolated` boots a second stack with `--isolation=fork` and runs
+>   the Python-node workflows against it. This is where *ordinary nodes still
+>   work* is demonstrated. It asserts the stack actually came up isolated
+>   before trusting the result.
+>
+> Two gaps remain, both deliberate. The isolated CI stack runs without
+> `--exec-user`, because hardening those paths breaks the e2e harness's
+> host-side ground-truth step (see `docker-compose.ci-isolated.yml`), so the
+> **filesystem** half is covered only by unit tests. And `--isolation` still
+> defaults to `auto`, which still resolves to `off`: a local `curio start`
+> changes nothing. The deployed instances pass `--isolation=fork
+> --exec-user curio-exec` explicitly, via `docker-compose.deploy.yml`.
 
 `POST /install` (`pip install` into the sandbox's interpreter) is off unless
 `--allow-runtime-install` is passed. It defaults on for a local single-user
