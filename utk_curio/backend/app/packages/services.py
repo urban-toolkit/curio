@@ -344,6 +344,46 @@ def resolve_template(
     return entry, ""
 
 
+def _store_index(user_key: str) -> dict[str, object]:
+    """ONE walk of the user's package store: ``dirName -> manifest``, or the
+    exception that stopped it being read (memo dev/99 R2).
+
+    Every template/catalog listing in this module used to walk the store and
+    load manifests for itself, so composing three of them for one agent payload
+    meant three traversals of the same directories. This is that walk, done
+    once and shared.
+
+    Unreadable packages are recorded rather than dropped, because what an
+    unreadable package MEANS differs per caller: the availability report logs
+    it and reports it as skipped (dev/93 D2), while the not-enlisted listing
+    and the catalog overview simply pass over it. Each caller therefore
+    applies its own scope filter first and then decides — the reason this
+    returns the exception instead of silently omitting the entry.
+    """
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+
+    out: dict[str, object] = {}
+    for path in list_user_packageages(user_key):
+        try:
+            out[path.name] = load_packageage_manifest(path)
+        except (ManifestError, OSError) as exc:
+            out[path.name] = exc
+    return out
+
+
+def _lockfile_or_empty(user_key: str, project_id: str) -> set[str]:
+    """The project's declared package dirNames, or empty when the project has
+    no readable lockfile. A genuine (non-``PackageServiceError``) fault still
+    propagates — the callers that swallow everything do so deliberately."""
+    try:
+        return set(get_project_lockfile(user_key, project_id))
+    except PackageServiceError:
+        return set()
+
+
 def _template_entry(package_id: str, template) -> dict:
     """One roster row for a manifest template — the shape every template
     listing in this module returns (memo dev/48; arity per dev/67-3, DEC-051).
@@ -384,31 +424,31 @@ def installed_templates_not_in_project(user_key: str, project_id: str) -> list[d
     are excluded (always present, never proposable) and so is anything the
     lockfile already names.
     """
-    from utk_curio.backend.app.packages.manifest import (
-        ManifestError,
-        load_packageage_manifest,
+    return _installed_templates_not_in_project_unlocked(
+        _lockfile_or_empty(user_key, project_id), _store_index(user_key),
     )
 
-    try:
-        wanted = set(get_project_lockfile(user_key, project_id))
-    except PackageServiceError:
-        wanted = set()
+
+def _installed_templates_not_in_project_unlocked(
+    wanted: set[str], store: dict[str, object],
+) -> list[dict]:
+    """:func:`installed_templates_not_in_project` over an existing store
+    snapshot (dev/99 R2). Takes no locks and performs no I/O."""
     out: list[dict] = []
     seen: set[str] = set()
-    for path in sorted(list_user_packageages(user_key), key=lambda p: p.name):
-        pkg_id = path.name.split("@", 1)[0]
-        if pkg_id == BUILTIN_PACKAGE_ID or path.name in wanted:
+    for dir_name in sorted(store):
+        pkg_id = dir_name.split("@", 1)[0]
+        if pkg_id == BUILTIN_PACKAGE_ID or dir_name in wanted:
             continue
-        try:
-            manifest = load_packageage_manifest(path)
-        except (ManifestError, OSError):
+        manifest = store[dir_name]
+        if isinstance(manifest, Exception):
             continue
         for t in manifest.templates:
             entry = _template_entry(manifest.package_id, t)
             if entry["id"] in seen:
                 continue
             seen.add(entry["id"])
-            out.append({**entry, "dirName": path.name})
+            out.append({**entry, "dirName": dir_name})
     return sorted(out, key=lambda e: e["id"])
 
 
@@ -446,37 +486,40 @@ def available_templates_report(user_key: str, project_id: str) -> dict:
     skip is also logged at WARNING; an unreadable installed package is an
     abnormal state, not routine.
     """
-    from utk_curio.backend.app.packages.manifest import (
-        ManifestError,
-        load_packageage_manifest,
+    return _available_templates_report_unlocked(
+        _lockfile_or_empty(user_key, project_id), _store_index(user_key),
     )
 
-    try:
-        wanted = set(get_project_lockfile(user_key, project_id))
-    except PackageServiceError:
-        wanted = set()
-    # Prefer the highest seeded builtin major when several exist.
-    paths = sorted(
-        list_user_packageages(user_key), key=lambda p: p.name, reverse=True
-    )
+
+def _available_templates_report_unlocked(
+    wanted: set[str], store: dict[str, object],
+) -> dict:
+    """:func:`available_templates_report` over an existing store snapshot
+    (dev/99 R2). Takes no locks and performs no I/O.
+
+    The scope filter runs BEFORE the readability check, exactly as before: a
+    package outside this project's scope is passed over silently and never
+    reported as skipped, so the skip list keeps meaning "in scope for this
+    project and unreadable".
+    """
     out: list[dict] = []
     seen: set[str] = set()
     skipped: list[str] = []
-    for path in paths:
-        pkg_id = path.name.split("@", 1)[0]
-        if pkg_id != BUILTIN_PACKAGE_ID and path.name not in wanted:
+    # Prefer the highest seeded builtin major when several exist.
+    for dir_name in sorted(store, reverse=True):
+        pkg_id = dir_name.split("@", 1)[0]
+        if pkg_id != BUILTIN_PACKAGE_ID and dir_name not in wanted:
             continue
-        try:
-            manifest = load_packageage_manifest(path)
-        except (ManifestError, OSError) as exc:
+        manifest = store[dir_name]
+        if isinstance(manifest, Exception):
             # Loud, because the consequence is invisible: every template this
             # package provides disappears from the roster (dev/93 D2).
             log.warning(
                 "Package %s is installed but unreadable (%s) — its templates are "
                 "missing from this project's roster",
-                path.name, exc,
+                dir_name, manifest,
             )
-            skipped.append(path.name)
+            skipped.append(dir_name)
             continue
         for t in manifest.templates:
             entry = _template_entry(manifest.package_id, t)
@@ -994,23 +1037,29 @@ def agent_catalog_overview(user_key: str, project_id: str | None) -> list[dict]:
     over a catalog one of the same dirName: it is the copy an install would
     actually enlist.
     """
-    from utk_curio.backend.app.packages.manifest import (
-        ManifestError,
-        load_packageage_manifest,
-    )
-
     lockfile: set[str] = set()
     if project_id:
         try:
             lockfile = get_project_lockfile(user_key, project_id)
         except Exception:  # noqa: BLE001 — an unreadable project reads as empty
             lockfile = set()
-    manifests: dict[str, "PackageManifest"] = dict(_catalog_manifests())
-    for path in list_user_packageages(user_key):
-        try:
-            manifests[path.name] = load_packageage_manifest(path)
-        except (ManifestError, OSError):
+    return _agent_catalog_overview_unlocked(
+        lockfile, _store_index(user_key), _catalog_manifests(),
+    )
+
+
+def _agent_catalog_overview_unlocked(
+    lockfile: set[str],
+    store: dict[str, object],
+    catalog: dict[str, "PackageManifest"],
+) -> list[dict]:
+    """:func:`agent_catalog_overview` over existing snapshots (dev/99 R2).
+    Takes no locks and performs no I/O."""
+    manifests: dict[str, "PackageManifest"] = dict(catalog)
+    for dir_name, manifest in store.items():
+        if isinstance(manifest, Exception):
             continue  # an unreadable store copy cannot provide working nodes
+        manifests[dir_name] = manifest
     rows: list[dict] = []
     for dir_name, manifest in sorted(manifests.items()):
         builtin = manifest.package_id == BUILTIN_PACKAGE_ID
@@ -1025,6 +1074,43 @@ def agent_catalog_overview(user_key: str, project_id: str | None) -> list[dict]:
             }
         )
     return rows
+
+
+def template_landscape(user_key: str, project_id: str) -> dict:
+    """Everything an agent needs to know about what already exists, from ONE
+    walk of the package store (memo dev/99 R2).
+
+    Returns ``{"available", "notEnlisted", "catalog", "skipped"}`` — the same
+    data as :func:`available_templates`, :func:`installed_templates_not_in_project`
+    and :func:`agent_catalog_overview`, plus the availability report's
+    degradation signal, all derived from a single snapshot.
+
+    Two reasons this exists rather than callers making three calls. It is
+    CHEAPER: each of those public readers independently resolves the project
+    lockfile and independently walks the store, so composing three of them for
+    one payload cost three spec reads and three traversals. And it is the only
+    shape that can be made ATOMIC: when the seed lock reaches readers (dev/99
+    proper), one composite acquires it once and every part of the payload
+    describes the same instant, where three separately-locked calls would each
+    be internally consistent yet able to straddle a seeding pass — which is
+    exactly the tear that lets an agent see a package in one half of its
+    evidence and not the other, and author a duplicate.
+
+    Callers in the agents domain consume this; they never own the lock
+    (`ADR-AG-007` keeps package knowledge here). It calls the unlocked cores
+    directly, never the public readers, so the non-reentrant seed lock can be
+    acquired exactly once on every path.
+    """
+    wanted = _lockfile_or_empty(user_key, project_id)
+    catalog = _catalog_manifests()
+    store = _store_index(user_key)
+    report = _available_templates_report_unlocked(wanted, store)
+    return {
+        "available": report["templates"],
+        "skipped": report["skipped"],
+        "notEnlisted": _installed_templates_not_in_project_unlocked(wanted, store),
+        "catalog": _agent_catalog_overview_unlocked(wanted, store, catalog),
+    }
 
 
 def agent_resolve_report(user_key: str, dir_names: list[str]) -> dict:

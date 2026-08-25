@@ -864,8 +864,13 @@ class TestAuthoringDelegateReuseEvidence:
         user, token = user_and_token
         pid = _project(client, token)
         key = _ukey(client, user)
+        # Injected at the store walk — the single I/O boundary the whole
+        # payload is built from (dev/99 R2's `_store_index`) — rather than at
+        # one public reader, so this keeps testing the BEHAVIOUR ("a broken
+        # registry degrades to no evidence") instead of which helper happens
+        # to be called.
         monkeypatch.setattr(
-            packages_services, "agent_catalog_overview",
+            packages_services, "_store_index",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("registry down")),
         )
         with caplog.at_level("WARNING"):

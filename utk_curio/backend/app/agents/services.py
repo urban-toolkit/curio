@@ -6557,15 +6557,20 @@ def _authoring_reuse_evidence(user_key: str, project_id: str) -> dict | None:
     from utk_curio.backend.app.packages import services as packages_services
 
     try:
-        rows = packages_services.agent_catalog_overview(user_key, project_id)
+        # ONE snapshot for the whole payload (memo dev/99 R2). This used to
+        # call three public readers, each of which independently resolved the
+        # project lockfile and walked the package store — three spec reads and
+        # three traversals to build one piece of evidence. The composite also
+        # makes the payload coherent once the seed lock reaches readers: every
+        # part of it then describes the same instant, instead of three
+        # individually-consistent reads that can straddle a seeding pass.
+        landscape = packages_services.template_landscape(user_key, project_id)
+        rows = landscape["catalog"]
         # Template ids make ``mode: "extend"`` followable rather than a guess.
         # Both listings are canonical and unversioned; keyed by packageId so a
         # row can name what it would be extending.
         by_package: dict[str, list[str]] = {}
-        for entry in (
-            packages_services.available_templates(user_key, project_id)
-            + packages_services.installed_templates_not_in_project(user_key, project_id)
-        ):
+        for entry in landscape["available"] + landscape["notEnlisted"]:
             package_id = str(entry["id"]).split("/", 1)[0]
             ids = by_package.setdefault(package_id, [])
             if entry["id"] not in ids:

@@ -490,3 +490,91 @@ class TestResolveTemplate:
         entry, err = packages_services.resolve_template(key, pid, "curio.builtin/data-loading")
         assert entry is None
         assert "registry is unavailable" in err and "disk on fire" in err
+
+
+class TestTemplateLandscape:
+    """dev/99 R2 — the composite that will hold the seed lock exactly once.
+
+    Its job today is to be behaviour-identical to the three readers it
+    replaces while walking the store once; its job after dev/99 proper is to
+    make an agent payload describe ONE instant, so evidence cannot straddle a
+    seeding pass and show a package in one half but not the other.
+    """
+
+    def _fixture(self, user_and_token, alice_project):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.builtin", 1, [_template("data-loading", "Load")])
+        _write_package(key, "ai.test.locked", 1, [_template("locked-kind", "Locked")])
+        _write_package(key, "ai.test.storeonly", 1, [_template("store-kind", "StoreOnly")])
+        _lockfile_add(key, alice_project, "ai.test.locked@1")
+        return key, alice_project
+
+    def test_equivalent_to_the_three_readers_it_replaces(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        """The behaviour-preservation proof: identical data, one walk."""
+        key, pid = self._fixture(user_and_token, alice_project)
+        landscape = packages_services.template_landscape(key, pid)
+
+        assert landscape["available"] == packages_services.available_templates(key, pid)
+        assert landscape["notEnlisted"] == (
+            packages_services.installed_templates_not_in_project(key, pid)
+        )
+        assert landscape["catalog"] == packages_services.agent_catalog_overview(key, pid)
+        assert landscape["skipped"] == (
+            packages_services.available_templates_report(key, pid)["skipped"]
+        )
+
+    def test_walks_the_store_once(self, user_and_token, alice_project, tmp_curio, monkeypatch):
+        """The efficiency claim, pinned: three public readers cost three
+        traversals plus three lockfile reads; the composite costs one of each.
+        This also guards the rule that composites call the unlocked CORES —
+        a composite that called the public readers would walk three times and,
+        once locking lands, deadlock on the non-reentrant lock."""
+        key, pid = self._fixture(user_and_token, alice_project)
+
+        walks = {"n": 0}
+        real = packages_services._store_index
+
+        def counting(user_key):
+            walks["n"] += 1
+            return real(user_key)
+
+        monkeypatch.setattr(packages_services, "_store_index", counting)
+
+        packages_services.template_landscape(key, pid)
+        assert walks["n"] == 1
+
+        walks["n"] = 0
+        packages_services.available_templates(key, pid)
+        packages_services.installed_templates_not_in_project(key, pid)
+        packages_services.agent_catalog_overview(key, pid)
+        assert walks["n"] == 3, "the individual readers each still walk once"
+
+    def test_degradation_signal_survives_the_composite(
+        self, user_and_token, alice_project, tmp_curio, caplog
+    ):
+        """An unreadable in-scope package must still be reported and logged —
+        the dev/93 D2 signal must not be lost on the way through."""
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.builtin", 1, [], broken=True)
+        with caplog.at_level("WARNING"):
+            landscape = packages_services.template_landscape(key, alice_project)
+        assert landscape["skipped"] == ["curio.builtin@1"]
+        assert landscape["available"] == []
+        assert "curio.builtin@1" in caplog.text
+
+    def test_out_of_scope_unreadable_package_is_not_reported_as_skipped(
+        self, user_and_token, alice_project, tmp_curio
+    ):
+        """Scope filter before readability check, exactly as before the split:
+        `skipped` keeps meaning "in scope for this project and unreadable"."""
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.builtin", 1, [_template("data-loading", "Load")])
+        _write_package(key, "ai.test.broken", 1, [], broken=True)  # not enlisted
+        landscape = packages_services.template_landscape(key, alice_project)
+        assert landscape["skipped"] == []
+        assert {t["id"] for t in landscape["available"]} == {"curio.builtin/data-loading"}
