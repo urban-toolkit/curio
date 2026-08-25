@@ -1,6 +1,6 @@
 # Hookable Agents Planning Package
 
-This directory contains the current implementation plan, implementation evidence, and approved UI direction for hookable agents in Curio. The committed implementation is current through **dev/105** (`BL-P5-20260825-44`) on `feat/agentscatalog`; remaining work and documentation status are summarized in [`dev/00-development-phase-index.md`](dev/00-development-phase-index.md), reconciled by [`dev/100`](dev/100-planning-document-reconciliation-memo.md), and advanced through dev/101 by [`dev/102`](dev/102-reconciliation-follow-up-memo.md).
+This directory contains the current implementation plan, implementation evidence, and approved UI direction for hookable agents in Curio. The committed implementation is current through **dev/106** (`BL-P5-20260825-45`) on `feat/agentscatalog`; remaining work and documentation status are summarized in [`dev/00-development-phase-index.md`](dev/00-development-phase-index.md), reconciled by [`dev/100`](dev/100-planning-document-reconciliation-memo.md), and advanced through dev/101 by [`dev/102`](dev/102-reconciliation-follow-up-memo.md).
 
 ## Current Product Direction
 

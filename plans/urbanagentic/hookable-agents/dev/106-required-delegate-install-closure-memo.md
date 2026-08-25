@@ -1,6 +1,6 @@
 # dev/106 — Installing an orchestrator leaves its required specialist uninstalled: Solve fails every node in 0 ms and the one install proposal it mints is invisible
 
-**Status: PROPOSED (2026-08-25) — awaiting owner approval before any code.**
+**Status: IMPLEMENTED (2026-08-25) — commits `9db3c497` (1, manifest + roster + closure helpers), `69db666c` (2, install closure + uninstall guard + card disclosure), `e438c5a3` (3, the Solve turn carries its proposal + one reason line), `d1abd249` (4, drawer disclosure), `f6b27079` (5, strip Install row + reasons, palette refresh on apply), docs (6); DEC-068 minted; BL-P5-20260825-45. Verification: `test_agents` + `test_packages` 1486 passed / 4 skipped; jest catalog+palette 173, attach 248; tsc baseline unchanged. Owner live re-test of the screenshot flow (fresh project → install Dataflow Builder → plan → Solve) still to be recorded here.**
 
 Date: 2026-08-25
 Branch / tree: `feat/agentscatalog` @ `2ba4c953`. Line numbers pinned to that commit.
