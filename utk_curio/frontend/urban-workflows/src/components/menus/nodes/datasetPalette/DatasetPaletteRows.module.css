@@ -23,19 +23,6 @@
 
 /* ── Left accent bar (coloured per format) ───────────────────────────────── */
 
-.rowAccent {
-  width: 4px;
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.fmt_geojson  .rowAccent { background: #4caf72; }
-.fmt_csv      .rowAccent { background: #5b9bd5; }
-.fmt_json     .rowAccent { background: #9b7fda; }
-.fmt_parquet  .rowAccent { background: #f5a623; }
-.fmt_geotiff  .rowAccent { background: #26c6da; }
-.fmt_shp      .rowAccent { background: #a0836a; }
-
 /* ── Row body ────────────────────────────────────────────────────────────── */
 
 .rowBody {
@@ -160,13 +147,14 @@
   pointer-events: none;
 }
 
-.chip_geojson  { background: rgba(76, 175, 114, 0.22); color: #7dd49a; }
-.chip_csv      { background: rgba(91, 155, 213, 0.22); color: #91bde8; }
-.chip_json     { background: rgba(155, 127, 218, 0.22); color: #bea8f0; }
-.chip_parquet  { background: rgba(245, 166, 35, 0.22);  color: #f8c56a; }
-.chip_geotiff  { background: rgba(38, 198, 218, 0.22);  color: #70dde8; }
-.chip_shp      { background: rgba(160, 131, 106, 0.22); color: #c9a98a; }
-.chip_osm      { background: rgba(76, 175, 114, 0.22); color: #7dd49a; }
+.chip_geojson { background: color-mix(in srgb, var(--curio-format-geojson-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-geojson-fg) 55%, white); }
+.chip_csv { background: color-mix(in srgb, var(--curio-format-csv-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-csv-fg) 55%, white); }
+.chip_json { background: color-mix(in srgb, var(--curio-format-json-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-json-fg) 55%, white); }
+.chip_parquet { background: color-mix(in srgb, var(--curio-format-parquet-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-parquet-fg) 55%, white); }
+.chip_geotiff { background: color-mix(in srgb, var(--curio-format-geotiff-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-geotiff-fg) 55%, white); }
+.chip_shp { background: color-mix(in srgb, var(--curio-format-shp-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-shp-fg) 55%, white); }
+.chip_bundle { background: color-mix(in srgb, var(--curio-format-bundle-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-bundle-fg) 55%, white); }
+.chip_osm { background: color-mix(in srgb, var(--curio-format-osm-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-osm-fg) 55%, white); }
 
 
 /* ── OSM PBF group (collapsible parent + indented member layers) ──────────── */

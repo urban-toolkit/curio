@@ -6,7 +6,7 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--curio-accent-sky-bg);
+    color: var(--curio-role-published-bg);
     background: rgba(53, 103, 199, 0.18);
     border: 1px solid rgba(53, 103, 199, 0.5);
     border-radius: var(--curio-radius-pill);
@@ -17,7 +17,7 @@
 
 .pillDock:hover:not(:disabled) {
     background: rgba(53, 103, 199, 0.28);
-    border-color: var(--curio-accent-sky-fg);
+    border-color: var(--curio-role-published-fg);
 }
 
 .pillDock:disabled {
@@ -51,8 +51,8 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--curio-accent-sky-fg);
-    background: var(--curio-accent-sky-bg);
+    color: var(--curio-role-published-fg);
+    background: var(--curio-role-published-bg);
     border: 1px solid rgba(53, 103, 199, 0.4);
     border-radius: var(--curio-radius-pill);
     padding: 3px 9px;
@@ -62,7 +62,7 @@
 
 .pillHub:hover:not(:disabled) {
     background: rgba(53, 103, 199, 0.25);
-    border-color: var(--curio-accent-sky-fg);
+    border-color: var(--curio-role-published-fg);
 }
 
 .pillHub:disabled {

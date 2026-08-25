@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import ModalShell from "./ModalShell";
+import modal from "./modal-content.module.css";
 import styles from "./LlmSettingsModal.module.css";
 import { useUserContext } from "../providers/UserProvider";
 
@@ -119,22 +120,22 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   return (
     <ModalShell onClose={onClose}>
-      <div className={styles.content}>
-        <h2 className={styles.title}>LLM Settings</h2>
+      <div className={modal.content}>
+        <h2 className={modal.title}>LLM Settings</h2>
 
         {user?.is_guest ? (
           <>
             <p className={styles.guestNotice}>
               LLM settings are managed by your administrator.
             </p>
-            <div className={styles.buttonRow}>
-              <button className={styles.cancelBtn} onClick={onClose}>Close</button>
+            <div className={modal.buttonRow}>
+              <button className={modal.ghostBtn} onClick={onClose}>Close</button>
             </div>
           </>
         ) : (
           <>
-            <div className={styles.field}>
-              <label className={styles.label}>Provider</label>
+            <div className={modal.field}>
+              <label className={modal.label}>Provider</label>
               <div className={styles.modeTabs}>
                 {(["openai", "anthropic", "gemini", "custom"] as UiMode[]).map((m) => (
                   <button
@@ -153,28 +154,28 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
 
             {info.showBaseUrl && (
-              <div className={styles.field}>
-                <label className={styles.label}>Base URL</label>
+              <div className={modal.field}>
+                <label className={modal.label}>Base URL</label>
                 <input
-                  className={styles.input}
+                  className={modal.input}
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder={info.baseUrlPlaceholder}
                 />
-                <span className={styles.hint}>Any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, Groq, Azure, …)</span>
+                <span className={modal.hint}>Any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, Groq, Azure, …)</span>
               </div>
             )}
 
-            <div className={styles.field}>
-              <label className={styles.label}>
+            <div className={modal.field}>
+              <label className={modal.label}>
                 API Key{" "}
                 <span className={styles.optional}>
                   {user?.has_llm_api_key ? "(saved - leave blank to keep)" : uiMode === "custom" ? "(optional for keyless servers)" : "(required)"}
                 </span>
               </label>
               <input
-                className={styles.input}
+                className={modal.input}
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
@@ -188,10 +189,10 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               )}
             </div>
 
-            <div className={styles.field}>
-              <label className={styles.label}>Model</label>
+            <div className={modal.field}>
+              <label className={modal.label}>Model</label>
               <input
-                className={styles.input}
+                className={modal.input}
                 type="text"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
@@ -199,14 +200,14 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               />
             </div>
 
-            {error && <p className={styles.error}>{error}</p>}
-            {success && <p className={styles.success}>Settings saved.</p>}
+            {error && <p className={modal.error}>{error}</p>}
+            {success && <p className={modal.success}>Settings saved.</p>}
 
-            <div className={styles.buttonRow}>
-              <button className={styles.cancelBtn} onClick={onClose} disabled={saving}>
+            <div className={modal.buttonRow}>
+              <button className={modal.ghostBtn} onClick={onClose} disabled={saving}>
                 Cancel
               </button>
-              <button className={styles.saveBtn} onClick={handleSave} disabled={saving}>
+              <button className={modal.primaryBtn} onClick={handleSave} disabled={saving}>
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>

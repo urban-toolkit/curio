@@ -1,78 +1,20 @@
+/*
+ * Canvas slide-over Data Catalog drawer — what is specific to this drawer.
+ *
+ * The panel itself is the shared
+ * ../../packages/publishing/CatalogDrawerShell.module.css, which the Node
+ * Catalog drawer also imports; header, search row, tab strip and footer are the
+ * shared packages/publishing components.
+ */
+
+/* This drawer sits one tier above the node drawer, because the dataset detail
+   modal can open on top of it (see curioTokens.css). */
 .overlayRoot {
-  position: fixed;
-  inset: 0;
-  z-index: var(--curio-z-dataset-drawer);
-  display: flex;
-  justify-content: flex-end;
-  pointer-events: none;
+  --curio-drawer-z: var(--curio-z-dataset-drawer);
 }
 
-.overlayRootPresented {
-  pointer-events: auto;
-}
-
-.scrim {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  padding: 0;
-  background: rgba(0, 0, 0, 0.12);
-  opacity: 0;
-  cursor: pointer;
-  transition: opacity 240ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.drawer {
-  position: relative;
-  z-index: 1;
-  width: min(520px, 100vw);
-  height: 100%;
-  background: var(--curio-page-bg);
-  border-left: 1px solid var(--curio-border);
-  box-shadow: var(--curio-shadow-modal);
-  display: flex;
-  flex-direction: column;
-  font-family: var(--curio-font-family);
-  color: var(--curio-text-primary);
-  outline: none;
-  transform: translate3d(100%, 0, 0);
-  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.overlayRootPresented .scrim {
-  opacity: 1;
-}
-
-.overlayRootPresented .drawer {
-  transform: translate3d(0, 0, 0);
-}
-
-/* Header, search row, and tab strip are rendered with the shared
-   packages/publishing styles (DrawerHeader, PackageSearchRow, DrawerTabs). */
-
-.content {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px 16px 12px;
-}
-
-.sectionLabel {
-  margin: 0 0 12px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #86878c;
-}
-
-.cardList {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-
+/* Loading skeletons. Specific to this drawer: the dataset catalog is fetched
+   over the network on open, where the package list is already in memory. */
 .skeletonList {
   display: flex;
   flex-direction: column;
@@ -82,10 +24,16 @@
 
 .skeletonCard {
   height: 72px;
-  border-radius: 6px;
+  border-radius: var(--curio-radius-md);
   background: linear-gradient(90deg, #eceae4 0%, #f5f4f0 50%, #eceae4 100%);
   background-size: 200% 100%;
   animation: catalogSkeletonShimmer 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonCard {
+    animation: none;
+  }
 }
 
 @keyframes catalogSkeletonShimmer {
@@ -94,34 +42,5 @@
   }
   100% {
     background-position: -100% 0;
-  }
-}
-
-.empty,
-.error {
-  margin-bottom: 12px;
-  border: 1px dashed #d8d6d0;
-  border-radius: 6px;
-  color: #85868b;
-  padding: 28px 12px;
-  text-align: center;
-  font-size: 13px;
-}
-
-.error {
-  color: #9f3f3f;
-  background: #fff6f4;
-  border-color: #ecc8c0;
-}
-
-/* Footer is rendered by the shared DrawerFooter (packages/publishing). */
-
-@media (max-width: 640px) {
-  .drawer {
-    width: 100vw;
-  }
-
-  .searchBar {
-    grid-template-columns: 1fr;
   }
 }

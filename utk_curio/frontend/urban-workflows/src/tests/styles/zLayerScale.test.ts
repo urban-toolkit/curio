@@ -26,10 +26,30 @@ function readZLayers(): Record<string, number> {
 describe("overlay / layering scale (curioTokens.css)", () => {
   const layers = readZLayers();
 
-  it("defines every tier in the high stacking band", () => {
+  it("defines every tier in the scale", () => {
     expect(Object.keys(layers).sort()).toEqual(
-      ["dataset-drawer", "dialog", "modal", "modal-backdrop", "node-drawer", "toast"].sort(),
+      [
+        // Base tier: a modal opened from a page, with no canvas overlays under
+        // it. ModalShell used to hard-code 499/500 for this while reading the
+        // scale for its overlay tier, so half the component sat outside it.
+        "modal-base",
+        "modal-base-backdrop",
+        // High band: anything that can stack over the canvas.
+        "dataset-drawer",
+        "dialog",
+        "modal",
+        "modal-backdrop",
+        "node-drawer",
+        "toast",
+      ].sort(),
     );
+  });
+
+  it("keeps the base modal tier below the whole overlay band", () => {
+    // A page modal must not outrank a canvas drawer: they never coexist, and
+    // the day one does, the drawer is the thing that was opened last.
+    expect(layers["modal-base-backdrop"]).toBeLessThan(layers["modal-base"]);
+    expect(layers["modal-base"]).toBeLessThan(layers["node-drawer"]);
   });
 
   it("keeps toasts strictly above the entire overlay band", () => {

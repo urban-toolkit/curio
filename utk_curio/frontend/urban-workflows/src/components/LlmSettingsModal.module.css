@@ -1,38 +1,20 @@
-.content {
-  padding: 28px 32px;
-  font-family: Rubik, -apple-system, BlinkMacSystemFont, sans-serif;
-  overflow-y: auto;
-}
-
-.title {
-  margin: 0 0 20px;
-  font-size: 18px;
-  font-weight: 600;
-  color: #1E1F23;
-}
-
-.field {
-  margin-bottom: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #555;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
+/* LLM Settings — only what is specific to this modal.
+ *
+ * The container, field, footer and button vocabulary is the shared
+ * ./modal-content.module.css. This file used to restate all of it under
+ * different class names (.saveBtn / .cancelBtn rather than .primaryBtn /
+ * .ghostBtn) and with drifted values, including a primary button that flipped
+ * to orange on hover where every other modal darkens.
+ */
 
 .optional {
   font-weight: 400;
   text-transform: none;
-  color: #999;
+  color: var(--curio-text-muted);
   letter-spacing: 0;
 }
 
+/* Provider picker. A segmented row of choices, not a form field. */
 .modeTabs {
   display: flex;
   gap: 6px;
@@ -41,99 +23,35 @@
 
 .modeTab {
   padding: 6px 14px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background: #fff;
-  color: #555;
-  font-size: 13px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-secondary);
+  font: inherit;
+  font-size: var(--curio-font-size-md);
   cursor: pointer;
-  font-family: inherit;
+}
+
+.modeTab:hover:not(.modeTabActive) {
+  background: var(--curio-page-bg);
 }
 
 .modeTabActive {
-  border: 1px solid #1E1F23;
-  background: #1E1F23;
-  color: #fff;
+  border-color: var(--curio-top-bar-bg);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
   font-weight: 600;
 }
 
-.input {
-  padding: 8px 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 13px;
-  color: #1E1F23;
-  outline: none;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.hint {
-  font-size: 11px;
-  color: #999;
-}
-
 .keyLink {
-  font-size: 12px;
-  color: #3567C7;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-role-published-fg);
   text-decoration: none;
   margin-top: 2px;
 }
 
-.buttonRow {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 24px;
-}
-
-.cancelBtn {
-  padding: 7px 18px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background: #fff;
-  color: #555;
-  font-size: 13px;
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.saveBtn {
-  padding: 7px 18px;
-  border: none;
-  border-radius: 4px;
-  background: #1E1F23;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.saveBtn:hover:not(:disabled) {
-  background: rgb(251, 170, 105);
-}
-
-.saveBtn:disabled,
-.cancelBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.error {
-  color: #c0392b;
-  font-size: 13px;
-  margin: 8px 0 0;
-}
-
-.success {
-  color: #2F8F4A;
-  font-size: 13px;
-  margin: 8px 0 0;
-}
-
 .guestNotice {
-  color: #666;
-  font-size: 14px;
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-lg);
   margin-bottom: 8px;
 }

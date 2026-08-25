@@ -163,7 +163,7 @@ export const DataCatalogBrowse: React.FC = () => {
             <h1>Data Catalog</h1>
             <span className={styles.titleCount}>{catalog.items.length}</span>
           </div>
-          <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6B6B76", maxWidth: 720 }}>
+          <p className={styles.pageIntro}>
             View datasets available in the catalog library. Adding a dataset to a dataflow is done
             in the project&apos;s Data Catalog.
           </p>

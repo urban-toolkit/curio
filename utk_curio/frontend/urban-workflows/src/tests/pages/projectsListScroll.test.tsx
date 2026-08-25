@@ -63,9 +63,17 @@ const LAYOUT_CSS = fs.readFileSync(
   'utf8'
 );
 
-/** The declarations inside one rule of the layout stylesheet. */
-function rule(selector: string): string {
-  const match = LAYOUT_CSS.match(new RegExp('\\.' + selector + '\\s*\\{([^}]*)\\}'));
+// The page shell is the catalog's, shared rather than restated: ProjectsList
+// used to carry an inline style object whose own comment said it was the same
+// shape as `.pageShell`.
+const SHELL_CSS = fs.readFileSync(
+  path.resolve(__dirname, '../../pages/catalog/CatalogMasterPage.module.css'),
+  'utf8'
+);
+
+/** The declarations inside one rule of a stylesheet (the layout by default). */
+function rule(selector: string, css: string = LAYOUT_CSS): string {
+  const match = css.match(new RegExp('\\.' + selector + '\\s*\\{([^}]*)\\}'));
   expect(match).not.toBeNull();
   return (match as RegExpMatchArray)[1];
 }
@@ -83,13 +91,19 @@ describe('ProjectsList scroll ownership', () => {
   test('the shell is bounded to the viewport', async () => {
     const { container } = await renderSettled();
 
+    // The shape moved from an inline style object to the shared `.pageShell`,
+    // so the guarantee is asserted against the stylesheet — the same approach
+    // the sibling tests below already use for `.cardScroll`.
     const page = container.firstElementChild as HTMLElement;
-    // Bounded height, not minHeight: with html/body overflow hidden, a page that
-    // merely grows past the viewport just gets clipped.
-    expect(page.style.height).toBe('100vh');
-    expect(page.style.overflow).toBe('hidden');
-    expect(page.style.display).toBe('flex');
-    expect(page.style.flexDirection).toBe('column');
+    expect(page).toHaveClass('pageShell');
+
+    const shell = rule('pageShell', SHELL_CSS);
+    // Bounded height, not min-height: with html/body overflow hidden, a page
+    // that merely grows past the viewport just gets clipped.
+    expect(shell).toMatch(/height:\s*100vh/);
+    expect(shell).toMatch(/overflow:\s*hidden/);
+    expect(shell).toMatch(/display:\s*flex/);
+    expect(shell).toMatch(/flex-direction:\s*column/);
   });
 
   test('the card area is the scrolling region', async () => {

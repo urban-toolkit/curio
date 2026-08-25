@@ -1,15 +1,19 @@
 /* Shell for /catalog — header + section tabs + scrollable outlet.
    Tab styles live in components/layout/AppSectionTabs.module.css. */
 
+/* The shell for every top-level page: /catalog/* and /projects, which used to
+   restate this as an inline style object on ProjectsList. */
 .pageShell {
-  /* Bounded height: html/body never scroll (overflow:hidden in MainCanvas.css),
-     so each region must own its scroll within the viewport. */
+  /* Bounded height, not min-height: html/body never scroll (overflow:hidden in
+     MainCanvas.css, injected app-wide), so each region must own its scroll
+     within the viewport or overflowing content is simply unreachable (#161). */
   height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  font-family: Rubik, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
-  background: #f0f0f0;
-  color: #1e1f23;
+  font-family: var(--curio-font-family);
+  background: var(--curio-page-bg);
+  color: var(--curio-text-primary);
 }
 
 .outlet {

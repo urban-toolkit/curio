@@ -29,16 +29,6 @@ function datasetVersion(dirName?: string | null): string | null {
 }
 
 // ── Format helpers ───────────────────────────────────────────────────────────
-const FORMAT_ABBR: Record<DatasetCatalogItem["format"], string> = {
-  geojson: "GeoJSON",
-  csv: "CSV",
-  json: "JSON",
-  parquet: "Parquet",
-  geotiff: "GeoTIFF",
-  shp: "SHP",
-  bundle: "Bundle",
-  osm: "OSM",
-};
 
 function formatAvatarClass(format: DatasetCatalogItem["format"]): string {
   return styles[`avatar_${format}` as keyof typeof styles] ?? "";
@@ -112,6 +102,8 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   const metaParts = [count, time].filter(Boolean).join(" · ");
 
   const sourceCaption = datasetListSourceCaption(dataset);
+  const title = datasetDisplayTitle(dataset);
+  const detailsLabel = `View ${title} (${DATASET_FORMAT_LABEL[dataset.format]}) details`;
 
   const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [sourceCaption];
 
@@ -132,16 +124,15 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       <button
         type="button"
         className={`${styles.cardAvatar} ${formatAvatarClass(dataset.format)} ${styles.cardAvatarButton}`}
-        title={`View ${dataset.title} (${FORMAT_ABBR[dataset.format]}) details`}
-        aria-label={`View ${dataset.title} (${FORMAT_ABBR[dataset.format]}) details`}
+        title={detailsLabel}
+        aria-label={detailsLabel}
         onClick={() => onOpenDetails?.(dataset)}
       >
-        {/* {FORMAT_ABBR[dataset.format]} */}
         <CatalogKindIcon
           className={`${styles.cardIcon} ${formatAvatarClass(dataset.format)} `}
           kind="dataset"
           size="md"
-          title={`View ${dataset.title} (${FORMAT_ABBR[dataset.format]}) details`}
+          title={detailsLabel}
         />
       </button>
 
@@ -156,11 +147,9 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
             />
           }
           onClick={onOpenDetails ? () => onOpenDetails(dataset) : undefined}
-          buttonLabel={`View ${datasetDisplayTitle(dataset)} details`}
+          buttonLabel={detailsLabel}
         />
-        <h3 className={styles.cardTitle}>
-          {datasetDisplayTitle(dataset)}
-        </h3>
+        <h3 className={styles.cardTitle}>{title}</h3>
 
         <div className={styles.cardMetaRow}>
           <span className={styles.cardMetaText}>

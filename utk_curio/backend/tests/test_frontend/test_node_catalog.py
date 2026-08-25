@@ -50,7 +50,7 @@ PKG_NAME = "Example: Custom UI Node"
 BUILTIN_DIR = "curio.builtin@1"
 
 DRAWER_ROOT = '[data-curio-node-catalog-drawer="true"]'
-SEARCH_PLACEHOLDER = "Search packages, authors, keywords..."
+SEARCH_PLACEHOLDER = "Search packages, publishers, tags…"
 
 
 def _one_node_spec() -> dict:
