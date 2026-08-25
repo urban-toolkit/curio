@@ -238,14 +238,26 @@ describe('project card selection', () => {
   });
 
   test('the header carries the same chrome as the catalog browse pages', async () => {
-    // The three browse pages are peers, so /projects grows the kind icon, the
-    // scope chip beside the search box and the sort select that both catalogs
-    // already had.
+    // The three browse pages are peers, so /projects grows the kind icon and
+    // the sort select that both catalogs already had.
     const { container, getByRole } = await renderPage();
 
     expect(container.querySelector('.titleRow .kindIcon')).not.toBeNull();
-    expect(container.querySelector('.hubStatusChip')).not.toBeNull();
     expect(getByRole('combobox', { name: 'Sort projects' })).toBeTruthy();
+  });
+
+  test('no browse page carries a scope chip beside its search box', () => {
+    // Removed on all three at once: the chip restated the page you were
+    // already on, and the class is gone so it cannot come back on one page
+    // only.
+    expect(read('catalog/CatalogBrowseLayout.module.css')).not.toContain('.hubStatusChip');
+    for (const page of [
+      'projects/ProjectsList.tsx',
+      'catalog/NodeCatalogBrowse.tsx',
+      'dataHub/DataCatalogBrowse.tsx',
+    ]) {
+      expect(read(page)).not.toContain('hubStatusChip');
+    }
   });
 });
 

@@ -233,10 +233,6 @@ const ProjectsList: React.FC = () => {
               Your dataflows. Open one to keep working on it, or start a new one.
             </p>
             <div className={browseStyles.headerTools}>
-              <span className={browseStyles.hubStatusChip}>
-                <span className={browseStyles.hubStatusDot} />
-                My dataflows
-              </span>
               <input
                 className={browseStyles.hubSearch}
                 type="search"

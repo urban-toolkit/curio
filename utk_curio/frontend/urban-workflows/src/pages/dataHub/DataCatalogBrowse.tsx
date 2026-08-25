@@ -168,10 +168,6 @@ export const DataCatalogBrowse: React.FC = () => {
             in the project&apos;s Data Catalog.
           </p>
           <div className={styles.headerTools}>
-            <span className={styles.hubStatusChip}>
-              <span className={styles.hubStatusDot} />
-              Catalog library
-            </span>
             <input
               className={styles.hubSearch}
               type="search"

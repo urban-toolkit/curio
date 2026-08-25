@@ -113,10 +113,6 @@ export const NodeCatalogBrowse: React.FC = () => {
             Removing a package from a single project can be done in that project&apos;s Node Catalog.
           </p>
           <div className={browseStyles.headerTools}>
-            <span className={browseStyles.hubStatusChip}>
-              <span className={browseStyles.hubStatusDot} />
-              Global defaults
-            </span>
             <input
               className={browseStyles.hubSearch}
               type="search"

@@ -34,10 +34,6 @@ function formatAvatarClass(format: DatasetCatalogItem["format"]): string {
   return styles[`avatar_${format}` as keyof typeof styles] ?? "";
 }
 
-function formatAccentClass(format: DatasetCatalogItem["format"]): string {
-  return styles[`accent_${format}` as keyof typeof styles] ?? "";
-}
-
 // ── Props ────────────────────────────────────────────────────────────────────
 
 export interface DatasetCardProps {
@@ -117,9 +113,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
-      {/* Left accent bar */}
-      <div className={`${styles.cardAccent} ${formatAccentClass(dataset.format)}`} />
-
       {/* Format avatar */}
       <button
         type="button"

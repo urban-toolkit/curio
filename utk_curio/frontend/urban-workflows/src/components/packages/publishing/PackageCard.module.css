@@ -107,7 +107,8 @@
     justify-content: space-between;
     gap: 8px;
     min-height: 16px;
-    margin-top: 2px;
+    /* Matches .cardMeta, the package card's equivalent line. */
+    margin: 0 0 8px;
 }
 
 .cardMetaText {
@@ -243,41 +244,21 @@
   cursor: grabbing;
 }
 
-/* ── Left accent bar ─────────────────────────────────────────────────────────── */
-
-
-.cardAccent {
-  position: absolute;
-  border: 1px solid var(--curio-border);
-  border-radius: var(--curio-radius-lg) 0 0 var(--curio-radius-lg);
-  width: 5px;
-  height: 100%;
-  flex-shrink: 0;
-  background: #d9d7d1;
-}
-
-.accent_geojson { background: var(--curio-format-geojson-fg); }
-.accent_csv { background: var(--curio-format-csv-fg); }
-.accent_json { background: var(--curio-format-json-fg); }
-.accent_parquet { background: var(--curio-format-parquet-fg); }
-.accent_geotiff { background: var(--curio-format-geotiff-fg); }
-.accent_shp { background: var(--curio-format-shp-fg); }
-.accent_bundle { background: var(--curio-format-bundle-fg); }
-.accent_osm { background: var(--curio-format-osm-fg); }
-
 /* ── Format avatar ───────────────────────────────────────────────────────────── */
 
+/* Same box as .cardIcon, which fills this slot on a package card. Only the
+   button affordances below are specific to the dataset side. */
 .cardAvatar {
   flex-shrink: 0;
   width: 72px;
   height: 72px;
   align-self: center;
-  margin: 10px 0 10px 0;
+  margin: 0;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--curio-radius-md, 5px);
-  padding: 6px 4px;
+  border-radius: var(--curio-radius-md);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.3px;
@@ -285,9 +266,9 @@
   text-align: center;
   text-transform: uppercase;
   word-break: break-all;
-  /* default fallback */
-  background: #f0efeb;
-  color: #5a5b60;
+  /* Fallback for a format with no tint of its own. */
+  background: var(--curio-surface-alt);
+  color: var(--curio-text-secondary);
 }
 
 .cardAvatarButton {
