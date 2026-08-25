@@ -127,14 +127,14 @@ export function DataCatalogBrowseCard({
         </div>
         <div className={styles.cardActionsRight}>
           <button
-            className={`${styles.linkButton} ${styles[`link_${dataset.format}`] || ""}`}
+            className={styles.linkButton}
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onViewDetails();
             }}
           >
-            View details ↗
+            View details
           </button>
         </div>
       </div>

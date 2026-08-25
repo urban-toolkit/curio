@@ -644,17 +644,13 @@
   font-family: inherit;
   font-size: 11px;
   font-weight: 600;
+  color: var(--curio-text-primary);
   cursor: pointer;
 }
 
-.link_geojson { color: var(--curio-format-geojson-fg); }
-.link_csv { color: var(--curio-format-csv-fg); }
-.link_json { color: var(--curio-format-json-fg); }
-.link_parquet { color: var(--curio-format-parquet-fg); }
-.link_geotiff { color: var(--curio-format-geotiff-fg); }
-.link_shp { color: var(--curio-format-shp-fg); }
-.link_bundle { color: var(--curio-format-bundle-fg); }
-.link_osm { color: var(--curio-format-osm-fg); }
+.linkButton:hover {
+  text-decoration: underline;
+}
 
 /* ══════════════════════════════════════════
    RIGHT DETAIL DRAWER

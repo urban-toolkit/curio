@@ -28,7 +28,7 @@ export interface DataCatalogBrowseDrawerProps {
   catalogPublishAllowed: boolean;
   onPublish: (dataset: DatasetCatalogItem) => void;
   onClose: () => void;
-  onViewSample: (dataset: DatasetCatalogItem) => void;
+  onViewDetails: (dataset: DatasetCatalogItem) => void;
   onLayoutChange?: (slotOpen: boolean) => void;
 }
 
@@ -38,7 +38,7 @@ export function DataCatalogBrowseDrawer({
   catalogPublishAllowed,
   onPublish,
   onClose,
-  onViewSample,
+  onViewDetails,
   onLayoutChange,
 }: DataCatalogBrowseDrawerProps) {
   return (
@@ -50,7 +50,7 @@ export function DataCatalogBrowseDrawer({
           catalogPublishAllowed={catalogPublishAllowed}
           onPublish={onPublish}
           onClose={onClose}
-          onViewSample={onViewSample}
+          onViewDetails={onViewDetails}
         />
       ) : null}
     </CatalogBrowseDrawerShell>
@@ -68,7 +68,7 @@ function DataCatalogBrowseDrawerContent({
   catalogPublishAllowed,
   onPublish,
   onClose,
-  onViewSample,
+  onViewDetails,
 }: DataCatalogBrowseDrawerContentProps) {
   const crs = dataset.schema?.crs ?? null;
   const published = isDatasetPublishedToCatalog(dataset);
@@ -132,9 +132,9 @@ function DataCatalogBrowseDrawerContent({
         <button
           className={styles.addToPaletteBtn}
           type="button"
-          onClick={() => onViewSample(dataset)}
+          onClick={() => onViewDetails(dataset)}
         >
-          View sample data
+          View details
         </button>
       }
       publishPill={

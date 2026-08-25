@@ -45,10 +45,11 @@ interface Surface {
  */
 const SURFACES: Surface[] = [
   {
-    // Hub browse card (strip header, active border, tag accent, link),
-    // format filter-rail dot, and browse drawer format badge.
+    // Hub browse card (strip header, active border, tag accent), format
+    // filter-rail dot, and browse drawer format badge. Not the card's action
+    // link: that reads as text and takes the text colour.
     file: "pages/catalog/CatalogBrowseLayout.module.css",
-    prefixes: ["strip", "card", "tagAccent", "link", "dot", "dfmt"],
+    prefixes: ["strip", "card", "tagAccent", "dot", "dfmt"],
   },
   {
     // List/row view format badge.
