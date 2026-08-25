@@ -1078,6 +1078,23 @@ def wait_for_projects_page(page, *, timeout: float = 10000) -> None:
     page.get_by_role("link", name="Projects", exact=True).wait_for(timeout=timeout)
 
 
+def project_card(page, name: str):
+    """The ``/projects`` card whose title is *name*, scoped to the card grid.
+
+    Not ``get_by_text(name)``: the browse rebuild auto-selects the first card so
+    the detail drawer arrives populated, and that drawer renders the same name
+    in an ``<h2>``. With one project on the page a bare text lookup therefore
+    resolves to two elements and Playwright fails it as a strict mode violation.
+
+    Keys off the two attributes ``ProjectsList.tsx`` exposes for exactly this -
+    ``data-curio-projects-scroll`` on the scroller and ``data-project-id`` on
+    each card - both of which the Jest suite already pins.
+    """
+    return page.locator(
+        '[data-curio-projects-scroll="true"] [data-project-id]'
+    ).filter(has_text=name)
+
+
 def open_new_workflow(page) -> None:
     """From ``/projects``, click "+ New Dataflow" and wait for the canvas."""
     page.get_by_text("+ New Dataflow").click()

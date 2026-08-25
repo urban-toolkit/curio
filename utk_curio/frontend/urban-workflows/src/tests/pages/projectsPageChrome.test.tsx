@@ -239,6 +239,23 @@ describe('projects detail drawer', () => {
     expect(screen.getByText('Sensor readings')).toBeTruthy();
   });
 
+  test('the selected name renders twice: on the card and in the drawer heading', async () => {
+    const { container, getByRole } = await renderPage();
+
+    // This duplication is deliberate, and it is why the e2e suite cannot look a
+    // project up by bare text: with one project on the page, get_by_text(name)
+    // matches both nodes and Playwright fails it as a strict mode violation.
+    // project_card() in backend/tests/test_frontend/utils.py scopes to the card
+    // via the two selectors asserted here, so this test guards that contract.
+    const card = container.querySelector(
+      '[data-curio-projects-scroll="true"] [data-project-id="p1"]'
+    ) as HTMLElement;
+    expect(card).not.toBeNull();
+    expect(card.textContent).toContain('Air quality');
+    expect(getByRole('heading', { name: 'Air quality' })).toBeTruthy();
+    expect(screen.getAllByText('Air quality').length).toBe(2);
+  });
+
   test('the drawer is the shared catalog body, not a projects-only one', async () => {
     const { container, getByRole } = await renderPage();
 
