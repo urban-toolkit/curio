@@ -37,7 +37,8 @@ Create `/srv/curio/.env`:
 
 ```bash
 CURIO_CONTAINER_NAME=curio
-CURIO_PORT_2000=2000
+# CURIO_PORT_2000 is no longer used: the sandbox executes arbitrary node
+# code and is no longer published. Harmless to leave in an existing .env.
 CURIO_PORT_5002=5002
 CURIO_PORT_8080=8080
 
@@ -181,7 +182,7 @@ A second checkout running on different ports under a different path lets you tes
 |---|---|---|
 | Path on server | `/srv/curio` | `/srv/curio-dev` |
 | Container | `curio` | `curio-dev` |
-| Ports | 2000 / 5002 / 8080 | 2010 / 5012 / 8090 |
+| Published ports | 5002 / 8080 | 5012 / 8090 |
 | Public URL | `lab-name.your-uni.edu/curio/` | `lab-name.your-uni.edu/curio-dev/` |
 
 Clone into `/srv/curio-dev`, write a parallel `.env` with `CURIO_PORT_*=2010/5012/8090`, `PUBLIC_PATH=/curio-dev/`, and `BACKEND_URL=https://lab-name.your-uni.edu/curio-dev/api`. Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` → 5012, `/curio-dev/*` → 8090). Then:
@@ -239,6 +240,10 @@ To roll back, dispatch Deploy with `ref` set to the previous tag and `target: st
 - Set a real `SECRET_KEY`. Auth is on for any real deployment, so this is not optional.
 - Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into or delete from the shared node catalog, and `DELETE /api/packages/catalog/<dirName>` performs no ownership check. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
 - Dataset publishing has no equivalent switch. Any signed-in user can publish into the shared Data Catalog; only the original publisher can unpublish or delete. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
+- **Verify the sandbox is not exposed**: `docker compose ps` must not list a published port for 2000. The sandbox executes arbitrary node code; only the backend inside the container should reach it. The image binds it to `127.0.0.1` and publishes nothing, so a published 2000 means a local override added one.
+- **Verify the sandbox token is set**: `docker compose logs curio | grep CURIO_SANDBOX_TOKEN` must print `CURIO_SANDBOX_TOKEN=<set>` (the value itself is never logged). A deployment with auth on refuses to start without it.
+- **Treat node authoring as shell access.** Node code runs with `exec()` inside the sandbox process, as the same OS user, with unrestricted builtins and no resource limits. A user who can author or edit a dataflow node can read `instance/urban_workflow.db` (every password hash and session token) and anything else that process can reach. Only give accounts to people you would give a shell to. See [ARCHITECTURE.md § Sandbox Isolation](ARCHITECTURE.md#sandbox-isolation).
+- **Consider isolated node execution.** `--isolation=fork --exec-user curio-exec` runs each node's Python in a confined child process (memory and CPU capped, no network, no read access to `instance/` or `.curio/data`) instead of in-process. It is off by default and Linux only. Without `--exec-user` there is no filesystem boundary, and the sandbox says so at startup. **Read the status note in [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only) before relying on it:** the confinement code has not yet been exercised outside CI.
 - `.env` is gitignored, but verify with `git status` after creating it.
 - Back up `instance/urban_workflow.db`, `datasets/`, and `.curio/` regularly.
 

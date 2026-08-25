@@ -18,7 +18,9 @@ services:
       # disables it for the same reason (FLASK_USE_RELOADER=0 in fixtures).
       - FLASK_USE_RELOADER=0
     ports:
-      - "${CURIO_PORT_2000:-2000}:2000"
+      # Port 2000 (the sandbox) is deliberately not published. It executes
+      # arbitrary user code and the backend reaches it over loopback inside
+      # the container; publishing it exposed that API to the host network.
       - "${CURIO_PORT_5002:-5002}:5002"
       - "${CURIO_PORT_8080:-8080}:8080"
     volumes:

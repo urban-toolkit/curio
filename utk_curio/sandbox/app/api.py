@@ -5,6 +5,7 @@ import sys
 import geopandas as gpd
 import pandas as pd
 from utk_curio.sandbox.app import app, cache
+from utk_curio.sandbox.app.auth import require_sandbox_token
 from utk_curio.sandbox.app.utils.cache import make_key
 import os
 import mmap
@@ -28,12 +29,11 @@ _worker_init()
 
 DATA_DIR = "./data"
 
-@app.after_request
-def add_cors_headers(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE')
-    return response
+# No CORS headers here on purpose. The sandbox is reached only by the backend
+# over server-to-server HTTP; no browser ever calls it directly (see
+# docs/ARCHITECTURE.md). The previous `Access-Control-Allow-Origin: *` granted
+# every page in the user's browser permission to read responses from a service
+# whose whole job is executing code, for no functional gain.
 
 @app.route('/')
 def root():
@@ -49,6 +49,7 @@ def version():
     return jsonify({'version': __version__})
 
 @app.route('/get', methods=['GET'])
+@require_sandbox_token
 def get_artifact():
     import pandas as _pd
     import traceback as _tb
@@ -168,9 +169,112 @@ def _get_artifact_arrow(art_id, session_id, max_rows_param):
 
     return Response(body, mimetype=ARROW_IPC_MIME, headers=headers)
 
+# Isolation is resolved once, on the first /exec, and cached. Resolving per
+# request would repeat the capability probe and the warning on every node.
+# None means "not resolved yet"; False means "resolved to the in-process path".
+_isolation_state = None
+_isolation_lock = __import__('threading').Lock()
+
+
+def _isolated_runner():
+    """Return ``(callable, config)`` when isolation is active, else None.
+
+    Falls back to the in-process path, loudly, if the zygote cannot be started.
+    A hosted instance has already refused to boot in that situation
+    (``sandbox/server.py`` calls ``mode.resolve_mode`` at startup), so reaching
+    the fallback here means a local launch, where degrading beats failing.
+    """
+    global _isolation_state
+
+    if _isolation_state is not None:
+        return _isolation_state or None
+
+    with _isolation_lock:
+        if _isolation_state is not None:
+            return _isolation_state or None
+
+        from utk_curio.sandbox.isolation import mode as isolation_mode
+
+        try:
+            resolved, reason = isolation_mode.resolve_from_environment()
+        except isolation_mode.IsolationUnavailable as exc:
+            # server.py should have caught this at boot; if we somehow get here,
+            # do not silently run unisolated on a hosted instance.
+            print(f"[isolation] {exc}", file=sys.stderr, flush=True)
+            _isolation_state = False
+            return None
+
+        isolation_mode.warn_once(reason)
+
+        if resolved != isolation_mode.FORK:
+            _isolation_state = False
+            return None
+
+        from utk_curio.sandbox.isolation import lifecycle, runner
+
+        # Filesystem permissions are handled at startup, in sandbox/server.py,
+        # not here. A misconfiguration has to fail the *boot*: raising from a
+        # request handler would surface as a 500, and /exec promises to report
+        # every failure as stderr at 200.
+        config = runner.IsolationConfig.from_environment()
+        try:
+            lifecycle.ensure_running(
+                config,
+                exec_user=os.environ.get('CURIO_EXEC_USER') or None,
+                require_seccomp=isolation_mode.mode_from_environment()[1],
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade rather than 500
+            print(
+                f"[isolation] could not start the execution zygote, falling back "
+                f"to in-process execution: {exc}",
+                file=sys.stderr, flush=True,
+            )
+            _isolation_state = False
+            return None
+
+        import atexit
+        atexit.register(lifecycle.shutdown)
+
+        print(
+            f"[isolation] node execution is isolated "
+            f"(memory={config.limits['memory_mb']}MB, "
+            f"timeout={config.wall_timeout}s, "
+            f"parallelism={config.parallelism})",
+            file=sys.stderr, flush=True,
+        )
+        _isolation_state = (runner.execute_isolated, config)
+        return _isolation_state
+
+
+def _runtime_install_enabled() -> bool:
+    """Whether ``POST /install`` is permitted at all.
+
+    Off by default. Nothing in Curio calls this route: library installs go
+    through the backend (``packages/pip_runner.py``), which is auth-gated and
+    records what it installed per user. This endpoint is a second, unrecorded
+    path to ``pip install`` inside the interpreter that executes node code, so
+    it stays disabled unless an operator explicitly asks for it with
+    ``--allow-runtime-install``.
+    """
+    return os.environ.get("CURIO_ALLOW_RUNTIME_INSTALL", "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 @app.route('/install', methods=['POST'])
+@require_sandbox_token
 def install_packages():
     import subprocess
+    if not _runtime_install_enabled():
+        return jsonify({
+            "error": "runtime_install_disabled",
+            "message": (
+                "Sandbox runtime package installation is disabled. Install "
+                "libraries through the Library Manager, which goes through the "
+                "backend. To re-enable this endpoint, launch with "
+                "--allow-runtime-install."
+            ),
+        }), 403
     packages = request.json.get('packages', [])
     if not packages:
         abort(400, "No packages specified")
@@ -197,6 +301,7 @@ def install_packages():
     return jsonify({"results": results})
 
 @app.route('/exec', methods=['POST'])
+@require_sandbox_token
 # @cache.cached(make_cache_key=make_key)
 def exec():
     import time
@@ -228,16 +333,26 @@ def exec():
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
-    result = execute_code(
-        code, str(file_path), str(node_type), str(data_type), launch_dir,
-        session_id=session_id, save_dataset=bool(save_dataset),
-        dataset_paths=dataset_paths,
-    )
+    isolated = _isolated_runner()
+    if isolated is not None:
+        run, config = isolated
+        result = run(
+            code, str(file_path), str(node_type), str(data_type),
+            session_id=session_id, save_dataset=bool(save_dataset),
+            dataset_paths=dataset_paths, config=config,
+        )
+    else:
+        result = execute_code(
+            code, str(file_path), str(node_type), str(data_type), launch_dir,
+            session_id=session_id, save_dataset=bool(save_dataset),
+            dataset_paths=dataset_paths,
+        )
 
     print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
     return jsonify(result)
 
 @app.route('/execJs', methods=['POST'])
+@require_sandbox_token
 def exec_js():
     import time
     import sys

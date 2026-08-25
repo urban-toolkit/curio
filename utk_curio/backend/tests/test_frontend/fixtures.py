@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import secrets
 import sqlite3
 import tempfile
 import pytest
@@ -238,6 +239,17 @@ def curio_servers(session_app, request):
         if key in os.environ:
             env[key] = os.environ[key]
 
+    # The sandbox's code-execution routes require a shared secret
+    # (utk_curio/sandbox/app/auth.py). `curio start` would mint one into the
+    # child's environment only, which this pytest process could not then read.
+    # A couple of tests call the sandbox directly (test_alive,
+    # test_library_install_integration), so pin it here instead and publish it
+    # via os.environ for the `sandbox_auth_headers` fixture. main.py honours a
+    # pre-set value.
+    sandbox_token = os.environ.get("CURIO_SANDBOX_TOKEN") or secrets.token_urlsafe(32)
+    os.environ["CURIO_SANDBOX_TOKEN"] = sandbox_token
+    env["CURIO_SANDBOX_TOKEN"] = sandbox_token
+
     # The E2E suite exercises the real signup / signin / guest flows, so the
     # backend must run with user auth enabled. ``curio.py start`` defaults to
     # ``CURIO_NO_AUTH=1`` (auto-guest mode, no login UI), which would send the
@@ -262,6 +274,17 @@ def curio_servers(session_app, request):
     # flips the per-node toggle in the UI, because "the user turned it on" is the
     # scenario #180 reports.
     extra_args.append("--save-node-outputs")
+    # Replay the whole e2e suite against isolated node execution by setting
+    # CURIO_E2E_ISOLATION=fork. Off by default, and deliberately so: the
+    # confinement path is not yet verified anywhere, so turning it on for every
+    # run would make an unrelated failure look like an isolation bug. Pair it
+    # with CURIO_E2E_EXEC_USER on a host that has an unprivileged account.
+    _e2e_isolation = os.environ.get("CURIO_E2E_ISOLATION", "").strip()
+    if _e2e_isolation:
+        extra_args += ["--isolation", _e2e_isolation]
+        _exec_user = os.environ.get("CURIO_E2E_EXEC_USER", "").strip()
+        if _exec_user:
+            extra_args += ["--exec-user", _exec_user]
 
     # Discard child stdout/stderr: PIPE deadlocks the subprocess once the
     # buffer fills, and a file in the repo trips webpack-dev-server's
@@ -335,6 +358,21 @@ def current_server(curio_servers):
 def sandbox_server(curio_servers):
     """Sandbox URL (servers already started by curio_servers or existing stack)."""
     yield base_url(curio_servers, "sandbox_port")
+
+
+@pytest.fixture(scope="session")
+def sandbox_auth_headers(curio_servers):
+    """Headers proving to the sandbox that we may call its guarded routes.
+
+    ``/exec``, ``/execJs``, ``/get`` and ``/install`` require the shared secret
+    (utk_curio/sandbox/app/auth.py). ``curio_servers`` pins it into os.environ
+    when it starts the stack; under ``CURIO_E2E_USE_EXISTING`` the workflow
+    exports the same value the container was given. Empty dict when unset, so
+    an unauthenticated local sandbox still works.
+    """
+    from .utils import sandbox_auth_header
+
+    return sandbox_auth_header()
 
 
 @pytest.fixture(scope="session")

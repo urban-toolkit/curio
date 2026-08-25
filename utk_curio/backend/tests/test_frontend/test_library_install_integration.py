@@ -81,8 +81,12 @@ def _stub_token(backend_url: str, username: str) -> tuple[int, str]:
     return body["user"]["id"], body["token"]
 
 
-def _exec_python(sandbox_url: str, code: str) -> dict:
-    """POST user code to the sandbox the way /processPythonCode does."""
+def _exec_python(sandbox_url: str, code: str, sandbox_headers: dict) -> dict:
+    """POST user code to the sandbox the way /processPythonCode does.
+
+    ``sandbox_headers`` carries the shared secret the sandbox requires on
+    /exec; the backend attaches the same header in ``_sandbox_call``.
+    """
     return api_json(
         f"{sandbox_url}/exec",
         token="",
@@ -95,6 +99,7 @@ def _exec_python(sandbox_url: str, code: str) -> dict:
             "save_dataset": False,
         },
         timeout=120.0,
+        extra_headers=sandbox_headers,
     )
 
 
@@ -142,7 +147,7 @@ def library_teardown(current_server):
 
 
 def test_installed_library_becomes_importable_by_the_sandbox(
-    current_server, sandbox_server, library_teardown
+    current_server, sandbox_server, sandbox_auth_headers, library_teardown
 ):
     require_user_auth()
 
@@ -157,7 +162,7 @@ def test_installed_library_becomes_importable_by_the_sandbox(
 
     # 1. Negative control. The failure contract is an EMPTY output path; a
     #    non-empty stderr on its own is not failure (warnings land there too).
-    before = _exec_python(sandbox_server, PY_CODE)
+    before = _exec_python(sandbox_server, PY_CODE, sandbox_auth_headers)
     assert before["output"]["path"] == "", (
         f"{LIB} was importable before installing it - a previous run leaked it "
         f"into this interpreter. Run `pip uninstall {LIB}` and retry."
@@ -187,7 +192,7 @@ def test_installed_library_becomes_importable_by_the_sandbox(
     assert report["standalone"]["python"] == [LIB], report
 
     # 3. The same node code now succeeds - with no sandbox restart in between.
-    after = _exec_python(sandbox_server, PY_CODE)
+    after = _exec_python(sandbox_server, PY_CODE, sandbox_auth_headers)
     assert after["output"]["path"], (
         f"{LIB} still not importable after a confirmed install. The sandbox's "
         f"in-process exec() may need importlib.invalidate_caches().\n"

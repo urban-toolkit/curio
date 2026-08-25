@@ -128,6 +128,54 @@ if __name__ == '__main__':
         RELOADER_EXCLUDE_PATTERNS,
     )
 
+    # Fail closed: a multi-user instance must not come up with the code
+    # execution routes unguarded. Checked here rather than at import time so
+    # the unit suites can still build the app with app.test_client().
+    from utk_curio.sandbox.app.auth import require_startup_token
+    require_startup_token()
+
+    # Same idea for execution isolation: resolve it now so a hosted instance
+    # that asked for --isolation=fork and cannot have it dies here, with a
+    # readable message, instead of quietly serving every node in-process. A
+    # local launch degrades and warns instead (see isolation/mode.py).
+    from utk_curio.sandbox.isolation import mode as _isolation_mode
+    _resolved_isolation, _isolation_reason = _isolation_mode.resolve_from_environment()
+    _isolation_mode.warn_once(_isolation_reason)
+    print(
+        f"[sandbox] node execution isolation: {_resolved_isolation}",
+        file=sys.stderr, flush=True,
+    )
+
+    if _resolved_isolation == _isolation_mode.FORK:
+        # Confining syscalls does not stop open(). A world-readable artifact
+        # store or user database is readable by node code with no escape at
+        # all, so tighten the permissions and then verify. Done at boot rather
+        # than per request: a misconfiguration must fail the start, because
+        # raising from a request handler would surface as a 500 and /exec
+        # promises to report failures as stderr at 200.
+        from utk_curio.sandbox.isolation import hardening as _hardening
+        from utk_curio.sandbox.isolation import runner as _runner
+        from utk_curio.sandbox.util.parsers import _shared_data_dir
+
+        _config = _runner.IsolationConfig.from_environment()
+        _findings, _fatal = _hardening.apply_and_report(
+            os.environ.get('CURIO_LAUNCH_CWD', os.getcwd()),
+            str(_shared_data_dir()),
+            uid=_config.exec_uid,
+            gid=None,
+            hosted=_isolation_mode.mode_from_environment()[1],
+        )
+        for _finding in _findings:
+            print(f"[isolation] {_finding}", file=sys.stderr, flush=True)
+        if _fatal:
+            raise SystemExit(
+                "[isolation] refusing to start: this instance has user auth "
+                "enabled and asked for isolated execution, but the paths listed "
+                "above are still reachable by the execution user. Configure "
+                "--exec-user with an unprivileged account, or pass "
+                "--isolation=off to accept the risk explicitly."
+            )
+
     app.run(
         host=os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1'),
         port=int(os.getenv('FLASK_SANDBOX_PORT', 2000)),
