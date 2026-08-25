@@ -39,18 +39,22 @@
 # publish-catalog tests exercise. CI wants auth on and publish still allowed.
 services:
   curio:
-    # Blast radius caps for the isolation test suite.
+    # Process-count cap for the isolation test suite.
     #
-    # test_isolation_linux.py deliberately provokes resource exhaustion:
-    # runaway allocations and, if enabled, fork bombs. The self-hosted
-    # runner shares a host with the live curio and curio-dev instances,
-    # and inside the container those tests run as root, which bypasses
-    # RLIMIT_NPROC. Without a pids cap a bug in that (as yet unverified)
-    # code could exhaust the host's PID space and take production with
-    # it. These bound the container instead of trusting the code under
-    # test to bound itself.
+    # test_isolation_linux.py can provoke process exhaustion, and inside
+    # the container those tests run as root, which bypasses RLIMIT_NPROC.
+    # This runner shares a host with the live curio and curio-dev stacks,
+    # so bound the container rather than trusting the code under test.
+    #
+    # Deliberately NO mem_limit. Setting one (12g) coincided with
+    # test_node_execution[06-autark-what-if-shadow-study] timing out at
+    # 120s waiting for its data pool to render, a test that passes on
+    # main. That example parses city-scale PBFs and drives WebGPU, and a
+    # mem_limit without memswap_limit lets the container swap instead of
+    # allocating, which shows up as exactly that kind of slowdown. The
+    # risk a memory cap guarded is already covered: RLIMIT_AS bounds each
+    # child (child._apply_rlimits) and the fork bomb is opt-in.
     pids_limit: 4096
-    mem_limit: 12g
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
     ports:
