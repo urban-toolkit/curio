@@ -26,8 +26,10 @@ before the step that drops it:
 5. ``setrlimit``       memory, CPU, processes, file size. Applied after the uid
                        drop so the child cannot raise its own soft limits back
                        to the (higher) hard limits.
-6. ``chdir``           into the scratch directory, the only place the child can
-                       write.
+6. ``chdir``           into the launch directory, so relative paths in node
+                       code resolve the way they do in-process. Writes are
+                       bounded by ownership, not by cwd: that tree is
+                       root-owned and this process is no longer root.
 
 There is no blanket close of inherited descriptors, and that is deliberate:
 closing fds under a live pyarrow/GDAL/duckdb crashed the child with SIGSEGV.
@@ -221,7 +223,7 @@ def _apply_rlimits(limits):
 
 
 def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
-            keep_fds=()):
+            work_dir=None, keep_fds=()):
     """Apply every confinement step, in the order the module docstring sets out.
 
     Raises :class:`ChildSetupError` if any step fails. The caller must treat
@@ -254,7 +256,20 @@ def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
     seccomp_active = _install_seccomp_filter(required=require_seccomp)
     _drop_privileges(uid, gid)
     _apply_rlimits(limits)
-    os.chdir(scratch_dir)
+    # *work_dir*, not *scratch_dir*. Node code addresses its inputs by paths
+    # relative to the launch directory -- the bundled examples all do
+    # `gpd.read_file("docs/examples/data/...")` -- and the in-process path runs
+    # with that cwd. Landing in the scratch directory instead made every such
+    # node fail with "No such file or directory", a failure that had nothing to
+    # do with permissions: the child could read the file perfectly well, it was
+    # looking in the wrong place.
+    #
+    # This does not widen what the child may touch. Reads were already possible
+    # by absolute path, and writes are bounded by ownership rather than by cwd:
+    # the launch tree is root-owned and the child has dropped to the execution
+    # user by the time it gets here. Falls back to the scratch directory when
+    # no work_dir was sent, so an older parent still lands somewhere it owns.
+    os.chdir(work_dir or scratch_dir)
     return {"seccomp": seccomp_active}
 
 
@@ -588,6 +603,7 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
             gid=gid,
             scratch_dir=scratch_dir,
             require_seccomp=require_seccomp,
+            work_dir=request.get("work_dir"),
         )
     except BaseException:
         import traceback

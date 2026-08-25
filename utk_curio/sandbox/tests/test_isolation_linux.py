@@ -242,6 +242,50 @@ def test_each_execution_gets_a_fresh_process(isolated):
     assert load_from_duckdb(second["output"]["path"]) is False
 
 
+def test_a_node_reads_a_file_by_relative_path(isolated, workspace):
+    """Node code addresses its data relative to the launch directory.
+
+    Every bundled example does this -- `gpd.read_file("docs/examples/data/
+    access_score.geojson")` -- and `confine` used to chdir into the scratch
+    directory, so all of them failed with "No such file or directory". Not a
+    permissions failure: the child could read the file perfectly well, it was
+    looking in the wrong place. The isolated CI job found it; nothing in this
+    suite did, because every test here passes its data in rather than reading
+    it off disk.
+    """
+    data = workspace / "docs" / "examples" / "data"
+    data.mkdir(parents=True)
+    (data / "thing.txt").write_text("42", encoding="utf-8")
+    os.chmod(workspace / "docs", 0o755)
+    os.chmod(data, 0o755)
+    os.chmod(data / "thing.txt", 0o644)
+
+    result = run_isolated(
+        isolated,
+        "    with open('docs/examples/data/thing.txt') as f:\n"
+        "        return int(f.read())\n",
+        launch_dir=str(workspace),
+    )
+
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["dataType"] == "int"
+
+
+def test_the_scratch_directory_is_still_where_output_lands(isolated, workspace):
+    """Moving the cwd must not move where the child writes its result.
+
+    Every child-side write joins scratch_dir explicitly, so this holds by
+    construction -- pinned because a future "simplification" to relative paths
+    would put node output in the launch tree, which the child cannot write.
+    """
+    result = run_isolated(
+        isolated, "    return {'a': 1}\n", launch_dir=str(workspace)
+    )
+
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["path"]
+
+
 # ---------------------------------------------------------------------------
 # Escapes. The reason this work exists.
 # ---------------------------------------------------------------------------

@@ -331,6 +331,7 @@ def build_exec_request(
     data_type,
     scratch_dir,
     input_spec,
+    work_dir=None,
     dataset_paths=None,
     session_imports=None,
     limits=None,
@@ -340,6 +341,15 @@ def build_exec_request(
 
     Kept here beside the response parser so the two halves of the wire format
     stay in one file.
+
+    ``work_dir`` is the directory the child runs *in*, and it is the parent's
+    decision rather than the child's. It is the launch directory, not the
+    scratch directory: node code addresses its inputs by paths relative to the
+    launch directory (``gpd.read_file("docs/examples/data/x.geojson")``), and
+    the in-process path runs with that cwd, so running elsewhere silently broke
+    every such node with "No such file or directory". Writes are still bounded
+    by permissions, not by cwd -- the launch tree is root-owned and the child
+    has dropped to the execution user.
 
     ``wall_timeout`` is enforced by the zygote, not by the parent. The zygote is
     the child's parent process, so while it holds an unreaped child the pid
@@ -352,6 +362,7 @@ def build_exec_request(
         "node_type": node_type,
         "data_type": data_type,
         "scratch_dir": str(scratch_dir),
+        "work_dir": str(work_dir) if work_dir else None,
         "input": input_spec,
         "dataset_paths": dict(dataset_paths or {}),
         "session_imports": list(session_imports or []),
