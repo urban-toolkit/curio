@@ -48,6 +48,28 @@ SENSITIVE_PATHS = (
 DIRECTORY_MODE = 0o700
 FILE_MODE = 0o600
 
+# One of them cannot be owner-only, and getting this wrong breaks isolation
+# completely rather than subtly.
+#
+# Every execution's scratch directory lives *inside* the artifact store
+# (``supervisor.SCRATCH_SUBDIR`` under ``.curio/data``), and the child chdirs
+# into it as the last step of ``child.confine``. At 0700 root-owned the child --
+# which by then has dropped to the execution user -- cannot traverse the store
+# to reach it, so `confine` fails and every isolated node dies before running a
+# line of user code.
+#
+# 0711 grants exactly what is needed and nothing more: traverse, but no read and
+# no list. The execution user cannot enumerate the store, and the files in it
+# stay FILE_MODE (0600, root-owned), so guessing an artifact name still gets
+# EACCES. ``describe_exposure`` agrees -- it asks about *read* access, which
+# 0711 does not grant -- so the startup audit stays clean.
+#
+# ``test_isolation_linux.py::isolated_dropped`` has always had to do this by
+# hand ("0711 up the chain: the child must traverse to its scratch dir without
+# being able to list any level of it"), which is how this surfaced.
+TRAVERSABLE_DIRECTORIES = frozenset({".curio/data"})
+TRAVERSE_MODE = 0o711
+
 
 def can_access(path_stat, *, uid, gid, write=False):
     """Could *uid*/*gid* read (or write) something with these stat results?
@@ -137,15 +159,27 @@ def harden_paths(launch_dir, *, paths=SENSITIVE_PATHS, recurse_files=True):
     if not hasattr(os, "chmod") or sys.platform == "win32":
         return {"changed": [], "failed": [], "skipped": "not a POSIX host"}
 
+    from utk_curio.sandbox.isolation.supervisor import SCRATCH_SUBDIR
+
     changed, failed = [], []
     for relative, _reason in paths:
         target = os.path.join(launch_dir, relative)
         if not os.path.exists(target):
             continue
         if os.path.isdir(target):
-            (changed if _tighten(target, DIRECTORY_MODE) else failed).append(relative)
+            directory_mode = (
+                TRAVERSE_MODE if relative in TRAVERSABLE_DIRECTORIES
+                else DIRECTORY_MODE
+            )
+            (changed if _tighten(target, directory_mode) else failed).append(relative)
             if recurse_files:
                 for root, directories, files in os.walk(target):
+                    # The scratch tree belongs to the execution user, not to us.
+                    # Walking into it would undo prepare_scratch_root's 0711 on
+                    # the root, and would re-own any live execution's directory
+                    # out from under the child currently running in it.
+                    if SCRATCH_SUBDIR in directories:
+                        directories.remove(SCRATCH_SUBDIR)
                     for name in directories:
                         _tighten(os.path.join(root, name), DIRECTORY_MODE)
                     for name in files:
@@ -199,7 +233,11 @@ def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted):
             "with an unprivileged account for a filesystem boundary."
         ], hosted)
 
-    prepare_scratch_root(shared_data_dir, exec_uid=uid)
+    # Order matters: harden first, then prepare. `harden_paths` skips the
+    # scratch subtree, so this is belt and braces rather than the load-bearing
+    # part -- but it means the scratch root gets its mode last either way, and
+    # a future change to the walk cannot silently take it away again.
     harden_paths(launch_dir)
+    prepare_scratch_root(shared_data_dir, exec_uid=uid)
     findings = audit(launch_dir, uid=uid, gid=gid)
     return findings, bool(findings and hosted)
