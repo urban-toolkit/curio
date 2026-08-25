@@ -79,7 +79,21 @@ export default function GrammarEditor({
         // resolves the schema graph. Disable URL fetching and clear the schema
         // list so Monaco only does the cheap structural JSON parse.
         try {
-            monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+            // monaco-editor's core typings stub `languages.json` as
+            // `{ deprecated: true }`; the real declarations ship with the JSON
+            // language contribution, whose .d.ts is an empty `export {}`. The
+            // API exists at runtime once that contribution is loaded, so this
+            // states the one call being made rather than reaching for `any`.
+            const jsonLanguage = monaco.languages.json as unknown as {
+                jsonDefaults: {
+                    setDiagnosticsOptions(options: {
+                        validate?: boolean;
+                        enableSchemaRequest?: boolean;
+                        schemas?: unknown[];
+                    }): void;
+                };
+            };
+            jsonLanguage.jsonDefaults.setDiagnosticsOptions({
                 validate: true,
                 enableSchemaRequest: false,
                 schemas: [],

@@ -81,7 +81,15 @@ const FIXTURE_PACK = {
  * without it snapping back). Asserting on `result.current` alone would
  * therefore always see `undefined` — we record each render instead.
  */
-function runBehavior(pack: typeof FIXTURE_PACK, code: unknown): Array<string | undefined> {
+/** The fixture, with `source` allowed to be null — which is exactly the case
+ *  the "no source" test below exercises. */
+type StarterPack = Omit<typeof FIXTURE_PACK, "templates"> & {
+  templates: Array<
+    Omit<(typeof FIXTURE_PACK)["templates"][number], "source"> & { source: string | null }
+  >;
+};
+
+function runBehavior(pack: StarterPack, code: unknown): Array<string | undefined> {
   const [desc] = registerPackageTemplates([pack]);
   const data = { nodeType: desc.id, ...(code !== undefined ? { code } : {}) } as unknown as NodeBehaviorData;
   const nodeState = { code: typeof code === 'string' ? code : '' } as unknown as UseNodeStateReturn;

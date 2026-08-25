@@ -7,7 +7,9 @@ import { splitCanonicalNodeType } from "../registry/packageKeys";
  */
 export function getFlowNodeCanonicalType(node: {
     type?: string | null;
-    data?: { nodeType?: string | null };
+    // `| null` because a ReactFlow node's `data` legitimately is null on some
+    // paths; the body already reads it with optional chaining.
+    data?: { nodeType?: string | null } | null;
 }): string {
     const rf = node.type ?? "";
     if (rf === CURIO_UNIVERSAL_NODE_TYPE) {

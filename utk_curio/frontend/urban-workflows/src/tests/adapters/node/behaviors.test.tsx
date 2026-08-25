@@ -69,7 +69,11 @@ jest.mock('@urban-toolkit/autk-grammar', () => ({ AutkGrammar: jest.fn().mockImp
 // "backend fails → fall back to browser" path can be exercised. `mock`-prefixed
 // names are the only out-of-scope refs jest.mock's hoisted factory may capture.
 const mockAutkDbLoadOsm = jest.fn().mockResolvedValue(undefined);
-const mockAutkDbGetLayerTables = jest.fn(() => [] as Array<{ name: string; type?: string }>);
+// Declared with a rest parameter so the forwarding wrapper below
+// (`(...a: any[]) => mockAutkDbGetLayerTables(...a)`) can spread into it.
+const mockAutkDbGetLayerTables = jest.fn(
+  (..._a: unknown[]) => [] as Array<{ name: string; type?: string }>,
+);
 jest.mock('@urban-toolkit/autk-db', () => ({
   AutkDb: jest.fn().mockImplementation(() => ({
     init: jest.fn().mockResolvedValue(undefined),

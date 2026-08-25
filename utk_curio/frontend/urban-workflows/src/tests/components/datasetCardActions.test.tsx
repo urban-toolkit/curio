@@ -7,6 +7,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 import { DatasetCard } from "../../components/datasets/catalog/DatasetCard";
+import type { DatasetCardProps } from "../../components/datasets/catalog/DatasetCard";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog/datasetCatalogTypes";
 
 /**
@@ -44,8 +45,8 @@ const base = {
   onInstall: jest.fn(),
 };
 
-const renderCard = (over: Record<string, unknown> = {}) =>
-  render(<DatasetCard {...(base as never)} dataset={dataset()} {...(over as never)} />);
+const renderCard = (over: Partial<DatasetCardProps> = {}) =>
+  render(<DatasetCard {...base} dataset={dataset()} {...over} />);
 
 const button = (name: string) => screen.queryByRole("button", { name });
 
@@ -67,7 +68,7 @@ describe("DatasetCard - primary action", () => {
   it("passes the dataset through to onInstall", () => {
     const onInstall = jest.fn();
     const item = dataset();
-    render(<DatasetCard {...(base as never)} dataset={item} onInstall={onInstall} />);
+    render(<DatasetCard {...base} dataset={item} onInstall={onInstall} />);
     fireEvent.click(button("Add to dataflow")!);
     expect(onInstall).toHaveBeenCalledWith(item);
   });

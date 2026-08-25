@@ -8,6 +8,7 @@ jest.mock("../../components/datasets/catalog/DatasetConnectionBadge", () => ({
   DatasetConnectionBadge: () => null,
 }));
 import { DatasetCard } from "../../components/datasets/catalog/DatasetCard";
+import type { DatasetCardProps } from "../../components/datasets/catalog/DatasetCard";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog/datasetCatalogTypes";
 
 /**
@@ -32,10 +33,13 @@ const card = (over: Partial<DatasetCatalogItem> = {}): DatasetCatalogItem =>
     ...over,
   } as unknown as DatasetCatalogItem);
 
-const renderCard = (dataset: DatasetCatalogItem, props: Record<string, unknown> = {}) =>
+const renderCard = (dataset: DatasetCatalogItem, props: Partial<DatasetCardProps> = {}) =>
   render(
     <DatasetCard
       dataset={dataset}
+      isInstalled={false}
+      isPublished={false}
+      busy={false}
       onInstall={jest.fn()}
       onDelete={jest.fn()}
       {...props}

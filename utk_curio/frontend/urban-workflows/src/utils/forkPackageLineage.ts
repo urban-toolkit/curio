@@ -180,7 +180,11 @@ export function sortPackagePayloadMembersDescending<
 export type PalettePackageGroupLike = Readonly<{
   key: string;
   label: string;
-  descriptors: ReadonlyArray<{ pkg?: NodePackageMeta | undefined }>;
+  // `package`, not `pkg`: that is the field NodeDescriptor carries (see
+  // registry/types.ts) and the one every reader below already uses. The
+  // constraint said `pkg`, so no real palette group satisfied it and every
+  // call site was an error.
+  descriptors: ReadonlyArray<{ package?: NodePackageMeta | undefined }>;
 }>;
 
 export function forkFamilyKeyFromPaletteGroup(group: PalettePackageGroupLike): string | null {

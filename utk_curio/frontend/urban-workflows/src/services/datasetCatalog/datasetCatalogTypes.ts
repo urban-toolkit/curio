@@ -121,6 +121,15 @@ export interface DatasetCatalogItem {
     nodeType?: string | null;
     datasetId?: string;
   }>;
+  /** Shared id stamped on every layer of one multilayer import (OSM PBF), so
+   * the dataset palette can fold the layers into a single group row. Absent on
+   * a dataset that is not part of such an import. Emitted by the backend (see
+   * ``catalog_item.py``); `datasetPaletteGrouping` reads it. */
+  groupId?: string | null;
+  /** This dataset's layer within a multilayer import, e.g. ``buildings``. Used
+   * as the row label under the group parent, and as the layer name in the
+   * loader's drag payload. */
+  layerName?: string | null;
   consumerNodeIds: string[];
   /** Real count of nodes consuming this dataset, summed across the user's
    * dataflows — the source of truth for the "N nodes consume" browse label.
@@ -357,7 +366,10 @@ export function displayFolderName(
  * displayed name stays consistent across the UI.
  */
 export function datasetDisplayTitle(
-  dataset: Pick<DatasetCatalogItem, "origin" | "title" | "dirName" | "fileName">,
+  dataset: Pick<
+    DatasetCatalogItem,
+    "origin" | "title" | "dirName" | "fileName" | "sourceLabel"
+  >,
 ): string {
   const title = dataset.title?.trim();
   // Display the node-scoped folder, never the dataflow-namespaced store id
@@ -420,7 +432,9 @@ export function isDatasetPublishedToCatalog(dataset: DatasetCatalogItem): boolea
 }
 
 /** True when the dataset comes from a node execution - computed*/
-export function isDatasetComputed(dataset: DatasetCatalogItem): boolean {
+export function isDatasetComputed(
+  dataset: Pick<DatasetCatalogItem, "origin"> & { sourceLabel?: string | null },
+): boolean {
   return dataset.origin === "computed" || dataset.sourceLabel?.toLowerCase() === "computed";
 }
 

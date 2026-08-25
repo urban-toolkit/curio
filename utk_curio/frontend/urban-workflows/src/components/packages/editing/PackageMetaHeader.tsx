@@ -8,10 +8,14 @@ import { useHeaderIconDragClick } from "../../../utils/headerIconDragClick";
 import styles from "./PackageMetaHeader.module.css";
 
 export interface PackageMetaHeaderProps {
-  package: NodePackageMeta;
+  /** The package this node came from. Required: the component dereferences it
+   * unconditionally, and its only caller renders nothing without one. The
+   * interface used to declare a required `package` that nobody passed and an
+   * optional `pkg` that everybody did, so the call site was an error and every
+   * use inside was possibly-undefined. */
+  pkg: NodePackageMeta;
   category: NodeCategory;
   suggestionActive: boolean;
-  pkg?: NodePackageMeta;
 }
 
 /**
