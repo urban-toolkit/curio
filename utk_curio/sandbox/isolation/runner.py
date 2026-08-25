@@ -183,6 +183,7 @@ def execute_isolated(
     session_id=None,
     save_dataset=True,
     dataset_paths=None,
+    user_key=None,
     config,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
@@ -190,12 +191,26 @@ def execute_isolated(
     *config* is an :class:`IsolationConfig`, carrying the socket path, limits
     and execution uid resolved once at startup.
 
-    *launch_dir* becomes the child's working directory, matching the
-    in-process path's ``cwd``. Positional and third-from-last so this signature
-    lines up with ``worker.execute_code``, which the caller picks between.
+    *launch_dir* is the fallback working directory, matching the in-process
+    path's ``cwd``. Positional and third-from-last so this signature lines up
+    with ``worker.execute_code``, which the caller picks between.
+
+    *user_key* switches the child into that user's own work directory instead:
+    persistent, writable, owned by the execution user, and the one place an
+    isolated node may write. Isolated mode only -- in-process execution shares
+    the sandbox's privileges anyway, so confining its cwd would buy nothing and
+    would change behaviour for every existing dataflow.
     """
     from utk_curio.sandbox.util import staging
     from utk_curio.sandbox.util.parsers import _shared_data_dir
+
+    work_dir = launch_dir
+    if user_key:
+        work_dir = supervisor.prepare_user_work_dir(
+            supervisor.user_work_dir(str(_shared_data_dir()), user_key),
+            exec_uid=config.exec_uid,
+            launch_dir=launch_dir,
+        )
 
     scratch_dir = None
     try:
@@ -224,7 +239,7 @@ def execute_isolated(
             data_type=data_type,
             scratch_dir=scratch_dir,
             input_spec=input_spec,
-            work_dir=launch_dir,
+            work_dir=work_dir,
             dataset_paths=staged_datasets,
             session_imports=_imports_for(session_id),
             limits=config.limits,
