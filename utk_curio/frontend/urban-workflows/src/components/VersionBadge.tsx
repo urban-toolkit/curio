@@ -18,17 +18,21 @@ const ISOLATION_LABELS: Record<string, { label: string; title: string }> = {
       "sessions' artifacts.",
   },
   off: {
-    label: "in-process",
+    label: "not isolated",
     title:
       "Node code runs inside the sandbox process with its full privileges. " +
       "This is the default for a local install; on a shared instance, treat " +
       "node-authoring rights as shell access.",
   },
+  // Same label, different reason. "isolation unavailable" would have been a
+  // third state to interpret, when the fact a reader needs is the one they
+  // already have from `off`: there is no boundary. Why there isn't one is a
+  // tooltip's job.
   unavailable: {
-    label: "isolation unavailable",
+    label: "not isolated",
     title:
       "Isolation was requested but this platform cannot provide it, so node " +
-      "code is running in-process.",
+      "code is running with the sandbox's full privileges.",
   },
 };
 
@@ -73,8 +77,7 @@ const VersionBadge: React.FC = () => {
           title={mode.title}
           style={{ pointerEvents: "auto", cursor: "help" }}
         >
-          {" · "}
-          {mode.label}
+          {` (${mode.label})`}
         </span>
       ) : null}
     </div>
