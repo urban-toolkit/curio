@@ -2287,6 +2287,55 @@ def _mint_dataset_install(
 _PACKAGE_REASON_MAX_CHARS = 300
 
 
+def _resolve_catalog_dir_name(dir_name: str, rows: dict[str, dict]) -> tuple[dict | None, list[str]]:
+    """Any spelling the roster teaches → the one Nodes Catalog row (dev/105 D1).
+
+    The roster shows a package three ways — ``curio.notes@1`` (the dirName the
+    proposal takes), ``curio.notes`` (the manifest id the model reads in
+    prose), and ``curio.notes/note-surface`` (the template id the roster line
+    LEADS with, optionally ``@major``). The live failure this fixes: a model
+    quoted the second, the mint exact-matched the first, and the refusal
+    pointed at a tool the agent did not hold. A spelling the system itself
+    produced must never be refused for being that spelling (the dev/93
+    posture, extended from node.create to package.install).
+
+    Returns ``(row, [])`` on a unique hit, ``(None, candidates)`` when a bare
+    package id matches more than one major — never guess a major — and
+    ``(None, [])`` on a true miss. Pure: no store access, no second parser —
+    the template-id form goes through :func:`canonical_template_id`.
+    """
+    from utk_curio.backend.app.packages.services import canonical_template_id
+
+    row = rows.get(dir_name)
+    if row is not None:
+        return row, []
+    package_id = dir_name
+    if "/" in dir_name:  # a template id: keep only the package half
+        package_id = canonical_template_id(dir_name).split("/", 1)[0]
+    elif "@" in dir_name:  # a dirName whose major is not in the catalog
+        return None, []
+    candidates = sorted(
+        name for name in rows if name.rsplit("@", 1)[0] == package_id
+    )
+    if len(candidates) == 1:
+        return rows[candidates[0]], []
+    return None, candidates
+
+
+def _package_install_miss_hint(granted) -> str:
+    """The way out of a dirName miss, naming ONLY sources this run can read
+    (DEC-063: an instruction must be executable on the path it is given).
+    The enlist roster is composed for every run holding package.install, so
+    it is always nameable; packages.catalog only when granted."""
+    hint = (
+        "use the dirName shown in parentheses after '(package …)' in the "
+        "'Installed but NOT enlisted in this project' list"
+    )
+    if "packages.catalog" in (granted or []):
+        hint += ", or a dirName from packages.catalog results"
+    return hint
+
+
 def _mint_package_install(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
@@ -2308,12 +2357,18 @@ def _mint_package_install(
         }
     except Exception as exc:  # a broken catalog is data, not a run error
         return "refused", f"the Nodes Catalog is unavailable: {exc}", None
-    row = rows.get(dir_name)
+    row, candidates = _resolve_catalog_dir_name(dir_name, rows)
+    if row is None and candidates:
+        return "refused", (
+            f"package {dir_name!r} names more than one major in the Nodes Catalog — "
+            f"propose exactly one of: {', '.join(candidates)}"
+        ), None
     if row is None:
         return "refused", (
-            f"package {dir_name!r} is not in the Nodes Catalog — propose only "
-            "dirNames from packages.catalog results"
+            f"package {dir_name!r} is not in the Nodes Catalog — "
+            f"{_package_install_miss_hint(loop_ctx.get('granted'))}"
         ), None
+    dir_name = row["dirName"]  # the canonical dirName is what gets pinned
     if row["builtin"]:
         return "refused", (
             f"package {row['name']!r} is built-in — always present, never proposed; "

@@ -209,8 +209,10 @@ REGISTRY: dict[str, ToolContract] = {
         effect="mutate",
         description=(
             "Propose installing ONE node package from the Nodes Catalog into "
-            'this project. Params: {"dirName": "<dirName from '
-            'packages.catalog results>", "reason": "why this work needs it"}. '
+            'this project. Params: {"dirName": "<the versioned dirName, e.g. '
+            "curio.notes@1 — from packages.catalog results or shown in "
+            "parentheses in the 'Installed but NOT enlisted in this project' "
+            'list>", "reason": "why this work needs it"}. '
             "The user reviews the proposal through the package install dialog "
             "(permissions, dependencies, conflicts); nothing is installed "
             "without their approval. Built-in packages are always present and "

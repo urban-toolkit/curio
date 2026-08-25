@@ -3405,6 +3405,68 @@ class TestReuseLadder:
         assert "(package curio.notes@1)" not in system
         assert "- curio.notes/note-surface — Note" in system
 
+    # dev/105 D1 — the live 2026-08-25 failure: the model quoted the manifest
+    # id `curio.notes` (the spelling its own prose used), the mint exact-matched
+    # the dirName, and the refusal named packages.catalog — a tool the
+    # Researcher does not hold. Every spelling the roster teaches must mint the
+    # SAME proposal, pinned to the canonical dirName.
+    @pytest.mark.parametrize("spelling", [
+        "curio.notes", "curio.notes/note-surface", "curio.notes/note-surface@1",
+    ])
+    def test_enlist_accepts_every_spelling_the_roster_teaches(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch, spelling
+    ):
+        import json as _json
+
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        install_tail = (
+            "```curio.v1\n"
+            + _json.dumps({"toolRequest": {"tool": "package.install", "params": {
+                "dirName": spelling, "reason": "notes need it",
+            }}})
+            + "\n```"
+        )
+        att_id, calls = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[install_tail, "Proposed."],
+        )
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+        resp = self._run(client, token, alice_project, att_id)
+        assert resp.status_code == 200
+        proposal = next(p for p in resp.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["tool"] == "package.install"
+        assert proposal["pins"]["dirName"] == "curio.notes@1"  # canonical, not the model's spelling
+        assert "not in the Nodes Catalog" not in calls[1][-1]["content"]
+
+    def test_enlist_miss_hint_names_only_sources_this_run_can_read(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """A true miss refuses with the roster list the Researcher DOES see and
+        never with packages.catalog, which it is not granted (DEC-063)."""
+        import json as _json
+
+        user, token = user_and_token
+        install_tail = (
+            "```curio.v1\n"
+            + _json.dumps({"toolRequest": {"tool": "package.install", "params": {
+                "dirName": "curio.nothing", "reason": "x",
+            }}})
+            + "\n```"
+        )
+        att_id, calls = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[install_tail, "ok"],
+        )
+        resp = self._run(client, token, alice_project, att_id)
+        assert all(p["type"] != "proposal" for p in resp.get_json()["content"])
+        correction = calls[1][-1]["content"]
+        assert "not in the Nodes Catalog" in correction
+        assert "Installed but NOT enlisted in this project" in correction
+        assert "packages.catalog" not in correction
+
     def test_enlist_then_create_places_a_note_on_the_reused_template(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
