@@ -201,3 +201,37 @@ Pathspec commits only (`git commit -- <paths>`); the index currently holds forei
 - [ ] Field replay test is the gate; it fails on `16b994b7` and passes after commit 3.
 - [ ] No frontend change, no new state, no flicker surface.
 - [ ] Docs closed per the repo convention; memory note updated to point here.
+
+---
+
+## Amendment A1 (2026-08-25, after the live test) — D4: the frontend's install review gate only knows the committed catalog
+
+**Status: IMPLEMENTED (2026-08-25) — commit 5: `usePackageInstallReview.beginReview` loads the store (`listInstalled`) and the catalog in parallel, store row first, probe set = store dirNames; hook jest lane 10/10 (5 new/extended); `tsc --noEmit` reports no errors in the touched files (pre-existing errors elsewhere untouched).**
+
+### A1.1 Live result of commits 1–4
+
+Re-asked "what's the weather in Paris?" in project `46dbf1d8…` (session `ebcb0c4b…`, screenshot `Desktop/Screenshot 2026-08-25 at 1.53.47 PM.png`) against the reloaded backend (`use_reloader` on; worker restarted 13:46 after the commits). D1–D3 hold in the field: the Researcher searched, stated the answer, and on the **first turn** minted **Install package · Simple Notes** (`curio.notes@1`) with the reason "I need a note template to display the current weather findings on the canvas" — no chat-only fallback, no false "not in the catalog" claim, no narration. The ENLIST rung is now reached and proposed exactly as dev/93 designed.
+
+**Apply then failed in the frontend**, before the backend was called: the card's error line reads *"package curio.notes@1 is no longer in the Nodes Catalog"*.
+
+### A1.2 Root cause
+
+`usePackageInstallReview.beginReview` (`utk_curio/frontend/urban-workflows/src/components/agents/attach/usePackageInstallReview.ts:54-57`) resolves the proposal's `dirName` against `packagesApi.catalog()` = `GET /api/packages/catalog` (`packages/routes.py:333-394`), which scans **only the committed `<repo>/packages/` catalog**. A store-only, agent-authored package — precisely what dev/93 D4 made proposable by teaching `agent_catalog_overview` to enumerate the user's store — is never in that list, so the hook throws before opening the dialog. The backend apply (`_apply_package_install` → `agent_resolve_report`, `packages/services.py`) already treats the store index as installable and would have succeeded; dev/93's "enlist-then-create end to end" test proved the backend path and never exercised the frontend gate. The same hook also derives the conflict-probe's `installed` set from the catalog rows' `installed` flag, which likewise omits store-only packages — a second, latent inaccuracy in the same lookup.
+
+### A1.3 Fix (one hook, one lookup rule)
+
+`beginReview` loads **both** feeds in parallel — `packagesApi.listInstalled()` (`GET /api/packages`, the user's store, same `PackagePayload` shape per the route docstring) and `packagesApi.catalog()` — and resolves the row as *store row first, else catalog row*; the conflict probe's `installed` set becomes the store's dirNames (what "every user-store package" in the existing comment actually means). The "no longer in the Nodes Catalog" error remains for a true miss in both feeds and its text gains "or your installed packages". No backend change; no new endpoint; the dialog, `confirm`, and `cancel` are untouched.
+
+Rejected: (a) adding store rows to `/api/packages/catalog` — that route is the fixture-backed *catalog* with families/collision semantics, and the drawer relies on its meaning; (b) a new agent-specific endpoint — `agent_catalog_overview` exists server-side but the dialog needs the full `PackagePayload` (permissions, dependencies), which `/api/packages` already serves.
+
+### A1.4 Tests
+
+`src/tests/attach/usePackageInstallReview.test.tsx`: mock `listInstalled` alongside `catalog`; (1) a store-only package (absent from the catalog mock, present in the store mock) opens the dialog with the store row and the probe list includes every store dirName + the candidate; (2) a catalog-only package still resolves (regression); (3) a package in neither feed rejects with the (extended) error before any dialog; (4) the probe's `installed` set comes from the store feed even when the catalog marks nothing installed. `tsc --noEmit` on the touched files.
+
+### A1.5 Acceptance
+
+Applying the live **Install package · Simple Notes** card opens the package install review dialog for `curio.notes@1`; Install enlists it (lockfile gains `curio.notes@1`, `curio.notes/note-surface` becomes available); the Researcher's next turn creates the yellow Question and green answer notes. §8 AC-1 is amended to include this frontend step.
+
+### A1.6 Commit
+
+- **Commit 5 — frontend review gate reads the store too**: the hook change + the four jest lanes; BL-44 gains a "found by the live test" deviation line; this amendment's status → IMPLEMENTED.

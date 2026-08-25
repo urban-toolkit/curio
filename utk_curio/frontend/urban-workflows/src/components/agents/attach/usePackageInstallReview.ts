@@ -51,14 +51,31 @@ export function usePackageInstallReview(
       if (!dirName) throw new Error("this proposal carries no package dirName");
       // Load the row + probe BEFORE opening the dialog — a load failure
       // rejects straight into the card's error line, nothing half-open.
-      const { packages } = await packagesApi.catalog();
-      const pkg = packages.find((p) => p.dirName === dirName);
+      //
+      // dev/105 A1: TWO feeds, store first. `/api/packages/catalog` is the
+      // committed <repo>/packages/ catalog only; a package the user already
+      // owns — an agent-authored one in particular, which dev/93 made
+      // proposable for exactly this enlist step — lives in the user's store
+      // (`/api/packages`) and nowhere else. Looking only at the catalog made
+      // the review gate refuse "no longer in the Nodes Catalog" for a package
+      // the backend apply would have installed. Same PackagePayload shape.
+      const [store, catalog] = await Promise.all([
+        packagesApi.listInstalled(),
+        packagesApi.catalog(),
+      ]);
+      const pkg =
+        store.packages.find((p) => p.dirName === dirName) ??
+        catalog.packages.find((p) => p.dirName === dirName);
       if (!pkg) {
-        throw new Error(`package ${dirName} is no longer in the Nodes Catalog`);
+        throw new Error(
+          `package ${dirName} is no longer in the Nodes Catalog or your installed packages`,
+        );
       }
       // The drawer's pre-install probe shape: every user-store package plus
       // the candidate, so the conflict report matches what install would hit.
-      const installed = packages.filter((p) => p.installed).map((p) => p.dirName);
+      // The store feed IS that set; the catalog's `installed` flag only covers
+      // catalog packages and would miss store-only ones.
+      const installed = store.packages.map((p) => p.dirName);
       let conflicts: ResolveConflict[] = [];
       try {
         const probe = await packagesApi.resolve([
