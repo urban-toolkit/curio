@@ -4961,7 +4961,14 @@ def _prepare_run(
 
         try:
             landscape = packages_services.template_landscape(user_key, project_id)
-        except Exception:  # a broken registry degrades to no listing, not a 500
+        except Exception as exc:  # a broken registry degrades to no listing, not a 500
+            # dev/105: but never SILENTLY — a vanished roster is the dev/93 D2
+            # failure shape (a swallowed cause surfacing layers away as "that
+            # template is not available"), so the cause is logged here.
+            log.warning(
+                "Template roster unavailable for project %s (%s: %s) — run "
+                "proceeds without it", project_id, type(exc).__name__, exc,
+            )
             landscape = None
         templates_block = _available_templates_block(
             project_id, landscape,

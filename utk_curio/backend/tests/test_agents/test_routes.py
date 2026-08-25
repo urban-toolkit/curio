@@ -3439,7 +3439,8 @@ class TestReuseLadder:
         proposal = next(p for p in resp.get_json()["content"] if p["type"] == "proposal")
         assert proposal["tool"] == "package.install"
         assert proposal["pins"]["dirName"] == "curio.notes@1"  # canonical, not the model's spelling
-        assert "not in the Nodes Catalog" not in calls[1][-1]["content"]
+        (install_result,) = self._results(calls)
+        assert install_result.startswith("[tool result] package.install: proposed")
 
     # dev/105 D2 — a parameter refusal is a millisecond correction, not a
     # provider round. Live: search + two refusals = MAX_TOOL_ROUNDS, and the
@@ -3462,6 +3463,16 @@ class TestReuseLadder:
             headers=_auth(token),
         ).get_json()["turns"]
         return turns[-1]["execution"]
+
+    @staticmethod
+    def _results(calls):
+        """Every tool result the model was handed, in order. The fake provider
+        records the ONE mutable message list by reference, so ``calls[i][-1]``
+        is always the run's FINAL message, whatever ``i`` — read the history."""
+        return [
+            m["content"] for m in calls[-1]
+            if m["role"] == "user" and m["content"].startswith("[tool result]")
+        ]
 
     def test_parameter_refusals_do_not_spend_rounds(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -3487,8 +3498,10 @@ class TestReuseLadder:
         proposal = next(p for p in resp.get_json()["content"] if p["type"] == "proposal")
         assert proposal["pins"]["dirName"] == "curio.notes@1"
         # Neither refusal told the model the budget was gone.
-        for i in (1, 2, 3):
-            assert "No further tool calls" not in calls[i][-1]["content"]
+        miss1, miss2, minted = self._results(calls)
+        assert "not in the Nodes Catalog" in miss1 and "not in the Nodes Catalog" in miss2
+        for r in (miss1, miss2, minted):
+            assert "No further tool calls" not in r
         execution = self._execution(client, token, alice_project, att_id)
         assert [c["status"] for c in execution["toolCalls"]] == ["refused", "refused", "proposed"]
         assert execution["refusedRounds"] == 2
@@ -3514,7 +3527,10 @@ class TestReuseLadder:
         parts = resp.get_json()["content"]
         assert all(p["type"] != "proposal" for p in parts)
         assert any("package.install" in json.dumps(p) and p["type"] != "proposal" for p in parts), parts
-        assert "No further tool calls" in calls[5][-1]["content"]  # the 5th miss was the last round
+        results = self._results(calls)
+        assert len(results) == 5
+        assert all("No further tool calls" not in r for r in results[:4])
+        assert "No further tool calls" in results[4]  # the 5th miss was the last round
         execution = self._execution(client, token, alice_project, att_id)
         assert len(execution["toolCalls"]) == 5
         assert execution["refusedRounds"] == 2
@@ -3539,8 +3555,10 @@ class TestReuseLadder:
         )
         resp = self._run(client, token, alice_project, att_id)
         assert resp.status_code == 200
-        assert "Nodes Catalog is unavailable" in calls[1][-1]["content"]
-        assert "No further tool calls" in calls[3][-1]["content"]  # round 3 of 3
+        results = self._results(calls)
+        assert len(results) == 3 and all("Nodes Catalog is unavailable" in r for r in results)
+        assert all("No further tool calls" not in r for r in results[:2])
+        assert "No further tool calls" in results[2]  # round 3 of 3
         execution = self._execution(client, token, alice_project, att_id)
         assert len(execution["toolCalls"]) == 3  # the 4th request hit the cap
         assert "refusedRounds" not in execution
@@ -3631,7 +3649,7 @@ class TestReuseLadder:
         )
         resp = self._run(client, token, alice_project, att_id)
         assert all(p["type"] != "proposal" for p in resp.get_json()["content"])
-        correction = calls[1][-1]["content"]
+        (correction,) = self._results(calls)
         assert "not in the Nodes Catalog" in correction
         assert "Installed but NOT enlisted in this project" in correction
         assert "packages.catalog" not in correction
