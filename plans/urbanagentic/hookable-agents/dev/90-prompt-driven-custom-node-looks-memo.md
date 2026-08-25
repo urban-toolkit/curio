@@ -98,7 +98,7 @@ The DOD suite constructs drafts inline as simulated model output: `_postit_scena
 ## 8. Acceptance Criteria
 
 1. `agent.researcher` ("Researcher") exists as the 21st built-in with the recipe-bearing instruction, reuse-first posture, and `delegatesTo` = Package Builder (+ Node Researcher); it never authors manifests/sources itself.
-2. The Dataflow Builder's prompt file and manifest are byte-identical to before this change; Follow-up D records the deferred wiring.
+2. The Dataflow Builder's prompt file and manifest are byte-identical to before this change; at dev/90 close Follow-up D recorded deferred wiring, subsequently delivered by dev/95 (`DEC-065`).
 3. The Package Builder's instruction teaches the generic authoring contract and contains no scenario recipe.
 4. A successful Researcher→Package Builder delegation becomes a runtime-minted, reviewed `package.draft.apply` proposal; unparseable/oversized/violating child output is a recoverable, visible failure.
 5. No first-party look component exists: the fixtures directory, reference module, frontend mirror, and their tests are gone.
@@ -184,7 +184,7 @@ Field finding (live run, after A8): the whole chain now works — the draft mint
 1. **Real-binary shakeout.** Running the compiler against a real esbuild (0.28.2, installed into the project conda env) caught a flag bug the fake toolchain could never see: ``--sourcemap=false`` is not a valid esbuild value — the flag is simply OMITTED (absence = no sourcemap, the fixed policy). With the fix, a real TSX behavior compiles to a deterministic bundle with ``window.React`` aliasing, byte-identical across workspaces.
 2. **The declared preview skip.** With a compiler configured, the next gate is the preview runner — heavy browser infrastructure no local deployment has, making the feature unusable locally by design. New operator declaration (the DEC-057 posture): ``CURIO_BUILD_PREVIEW_POLICY=skip`` lets a runner-less deployment pass a custom behavior to review UNPREVIEWED, with the skip recorded in the draft's provenance ("SKIPPED BY OPERATOR POLICY … NOT rendered before review"). The default stays fail-closed; unknown values read as ``required``; a configured runner always wins over the policy; and the fail-closed refusal now names the declaration option.
 
-Operator setup for local dev is therefore: ``npm i -g esbuild`` (in the project env) + ``CURIO_BUILD_ESBUILD=$(which esbuild)`` + ``CURIO_BUILD_PREVIEW_POLICY=skip`` (until a pinned runner exists — shipping a reference runner remains follow-up territory; the rich review card landed as dev/96).
+Operator setup for local dev is therefore: ``npm i -g esbuild`` (in the project env) + ``CURIO_BUILD_ESBUILD=$(which esbuild)`` + ``CURIO_BUILD_PREVIEW_POLICY=skip`` *(superseded: the reference runner shipped as dev/98 — ``python -m utk_curio.tools.install_preview_runner`` replaces the skip; the rich review card landed as dev/96)*.
 
 ## Amendment A10 (2026-08-20) — the decorated request: honor the request the model actually made
 

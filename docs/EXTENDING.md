@@ -504,8 +504,18 @@ repo's build list:
    externals contract as the webpack config, enforced rather than configured.
 3. The bundle renders in a sandboxed preview (`CURIO_BUILD_PREVIEW_RUNNER`) across five contract
    states — empty, loading, success, malformed-input, error — and a failed preview blocks Apply.
-   A deployment without a runner may declare `CURIO_BUILD_PREVIEW_POLICY=skip` (dev/90 A9): the
-   draft then reaches review unpreviewed, with the skip recorded in its provenance.
+   **Curio ships a reference runner** (dev/98 — Playwright driving headless Chromium, real
+   measured dimensions and real screenshots, the host React globals injected exactly as the
+   live runtime provides them): generate its pinned wrapper with
+   `python -m utk_curio.tools.install_preview_runner` and export the printed
+   `CURIO_BUILD_PREVIEW_RUNNER=…` line (prerequisites are named loudly at generation:
+   `python -m playwright install chromium` and the frontend's `node_modules`).
+   `CURIO_BUILD_PREVIEW_POLICY=skip` (dev/90 A9) remains the fallback it was meant to be —
+   for deployments that genuinely cannot run a browser, the draft reaches review unpreviewed
+   with the skip recorded in its provenance and stated verbatim on the review card. Drop the
+   stale skip once a runner is configured. (Caveat, recorded not hidden: on Linux the worker's
+   1 GiB `RLIMIT_AS` can kill Chromium — macOS ignores AS; raising the preview limits tier is
+   its own decision.)
 4. The user reviews the diff, dependencies, and preview; Apply promotes the **exact reviewed
    artifact digest** through the normal installer (backup held, journaled, rollback honest).
 

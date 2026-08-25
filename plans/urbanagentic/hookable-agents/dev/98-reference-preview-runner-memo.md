@@ -1,6 +1,6 @@
 # dev/98 — The reference preview runner: local deployments graduate from declared-unpreviewed to actually previewed
 
-**Status: APPROVED (owner, 2026-08-24). Implementation in progress.**
+**Status: IMPLEMENTED (2026-08-24) — commits 1–3 landed (`9b32a88f`, `37f1b7bc`, + docs); BL-P5-20260824-41; no new DEC. Correction to §0: reactflow DOES ship a UMD build (`dist/umd/index.js`) — it is baked into the wrapper when present.**
 Prereqs: dev/89 §3.7 (the preview system and its operator-pinned runner contract), dev/90 A9 (`CURIO_BUILD_PREVIEW_POLICY=skip` — the honest gap this closes for local deployments), dev/96 (the card that renders preview verdicts), dev/97 complete. This implements the runner dev/89 already designed the socket for — **no new DEC**; the dev/90 "shipping a reference runner remains follow-up territory" note closes.
 
 ---
