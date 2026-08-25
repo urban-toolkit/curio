@@ -1,0 +1,375 @@
+/* The review card shares the docs/03 chat-feedback surface with AgentChatCard
+   and adds the system review controls (Apply/Dismiss) — the sanctioned
+   exception family to "no agent action buttons" (docs/08, DEC-035 pattern). */
+
+.card {
+  background: #f7f7f8;
+  border: 1px solid #ececee;
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.accentDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.kind {
+  font-weight: 400;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a8a8e;
+}
+
+.preview {
+  background: #fff;
+  border: 1px solid #ececee;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: #444;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.apply {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  background: #2f7d4f;
+  cursor: pointer;
+}
+
+.apply:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.dismiss {
+  border: 1px solid #ececee;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  color: #555;
+  background: #fff;
+  cursor: pointer;
+}
+
+.dismiss:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.outcome {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #6a6a6e;
+}
+
+.outcome_applied {
+  color: #2f7d4f;
+}
+
+.outcome_stale {
+  color: #b0632a;
+}
+
+.error {
+  margin-top: 8px;
+  font-size: 0.76rem;
+  color: #b3423f;
+}
+
+/* dev/48 — the node.template.create adequacy gate: the model's reasoning,
+   rendered verbatim above the definition. */
+.justification {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  background: #fdf7ec;
+  border-left: 3px solid #d9a441;
+  border-radius: 4px;
+  color: #4c4335;
+}
+
+/* Secondary metadata / effect lines under the preview. */
+.meta {
+  margin-top: 6px;
+  font-size: 0.74rem;
+  color: #6b7280;
+}
+
+/* dev/59 (DEC-049.2) — the destructive Removes section: reviewed by name. */
+.removals {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #fdf0ef;
+  border-left: 3px solid #c0392b;
+  border-radius: 4px;
+}
+
+.removalsTitle {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #922b21;
+}
+
+.removalsList {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 0.74rem;
+  color: #6e2f28;
+}
+
+/* dev/67-5 — the per-node plan review rows (Simulation Mode: create). */
+.planNodes {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.planNodeRow {
+  border: 1px solid #e3e6ea;
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.planNodeHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.planNodeTitle {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.planNodeType {
+  color: #6b7280;
+  font-size: 0.75rem;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planNodeCreated {
+  color: #2f7d4f;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.planNodeExpects {
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
+/* dev/72: the compact icon-link riding a row's review chip — opens the node
+ * agent's chat, where the content review and Solve trace live. */
+.reviewLink {
+  margin-left: 5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  background: #fff;
+  color: inherit;
+  font-size: 9px;
+  padding: 0;
+  cursor: pointer;
+  vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reviewLink:hover,
+.reviewLink:focus-visible {
+  transform: scale(1.12);
+  outline: none;
+}
+
+.planGoalInput {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 6px 8px;
+  border: 1px solid #d7dbe0;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.planGoalInput:disabled {
+  background: #f6f7f8;
+  color: #6b7280;
+}
+
+/* dev/67-7 — the validation verdict block. */
+.validation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.validationPass {
+  background: #f0f9f2;
+  border: 1px solid #bfe3cb;
+  color: #2f7d4f;
+}
+
+.validationFail {
+  background: #fdf2f1;
+  border: 1px solid #f0c4c1;
+  color: #b3423f;
+}
+
+.validationBadge {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.validationDetails {
+  flex-basis: 100%;
+}
+
+.validationDetails pre {
+  margin: 6px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+}
+
+/* dev/67-8 — the connection review rows (Simulation Mode: connect). */
+.planEdges {
+  margin-top: 8px;
+  border: 1px solid #e3e6ea;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.planEdgesHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.82rem;
+  margin-bottom: 6px;
+}
+
+.planEdgesList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.planEdgeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.planEdgeNames {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planEdgeRefused {
+  color: #b3423f;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* dev/96: the rich draft sections — native disclosure, calm by default. */
+.draftSection {
+    margin: 8px 12px 0;
+    font-size: var(--curio-font-size-sm);
+    font-family: var(--curio-font-family);
+    color: var(--curio-text-secondary, #4b5563);
+}
+
+.draftSection summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--curio-text, #1f2a37);
+}
+
+.draftList {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    overflow-wrap: anywhere;
+}
+
+.draftOverflow {
+    font-style: italic;
+}
+
+.findingBlock {
+    color: var(--curio-danger-strong, #b3261e);
+    font-weight: 600;
+}
+
+.findingWarn {
+    color: var(--curio-warning-strong, #8a6d00);
+}
+
+.draftNodesRow {
+    margin: 8px 12px 0;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-secondary, #4b5563);
+}

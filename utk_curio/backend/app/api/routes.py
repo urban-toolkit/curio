@@ -65,66 +65,40 @@ import time
 from utk_curio.backend.config import (
     CURIO_DEFAULT_SAVE_NODE_OUTPUT,
     GUEST_LLM_API_TYPE,
-    GUEST_LLM_BASE_URL,
-    GUEST_LLM_API_KEY,
-    GUEST_LLM_MODEL,
 )
+from utk_curio.backend.app.agents.providers import ProviderConfig, run_chat_completion
 
 
 def _resolve_llm_config():
-    """Return (api_key, api_type, base_url, model) for the current authenticated user."""
-    user = g.user
-    if user.is_guest:
-        if not GUEST_LLM_API_KEY:
-            abort(400, description="LLM is not available for guest users at this time.")
-        return GUEST_LLM_API_KEY, GUEST_LLM_API_TYPE, GUEST_LLM_BASE_URL, GUEST_LLM_MODEL
-    if not user.llm_model:
-        abort(400, description="No LLM configured. Set your provider and model in the Projects page.")
-    return (
-        user.llm_api_key or "",
-        user.llm_api_type or "openai_compatible",
-        user.llm_base_url or "",
-        user.llm_model,
+    """Legacy tuple shim over the agents-owned resolver (``ADR-AG-012`` bridge).
+
+    Resolution now lives in ``app/agents/provider_config.py`` (memo ``dev/22``);
+    the legacy ``/llm/*`` handlers keep their exact contract — including the
+    400 for guests without a deployed key — by reading through it.
+    """
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
     )
+
+    try:
+        cfg = resolve_provider_config(g.user)
+    except ProviderConfigError as exc:
+        abort(400, description=str(exc))
+    return cfg.api_key, cfg.api_type, cfg.base_url, cfg.model
 
 
 def _call_llm(api_key: str, api_type: str, base_url: str, model: str, messages: list) -> str:
-    """Dispatch an LLM chat completion to the configured provider."""
-    if api_type == "anthropic":
-        import anthropic
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model=model,
-            system="\n".join(system_parts) if system_parts else anthropic.NOT_GIVEN,
-            messages=chat_messages,
-            max_tokens=4096,
-        )
-        return resp.content[0].text
-    elif api_type == "gemini":
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
-        history = []
-        for m in chat_messages[:-1]:
-            role = "user" if m["role"] == "user" else "model"
-            history.append({"role": role, "parts": [m["content"]]})
-        last_user_msg = chat_messages[-1]["content"] if chat_messages else ""
-        system_instruction = "\n".join(system_parts) if system_parts else None
-        gen_model = genai.GenerativeModel(model, system_instruction=system_instruction)
-        chat = gen_model.start_chat(history=history)
-        response = chat.send_message(last_user_msg)
-        return response.text
-    else:  # openai_compatible (default)
-        from openai import OpenAI
-        kwargs = {"api_key": api_key or "no-key"}
-        if base_url:
-            kwargs["base_url"] = base_url
-        client = OpenAI(**kwargs)
-        completion = client.chat.completions.create(model=model, messages=messages)
-        return completion.choices[0].message.content
+    """Dispatch an LLM chat completion via the agents provider port.
+
+    Provider dispatch (and the raw provider SDKs) lives in
+    ``app/agents/providers.py`` so LLM behavior stays out of the route layer;
+    this thin wrapper preserves the existing call signature.
+    """
+    return run_chat_completion(
+        ProviderConfig(api_key=api_key, api_type=api_type, base_url=base_url, model=model),
+        messages,
+    )
 
 # The Flask app
 from utk_curio.backend.app.api import bp
@@ -465,6 +439,13 @@ def process_python_code():
                 flush=True,
             )
 
+    _record_runtime_outcome(
+        node_id=node_id,
+        dataflow_id=request.json.get("dataflowId") or None,
+        code=code, stdout=stdout, stderr=stderr, output=output,
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
+
     return {
         'stdout': stdout,
         'stderr': stderr,
@@ -473,6 +454,31 @@ def process_python_code():
         'installedDataset': installed_dataset,
         'datasetDiagnostic': dataset_diagnostic,
     }
+
+
+def _record_runtime_outcome(*, node_id, dataflow_id, code, stdout, stderr, output, duration_ms):
+    """Per-node runtime journal write (memo dev/67-2, DEC-052).
+
+    Best-effort and observational: agents read this to answer "what ran, what
+    failed, and why" — an execution response is never delayed or failed over
+    it. Skipped when the run has no node/project identity (unsaved canvas)."""
+    import time as _time
+
+    from utk_curio.backend.app.execution import runtime_journal
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user = getattr(g, "user", None)
+    if not node_id or not dataflow_id or user is None:
+        return
+    try:
+        runtime_journal.record_execution(
+            _user_dir_key(user), dataflow_id, node_id,
+            code=code, stdout=stdout, stderr=stderr, output=output,
+            started_at=_time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+            duration_ms=duration_ms,
+        )
+    except Exception:
+        pass
 
 
 @bp.route('/processJavaScriptCode', methods=['POST'])
@@ -564,6 +570,13 @@ def process_javascript_code():
                 f"{dataset_diagnostic.get('status')} — {dataset_diagnostic.get('reason')}",
                 flush=True,
             )
+
+    _record_runtime_outcome(
+        node_id=node_id,
+        dataflow_id=request.json.get("dataflowId") or None,
+        code=code, stdout=stdout, stderr=stderr, output=output,
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
 
     return {
         'stdout': stdout,

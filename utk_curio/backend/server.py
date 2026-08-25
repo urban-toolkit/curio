@@ -59,6 +59,16 @@ with app.app_context():
             from utk_curio.backend.app.projects.seed import seed_example_projects
             s = seed_example_projects(guest)
             app.logger.info("Seeded %d example project(s)", s)
+        # DEC-057 (dev/87/88): enforce ONLY operator-declared retention — with
+        # no declaration this is a no-op; a declared ledger archival age moves
+        # old day files into ledger/archive/ (append-only, never rewritten).
+        from utk_curio.backend.app.agents.retention import run_retention_sweep
+        swept = run_retention_sweep()
+        if swept.get("ledgerFilesArchived"):
+            app.logger.info(
+                "Retention sweep archived %d ledger day file(s)",
+                swept["ledgerFilesArchived"],
+            )
     except Exception:
         app.logger.warning("Could not ensure guest user on startup", exc_info=True)
 

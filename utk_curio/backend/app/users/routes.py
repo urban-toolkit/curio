@@ -154,6 +154,11 @@ def me_patch_route():
 
 @config_bp.route("/public", methods=["GET"])
 def public_config_route():
+    # DEC-057 (dev/87/88): the operator's retention declaration rides the
+    # bootstrap config so deletion-confirmation copy can state the backup
+    # posture honestly (null = undeclared, and the UI says so).
+    from utk_curio.backend.app.agents.retention import public_declaration
+
     return jsonify(
         {
             "allow_guest_login": ALLOW_GUEST_LOGIN,
@@ -164,5 +169,6 @@ def public_config_route():
             "shared_guest_username": CURIO_SHARED_GUEST_USERNAME,
             "enable_collab": ENABLE_COLLAB,
             "default_save_node_output": CURIO_DEFAULT_SAVE_NODE_OUTPUT,
+            "retention": public_declaration(),
         }
     ), 200

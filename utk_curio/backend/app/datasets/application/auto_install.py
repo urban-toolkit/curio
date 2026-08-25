@@ -84,6 +84,20 @@ def auto_install_node_output(
             reason=f"sink node ({node_type}) — output is not a dataset",
         )
 
+    # Computed dataset ids are dataflow-namespaced (``computed.<dataflow>.<node>``).
+    # Without a dataflow id the installer would fall back to the legacy
+    # un-namespaced ``computed.<node>@1`` dir, which collides across dataflows
+    # that reuse a node id and re-poisons the catalog with legacy-format dirs.
+    # Skip instead: the client persists the project right after a producing run
+    # (create-on-first-save), and the save-time installer
+    # (``_auto_install_computed_outputs``) then saves the properly namespaced
+    # dataset from the output refs — nothing is lost.
+    if not dataflow_id:
+        return _diagnostic(
+            "skipped", node_id=node_id, data_type=data_type,
+            reason="dataflow not saved yet — the dataset is saved on the first project save",
+        )
+
     #   * a bundle (``dataType == "outputs"``) is keyed by the parent artifact
     #     id in ``output['path']``.
     #   * otherwise prefer ``output['dataset']`` — the parquet a (geo)dataframe

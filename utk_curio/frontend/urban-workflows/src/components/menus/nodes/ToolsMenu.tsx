@@ -16,6 +16,7 @@ import {
     type ToolsMenuTooltipSide,
 } from "./toolsMenuPackagePalette";
 import { DatasetsPaletteDropdown } from "./datasetPalette";
+import { AgentsPaletteDropdown } from "./agentsPalette";
 import styles from "./ToolsMenu.module.css";
 
 const DraggableTool = memo(function DraggableTool({
@@ -142,6 +143,7 @@ const ToolsMenu = memo(function ToolsMenu() {
             </div>
             <DatasetsPaletteDropdown />
             <PackagesPaletteDropdown groups={packageGroups} />
+            <AgentsPaletteDropdown />
         </div>
     );
 });

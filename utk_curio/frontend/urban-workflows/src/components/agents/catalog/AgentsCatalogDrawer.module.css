@@ -1,0 +1,205 @@
+/* ── Overlay + slide transition (memo dev/43) ──────────────────────────────
+   The same pattern, timings, and easings as the Nodes/Datasets drawers:
+   scrim opacity 240ms cubic-bezier(0.4, 0, 0.2, 1); panel transform 300ms
+   cubic-bezier(0.32, 0.72, 0, 1) — keep in sync with DRAWER_MOTION_MS in
+   AgentsCatalogDrawerProvider.tsx. */
+
+.overlayRoot {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.overlayRootPresented {
+  pointer-events: auto;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(20, 21, 25, 0.28);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 240ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.panel {
+  position: relative;
+  z-index: 1;
+  width: 560px;
+  max-width: 92vw;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--curio-card-bg, #fff);
+  color: var(--curio-text-primary, #1e1f23);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
+  outline: none;
+  transform: translate3d(100%, 0, 0);
+  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+
+.overlayRootPresented .scrim {
+  opacity: 1;
+}
+
+.overlayRootPresented .panel {
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .panel {
+    transition-duration: 0.01ms;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--curio-top-bar-bg, #1e1f23);
+  color: var(--curio-text-on-dark, #fff);
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+}
+
+/* Roster header controls (DEC-042): the Pin is the only button here. */
+.pinBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--curio-text-on-dark, #fff);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pinBtn:hover,
+.pinBtn:focus-visible {
+  background: #2c2d33;
+}
+
+.pinBtnActive {
+  color: var(--curio-accent-sky-fg, #7fa7e8);
+  transform: rotate(45deg);
+}
+
+.titleIcon {
+  color: #f2933f; /* the Agents' canvas-orange bot, per the concept */
+  font-size: 16px;
+}
+
+.subtitle {
+  padding: 8px 16px 0;
+  font-size: 12px;
+  color: var(--curio-text-secondary, #5b5c63);
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Card structure/buttons come from the shared PackageCard.module.css grid
+   (accent | avatar | body | action), like DatasetCard (dev/68). Only the
+   agent-specific category tints and the avatar glyph size live here. */
+
+.avatarIcon {
+  font-size: 22px;
+}
+
+/* Category-tinted left accent bars — hues shared with the AGENTS palette and
+   the dataset accents where they coincide (agentCategoryStyle.ts). Unknown
+   categories keep the neutral cardAccent/cardAvatar defaults. */
+.accent_canvas   { background: #f2933f; }
+.accent_data     { background: #4caf72; }
+.accent_node     { background: #5b9bd5; }
+.accent_evaluate { background: #9b7fda; }
+.accent_package  { background: #26c6da; }
+
+/* Category-tinted avatars (light surface; !important mirrors the dataset
+   avatar_* overrides of the cardAvatar fallback). */
+.avatar_canvas   { background: #fdeadd !important; color: #b3651c; }
+.avatar_data     { background: #e3f4eb !important; color: #2d7a4f; }
+.avatar_node     { background: #e0eaf8 !important; color: #2a5fa0; }
+.avatar_evaluate { background: #ece4f8 !important; color: #5c3fa0; }
+.avatar_package  { background: #ddf4f6 !important; color: #1a8a9a; }
+
+.empty,
+.error {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--curio-text-secondary, #5b5c63);
+}
+
+.error {
+  color: var(--curio-accent-peach-fg, #e86a3c);
+}
+
+/* Account-policy entry in the roster header (dev/24) — labeled cog. */
+.headerSettingsBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: none;
+  color: var(--curio-text-on-dark, #fff);
+  cursor: pointer;
+}
+
+.headerSettingsBtn:hover,
+.headerSettingsBtn:focus-visible {
+  background: #2c2d33;
+}
+
+/* Footer upload-import entry (dev/36), per the approved concept's footer button. */
+.importPackageBtn {
+  margin: 8px 16px 16px;
+  padding: 10px 0;
+  border: none;
+  border-radius: 10px;
+  background: var(--curio-top-bar-bg, #1e1f23);
+  color: var(--curio-text-on-dark, #fff);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.importPackageBtn:hover,
+.importPackageBtn:focus-visible {
+  background: #2c2d33;
+}
+
+/* dev/106: the hard-dependency disclosure line under a card's tags. */
+.requiresLine {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+.requireMet { color: #2d7a4f; }
+.requireMissing { color: #b3651c; font-weight: 600; }

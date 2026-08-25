@@ -1,0 +1,131 @@
+/* dev/52 DR-5 — the phase-aware builder strip inside the chat drawer. */
+
+.strip {
+  border-bottom: 1px solid #ececee;
+  padding: 10px 16px;
+  background: #fafafb;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phases {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.phaseChip {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a8a90;
+  border: 1px solid #e3e3e6;
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: #fff;
+}
+
+.phaseActive {
+  color: #1d4ed8;
+  border-color: #bfd3f7;
+  background: #eef4fe;
+}
+
+.templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.templateChip {
+  font-size: 0.74rem;
+  border: 1px solid #d9d9de;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.templateChip:hover {
+  background: #f0f4ff;
+}
+
+.nodeRuns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.nodeRun {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  border: 1px solid #ececee;
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: #fff;
+}
+
+.nodeId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #6b7280;
+}
+
+.status_pending { color: #6b7280; }
+.status_solving { color: #1d4ed8; }
+.status_solved { color: #2f7d4f; }
+.status_failed { color: #b3423f; }
+.status_skipped { color: #8a6d1f; }
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.solve,
+.run {
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 5px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.solve {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.run {
+  background: #fff;
+  color: #2f7d4f;
+  border-color: #bfe3cd;
+}
+
+.solve:disabled,
+.run:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hint,
+.error {
+  font-size: 0.72rem;
+}
+
+.hint { color: #8a8a90; }
+.error { color: #b3423f; }
+
+.reviewSummary {
+  font-size: 0.74rem;
+  color: #555;
+  align-self: center;
+  margin-right: 4px;
+}

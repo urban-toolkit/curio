@@ -61,9 +61,10 @@ from utk_curio.backend.app.packages.manifest import (
     PackageManifest,
     load_packageage_manifest,
 )
+from utk_curio.backend.app.packages.locks import package_seed_lock
 from utk_curio.backend.app.packages.resolver import (
     ResolverError,
-    resolve_for_project,
+    resolve_for_project_unlocked,
 )
 from utk_curio.backend.app.packages.seed import BUILTIN_PACKAGE_ID
 from utk_curio.backend.app.packages.storage import (
@@ -143,6 +144,9 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
                 "containerStyle": tpl.container_style,
                 "hasProvenance": tpl.has_provenance,
                 "tutorialId": tpl.tutorial_id,
+                # dev/91: the declared backend handler this template's Run
+                # invokes through the package backend sandbox (null = none).
+                "backendHandler": tpl.backend_handler,
             }
         )
     payload = {
@@ -214,6 +218,11 @@ def _resolver_overrides_for(user_key: str, packages: list[str]) -> dict[str, Pat
     the resolver at the catalog directory iff a well-formed manifest is
     present there. Unknown packages are left alone so the resolver still
     surfaces a precise "not installed" error.
+
+    UNLOCKED: the caller holds the per-user seed lock (memo dev/99) so the
+    "is it installed?" answer here and the resolver's own store reads describe
+    the same instant — otherwise a seeded package caught in the swap window
+    would be resolved against its catalog copy instead of its installed one.
     """
     catalog_root = _catalog_root()
     if not catalog_root.is_dir():
@@ -230,6 +239,17 @@ def _resolver_overrides_for(user_key: str, packages: list[str]) -> dict[str, Pat
         if (candidate / "manifest.json").is_file():
             out[name] = candidate
     return out
+
+
+def _resolve_snapshot(user_key: str, packages: list[str]):
+    """Override discovery + resolution against ONE store snapshot (dev/99).
+
+    The seed lock is released before anything slow: both callers hand the
+    result to the sandbox / the response after this returns.
+    """
+    with package_seed_lock(user_key):
+        overrides = _resolver_overrides_for(user_key, packages)
+        return resolve_for_project_unlocked(user_key, packages, overrides=overrides)
 
 
 def _error(message: str, status: int = 400) -> tuple[Response, int]:
@@ -270,9 +290,15 @@ def _ensure_user_seeded(user_key: str) -> None:
         # never got the entry" (e.g. an earlier seed before this code shipped).
         prefix = f"{BUILTIN_PACKAGE_ID}@"
         existing_defaults = defaults_io.load_defaults(user_key)
-        for package_path in list_user_packageages(user_key):
-            if package_path.name.startswith(prefix) and package_path.name not in existing_defaults:
-                defaults_io.add_to_defaults(user_key, package_path.name)
+        # Names-only snapshot under the seed lock (memo dev/99); the defaults
+        # write happens after release — the seed lock is a leaf.
+        with package_seed_lock(user_key):
+            builtin_names = [
+                p.name for p in list_user_packageages(user_key) if p.name.startswith(prefix)
+            ]
+        for name in builtin_names:
+            if name not in existing_defaults:
+                defaults_io.add_to_defaults(user_key, name)
     except Exception:  # noqa: BLE001 — never block the request on a seed error
         log.warning("Lazy builtin seed failed for user_key=%s", user_key, exc_info=True)
 
@@ -283,13 +309,16 @@ def list_installed_packageages():
     user_key = _user_dir_key(g.user)
     _ensure_user_seeded(user_key)
     out: list[dict] = []
-    for package_path in list_user_packageages(user_key):
-        try:
-            manifest = load_packageage_manifest(package_path)
-        except ManifestError as exc:
-            log.warning("Skipping malformed package %s: %s", package_path.name, exc)
-            continue
-        out.append(_manifest_to_payload(manifest, package_mtime_path=package_path))
+    # Enumeration + manifests + mtimes under ONE seed-lock hold (memo dev/99):
+    # the payloads are detached dicts, so nothing live leaves the lock.
+    with package_seed_lock(user_key):
+        for package_path in list_user_packageages(user_key):
+            try:
+                manifest = load_packageage_manifest(package_path)
+            except ManifestError as exc:
+                log.warning("Skipping malformed package %s: %s", package_path.name, exc)
+                continue
+            out.append(_manifest_to_payload(manifest, package_mtime_path=package_path))
     # Newest ``manifest.createdAt`` first — canonical authoring time / ordering.
     out.sort(
         key=lambda p: (-int(p.get("createdAtMs") or 0), p.get("dirName") or ""),
@@ -312,7 +341,8 @@ def list_catalog_packageages():
     """
     user_key = _user_dir_key(g.user)
     _ensure_user_seeded(user_key)
-    installed_coords = {p.name for p in list_user_packageages(user_key)}
+    with package_seed_lock(user_key):  # memo dev/99: no transient "not installed"
+        installed_coords = {p.name for p in list_user_packageages(user_key)}
 
     root = _catalog_root()
     if not root.is_dir():
@@ -484,6 +514,11 @@ def remove_packageage(dir_name: str):
         return _error(str(exc))
     if not removed:
         return _error("package not installed", 404)
+    # dev/97: backend residue goes with the package (overlay, data dir,
+    # pin); the invocation ledger survives — retention owns its expiry.
+    from utk_curio.backend.app.packages.backend_runtime import remove_backend_residue
+
+    remove_backend_residue(user_key, dir_name)
     return "", 204
 
 
@@ -939,9 +974,8 @@ def install_packageage_deps():
     packages = body.get("packages")
     if not isinstance(packages, list) or not all(isinstance(p, str) for p in packages):
         return _error("body must be {'packages': [<dirName>, ...]}")
-    overrides = _resolver_overrides_for(user_key, packages)
     try:
-        result = resolve_for_project(user_key, packages, overrides=overrides)
+        result = _resolve_snapshot(user_key, packages)
     except ResolverError as exc:
         return _error(str(exc))
     except PackageIdError as exc:
@@ -1004,9 +1038,8 @@ def resolve_deps():
     packages = body.get("packages")
     if not isinstance(packages, list) or not all(isinstance(p, str) for p in packages):
         return _error("body must be {'packages': [<dirName>, ...]}")
-    overrides = _resolver_overrides_for(user_key, packages)
     try:
-        result = resolve_for_project(user_key, packages, overrides=overrides)
+        result = _resolve_snapshot(user_key, packages)
     except ResolverError as exc:
         return _error(str(exc))
     except PackageIdError as exc:
@@ -1064,17 +1097,24 @@ def check_workflow_deps():
 
     from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
 
-    in_store = {p.name for p in list_user_packageages(user_key)}
+    wanted = [
+        dn for dn in packages if isinstance(dn, str) and PACKAGE_DIR_RE.match(dn)
+    ]
+    # Store membership + declared deps in ONE seed-lock hold (memo dev/99);
+    # the pip presence probes run after release.
+    with package_seed_lock(user_key):
+        in_store = {p.name for p in list_user_packageages(user_key)}
+        declared = {
+            dn: packages_services._read_python_deps(user_key, dn)
+            for dn in wanted if dn in in_store
+        }
     need: set[str] = set()
-    for dir_name in packages:
-        if not isinstance(dir_name, str) or not PACKAGE_DIR_RE.match(dir_name):
-            continue
+    for dir_name in wanted:
         if dir_name not in in_store:
             need.add(dir_name)
             continue
         # Installed in the store — flag only if a declared dep went missing.
-        deps = packages_services._read_python_deps(user_key, dir_name)
-        if any(not is_satisfied(n, s) for n, s in deps.items()):
+        if any(not is_satisfied(n, s) for n, s in declared[dir_name].items()):
             need.add(dir_name)
     return jsonify({"packages": sorted(need)}), 200
 
@@ -1240,6 +1280,53 @@ def list_libraries_route():
     }), 200
 
 
+# ---------------------------------------------------------------------------
+# POST /api/packages/<dir_name>/backend/<handler> — the package backend sandbox
+# ---------------------------------------------------------------------------
+
+@packages_bp.route("/<dir_name>/backend/<handler>", methods=["POST"])
+@require_auth
+def invoke_packageage_backend(dir_name: str, handler: str):
+    """Invoke one declared backend handler (memo dev/91 §3) — the ONLY
+    caller surface for package server code. Body: ``{"payload": <JSON>}``.
+
+    The handler runs in a per-invocation sandboxed worker (never in this
+    process); the promote/install-time entry pin gates verify-on-read. The
+    memo's §6 status matrix: 404 unknown package/backend/handler, 403 is
+    impossible here by construction (an undeclared-permission backend cannot
+    install — the manifest loader refuses it), 409 digest drift, 413/422
+    payload bounds, 503 no worker slot, 507 data dir over cap, 502 honest
+    sanitized worker/contract failure. A well-formed ``ok: false`` reply
+    (handler-error) returns 200 — the envelope IS the diagnosis."""
+    from utk_curio.backend.app.packages import backend_contract as bc
+    from utk_curio.backend.app.packages import backend_runtime
+
+    if request.content_length and request.content_length > bc.PAYLOAD_MAX_BYTES + 4096:
+        return _error(
+            f"payload exceeds the {bc.PAYLOAD_MAX_BYTES // (1024 * 1024)} MiB "
+            "request bound", 413,
+        )
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or "payload" not in body:
+        return _error('body must be a JSON object with a "payload" member', 422)
+    user_key = _user_dir_key(g.user)
+    pin = backend_runtime.pinned_entry_digest(user_key, dir_name)
+    try:
+        out = backend_runtime.invoke_handler(
+            user_key, dir_name, handler, body["payload"],
+            expected_entry_digest=pin,
+        )
+    except backend_runtime.BackendRuntimeError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({
+        "reply": out["reply"],
+        "invocationId": out["invocationId"],
+        "durationMs": out["durationMs"],
+        "limitsApplied": out["limitsApplied"],
+        "entryDigest": out["entryDigest"],
+    }), 200
+
+
 @packages_bp.route("/libraries", methods=["POST"])
 @require_auth
 def add_library_route():
@@ -1342,12 +1429,13 @@ def _any_package_declares(user_key: str, lib_name: str, kind: str) -> bool:
     )
     from utk_curio.backend.app.packages.storage import list_user_packageages
 
-    for package_path in list_user_packageages(user_key):
-        try:
-            m = load_packageage_manifest(package_path)
-        except ManifestError:
-            continue
-        deps = (m.python_deps if kind == "python" else m.js_deps) or {}
-        if lib_name in deps:
-            return True
+    with package_seed_lock(user_key):  # memo dev/99: one consistent walk
+        for package_path in list_user_packageages(user_key):
+            try:
+                m = load_packageage_manifest(package_path)
+            except ManifestError:
+                continue
+            deps = (m.python_deps if kind == "python" else m.js_deps) or {}
+            if lib_name in deps:
+                return True
     return False

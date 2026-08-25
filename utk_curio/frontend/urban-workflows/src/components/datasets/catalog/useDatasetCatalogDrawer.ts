@@ -24,6 +24,7 @@ import {
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
+import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
@@ -70,7 +71,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
 
   useEffect(() => {
     if (!presented) return;
-    const onRefresh = () => void catalog.reload({ bustCache: true });
+    const onRefresh = () => void catalog.reload();
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
   }, [catalog.reload, presented]);
@@ -188,11 +189,11 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           );
           return [...next, ...installedItems.map(dataflowRefFromCatalogItem)];
         });
-        // Bust the cache so the drawer refetches fresh rather than re-reading
-        // the stale cached response, then let the palette (and other catalog
-        // listeners) refresh so the newly installed dataset shows up immediately.
-        await catalog.reload({ bustCache: true });
+        // Notify first: it invalidates the whole shared catalog cache (every
+        // fetch key, mounted or not) and lets the palette refresh; the awaited
+        // reload then fetches the post-install state into the fresh epoch.
         notifyDatasetCatalogRefresh();
+        await catalog.reload();
         showToast(
           isGroup
             ? `Installed ${installedItems.length} layers from ${dataset.title}.`
@@ -229,10 +230,10 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           const removed = new Set(memberIds.map(String));
           return prev.filter((row) => !removed.has(String(row?.datasetId || row?.id)));
         });
-        // Bust the cache so the drawer's own list refetches the post-uninstall
-        // state immediately rather than re-reading the stale cached response.
-        await catalog.reload({ bustCache: true });
+        // Notify first (invalidates the whole shared cache + fans out to other
+        // surfaces), then refetch the post-uninstall state into the fresh epoch.
         notifyDatasetCatalogRefresh();
+        await catalog.reload();
         showToast(
           isGroup
             ? `Removed ${dataset.title} (${memberIds.length} layers) from this dataflow.`
@@ -274,8 +275,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           if (published.producerNodeId) ref.producerNodeId = published.producerNodeId;
           return [...next, ref];
         });
-        await catalog.reload({ bustCache: true });
         notifyDatasetCatalogRefresh();
+        await catalog.reload();
         showToast("Dataset published to Data Catalog.", "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not publish dataset.", "error");
@@ -307,8 +308,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
             return { ...row, origin: "imported", publishedToHub: false };
           }),
         );
-        await catalog.reload({ bustCache: true });
         notifyDatasetCatalogRefresh();
+        await catalog.reload();
         showToast(`${dataset.title} unpublished from the Data Catalog.`, "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not unpublish dataset.", "error");
@@ -327,7 +328,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           ? `\n\nIt is referenced by ${usageCount} node${usageCount === 1 ? "" : "s"} across your projects; those references will be removed.`
           : "";
       const confirmed = window.confirm(
-        `Delete ${dataset.title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just uninstalled from this project.${usageNote}`,
+        `Delete ${dataset.title} from your Data Catalog?\n\nThis permanently removes the dataset — not just uninstalled from this project. ${permanentDeletionNotice()}${usageNote}`,
       );
       if (!confirmed) return;
       setBusyId(dataset.id);
@@ -337,8 +338,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setDataflowDatasets((prev) =>
           prev.filter((row) => !removed.has(String(row?.datasetId || row?.id))),
         );
-        await catalog.reload({ bustCache: true });
         notifyDatasetCatalogRefresh();
+        await catalog.reload();
         const n = result?.removedFrom?.length ?? 0;
         showToast(
           n > 0

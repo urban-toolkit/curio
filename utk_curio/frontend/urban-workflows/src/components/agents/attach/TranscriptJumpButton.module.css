@@ -1,0 +1,49 @@
+/* "Jump to latest" pill (memo dev/75): dark-pill accent matching the chat
+   chrome (user bubbles / top bar use the same token). Absolute overlay — the
+   parent wraps the scroll container in a position:relative box, so appearing
+   never shifts layout. */
+.jump {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--curio-top-bar-bg, #1e1f23);
+  color: var(--curio-text-on-dark, #fff);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  animation: jumpFadeIn 120ms ease-out;
+}
+
+.jump:hover {
+  filter: brightness(1.25);
+}
+
+.jump:focus-visible {
+  outline: 2px solid var(--curio-top-bar-bg, #1e1f23);
+  outline-offset: 2px;
+}
+
+@keyframes jumpFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jump {
+    animation: none;
+  }
+}

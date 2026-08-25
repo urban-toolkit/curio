@@ -16,6 +16,7 @@ import {
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
+import { stripNodeTypeVersion } from "../utils/flowNodeCanonicalType";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
@@ -69,6 +70,7 @@ import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
 import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { extractNodeContent } from "../utils/extractNodeContent";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 import { useDatasetPalette } from "../providers/DatasetPaletteContext";
@@ -491,9 +493,10 @@ export const NodeContainer = ({
                 }
 
                 let result = await llmRequest("default_preamble", "new_content_prompt", "Current Trill: " + JSON.stringify(trill_spec) + "\n" + " Node ID: " + nodeId + "\n" + "Subtask: "+goal+" Task: " + "\n" + workflowGoal);
-    
-                let clean_result = result.result.replaceAll("```json", "").replaceAll("```python", "");
-                clean_result = clean_result.replaceAll("```", "");
+
+                // Shared extraction (dev/57): fences, language ids, wrappers,
+                // and surrounding prose removed — legitimate content untouched.
+                let clean_result = extractNodeContent(result.result);
 
                 console.log("generateContentNode result", clean_result);
 
@@ -1230,7 +1233,9 @@ const nodeTypeBorderColor: Record<string, string> = {
 const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({
     position: "relative",
     backgroundColor: "#ffffff",
-    borderLeft: `4px solid ${nodeTypeBorderColor[nodeType] ?? "#95a5a6"}`,
+    // The map is keyed by unversioned NodeType ids; data.nodeType is the
+    // versioned dispatcher id (`…@1`) since the curio.builtin@1 pack (dev/64).
+    borderLeft: `4px solid ${nodeTypeBorderColor[stripNodeTypeVersion(nodeType)] ?? "#95a5a6"}`,
     borderRadius: "10px",
     padding: "5px",
     boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",

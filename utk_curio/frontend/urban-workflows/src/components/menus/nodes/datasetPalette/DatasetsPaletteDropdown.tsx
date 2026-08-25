@@ -61,7 +61,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   });
 
   useEffect(() => {
-    const onRefresh = () => void catalog.reload({ bustCache: true });
+    const onRefresh = () => void catalog.reload();
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
   }, [catalog.reload]);

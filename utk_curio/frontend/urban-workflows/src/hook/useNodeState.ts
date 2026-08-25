@@ -75,5 +75,8 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
     closeDescription,
     updateTemplate,
     setSendCodeCallback,
+    // dev/90 A15: per-instance appearance for presentation behaviors —
+    // mirrors the canonical data.appearance (generated bundles read it here).
+    appearance: data?.appearance,
   };
 }

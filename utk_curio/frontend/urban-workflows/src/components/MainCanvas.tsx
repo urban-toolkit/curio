@@ -44,8 +44,11 @@ import {
     hasDatasetDrag,
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
-
-const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
+import { agentsApi } from "../api/agentsApi";
+import { readAgentDragCoord, notifyAgentDockRefresh, pickNodeAtPoint, hasAgentDrag, type AgentDropTarget } from "../utils/agentsPaletteEvents";
+import { attachAgentOnDrop } from "../utils/agentDropAttach";
+import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
+import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";
 
 export function MainCanvas() {
     const { showToast } = useToastContext();
@@ -54,6 +57,7 @@ export function MainCanvas() {
         nodes,
         edges,
         loading,
+        projectId,
         onNodesChange,
         onEdgesChange,
         onConnect,
@@ -61,6 +65,7 @@ export function MainCanvas() {
         onEdgesDelete,
         onNodesDelete,
         markDirty,
+        saveCurrentProject,
     } = useFlowContext();
     const collab = useCollab();
     const collabRef = useRef(collab);
@@ -281,8 +286,13 @@ export function MainCanvas() {
 
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
-        // Dataset drags use effectAllowed="copy"; "move" blocks the drop in browsers.
-        event.dataTransfer.dropEffect = hasDatasetDrag(event.dataTransfer) ? "copy" : "move";
+        // Dataset AND agent drags use effectAllowed="copy"; a "move" dropEffect is
+        // an incompatible pair, so the browser cancels the drop (handleDrop never
+        // fires and the agent silently fails to attach). Node-creation drags keep
+        // "move".
+        const wantsCopy =
+            hasDatasetDrag(event.dataTransfer) || hasAgentDrag(event.dataTransfer);
+        event.dataTransfer.dropEffect = wantsCopy ? "copy" : "move";
     }, []);
 
     const handleCanvasDrop = useCallback((event: React.DragEvent) => {
@@ -302,13 +312,43 @@ export function MainCanvas() {
             handleCanvasDrop(event);
             return;
         }
+        const agentCoord = readAgentDragCoord(event.dataTransfer);
+        if (agentCoord) {
+            event.preventDefault();
+            // Hit-test the drop point against node geometry (reliable regardless
+            // of which DOM layer received the drop). A hit → attach to that node;
+            // empty canvas → attach to the canvas.
+            const dropPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+            const hitNodeId = pickNodeAtPoint(reactFlow.getNodes(), dropPos);
+            const target: AgentDropTarget = hitNodeId
+                ? { kind: "node", targetId: hitNodeId }
+                : { kind: "canvas" };
+            const where = target.kind === "node" ? "the node" : "the canvas";
+            // For a node target, persist the graph first so the (possibly
+            // freshly-added) node is in the saved spec the backend validates
+            // against — otherwise the attach 400s. See attachAgentOnDrop.
+            attachAgentOnDrop({
+                projectId,
+                target,
+                agentCoord,
+                saveProject: saveCurrentProject,
+                attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
+            })
+                .then(() => {
+                    notifyAgentDockRefresh();
+                    markDirty();
+                    showToast(`Agent attached to ${where}.`, "success");
+                })
+                .catch((e: any) => showToast(e?.message || "Attach failed.", "error"));
+            return;
+        }
         event.preventDefault();
         const type = event.dataTransfer.getData("application/reactflow") as NodeType;
         if (!type) return;
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         createCodeNode(type, { position });
         markDirty();
-    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop]);
+    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
 
     const handleNodesChange = useCallback((changes: NodeChange[]) => {
         const allowedChanges: NodeChange[] = [];
@@ -469,6 +509,7 @@ export function MainCanvas() {
     }
 
     return (
+        <AgentAttachmentsProvider enabled={!isSharedView}>
         <>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: dashboardOn ? "#ffffff" : "#f0f0f0" }}
@@ -516,7 +557,6 @@ export function MainCanvas() {
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
 
-                translateExtent={CANVAS_EXTENT}
                 panOnDrag={!dashboardOn || !dashboardLocked}
                 zoomOnScroll={!dashboardOn || !dashboardLocked}
                 zoomOnPinch={!dashboardOn || !dashboardLocked}
@@ -533,6 +573,7 @@ export function MainCanvas() {
                 {AIModeRef.current ? <WorkflowGoal /> : null}
                 {AIModeRef.current ? <LLMChat /> : null}
             </ReactFlow>
+            {!isSharedView ? <AgentDockOverlay /> : null}
             </div>
             {/*{isComponentsSelected ? (
                 <button
@@ -578,6 +619,6 @@ export function MainCanvas() {
         </div> : loadingAnimation() }
         <VersionBadge />
         </>
-
+        </AgentAttachmentsProvider>
     );
 }

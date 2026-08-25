@@ -3,16 +3,12 @@ import React, { useState, useEffect, useRef } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { NodeType } from "../../constants";
 import { NodeTemplateId } from "../../registry/types";
-import { splitCanonicalNodeType } from "../../registry/packageKeys";
-
 // Resolve a node type to its unversioned `<packageId>/<templateId>` form so
 // comparisons against the NodeType enum (which is unversioned) line up even
 // when the registry handed us the canonical `…@<major>` id. Without this,
 // JS_COMPUTATION nodes route to the Python interpreter and the sandbox
 // raises a SyntaxError on JS source.
-function unversionedNodeType(nodeType: string): string {
-    return splitCanonicalNodeType(nodeType)?.unversioned ?? nodeType;
-}
+import { stripNodeTypeVersion as unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
@@ -21,6 +17,8 @@ import { resolveSaveOutputDataset } from "../../utils/saveOutputDataset";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
+import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
+import { usePackageBackendRun } from "../../hook/usePackageBackendRun";
 import { ICodeData } from "../../types";
 
 type CodeEditorProps = {
@@ -61,14 +59,26 @@ function CodeEditor({
     } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
+    // dev/91: non-null exactly when this template declares a backendHandler.
+    const backendRun = usePackageBackendRun(nodeType);
 
     const replacedCodeDirtyBypass = useRef(false);
-    const defaultValueBypass = useRef(false);
     const outputRef = useRef<HTMLDivElement>(null);
 
-    // Track the canonical "as-loaded" code so blur can diff against it
-    // when deciding whether to propose a change to peers.
-    const baselineCodeRef = useRef<string>("");
+    // The Monaco model is the source of truth while the user types; `code`
+    // only mirrors it. Content flows INTO the editor exclusively through this
+    // hook: it applies `defaultValue` when a genuinely new external string
+    // arrives (initial load, dataset drop, LLM apply, provenance navigation)
+    // and ignores `undefined`/stale flips, so in-progress edits are never
+    // clobbered and the cursor never jumps (dev/70). `baselineCodeRef` is the
+    // canonical "as-loaded" code the collab blur-diff compares against.
+    const { baselineRef: baselineCodeRef, applyValue, attachEditor } = useMonacoExternalValue({
+        externalValue: defaultValue,
+        onExternalApply: (value) => {
+            setCode(value);
+            sendCodeToWidgets(value); // will resolve markers for templated boxes
+        },
+    });
     const codeRef = useRef<string>("");
     const collabRef = useRef(collab);
     collabRef.current = collab;
@@ -97,6 +107,7 @@ function CodeEditor({
     };
 
     const handleEditorMount = (editor: any, _monaco: Monaco) => {
+        attachEditor(editor);
         editor.onDidBlurEditorText(proposeOnBlur);
     };
 
@@ -112,8 +123,8 @@ function CodeEditor({
                 baselineCodeRef.current = prop.newValue;
                 return;
             }
+            applyValue(prop.newValue); // editor + baseline (cursor-preserving)
             setCode(prop.newValue);
-            baselineCodeRef.current = prop.newValue;
         });
         return unsub;
     }, [collab.enabled, collab.onRemote, collab.currentUserId, data.nodeId]);
@@ -125,16 +136,6 @@ function CodeEditor({
         pendingProposal && collab.currentUserId != null &&
         pendingProposal.proposed_by?.user_id === collab.currentUserId,
     );
-
-    useEffect(() => {
-        if (defaultValue != undefined && defaultValueBypass.current) {
-            setCode(defaultValue);
-            sendCodeToWidgets(defaultValue); // will resolve markers for templated boxes
-            baselineCodeRef.current = defaultValue;
-        }
-
-        defaultValueBypass.current = true;
-    }, [defaultValue]);
 
     useEffect(() => {
         if (floatCode != undefined) floatCode(code);
@@ -198,6 +199,21 @@ function CodeEditor({
         if (output.code !== "exec") return;
         if (replacedCode === "") {
             setOutputCallback({ code: "error", content: "No code to execute" });
+            return;
+        }
+        if (backendRun) {
+            // dev/91: a backendHandler template Runs through the package
+            // backend sandbox — registry-driven dispatch, never another
+            // hardcoded template-id literal.
+            void backendRun({ content: replacedCode, input: data.input }).then((outcome) => {
+                if (outcome.ok) {
+                    setOutputCallback({ code: "success", content: outcome.content });
+                    markNodeExecuted(data.nodeId);
+                } else {
+                    setOutputCallback({ code: "error", content: outcome.content });
+                    signalNodeExecDone(data.nodeId);
+                }
+            });
             return;
         }
         const isJsNode = unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION;
@@ -360,11 +376,15 @@ function CodeEditor({
                 </div>
             )}
             <div style={{ flex: 2, minHeight: 0 }}>
+                {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
+                    lets a render that lands with a stale string do a full-model
+                    replace — dropping characters and throwing the cursor to the
+                    end (dev/70). External content arrives via attachEditor /
+                    applyValue in useMonacoExternalValue instead. */}
                 <Editor
                     height="100%"
                     language={unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION ? "javascript" : "python"}
                     theme="vs"
-                    value={code}
                     onChange={handleCodeChange}
                     onMount={handleEditorMount}
                     options={{

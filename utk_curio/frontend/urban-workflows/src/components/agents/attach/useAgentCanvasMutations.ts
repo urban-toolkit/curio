@@ -1,0 +1,200 @@
+import { useEffect, useRef } from "react";
+import { useReactFlow } from "reactflow";
+import { useCode } from "../../../hook/useCode";
+import { useFlowContext } from "../../../providers/FlowProvider";
+import { fitViewWithMenuOffset } from "../../../utils/fitViewWithMenuOffset";
+import {
+  AgentCanvasMutation,
+  AgentCreatedNode,
+  subscribeAgentCanvasMutations,
+} from "../../../utils/agentCanvasEvents";
+import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
+import {
+  getCurrentProjectPackages,
+  setCurrentProjectPackages,
+} from "../../../registry/projectPackagesStore";
+import { EdgeType } from "../../../constants";
+
+// Approximate node footprint for viewport centering — the node isn't measured
+// yet at insert time; half-extent offsets are all setCenter needs.
+const NODE_CENTER_X = 175;
+const NODE_CENTER_Y = 100;
+const CENTER_ANIMATION_MS = 400;
+
+/**
+ * Canvas-side listener of the apply→canvas bridge (memos dev/48 §3.3, dev/51).
+ *
+ * Mounted where React Flow is reachable (the {@link AgentDockOverlay}).
+ * - ``node-created`` → insert the applied node into the LIVE graph through
+ *   the existing `useCode.createCodeNode` factory (same interpreters and
+ *   callbacks as a palette drop) with the SERVER-minted id, then **center the
+ *   viewport on it** — the backend places new nodes right of the whole graph
+ *   extent, which is usually off-screen (dev/51 defect 1: the node existed
+ *   but out of view, and only the load-time fitView made it visible). A new
+ *   node type first lands in the project-packages store + client registry
+ *   (the same bootstrap refresh the Save-as flow uses) so `UniversalNode`
+ *   resolves its descriptor without a reload.
+ * - ``node-content-applied`` → `FlowProvider.applyNodeContent` (provider
+ *   state — dev/51 defect 2: direct RF-store writes are clobbered by the
+ *   controlled re-sync and never reached the serializer or editor).
+ *
+ * Idempotent per node id at two levels (dev/51 defect 3): a processed-ids ref
+ * catches re-fired events before the store has synced, and the live-graph
+ * check catches replays across remounts.
+ */
+export function useAgentCanvasMutations(): void {
+  const { createCodeNode } = useCode();
+  const { applyNodeContent, onEdgesChange, applyReviewedRemovals } = useFlowContext();
+  const reactFlow = useReactFlow();
+  const { getNodes, setCenter, getZoom } = reactFlow;
+  // Event-level idempotence: survives the store-sync lag between an insert
+  // and the next controlled re-render.
+  const processedRef = useRef<Set<string>>(new Set());
+  // The subscription is registered once; the handler reads live refs.
+  const handlerRef = useRef<(mutation: AgentCanvasMutation) => void>(() => undefined);
+
+  const insertNode = (node: AgentCreatedNode) => {
+    createCodeNode(node.type, {
+      nodeId: node.id,
+      code: node.content,
+      goal: node.goal ?? "",
+      position: { x: node.x, y: node.y },
+      // dev/89: the typed appearance/title round-trip — the applied spec
+      // values reach live data so the next save re-persists them.
+      appearance: node.metadata?.appearance,
+      title: node.title,
+    });
+  };
+
+  handlerRef.current = (mutation: AgentCanvasMutation) => {
+    if (mutation.kind === "node-content-applied") {
+      applyNodeContent(mutation.nodeId, mutation.content);
+      return;
+    }
+    if (mutation.kind === "edges-created") {
+      // dev/67-8: the connection stage applies edges one review at a time —
+      // insert quietly through the same provider path (handles + data
+      // parity), no fit/center (the nodes are already where the user looks).
+      if (processedRef.current.has(mutation.batchId)) return;
+      processedRef.current.add(mutation.batchId);
+      onEdgesChange(
+        mutation.edges.map((edge) => ({
+          type: "add" as const,
+          item: {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle ?? "out",
+            targetHandle: edge.targetHandle ?? "in",
+            type: EdgeType.UNIDIRECTIONAL_EDGE,
+            markerEnd: { type: "arrow" },
+            data: {},
+          } as never,
+        })),
+      );
+      return;
+    }
+    if (mutation.kind === "graph-created") {
+      // dev/52: a whole applied plan — bulk nodes + edges through the same
+      // provider paths a manual build uses, then a fit (a plan deserves a
+      // framing, not a center). Idempotent per plan id.
+      if (processedRef.current.has(mutation.planId)) return;
+      processedRef.current.add(mutation.planId);
+      const live = new Set(getNodes().map((n) => n.id));
+      // Removals FIRST (dev/59), through the REVIEWED path (dev/62): the
+      // user authorized every victim by name on the review card, and the
+      // edge cascade travels in the same event — so victims and their edges
+      // leave in one operation with manual-delete bookkeeping, without the
+      // manual "remove the edges first" guard (which reads the not-yet-
+      // committed edge state and would refuse every connected victim).
+      // Already-absent elements (user deleted them live) are a no-op.
+      const removedNodeIds = (mutation.removedNodeIds ?? []).filter((id) => live.has(id));
+      const removedEdgeIds = mutation.removedEdgeIds ?? [];
+      if (removedNodeIds.length || removedEdgeIds.length) {
+        applyReviewedRemovals(removedNodeIds, removedEdgeIds);
+      }
+      for (const node of mutation.nodes) {
+        if (!live.has(node.id)) insertNode(node);
+      }
+      onEdgesChange(
+        mutation.edges.map((edge) => ({
+          type: "add" as const,
+          item: {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            // dev/67-3: the apply assigns real handles (merge slots in_N) —
+            // pass them through; hardcoding "in" left merge slots unfilled
+            // until a reload healed them.
+            sourceHandle: edge.sourceHandle ?? "out",
+            targetHandle: edge.targetHandle ?? "in",
+            type: EdgeType.UNIDIRECTIONAL_EDGE,
+            markerEnd: { type: "arrow" },
+            // Parity with loadTrill's add_edge (dev/58): the edge components
+            // read display flags off `data` — it must always exist.
+            data: {},
+          } as never,
+        })),
+      );
+      window.setTimeout(
+        () => fitViewWithMenuOffset(reactFlow, { duration: 400 }),
+        50,
+      );
+      return;
+    }
+    if (mutation.kind === "package-nodes-created") {
+      // dev/89: an applied package draft. Registry-BEFORE-canvas: the new
+      // package's descriptors must resolve before UniversalNode paints its
+      // nodes — store entry first (deduped), then the registry pulse, then
+      // the inserts. Idempotent per artifact digest.
+      if (processedRef.current.has(mutation.artifactDigest)) return;
+      processedRef.current.add(mutation.artifactDigest);
+      // The store holds a ReadonlySet (dev/90 A11: `.includes` here threw at
+      // the live Apply — Sets have `.has`; spread covers both shapes).
+      const current = getCurrentProjectPackages();
+      if (!current?.has(mutation.packageDir)) {
+        setCurrentProjectPackages([...(current ?? []), mutation.packageDir]);
+      }
+      void refreshPackageRegistry().then(() => {
+        const live = new Set(getNodes().map((n) => n.id));
+        const fresh = mutation.nodes.filter((n) => !live.has(n.id));
+        for (const node of fresh) insertNode(node);
+        const first = fresh[0] ?? mutation.nodes[0];
+        if (first) {
+          setCenter(first.x + NODE_CENTER_X, first.y + NODE_CENTER_Y, {
+            zoom: getZoom(),
+            duration: CENTER_ANIMATION_MS,
+          });
+        }
+      });
+      return;
+    }
+    const { node, createdPackageDir } = mutation;
+    if (processedRef.current.has(node.id)) return; // re-fired event — no-op
+    if (getNodes().some((n) => n.id === node.id)) return; // already live — no-op
+    processedRef.current.add(node.id);
+    const insert = () => {
+      insertNode(node);
+      // The backend placement is right of the whole graph extent — bring the
+      // node into view so "created" is visible, not off-screen (dev/51).
+      setCenter(node.x + NODE_CENTER_X, node.y + NODE_CENTER_Y, {
+        zoom: getZoom(),
+        duration: CENTER_ANIMATION_MS,
+      });
+    };
+    if (createdPackageDir) {
+      // A brand-new node type (dev/48 §3.2b): make its descriptor
+      // client-resolvable first — store entry, then the registry pulse.
+      const current = getCurrentProjectPackages();
+      setCurrentProjectPackages([...(current ?? []), createdPackageDir]);
+      void refreshPackageRegistry().then(insert);
+      return;
+    }
+    insert();
+  };
+
+  useEffect(
+    () => subscribeAgentCanvasMutations((m) => handlerRef.current(m)),
+    [],
+  );
+}

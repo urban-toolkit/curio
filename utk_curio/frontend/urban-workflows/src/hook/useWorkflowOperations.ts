@@ -25,13 +25,9 @@ import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
+import { notifyAgentDockRefresh } from "../utils/agentsPaletteEvents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
-import {
-    notifyDatasetCatalogRefresh,
-    buildInstalledDatasetRef,
-    upsertDataflowDatasetRef,
-    type InstalledDatasetPayload,
-} from "../services/datasetCatalog/datasetCatalogApi";
+import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import {
     getCurrentProjectPackagesList,
@@ -290,8 +286,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                     }
                 }
             } else {
+                // Accumulate the spec edges connected so far and hand them to
+                // onConnect, so merge-handle resolution sees the earlier edges
+                // of this load (in_N occupancy) instead of an empty list.
+                const connectedSoFar: any[] = [];
                 for (const edge of loaded_edges) {
-                    onConnect(edge, prevNodes, [], workflowName, provenance, true);
+                    onConnect(edge, prevNodes, connectedSoFar, workflowName, provenance, true);
+                    connectedSoFar.push(edge);
                 }
             }
 
@@ -412,6 +413,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         onNodesDelete(allowedChanges);
         return onNodesChange(allowedChanges);
     }, [reactFlow, showToast, onNodesDelete, onNodesChange]);
+
+    // A reviewed plan apply (dev/62, DEC-049): the user authorized every
+    // victim by name and the edge cascade arrived with them, so the manual
+    // "remove the edges first" guard does not apply — the edges leave in the
+    // same operation. Bookkeeping parity with manual deletion: onEdgesDelete
+    // (collab broadcast, provenance, survivor-input reset) and onNodesDelete
+    // (output pruning, provenance, broadcast). Already-absent elements no-op.
+    const applyReviewedRemovals = useCallback((nodeIds: string[], edgeIds: string[]) => {
+        const edgeSet = new Set(edgeIds);
+        const victimEdges = reactFlow.getEdges().filter((e: Edge) => edgeSet.has(e.id));
+        if (victimEdges.length) {
+            onEdgesDelete(victimEdges);
+            setEdges((prev: Edge[]) => prev.filter((e: Edge) => !edgeSet.has(e.id)));
+        }
+        const nodeSet = new Set(nodeIds);
+        const changes: NodeRemoveChange[] = reactFlow
+            .getNodes()
+            .filter((n: Node) => nodeSet.has(n.id))
+            .map((n: Node) => ({ id: n.id, type: "remove" as const }));
+        if (changes.length) {
+            onNodesDelete(changes);
+            onNodesChange(changes);
+        }
+    }, [reactFlow, onEdgesDelete, setEdges, onNodesDelete, onNodesChange]);
 
     // ---------------------------------------------------------------------------
     // Suggestion Management
@@ -644,9 +669,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // from the React state snapshot, which may lag behind the store when a
         // package install/uninstall updates the store before React re-renders.
         const currentPackages = getCurrentProjectPackagesList();
-        // Read datasets from the ref (always current) rather than the closure so
-        // that a stale snapshot can never overwrite a publish/unpublish that the
-        // backend already wrote to the spec.
+        // The serialized datasets section matters only on the CREATE branch,
+        // where it seeds the new project's refs (dev/81). On an update the
+        // backend owns dataflow.datasets and ignores whatever is sent here —
+        // syncDatasetsFromSavedSpec re-aligns the mirror from the response.
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
@@ -665,6 +691,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 name,
             });
             syncDatasetsFromSavedSpec(detail.spec);
+            // The backend prunes attachments for deleted nodes/edges (and
+            // preserves the agent lockfile) on save, so reconcile the dock with
+            // the freshly-persisted spec — a just-deleted node's tile disappears
+            // without a reload. Mirrors the dataset-catalog refresh above.
+            notifyAgentDockRefresh();
             setProjectSavedAt(new Date());
             setProjectDirty(false);
             return detail;
@@ -732,7 +763,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // used to live only in the catalog drawer so the node-execution auto-install
     // path can guarantee a persisted project without a manual save. Does NOT force
     // a save when the project already exists (the catalog Install endpoint persists
-    // its own ref) — see persistInstalledDataset for the always-save behavior.
+    // its own ref) — see persistDataflowForInstall for the always-save behavior.
     // Concurrent callers share one create (so two rapid installs can't double-create)
     // and all receive the same id, without triggering a redundant follow-up update.
     const ensureProjectInFlightRef = useRef<Promise<string | null> | null>(null);
@@ -756,43 +787,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         ensureProjectInFlightRef.current = inFlight;
         return inFlight;
     }, [requestProjectSave, showToast]);
-
-    // Persist a dataset that the backend auto-installed on node execution and
-    // refresh the UI from the resulting saved spec — no manual disk-icon save.
-    // This ALWAYS saves the project (create for a brand-new dataflow, update for an
-    // existing one) rather than relying on the backend's execution-time spec merge,
-    // so re-running a flow after datasets were removed reaches the SAME persisted +
-    // visible state as a first-time install: saveCurrentProject round-trips the
-    // canonical spec and syncDatasetsFromSavedSpec reconciles the catalog from it.
-    const persistInstalledDataset = useCallback(
-        async (inst: InstalledDatasetPayload | null | undefined): Promise<void> => {
-            if (!inst?.id || !inst?.dirName) return;
-            // Build the ref once so the React state and the ref stay byte-identical.
-            const ref = buildInstalledDatasetRef(inst);
-            // Optimistically merge into in-memory state...
-            setDataflowDatasets((prev) => upsertDataflowDatasetRef(prev, inst.id, ref) as any[]);
-            // ...and update dataflowDatasetsRef synchronously: setDataflowDatasets only
-            // flushes to the ref on the next render, but saveCurrentProject reads
-            // dataflowDatasetsRef.current *now*, so without this the saved spec could
-            // miss this dataset.
-            dataflowDatasetsRef.current = upsertDataflowDatasetRef(
-                dataflowDatasetsRef.current,
-                inst.id,
-                ref,
-            ) as any[];
-            try {
-                // Create-or-update + syncDatasetsFromSavedSpec (which also fires the
-                // catalog refresh) — UI ends on the final persisted project state.
-                await requestProjectSave();
-            } catch (err) {
-                // Keep the optimistic in-memory ref so a later manual save still
-                // captures it; surface why the auto-save failed.
-                showToast((err as Error)?.message || "Could not save the dataflow.", "error");
-                notifyDatasetCatalogRefresh();
-            }
-        },
-        [requestProjectSave, setDataflowDatasets, showToast],
-    );
 
     // Persist the dataflow after a producing node ran but the backend did NOT
     // auto-install during execution (it only does so for deliberately-saved
@@ -902,7 +896,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const currentEdges = reactFlow.getEdges();
         // Same as saveCurrentProject: read from store to avoid stale React state snapshot.
         const currentPackages = getCurrentProjectPackagesList();
-        // Same as saveCurrentProject: read from ref so we always use the latest datasets.
+        // Save-a-copy is a CREATE: the serialized datasets section seeds the new
+        // project's refs (dev/81) — read from the ref so the copy carries the
+        // latest installed datasets.
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
@@ -974,12 +970,20 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setViewerMode("owner");
     }, []);
 
+    // Both marks return the SAME state object when the node is already in the
+    // target status. CodeEditor calls markNodeStale on every keystroke, and an
+    // unconditional spread changed the FlowContext value each time — re-rendering
+    // every context consumer on the canvas per keystroke (dev/70).
     const markNodeExecuted = useCallback((nodeId: string) => {
-        setNodeExecStatus((prev) => ({ ...prev, [nodeId]: "executed" }));
+        setNodeExecStatus((prev) =>
+            prev[nodeId] === "executed" ? prev : { ...prev, [nodeId]: "executed" },
+        );
     }, []);
 
     const markNodeStale = useCallback((nodeId: string) => {
-        setNodeExecStatus((prev) => ({ ...prev, [nodeId]: "stale" }));
+        setNodeExecStatus((prev) =>
+            prev[nodeId] === "stale" ? prev : { ...prev, [nodeId]: "stale" },
+        );
     }, []);
 
     // ---------------------------------------------------------------------------
@@ -1025,12 +1029,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         acceptSuggestion,
         eraseWorkflowSuggestions,
         applyRemoveChanges,
+        applyReviewedRemovals,
 
         // Project operations
         saveCurrentProject,
         saveAsNewProject,
         ensureProjectId,
-        persistInstalledDataset,
         persistDataflowForInstall,
         loadProject,
         loadSharedProject,

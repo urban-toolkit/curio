@@ -1,0 +1,19 @@
+/* Canvas-target agents: a persistent bar centered at the TOP of the canvas,
+   just below the top menu bar. Node-target agents render at their node instead
+   (NodeAgentBadges). */
+.dock {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 76px;
+  z-index: 30;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: min(90vw, 720px);
+}
+
+/* Avatar chips are the shared AgentAvatarBadge; the chat panel's styles live
+   in AgentChatPanel.module.css (concept-aligned visual system). */

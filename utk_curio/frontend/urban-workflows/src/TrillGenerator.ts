@@ -207,6 +207,19 @@ export class TrillGenerator {
                 trill_node.metadata.datasetSource = node.data.datasetSource;
             }
 
+            // dev/89: per-node appearance persists at the canonical
+            // metadata.appearance shape — without this, a recolored post-it
+            // would lose its color on the next canvas save.
+            if(node.data.appearance != undefined && node.data.appearance.backgroundColor != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.appearance = node.data.appearance;
+            }
+
+            if(typeof node.data.title === "string" && node.data.title)
+                trill_node.title = node.data.title;
+
             if(node.data.appliedDatasets != undefined){
                 for(const dataset of Object.values(node.data.appliedDatasets)){
                     const id = (dataset as any)?.datasetId || (dataset as any)?.id;
@@ -232,6 +245,14 @@ export class TrillGenerator {
             trill_edge.id = edge.id;
             trill_edge.source = edge.source;
             trill_edge.target = edge.target;
+
+            // Persist the concrete handles. Slot wiring (`in_N` on merge
+            // nodes) must not depend on loadTrill's edge-id heuristic —
+            // agent-built edges have plain UUID ids, so without these fields
+            // their slot assignment is lost and they reload as unrenderable
+            // `"in"` edges (dev/64). Omitted when absent to keep specs lean.
+            if (edge.sourceHandle) trill_edge.sourceHandle = edge.sourceHandle;
+            if (edge.targetHandle) trill_edge.targetHandle = edge.targetHandle;
 
             if(edge.data != undefined && edge.data.keywords != undefined){
                 if(trill_edge.metadata == undefined)

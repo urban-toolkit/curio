@@ -523,14 +523,26 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         [nodeState.output],
     );
 
-    const hasExistingCode = !!(data.defaultCode || (data as any).code);
+    // Editor seed, decided ONCE at mount: a node that arrives with no code gets
+    // the default example spec. This must NOT be re-derived per render from
+    // ``data.code`` — that field is written back by the editor one commit late
+    // (useNodeState's post-commit mutation), so a render-time check flip-flops
+    // while the user types, oscillating ``defaultValue`` and resetting the
+    // editor to the default spec (dev/70).
+    const seedSpecRef = useRef<string | undefined>(
+        (data.defaultCode || (data as any).code)
+            ? undefined
+            : (autkGrammarAdapter.getDefaultSpec?.() as string | undefined),
+    );
 
     return {
         applyGrammar,
         contentComponent,
-        defaultValueOverride: hasExistingCode
-            ? undefined
-            : (autkGrammarAdapter.getDefaultSpec?.() as string | undefined),
+        // Yield to a real external update: dataset drop / LLM apply write
+        // ``data.defaultCode`` via updateDefaultCode, and that must win over
+        // the mount-time seed. (``data.defaultCode`` only changes through
+        // setNodes, never mid-keystroke, so this stays stable while typing.)
+        defaultValueOverride: data.defaultCode ? undefined : seedSpecRef.current,
     };
 };
 

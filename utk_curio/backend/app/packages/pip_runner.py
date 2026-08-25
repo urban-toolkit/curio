@@ -203,6 +203,64 @@ def install_python_deps(
     return InstallReport(installed=to_install, skipped=skipped)
 
 
+def install_python_deps_to_target(
+    deps: Mapping[str, str],
+    target_dir: str,
+    *,
+    on_line: Optional[Callable[[str], None]] = None,
+) -> InstallReport:
+    """dev/97: pip-install *deps* (and their transitive closure) into
+    *target_dir* via ``pip install --target`` — the backend sandbox's
+    per-package OVERLAY primitive. The shared host interpreter is never
+    touched; workers receive the overlay on ``PYTHONPATH``.
+
+    No skip logic ON PURPOSE: the caller wipes the target first (the dev/97
+    wipe-before-build discipline — a fresh dir has nothing to skip, and pip's
+    ``--target`` semantics over an existing tree are overwrite-ish rather
+    than idempotent). Same timeout/error posture as the siblings; the
+    report's ``installed`` lists every requested spec."""
+    if not deps:
+        return InstallReport(installed=[], skipped=[])
+    specs = [_spec_argv(name, spec) for name, spec in sorted(deps.items())]
+    cmd = [sys.executable, "-m", "pip", "install", "--no-input",
+           "--target", str(target_dir), *specs]
+    log.info("Running %s", " ".join(cmd))
+    if on_line is not None:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        last_lines: list[str] = []
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                stripped = line.rstrip()
+                on_line(stripped)
+                last_lines.append(stripped)
+                if len(last_lines) > 40:
+                    last_lines.pop(0)
+        rc = proc.wait()
+        if rc != 0:
+            tail = "\n".join(last_lines)[-2000:]
+            raise PipInstallError(
+                f"pip install --target failed (exit {rc}): {tail.strip()}"
+            )
+        return InstallReport(installed=specs, skipped=[])
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=_PIP_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PipInstallError(
+            f"pip install --target timed out after {_PIP_TIMEOUT_SECONDS}s "
+            f"(packages: {specs})"
+        ) from exc
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "")[-2000:]
+        raise PipInstallError(
+            f"pip install --target failed (exit {proc.returncode}): {tail.strip()}"
+        )
+    return InstallReport(installed=specs, skipped=[])
+
+
 def uninstall_python_deps(names: Iterable[str]) -> UninstallReport:
     """Pip-uninstall *names*. Best-effort — already-missing packages are
     silently ignored (pip exits 0 for "not installed" with --yes).
