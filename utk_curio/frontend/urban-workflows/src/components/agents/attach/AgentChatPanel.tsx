@@ -93,7 +93,9 @@ export const AgentChatPanel: React.FC<{
    * never in the DEC-042 header itself). Omitted → no cog. */
   onOpenSettings?: () => void;
   /** Review-before-apply actions (memo dev/41); omitted → cards render inert. */
-  onApplyProposal?: (proposalId: string) => Promise<void>;
+  /** Resolves with the apply result when the caller has one (dev/105 A3: the
+   * package install review walks `followUpProposals` from it). */
+  onApplyProposal?: (proposalId: string) => Promise<{ followUpProposals?: string[] } | void>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
   /** dev/67-5: per-node plan review actions (Simulation Mode: create). */
   onApplyPlanNode?: (proposalId: string, ref: string) => Promise<void>;

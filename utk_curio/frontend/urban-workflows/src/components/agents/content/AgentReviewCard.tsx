@@ -225,7 +225,9 @@ export const AgentReviewCard: React.FC<{
   part: AgentProposalPart;
   /** Tint class carrying the agent's category color for the accent dot. */
   tintClassName?: string;
-  onApply?: (proposalId: string) => Promise<void>;
+  /** The card awaits settlement only; a caller may resolve with its apply
+   * result (dev/105 A3: the install review reads `followUpProposals`). */
+  onApply?: (proposalId: string) => Promise<unknown>;
   onDismiss?: (proposalId: string) => Promise<void>;
   /** dev/67-5 (plan proposals): the per-node review state from the
    * activeProposal mirror; enables the per-node rows when present. */
@@ -258,7 +260,7 @@ export const AgentReviewCard: React.FC<{
     }
   };
 
-  const act = async (fn?: (proposalId: string) => Promise<void>) => {
+  const act = async (fn?: (proposalId: string) => Promise<unknown>) => {
     if (!fn || busy) return;
     setBusy(true);
     setError(null);

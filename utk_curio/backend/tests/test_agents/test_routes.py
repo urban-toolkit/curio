@@ -3717,6 +3717,88 @@ class TestReuseLadder:
     def _spec(self, client, token, project_id):
         return client.get(f"/api/projects/{project_id}", headers=_auth(token)).get_json()["spec"]
 
+    # dev/105 A3 — honest degradation at the install apply: no notes on the
+    # request, or a package with no presentation template → enlist only, SAID.
+    def _apply(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply",
+            headers=_auth(token),
+        )
+
+    def _turn_texts(self, client, token, project_id, att_id):
+        turns = client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        return [t["text"] for t in turns]
+
+    def test_install_apply_without_notes_enlists_only_and_says_so(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        att_id, _ = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[self._install_req("curio.notes@1"), "ok"],
+        )
+        self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
+        resp = self._run(client, token, alice_project, att_id)
+        (proposal,) = [p for p in resp.get_json()["content"] if p["type"] == "proposal"]
+        assert proposal["summary"] == "Install package · Simple Notes"  # no "to follow"
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        assert body["followUpProposals"] == []
+        assert "No notes rode this request" in self._turn_texts(client, token, alice_project, att_id)[-1]
+
+    def test_install_apply_with_notes_but_no_presentation_template_says_why(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        import json as _json
+
+        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        # A store-only CODE package: enlistable, but nothing in it renders a note.
+        d = user_packageages_dir(key) / "curio.tools@1"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "manifest.json").write_text(_json.dumps({
+            "id": "curio.tools", "version": "1.0.0", "name": "Tools", "publisher": "x",
+            "description": "", "license": "MIT",
+            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+            "permissions": [], "dependencies": {"packages": {}, "python": {}, "js": {}},
+            "templates": [{
+                "id": "tool", "label": "Tool", "category": "computation", "engine": "python",
+                "editor": "code", "hasCode": True, "inputPorts": [], "outputPorts": [],
+                "source": "sources/default.py",
+            }],
+            "createdAt": "2026-08-21T16:42:23Z",
+        }), encoding="utf-8")
+        (d / "sources").mkdir(exist_ok=True)
+        (d / "sources" / "default.py").write_text("def main(): return {}\n")
+        req = (
+            "```curio.v1\n"
+            + _json.dumps({"toolRequest": {"tool": "package.install", "params": {
+                "dirName": "curio.tools@1", "reason": "x",
+                "notes": [{"title": "Question", "content": "q?"}],
+            }}})
+            + "\n```"
+        )
+        att_id, _ = self._setup(
+            client, user=user, token=token, project_id=alice_project,
+            monkeypatch=monkeypatch, replies=[req, "ok"],
+        )
+        resp = self._run(client, token, alice_project, att_id)
+        (proposal,) = [p for p in resp.get_json()["content"] if p["type"] == "proposal"]
+        assert proposal["summary"].endswith("· 1 note to follow")
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        assert body["installedPackage"]["dirName"] == "curio.tools@1"  # enlisted anyway
+        assert body["followUpProposals"] == []
+        last = self._turn_texts(client, token, alice_project, att_id)[-1]
+        assert "has no presentation (note) template" in last
+
     def test_enlist_miss_hint_names_only_sources_this_run_can_read(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):

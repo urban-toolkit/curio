@@ -164,7 +164,75 @@ def _apply(client, token, project_id, att_id, proposal_id):
     )
 
 
+def _install_with_notes():
+    # dev/105 A3: the ENLIST request carries the findings (the AUTHOR shape).
+    return _tool("package.install", {
+        "dirName": "curio.notes@1",
+        "reason": "notes need a note template",
+        "notes": [
+            {"title": "Question", "content": "what's the weather in Paris?", "color": "yellow"},
+            {"title": "Weather in Paris", "content": "### Weather in Paris\n- **Now:** ~21°C"},
+        ],
+    })
+
+
 class TestFieldReplay:
+    def test_variant_d_apply_on_the_install_card_queues_the_notes_one_card_at_a_time(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The owner's ask after the 14:09 run: Apply on the install card must
+        proceed to the notes — as cards BELOW it, one node at a time — with no
+        second message. The install apply queues the A16 sequence and returns
+        the ordered ids; applying each (the frontend walk) lands its node."""
+        from utk_curio.backend.app.packages import node_appearance
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            _install_with_notes(),
+            "The install awaits your review; the notes follow it.",
+        ])
+        _field_store(_user_dir_key(user), pid, with_notes=True)  # store-only, not enlisted
+
+        run = _run(client, token, pid, att_id)
+        assert run.status_code == 200, run.get_data(as_text=True)
+        (install,) = [p for p in run.get_json()["content"] if p["type"] == "proposal"]
+        assert install["tool"] == "package.install"
+        assert install["summary"] == "Install package · Simple Notes · 2 notes to follow"
+        assert "Question · what's the weather in Paris?" in install["preview"]
+        assert len(_spec_nodes(client, token, pid)) == 0
+
+        # Apply the install: the package is enlisted, the notes are QUEUED (not
+        # inserted), their cards ride the applied turn below the install card.
+        applied = _apply(client, token, pid, att_id, install["proposalId"])
+        assert applied.status_code == 200, applied.get_data(as_text=True)
+        body = applied.get_json()
+        assert body["installedPackage"]["dirName"] == "curio.notes@1"
+        follow_ups = body["followUpProposals"]
+        assert len(follow_ups) == 2
+        assert "createdNodes" not in body  # nothing inserted by the install apply
+        assert len(_spec_nodes(client, token, pid)) == 0
+        turns = client.get(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/session", headers=_auth(token),
+        ).get_json()["turns"]
+        applied_turn = turns[-1]
+        assert "2 notes queued below" in applied_turn["text"]
+        cards = [p for p in applied_turn["content"] if p.get("type") == "proposal"]
+        assert [p["proposalId"] for p in cards] == follow_ups  # cards below, in order
+        assert cards[0]["summary"].endswith("· Question")
+
+        # The frontend walk: one apply at a time, each landing exactly one node.
+        yellow = node_appearance.normalize_appearance({"backgroundColor": "yellow"})
+        green = node_appearance.normalize_appearance({"backgroundColor": "green"})
+        for i, fid in enumerate(follow_ups):
+            assert _apply(client, token, pid, att_id, fid).status_code == 200
+            assert len(_spec_nodes(client, token, pid)) == i + 1
+        notes = [n for n in _spec_nodes(client, token, pid) if "note-surface" in n["type"]]
+        assert [(n["title"], n["metadata"]["appearance"]) for n in notes] == [
+            ("Question", yellow), ("Weather in Paris", green),
+        ]
+
     def test_variant_c_enlisted_notes_land_titled_and_colored(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):

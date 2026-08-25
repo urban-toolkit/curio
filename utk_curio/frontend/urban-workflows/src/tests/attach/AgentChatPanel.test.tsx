@@ -11,7 +11,7 @@ jest.mock("../../providers/FlowProvider", () => ({
 // dev/84: the package-install review flow loads the catalog + conflict probe;
 // mocked so the panel suite stays network-free.
 jest.mock("../../api/packagesApi", () => ({
-  packagesApi: { catalog: jest.fn(), resolve: jest.fn() },
+  packagesApi: { catalog: jest.fn(), listInstalled: jest.fn(), resolve: jest.fn() },
 }));
 import { packagesApi } from "../../api/packagesApi";
 
@@ -515,6 +515,9 @@ describe("AgentChatPanel package-install review (memo dev/84)", () => {
       ],
     });
     (packagesApi.resolve as jest.Mock).mockResolvedValue({ lockfile: {}, conflicts: [] });
+    // dev/105 A1: the review reads the user's store as well as the catalog.
+    (packagesApi.listInstalled as jest.Mock).mockClear();
+    (packagesApi.listInstalled as jest.Mock).mockResolvedValue({ packages: [] });
   });
 
   it("Apply opens the existing install review dialog; only its Install button fires the apply", async () => {

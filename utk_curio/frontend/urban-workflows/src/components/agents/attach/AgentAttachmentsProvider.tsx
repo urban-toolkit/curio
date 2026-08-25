@@ -8,7 +8,12 @@ import React, {
   useState,
 } from "react";
 import { useFlowContext } from "../../../providers/FlowProvider";
-import { agentsApi, type AgentSessionTurn, type AgentUsage } from "../../../api/agentsApi";
+import {
+  agentsApi,
+  type AgentApplyResult,
+  type AgentSessionTurn,
+  type AgentUsage,
+} from "../../../api/agentsApi";
 import { notifyAgentCanvasMutation } from "../../../utils/agentCanvasEvents";
 import { useAgentAttachments, type AgentAttachmentsState } from "./useAgentAttachments";
 import type { AgentRunStatus } from "./agentRunStatus";
@@ -54,7 +59,7 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   runStatus: Record<string, AgentRunStatus>;
   /** Apply a pending review proposal (the only mutation path); refreshes the
    * transcript + listing so the outcome and result turn arrive together. */
-  applyProposal: (attachmentId: string, proposalId: string) => Promise<void>;
+  applyProposal: (attachmentId: string, proposalId: string) => Promise<AgentApplyResult>;
   /** dev/67-5: apply ONE planned node (Simulation Mode: create) — the
    * proposal stays pending; the created node reaches the live canvas. */
   applyPlanNode: (attachmentId: string, proposalId: string, ref: string) => Promise<void>;
@@ -433,6 +438,9 @@ export const AgentAttachmentsProvider: React.FC<{
             removedEdgeIds: result.appliedGraph.removedEdgeIds,
           });
         }
+        // dev/105 A3: callers that queue follow-ups (the package install
+        // review) read the result to walk them one at a time.
+        return result;
       } finally {
         // Success appends the result turn + statuses; a 409 marked it stale —
         // either way the transcript and listing are the truth: refresh both

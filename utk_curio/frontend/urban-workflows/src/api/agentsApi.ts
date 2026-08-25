@@ -391,6 +391,10 @@ export interface AgentApplyResult {
   /** package.draft.apply (dev/89): the frontend must refresh the package/
    * behavior/template registries BEFORE painting createdNodes. */
   requiresRegistryRefresh?: boolean;
+  /** package.install (dev/105 A3): the note proposals the apply queued below
+   * the install card, in order — the caller applies them one at a time so
+   * each note lands before the next card is applied. */
+  followUpProposals?: string[];
 }
 
 /** dev/67-5 apply-node response: one created node + the per-node ledger. */

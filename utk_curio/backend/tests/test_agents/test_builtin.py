@@ -541,6 +541,10 @@ class TestResearcher:
         # because the contract named only nodeType/content/goal).
         assert '"title": "<short header>"' in text
         assert '"appearance": {"backgroundColor"' in text
+        # dev/105 A3: the ENLIST rung carries the findings like AUTHOR does, so
+        # Apply on the install card proceeds to the notes without a second turn.
+        assert 'an install request without "notes" enlists a package and places nothing' in low
+        assert "you do not need a second turn" in low
         from utk_curio.backend.app.agents import tools as tools_mod
 
         contract = tools_mod.REGISTRY["node.create"].description

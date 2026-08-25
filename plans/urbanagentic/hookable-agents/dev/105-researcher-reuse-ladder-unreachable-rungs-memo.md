@@ -278,3 +278,42 @@ Re-running the live sequence yields a yellow note headed **Question** and a gree
 ### A2.6 Commit
 
 - **Commit 6 — `node.create` carries title + appearance, A13 defaults on the attachment path**: tools contract, mint/apply, delegate row mapping, prompt clause, tests incl. field variant C; BL-44 deviation line; this amendment → IMPLEMENTED.
+
+---
+
+## Amendment A3 (2026-08-25, owner request; revised the same day) — D6: Apply on the enlist card proceeds to the notes, one node at a time, as review cards below it
+
+**Status: IMPLEMENTED (2026-08-25) — commit 7. Backend: `package.install` params carry A12 `notes` (parsed by `_notes_from_delegate_inputs`), stored on the proposal and listed in the card preview (`… · N notes to follow`); `_apply_package_install` → `_queue_enlisted_notes` mints the rows as one pending A16 `node.create` sequence through `_mint_node_create` (commit-6 titles/A13 colors), rides the cards on the applied turn (`_log_applied_turn(extra_parts=)`), returns ordered `followUpProposals`; no-notes / no-presentation-template / failed row are said in the turn text. Frontend: the provider's `applyProposal` returns the `AgentApplyResult`; `usePackageInstallReview.confirm` walks `followUpProposals` one `await` at a time (stop on failure, remaining cards stay pending); `onApply`/`onApplyProposal` prop types widened to `Promise<unknown>`. Tests: backend 1463 / 4 (field variant D: install card lists both notes → Apply queues two cards below it, zero nodes inserted → applying each lands exactly one titled/colored node; honesty lanes; prompt markers); jest `src/tests/attach` 241 / 241 (sequential walk, stop-on-failure, no-follow-ups unchanged; the panel test's mock gained `listInstalled` — a commit-5 omission); `tsc --noEmit` clean on every touched file.**
+
+### A3.1 Ask (as revised by the owner)
+
+After **Apply** on the Researcher's *Install package · Simple Notes* card, the flow must proceed to the notes without a second message — and it must LOOK the way it did in the 14:09 run: the note cards ("Note · curio.notes/note-surface / node <id> / proposal <id>") appear **below the install card**, and the nodes are created **one at a time**, each landing on the canvas before the next card appears — a seamless progression, not a bulk insertion. (Revision 1 proposed inserting all nodes server-side at Apply and returning `createdNodes`; the owner rejected that presentation.)
+
+### A3.2 Design — the install request carries the notes; Apply mints the A16 sequence; the frontend walks it one card at a time
+
+1. **Request** — `package.install` params gain optional `notes`: the A12 rows `[{title, content, color}]`, parsed by the existing A12 reader (`_notes_from_delegate_inputs`, `services.py:6454`) — one parser. Bounded as A12 bounds them (≤16 rows; content ≤ `PROPOSAL_CONTENT_MAX_CHARS`).
+2. **Mint** — `_mint_package_install` stores `proposal["notes"]`; the card's preview lists the rows under the reason so the user reviews what will follow. Summary: `Install package · Simple Notes · 2 notes to follow`.
+3. **Apply (backend)** — `_apply_package_install`, after `install_to_project` and the spec re-read: resolve the enlisted package's **presentation** template; for each stored row, mint a `node.create` proposal through the existing `_mint_node_create` (title, content, A13 default color by index — the commit-6 path, unchanged) as ONE A16 jointly-pending sequence at the same attachment, status `pending`, in row order. Nothing is inserted into the graph here. The apply body gains `followUpProposals: [<proposalId>, …]` (ordered) beside `installedPackage`; the applied-turn log says "Applied: package Simple Notes enlisted; 2 note(s) queued below." The proposal parts ride the log turn so the cards render **below the install card** in the transcript, exactly the shape of the 14:09 run.
+   - No presentation template in the package, or no `notes` on the proposal → enlist only; `followUpProposals: []`; the log line says why ("no notes rode this request — ask the Researcher to create them").
+   - A row that fails to mint (bounds/appearance) is skipped and named in the log line; the rest still queue; the lockfile is never touched again.
+4. **Progression (frontend)** — the provider's `applyProposal` returns the apply result; `usePackageInstallReview.confirm`, on `result.followUpProposals`, applies them **sequentially**: `for (const id of ids) await applyProposal(id)` — each apply is the ordinary `node.create` apply, so each produces its own "Applied: node created" turn (names/ids), paints its node through the existing `node-created` bridge (`AgentAttachmentsProvider.tsx:411-416`, centers on the node), and reloads the transcript before the next begins. No timers, no fake stagger: the cadence IS one apply round-trip per node. The dialog's busy state covers the whole walk; a failing apply stops the walk at that node with the error in the card's line (the remaining cards stay pending and can be applied by hand — nothing is lost).
+   - These cards are auto-applied because the user reviewed their content on the install card and confirmed in the install dialog. The A16 sequence semantics are unchanged (jointly pending; a later run supersedes).
+5. **Prompt** — the ENLIST rung gets AUTHOR's MUST: the request's `notes` rows carry the findings (yellow "Question" first, green answers); "an install request without notes enlists a package and places nothing".
+
+Rejected: **(a) bulk `createdNodes` at Apply** (revision 1) — right data, wrong presentation: one batch paint, no per-node cards. **(b) an automatic second LLM run after Apply** — an extra provider round, nondeterministic on the local model, and the findings would be re-composed instead of copied verbatim (against the A12 posture). **(c) frontend stagger timers over a bulk result** — a fake progression; the sequential-apply walk gives the same cadence from real events. **(d) create nodes at mint time** — the template is not available until the package is enlisted.
+
+### A3.3 Tests
+
+- Backend mint: `notes` stored and bounded; preview lists them; malformed rows skipped; absent → no key (existing lanes byte-unchanged).
+- Backend apply: enlist + N pending `node.create` proposals in row order as one `mintSequenceId`, titles + A13 colors on the proposals; `followUpProposals` ordered; the log turn carries the proposal parts; no-notes / no-presentation-template → enlist only with the honest line; a failing row skips without touching the lockfile; zero nodes inserted by the install apply itself. Applying each follow-up through the ordinary route inserts exactly that node (existing lane).
+- Field lane variant D: the live sequence with `notes` on the install request → after the install apply, two pending note cards; applying them in order yields `Question`/yellow then `Weather in Paris`/green on the canvas; no second run.
+- Prompt marker: the ENLIST MUST.
+- jest (`usePackageInstallReview.test.tsx`): `confirm` walks `followUpProposals` sequentially (apply mock records order; the second call starts after the first resolves); a failing follow-up rejects into the card's line and stops the walk; a result without `followUpProposals` behaves as today. `tsc --noEmit` on the touched files.
+
+### A3.4 Acceptance
+
+Ask the Paris question where `curio.notes@1` is in the store but not enlisted → one card *Install package · Simple Notes · 2 notes to follow* listing both notes → **Apply** → install dialog → Install → the package is enlisted, then below the install card the **Question** card appears and its yellow note lands on the canvas, then the **Weather in Paris** card appears and its green note lands — one after the other, with no further message.
+
+### A3.5 Commit
+
+- **Commit 7 — Apply on the enlist card proceeds to the notes, one at a time**: params/mint/apply (A16 queue + `followUpProposals`), prompt MUST, provider return + sequential walk in the hook, tests incl. field variant D and the jest walk; BL-44 line; this amendment → IMPLEMENTED.

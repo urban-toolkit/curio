@@ -989,8 +989,12 @@ def _log_applied_turn(
     text: str,
     title: str,
     lines: list[str],
+    *,
+    extra_parts: list[dict] | None = None,
 ) -> None:
-    """Mark applied + append the result-card turn (mutation_applied, dev/03:344)."""
+    """Mark applied + append the result-card turn (mutation_applied, dev/03:344).
+    ``extra_parts`` (dev/105 A3, additive) ride the same turn after the result
+    card — the follow-up proposal cards an apply queued, rendered below it."""
     if not isinstance(session_id, str):
         return
     sessions.update_proposal_status(user_key, project_id, session_id, proposal_id, "applied")
@@ -1003,7 +1007,8 @@ def _log_applied_turn(
             sessions.make_turn(
                 "agent",
                 text,
-                content=[{"type": "card", "kind": "result", "title": title, "lines": lines}],
+                content=[{"type": "card", "kind": "result", "title": title, "lines": lines}]
+                + list(extra_parts or []),
             )
         ],
     )
@@ -2384,31 +2389,41 @@ def _mint_package_install(
         return "refused", "no saved project spec is available", None
     reason = params.get("reason")
     reason = reason.strip()[:_PACKAGE_REASON_MAX_CHARS] if isinstance(reason, str) else ""
+    # dev/105 A3: the findings ride the ENLIST request as the A12 rows the
+    # AUTHOR rung already carries — Apply enlists the package and then queues
+    # one node.create card per row below this one (one parser: the dev/90
+    # reader). Absent rows → enlist only, said so at Apply.
+    notes = _notes_from_delegate_inputs({"notes": params.get("notes")}) or []
     proposal_id = uuid.uuid4().hex
-    summary = f"Install package · {row['name']}"
+    summary = f"Install package · {row['name']}" + (
+        f" · {len(notes)} note{'s' if len(notes) != 1 else ''} to follow" if notes else ""
+    )
+    preview = reason or (row.get("description") or dir_name)
+    if notes:
+        preview += "\n\nNotes to follow:\n" + "\n".join(
+            f"- {n.get('title') or 'Note'} · {n['content'][:80]}"
+            + ("…" if len(n["content"]) > 80 else "")
+            for n in notes
+        )
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="package.install",
         summary=summary,
-        preview=reason or (row.get("description") or dir_name),
+        preview=preview,
         pins={"dirName": dir_name},
     )
-    _store_proposal(
-        user_key,
-        project_id,
-        spec,
-        loop_ctx,
-        {
-            "proposalId": proposal_id,
-            "tool": "package.install",
-            "dirName": dir_name,
-            "packageName": row["name"],
-            "reason": reason,
-            "summary": summary,
-            "status": "pending",
-        },
-        part,
-    )
+    proposal = {
+        "proposalId": proposal_id,
+        "tool": "package.install",
+        "dirName": dir_name,
+        "packageName": row["name"],
+        "reason": reason,
+        "summary": summary,
+        "status": "pending",
+    }
+    if notes:
+        proposal["notes"] = notes
+    _store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     return (
         "proposed",
         f"proposal {proposal_id} created to install package {row['name']!r}; it awaits "
@@ -3021,11 +3036,19 @@ def _apply_package_install(
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
     name = str(proposal.get("packageName") or dir_name)
+    # dev/105 A3: the findings that rode the request become the A16 sequence
+    # of node.create cards BELOW this one — minted pending, applied one at a
+    # time by the frontend walk so each note lands before the next card.
+    follow_ups, note_parts, notes_line = _queue_enlisted_notes(
+        user_key, project_id, spec, attachment_id, session_id, dir_name,
+        proposal.get("notes") or [],
+    )
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: package installed ({name}).",
+        f"Applied: package installed ({name}).{notes_line}",
         "Applied: package installed",
         [name, dir_name, f"proposal {proposal_id[:8]}"],
+        extra_parts=note_parts,
     )
     return {
         "attachmentId": attachment_id,
@@ -3033,7 +3056,72 @@ def _apply_package_install(
         "status": "applied",
         "mutationApplied": True,
         "installedPackage": {"dirName": dir_name, "name": name},
+        # dev/105 A3: ordered — the frontend applies them one after another.
+        "followUpProposals": follow_ups,
     }
+
+
+def _queue_enlisted_notes(
+    user_key: str,
+    project_id: str,
+    spec: dict,
+    attachment_id: str,
+    session_id: object,
+    dir_name: str,
+    notes: list,
+) -> tuple[list[str], list[dict], str]:
+    """dev/105 A3: mint the enlisted package's notes as ONE pending A16
+    sequence of ``node.create`` proposals (row order) — through the ordinary
+    mint, so titles and the A13 colors are exactly the commit-6 path — and
+    return ``(proposal ids, proposal parts, log suffix)``. Nothing is
+    inserted into the graph here; each card is applied by the frontend walk,
+    one at a time. Honest degradation: no rows, no presentation template, or
+    a row that fails to mint is SAID in the suffix, never silent."""
+    if not notes:
+        return [], [], " No notes rode this request — ask the Researcher to create them."
+    from utk_curio.backend.app.packages.manifest import ManifestError, load_packageage_manifest
+    from utk_curio.backend.app.packages.storage import user_packageages_dir
+
+    try:
+        manifest = load_packageage_manifest(user_packageages_dir(user_key) / dir_name)
+    except (ManifestError, OSError) as exc:
+        return [], [], f" Notes skipped: the package manifest is unreadable ({exc})."
+    template = next(
+        (t for t in manifest.templates if t.behavior and t.editor == "none"), None
+    )
+    if template is None:
+        return [], [], (
+            f" Notes skipped: {manifest.package_id} has no presentation (note) "
+            "template — ask the Researcher to author one."
+        )
+    record = _record_or_404(spec, attachment_id)
+    loop_ctx = {
+        "attachment_id": attachment_id,
+        "session_id": session_id if isinstance(session_id, str) else None,
+        # The A13 default keys on the attached agent's capability, as in a run.
+        "manifest": _resolve_definition(user_key, record.get("coord", "")),
+    }
+    node_type = f"{manifest.package_id}/{template.template_id}"
+    ids: list[str] = []
+    parts: list[dict] = []
+    skipped: list[str] = []
+    for row in notes:
+        req = {"params": {
+            "nodeType": node_type,
+            "content": row["content"],
+            **({"title": row["title"]} if row.get("title") else {}),
+            **({"appearance": row["appearance"]} if row.get("appearance") else {}),
+        }}
+        status, text, part = _mint_node_create(user_key, project_id, loop_ctx, req)
+        if status == "proposed" and part is not None:
+            ids.append(part["proposalId"])
+            parts.append(part)
+        else:
+            skipped.append(f"{row.get('title') or 'Note'}: {text}")
+    line = f" {len(ids)} note{'s' if len(ids) != 1 else ''} queued below." if ids else ""
+    if skipped:
+        line += " Skipped — " + "; ".join(skipped) + "."
+    return ids, parts, line
 
 
 def _apply_package_draft(

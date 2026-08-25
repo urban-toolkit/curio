@@ -43,7 +43,7 @@ export const AgentBuilderStrip: React.FC<{
    * (dev/53) so the Apply control lives where the phase indicator points,
    * targeting the activeProposal mirror (works even when a transcript part
    * is missing). Omitted → the transcript card is the only review surface. */
-  onApplyProposal?: (proposalId: string) => Promise<void>;
+  onApplyProposal?: (proposalId: string) => Promise<unknown>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
   /** dev/67-9: the Simulation Mode driver — step or auto (Build & validate). */
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
@@ -169,7 +169,7 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
-  const review = async (fn?: (proposalId: string) => Promise<void>) => {
+  const review = async (fn?: (proposalId: string) => Promise<unknown>) => {
     if (!fn || !planReview || reviewBusy) return;
     setReviewBusy(true);
     setError(null);
