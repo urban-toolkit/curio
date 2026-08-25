@@ -5,6 +5,11 @@ jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ projectId: "p1" }),
 }));
 
+const mockPaletteRefresh = jest.fn();
+jest.mock("../../utils/agentsPaletteEvents", () => ({
+  notifyAgentsPaletteRefresh: () => mockPaletteRefresh(),
+}));
+
 jest.mock("../../api/agentsApi", () => ({
   agentsApi: {
     listAttachments: jest.fn(),
@@ -86,6 +91,11 @@ const Harness: React.FC = () => {
       <div data-testid="solve-progress">
         {Object.entries(ctx.solveProgress["a1"] ?? {})
           .map(([n, st]) => `${n}:${st}`)
+          .join("|") || "∅"}
+      </div>
+      <div data-testid="solve-errors">
+        {Object.entries(ctx.solveErrors["a1"] ?? {})
+          .map(([n, e]) => `${n}:${e}`)
           .join("|") || "∅"}
       </div>
       <div data-testid="selected">{ctx.selectedId ?? "none"}</div>
@@ -586,6 +596,22 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
     ]);
   });
 
+  it("a project.install apply repaints the AGENTS palette (dev/106)", async () => {
+    api.applyProposal.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "applied",
+      installedCoord: "agent.node-content-builder@1.0.0",
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    await waitFor(() => expect(mockPaletteRefresh).toHaveBeenCalledTimes(1));
+  });
+
   it("a plain apply response (project.install / legacy) dispatches nothing", async () => {
     api.applyProposal.mockResolvedValue({
       attachmentId: "a1",
@@ -684,6 +710,47 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
   });
 
   afterEach(() => unsubscribe());
+
+  it("records each failed node's reason from node_result and clears it when the next solve starts (dev/106)", async () => {
+    let emit: (name: string, payload: Record<string, unknown>) => void = () => undefined;
+    let finish: (r: unknown) => void = () => undefined;
+    api.solveAttachmentStream.mockImplementation(
+      (_p: string, _a: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        emit = onEvent;
+        return new Promise((res) => {
+          finish = res as (r: unknown) => void;
+        }) as ReturnType<typeof api.solveAttachmentStream>;
+      },
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("solve"));
+    await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
+    const reason = "specialist not installed — Node Content Builder is not installed in this project";
+    act(() => {
+      emit("node_result", { nodeId: "n1", status: "failed", error: reason });
+      emit("node_result", { nodeId: "n2", status: "failed", error: reason });
+    });
+    expect(screen.getByTestId("solve-errors")).toHaveTextContent(`n1:${reason}|n2:${reason}`);
+    await act(async () => {
+      finish({
+        attachmentId: "a1",
+        executionId: "e1",
+        results: { n1: { status: "failed", error: reason }, n2: { status: "failed", error: reason } },
+        appliedContents: [],
+        builderSession: { phase: "applied" },
+        reason,
+      });
+    });
+    // Survives done (the pills need their why) …
+    expect(screen.getByTestId("solve-errors")).toHaveTextContent("n1:");
+    // … and clears the moment the next batch starts.
+    fireEvent.click(screen.getByText("solve"));
+    await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId("solve-errors")).toHaveTextContent("∅");
+    await act(async () => {
+      finish({ attachmentId: "a1", executionId: "e2", results: {}, appliedContents: [], builderSession: { phase: "ready" } });
+    });
+  });
 
   it("overlays per-node progress, applies solved content live, and clears on done", async () => {
     let emit: (name: string, payload: Record<string, unknown>) => void = () => undefined;

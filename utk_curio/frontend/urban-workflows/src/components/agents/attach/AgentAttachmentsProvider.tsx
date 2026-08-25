@@ -15,6 +15,7 @@ import {
   type AgentUsage,
 } from "../../../api/agentsApi";
 import { notifyAgentCanvasMutation } from "../../../utils/agentCanvasEvents";
+import { notifyAgentsPaletteRefresh } from "../../../utils/agentsPaletteEvents";
 import { useAgentAttachments, type AgentAttachmentsState } from "./useAgentAttachments";
 import type { AgentRunStatus } from "./agentRunStatus";
 
@@ -111,6 +112,11 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
    * only — cleared on the terminal event; the persisted builderSession stays
    * the truth. */
   solveProgress: Record<string, Record<string, string>>;
+  /** dev/106: the LIVE batch's per-node failure reasons (attachmentId →
+   * nodeId → error text from the `node_result` event). Cleared when the
+   * attachment's next solve starts — NOT on done, so the strip can show why
+   * the pills say failed. The Solve turn's card is the durable record. */
+  solveErrors: Record<string, Record<string, string>>;
   /** Cancel the running solve (dev/63): in-flight children finish and
    * persist; undispatched targets revert to pending. */
   cancelSolve: (attachmentId: string) => Promise<void>;
@@ -141,6 +147,7 @@ export const AgentAttachmentsProvider: React.FC<{
   const runSeqRef = useRef<Record<string, number>>({});
   // dev/63: the live solve's per-node overlay + its abort handle.
   const [solveProgress, setSolveProgress] = useState<Record<string, Record<string, string>>>({});
+  const [solveErrors, setSolveErrors] = useState<Record<string, Record<string, string>>>({});
   // dev/67-9: the running simulation's narration line, per attachment.
   const [simulationActivity, setSimulationActivity] = useState<Record<string, string>>({});
   const solveAbortRef = useRef<Map<string, AbortController>>(new Map());
@@ -438,6 +445,9 @@ export const AgentAttachmentsProvider: React.FC<{
             removedEdgeIds: result.appliedGraph.removedEdgeIds,
           });
         }
+        // dev/106: a reviewed project.install landed a template (and its
+        // required closure) in the lockfile — the AGENTS palette repaints.
+        if (result.installedCoord) notifyAgentsPaletteRefresh();
         // dev/105 A3: callers that queue follow-ups (the package install
         // review) read the result to walk them one at a time.
         return result;
@@ -637,6 +647,11 @@ export const AgentAttachmentsProvider: React.FC<{
           ...prev,
           [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: status },
         }));
+      // dev/106: a fresh batch starts with a clean reason slate.
+      setSolveErrors((prev) => {
+        const { [attachmentId]: _gone, ...rest } = prev;
+        return rest;
+      });
       try {
         const result = await agentsApi.solveAttachmentStream(
           pid,
@@ -646,6 +661,13 @@ export const AgentAttachmentsProvider: React.FC<{
             if (name === "node_started" && nodeId) mark(nodeId, "solving");
             else if (name === "node_result" && nodeId) {
               mark(nodeId, typeof payload.status === "string" ? payload.status : "failed");
+              if (typeof payload.error === "string" && payload.error) {
+                const reason = payload.error;
+                setSolveErrors((prev) => ({
+                  ...prev,
+                  [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: reason },
+                }));
+              }
               if (payload.status === "solved" && typeof payload.content === "string") {
                 notifyAgentCanvasMutation({
                   kind: "node-content-applied",
@@ -778,6 +800,7 @@ export const AgentAttachmentsProvider: React.FC<{
       applyProposal,
       solveAttachment,
       solveProgress,
+      solveErrors,
       cancelSolve,
       applyPlanNode,
       savePlanGoal,
@@ -807,6 +830,7 @@ export const AgentAttachmentsProvider: React.FC<{
       applyProposal,
       solveAttachment,
       solveProgress,
+      solveErrors,
       cancelSolve,
       applyPlanNode,
       savePlanGoal,

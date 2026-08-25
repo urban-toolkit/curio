@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 const mockPlayAllNodes = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
@@ -406,5 +406,70 @@ describe("AgentBuilderStrip running-status line (dev/83)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Step" }));
     expect(screen.getByText(/Stepping… · \d+:\d\d/)).toBeInTheDocument();
+  });
+});
+
+describe("AgentBuilderStrip missing specialist (dev/106)", () => {
+  const installProposal = {
+    proposalId: "ip1",
+    tool: "project.install",
+    summary: "Install Node Content Builder in this project",
+    status: "pending",
+  } as unknown as NonNullable<AgentAttachment["activeProposal"]>;
+  const runs = { "node-aaaa-1": "failed", "node-bbbb-2": "failed" } as const;
+
+  it("surfaces Install / Dismiss from the mirror alone — no transcript part needed", async () => {
+    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
+    const onDismissProposal = jest.fn().mockResolvedValue(undefined);
+    render(
+      <AgentBuilderStrip
+        attachment={{ ...attachment({ phase: "applied", nodeRuns: runs }), activeProposal: installProposal }}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onApplyProposal={onApplyProposal}
+        onDismissProposal={onDismissProposal}
+      />,
+    );
+    const group = screen.getByRole("group", { name: "Missing specialist" });
+    expect(group).toHaveTextContent("Install Node Content Builder in this project");
+    fireEvent.click(within(group).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("ip1"));
+    // Retry stays available alongside.
+    expect(screen.getByRole("button", { name: "Retry 2 failed" })).toBeEnabled();
+    fireEvent.click(within(group).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(onDismissProposal).toHaveBeenCalledWith("ip1"));
+    // The plan-review controls are NOT conjured by an install proposal.
+    expect(screen.queryByRole("button", { name: "Apply plan" })).toBeNull();
+  });
+
+  it("renders one reason line for six identical node failures", () => {
+    const reason = "specialist not installed — Node Content Builder is not installed in this project";
+    const errors = Object.fromEntries(
+      ["n1", "n2", "n3", "n4", "n5", "n6"].map((n) => [n, reason]),
+    );
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: runs })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveErrors={errors}
+      />,
+    );
+    expect(screen.getAllByText(reason)).toHaveLength(1);
+  });
+
+  it("shows no install row when the proposal is applied", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={{
+          ...attachment({ phase: "applied", nodeRuns: runs }),
+          activeProposal: { ...installProposal, status: "applied" } as typeof installProposal,
+        }}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onApplyProposal={jest.fn()}
+      />,
+    );
+    expect(screen.queryByRole("group", { name: "Missing specialist" })).toBeNull();
   });
 });

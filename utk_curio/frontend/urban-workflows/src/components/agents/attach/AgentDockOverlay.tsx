@@ -112,6 +112,7 @@ export const AgentDockOverlay: React.FC = () => {
               simulationActivity={ctx.simulationActivity[selected.attachmentId]}
               onSolve={(nodeIds) => ctx.solveAttachment(selected.attachmentId, nodeIds)}
               solveProgress={ctx.solveProgress[selected.attachmentId]}
+              solveErrors={ctx.solveErrors[selected.attachmentId]}
               onCancelSolve={() => ctx.cancelSolve(selected.attachmentId)}
               onDismissProposal={(proposalId) =>
                 ctx.dismissProposal(selected.attachmentId, proposalId)

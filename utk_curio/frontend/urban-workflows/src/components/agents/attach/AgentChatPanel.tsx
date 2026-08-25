@@ -113,6 +113,8 @@ export const AgentChatPanel: React.FC<{
   onSolve?: (nodeIds?: string[]) => Promise<unknown>;
   /** dev/63: the live batch's per-node status overlay (nodeId → status). */
   solveProgress?: Record<string, string>;
+  /** dev/106: the live batch's per-node failure reasons (nodeId → text). */
+  solveErrors?: Record<string, string>;
   /** dev/63: cancel the running solve. */
   onCancelSolve?: () => Promise<void>;
   /** dev/72: opens ANOTHER attachment's chat — the delegation entries' and
@@ -152,6 +154,7 @@ export const AgentChatPanel: React.FC<{
   simulationActivity,
   onSolve,
   solveProgress,
+  solveErrors,
   onCancelSolve,
   onOpenAgentChat,
   delegateExists,
@@ -526,6 +529,7 @@ export const AgentChatPanel: React.FC<{
           attachment={attachment}
           onSolve={onSolve}
           solveProgress={solveProgress}
+          solveErrors={solveErrors}
           onCancelSolve={onCancelSolve}
           onComposePrompt={composePrompt}
           onApplyProposal={onApplyProposal}

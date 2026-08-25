@@ -35,6 +35,9 @@ export const AgentBuilderStrip: React.FC<{
   /** dev/63: the live batch's transient per-node statuses (nodeId → status,
    * including "solving") — overlays the persisted nodeRuns for display. */
   solveProgress?: Record<string, string>;
+  /** dev/106: the live batch's per-node failure reasons (nodeId → text) —
+   * rendered ONCE per distinct reason under the pills, never per node. */
+  solveErrors?: Record<string, string>;
   /** dev/63: cancel the running solve — in-flight children finish; the rest
    * revert to pending. Omitted → no Cancel control. */
   onCancelSolve?: () => Promise<void>;
@@ -54,6 +57,7 @@ export const AgentBuilderStrip: React.FC<{
   attachment,
   onSolve,
   solveProgress,
+  solveErrors,
   onCancelSolve,
   onComposePrompt,
   onApplyProposal,
@@ -150,6 +154,18 @@ export const AgentBuilderStrip: React.FC<{
 
   const pauseReason = session.pauseReason ?? null;
 
+  // dev/106: the missing-specialist review, from the mirror — Solve minted a
+  // reviewed `project.install` (REQ-ORCH-001) and this is where the failure
+  // is, so this is where Install lives. Works without a transcript part.
+  const installReview =
+    attachment.activeProposal &&
+    attachment.activeProposal.tool === "project.install" &&
+    attachment.activeProposal.status === "pending"
+      ? attachment.activeProposal
+      : null;
+  // One line per DISTINCT reason (six identical node failures → one line).
+  const solveReasons = Array.from(new Set(Object.values(solveErrors ?? {}).filter(Boolean)));
+
   const simulate = async (mode: "step" | "auto") => {
     if (!onSimulate || simBusy) return;
     setSimBusy(mode);
@@ -169,12 +185,15 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
-  const review = async (fn?: (proposalId: string) => Promise<unknown>) => {
-    if (!fn || !planReview || reviewBusy) return;
+  const review = async (
+    fn?: (proposalId: string) => Promise<unknown>,
+    proposalId: string | undefined = planReview?.proposalId,
+  ) => {
+    if (!fn || !proposalId || reviewBusy) return;
     setReviewBusy(true);
     setError(null);
     try {
-      await fn(planReview.proposalId);
+      await fn(proposalId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "The review action failed");
     } finally {
@@ -241,6 +260,40 @@ export const AgentBuilderStrip: React.FC<{
             </li>
           ))}
         </ul>
+      ) : null}
+      {solveReasons.length ? (
+        <div className={styles.error} aria-live="polite">
+          {solveReasons.map((r) => (
+            <div key={r}>{r}</div>
+          ))}
+        </div>
+      ) : null}
+      {installReview && (onApplyProposal || onDismissProposal) ? (
+        <div className={styles.actions} role="group" aria-label="Missing specialist">
+          <span className={styles.reviewSummary}>
+            Solve needs a specialist — {installReview.summary}
+          </span>
+          {onApplyProposal ? (
+            <button
+              type="button"
+              className={styles.solve}
+              disabled={reviewBusy || solving}
+              onClick={() => void review(onApplyProposal, installReview.proposalId)}
+            >
+              {reviewBusy ? "Installing…" : "Install"}
+            </button>
+          ) : null}
+          {onDismissProposal ? (
+            <button
+              type="button"
+              className={styles.run}
+              disabled={reviewBusy}
+              onClick={() => void review(onDismissProposal, installReview.proposalId)}
+            >
+              Dismiss
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {planReview && (onSimulate || onApplyProposal || onDismissProposal) ? (
         <div className={styles.actions} role="group" aria-label="Plan review">

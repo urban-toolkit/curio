@@ -486,6 +486,9 @@ export interface AgentSolveResult {
   cancelled?: boolean;
   /** dev/63: targets never dispatched — reverted to pending. */
   notAttempted?: string[];
+  /** dev/106: the batch-level failure reason (the missing-specialist case) —
+   * the same text every node's `error` carries; the Solve card shows it once. */
+  reason?: string;
 }
 
 export type AgentContentPart =
