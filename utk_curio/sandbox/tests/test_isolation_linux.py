@@ -445,11 +445,19 @@ def test_a_runaway_allocation_hits_the_memory_limit(isolated):
     not applied, a multi-gigabyte allocation here would put real memory pressure
     on the host that also runs the live instances.
     """
+    # Derived from the configured headroom so the two cannot drift apart: if
+    # someone raises the fixture's budget above this allocation, the test would
+    # silently start asserting that a legal allocation fails.
+    over_budget_mb = 2 * MEMORY_HEADROOM_MB
     result = run_isolated(
-        isolated, "    x = bytearray(512 * 1024 * 1024)\n    return len(x)\n"
+        isolated,
+        f"    x = bytearray({over_budget_mb} * 1024 * 1024)\n    return len(x)\n",
     )
     assert result["output"]["path"] == ""
     assert result["stderr"], "a memory failure produced no explanation"
+    # And specifically a memory failure, not a crash: a SIGSEGV here would mean
+    # the child died for an unrelated reason and this test proved nothing.
+    assert "signal" not in result["stderr"].lower(), result["stderr"][:300]
 
 
 def test_an_infinite_loop_is_killed_and_the_sandbox_survives(isolated):

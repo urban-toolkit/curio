@@ -26,10 +26,12 @@ before the step that drops it:
 5. ``setrlimit``       memory, CPU, processes, file size. Applied after the uid
                        drop so the child cannot raise its own soft limits back
                        to the (higher) hard limits.
-6. close inherited fds  the parent's DuckDB handle and listening sockets are in
-                       this process's table until we close them.
-7. ``chdir``           into the scratch directory, the only place the child can
+6. ``chdir``           into the scratch directory, the only place the child can
                        write.
+
+There is no blanket close of inherited descriptors, and that is deliberate:
+closing fds under a live pyarrow/GDAL/duckdb crashed the child with SIGSEGV.
+See :func:`confine` for what replaced it.
 
 Only then is user code compiled and run. The result goes to a file in the
 scratch directory (not a pipe) so a child that dies mid-write cannot wedge the
@@ -218,37 +220,6 @@ def _apply_rlimits(limits):
     _set(resource.RLIMIT_CORE, 0, "RLIMIT_CORE")
 
 
-def _close_inherited_fds(keep):
-    """Close every descriptor above stderr except those in *keep*.
-
-    The fork inherited the parent's whole descriptor table, which includes the
-    DuckDB write handle and the sandbox's listening socket. Leaving those open
-    would hand the child exactly the access the scratch directory is meant to
-    deny.
-    """
-    keep = set(keep) | {0, 1, 2}
-    try:
-        entries = os.listdir("/proc/self/fd")
-    except OSError:
-        # No /proc. Fall back to the soft NOFILE limit, which is a superset of
-        # what can be open.
-        import resource
-        soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-        entries = [str(n) for n in range(min(soft, 65536))]
-
-    for entry in entries:
-        try:
-            fd = int(entry)
-        except ValueError:
-            continue
-        if fd in keep:
-            continue
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-
-
 def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
             keep_fds=()):
     """Apply every confinement step, in the order the module docstring sets out.
@@ -257,13 +228,32 @@ def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
     that as fatal for the child: running user code after a partial confinement
     is worse than not running it, because the operator would believe the
     boundary held.
+
+    **There is deliberately no blanket close of inherited descriptors.** An
+    earlier version walked ``/proc/self/fd`` and closed everything outside a
+    keep-set, which crashed the child with SIGSEGV while pandas built a
+    DataFrame: pyarrow's allocator, GDAL/PROJ's ``proj.db`` and duckdb all hold
+    internal descriptors, and closing those under a live native library is
+    undefined behaviour. It was intermittent, because fd numbers move between
+    runs.
+
+    Nothing is lost by dropping it. The descriptors that actually mattered are
+    handled where they are known rather than guessed at:
+
+    - The zygote is a separate process that never opens DuckDB, so there is no
+      store handle in this descriptor table at all
+      (``test_the_zygote_holds_no_duckdb_handle`` pins that).
+    - The zygote closes its listening socket and every pending connection in
+      the child immediately after the fork, by name, in ``Zygote._fork_child``.
+
+    ``keep_fds`` is retained in the signature for callers that pass it, and is
+    now unused.
     """
     os.setsid()
     _set_no_new_privs()
     seccomp_active = _install_seccomp_filter(required=require_seccomp)
     _drop_privileges(uid, gid)
     _apply_rlimits(limits)
-    _close_inherited_fds(keep_fds)
     os.chdir(scratch_dir)
     return {"seccomp": seccomp_active}
 
@@ -578,6 +568,18 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
     process group (``sandbox/server.py::_kill_descendants``), which a normal
     exit here would fire against its siblings.
     """
+    # A child that dies on a signal writes no manifest, so the parent can only
+    # report "killed by signal 11". faulthandler turns that into a Python
+    # traceback on the inherited stderr, which reaches the sandbox log. Cheap,
+    # and it is the difference between diagnosing a native crash and guessing
+    # at it: the fd-closing bug above presented only as signal 11.
+    try:
+        import faulthandler
+
+        faulthandler.enable()
+    except Exception:
+        pass
+
     scratch_dir = request["scratch_dir"]
     try:
         confine(
