@@ -1,7 +1,7 @@
 # Dev/99 — Package-seed reader locking for zero-gap package-store snapshots
 
 Date: 2026-08-24
-Status: **proposed — implementation not started**
+Status: **IMPLEMENTED — 2026-08-24** (see the implementation record at the end; originally proposed as "implementation not started")
 Depends on: [`dev/93`](93-dataflow-plan-template-vocabulary-memo.md) (`DEC-062`), especially amendment A1; `app/common/file_locks.py`
 Decision posture: closes an already-recorded dev/93 follow-up; no new decision ID is required
 
@@ -474,3 +474,66 @@ agents-domain callers and the plan mint → then the route/resolver audit in §2
 
 *Appended by the session that implemented dev/93 and dev/94, at the owner's request. Advisory, like R1: the
 memo remains its author's to accept or reject.*
+
+---
+
+## Implementation record (2026-08-24) — status: **IMPLEMENTED**, with R2 accepted in full
+
+The memo above and both amendments are left as written. This record states what shipped, where it
+deviates, and how each acceptance criterion was verified. R1.1 was resolved by building the composite
+(R2's recommendation, not the downgrade); R1.2 and R1.3 were implemented as R2 folded them in; R1.4 was
+applied. No new decision ID: the memo closes dev/93's recorded follow-up under `DEC-062`.
+
+### Commits, in R2's sequence
+
+| Step | Commit | What |
+| --- | --- | --- |
+| 1 | `ea802aa7` | Unlocked cores (`_available_templates_report_unlocked`, `_installed_templates_not_in_project_unlocked`, `_agent_catalog_overview_unlocked`) over ONE `_store_index` walk; the `template_landscape` composite; `_authoring_reuse_evidence` migrated. Pure refactor — every existing test unchanged. |
+| 2 | `e4d27921` | `packages/locks.py::package_seed_lock` — the one owner of `.seed.lock` / `package-seed`; the seeder and `_locked_store_index` share it; `presentation_templates` split onto the snapshot; deterministic swap-window test + 8×8 stress through the production reader requiring zero absent reads (R1.4: the inode comparison kept, the tolerance inverted). |
+| 3 | `47304bc9` | The roster's two blocks become formatters over ONE `template_landscape`; `resolve_templates` batch gate — a plan mint reads the store once regardless of node count; `resolve_template` is its one-element wrapper. |
+| 4 | `2cf58202` | The §2 audit: resolver (`resolve_for_project` one hold over both store reads; `resolve_for_project_unlocked` for composed callers; `lockfile_for_user`), routes (installed list, catalog installed-coordinates, `_ensure_user_seeded`, `_resolve_snapshot` for `/resolve` + `/install-deps`, `check_workflow_deps`, `_any_package_declares`), services (`agent_resolve_report` one hold, `_is_installed_in_user_store`, `_installed_majors_by_pkg`, `_python_deps_unique_to_pruned`), starters, libraries, build-deps (`installed_manifests` shared by both reviews). `test_locks.py`: contract, exception release, same-user/cross-user, Windows fallback, one-acquisition snapshots, and the §7.8 structural audit. |
+| 5 | `74e99a97` | R1.3: `_plan_seed` resolves every fixture-catalog read (`_latest_builtin_dir`, `example_dep_package_ids`, `_max_mtime`) BEFORE the lock; `_seed_locked` is store work only. Test records whether the per-user thread lock is held during each catalog read. |
+| 6 | (docs commit) | This record; `BL-P5-20260824-42`. |
+
+### Deviations and audit outcomes worth recording
+
+- **Deliberately unprotected, with the reason** (§2 asked for the audit, not for locking everything):
+  `build_extension.snapshot_installed_package` / `installed_package_digest` and `backend_runtime.invoke`
+  read ONE named package that is never a seeded one (extension refuses the builtin; the builtin declares
+  no backend) and already run under the per-target lock. `_read_python_deps` stays a raw single-package
+  read because its callers hold the lock or read a package they just chose to prune.
+- **§7.8 is implemented as a real test, not "if practical"**: an AST walk asserts every raw
+  `list_user_packageages(...)` call in `app/packages` and `app/agents` sits in a function on an
+  accounted list, each labelled lock-owner or unlocked-core. A new enumerator has to add itself.
+- **The non-reentrancy test does not nest for real.** The first draft did, and the blocked thread kept
+  the keyed `threading.Lock` for every later test in the process. The pin is on the primitive's type and
+  the documentation instead. Recorded because the next person will be tempted the same way.
+- **Two caller-visible additions, both additive**: `resolve_for_project_unlocked` (resolver) and the
+  `installed=` parameter on the two build-deps reviews. No response schema changed.
+- **Verification discipline note**: `git commit -- <paths>` commits the *working-tree* content of those
+  paths, not the index. Step 3's first attempt swept step 4's edits to the same file into the commit; it
+  was soft-reset and redone with the step-3-only content in the working tree during the commit.
+
+### Acceptance criteria — how each was verified
+
+| AC | Evidence |
+| --- | --- |
+| 1, 2 | `test_seeder_and_readers_share_the_one_lock_helper`, `test_lock_file_path_namespace_and_key_are_the_seeders`, `test_lock_is_documented_non_reentrant` |
+| 3, 8 | `test_reader_waits_out_the_swap_window_instead_of_seeing_nothing[5 readers]` (parked between the two renames, proven blocked, proven complete), `test_production_readers_never_see_an_absent_package_under_stress` |
+| 4 | `_locked_store_index` returns parsed manifests, not paths; the structural audit forbids unaccounted enumerations |
+| 5 | `TestBatchResolution`, `TestPlanTemplateSpellings` (unchanged, still green), the swap-window test on `available_templates` |
+| 6 | `test_roster_halves_come_from_one_snapshot`, `TestTemplateLandscape` equivalence + one-walk tests |
+| 7 | `list_installed_packageages` / `list_catalog_packageages` under one hold (step 4); swap-window test on `lockfile_for_user` |
+| 9 | `test_failed_swap_keeps_the_previous_tree` (unchanged) — restore happens inside `_seed_locked`, before release |
+| 10 | Catalog read before the lock in `agent_resolve_report` / `template_landscape`; registry fetch before `installed_manifests`; `is_satisfied` and `add_to_defaults` after release; R1.3 test for the writer |
+| 11 | `test_same_user_waits_and_different_user_does_not`, `test_lock_is_released_when_the_body_raises`, `test_windows_fallback_takes_and_releases_a_cross_process_lock` — events, no sleeps |
+| 12 | Full suite green at every step; equivalence tests pin reader outputs |
+| 13 | Step 2: 1741 / 8 skipped; step 3: 1763 / 8 skipped (+18 Playwright whole-suite fixture errors, BL-35 baseline); step 4: 1762 / 8 skipped; step 5: 1763 / 8 skipped |
+| R2 new ACs | No public reader called inside the lock (composites call cores — `TestTemplateLandscape.test_walks_the_store_once`); plan-mint acquisitions bounded independent of N (`test_plan_mint_cost_does_not_grow_with_plan_size`) |
+
+### §10 checklist
+
+All fourteen items hold as of step 5; the two that need a word: *"Lock ordering is documented"* — in
+`locks.py`'s docstring (leaf; never acquire another store lock underneath) and in step 4's commit message,
+which walks the spec/target/defaults/installer interactions; *"Documentation status is updated only after
+implementation is actually verified"* — this record is the last commit of the series.
