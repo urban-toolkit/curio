@@ -3749,6 +3749,7 @@ class TestReuseLadder:
         assert proposal["summary"] == "Install package · Simple Notes"  # no "to follow"
         body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
         assert body["followUpProposals"] == []
+        assert body["requiresRegistryRefresh"] is True  # dev/105 A4: enlisting alone changes the lockfile
         assert "No notes rode this request" in self._turn_texts(client, token, alice_project, att_id)[-1]
 
     def test_install_apply_with_notes_but_no_presentation_template_says_why(

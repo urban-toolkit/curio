@@ -119,6 +119,27 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3 + dev
     expect(mockCreateCodeNode).toHaveBeenCalledTimes(1);
   });
 
+  // dev/105 A4: a package.install apply enlists a package and queues its note
+  // cards for a later, sequential walk — the bridge event carries NO nodes.
+  // The handler must still add the store entry and pulse the registry (so
+  // the walk's node-created events paint real notes) and do nothing else.
+  it("package-nodes-created with no nodes updates store + registry, inserts and centers nothing", async () => {
+    render(<Host />);
+    act(() =>
+      notifyAgentCanvasMutation({
+        kind: "package-nodes-created",
+        artifactDigest: "p-install",
+        packageDir: "curio.notes@1",
+        nodes: [],
+      }),
+    );
+    await waitFor(() => expect(mockRefreshPackageRegistry).toHaveBeenCalledTimes(1));
+    const stored = mockSetCurrentProjectPackages.mock.calls[0][0] as string[];
+    expect(Array.from(stored)).toEqual(["curio.builtin@1", "curio.notes@1"]);
+    expect(mockCreateCodeNode).not.toHaveBeenCalled();
+    expect(mockSetCenter).not.toHaveBeenCalled();
+  });
+
   it("a created TEMPLATE lands in the store + registry BEFORE the node inserts", async () => {
     const order: string[] = [];
     mockSetCurrentProjectPackages.mockImplementation(() => order.push("store"));

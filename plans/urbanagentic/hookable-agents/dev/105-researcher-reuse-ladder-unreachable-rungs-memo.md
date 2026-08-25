@@ -317,3 +317,39 @@ Ask the Paris question where `curio.notes@1` is in the store but not enlisted �
 ### A3.5 Commit
 
 - **Commit 7 — Apply on the enlist card proceeds to the notes, one at a time**: params/mint/apply (A16 queue + `followUpProposals`), prompt MUST, provider return + sequential walk in the hook, tests incl. field variant D and the jest walk; BL-44 line; this amendment → IMPLEMENTED.
+
+---
+
+## Amendment A4 (2026-08-25, third live test) — D7: after the install apply the frontend registry is stale, so the queued notes paint as "Loading node…"
+
+**Status: IMPLEMENTED (2026-08-25) — commit 8: `_apply_package_install` returns `requiresRegistryRefresh: True`; the provider's existing branch emits `package-nodes-created` with `nodes: []`, and the handler adds the store entry + pulses the registry, inserting and centering nothing. Tests: backend 1463 / 4 (field variant D + the no-notes lane assert the flag); jest `src/tests/attach` 243 / 243 (provider lane: install result → event with `packageDir` and no nodes; handler lane: empty nodes → store + registry only).**
+
+### A4.1 Live result of commit 7
+
+Project `cb605bfd…`, session `733460a6…` (screenshot `Desktop/Screenshot 2026-08-25 at 3.04.00 PM.png`). The owner uninstalled `curio.notes@1` from the project (`DELETE /api/packages/projects/cb605bfd…/curio.notes@1` → 200 at 15:02:45), attached the Researcher, asked the Paris question. Backend, in order: `web.search` ok → `package.install` proposed (with notes) → Apply: "package installed (Simple Notes). 2 notes queued below." → the walk applied both → two `curio.notes/note-surface` nodes in the spec, lockfile `['curio.builtin@1', 'curio.notes@1']`. **Every backend step is correct** — the store still held the package, the ENLIST rung re-enlisted it on the user's Apply, and the notes followed one at a time.
+
+What the owner saw: PACKAGES **0**, both nodes as **"Loading node… curio.notes/note-surface"**. The frontend never learned that the project's package set changed.
+
+### A4.2 Root cause
+
+The provider's apply→canvas bridge (`AgentAttachmentsProvider.tsx:403-410`) refreshes the package registry and the project-packages store only on `result.requiresRegistryRefresh && result.installedPackage` — the `package.draft.apply` shape. `_apply_package_install`'s body carries `installedPackage` but **no `requiresRegistryRefresh`**, so no refresh happens; the follow-up `node.create` applies then fire `node-created` for a type the frontend registry does not hold → "Loading node…", and the PACKAGES badge reads the un-updated store. Before commit 7 the notes arrived in a later turn, by which time a drawer open / save re-sync (dev/101's `applyProjectLockfile` pulse) had usually refreshed the registry — the gap was masked, not absent.
+
+### A4.3 Fix (one truthful flag)
+
+`_apply_package_install` returns `requiresRegistryRefresh: True` — it DID change the lockfile, exactly the condition the flag names. The provider's existing branch then emits `package-nodes-created` with `nodes: []` (it already handles an empty list: store entry added, registry pulsed, no inserts, no centering), so the registry is current **before** `usePackageInstallReview.confirm` walks `followUpProposals` and the `node-created` events paint real notes. No new event kind, no new frontend branch; the badge updates through the same store write.
+
+Rejected: a dedicated `package-enlisted` mutation kind — duplicates what the existing branch does with an empty node list; a frontend-side refresh inside the hook — the bridge is the one place apply results become canvas/registry state (dev/48 §3.3), and splitting it would make two places disagree.
+
+### A4.4 Tests
+
+- Backend: the install apply body carries `requiresRegistryRefresh: True` (field variant D asserts it; the no-notes lane too — enlisting alone changes the lockfile).
+- jest (`AgentAttachmentsProvider.test.tsx`): a `package.install` apply result `{installedPackage, requiresRegistryRefresh: true}` emits `package-nodes-created` with `packageDir` = the dirName and `nodes: []`; the `useAgentCanvasMutations` handler test: an empty `nodes` list adds the store entry and pulses the registry without inserting or centering.
+- `tsc --noEmit` on touched files.
+
+### A4.5 Acceptance
+
+Uninstall `curio.notes@1` from a project, ask the Paris question, Apply the install card: PACKAGES badge increments, the two notes paint as real yellow/green notes (no "Loading node…"), no reload needed.
+
+### A4.6 Commit
+
+- **Commit 8 — the install apply declares its registry change**: the flag + the two jest lanes; BL-44 line; this amendment → IMPLEMENTED.

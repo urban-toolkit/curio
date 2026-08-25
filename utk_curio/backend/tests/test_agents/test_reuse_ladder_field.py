@@ -212,6 +212,9 @@ class TestFieldReplay:
         follow_ups = body["followUpProposals"]
         assert len(follow_ups) == 2
         assert "createdNodes" not in body  # nothing inserted by the install apply
+        # dev/105 A4: the lockfile changed — the frontend must pulse its registry
+        # BEFORE the walk paints the notes (the 15:04 "Loading node…" run).
+        assert body["requiresRegistryRefresh"] is True
         assert len(_spec_nodes(client, token, pid)) == 0
         turns = client.get(
             f"/api/agents/projects/{pid}/attachments/{att_id}/session", headers=_auth(token),

@@ -490,6 +490,37 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
     ]);
   });
 
+  // dev/105 A4 — the third live test: a package.install apply re-enlisted the
+  // notes package and queued the note cards, but the result carried no
+  // requiresRegistryRefresh, so the registry stayed stale and the follow-up
+  // notes painted "Loading node…". The install apply now declares the
+  // lockfile change; the SAME bridge branch pulses the registry (no nodes).
+  it("a package-install apply dispatches package-nodes-created with no nodes (dev/105 A4)", async () => {
+    api.applyProposal.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "applied",
+      mutationApplied: true,
+      requiresRegistryRefresh: true,
+      installedPackage: { dirName: "curio.notes@1", name: "Simple Notes" },
+      followUpProposals: ["n1", "n2"],
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(events).toEqual([
+      {
+        kind: "package-nodes-created",
+        artifactDigest: "p1",
+        packageDir: "curio.notes@1",
+        nodes: [],
+      },
+    ]);
+  });
+
   it("a package-draft apply dispatches package-nodes-created (dev/89 registry-before-canvas)", async () => {
     api.applyProposal.mockResolvedValue({
       attachmentId: "a1",

@@ -3056,6 +3056,10 @@ def _apply_package_install(
         "status": "applied",
         "mutationApplied": True,
         "installedPackage": {"dirName": dir_name, "name": name},
+        # dev/105 A4: the lockfile CHANGED — the frontend must refresh its
+        # package registry + project-packages store BEFORE the follow-up notes
+        # paint, or they render "Loading node…" for a type it does not hold.
+        "requiresRegistryRefresh": True,
         # dev/105 A3: ordered — the frontend applies them one after another.
         "followUpProposals": follow_ups,
     }
