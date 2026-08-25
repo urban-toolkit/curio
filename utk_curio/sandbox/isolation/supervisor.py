@@ -27,6 +27,7 @@ import os
 import shutil
 import signal
 import socket
+import sys
 import tempfile
 
 from utk_curio.sandbox.isolation import protocol
@@ -175,6 +176,59 @@ def _read_json_line(connection, *, timeout):
             break
         chunks.append(byte)
     return json.loads(b"".join(chunks).decode("utf-8"))
+
+
+def user_work_dir(shared_data_dir, user_key):
+    """The persistent, writable directory a user's isolated nodes run in.
+
+    Beside the store rather than under ``.curio/users/<key>/``. The user's own
+    folder is the more natural home, but ``.curio/users`` is 0700 root-owned so
+    that a node cannot reach any *other* user's datasets and projects
+    (``hardening.SENSITIVE_PATHS``). Putting a child-writable directory inside
+    it means relaxing that to 0711, and then every ``<key>/datasets/`` needs its
+    own 0700 -- applied as users appear at runtime, not once at boot. That trades
+    a closed cross-user read for a convenience. Here the property is identical:
+    per user, persistent, writable, owned by the execution user, and nothing
+    else is reachable through it.
+    """
+    return os.path.join(
+        os.path.dirname(os.path.abspath(shared_data_dir)),
+        SCRATCH_SUBDIR, "users", str(user_key),
+    )
+
+
+def prepare_user_work_dir(path, *, exec_uid=None, launch_dir=None):
+    """Create the user's work directory and make it usable by the child.
+
+    0700 and owned by the execution user: it is the one place an isolated node
+    may write, and ``confine`` chdirs into it, so relative reads and writes in
+    node code both land here.
+
+    A ``docs`` symlink is dropped in when the launch directory has one. The
+    bundled examples read their data relatively
+    (``gpd.read_file("docs/examples/data/x.geojson")``), and with the cwd moved
+    off the launch directory those paths would resolve to nothing. The link is
+    to a root-owned tree, so it reads and does not write.
+    """
+    os.makedirs(path, exist_ok=True)
+    if sys.platform == "win32":
+        return path
+    try:
+        os.chmod(path, 0o700)
+        if exec_uid is not None and os.getuid() == 0:
+            os.chown(path, exec_uid, -1)
+    except OSError:
+        pass
+
+    if launch_dir:
+        source = os.path.join(launch_dir, "docs")
+        link = os.path.join(path, "docs")
+        if os.path.isdir(source) and not os.path.lexists(link):
+            try:
+                os.symlink(source, link)
+            except OSError:
+                pass
+    return path
 
 
 def make_scratch_dir(shared_data_dir, *, exec_uid=None):

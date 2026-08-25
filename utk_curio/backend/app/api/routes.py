@@ -380,6 +380,24 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
         return {}
 
 
+def _exec_user_key():
+    """The current user's on-disk storage key, or None when there is no user.
+
+    Matches the key ``auto_install_node_output`` files a node's output under,
+    so a user's work directory and their computed datasets agree about who they
+    belong to. Returns None rather than raising: an unauthenticated launch
+    (``CURIO_NO_AUTH=1``) has no user, and the sandbox then falls back to the
+    launch directory exactly as it did before.
+    """
+    try:
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user = getattr(g, "user", None)
+        return _user_dir_key(user) if user is not None else None
+    except Exception:  # noqa: BLE001 - a work directory is a convenience
+        return None
+
+
 @bp.route('/processPythonCode', methods=['POST'])
 @require_auth
 def process_python_code():
@@ -401,6 +419,12 @@ def process_python_code():
     dataset_paths = _resolve_exec_dataset_paths(
         code, request.json.get("dataflowId") or None,
     )
+    # Under isolation the sandbox gives each user a persistent work directory,
+    # so a node's relative reads and writes land somewhere that belongs to
+    # them instead of the launch tree. The storage key, not a name, and only
+    # this route knows it: the sandbox has no notion of who is logged in, and
+    # the in-process path ignores it entirely.
+    exec_user_key = _exec_user_key()
     t1 = _time.perf_counter()
     response = _sandbox_call(
         'post', '/exec',
@@ -413,6 +437,7 @@ def process_python_code():
             "session_id": session_id,
             "save_dataset": bool(save_output_dataset),
             "dataset_paths": dataset_paths,
+            "user_key": exec_user_key,
         }),
         headers={"Content-Type": "application/json"},
     )

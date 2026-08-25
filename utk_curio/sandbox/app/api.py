@@ -359,6 +359,11 @@ def exec():
     # curio_dataset_path("<id>") calls. Defensive re-shaping mirrors the
     # backend's MAX_EXEC_DATASET_IDS cap.
     dataset_paths = request.json.get('dataset_paths') or {}
+    # Isolated mode gives each user their own work directory, so a node's
+    # relative reads and writes land somewhere that persists and belongs to
+    # them. The backend is the only component that knows who is logged in; it
+    # sends the storage key, not a name, and only the isolated path uses it.
+    user_key = request.json.get('user_key') or None
     if not isinstance(dataset_paths, dict):
         dataset_paths = {}
     dataset_paths = {
@@ -378,7 +383,7 @@ def exec():
         result = run(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
-            dataset_paths=dataset_paths, config=config,
+            dataset_paths=dataset_paths, user_key=user_key, config=config,
         )
     else:
         result = execute_code(

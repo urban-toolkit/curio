@@ -286,6 +286,78 @@ def test_the_scratch_directory_is_still_where_output_lands(isolated, workspace):
     assert result["output"]["path"]
 
 
+def test_a_node_writes_and_reads_back_in_its_user_directory(isolated, workspace):
+    """The point of the per-user work directory.
+
+    A node writing a file and reading it back is ordinary: a cache, an
+    intermediate, a `to_csv` the next node picks up. Before this, the write
+    either vanished with the per-execution scratch directory or landed in the
+    application tree.
+    """
+    result = run_isolated(
+        isolated,
+        "    with open('note.txt', 'w') as f:\n"
+        "        f.write('kept')\n"
+        "    with open('note.txt') as f:\n"
+        "        return f.read()\n",
+        launch_dir=str(workspace),
+        user_key="7",
+    )
+
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["dataType"] == "str"
+
+
+def test_what_a_node_writes_survives_to_the_next_execution(isolated, workspace):
+    """Persistent, unlike the per-execution scratch directory."""
+    first = run_isolated(
+        isolated,
+        "    with open('carried.txt', 'w') as f:\n"
+        "        f.write('across')\n"
+        "    return 'written'\n",
+        launch_dir=str(workspace),
+        user_key="7",
+    )
+    assert first["stderr"] == "", first["stderr"]
+
+    second = run_isolated(
+        isolated,
+        "    with open('carried.txt') as f:\n"
+        "        return f.read()\n",
+        launch_dir=str(workspace),
+        user_key="7",
+    )
+
+    assert second["stderr"] == "", second["stderr"]
+
+
+def test_one_user_does_not_land_in_anothers_directory(isolated, workspace):
+    """Separate directories.
+
+    Not an OS-enforced boundary: every child runs as the same uid, so this
+    keeps users' files apart by construction, not against a determined node.
+    Session scoping in the parent is what actually separates their data.
+    """
+    run_isolated(
+        isolated,
+        "    with open('mine.txt', 'w') as f:\n"
+        "        f.write('7')\n"
+        "    return 'ok'\n",
+        launch_dir=str(workspace),
+        user_key="7",
+    )
+    other = run_isolated(
+        isolated,
+        "    import os\n"
+        "    return os.path.exists('mine.txt')\n",
+        launch_dir=str(workspace),
+        user_key="8",
+    )
+
+    assert other["stderr"] == "", other["stderr"]
+    assert other["output"]["dataType"] == "bool"
+
+
 # ---------------------------------------------------------------------------
 # Escapes. The reason this work exists.
 # ---------------------------------------------------------------------------
