@@ -218,3 +218,95 @@ class TestSchemaAgreementWithTheFake:
                 assert (workspace.output_dir / s["screenshot"]).is_file()
         finally:
             destroy_workspace(workspace)
+
+
+_REAL_ESBUILD = Path("/opt/anaconda3/envs/curio-feat/bin/esbuild")
+
+
+class TestFullPipelineWithRealPreview:
+    """dev/98 commit 2 — the WHOLE stack, real: real esbuild compiles the
+    behavior source, the real reference runner renders it in Chromium, and
+    run_build's provenance carries the runner's verdict. Skips honestly when
+    either pinned tool is absent."""
+
+    def _require_toolchain(self, monkeypatch):
+        _require_browser()
+        if not _REAL_ESBUILD.is_file():
+            pytest.skip("real esbuild not installed — full-stack preview skipped")
+        monkeypatch.setenv("CURIO_BUILD_ESBUILD", str(_REAL_ESBUILD))
+
+    def _behavior_request(self, source: str):
+        return parse_build_request({
+            "mode": "create",
+            "manifest": {
+                "id": "ai.test.fullpreview", "version": "1.0.0", "name": "FP",
+                "publisher": "t", "description": "d", "compatibility": {"major": 1},
+                "permissions": [],
+                "dependencies": {"packages": {}, "python": {}, "js": {}},
+                "templates": [{
+                    "id": "note-kind", "label": "Note", "category": "visualization",
+                    "engine": "javascript", "editor": "none", "hasCode": False,
+                    "behavior": "note-behavior", "inputPorts": [], "outputPorts": [],
+                }],
+            },
+            "files": {"sources/note.tsx": {"text": source}},
+            "behaviorEntries": ["sources/note.tsx"],
+            "previewTemplates": ["note-kind"],
+        })
+
+    _GOOD_SOURCE = (
+        'import * as React from "react";\n'
+        'declare global { interface Window { curio: any } }\n'
+        'window.curio.registerBehavior("note-behavior",\n'
+        '  (data: any, nodeState: any) => ({\n'
+        '    contentComponent: React.createElement("div",\n'
+        '      {style: {padding: "16px", width: "280px"}},\n'
+        '      String((data && (data.content ?? data.code)) || "empty note")),\n'
+        "  }));\n"
+        "export {};\n"
+    )
+
+    def test_draft_builds_compiles_and_previews_ok(self, wrapper, monkeypatch,
+                                                   tmp_curio):
+        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.build_compiler import toolchain_from_env
+        from utk_curio.backend.app.packages.build_pipeline import run_build
+
+        self._require_toolchain(monkeypatch)
+        monkeypatch.setenv("CURIO_BUILD_PREVIEW_RUNNER", str(wrapper))
+        monkeypatch.delenv("CURIO_BUILD_PREVIEW_POLICY", raising=False)
+        build_jobs.reset_registry()
+        job = run_build("guest", self._behavior_request(self._GOOD_SOURCE),
+                        toolchain=toolchain_from_env(),
+                        preview_runner=runner_from_env())
+        assert job.phase == "ready", job.to_payload()
+        preview = job.result.preview
+        assert preview["status"] == "ok"
+        assert "curio-preview-runner/1" in preview["runnerVersion"]
+        assert sorted(preview["states"]["note-kind"]) == [
+            "empty", "error", "loading", "malformed-input", "success"]
+        # Screenshots ride provenance as digest+size only (dev/96 posture).
+        shots = preview["screenshots"]
+        assert len(shots) == 5
+        for meta in shots.values():
+            assert set(meta) == {"sha256", "bytes"} and meta["bytes"] > 0
+
+    def test_wrong_behavior_key_fails_the_build_at_preview(
+            self, wrapper, monkeypatch, tmp_curio):
+        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.build_compiler import toolchain_from_env
+        from utk_curio.backend.app.packages.build_pipeline import run_build
+
+        self._require_toolchain(monkeypatch)
+        monkeypatch.setenv("CURIO_BUILD_PREVIEW_RUNNER", str(wrapper))
+        build_jobs.reset_registry()
+        source = self._GOOD_SOURCE.replace('"note-behavior"', '"wrong-key"')
+        job = run_build("guest", self._behavior_request(source),
+                        toolchain=toolchain_from_env(),
+                        preview_runner=runner_from_env())
+        assert job.phase == "failed"
+        failures = " | ".join(e["message"] for e in job.events
+                              if e["phase"] == "failed")
+        assert "never registered" in failures
+        assert job.result.status == "failed"
+        assert job.result.artifact_digest is None  # unpreviewed never stages
