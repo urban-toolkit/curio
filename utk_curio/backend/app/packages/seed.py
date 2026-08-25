@@ -300,35 +300,38 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
     except Exception:  # noqa: BLE001 — cleanup must never crash startup
         log.warning("Stale-staging sweep failed", exc_info=True)
 
+    # memo dev/99 R1.3: everything that reads the FIXTURE catalog — not the
+    # user's store — is resolved before the lock is taken. Readers now wait on
+    # this lock, so its hold is exactly the store work: health checks, swaps,
+    # state markers. The fixture rglob and the docs/examples scan are not
+    # store work and would only lengthen every reader's wait.
+    plan = _plan_seed(src_root)
     with package_seed_lock(user_key):
-        return _seed_locked(user_key, src_root, dest_base)
+        return _seed_locked(user_key, dest_base, plan)
 
 
-def _seed_locked(user_key: str, src_root: Path, dest_base: Path) -> list[str]:
-    """One seeding pass, holding the per-user seed lock."""
-    _sweep_seed_staging(dest_base)
+class _SeedPlan:
+    """What the fixture catalog says should be seeded — computed UNLOCKED.
 
-    force = CURIO_RESEED_PACKAGES
-    records = seed_state.load(user_key)
+    ``candidates`` is ``(fixture_dir, fixture_mtime)`` in catalog order for
+    every package this pass may seed; ``keep_builtin_name`` is the one
+    ``curio.builtin@<major>`` that survives the prune of older majors.
+    """
 
+    __slots__ = ("keep_builtin_name", "candidates")
+
+    def __init__(self, keep_builtin_name: str | None, candidates: list[tuple[Path, float]]):
+        self.keep_builtin_name = keep_builtin_name
+        self.candidates = candidates
+
+
+def _plan_seed(src_root: Path) -> _SeedPlan:
     # The built-in package ships with every Curio install. We seed exactly the
     # latest installed major and clean up any older `curio.builtin@<X>` copies
     # the user may still have from a previous version. Tombstones don't apply
     # — user cannot opt out of having the default node kinds.
     builtin_dir = _latest_builtin_dir(src_root)
     keep_builtin_name = builtin_dir.name if builtin_dir is not None else None
-    if keep_builtin_name:
-        prefix = f"{BUILTIN_PACKAGE_ID}@"
-        for old in dest_base.iterdir():
-            if not old.is_dir() or not old.name.startswith(prefix):
-                continue
-            if old.name == keep_builtin_name:
-                continue
-            try:
-                shutil.rmtree(old)
-                log.info("Pruned superseded builtin package %s", old.name)
-            except OSError as exc:
-                log.warning("Failed to prune old builtin %s: %s", old, exc)
 
     # Only auto-install the built-in package — plus, when example projects
     # are being seeded, the packages those examples declare as dependencies
@@ -343,7 +346,7 @@ def _seed_locked(user_key: str, src_root: Path, dest_base: Path) -> list[str]:
             if pkg_dir is not None:
                 keep_names.add(pkg_dir.name)
 
-    seeded: list[str] = []
+    candidates: list[tuple[Path, float]] = []
     for src in sorted(src_root.iterdir()):
         if not src.is_dir():
             continue
@@ -351,8 +354,38 @@ def _seed_locked(user_key: str, src_root: Path, dest_base: Path) -> list[str]:
             continue
         if src.name not in keep_names:
             continue
+        candidates.append((src, _max_mtime(src)))
+    return _SeedPlan(keep_builtin_name, candidates)
+
+
+def _seed_locked(user_key: str, dest_base: Path, plan: _SeedPlan) -> list[str]:
+    """One seeding pass over the user's STORE, holding the per-user seed lock.
+
+    Everything about the fixture catalog arrived in *plan*; nothing in here
+    reads outside ``dest_base`` and the seed-state marker.
+    """
+    _sweep_seed_staging(dest_base)
+
+    force = CURIO_RESEED_PACKAGES
+    records = seed_state.load(user_key)
+
+    keep_builtin_name = plan.keep_builtin_name
+    if keep_builtin_name:
+        prefix = f"{BUILTIN_PACKAGE_ID}@"
+        for old in dest_base.iterdir():
+            if not old.is_dir() or not old.name.startswith(prefix):
+                continue
+            if old.name == keep_builtin_name:
+                continue
+            try:
+                shutil.rmtree(old)
+                log.info("Pruned superseded builtin package %s", old.name)
+            except OSError as exc:
+                log.warning("Failed to prune old builtin %s: %s", old, exc)
+
+    seeded: list[str] = []
+    for src, fixture_mtime in plan.candidates:
         dest = dest_base / src.name
-        fixture_mtime = _max_mtime(src)
         record = records.get(src.name)
         is_builtin = src.name == keep_builtin_name
         if force:

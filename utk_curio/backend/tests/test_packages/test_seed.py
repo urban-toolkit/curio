@@ -640,3 +640,42 @@ def test_production_readers_never_see_an_absent_package_under_stress(
     assert not failures, failures[:5]
     assert reads["n"] > 0
     assert _production_template_ids("guest") == expected
+
+
+def test_fixture_catalog_reads_happen_before_the_lock_is_taken(
+    tmp_curio, real_fixtures_root, monkeypatch
+):
+    """dev/99 R1.3: the writer's critical section is store work only. The
+    fixture rglob (`_max_mtime`), the builtin lookup and the docs/examples scan
+    (`example_dep_package_ids`) are catalog reads — every reader now waits on
+    this lock, so they must not be inside it. Asserted by recording whether the
+    per-user thread lock is held when each catalog read runs."""
+    from utk_curio.backend.app.common import file_locks
+    from utk_curio.backend.app.packages import seed as packages_seed
+
+    thread_lock = file_locks.keyed_thread_lock("package-seed", "guest")
+    held_during: dict[str, bool] = {}
+
+    def _spy(name, real):
+        def _wrapped(*a, **k):
+            held_during[name] = held_during.get(name, False) or thread_lock.locked()
+            return real(*a, **k)
+        return _wrapped
+
+    monkeypatch.setattr(packages_seed, "_max_mtime", _spy("_max_mtime", packages_seed._max_mtime))
+    monkeypatch.setattr(
+        packages_seed, "_latest_builtin_dir",
+        _spy("_latest_builtin_dir", packages_seed._latest_builtin_dir),
+    )
+    monkeypatch.setattr(
+        packages_seed, "example_dep_package_ids",
+        _spy("example_dep_package_ids", packages_seed.example_dep_package_ids),
+    )
+    monkeypatch.setattr(packages_seed, "CURIO_SEED_EXAMPLES", True)
+
+    assert seed_dev_packageages(user_key="guest"), "the pass should seed something"
+    assert set(held_during) == {"_max_mtime", "_latest_builtin_dir", "example_dep_package_ids"}
+    assert not any(held_during.values()), (
+        f"catalog reads ran INSIDE the seed lock: "
+        f"{[k for k, v in held_during.items() if v]}"
+    )
