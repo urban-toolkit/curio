@@ -56,7 +56,7 @@ Tradeoff: moving legacy LLM code creates temporary compatibility work. Accept th
 
 ### ADR-AG-002 — Backend-controlled execution
 
-Decision: the frontend submits commands and consumes normalized events; the backend creates LangChain agents and invokes providers/tools.
+Decision: the frontend submits commands and consumes normalized events; the backend creates the runtime agents (originally LangChain; direct provider-port per `DEC-048`) and invokes providers/tools.
 
 Rationale: credentials, tool authorization, retries, audit, and cancellation require a trusted boundary.
 
@@ -85,6 +85,8 @@ Decision: `AgentRuntime` and `LLMProviderAdapter` are application ports. LangCha
 Rationale: domain/application tests run without LangChain; provider compatibility is centralized; future frameworks do not change UI/domain contracts.
 
 Tradeoff: adapters translate messages, tools, streaming chunks, and errors. Shared normalized types keep that translation explicit.
+
+*Current status (`DEC-048`): the shipped runtime is direct provider-port code behind the same ports; the LangChain adapter never landed and reopens only with `DEC-021` background execution.*
 
 ### ADR-AG-006 — Typed event log as execution truth
 
@@ -140,7 +142,7 @@ Tradeoff: the store must retain and reference-count old immutable artifacts. The
 
 Decision: provider/model selection uses account-level `ProviderProfile` records. Credentials live only in an encrypted secret store behind opaque references; manifests and attachment configuration declare credential requirements but never contain secret values. Installation grants no data, tool, provider, or egress permission. Execution independently authorizes the artifact, dataflow target, declared context reads, provider destination, and typed tool grants.
 
-Migration and default source (see `17-hardening-resolutions-memo.md` §3.3): a one-time migration moves the legacy plaintext `user.llm_api_type`/`llm_api_key` (`app/api/routes.py:74-91`) into a per-account default `ProviderProfile` + encrypted secret store, with a time-bounded `/llm/chat`/`/llm/check` compatibility bridge removed at cutover; this lands before any provider-profile-referencing Resource-policy screen. The **default** `ProviderProfile` and the `LangChainModelBridge` derive provider/model/API/runtime defaults from the existing `dev/aiconn/` configuration (`DEC-039`) — OpenAI-compatible sage200 endpoint `https://sage200.evl.uic.edu/v1`, models `llama4-nim` (default) + `gemma4`, `AICONN_API_KEY`, chat-completions runtime — not separate LangChain-specific defaults. LangChain has no independent default provider/model/endpoint; per-agent `providerRequirements`/`runtime` and per-scope Resource policy are explicit overrides of that seed.
+Migration and default source (see `17-hardening-resolutions-memo.md` §3.3): a one-time migration moves the legacy plaintext `user.llm_api_type`/`llm_api_key` (`app/api/routes.py:74-91`) into a per-account default `ProviderProfile` + encrypted secret store, with a time-bounded `/llm/chat`/`/llm/check` compatibility bridge removed at cutover; this lands before any provider-profile-referencing Resource-policy screen. The **default** `ProviderProfile` and the model bridge (blueprint name `LangChainModelBridge`; shipped as the direct provider-port resolver — `DEC-048`) derive provider/model/API/runtime defaults from the existing `dev/aiconn/` configuration (`DEC-039`) — OpenAI-compatible sage200 endpoint `https://sage200.evl.uic.edu/v1`, models `llama4-nim` (default) + `gemma4`, `AICONN_API_KEY`, chat-completions runtime — not separate LangChain-specific defaults. LangChain has no independent default provider/model/endpoint; per-agent `providerRequirements`/`runtime` and per-scope Resource policy are explicit overrides of that seed.
 
 Rationale: visible definitions and project templates must not inherit credentials or data access. Central provider profiles support rotation and revocation while keeping secrets out of the browser, dataflow spec, transcript, logs, and published package.
 
@@ -153,6 +155,8 @@ Decision: nonterminal executions persist a lease owner, expiry/heartbeat, and mo
 Rationale: the server cannot prove whether an external provider or tool completed after a crash. Marking uncertainty explicitly avoids duplicate cost and side effects.
 
 Tradeoff: workers must heartbeat and all event/tool/mutation writes reject stale fencing tokens. The UI gains an interrupted state and an explicit retry path rather than pretending a disconnected execution is still running.
+
+*Current status: `DEC-021` proper remains open (`OQ-009` deployment gate) — the shipped synchronous runtime persists no leases; `DEC-050` delivered the user-facing streamed Solve/cancel slice, and this ADR is the recorded design for the background-execution build.*
 
 ### ADR-AG-014 — Sharing out of scope (reuse existing flow-sharing)
 
@@ -196,7 +200,7 @@ Decision: static and approved model-based evaluations persist exact draft, suite
 
 Rationale: exact evidence can gate Release without self-certification, and protected audit metadata proves governance events without copying rendered prompts/context into broad logs.
 
-Tradeoff: evaluator/profile availability, fixture egress, cost/quota, and audit retention add policy joins. Model judgment remains visibly advisory unless an approved gate requires it, and audit content retention stays bounded by OQ-008.
+Tradeoff: evaluator/profile availability, fixture egress, cost/quota, and audit retention add policy joins. Model judgment remains visibly advisory unless an approved gate requires it, and audit content retention stays bounded by the `DEC-057`/`DEC-058` retention contract (OQ-008 closed).
 
 ## 4. System Architecture
 
@@ -221,7 +225,7 @@ flowchart LR
         Admission[Cost quota resource admission]
         Repos[agents/infrastructure/repositories]
         Runtime[AgentRuntime port]
-        LC[LangChain adapter]
+        LC["LangChain adapter — historical, DEC-048"]
         Providers[Provider registry and adapters]
         Profiles[Provider profiles + secret and egress policy]
         Capabilities[Semantic capability registry]
@@ -269,7 +273,7 @@ sequenceDiagram
     participant Hooks as Agent hooks/API
     participant App as Backend agent services
     participant Repo as Agent repositories
-    participant Runtime as LangChain runtime
+    participant Runtime as LangChain runtime - historical, DEC-048
     participant Provider as LLM provider
     participant Flow as Node/flow domain service
 
@@ -625,8 +629,8 @@ utk_curio/backend/app/agents/
       prompt_audit_repository.py
       prompt_audit_event_repository.py
     runtime/
-      langchain_runtime.py
-      langchain_model_bridge.py
+      langchain_runtime.py        # historical (DEC-048) — shipped as the direct provider-port runtime
+      langchain_model_bridge.py   # historical (DEC-048) — shipped as the provider-port model resolver
       checkpoint_store.py
       event_publisher.py
       execution_leases.py
@@ -1202,12 +1206,14 @@ Repository ports expose aggregate-level operations, revisions, and transactions.
 - `CostPolicyService`: provider price snapshots, advisory estimates, idempotent reservation, actual settlement, ambiguous-use reconciliation, and append-only usage ledger.
 - `QuotaPolicyService` and `ResourcePolicyService`: atomic counters/windows/queue admission and provider/model/locality/context/tool/network/local-compute enforcement.
 - `PromptAuthoringService`: explicit-import ownership authorization, contained prompt draft validation, optimistic revisions, and protected-content handling; every non-imported source is read-only.
-- `PromptEvaluationService`: deterministic and approved isolated model evaluation with exact evidence pins, independent egress/budget, cancellation, and stale detection; it does not depend on the OQ-007 package.
+- `PromptEvaluationService`: deterministic and approved isolated model evaluation with exact evidence pins, independent egress/budget, cancellation, and stale detection; it does not depend on the report-only `DEC-055` evaluator (OQ-007 closed).
 - `PromptReleaseService`: exact-current validation/audit/evaluation/review gate and atomic new private imported-artifact commit; never updates a project template or publication.
 - `PromptAuditService`: versioned ruleset/policy resolution, exact-digest static security/compliance/provenance runs, typed findings, authorized remediation transitions, cancellation/staleness, and Release-gate projection.
 - `PromptGovernanceEventService`: append-only integrity chain, redacted event queries, and separately authorized/rate-limited reveal/diff/export that audits itself; never treats transcript messages as audit events.
 
 ### LangChain adapter
+
+> **Supersession note (`DEC-048`):** no `LangChainAgentRuntime` shipped — the numbered obligations below are met by the direct provider-port runtime (dev/39/41, `DEC-046`/`DEC-048`). The section remains as the contract a future LangChain adapter must satisfy if `DEC-021` background execution reopens the seam.
 
 `LangChainAgentRuntime` is the only adapter allowed to import LangChain. It:
 
@@ -1446,7 +1452,7 @@ Paths are normalized, relative, contained inside the real artifact directory aft
 
 `settingsDefaults` contains non-secret schema-valid seed suggestions for a reviewed profile family. Each explicit project Install materializes independent project-owned typed revisions clamped by deployment/account policy. The manifest cannot grant provider, egress, tool, context, mutation, retention, budget, or quota permission, and Reset always re-evaluates current ceilings.
 
-The reviewed v1 registry maps `interactive-report` to Chat/Dataflow Explainer/Node Explainer; `planning-analysis` to Dataset Finder plus the seven prompt-backed planning/analysis agents; `mutation-proposal` to Node Builder plus Debug/Node Content Builder/Connection Builder/Package Recommendation; `orchestration-mutation` to Dataflow Builder; and `evaluation-disabled` to the blocked Generated Content Evaluator. Enabled defaults inherit account budgets, start with at most one concurrent execution per project template, use explicit provider selection and the deployment `standard` resource class, restrict network to the provider plus authorized tools, and disallow local-to-remote fallback. Profile versions and mapping fixtures are code-reviewed server data, not arbitrary manifest declarations. Every project template materializes its own revisioned profile even when it reuses a family; one project's Reset/activation never changes another project.
+The reviewed v1 registry maps `interactive-report` to Chat/Dataflow Explainer/Node Explainer; `planning-analysis` to Dataset Finder plus the seven prompt-backed planning/analysis agents; `mutation-proposal` to Node Builder plus Debug/Node Content Builder/Connection Builder/Package Recommendation; `orchestration-mutation` to Dataflow Builder; and, historically, `evaluation-disabled` to the then-blocked Generated Content Evaluator *(retired by `DEC-055` — the evaluator shipped authored and report-only under the standard profile rules; dev/85–86)*. Enabled defaults inherit account budgets, start with at most one concurrent execution per project template, use explicit provider selection and the deployment `standard` resource class, restrict network to the provider plus authorized tools, and disallow local-to-remote fallback. Profile versions and mapping fixtures are code-reviewed server data, not arbitrary manifest declarations. Every project template materializes its own revisioned profile even when it reuses a family; one project's Reset/activation never changes another project.
 
 The `capabilities` array is semantic registry metadata. It answers what behavior the agent implements and which typed contract version it supports. The `prompts` object identifies how this particular artifact implements those capabilities. Capability IDs must not contain `_prompt`, `.txt`, path separators, or prompt filenames.
 
@@ -1538,7 +1544,7 @@ class PromptAgentFactory:
 2. Extract LLM provider selection/invocation from broad `app/api/routes.py` into provider adapters and `ProviderService`.
 3. Move canonical prompt assets from `utk_curio/llm-prompts` into versioned agent packages and index them through the prompt asset registry; update packaging and prompt tests.
 4. Keep legacy endpoints as thin delegates to agent application services during migration.
-5. Introduce LangChain only inside `agents/infrastructure/runtime` after provider and event contracts pass.
+5. Introduce LangChain only inside `agents/infrastructure/runtime` after provider and event contracts pass. *(Superseded by `DEC-048` — never introduced.)*
 6. Add typed settings/default-profile, admission/reservation/ledger, prompt-workspace/evaluation/audit repositories and application services before enabling the six screens.
 7. Remove old dispatch/prompt paths after all frontend callers and tests use agent APIs.
 
@@ -1564,7 +1570,7 @@ Implement using existing lint/test tooling where possible, plus a focused archit
 | Module/function | Required tests |
 | --- | --- |
 | Manifest parser/schema | Valid fixtures, unknown schema major, invalid defaults, missing tools/prompts, duplicate ID/version, digest mismatch. |
-| Default profiles / settings schema | Five reviewed profile-family fixtures (`interactive-report`, `planning-analysis`, `mutation-proposal`, `orchestration-mutation`, and fail-closed `evaluation-disabled`); manifest seeds cannot loosen policy; each project Install materializes independent typed defaults atomically; Reset re-clamps current ceilings. |
+| Default profiles / settings schema | Reviewed profile-family fixtures for the four active families (`interactive-report`, `planning-analysis`, `mutation-proposal`, `orchestration-mutation`; the formerly fifth fail-closed `evaluation-disabled` family is retired by `DEC-055` and needs no fixture); manifest seeds cannot loosen policy; each project Install materializes independent typed defaults atomically; Reset re-clamps current ceilings. |
 | Settings bindings/revisions/resolver | Independent draft streams, schema versions, strict deployment/account/project-template/attachment intersection, downward-only rejection, provenance, activation CAS, stale ETag/conflict, idempotency, and effective-snapshot reproducibility. |
 | Cost/quota/resource admission | Price revisions/unknown prices/currency/window boundaries, estimate versus actual settlement, child/retry/evaluation attribution, concurrent last-slot reservation, cancellation, stale/ambiguous reconciliation, `429`/retryAfter, provider/model/locality/context/output/tool/time/CPU/RAM/GPU/queue bounds, egress/SSRF, and no fallback. |
 | Artifact import pipeline | Media/type denial, compressed/expanded/file-count/ratio limits, traversal and absolute paths, Unicode/case-normalized duplicates, symlink/hardlink/device/FIFO rejection, truncated/corrupt input, atomic visibility, and staging cleanup. |
@@ -1578,7 +1584,7 @@ Implement using existing lint/test tooling where possible, plus a focused archit
 | `AttachmentPolicy` / `attachmentCompatibility` | Each target kind, predicate mismatch, malformed descriptor, keyboard/pointer parity. |
 | `ProviderCompatibilityPolicy` | Required capabilities, unsupported model, stale health snapshot, local resource constraints. |
 | Provider profiles/adapters | Encrypted secret non-return, migration/rotation/revocation, profile ownership, local/remote labeling, no implicit fallback, capability contract, SSRF/redirect/DNS/private-network denial, timeout, cancellation, normalized errors, and secret redaction. |
-| `LangChainAgentRuntime` | Authorized prompt/tool/profile assembly, event mapping/order, review pause, cancel, provider failure, lease heartbeat, stale-fence rejection, and no checkpoint side-effect replay. |
+| `LangChainAgentRuntime` *(historical — `DEC-048`; these obligations are met by the direct provider-port runtime)* | Authorized prompt/tool/profile assembly, event mapping/order, review pause, cancel, provider failure, lease heartbeat, stale-fence rejection, and no checkpoint side-effect replay. |
 | Execution recovery / `executionReducer` | Duplicate/out-of-order events, authenticated reconnect, partial deltas, terminal idempotency, cancellation race, expired-lease reconciliation to interrupted, and new-execution retry linkage. |
 | Agent API/hooks | Account-import and project-template query keys, abort/supersession, optimistic rollback, project-targeted cache reconciliation, project isolation for templates/attachments/sessions, and complete stream/cache/draft cleanup on project/account switch. |
 | Catalog/palette | Global Catalog/My Imports/Installed in this project states, separate Import/Install/imported-only Publish commands, pending geometry, empty/error/retry, and selected-project-only palette updates. |
@@ -1589,7 +1595,7 @@ Implement using existing lint/test tooling where possible, plus a focused archit
 | Orchestration | Child links, reviewed missing-agent install proposal, partial failure, retry, merge/evaluate, and mutation gates. |
 | Architecture boundaries | Forbidden imports/calls absent; public entry points and approved adapters only. |
 
-Integration fixtures should use deterministic fake provider/runtime/evaluator/pricing/scheduler adapters. Migration parity covers exact request construction, schemas, provider parameters, context selection, independently evaluated grants, review gates, and normalized errors; semantic output quality uses a curated rubric rather than byte equality. A small separately marked suite exercises real LangChain adapter construction without external network calls. Provider live tests are opt-in and never required for normal CI. Backup/restore and deletion/export fixtures must prove account isolation and truthful retained-reference behavior for transcripts/events, prompt drafts/snapshots/diffs, evaluation fixtures/results, audit metadata/protected content, remediation tombstones, and restored copies; OQ-008 owns durations and deletion/export/backup policy, so tests must not invent them.
+Integration fixtures should use deterministic fake provider/runtime/evaluator/pricing/scheduler adapters. Migration parity covers exact request construction, schemas, provider parameters, context selection, independently evaluated grants, review gates, and normalized errors; semantic output quality uses a curated rubric rather than byte equality. A small separately marked suite exercises real LangChain adapter construction without external network calls *(historical — `DEC-048`: not required while the LangChain seam stays retired)*. Provider live tests are opt-in and never required for normal CI. Backup/restore and deletion/export fixtures must prove account isolation and truthful retained-reference behavior for transcripts/events, prompt drafts/snapshots/diffs, evaluation fixtures/results, audit metadata/protected content, remediation tombstones, and restored copies; the `DEC-057`/`DEC-058` retention contract (OQ-008 closed — dev/87/88, `docs/RETENTION.md`) owns durations and deletion/export/backup policy, so tests must not invent them.
 
 ## 17. Incremental Implementation Steps
 
@@ -1618,7 +1624,7 @@ Exit: domain/repository tests and on-disk load/validate/write round trips pass.
 
 - Extract existing provider dispatch behind `LLMProviderAdapter`.
 - Add encrypted account provider profiles, egress/SSRF policy, provider/pricing registry, prompt registry, typed allowlisted tool registry, and normalized events/errors.
-- Add strict effective-policy resolution, atomic cost/quota/resource reservations, usage settlement/reconciliation, authenticated fetch-SSE, execution leases/fencing/interruption reconciliation, rollout flag, initial metrics, LangChain adapter, and one non-mutating Node Explainer execution.
+- Add strict effective-policy resolution, atomic cost/quota/resource reservations, usage settlement/reconciliation, authenticated fetch-SSE, execution leases/fencing/interruption reconciliation, rollout flag, initial metrics, the runtime adapter (LangChain superseded by `DEC-048` — direct provider-port code), and one non-mutating Node Explainer execution.
 
 Exit: provider/runtime contract, cancellation, resume, and failure tests pass.
 
@@ -1673,7 +1679,7 @@ Exit: boundary scan finds no leaks/duplicates; full regression, security, access
 9. `feat(agent-project-templates): add explicit project install, independent default materialization, lifecycle trust, locking, lockfile persistence, and read APIs`
 10. `feat(agent-capabilities): add semantic registry and deterministic resolution`
 11. `feat(agent-providers): add encrypted profiles, egress policy, pricing, and provider ports`
-12. `feat(agent-runtime): add prompts, tools, policy admission, fenced events, interruption recovery, and LangChain adapter`
+12. `feat(agent-runtime): add prompts, tools, policy admission, fenced events, interruption recovery, and LangChain adapter` *(LangChain adapter superseded by `DEC-048`.)*
 13. `feat(agents-frontend): add public API, types, query hooks, selectors, and account-switch cleanup`
 14. `feat(agent-catalog): add Global Catalog, My Imports, selected-project Install/source update, imported-only publication, trust states, palette, and settings launchers`
 15. `feat(agent-settings-ui): add shared shell and Cost/Quotas/Resource screens with accessibility tests`
@@ -1698,7 +1704,7 @@ Each commit must update its KGGraph Build Log entry with requirement/task/test I
 - [ ] Settings scope/applicability, independent typed revision schemas, reviewed default profile, strict precedence/downward-only rule, Reset behavior, and active/draft/effective provenance are explicit.
 - [ ] Cost price source/currency, quota window/reset, resource constraints, atomic reservation/settlement/reconciliation behavior, admission transaction, and stable denial errors are specified.
 - [ ] Prompt workspace explicit-import ownership, denial for every other source, protected content, contained asset contract, save conflict, exact evaluation pins/staleness, reviewer, Release SemVer, and separate project-template update/publication behavior are specified.
-- [ ] Prompt-audit mandatory events, integrity scheme, metadata redaction, protected snapshot/diff authorization, reveal/export audit, and OQ-008 retention/tombstone implications are specified without invented durations.
+- [ ] Prompt-audit mandatory events, integrity scheme, metadata redaction, protected snapshot/diff authorization, reveal/export audit, and the `DEC-057`/`DEC-058` (OQ-008 closed) retention/tombstone implications are specified without invented durations.
 - [ ] Package media/archive limits, staging cleanup, path/link/special-file policy, and safe agent-content rendering are explicit.
 - [ ] Execution lease, fencing, interruption, authenticated resume, cancellation, and linked-retry behavior is specified without automatic side-effect replay.
 - [ ] Project uninstall, attachment detach, private-import deletion, unpublish, quarantine/revocation, and garbage collection are distinguished; unresolved retention/backup durations have named product/security owners.
