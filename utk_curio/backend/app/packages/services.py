@@ -36,6 +36,7 @@ from utk_curio.backend.app.packages.installer import (
 from utk_curio.backend.app.packages.seed import BUILTIN_PACKAGE_ID
 from utk_curio.backend.app.packages.spec_packages import (
     project_packages,
+    referencing_nodes,
     set_project_packages,
 )
 from utk_curio.backend.app.packages.storage import (
@@ -831,6 +832,21 @@ def uninstall_from_project(
     if dir_name.startswith(f"{BUILTIN_PACKAGE_ID}@"):
         raise PackageServiceError(
             f"{BUILTIN_PACKAGE_ID} is built-in and cannot be uninstalled",
+        )
+
+    # memo dev/101: refuse while canvas nodes still use the package. The
+    # backfill in ``project_packages`` would re-derive it from those nodes on
+    # the next read, so a "successful" uninstall here was a permanent no-op
+    # that reported success — the drawer showed the package installed again
+    # on every reload with no explanation. Name the count instead.
+    spec = projects_storage.read_spec(user_key, project_id)
+    users = referencing_nodes(spec, dir_name, _installed_majors_by_pkg(user_key))
+    if users:
+        raise PackageServiceError(
+            f"{len(users)} node{'s' if len(users) != 1 else ''} on this canvas "
+            f"use{'s' if len(users) == 1 else ''} {dir_name} — delete "
+            f"{'them' if len(users) != 1 else 'it'} first",
+            409,
         )
 
     current = get_project_lockfile(user_key, project_id)

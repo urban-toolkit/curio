@@ -581,6 +581,34 @@ def replace_dataflow_datasets(user, project_id: str, refs: list) -> Optional[dic
 # Load (hydration)
 # ---------------------------------------------------------------------------
 
+def _with_effective_packages(spec, ukey: str, project_id: str):
+    """Serve the backend's EFFECTIVE lockfile in ``dataflow.packages`` (memo dev/101).
+
+    The frontend seeds its palette/registry mirror from the raw list it loads,
+    while every backend reader goes through ``get_project_lockfile`` (backfill
+    included). Two readers of one file gave two answers — a palette showing
+    zero packages while the drawer showed one. Normalising on read gives the
+    client the list the backend acts on. Only a list that is already present
+    is rewritten: a spec without the key stays without it, and a failure to
+    compute the lockfile degrades to the raw list — a load never 500s here.
+    """
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict) or not isinstance(dataflow.get("packages"), list):
+        return spec
+    from utk_curio.backend.app.packages.services import (
+        PackageServiceError,
+        get_project_lockfile,
+    )
+
+    try:
+        effective = sorted(get_project_lockfile(ukey, project_id))
+    except PackageServiceError:
+        return spec
+    if effective != dataflow["packages"]:
+        dataflow["packages"] = effective
+    return spec
+
+
 def load_project(user, project_id: str) -> dict:
     from utk_curio.backend.app.packages.services import (
         ensure_user_packages_initialized,
@@ -608,6 +636,7 @@ def load_project(user, project_id: str) -> dict:
         ]
 
     hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
+    spec = _with_effective_packages(spec, ukey, project_id)
 
     db.session.commit()
     return {
@@ -659,6 +688,7 @@ def load_shared_project(project_id: str) -> dict:
         ]
 
     hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
+    spec = _with_effective_packages(spec, ukey, project_id)
 
     detail = _to_detail(project, spec=spec, outputs=hydrated)
     # Don't leak server filesystem layout to shared-link visitors.

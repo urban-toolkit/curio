@@ -312,3 +312,35 @@ def test_metadata_only_update_does_not_touch_the_lockfile(app, db, user_and_toke
     detail = services.save_project(user, ProjectCreate(name="Meta", spec=_make_spec()))
     services.update_project(user, detail.id, ProjectUpdate(name="Renamed"))
     assert "packages" not in storage.read_spec(ukey, detail.id)["dataflow"]
+
+
+def test_load_serves_the_effective_lockfile_not_the_raw_list(app, db, user_and_token, tmp_curio):
+    """memo dev/101 D3: the frontend seeds its palette/registry mirror from the
+    list it loads. A clobbered ``[]`` with a package node on the canvas must
+    load as the backfilled list the backend itself acts on — otherwise the
+    palette shows 0 and the node paints "Loading node…" forever."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    user, _ = user_and_token
+    ukey = services._user_dir_key(user)
+    detail = services.save_project(
+        user, ProjectCreate(name="Heal", spec={"dataflow": {"nodes": [], "edges": [], "packages": []}}),
+    )
+    packages_services.install_to_project(ukey, detail.id, "ai.urbanlab.uhvi@1")
+    spec = storage.read_spec(ukey, detail.id)
+    spec["dataflow"]["nodes"] = [{"id": "n1", "type": "ai.urbanlab.uhvi/uhvi-load@1"}]
+    spec["dataflow"]["packages"] = []
+    storage.write_spec(ukey, detail.id, spec)
+
+    loaded = services.load_project(user, detail.id)
+    assert loaded["spec"]["dataflow"]["packages"] == ["ai.urbanlab.uhvi@1"]
+    assert loaded["project"].spec["dataflow"]["packages"] == ["ai.urbanlab.uhvi@1"]
+    # On disk it is still ``[]`` until the next save writes it down (commit 1).
+    assert storage.read_spec(ukey, detail.id)["dataflow"]["packages"] == []
+
+
+def test_load_leaves_a_spec_without_the_packages_key_alone(app, db, user_and_token, tmp_curio):
+    user, _ = user_and_token
+    detail = services.save_project(user, ProjectCreate(name="Legacy", spec=_make_spec()))
+    loaded = services.load_project(user, detail.id)
+    assert "packages" not in loaded["spec"]["dataflow"]

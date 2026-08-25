@@ -496,3 +496,71 @@ class TestReferencingNodes:
     def test_no_dataflow_is_empty(self):
         assert referencing_nodes(None, UHVI_DIR) == []
         assert referencing_nodes({"dataflow": None}, UHVI_DIR) == []
+
+
+class TestUninstallRefusesWhileNodesUseThePackage:
+    """memo dev/101 D2 — the delete that silently did nothing."""
+
+    def _spec_with_uhvi_node(self, user_key, project_id):
+        spec = projects_storage.read_spec(user_key, project_id)
+        spec["dataflow"]["nodes"] = [
+            {"id": "n-uhvi", "type": UHVI_TEMPLATE_REF, "data": {}},
+        ]
+        projects_storage.write_spec(user_key, project_id, spec)
+
+    def test_service_refuses_with_the_node_count(self, app, user_and_token, alice_project):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        self._spec_with_uhvi_node(user_key, alice_project)
+
+        with pytest.raises(packages_services.PackageServiceError) as exc:
+            packages_services.uninstall_from_project(user_key, alice_project, UHVI_DIR)
+        assert exc.value.status == 409
+        assert "1 node on this canvas uses ai.urbanlab.uhvi@1" in str(exc.value)
+        # Nothing moved: lockfile intact, store copy intact.
+        assert projects_storage.read_spec(user_key, alice_project)["dataflow"]["packages"] == [UHVI_DIR]
+        assert (package_dir(user_key, UHVI_DIR) / "manifest.json").is_file()
+
+    def test_the_reported_state_is_refused_not_no_opped(self, app, user_and_token, alice_project):
+        """``[]`` on disk + a node of the package's type: before, uninstall
+        computed the backfilled set, wrote ``[]`` (already ``[]``), prune saw the
+        node, nothing happened, 200. Now it says why."""
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        spec = projects_storage.read_spec(user_key, alice_project)
+        spec["dataflow"]["nodes"] = [{"id": "n1", "type": UHVI_TEMPLATE_REF}, {"id": "n2", "type": UHVI_TEMPLATE_REF}]
+        spec["dataflow"]["packages"] = []  # the clobbered lockfile
+        projects_storage.write_spec(user_key, alice_project, spec)
+
+        with pytest.raises(packages_services.PackageServiceError) as exc:
+            packages_services.uninstall_from_project(user_key, alice_project, UHVI_DIR)
+        assert exc.value.status == 409
+        assert "2 nodes on this canvas use ai.urbanlab.uhvi@1 — delete them first" in str(exc.value)
+
+    def test_after_the_nodes_go_the_uninstall_succeeds(self, app, user_and_token, alice_project):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        self._spec_with_uhvi_node(user_key, alice_project)
+        with pytest.raises(packages_services.PackageServiceError):
+            packages_services.uninstall_from_project(user_key, alice_project, UHVI_DIR)
+
+        spec = projects_storage.read_spec(user_key, alice_project)
+        spec["dataflow"]["nodes"] = []
+        projects_storage.write_spec(user_key, alice_project, spec)
+        result = packages_services.uninstall_from_project(user_key, alice_project, UHVI_DIR)
+        assert result["packages"] == []
+        assert result["pruned"] == [UHVI_DIR]
+
+    def test_route_returns_409_with_the_message(self, client, user_and_token, alice_project):
+        user, token = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        self._spec_with_uhvi_node(user_key, alice_project)
+        resp = client.delete(
+            f"/api/packages/projects/{alice_project}/{UHVI_DIR}", headers=_auth(token),
+        )
+        assert resp.status_code == 409
+        assert "delete it first" in resp.get_json()["error"]
