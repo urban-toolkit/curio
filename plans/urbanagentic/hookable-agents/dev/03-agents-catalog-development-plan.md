@@ -1,7 +1,7 @@
 # Agents Catalog Development Plan
 
-Status: implementation specification with current overlay — implementation verified through dev/97; remaining gates are identified below
-Baseline date: 2026-07-15; current overlay: 2026-08-24
+Status: implementation specification with current overlay — implementation verified through dev/101; remaining gates are identified below
+Baseline date: 2026-07-15; current overlay: 2026-08-25
 Source instructions: `02-development-plan-brief.md`  
 Traceability companion: `kggraph/Stage-2-Design-Phase/2.1-Agents-Catalog-Design-Traceability.md`  
 Build log template: `kggraph/Stage-3-Build-Phase/3.1-Agents-Catalog-Build-Log.md`
@@ -22,13 +22,13 @@ Composite-agent specifications (H-5): `15-composite-agent-specifications-memo.md
 
 Node-package capabilities (`REQ-PACKAGE-001`): `16-agent-node-package-capabilities-memo.md`
 
-This document is the actionable implementation specification for the Agents Catalog. It does not authorize or contain implementation code. Existing concept documents remain the design source of truth; conflicts are resolved by the decisions and open questions recorded below. The original problem/scope prose records the July baseline; current status comes from the active decision table, the open-question table, `00-development-phase-index.md`, and the Stage-3 build evidence through `BL-P5-20260824-40`.
+This document is the actionable implementation specification for the Agents Catalog. It does not authorize or contain implementation code. Existing concept documents remain the design source of truth; conflicts are resolved by the decisions and open questions recorded below. The original problem/scope prose records the July baseline; current status comes from the active decision table, the open-question table, `00-development-phase-index.md`, and the Stage-3 build evidence through `BL-P5-20260824-43`.
 
 For file-level module contracts, architecture tradeoffs, Mermaid diagrams, pseudocode, persistence/API patterns, and step-by-step source migration, use `05-agents-catalog-implementation-blueprint.md` together with this specification.
 
 ## 1. Problem Statement
 
-At the July 2026 baseline, Curio had mature private account storage, catalog publishing, project/dataflow persistence, and dataset/package patterns, but agents existed only as design concepts and scattered LLM behaviors. The persisted definition/import/project-template/attachment lifecycle, unified sessions, provider-neutral runtime, and the approved 21-agent roster have since shipped. The principal implementation remainders are the twelve non-grandfathered raw prompt-caller cutovers, the package-seed reader lock, ProviderProfile/encrypted-secret storage, DEC-058 governance surfaces, and deployment gates `OQ-009`/`OQ-010`.
+At the July 2026 baseline, Curio had mature private account storage, catalog publishing, project/dataflow persistence, and dataset/package patterns, but agents existed only as design concepts and scattered LLM behaviors. The persisted definition/import/project-template/attachment lifecycle, unified sessions, provider-neutral runtime, and the approved 21-agent roster have since shipped. The principal implementation remainders are the twelve non-grandfathered raw prompt-caller cutovers, ProviderProfile/encrypted-secret storage, DEC-058 governance surfaces, and deployment gates `OQ-009`/`OQ-010`. (The formerly listed package-seed reader lock shipped — `dev/99`, `BL-P5-20260824-42`.)
 
 The change affects the Agents drawer, project-only AGENTS palette, canvas/node attachment affordances, attached-agent dock, unified chat drawer, six dedicated governed-settings screens, project/dataflow persistence, backend catalog/runtime/projection services, LLM configuration, prompt authoring/evaluation/audit, and tests. (The built-in node Explanation tab is retained permanently — `DEC-041`, `dev/18` — and is not modified by this change.) Users explicitly import reusable manifest packages into a private account library, explicitly install a visible definition as a project template, attach a private instance to a compatible target, and refine/run it through unified chat. Import, project installation, attachment, Release, and user publication never chain implicitly.
 

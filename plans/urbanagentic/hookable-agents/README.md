@@ -1,6 +1,6 @@
 # Hookable Agents Planning Package
 
-This directory contains the current implementation plan, implementation evidence, and approved UI direction for hookable agents in Curio. The committed implementation is current through **dev/97** (`DEC-066`, `BL-P5-20260824-40`) on `feat/agentscatalog`; remaining work and documentation status are summarized in [`dev/00-development-phase-index.md`](dev/00-development-phase-index.md) and reconciled by [`dev/100`](dev/100-planning-document-reconciliation-memo.md).
+This directory contains the current implementation plan, implementation evidence, and approved UI direction for hookable agents in Curio. The committed implementation is current through **dev/101** (`BL-P5-20260824-43`) on `feat/agentscatalog`; remaining work and documentation status are summarized in [`dev/00-development-phase-index.md`](dev/00-development-phase-index.md), reconciled by [`dev/100`](dev/100-planning-document-reconciliation-memo.md), and advanced through dev/101 by [`dev/102`](dev/102-reconciliation-follow-up-memo.md).
 
 ## Current Product Direction
 
@@ -39,12 +39,11 @@ The numbered product specifications under `docs/01-...` through `docs/11-...` pr
 
 ## Current Application Evidence
 
-The application now ships the filesystem-backed catalog/import/install/attach lifecycle, unified agent chat and settings, the typed streaming/tool/review runtime, all three composite agents, Package Recommendation, Node Researcher, the authored Generated Content Evaluator, Package Builder, Researcher, reviewed package authoring, the package backend sandbox, activation hardening, rich package-draft review, and per-package backend dependency overlays. The current roster is **21 built-in agents**; [`docs/AGENTS.md`](../../../docs/AGENTS.md) is the user-facing implementation overview, while the append-only Stage-3 logs carry verification evidence.
+The application now ships the filesystem-backed catalog/import/install/attach lifecycle, unified agent chat and settings, the typed streaming/tool/review runtime, all three composite agents, Package Recommendation, Node Researcher, the authored Generated Content Evaluator, Package Builder, Researcher, reviewed package authoring, the package backend sandbox, activation hardening, rich package-draft review, per-package backend dependency overlays, the reference preview runner (`dev/98`), package-seed reader locking (`dev/99`), and backend-owned project package lockfile authority (`dev/101`). The current roster is **21 built-in agents**; [`docs/AGENTS.md`](../../../docs/AGENTS.md) is the user-facing implementation overview, while the append-only Stage-3 logs carry verification evidence.
 
 Concrete implementation work still remains:
 
 - twelve non-grandfathered direct `llmRequest(...)` call paths in general frontend components still pass raw prompt filenames and require the dev/06 parity-backed caller cutover;
-- the package-store seeder's two-rename absence interval has an implementation-ready reader-lock plan in [`dev/99`](dev/99-package-seed-reader-locking-memo.md), but implementation has not started;
 - ProviderProfile/encrypted-secret-store T4, prompt Editor/Quality/Audit governance (DEC-058), and the OQ-009/OQ-010 deployment gates remain outside the completed slices.
 
 The node Explanation tab and its direct `single_box_explanation_prompt` caller are the deliberate `DEC-041` exemption: they remain functional and coexist with the installed/attached Node Explainer agent. `agent.generated-content-evaluator` is no longer blocked: it was authored and shipped under `DEC-055` (dev/85–86), rather than fabricated as a migration source.

@@ -1,6 +1,6 @@
 # Agents Catalog Cursor-Style Implementation Blueprint
 
-Status: historical implementation blueprint with current overlay — implementation verified through dev/97; remaining work is listed below
+Status: historical implementation blueprint with current overlay — implementation verified through dev/101; remaining work is listed below
 Depends on: `03-agents-catalog-development-plan.md`  
 Architecture amendment: `04-agents-module-encapsulation-memo.md`  
 Settings and prompt-governance amendment: `11-agent-configuration-modals-and-prompt-governance-memo.md`  
@@ -11,7 +11,7 @@ Traceability: `kggraph/Stage-2-Design-Phase/2.1-Agents-Catalog-Design-Traceabili
 
 This blueprint translates the approved product and architecture plan into concrete modules, contracts, flows, files, tests, and incremental implementation steps. It contains illustrative pseudocode only; names should be confirmed against repository conventions during implementation.
 
-**Current overlay (2026-08-24).** The lifecycle/catalog/chat/settings foundation, typed runtime, all three composites, Package Recommendation, Node Researcher, the DEC-055 authored evaluator, Package Builder, Researcher, sandboxed package backends, activation hardening, rich review, and dependency overlays ship through dev/97. Future-tense sequencing below is the original blueprint, not a current backlog. Concrete remainders are the twelve non-grandfathered raw prompt-caller cutovers, the package-seed reader lock, ProviderProfile/encrypted-secret T4, DEC-058 governance surfaces, and deployment gates `OQ-009`/`OQ-010`; explicitly demand-gated items remain optional.
+**Current overlay (2026-08-25).** The lifecycle/catalog/chat/settings foundation, typed runtime, all three composites, Package Recommendation, Node Researcher, the DEC-055 authored evaluator, Package Builder, Researcher, sandboxed package backends, activation hardening, rich review, and dependency overlays ship through dev/97; dev/98–dev/101 add the reference preview runner, package-seed reader locking, and backend-owned project package lockfile authority. Future-tense sequencing below is the original blueprint, not a current backlog. Concrete remainders are the twelve non-grandfathered raw prompt-caller cutovers, ProviderProfile/encrypted-secret T4, DEC-058 governance surfaces, and deployment gates `OQ-009`/`OQ-010`; explicitly demand-gated items remain optional.
 
 ## 1. Problem Statement
 
