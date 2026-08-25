@@ -19,7 +19,6 @@ export const DatasetInstallingCard: React.FC<{ pending: PendingInstall }> = ({ p
       aria-label={`Adding ${pending.label}`}
       style={{ opacity: 0.7 }}
     >
-      <div className={styles.cardAccent} />
       <div className={`${styles.cardAvatar} ${styles.cardAvatarButton}`}>
         <FontAwesomeIcon icon={faSpinner} spin aria-hidden="true" className={styles.cardIcon} />
       </div>

@@ -236,28 +236,6 @@
   margin-bottom: 16px;
 }
 
-.hubStatusChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  border-radius: 16px;
-  background: var(--curio-page-bg);
-  padding: 0 14px 0 12px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--curio-text-secondary);
-  flex-shrink: 0;
-}
-
-.hubStatusDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(47, 143, 74, 0.65);
-  flex-shrink: 0;
-}
-
 .hubSearch {
   flex: 1;
   min-width: 0;

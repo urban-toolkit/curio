@@ -61,9 +61,10 @@ const SURFACES: Surface[] = [
     prefixes: ["format"],
   },
   {
-    // Project-catalog DatasetCard avatar + accent bar.
+    // Project-catalog DatasetCard avatar. (No accent bar: a dataset card is the
+    // same shape as a package card, which never had one.)
     file: "components/packages/publishing/PackageCard.module.css",
-    prefixes: ["avatar", "accent"],
+    prefixes: ["avatar"],
   },
   {
     // Canvas dataset palette dropdown. A dark surface, so it renders the same
