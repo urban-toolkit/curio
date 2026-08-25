@@ -6,7 +6,7 @@ import {
   refreshPackageRegistry,
 } from "../../../api/packagesApi";
 import { useFlowContext } from "../../../providers/FlowProvider";
-import { setCurrentProjectPackages } from "../../../registry/projectPackagesStore";
+import { applyProjectLockfile, setCurrentProjectPackages } from "../../../registry/projectPackagesStore";
 import { draftFromInstalledPackagePayload } from "../../../utils/palettePackageFactoryDraft";
 import { toApiPayload } from "../../../pages/nodes/factoryDraftModel";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
@@ -120,7 +120,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     installedByDirRef.current = new Map(mine.packages.map((p) => [p.dirName, p]));
     setCatalogPublishAllowed(cap.catalogPublish);
     if (projLock && Array.isArray(projLock.packages)) {
-      setCurrentProjectPackages(projLock.packages);
+      // memo dev/101: when the backend's lockfile differs from the mirror,
+      // the palette/registry must follow — not only the drawer's pill.
+      if (applyProjectLockfile(projLock.packages)) {
+        await refreshPackageRegistry();
+      }
     }
   // userStoreDirs intentionally omitted — it's derived from `installed` which we set here.
   // eslint-disable-next-line react-hooks/exhaustive-deps
