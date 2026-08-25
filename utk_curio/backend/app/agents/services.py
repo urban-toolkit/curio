@@ -62,8 +62,13 @@ def _manifest_to_card(
     installed_in_project: bool,
     published: bool = False,
     publishable: bool = False,
+    requires_agents: list[dict] | None = None,
 ) -> dict:
-    """Serialize a definition to the camelCase card the drawer consumes."""
+    """Serialize a definition to the camelCase card the drawer consumes.
+
+    ``requires_agents`` (dev/106) is the server-resolved hard-dependency list
+    (``_requires_agents_rows``) so the drawer can disclose what an Install
+    adds without re-deriving it; absent → ``[]``."""
     return {
         "id": m.agent_id,
         "version": m.version,
@@ -79,7 +84,25 @@ def _manifest_to_card(
         "published": published,
         "publishable": publishable,
         "scope": scope,
+        "requiresAgents": list(requires_agents or []),
     }
+
+
+def _requires_agents_rows(user_key: str, m: AgentManifest, installed: set[str]) -> list[dict]:
+    """dev/106: one row per DIRECT hard dependency of *m* — ``{id, name, coord,
+    installedInProject, visible}``. ``coord``/``name`` fall back to the id when
+    the dependency is visible nowhere (the drawer says so; install refuses)."""
+    rows: list[dict] = []
+    for agent_id in m.requires_agents:
+        coord, dep = delegation.find_visible(user_key, agent_id)
+        rows.append({
+            "id": agent_id,
+            "name": dep.name if dep is not None else agent_id,
+            "coord": coord,
+            "visible": dep is not None,
+            "installedInProject": coord in installed if coord else False,
+        })
+    return rows
 
 
 def _resolve_definition(user_key: str, coord: str) -> AgentManifest | None:
@@ -257,6 +280,7 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object) -> 
         installed_in_project=False,
         published=publications.is_published(coord),
         publishable=True,
+        requires_agents=_requires_agents_rows(user_key, m, set()),
     )
 
 
@@ -282,6 +306,7 @@ def list_global_catalog(user_key: str, project_id: str | None = None) -> list[di
             imported=dir_name in imported,
             installed_in_project=dir_name in installed,
             published=published,
+            requires_agents=_requires_agents_rows(user_key, m, installed),
         )
         for dir_name, (m, published) in sorted(by_dir.items())
     ]
@@ -315,6 +340,7 @@ def list_my_imports(user_key: str, project_id: str | None = None) -> list[dict]:
                 installed_in_project=coord in installed,
                 published=publications.is_published(coord),
                 publishable=(m.provenance.trust == "imported"),
+                requires_agents=_requires_agents_rows(user_key, m, installed),
             )
         )
     return out
@@ -326,6 +352,7 @@ def list_installed_in_project(user_key: str, project_id: str) -> list[dict]:
     if spec is None:
         raise AgentServiceError(f"project {project_id!r} has no spec", 404)
     imported = imports.load_imported_agents(user_key)
+    installed = set(project_agents.project_agents(spec))
     out: list[dict] = []
     for coord in project_agents.project_agents(spec):
         m = _resolve_definition(user_key, coord)
@@ -333,7 +360,8 @@ def list_installed_in_project(user_key: str, project_id: str) -> list[dict]:
             continue
         out.append(
             _manifest_to_card(
-                m, scope="installed", imported=coord in imported, installed_in_project=True
+                m, scope="installed", imported=coord in imported, installed_in_project=True,
+                requires_agents=_requires_agents_rows(user_key, m, installed),
             )
         )
     return out
@@ -369,36 +397,80 @@ def _defaults_seed(user_key: str, coord: str) -> dict:
 
 
 def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
-    """Add *coord* to the project's lockfile (explicit; never auto-imports).
+    """Add *coord* AND its ``requiresAgents`` closure to the project's lockfile
+    (explicit; never auto-imports).
+
+    dev/106: the closure (``delegation.required_closure``) is resolved BEFORE
+    anything is written — a dependency visible nowhere refuses with 409 and
+    leaves the lockfile untouched. Every coord in the closure is materialized
+    and recorded in ONE spec write. This runs at the user's explicit Install
+    (drawer button or a reviewed ``project.install`` Apply), so `REQ-ORCH-001`
+    — the orchestrator never installs silently — is untouched.
 
     Also materializes the project-agent-default record (memo dev/23) — an
     independent per-project profile the settings screens later edit. Idempotent:
     reinstalling never resets an existing record.
+
+    Returns ``{"agents": lockfile, "installed": [coords newly added, root
+    first], "required": [the closure's coords]}``.
     """
-    _require_definition(user_key, coord)
-    _materialize_builtin(user_key, coord)
+    root = _require_definition(user_key, coord)
+    required, missing = delegation.required_closure(user_key, root)
+    if missing:
+        raise AgentServiceError(
+            f"{root.name} ({coord}) requires "
+            + ", ".join(missing)
+            + ", which " + ("is" if len(missing) == 1 else "are")
+            + " not available in the catalog or your imports — nothing was installed",
+            409,
+        )
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         raise AgentServiceError(f"project {project_id!r} has no spec", 404)
+    for c in [coord, *required]:
+        _materialize_builtin(user_key, c)
     current = project_agents.project_agents(spec)
+    added: list[str] = []
+    for c in [coord, *required]:
+        if c not in current and c not in added:
+            added.append(c)
     dirty = False
-    if coord not in current:
-        project_agents.set_project_agents(spec, current + [coord])
+    if added:
+        project_agents.set_project_agents(spec, current + added)
         dirty = True
-    if coord not in project_agents.agent_defaults(spec):
-        project_agents.materialize_defaults(spec, coord, _defaults_seed(user_key, coord))
-        dirty = True
+    for c in [coord, *required]:
+        if c not in project_agents.agent_defaults(spec):
+            project_agents.materialize_defaults(spec, c, _defaults_seed(user_key, c))
+            dirty = True
     if dirty:
         projects_storage.write_spec(user_key, project_id, spec)
-    return {"agents": project_agents.project_agents(spec)}
+    return {
+        "agents": project_agents.project_agents(spec),
+        "installed": added,
+        "required": required,
+    }
 
 
 def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
-    """Remove *coord* from the project's lockfile and drop its defaults record."""
+    """Remove *coord* from the project's lockfile and drop its defaults record.
+
+    dev/106: refused (409) while another INSTALLED template lists *coord*'s
+    agent in ``requiresAgents`` — the dependents are named. No cascade."""
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         raise AgentServiceError(f"project {project_id!r} has no spec", 404)
     current = project_agents.project_agents(spec)
+    dependents = delegation.required_by(user_key, current, coord) if coord in current else []
+    if dependents:
+        names = []
+        for d in dependents:
+            dm = _resolve_definition(user_key, d)
+            names.append(f"{dm.name} ({d})" if dm else d)
+        raise AgentServiceError(
+            f"{coord} is required by " + ", ".join(names)
+            + " — uninstall " + ("that agent" if len(names) == 1 else "those agents") + " first",
+            409,
+        )
     dirty = False
     if coord in current:
         project_agents.set_project_agents(spec, [c for c in current if c != coord])

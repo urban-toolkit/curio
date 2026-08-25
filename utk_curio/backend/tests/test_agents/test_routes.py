@@ -14,6 +14,20 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+def _drop_from_lockfile(user, project_id, coord):
+    """Simulate a pre-dev/106 project: remove *coord* from ``dataflow.agents``
+    directly (the API refuses uninstalling a required dependency)."""
+    from utk_curio.backend.app.agents import project_agents
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    key = _user_dir_key(user)
+    spec = projects_storage.read_spec(key, project_id)
+    project_agents.set_project_agents(
+        spec, [c for c in project_agents.project_agents(spec) if c != coord]
+    )
+    projects_storage.write_spec(key, project_id, spec)
+
+
 def _write_def(user, agent_id="agent.node-explainer", version="1.0.0"):
     """Materialize a valid agent definition in the user's FS store."""
     user_key = _user_dir_key(user)
@@ -173,6 +187,103 @@ class TestProjectInstall:
             headers=_auth(token),
         )
         assert r.status_code == 404
+
+    # ── dev/106: the requiresAgents closure ─────────────────────────────
+    DFB = "agent.dataflow-builder@1.0.0"
+    NCB = "agent.node-content-builder@1.0.0"
+
+    def test_installing_the_builder_installs_its_required_specialist_in_one_write(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        writes = []
+        real = projects_storage.write_spec
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.projects_storage.write_spec",
+            lambda *a, **k: (writes.append(1), real(*a, **k))[1],
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": self.DFB}, headers=_auth(token),
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+        body = r.get_json()
+        assert body["agents"] == [self.DFB, self.NCB]
+        assert body["installed"] == [self.DFB, self.NCB]
+        assert body["required"] == [self.NCB]
+        assert len(writes) == 1  # atomic: root + closure in one spec write
+        # The dependency's bytes are materialized (AC-5) — no import row added.
+        assert storage.load_installed_agent_definition(_user_dir_key(user), self.NCB) is not None
+        assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == []
+
+    def test_reinstall_with_satisfied_closure_is_idempotent(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
+        r = client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
+        assert r.status_code == 201
+        assert r.get_json()["installed"] == []
+        assert r.get_json()["agents"] == [self.DFB, self.NCB]
+
+    def test_dependency_already_installed_adds_only_the_root(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.NCB}, headers=_auth(token))
+        r = client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
+        assert r.get_json()["installed"] == [self.DFB]
+        assert sorted(r.get_json()["agents"]) == [self.DFB, self.NCB]
+
+    def test_unresolvable_dependency_409s_and_writes_nothing(self, client, user_and_token, tmp_curio, alice_project):
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        d = storage.user_agents_dir(key) / "agent.needy@1.0.0"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "manifest.json").write_text(json.dumps({
+            "id": "agent.needy", "name": "Needy", "category": "node", "version": "1.0.0",
+            "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
+            "compatibleTargets": [{"kind": "node", "requires": []}],
+            "delegatesTo": ["agent.node-content-builder", "agent.ghost"],
+            "requiresAgents": ["agent.node-content-builder", "agent.ghost"],
+            "provenance": {"publisher": "curio", "trust": "imported"},
+        }), encoding="utf-8")
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": "agent.needy@1.0.0"}, headers=_auth(token),
+        )
+        assert r.status_code == 409
+        assert "agent.ghost" in r.get_json()["error"]
+        assert "nothing was installed" in r.get_json()["error"]
+        listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
+        assert listed["agents"] == []  # not even the resolvable NCB landed
+
+    def test_uninstalling_a_required_dependency_409s_naming_the_dependent(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
+        r = client.delete(f"/api/agents/projects/{alice_project}/{self.NCB}", headers=_auth(token))
+        assert r.status_code == 409
+        assert "Dataflow Builder" in r.get_json()["error"]
+        # Parent first, then the dependency — no cascade either way.
+        assert client.delete(f"/api/agents/projects/{alice_project}/{self.DFB}", headers=_auth(token)).status_code == 200
+        listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
+        assert [a["dirName"] for a in listed["agents"]] == [self.NCB]
+        assert client.delete(f"/api/agents/projects/{alice_project}/{self.NCB}", headers=_auth(token)).status_code == 200
+
+    def test_catalog_cards_disclose_requires_agents_per_project(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        cat = client.get(f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)).get_json()["agents"]
+        dfb = next(a for a in cat if a["dirName"] == self.DFB)
+        assert dfb["requiresAgents"] == [{
+            "id": "agent.node-content-builder", "name": "Node Content Builder",
+            "coord": self.NCB, "visible": True, "installedInProject": False,
+        }]
+        ncb = next(a for a in cat if a["dirName"] == self.NCB)
+        assert ncb["requiresAgents"] == []
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.NCB}, headers=_auth(token))
+        cat = client.get(f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)).get_json()["agents"]
+        dfb = next(a for a in cat if a["dirName"] == self.DFB)
+        assert dfb["requiresAgents"][0]["installedInProject"] is True
+        installed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()["agents"]
+        assert installed[0]["requiresAgents"] == []
 
     def test_install_is_explicit_not_auto_import(self, client, user_and_token, tmp_curio, alice_project):
         # Installing into a project must NOT add the agent to My Imports (no chaining).
@@ -4858,6 +4969,10 @@ class TestSolve:
         att_id, calls = helper._setup(client, user, token, project_id, monkeypatch, replies=replies)
         if install_ncb:
             client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.NCB}, headers=_auth(token))
+        else:
+            # dev/106: installing the Builder now brings the NCB along; the
+            # missing-specialist state is a legacy/hand-edited lockfile.
+            _drop_from_lockfile(user, project_id, self.NCB)
         r = helper._run(client, token, project_id, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
         body = client.post(
