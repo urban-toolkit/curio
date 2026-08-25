@@ -1258,6 +1258,8 @@ Prefer repository abstractions that follow the Data Catalog's shared-catalog plu
 
 Private project/dataflow serialization stores project-template and attachment references, setting-binding references, and non-secret schema-defined agent inputs only—not policy bodies, locks, reservations/ledgers, prompt drafts, evaluation fixtures/results, audit records, provider secrets, transcript bodies, or runtime framework objects. Public sharing never serializes this private aggregate. The selected project's template repository is the sole AGENTS palette source; immutable artifacts remain retained separately by exact coordinate.
 
+*Current rule (dev/29/81/101): the project-spec agent sections (`agents`, `agentAttachments`, `agentDefaults`) and the dataset/package lockfiles (`dataflow.datasets`, `dataflow.packages`) are backend-owned on update — a canvas save that omits them cannot clobber them; explicitly sent values win, and load serves the effective package lockfile.*
+
 Transactions:
 
 - Account Import: stream to a private staging area; enforce media/archive, compressed/expanded bytes, file-count, expansion-ratio, canonical-path uniqueness, and regular-file-only limits; reject traversal, absolute paths, links, devices, FIFOs, and duplicate normalized names; validate schemas/digests/provenance; then atomically commit the artifact and `AccountImportedAgent` or remove staging completely. No project/publication record is written.
@@ -1474,6 +1476,8 @@ The `capabilities` array is semantic registry metadata. It answers what behavior
 | `agent.syntax-analysis-agent` | `code.syntax.analyze` | `syntax_analysis_prompt.txt` | `syntax_analysis_preamble.txt` | `codeContext` | Code node | Syntax findings with locations/severity. |
 | `agent.task-refresh-agent` | `workflow.plan.refresh` | `task_refresh_prompt.txt` | `default_preamble.txt` | `currentTask`, `keywords`, `dataflowContext` | Canvas | Revised task-plan proposal. |
 | `agent.keyword-binding-agent` | `workflow.keyword.bind` | `keywords_binding_prompt.txt` | `default_preamble.txt` | `keywords`, `dataflowContext` | Canvas/nodes | Keyword-to-node binding proposals. |
+
+*Current roster note (2026-08-25): this table is the prompt-backed subset. The shipped Global Catalog holds **21 built-ins** — these fourteen plus the three `DEC-034` composites (Node Builder dev/48, Dataset Finder dev/50, Dataflow Builder dev/52), Node Researcher (`DEC-053`, dev/67-4), Package Recommendation (`DEC-035`, dev/84), Package Builder (`DEC-059`, dev/89), and Researcher (`DEC-060`, dev/90). The consolidated table lives in dev/03 §"Complete shipped roster".*
 
 ### Current-call migration map
 

@@ -187,7 +187,7 @@ DEC-029 through DEC-032 (with DEC-033 superseded by DEC-041 — the Explanation 
 | RISK-ATTACH-001 | Attachment revision is mistaken for SemVer/publication, or source/profile changes silently retarget a private instance. | Stable `attachmentId`, concurrency-only revision, no artifact/share endpoints, and immutable execution pins for source/settings/prompt/provider facts. |
 | RISK-SHARE-002 | Sharing is out of scope (D-0 = B); agents reuse existing flow-sharing and add no new sharing mechanic. | The only invariant is that the feature introduces no agent-private data as a new shared surface (regression guard). |
 | RISK-EXPLAIN-001 | **Retired (`DEC-041`)** — this risk assumed the tab must be removed; it is intentionally retained. Identifier not reused. | — |
-| RISK-EXPLAIN-002 | The obsolete Explanation-tab removal (`DEC-033`) is reintroduced from a stale document and the tab or its direct path is deleted. | `DEC-041` supersession notes on every former removal instruction; retired-ID policy (memo `13`); a regression test asserting the Explanation tab renders. |
+| RISK-EXPLAIN-002 | The obsolete Explanation-tab removal (`DEC-033`) is reintroduced from a stale document and the tab or its direct path is deleted. | `DEC-041` supersession notes on every former removal instruction; retired-ID policy (memo `13`); a regression test asserting the Explanation tab renders *(recommended by `BL-P4-20260721-11`; not yet written — add when node-UI tests are next touched)*. |
 
 ## 5. Recommended Implementation Approach
 
@@ -340,6 +340,20 @@ The following thirteen source-backed prompt behaviors and one authored evaluator
 
 All except syntax analysis link `prompts/default_preamble.txt` as the system asset unless a reviewed manifest declares a different system prompt. Syntax analysis links `prompts/syntax_analysis_preamble.txt`. The 2026-07-16 inspection found no `evaluate_generated_content_prompt.txt`; that historical blocker was closed by `DEC-055`, and dev/86 ships the authored asset, manifest, report-only contract, and tests.
 
+### Complete shipped roster (21 built-ins)
+
+The fourteen prompt-backed packages above are the migration subset. The shipped Global Catalog holds **21 built-ins** — the fourteen above plus the seven below, whose full specifications live in their authorizing memos. This table matches `docs/AGENTS.md` and `docs/11`'s "twenty-one shipped built-ins".
+
+| Agent ID | Kind | Core capabilities / behavior | Primary hook | Authority |
+| --- | --- | --- | --- | --- |
+| `agent.node-builder` | Composite | Node authoring/composition over the capability substrate; digest-pinned review-before-apply. | Node/canvas | `DEC-034`, dev/48 |
+| `agent.dataset-finder` | Composite | Dataset search with reviewed dataset install and user-mediated external handoff (`DEC-047`). | Canvas | `DEC-034`, dev/50 |
+| `agent.dataflow-builder` | Composite (master orchestrator) | Plan/apply dataflow construction; Simulation Mode default (`DEC-054`); depth-1 delegation to the roster (`DEC-046`/`DEC-065`). | Canvas | `DEC-034`, dev/52 |
+| `agent.node-researcher` | Specialist | Verified node discovery/research through the egress chokepoint's web tools. | Node/canvas | `DEC-053`, dev/67-4 |
+| `agent.package-recommendation` | Specialist | `package.identify`/`package.recommend`; installs surface as reviewed `package.install` proposals. | Canvas | `DEC-035`, dev/84 |
+| `agent.package-builder` | Specialist | Authors/extends node packages as ONE reviewed `package.draft.apply` draft built by the isolated build service; never installs or publishes itself. | Canvas | `DEC-059`, dev/89 |
+| `agent.researcher` | Specialist | Policy-gated web research composed into reviewed note sequences; reuse → enlist → author ladder (`DEC-062`). | Canvas | `DEC-060`, dev/90 |
+
 Live fields such as installation state, publication state, and execution status must not be stored in the immutable manifest. They are joined into view models by application mappers. This corrects the conceptual shorthand in `11-agent-manifest-and-product-model.md` while preserving its UI mapping.
 
 ### Validation and compatibility
@@ -453,7 +467,7 @@ Capability flags include chat, streaming, tools, parallel tools, structured outp
 
 Provider errors normalize to stable codes: `credentials_missing`, `credentials_expired`, `model_not_found`, `capability_unsupported`, `egress_denied`, `destination_forbidden`, `rate_limited`, `resource_exhausted`, `timeout`, `cancelled`, `network`, `provider_unavailable`, and `invalid_response`. Retry only transient, idempotent operations with capped exponential backoff and jitter. Never retry a tool or mutation without its idempotency key.
 
-Provider profiles store non-secret metadata plus an opaque `secretRef`; secret material is encrypted/secret-managed, write-only through credential APIs, resolved only on the server, rotated independently, and never returned by read APIs. Custom remote base URLs permit approved schemes/ports only, resolve and revalidate DNS for every connection/redirect, and deny loopback, link-local, private-network, metadata-service, credential-bearing URL, and rebinding destinations. Explicitly configured local profiles use a separate administrator-controlled allowlist. Local unavailability surfaces an error and never causes implicit remote fallback.
+Provider profiles store non-secret metadata plus an opaque `secretRef`; secret material is encrypted/secret-managed, write-only through credential APIs, resolved only on the server, rotated independently, and never returned by read APIs. Custom remote base URLs permit approved schemes/ports only, resolve and revalidate DNS for every connection/redirect, and deny loopback, link-local, private-network, metadata-service, credential-bearing URL, and rebinding destinations. Explicitly configured local profiles use a separate administrator-controlled allowlist. Local unavailability surfaces an error and never causes implicit remote fallback. *(Current posture: this ProviderProfile/encrypted-secret model is the open T4 remainder — the legacy plaintext `llm_api_key` column persists until the one-time migration lands.)*
 
 ## 11. Reuse and Shared Abstractions
 
@@ -538,7 +552,7 @@ The implementation phase must inventory the repository again before moving files
 | `frontend/.../src/providers/LLMProvider.tsx` | `frontend/.../src/agents/providers/` | Move request/state behavior; expose a narrow agent client/context. Keep a temporary re-export only during migration. |
 | `frontend/.../src/components/LLMChat.tsx` and its stylesheet | `frontend/.../src/agents/components/chat/` | Move because the component is LLM/agent-specific; migrate toward unified attachment chat. |
 | LLM logic embedded in `WorkflowGoal.tsx`, `components/styles.tsx`, and `MainCanvas.tsx` | `src/agents/hooks`, `services`, and public commands | Extract raw prompt/request/orchestration behavior. Migrate `MainCanvas.tsx` flow-level `explanation_prompt` specifically to project-installed `agent.dataflow-explainer`, not the node-explanation workflow. |
-| `components/editing/NodeEditor.tsx` and `components/editing/NodeExplanation.tsx` | **No change (`DEC-041`)** — the Explanation tab, its nav/loading/error states, cache, and direct `single_box_explanation_prompt` request are retained as-is; the former removal task is cancelled and must not be reintroduced. An optional `Explain with Node Explainer` affordance may additionally open the standard install/attach/chat path. | Retention verified by a regression test that the tab renders (`RISK-EXPLAIN-002`). |
+| `components/editing/NodeEditor.tsx` and `components/editing/NodeExplanation.tsx` | **No change (`DEC-041`)** — the Explanation tab, its nav/loading/error states, cache, and direct `single_box_explanation_prompt` request are retained as-is; the former removal task is cancelled and must not be reintroduced. An optional `Explain with Node Explainer` affordance may additionally open the standard install/attach/chat path. | Retention guarded by the planned regression test that the tab renders (`RISK-EXPLAIN-002` — recommended by `BL-P4-20260721-11`, not yet written; add when node-UI tests are next touched). |
 | `components/packages/editing/NodeTemplateConfigModal.tsx`, `utils/canvasTemplateConfig.ts`, and `UniversalNode.tsx` explanation flags | **No change (`DEC-041`)** — `hasExplanation` authoring/UI behavior and propagation are retained. | Saved flags keep their current meaning; no migration. |
 | Agent catalog/palette/dock/attachment/refinement code introduced by this project | `src/agents/components`, `hooks`, `state`, `services` | Create directly in the feature module; do not place it in dataset/node menu trees. |
 | Agent cost/quota/resource settings, prompt quality/editor/audit UI, API clients, drafts, selectors, and authorization projections | `src/agents/settings/` | Create as one feature-owned modal system with six dedicated screens; only generic dialog/form/editor primitives stay shared. |
@@ -565,6 +579,7 @@ After each move, update all imports, package manifests, test mocks/fixtures, bui
 | User publications | Publication repository keyed by `publicationId`, eligible imported-agent ID, and exact coordinate |
 | Project templates/palette | `ProjectAgentTemplateRepository` keyed by `projectAgentTemplateId` and selected project/dataflow scope key |
 | Attached instances/config | Private project/dataflow attachment records keyed by stable `attachmentId` plus concurrency `revision`, referencing one project template |
+| Backend-owned project-spec sections | The backend preserves `agents`, `agentAttachments`, `agentDefaults` (dev/29), `dataflow.datasets` (dev/81), and `dataflow.packages` (dev/101) across canvas saves inside the spec write lock; a client save that omits them cannot clobber them, explicitly sent values win, and load serves the effective lockfile |
 | Sessions/transcripts | Server session/event store |
 | Runtime instances/status | Execution/event store plus lease-aware runtime coordinator; terminal and `interrupted` history persisted |
 | Provider/model config | Account provider-profile repository; encrypted secret vault/reference store |
@@ -582,6 +597,7 @@ After each move, update all imports, package manifests, test mocks/fixtures, bui
 ### Mutation and synchronization rules
 
 - Use entity-keyed query caches and mutation keys. Cancel/merge superseded reads and ignore responses older than the entity revision.
+- Canvas/project saves never author the backend-owned spec sections: `preserve_agent_state` and its dataset/package counterparts carry `agents`/`agentAttachments`/`agentDefaults`/`dataflow.datasets`/`dataflow.packages` forward when a client omits them (dev/29/81/101).
 - Optimistically show pending import/project-install/publish/attach rows only when rollback is deterministic; otherwise retain current content with an inline busy state.
 - Import/project-install/uninstall/publish/unpublish/attach/detach and settings draft/activate/release endpoints accept idempotency keys and expected revisions; no command invokes another lifecycle command.
 - Each settings screen queries only its own active/draft/inherited/effective read model. Dirty form/editor text remains local and account-scoped; prompt bodies are memory-only and never enter shared/global query caches, local storage, URLs, analytics, or transcripts.
