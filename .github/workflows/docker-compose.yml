@@ -124,6 +124,7 @@ jobs:
         run: docker compose -p curio-ci up -d
 
       - name: 🧪 Wait for services to become healthy
+        id: stack_healthy
         shell: bash
         run: |
           set -euo pipefail
@@ -214,11 +215,22 @@ jobs:
           path: allure-report
           retention-days: 30
 
+      # Both of these used to be skipped by any e2e failure, which is backwards:
+      # a red e2e run is exactly when you want to know whether the frontend still
+      # builds and its unit tests still pass. Gated on !cancelled() rather than
+      # always() so a cancelled run stops promptly instead of building an image
+      # nobody is waiting for.
       - name: Check frontend availability
+        # Unlike Jest below, this one does need the stack, so don't add a second
+        # red X when the containers never came up in the first place.
+        if: ${{ !cancelled() && steps.stack_healthy.outcome == 'success' }}
         run: |
           curl --fail http://localhost:8100 || (echo "Frontend not reachable" && exit 1)
 
       - name: Jest frontend unit tests
+        # Builds its own frontend_builder image and never touches the running
+        # stack, so this stands on its own no matter what happened above.
+        if: ${{ !cancelled() }}
         run: |
           docker build --target frontend_builder -t curio-frontend-test .
           docker run --rm curio-frontend-test npm test
