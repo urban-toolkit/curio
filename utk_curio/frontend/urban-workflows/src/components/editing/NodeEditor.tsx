@@ -77,7 +77,11 @@ function NodeEditor({
     disableWidgets,
 }: NodeEditorProps) {
     const [userCode, setUserCode] = useState<string>(""); // python or grammar with marks unresolved
-    const [defaultCode, setDefaultCode] = useState<string>("");
+    // Seed from the prop so the editors receive the real content on their
+    // first render — an initial "" here would read as an external update to
+    // GrammarEditor (whose empty model is "{}", not ""). Stays undefined for
+    // nodes with no content (dev/70).
+    const [defaultCode, setDefaultCode] = useState<string | undefined>(defaultValue);
     const [markersDirty, setMarkersDirty] = useState<boolean>(false); // make WidgetsEditor update replacedCode
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<boolean>(false); // code has to rerun every time button is pressed (having changes or not)

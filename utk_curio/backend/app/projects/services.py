@@ -460,8 +460,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         project_id=project_id,
     )
 
-    # Serialize the spec read-modify-write so a concurrent dataset auto-install
-    # (merge_dataflow_dataset_ref) or Play-All can't clobber freshly-installed
+    # Serialize the spec read-modify-write so a concurrent dataset mutation
+    # (replace_dataflow_datasets) or Play-All can't clobber freshly-installed
     # refs. Re-read existing_spec INSIDE the lock so we merge/preserve against
     # the latest on-disk spec, not the snapshot read before the lock.
     install_warnings: list = []
@@ -469,6 +469,47 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         existing_spec = storage.read_spec(ukey, project_id)
         effective_spec = data.spec if data.spec is not None else existing_spec
         spec_dirty = False
+        # The canvas save (TrillGenerator) does not serialize the backend-owned
+        # agent sections, so carry dataflow.agents / agentAttachments forward
+        # from the on-disk spec — otherwise a client save wipes installed agents
+        # and attachments. No-op on an outputs-only update (effective is existing).
+        if data.spec is not None:
+            from utk_curio.backend.app.agents.project_agents import preserve_agent_state
+            from utk_curio.backend.app.agents.attachments import prune_orphaned_attachments
+            from utk_curio.backend.app.agents.sessions import delete_session
+            from utk_curio.backend.app.datasets.application.ref_ownership import (
+                preserve_dataset_refs,
+            )
+            preserve_agent_state(effective_spec, existing_spec)
+            # ``dataflow.packages`` is backend-owned on update too (memo
+            # dev/101): the client's mirror of the lockfile could overwrite
+            # what a promotion or the drawer had just written. The on-disk
+            # effective lockfile (backfill included) is what survives.
+            from utk_curio.backend.app.packages.services import (
+                _installed_majors_by_pkg,
+            )
+            from utk_curio.backend.app.packages.spec_packages import (
+                preserve_project_packages,
+            )
+            preserve_project_packages(
+                effective_spec, existing_spec, _installed_majors_by_pkg(ukey),
+            )
+            # ``dataflow.datasets`` is backend-owned on update (dev/81 Fix 2):
+            # the on-disk section overwrites whatever the client sent, so a
+            # stale client mirror can neither resurrect an uninstalled ref nor
+            # drop a fresh install. (The client-sent section still seeds
+            # ``create()`` — Save a copy / trill import.)
+            preserve_dataset_refs(effective_spec, existing_spec)
+            # Drop attachments whose target node/edge was deleted on the canvas
+            # (the carried-forward list is pruned against the new node set).
+            pruned = prune_orphaned_attachments(effective_spec)
+            if pruned:
+                spec_dirty = True
+                # A transcript lives exactly as long as its attachment.
+                for rec in pruned:
+                    session_id = rec.get("sessionId")
+                    if isinstance(session_id, str):
+                        delete_session(ukey, project_id, session_id)
         if data.outputs is not None:
             output_refs = list(data.outputs)
             # Install into users/<user>/datasets/ and register lean refs in the spec.
@@ -483,13 +524,14 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         else:
             output_refs = _output_refs_from_manifest(existing_manifest)
 
-        # NOTE: computed dataset refs are created ONLY by an explicit install
-        # (the client tracks them in its own dataflow-datasets state and sends
-        # them back on save), so there is no longer a "ref the client never
-        # learned about" to carry forward. The old ``_preserve_persisted_computed_refs``
-        # step re-added refs whenever the account-store dir existed, which — now
-        # that uninstall keeps that dir — would resurrect an explicitly
-        # uninstalled ref. It is intentionally gone.
+        # NOTE: dataset refs are created ONLY by an explicit install through the
+        # dataset endpoints; on a client save the carry-forward above
+        # (``preserve_dataset_refs``) is the sole way refs survive. It cannot
+        # resurrect an uninstalled ref, because uninstall removes the ref from
+        # the very on-disk section being carried. The old
+        # ``_preserve_persisted_computed_refs`` step re-added refs whenever the
+        # account-store dir existed, which — now that uninstall keeps that dir —
+        # would resurrect an explicitly uninstalled ref. It is intentionally gone.
 
         # Prune dataset refs keyed on visualization/sink nodes — their output is a
         # passthrough of their input, so the ref just duplicates the upstream
@@ -517,9 +559,76 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                       dataset_install_warnings=install_warnings)
 
 
+def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
+    """The dataset endpoints' writer for ``spec.dataflow.datasets`` (dev/81/82).
+
+    Atomic read-modify-write: *mutate* receives the current refs under the
+    per-project spec lock and returns the list to persist (``None`` = no
+    change, nothing written). Bumps the project row's timestamp exactly like
+    :func:`update_project` — but only when something actually changed — so
+    install/uninstall/publish keep affecting "Recent" ordering without no-op
+    mutations churning it. Deliberately NOT a round-trip through
+    :func:`update_project`: that path carries the on-disk section forward on
+    every client save, which would immediately undo the very refs being
+    written here. Skips the manifest rewrite — the manifest carries
+    outputs/name/description only. Returns the resulting spec, or ``None``
+    when the project has no spec on disk.
+    """
+    project = repo.get_for_user(project_id, user.id)
+    ukey = _user_dir_key(user)
+    result = storage.mutate_dataflow_datasets(ukey, project_id, mutate)
+    if result is None:
+        return None
+    spec, changed = result
+    if changed:
+        repo.upsert_project(
+            user_id=user.id,
+            name=project.name,
+            folder_path=str(storage.project_dir(ukey, project_id)),
+            description=project.description,
+            thumbnail_accent=project.thumbnail_accent,
+            project_id=project_id,
+        )
+        db.session.commit()
+    return spec
+
+
+def replace_dataflow_datasets(user, project_id: str, refs: list) -> Optional[dict]:
+    """Whole-list variant of :func:`mutate_dataflow_datasets` (dev/81 Fix 2)."""
+    return mutate_dataflow_datasets(user, project_id, lambda _current: refs)
+
+
 # ---------------------------------------------------------------------------
 # Load (hydration)
 # ---------------------------------------------------------------------------
+
+def _with_effective_packages(spec, ukey: str, project_id: str):
+    """Serve the backend's EFFECTIVE lockfile in ``dataflow.packages`` (memo dev/101).
+
+    The frontend seeds its palette/registry mirror from the raw list it loads,
+    while every backend reader goes through ``get_project_lockfile`` (backfill
+    included). Two readers of one file gave two answers — a palette showing
+    zero packages while the drawer showed one. Normalising on read gives the
+    client the list the backend acts on. Only a list that is already present
+    is rewritten: a spec without the key stays without it, and a failure to
+    compute the lockfile degrades to the raw list — a load never 500s here.
+    """
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict) or not isinstance(dataflow.get("packages"), list):
+        return spec
+    from utk_curio.backend.app.packages.services import (
+        PackageServiceError,
+        get_project_lockfile,
+    )
+
+    try:
+        effective = sorted(get_project_lockfile(ukey, project_id))
+    except PackageServiceError:
+        return spec
+    if effective != dataflow["packages"]:
+        dataflow["packages"] = effective
+    return spec
+
 
 def load_project(user, project_id: str) -> dict:
     from utk_curio.backend.app.packages.services import (
@@ -548,6 +657,7 @@ def load_project(user, project_id: str) -> dict:
         ]
 
     hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
+    spec = _with_effective_packages(spec, ukey, project_id)
 
     db.session.commit()
     return {
@@ -579,6 +689,13 @@ def load_shared_project(project_id: str) -> dict:
     if spec is None:
         raise repo.NotFoundError(f"Project {project_id} not found")
 
+    # Rule 9 (DEC-032, memo dev/12): the shared surface must carry no
+    # agent-private data — strip the backend-owned agent sections (install
+    # lockfile, attachments incl. intents/titles/session ids, project
+    # defaults) from the served copy. The on-disk spec is untouched.
+    from utk_curio.backend.app.agents.project_agents import strip_agent_state
+    spec = strip_agent_state(spec)
+
     manifest = storage.read_manifest(ukey, project_id)
     output_refs: List[OutputRef] = []
     if manifest and "outputs" in manifest:
@@ -592,6 +709,7 @@ def load_shared_project(project_id: str) -> dict:
         ]
 
     hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
+    spec = _with_effective_packages(spec, ukey, project_id)
 
     detail = _to_detail(project, spec=spec, outputs=hydrated)
     # Don't leak server filesystem layout to shared-link visitors.

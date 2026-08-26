@@ -7,7 +7,10 @@ import {
 } from "../../../api/packagesApi";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
-import { setCurrentProjectPackages } from "../../../registry/projectPackagesStore";
+import {
+  applyProjectLockfile,
+  setCurrentProjectPackages,
+} from "../../../registry/projectPackagesStore";
 import { draftFromInstalledPackagePayload } from "../../../utils/palettePackageFactoryDraft";
 import { toApiPayload } from "../../../pages/nodes/factoryDraftModel";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
@@ -20,6 +23,7 @@ import { EnvNote } from "./EnvNote";
 import { DrawerFooter } from "./DrawerFooter";
 import { DrawerTab, SortMode } from "./packageTypes";
 import { sortPackages, matchesSearch } from "./packageUtils";
+import { restartNotice } from "../../../services/packageRestartCopy";
 import shell from "./CatalogDrawerShell.module.css";
 import styles from "./NodeCatalogDrawer.module.css";
 
@@ -60,6 +64,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const [installCandidate, setInstallCandidate] = useState<PackagePayload | null>(null);
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // dev/92 B-2: the restart-honesty line after an install that changed
+  // shared Python libraries (backend-declared, never inferred here).
+  const [restartNoticeText, setRestartNoticeText] = useState<string | null>(null);
   const installedByDirRef = useRef<Map<string, PackagePayload>>(new Map());
   // When Install auto-saves a brand-new dataflow, the React state update
   // for `projectId` doesn't always make it into `confirmCatalogInstall`'s
@@ -120,7 +127,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     installedByDirRef.current = new Map(mine.packages.map((p) => [p.dirName, p]));
     setCatalogPublishAllowed(cap.catalogPublish);
     if (projLock && Array.isArray(projLock.packages)) {
-      setCurrentProjectPackages(projLock.packages);
+      // memo dev/101: when the backend's lockfile differs from the mirror,
+      // the palette/registry must follow — not only the drawer's pill.
+      if (applyProjectLockfile(projLock.packages)) {
+        await refreshPackageRegistry();
+      }
     }
   // userStoreDirs intentionally omitted — it's derived from `installed` which we set here.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,6 +236,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       const result = await packagesApi.installToProject(
         effectiveProjectId, installCandidate.dirName,
       );
+      if (result.restartRecommended?.libs?.length) {
+        setRestartNoticeText(restartNotice(result.restartRecommended));
+      }
       // Keep the lockfile store in sync — palette filter reads this.
       setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
@@ -447,6 +461,19 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
           <div className={shell.scrollBody}>
             {unsavedBanner}
+            {restartNoticeText ? (
+              <div className={styles.noticeBanner} role="status">
+                <span className={styles.errorBannerText}>{restartNoticeText}</span>
+                <button
+                  type="button"
+                  className={styles.noticeBannerDismiss}
+                  aria-label="Dismiss restart notice"
+                  onClick={() => setRestartNoticeText(null)}
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
             {actionError ? (
               <div className={shell.errorBanner} role="alert">
                 <span className={shell.errorBannerText}>{actionError}</span>

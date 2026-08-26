@@ -321,6 +321,41 @@ test("buildDatasetLoaderCode reads parquet as a GeoDataFrame first, then falls b
   expect(code).toContain("return df");
 });
 
+const jsonDataset: DatasetCatalogItem = {
+  id: "computed.dataflow-1.node-a",
+  title: "Autark",
+  origin: "computed",
+  format: "json",
+  uri: "curio://datasets/computed.dataflow-1.node-a@1",
+  path: "/store/computed.dataflow-1.node-a@1/data/1786466491428_32e01db8.json.zlib",
+  consumerNodeIds: [],
+  updatedAt: "2026-08-11T00:00:00Z",
+  tags: ["json", "computed"],
+};
+
+test("buildDatasetLoaderCode reads json binary and tolerates zlib compression", () => {
+  // Computed dict/list outputs (autk-grammar pool wrappers) are stored as
+  // `.json.zlib` with `format: json`; the loader must decompress them while
+  // still reading plain user-imported .json files.
+  const code = buildDatasetLoaderCode(jsonDataset);
+  expect(code).toContain("import json");
+  expect(code).toContain("import zlib");
+  expect(code).toContain('with open(dataset_path, "rb") as f:');
+  expect(code).toContain("zlib.decompress(_raw)");
+  expect(code).toContain("except zlib.error:");
+  expect(code).toContain('data = json.loads(_raw.decode("utf-8"))');
+  expect(code).toContain("return data");
+  expect(code).not.toContain("json.load(f)");
+});
+
+test("mergeDatasetLoaderCode adds the zlib import once and is stable on re-apply", () => {
+  const first = mergeDatasetLoaderCode("", jsonDataset);
+  expect(first.match(/^import zlib$/gm)).toHaveLength(1);
+  // Re-applying the same dataset must not duplicate the loader block or imports.
+  const again = mergeDatasetLoaderCode(first, jsonDataset);
+  expect(again).toBe(first);
+});
+
 test("buildDatasetLoaderCode rebuilds a bundle into a tuple of parts", () => {
   const code = buildDatasetLoaderCode(bundleDataset);
   // Reads the bundle manifest and returns the parts as a tuple so the sandbox

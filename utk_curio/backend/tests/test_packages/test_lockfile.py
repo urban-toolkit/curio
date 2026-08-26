@@ -24,7 +24,9 @@ from utk_curio.backend.app.packages import defaults as defaults_io
 from utk_curio.backend.app.packages import services as packages_services
 from utk_curio.backend.app.packages.spec_packages import (
     dir_name_from_node_type,
+    preserve_project_packages,
     project_packages,
+    referencing_nodes,
     set_project_packages,
 )
 from utk_curio.backend.app.packages.storage import (
@@ -366,3 +368,199 @@ class TestHttpEndpoints:
             headers=_auth(token),
         )
         assert resp.status_code >= 400
+
+
+class TestRestartHonestyOnCatalogInstall:
+    """dev/92 B-2: the catalog path is an install authority too — its
+    response carries restartRecommended exactly when pip actually changed
+    shared libraries; a no-op/already-installed path stays silent."""
+
+    def test_pip_installed_libs_ride_the_response(self, app, user_and_token,
+                                                  alice_project, monkeypatch):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        monkeypatch.setattr(
+            packages_services, "_ensure_user_store_install",
+            lambda uk, dn: ["geo-sdk", "tiny-lib"],
+        )
+        result = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        assert result["restartRecommended"] == {"libs": ["geo-sdk", "tiny-lib"]}
+
+    def test_silent_when_nothing_actually_installed(self, app, user_and_token,
+                                                    alice_project):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        result = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        assert "restartRecommended" not in result  # UHVI declares no python deps
+        again = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        assert "restartRecommended" not in again
+
+
+class TestCatalogOverlayRouting:
+    """dev/97: the catalog authority routes through the SAME rule as promote
+    — overlay for backend-bearing packages, host portion only in the restart
+    signal."""
+
+    def test_backend_only_catalog_install_builds_overlay_no_restart(
+            self, app, user_and_token, alice_project, monkeypatch):
+        from types import SimpleNamespace
+
+        from utk_curio.backend.app.packages import backend_runtime, pip_runner
+        from utk_curio.backend.app.packages import services as svc
+
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        calls = {"overlay": None}
+        fake_manifest = SimpleNamespace(
+            python_deps={"tinylib": "1.0.0"},
+            backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
+            templates=[SimpleNamespace(engine="javascript", has_code=False)],
+            permissions=[],
+        )
+        monkeypatch.setattr(
+            svc, "install_packageage_from_directory",
+            lambda uk, src, replace=False: SimpleNamespace(manifest=fake_manifest))
+        monkeypatch.setattr(
+            svc, "_is_installed_in_user_store", lambda uk, dn: False)
+        monkeypatch.setattr(
+            "utk_curio.backend.app.packages.backend_runtime.record_entry_pin",
+            lambda uk, dn: None)
+        monkeypatch.setattr(
+            backend_runtime, "build_overlay",
+            lambda uk, dn, deps, on_line=None: calls.__setitem__("overlay", (dn, dict(deps)))
+            or {"libs": ["tinylib==1.0.0"], "bytes": 5})
+
+        def _never_host(deps, on_line=None):  # pragma: no cover
+            raise AssertionError("host pip must not run for overlay-only routing")
+
+        monkeypatch.setattr(pip_runner, "install_python_deps", _never_host)
+        result = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        assert calls["overlay"] == (UHVI_DIR, {"tinylib": "1.0.0"})
+        # Host portion empty → no restart notice (dev/92 narrowed by dev/97).
+        assert "restartRecommended" not in result
+
+
+# ---------------------------------------------------------------------------
+# memo dev/101 — the lockfile is backend-owned on update
+# ---------------------------------------------------------------------------
+
+class TestPreserveProjectPackages:
+    def test_disk_wins_over_the_client_mirror(self):
+        disk = {"dataflow": {"nodes": [], "packages": [UHVI_DIR]}}
+        client = {"dataflow": {"nodes": [], "packages": []}}
+        preserve_project_packages(client, disk)
+        assert client["dataflow"]["packages"] == [UHVI_DIR]
+
+    def test_client_cannot_add_what_disk_lacks(self):
+        disk = {"dataflow": {"nodes": [], "packages": []}}
+        client = {"dataflow": {"nodes": [], "packages": ["stale.tab@1"]}}
+        preserve_project_packages(client, disk)
+        assert client["dataflow"]["packages"] == []
+
+    def test_legacy_empty_list_with_nodes_becomes_explicit(self):
+        """The reported state: ``[]`` on disk, a node of the package's type on
+        the canvas. The carried-forward value is the EFFECTIVE lockfile, so the
+        next save writes it down instead of leaving the backfill implicit."""
+        disk = {"dataflow": {"nodes": [{"type": UHVI_TEMPLATE_REF}], "packages": []}}
+        client = {"dataflow": {"nodes": [{"type": UHVI_TEMPLATE_REF}], "packages": []}}
+        preserve_project_packages(client, disk)
+        assert client["dataflow"]["packages"] == [UHVI_DIR]
+
+    def test_no_dataflow_on_disk_leaves_the_client_value(self):
+        client = {"dataflow": {"nodes": [], "packages": ["fresh.pkg@1"]}}
+        preserve_project_packages(client, None)
+        assert client["dataflow"]["packages"] == ["fresh.pkg@1"]
+        preserve_project_packages(client, {"dataflow": "corrupt"})
+        assert client["dataflow"]["packages"] == ["fresh.pkg@1"]
+
+    def test_none_effective_is_a_no_op(self):
+        assert preserve_project_packages(None, {"dataflow": {}}) is None
+
+
+class TestReferencingNodes:
+    def test_versioned_and_unversioned_types_are_counted(self):
+        spec = {"dataflow": {"nodes": [
+            {"id": "a", "type": UHVI_TEMPLATE_REF},
+            {"id": "b", "type": "ai.urbanlab.uhvi/uhvi-load"},
+            {"id": "c", "type": "curio.builtin/data-loading@1"},
+            "garbage",
+        ]}}
+        assert referencing_nodes(spec, UHVI_DIR, {"ai.urbanlab.uhvi": [1]}) == ["a", "b"]
+        # Without a resolver the unversioned reference cannot be attributed.
+        assert referencing_nodes(spec, UHVI_DIR) == ["a"]
+
+    def test_nodes_without_ids_still_count(self):
+        spec = {"dataflow": {"nodes": [{"type": UHVI_TEMPLATE_REF}]}}
+        assert referencing_nodes(spec, UHVI_DIR) == ["#0"]
+
+    def test_no_dataflow_is_empty(self):
+        assert referencing_nodes(None, UHVI_DIR) == []
+        assert referencing_nodes({"dataflow": None}, UHVI_DIR) == []
+
+
+class TestUninstallRefusesWhileNodesUseThePackage:
+    """memo dev/101 D2 — the delete that silently did nothing."""
+
+    def _spec_with_uhvi_node(self, user_key, project_id):
+        spec = projects_storage.read_spec(user_key, project_id)
+        spec["dataflow"]["nodes"] = [
+            {"id": "n-uhvi", "type": UHVI_TEMPLATE_REF, "data": {}},
+        ]
+        projects_storage.write_spec(user_key, project_id, spec)
+
+    def test_service_refuses_with_the_node_count(self, app, user_and_token, alice_project):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        self._spec_with_uhvi_node(user_key, alice_project)
+
+        with pytest.raises(packages_services.PackageServiceError) as exc:
+            packages_services.uninstall_from_project(user_key, alice_project, UHVI_DIR)
+        assert exc.value.status == 409
+        assert "1 node on this canvas uses ai.urbanlab.uhvi@1" in str(exc.value)
+        # Nothing moved: lockfile intact, store copy intact.
+        assert projects_storage.read_spec(user_key, alice_project)["dataflow"]["packages"] == [UHVI_DIR]
+        assert (package_dir(user_key, UHVI_DIR) / "manifest.json").is_file()
+
+    def test_the_reported_state_is_refused_not_no_opped(self, app, user_and_token, alice_project):
+        """``[]`` on disk + a node of the package's type: before, uninstall
+        computed the backfilled set, wrote ``[]`` (already ``[]``), prune saw the
+        node, nothing happened, 200. Now it says why."""
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        spec = projects_storage.read_spec(user_key, alice_project)
+        spec["dataflow"]["nodes"] = [{"id": "n1", "type": UHVI_TEMPLATE_REF}, {"id": "n2", "type": UHVI_TEMPLATE_REF}]
+        spec["dataflow"]["packages"] = []  # the clobbered lockfile
+        projects_storage.write_spec(user_key, alice_project, spec)
+
+        with pytest.raises(packages_services.PackageServiceError) as exc:
+            packages_services.uninstall_from_project(user_key, alice_project, UHVI_DIR)
+        assert exc.value.status == 409
+        assert "2 nodes on this canvas use ai.urbanlab.uhvi@1 — delete them first" in str(exc.value)
+
+    def test_after_the_nodes_go_the_uninstall_succeeds(self, app, user_and_token, alice_project):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        self._spec_with_uhvi_node(user_key, alice_project)
+        with pytest.raises(packages_services.PackageServiceError):
+            packages_services.uninstall_from_project(user_key, alice_project, UHVI_DIR)
+
+        spec = projects_storage.read_spec(user_key, alice_project)
+        spec["dataflow"]["nodes"] = []
+        projects_storage.write_spec(user_key, alice_project, spec)
+        result = packages_services.uninstall_from_project(user_key, alice_project, UHVI_DIR)
+        assert result["packages"] == []
+        assert result["pruned"] == [UHVI_DIR]
+
+    def test_route_returns_409_with_the_message(self, client, user_and_token, alice_project):
+        user, token = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        self._spec_with_uhvi_node(user_key, alice_project)
+        resp = client.delete(
+            f"/api/packages/projects/{alice_project}/{UHVI_DIR}", headers=_auth(token),
+        )
+        assert resp.status_code == 409
+        assert "delete it first" in resp.get_json()["error"]

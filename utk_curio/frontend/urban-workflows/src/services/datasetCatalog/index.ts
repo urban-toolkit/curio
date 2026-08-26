@@ -1,5 +1,6 @@
 export * from "./datasetApplication";
 export * from "./datasetCatalogApi";
+export * from "./datasetCatalogCache";
 export * from "./datasetCatalogHooks";
 export * from "./datasetCatalogTypes";
 export * from "./datasetLoaderSnippets";

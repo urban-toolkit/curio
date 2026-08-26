@@ -21,3 +21,30 @@
 .overlayRoot {
     --curio-drawer-z: var(--curio-z-node-drawer);
 }
+
+/* dev/92 B-2: informational (non-error) banner — the restart-honesty line. */
+.noticeBanner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    margin: 0 0 16px;
+    background: rgba(80, 140, 255, 0.08);
+    border: 1px solid var(--curio-border-strong, #7a9cc6);
+    border-radius: var(--curio-radius-md);
+    color: var(--curio-text-primary);
+    font-size: var(--curio-font-size-md);
+    font-family: var(--curio-font-family);
+}
+
+.noticeBannerDismiss {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    margin: -2px -2px 0 0;
+}

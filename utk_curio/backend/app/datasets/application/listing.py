@@ -187,6 +187,15 @@ class CatalogListing:
                 if current_filename and installed_filename and current_filename != installed_filename:
                     item["needsReinstall"] = True
 
+        # NOTE: ``installed`` is derived ONLY from the dataflow's spec refs
+        # (``installed_ids`` / the legacy alias match above). An earlier
+        # ``_mark_user_store_computed_installs`` step also flagged rows whose
+        # legacy ``computed.<node>@1`` store dir merely existed on disk - a
+        # bridge from the auto-install era. Under the account-catalog model
+        # every saved computed output has a store dir, so disk existence means
+        # "available", never "installed"; the marker produced phantom installed
+        # rows whose Uninstall then 404d (no ref to remove).
+
         items = dedupe_items(items)
 
         # A computed dataset published to the hub keeps the title captured at

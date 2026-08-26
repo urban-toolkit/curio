@@ -1,5 +1,6 @@
 import React from "react";
 import type { PackagePayload, ResolveConflict } from "../../../api/packagesApi";
+import { describePackagePermission } from "../../../utils/packagePermissions";
 import styles from "./InstallPermissionsDialog.module.css";
 
 export interface InstallPermissionsDialogProps {
@@ -41,12 +42,16 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
           <>
             <p className={styles.depsTitle}>Permissions requested</p>
             <ul className={styles.permList}>
-              {pkg.permissions.map((perm) => (
-                <li key={perm} className={styles.permItem}>
-                  <span className={styles.permIcon}>●</span>
-                  {perm}
-                </li>
-              ))}
+              {pkg.permissions.map((perm) => {
+                const meaning = describePackagePermission(perm);
+                return (
+                  <li key={perm} className={styles.permItem}>
+                    <span className={styles.permIcon}>●</span>
+                    {perm}
+                    {meaning ? ` — ${meaning}` : ""}
+                  </li>
+                );
+              })}
             </ul>
           </>
         )}

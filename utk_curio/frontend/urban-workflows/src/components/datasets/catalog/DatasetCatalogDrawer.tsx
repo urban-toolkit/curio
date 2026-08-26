@@ -119,11 +119,13 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             closeAriaLabel="Close Data Catalog drawer"
           />
 
+          {/* Typed with the dataset sort contract ("recent" | "name") — the
+              values the backend actually documents (dev/74). */}
           <PackageSearchRow
             search={search}
             sort={sort}
             onSearchChange={(value) => startUiTransition(() => setSearch(value))}
-            onSortChange={(value) => setSort(value as DatasetSortMode)}
+            onSortChange={setSort}
             placeholder="Search datasets, publishers, tags…"
             sortAriaLabel="Sort datasets"
             sortOptions={[

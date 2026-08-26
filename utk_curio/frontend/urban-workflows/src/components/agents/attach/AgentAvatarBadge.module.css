@@ -1,0 +1,106 @@
+/* Shared agent avatar chip used both at a node's bottom edge (NodeAgentBadges)
+   and in the canvas dock (AgentDock) so canvas and node agents look identical
+   (per the concept). A white rounded chip with a category-tinted robot; a
+   hover ✕ detaches. */
+.badge {
+  position: relative;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  color: #3567c7; /* overridden by a category tint class */
+  padding: 0;
+}
+
+/* Selected agent: the app's standard blue focus border (same treatment used on
+   selected package cards / headers), so the clicked agent is clearly highlighted. */
+.badgeActive .avatar {
+  border-color: var(--curio-accent-sky-fg, #3567c7);
+  outline: 2px solid var(--curio-accent-sky-fg, #3567c7);
+  outline-offset: 1px;
+}
+
+.icon {
+  font-size: 16px;
+  color: inherit;
+}
+
+.detach {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: #1e1f23;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.badge:hover .detach,
+.badge:focus-within .detach {
+  opacity: 1;
+}
+
+/* macOS Dock-style name label below the chip, shown on hover/focus. */
+.tooltip {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  z-index: 20;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(20, 21, 25, 0.95);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+}
+
+/* Upward caret joining the label to the chip. */
+.tooltip::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-bottom-color: rgba(20, 21, 25, 0.95);
+}
+
+.badge:hover .tooltip,
+.badge:focus-within .tooltip {
+  opacity: 1;
+}
+
+/* Category tints (icon color; the chip stays white). */
+.tint_canvas   { color: #f2933f; }
+.tint_data     { color: #4caf72; }
+.tint_node     { color: #3567c7; }
+.tint_evaluate { color: #7b5bd6; }
+.tint_package  { color: #17a2b8; }
+.tint_default  { color: #3567c7; }

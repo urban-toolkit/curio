@@ -13,6 +13,7 @@ import {
   UserData,
 } from "../utils/authApi";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
+import { setRetentionDeclaration } from "../services/retentionCopy";
 import { Loading } from "../components/login/Loading";
 
 interface UserProviderProps {
@@ -121,6 +122,9 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         setSkipProjectPage(projectPageSkipped);
         setAllowGuest(Boolean(authEnabled && cfg?.allow_guest_login));
         setSharedGuestUsername(sharedGuestUsername);
+        // DEC-057 (dev/88): seed the deletion-confirmation copy with the
+        // operator's declared backup posture (undeclared stays undeclared).
+        setRetentionDeclaration((cfg as { retention?: unknown } | null)?.retention ?? null);
 
         const token = getToken();
 

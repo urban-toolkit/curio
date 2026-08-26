@@ -25,6 +25,7 @@ import {
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
+import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
@@ -346,7 +347,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         }
       }
       const confirmed = window.confirm(
-        `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just removed from this dataflow.${usageNote}`,
+        `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just removed from this dataflow. ${permanentDeletionNotice()}${usageNote}`,
       );
       if (!confirmed) return;
       setBusyId(dataset.id);

@@ -67,6 +67,7 @@ import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
 import { NodeCatalogDrawerProvider } from "./providers/NodeCatalogDrawerProvider";
+import { AgentsCatalogDrawerProvider } from "./providers/AgentsCatalogDrawerProvider";
 import { DatasetCatalogDrawerProvider } from "./providers/datasetCatalog";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
@@ -104,6 +105,7 @@ const MainCanvasRoute: React.FC = () => (
             components (UpMenu, PackagesPaletteDropdown), so scoping it here
             doesn't reduce reach. */}
         <NodeCatalogDrawerProvider>
+          <AgentsCatalogDrawerProvider>
           <DatasetCatalogDrawerProvider>
             <StarterProvider>
               <ProjectLoader>
@@ -115,6 +117,7 @@ const MainCanvasRoute: React.FC = () => (
               </ProjectLoader>
             </StarterProvider>
           </DatasetCatalogDrawerProvider>
+          </AgentsCatalogDrawerProvider>
         </NodeCatalogDrawerProvider>
       </FlowProvider>
     </CollaborationProvider>

@@ -153,34 +153,50 @@ class InstalledDatasetRepository:
     def remove_dataset_references(self, dataflow_id: str, dataset_id: str) -> bool:
         """Strip every reference to *dataset_id* from one dataflow's spec.
 
-        Removes the matching ``dataflow.datasets`` ref (preserving non-dict
-        junk) AND the id from each node's ``metadata.datasetRefs`` binding —
-        dropping the key when it empties — so a deleted dataset leaves no stale
-        canvas pill behind (#176). Persists via ``update_project`` like
-        :meth:`replace_refs`. Returns True when the spec changed.
+        Removes the matching ``dataflow.datasets`` ref AND the id from each
+        node's ``metadata.datasetRefs`` binding - dropping the key when it
+        empties - so a deleted dataset leaves no stale canvas pill behind
+        (#176). Returns True when the spec changed.
+
+        The two halves take different write paths on purpose. The refs list is
+        backend-owned (dev/81 Fix 2), so it goes through :meth:`mutate_refs`;
+        routing it through ``update_project`` would have the on-disk section
+        carried forward over the edit and silently undo the removal. Node
+        metadata is not backend-owned, so it still takes the whole-spec write.
+        Refs first: the later ``update_project`` then carries forward a section
+        that already has the ref gone.
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
         from utk_curio.backend.app.projects.schemas import ProjectUpdate
         from utk_curio.backend.app.projects import services as project_services
 
-        spec, _manifest = self._project_spec_and_manifest(dataflow_id)
-        dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
-        if not isinstance(dataflow, dict):
-            return False
-
         changed = False
 
-        refs = dataflow.get("datasets")
-        if isinstance(refs, list):
-            next_refs = [
+        # 1. The refs list, through the section writer.
+        hit: list[bool] = []
+
+        def _drop(refs: list[dict[str, Any]], _hit: list[bool] = hit):
+            kept = [
                 r for r in refs
                 if not (isinstance(r, dict) and dataset_id in (r.get("datasetId"), r.get("id")))
             ]
-            if len(next_refs) != len(refs):
-                dataflow["datasets"] = next_refs
-                changed = True
+            if len(kept) == len(refs):
+                return None
+            _hit.append(True)
+            return kept
 
+        self.mutate_refs(dataflow_id, _drop)
+        if hit:
+            changed = True
+
+        # 2. Node-level bindings, through the whole-spec write.
+        spec, _manifest = self._project_spec_and_manifest(dataflow_id)
+        dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+        if not isinstance(dataflow, dict):
+            return changed
+
+        nodes_changed = False
         for node in dataflow.get("nodes") or []:
             if not isinstance(node, dict):
                 continue
@@ -195,29 +211,37 @@ class InstalledDatasetRepository:
                 metadata["datasetRefs"] = next_bindings
             else:
                 metadata.pop("datasetRefs", None)
+            nodes_changed = True
+
+        if nodes_changed:
+            project_services.update_project(
+                self.user,
+                dataflow_id,
+                ProjectUpdate(spec=spec, outputs=None, name=None, description=None, thumbnail_accent=None),
+            )
             changed = True
 
-        if not changed:
-            return False
-        project_services.update_project(
-            self.user,
-            dataflow_id,
-            ProjectUpdate(spec=spec, outputs=None, name=None, description=None, thumbnail_accent=None),
-        )
-        return True
+        return changed
 
-    def replace_refs(self, dataflow_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
+    def mutate_refs(self, dataflow_id: str, mutate) -> dict[str, Any]:
+        """Atomically read-modify-write this dataflow's refs (dev/82).
+
+        *mutate* receives the current refs under the per-project spec lock and
+        returns the list to persist, or ``None`` for "no change". Dedicated
+        section writer (dev/81 Fix 2) - NOT an update_project round-trip: that
+        path carries the on-disk datasets section forward on every client save
+        (backend ownership) and would undo these refs. The callback must be a
+        pure list transform (it runs while the spec lock is held)."""
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
-        from utk_curio.backend.app.projects.schemas import ProjectUpdate
         from utk_curio.backend.app.projects import services as project_services
 
-        spec, _manifest = self._project_spec_and_manifest(dataflow_id)
-        dataflow = spec.setdefault("dataflow", {})
-        dataflow["datasets"] = refs
-        detail = project_services.update_project(
-            self.user,
-            dataflow_id,
-            ProjectUpdate(spec=spec, outputs=None, name=None, description=None, thumbnail_accent=None),
-        )
-        return detail.spec or spec
+        spec = project_services.mutate_dataflow_datasets(self.user, dataflow_id, mutate)
+        if spec is None:
+            raise DatasetCatalogError("Dataflow not found", 404)
+        return spec
+
+    def replace_refs(self, dataflow_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
+        """Whole-list variant of :meth:`mutate_refs` — for seeding/carry-over
+        writes where the caller does not depend on the prior list."""
+        return self.mutate_refs(dataflow_id, lambda _current: refs)

@@ -7,10 +7,12 @@ import DescriptionModal from './DescriptionModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
+import { behaviorDataView } from "../utils/behaviorDataView";
 import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvasTemplateConfig';
 import { useNodeState } from '../hook/useNodeState';
 import { HandleDef, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
+import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -60,7 +62,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const { adapter } = descriptor;
 
   const nodeState = useNodeState(data, descriptor.id);
-  const behavior = adapter.useNodeBehavior(data, nodeState);
+  // dev/90 A15: behaviors read content as data.code OR data.content — hand
+  // the hook the compat view (render-time only, never persisted).
+  const behavior = adapter.useNodeBehavior(behaviorDataView(data), nodeState);
   const edges = useEdges();
 
   const sendCode = behavior.sendCodeOverride ?? nodeState.sendCode;
@@ -120,7 +124,13 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         });
       }
     }
-  }, [output?.code]);
+    // Keyed on the OBJECT, not `output?.code`: a node that errors twice in a
+    // row (e.g. a merge re-triggered by Play with inputs still missing) keeps
+    // code === "error", and a code-keyed effect never re-fires — the run then
+    // hangs on the stall watchdog. setOutput always produces a fresh object,
+    // and signalNodeExecDone ignores nodes outside the active level, so
+    // duplicate signals are harmless (dev/64).
+  }, [output]);
 
   // Signal done on unmount if the node was still executing (e.g. deleted while running).
   useEffect(() => {
@@ -264,6 +274,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
 
         {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </NodeContainer>
+
+      {/* Agents attached to this node render as avatars at its bottom edge. */}
+      {!dashboardOn && <NodeAgentBadges nodeId={data.nodeId} />}
     </div>
   );
 });

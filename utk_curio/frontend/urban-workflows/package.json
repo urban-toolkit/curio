@@ -105,8 +105,20 @@
       "^assets/(.*)$": "<rootDir>/assets/$1"
     },
     "transform": {
-      "^.+\\.(ts|tsx)$": "babel-jest"
+      "^.+\\.(js|jsx|ts|tsx)$": [
+        "babel-jest",
+        {
+          "presets": [
+            "@babel/preset-env",
+            "@babel/preset-react",
+            "@babel/preset-typescript"
+          ]
+        }
+      ]
     },
+    "transformIgnorePatterns": [
+      "node_modules/(?!(react-markdown|remark-[^/]+|mdast-[^/]+|micromark[^/]*|unist-[^/]+|unified|bail|is-plain-obj|trough|vfile[^/]*|decode-named-character-reference|character-entities[^/]*|character-reference-invalid|is-alphanumerical|is-alphabetical|is-decimal|is-hexadecimal|property-information|hast-[^/]+|space-separated-tokens|comma-separated-tokens|trim-lines|devlop|html-url-attributes|ccount|escape-string-regexp|markdown-table|zwitch|longest-streak|estree-util-[^/]+|style-to-object|inline-style-parser)/)"
+    ],
     "testMatch": [
       "<rootDir>/src/tests/**/*.{ts,tsx}",
       "<rootDir>/src/**/*.{test,spec}.{ts,tsx}"

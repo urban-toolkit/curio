@@ -1,0 +1,30 @@
+/* Session token counter (memo dev/80) — right side of the chat status
+   strip. Same muted grammar as the status line; digits stay steady. */
+
+.counter {
+  flex: none;
+  font-size: 11px;
+  color: var(--curio-text-secondary, #8a8b93);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.live {
+  animation: tokenCounterPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tokenCounterPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live {
+    animation: none;
+  }
+}

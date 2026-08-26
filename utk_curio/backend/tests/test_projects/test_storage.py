@@ -2,6 +2,7 @@
 import json
 import pytest
 
+from utk_curio.backend.app.common import file_locks
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.projects.schemas import OutputRef
 
@@ -107,36 +108,91 @@ def test_delete_tree(tmp_curio):
     assert not d.exists()
 
 
-# ── merge_dataflow_dataset_ref (#144c) ──────────────────────────────────────
+# ── replace_dataflow_datasets (dev/81 Fix 2 section writer) ─────────────────
 
-def test_merge_dataflow_dataset_ref_missing_project(tmp_curio):
-    # No spec on disk → False, and no project dir is created as a side effect.
-    assert storage.merge_dataflow_dataset_ref("1", "proj-none", {"datasetId": "x"}) is False
+def test_replace_dataflow_datasets_missing_project(tmp_curio):
+    # No spec on disk → None, and no project dir is created as a side effect.
+    assert storage.replace_dataflow_datasets("1", "proj-none", [{"datasetId": "x"}]) is None
     assert not storage.project_dir("1", "proj-none").exists()
 
 
-def test_merge_dataflow_dataset_ref_upsert_and_append(tmp_curio):
-    storage.write_spec("1", "proj-merge", {"dataflow": {"datasets": []}})
+def test_replace_dataflow_datasets_replaces_only_the_section(tmp_curio):
+    """The writer swaps ``dataflow.datasets`` verbatim — replace, not merge —
+    and leaves every other spec section untouched."""
+    storage.write_spec("1", "proj-replace", {
+        "dataflow": {
+            "name": "keep-me",
+            "nodes": [{"id": "n1"}],
+            "edges": [],
+            "agents": [{"agentId": "it.urbanlab/example@1"}],
+            "datasets": [{"datasetId": "computed.a", "publishedToHub": True}],
+        },
+    })
 
-    # Append a new ref.
-    assert storage.merge_dataflow_dataset_ref(
-        "1", "proj-merge",
-        {"datasetId": "computed.a", "producerNodeId": "na", "dirName": "computed.a@1"},
-    ) is True
-    # Upsert (same datasetId) merges fields rather than duplicating.
-    assert storage.merge_dataflow_dataset_ref(
-        "1", "proj-merge",
-        {"datasetId": "computed.a", "producerNodeId": "na", "publishedToHub": True},
-    ) is True
-
-    refs = storage.read_spec("1", "proj-merge")["dataflow"]["datasets"]
-    assert len(refs) == 1
-    assert refs[0]["dirName"] == "computed.a@1"
-    assert refs[0]["publishedToHub"] is True
+    refs = [{"datasetId": "computed.b", "dirName": "computed.b@1"}]
+    spec = storage.replace_dataflow_datasets("1", "proj-replace", refs)
+    assert spec is not None
+    on_disk = storage.read_spec("1", "proj-replace")
+    assert on_disk["dataflow"]["datasets"] == refs  # old ref gone, no merge
+    assert on_disk["dataflow"]["name"] == "keep-me"
+    assert on_disk["dataflow"]["nodes"] == [{"id": "n1"}]
+    assert on_disk["dataflow"]["agents"] == [{"agentId": "it.urbanlab/example@1"}]
 
 
-def test_merge_dataflow_dataset_ref_concurrent_no_lost_update(tmp_curio):
-    """Concurrent upserts of distinct refs must all survive (no lost update)."""
+def test_replace_dataflow_datasets_creates_the_section(tmp_curio):
+    """A spec without a datasets section gains one."""
+    storage.write_spec("1", "proj-fresh", {"dataflow": {"nodes": [], "edges": []}})
+    refs = [{"datasetId": "imported.x1", "dirName": "imported.x1"}]
+    spec = storage.replace_dataflow_datasets("1", "proj-fresh", refs)
+    assert spec["dataflow"]["datasets"] == refs
+    assert storage.read_spec("1", "proj-fresh")["dataflow"]["datasets"] == refs
+
+
+# ── mutate_dataflow_datasets (dev/82 atomic read-modify-write) ───────────────
+
+def test_mutate_dataflow_datasets_missing_project(tmp_curio):
+    assert storage.mutate_dataflow_datasets("1", "proj-none", lambda refs: refs) is None
+    assert not storage.project_dir("1", "proj-none").exists()
+
+
+def test_mutate_dataflow_datasets_transforms_current_refs(tmp_curio):
+    """The callback receives the dict-filtered on-disk refs and its result is
+    persisted — the read and the write share one lock acquisition."""
+    storage.write_spec("1", "proj-mut", {"dataflow": {"datasets": [
+        {"datasetId": "computed.a"},
+        "malformed-row",  # non-dict residue must be filtered before the callback
+    ]}})
+
+    seen: list = []
+
+    def _mutate(refs):
+        seen.append(list(refs))
+        return refs + [{"datasetId": "computed.b"}]
+
+    spec, changed = storage.mutate_dataflow_datasets("1", "proj-mut", _mutate)
+    assert changed is True
+    assert seen == [[{"datasetId": "computed.a"}]]
+    assert [r["datasetId"] for r in spec["dataflow"]["datasets"]] == ["computed.a", "computed.b"]
+    on_disk = storage.read_spec("1", "proj-mut")["dataflow"]["datasets"]
+    assert [r["datasetId"] for r in on_disk] == ["computed.a", "computed.b"]
+
+
+def test_mutate_dataflow_datasets_none_means_no_write(tmp_curio):
+    """A ``None`` return skips the write entirely — the spec file is untouched."""
+    storage.write_spec("1", "proj-noop", {"dataflow": {"datasets": [{"datasetId": "d1"}]}})
+    spec_path = storage.project_dir("1", "proj-noop") / "spec.trill.json"
+    before = spec_path.read_bytes()
+
+    spec, changed = storage.mutate_dataflow_datasets("1", "proj-noop", lambda refs: None)
+    assert changed is False
+    assert spec["dataflow"]["datasets"] == [{"datasetId": "d1"}]
+    assert spec_path.read_bytes() == before
+
+
+def test_mutate_dataflow_datasets_concurrent_no_lost_update(tmp_curio):
+    """The dev/81 follow-up race: concurrent mutations appending DISTINCT refs
+    must all survive — the transform runs inside the lock, so no stale pre-lock
+    read can be written back over another writer's ref."""
     import threading
 
     storage.write_spec("1", "proj-conc", {"dataflow": {"datasets": []}})
@@ -146,9 +202,9 @@ def test_merge_dataflow_dataset_ref_concurrent_no_lost_update(tmp_curio):
 
     def worker(i: int) -> None:
         barrier.wait()  # maximize overlap of the read-modify-write windows
-        storage.merge_dataflow_dataset_ref(
+        storage.mutate_dataflow_datasets(
             "1", "proj-conc",
-            {"datasetId": f"computed.{i}", "producerNodeId": f"n{i}"},
+            lambda refs, _i=i: refs + [{"datasetId": f"computed.{_i}"}],
         )
 
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
@@ -248,8 +304,8 @@ def test_spec_write_lock_uses_msvcrt_when_fcntl_absent(tmp_curio, monkeypatch):
     """#144: on Windows (no fcntl) the lock must still take a cross-process
     msvcrt lock, not silently degrade to the in-process layer only."""
     fake = _FakeMsvcrt()
-    monkeypatch.setattr(storage, "fcntl", None)
-    monkeypatch.setattr(storage, "msvcrt", fake)
+    monkeypatch.setattr(file_locks, "fcntl", None)
+    monkeypatch.setattr(file_locks, "msvcrt", fake)
 
     with storage.spec_write_lock("1", "proj-win"):
         pass
@@ -268,8 +324,8 @@ def test_spec_write_lock_msvcrt_blocks_through_contention(tmp_curio, monkeypatch
     OSError after its ~10s window — must be retried until the region frees, not
     surfaced as an uncaught OSError (HTTP 500) out of the save."""
     fake = _FakeMsvcrt(fail_times=3)
-    monkeypatch.setattr(storage, "fcntl", None)
-    monkeypatch.setattr(storage, "msvcrt", fake)
+    monkeypatch.setattr(file_locks, "fcntl", None)
+    monkeypatch.setattr(file_locks, "msvcrt", fake)
 
     # Must NOT raise despite three timeouts before the region becomes free.
     with storage.spec_write_lock("1", "proj-win-contended"):

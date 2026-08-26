@@ -50,6 +50,7 @@ from utk_curio.backend.app.packages.manifest import (
     PackageManifest,
     load_packageage_manifest,
 )
+from utk_curio.backend.app.packages.locks import package_seed_lock
 from utk_curio.backend.app.packages.storage import list_user_packageages, package_dir
 
 
@@ -292,6 +293,9 @@ def _load_manifests(
 ) -> dict[str, PackageManifest]:
     """Load manifests by directory name. Skips malformed packages silently.
 
+    UNLOCKED core (memo dev/99): the caller must already hold the per-user
+    seed lock — :func:`resolve_for_project` and :func:`lockfile_for_user` do.
+
     ``overrides`` lets the caller point the resolver at an alternate
     manifest source for a given package dir name — e.g. the committed
     catalog fixture for a package the user hasn't installed yet (the
@@ -461,6 +465,29 @@ def resolve_for_project(
         the committed catalog fixture for a package the user has not
         installed yet. See :func:`_load_manifests` for the precedence.
     """
+    with package_seed_lock(user_key):
+        return resolve_for_project_unlocked(
+            user_key, project_packageages, overrides=overrides,
+        )
+
+
+def resolve_for_project_unlocked(
+    user_key: str,
+    project_packageages: list[str],
+    *,
+    overrides: dict[str, Path] | None = None,
+) -> ResolveResult:
+    """:func:`resolve_for_project` for a caller that ALREADY holds the
+    per-user seed lock (memo dev/99 §3.2).
+
+    The resolver reads the store twice — the pinned packages, then every
+    other installed package for transitive deps — and both reads must see the
+    same instant. A caller that has other store reads to make for the same
+    payload (the catalog probe in ``services.agent_resolve_report``, the
+    override discovery in the resolve routes) takes the lock once around all
+    of them and calls this; the lock is not reentrant, so calling
+    :func:`resolve_for_project` from inside it would deadlock.
+    """
     if not project_packageages:
         return ResolveResult(installed_packageages=(), python_deps={}, js_deps={})
 
@@ -501,5 +528,6 @@ def lockfile_for_user(user_key: str) -> dict[str, object]:
 
     Returns an empty lockfile when the user has no packages.
     """
-    names = [p.name for p in list_user_packageages(user_key)]
-    return resolve_for_project(user_key, names).to_lockfile()
+    with package_seed_lock(user_key):
+        names = [p.name for p in list_user_packageages(user_key)]
+        return resolve_for_project_unlocked(user_key, names).to_lockfile()

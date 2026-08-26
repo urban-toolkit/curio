@@ -57,6 +57,12 @@
   --curio-danger-bg: #FDF0EE;
   --curio-danger-border: #E8A79E;
   --curio-success-text: #2F8F4A;
+  /* Completes the status triad. A warning is not an error: the agent review
+     card distinguishes a blocking finding (danger) from an advisory one, and
+     collapsing them would erase a severity the UI deliberately shows. The
+     value is the amber already chosen for contrast on a light surface by
+     --curio-format-parquet-on-tint, so this names a role, not a new hue. */
+  --curio-warning-text: #996300;
 
   /* ── Typography ────────────────────────────────────────────────────── */
   --curio-font-family: Rubik, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;

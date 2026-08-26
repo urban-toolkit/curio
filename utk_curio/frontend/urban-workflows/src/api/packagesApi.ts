@@ -61,7 +61,11 @@ export interface PackageTemplatePayload {
   hasProvenance: boolean | null;
   /** Anchor id for the in-app tutorial system. */
   tutorialId: string | null;
+  /** dev/91: declared backend handler this template's Run invokes through
+   * the package backend sandbox (null/absent = ordinary execution). */
+  backendHandler?: string | null;
 }
+
 
 /** Package-relative coordinate (`packageId` + compatibility major). */
 export interface PackageLineageCoordPayload {
@@ -209,6 +213,9 @@ export interface ProjectPackagesResponse {
   pruned?: string[];
   /** Set on uninstall responses: defaults entries the prune sweep removed. */
   removedFromDefaults?: string[];
+  /** dev/92 B-2: present exactly when this install's pip step actually
+   * installed/changed shared libraries under the running server. */
+  restartRecommended?: { libs: string[] };
 }
 
 /** Per-project result row in a global (defaults) install response. */
@@ -530,3 +537,4 @@ export const packagesApi = {
 };
 
 export { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
+
