@@ -11,7 +11,7 @@ Playwright-based end-to-end tests that upload workflow JSON files into the Curio
 # full suite
 pytest utk_curio/backend/tests/test_frontend/
 
-# headed (watch the browser; required for AUTK fixtures to actually render — see below)
+# headed (watch the browser; required for AUTK fixtures to actually render, see below)
 pytest utk_curio/backend/tests/test_frontend/ --headed
 
 # use already-running servers (e.g. docker compose); the caller is responsible for
@@ -23,7 +23,7 @@ CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 
 Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes a minimal flag set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.
 
-There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU — which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
+There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU - which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
 
 `AUTK_GRAMMAR` is a `"grammar"` node (grammar/JSON editor + output tab) and exercises the full matrix: `test_node_type_and_content` checks the grammar editor; `test_node_execution` verifies each node reaches **Done**. Its grammar content (and any JavaScript/WGSL compute blocks) is excluded from the Python random-seed injection used by Python `CODE_TYPES` nodes.
 
@@ -38,7 +38,7 @@ These tests boot the **real** backend through `curio.py start`, so they must nev
   3. **wipes** any pre-existing `urban_workflow_test.db` and re-creates the schema via `flask db upgrade`.
 - A function-scoped autouse `e2e_clean_db` fixture truncates the mutable tables (`user`, `user_session`, `auth_attempt`, `project`, `exec_cache_entry`) between tests so hardcoded usernames like `e2etestuser`, `ownera`, `ownerb`, `prjtester` can be re-created fresh in every test.
 
-In other words: **every pytest invocation starts against an empty database**, and tests are independent of each other — the same isolation Django's test runner aims to provide.
+In other words: **every pytest invocation starts against an empty database**, and tests are independent of each other - the same isolation Django's test runner aims to provide.
 
 | Variable | Purpose |
 |---|---|
@@ -50,7 +50,7 @@ In other words: **every pytest invocation starts against an empty database**, an
 
 The SPA wraps `/projects` and `/workflow/:id?` in `RequireAuth`, so every E2E test needs an authenticated browser session before it can interact with those pages. Two reusable strategies live in [`utils.py`](utils.py); pick based on what the test is actually asserting.
 
-### Strategy A — drive the signup form (UI coverage)
+### Strategy A - drive the signup form (UI coverage)
 
 Use when the test's purpose is to exercise the real `/auth/signup` / `/auth/signin` pages, or when a test must hit the exact same code path a first-time user would. Helpers:
 
@@ -62,7 +62,7 @@ Use when the test's purpose is to exercise the real `/auth/signup` / `/auth/sign
 
 Used by `test_auth_flow.py`, `test_project_save_load.py`, `test_project_dirty_guard.py`, `test_project_ownership.py`.
 
-### Strategy B — DB stub (fast path)
+### Strategy B - DB stub (fast path)
 
 Use when auth is incidental setup rather than the subject of the test (e.g. `test_workflows.py`'s parametrized canvas checks, one signup per workflow class ≈ seconds saved). The browser session is prepared through test-only backend endpoints instead of the signup UI:
 
@@ -75,9 +75,9 @@ The blueprint lives in [`utk_curio/backend/app/testing/routes.py`](../../app/tes
 |---|---|
 | `stub_db_login(page, frontend_url, backend_url, *, username, name, password=…, project_name=None, project_spec=None)` | POSTs to `/api/testing/stub-login`, installs the returned token as the `session_token` cookie on `page.context`, and optionally seeds a project via `/api/testing/stub-project`. |
 | `install_session_cookie(page, frontend_url, token)` | Low-level: matches `js-cookie`'s defaults (path=`/`, host-only) so the SPA's `Cookies.get("session_token")` finds the same value. |
-| `stub_login_and_enter_workflow(page, frontend_url, backend_url, *, username, name, password=…, project_name="StubbedWorkflow", project_spec=None)` | Stubs user + empty project, installs the cookie, and navigates **directly** to `/workflow/<project_id>` — no `/auth/signup`, no `+ New Workflow` click. Used by the class-scoped `loaded_workflow` fixture. |
+| `stub_login_and_enter_workflow(page, frontend_url, backend_url, *, username, name, password=…, project_name="StubbedWorkflow", project_spec=None)` | Stubs user + empty project, installs the cookie, and navigates **directly** to `/workflow/<project_id>` - no `/auth/signup`, no `+ New Workflow` click. Used by the class-scoped `loaded_workflow` fixture. |
 
-The DB stub is strictly additive — Strategy A still works against the same test DB. Keep project-ownership / signup UI tests on Strategy A so regressions in the real auth flow still fail those tests.
+The DB stub is strictly additive - Strategy A still works against the same test DB. Keep project-ownership / signup UI tests on Strategy A so regressions in the real auth flow still fail those tests.
 
 **One footgun in the stub spec.** `_empty_spec()` sets a top-level `name` but no
 `dataflow.name`, so `loadParsedTrill` calls `setWorkflowName(undefined)` and the
@@ -276,7 +276,7 @@ test_frontend/
   utils.py                    # FrontendPage, upload_workflow, signup helpers, stub_* helpers
   test_alive.py               # smoke tests: backend, sandbox, frontend are live
   test_auth_flow.py           # signup → projects → signout → signin (UI path)
-  test_workflows.py           # TestWorkflowCanvas — DB-stubbed auth via loaded_workflow
+  test_workflows.py           # TestWorkflowCanvas - DB-stubbed auth via loaded_workflow
   test_project_save_load.py   # + New Workflow → save → reload (UI auth)
   test_project_dirty_guard.py # beforeunload guard on dirty canvas (UI auth)
   test_project_ownership.py   # two-user isolation via /api/projects (UI auth)

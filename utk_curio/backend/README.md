@@ -28,11 +28,11 @@ Any test that boots the real backend (Playwright/E2E suite under `tests/test_fro
 
 ### Test-only DB stub endpoints
 
-When `CURIO_TESTING=1`, `create_app` additionally registers [`app/testing/`](app/testing/routes.py) — a Flask blueprint exposing:
+When `CURIO_TESTING=1`, `create_app` additionally registers [`app/testing/`](app/testing/routes.py) - a Flask blueprint exposing:
 
-- `POST /api/testing/stub-login` — create-or-find a user, open a `UserSession`, return `{user, token}`.
-- `POST /api/testing/stub-project` — seed an empty `Project` owned by a user, return its `id`/`slug`.
+- `POST /api/testing/stub-login` - create-or-find a user, open a `UserSession`, return `{user, token}`.
+- `POST /api/testing/stub-project` - seed an empty `Project` owned by a user, return its `id`/`slug`.
 
-Both handlers re-guard on `CURIO_TESTING` at request time with `abort(404)`, so the blueprint is invisible to production builds even if accidentally imported. Playwright helpers in [`tests/test_frontend/utils.py`](tests/test_frontend/utils.py) (`stub_db_login`, `stub_login_and_enter_workflow`) use these to skip the signup UI for tests where auth is incidental setup — e.g. the parametrized `TestWorkflowCanvas` class. Tests whose subject *is* the auth UI (`test_auth_flow.py`, `test_project_save_load.py`, `test_project_ownership.py`, `test_project_dirty_guard.py`) still drive the real `/auth/signup` and `/auth/signin` forms via `signup_e2e_user` / `signup_and_enter_new_workflow`.
+Both handlers re-guard on `CURIO_TESTING` at request time with `abort(404)`, so the blueprint is invisible to production builds even if accidentally imported. Playwright helpers in [`tests/test_frontend/utils.py`](tests/test_frontend/utils.py) (`stub_db_login`, `stub_login_and_enter_workflow`) use these to skip the signup UI for tests where auth is incidental setup - e.g. the parametrized `TestWorkflowCanvas` class. Tests whose subject *is* the auth UI (`test_auth_flow.py`, `test_project_save_load.py`, `test_project_ownership.py`, `test_project_dirty_guard.py`) still drive the real `/auth/signup` and `/auth/signin` forms via `signup_e2e_user` / `signup_and_enter_new_workflow`.
 
 See [`tests/test_frontend/README.md`](tests/test_frontend/README.md) for the full contract.
