@@ -23,7 +23,7 @@ function card(over: Partial<AgentCard> = {}): AgentCard {
     published: false,
     publishable: false,
     requiresAgents: [],
-    scope: "global",
+    scope: "browse",
     ...over,
   };
 }

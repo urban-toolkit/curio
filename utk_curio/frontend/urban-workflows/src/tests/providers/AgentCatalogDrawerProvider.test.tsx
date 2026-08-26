@@ -18,28 +18,28 @@ jest.mock("../../api/agentsApi", () => ({
 }));
 
 import {
-  AgentsCatalogDrawerProvider,
-  useAgentsCatalogDrawerControls,
-} from "../../providers/AgentsCatalogDrawerProvider";
+  AgentCatalogDrawerProvider,
+  useAgentCatalogDrawerControls,
+} from "../../providers/AgentCatalogDrawerProvider";
 
 const Consumer: React.FC = () => {
-  const { openAgentsCatalogDrawer, isAgentsCatalogDrawerOpen } = useAgentsCatalogDrawerControls();
+  const { openAgentCatalogDrawer, isAgentCatalogDrawerOpen } = useAgentCatalogDrawerControls();
   return (
-    <button onClick={openAgentsCatalogDrawer}>
-      {isAgentsCatalogDrawerOpen ? "open" : "closed"} — toggle
+    <button onClick={openAgentCatalogDrawer}>
+      {isAgentCatalogDrawerOpen ? "open" : "closed"} — toggle
     </button>
   );
 };
 
 function renderProvider() {
   return render(
-    <AgentsCatalogDrawerProvider>
+    <AgentCatalogDrawerProvider>
       <Consumer />
-    </AgentsCatalogDrawerProvider>,
+    </AgentCatalogDrawerProvider>,
   );
 }
 
-describe("AgentsCatalogDrawerProvider", () => {
+describe("AgentCatalogDrawerProvider", () => {
   it("does not render the drawer until opened", () => {
     renderProvider();
     expect(screen.queryByRole("dialog", { name: "Agent Catalog" })).not.toBeInTheDocument();

@@ -304,7 +304,7 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object) -> 
     imports.add_imported_agent(user_key, coord)
     return _manifest_to_card(
         m,
-        scope="my-imports",
+        scope="imports",
         imported=True,
         installed_in_project=False,
         published=publications.is_published(coord),
@@ -331,7 +331,7 @@ def list_global_catalog(user_key: str, project_id: str | None = None) -> list[di
     return [
         _manifest_to_card(
             m,
-            scope="global",
+            scope="browse",
             imported=dir_name in imported,
             installed_in_project=dir_name in installed,
             published=published,
@@ -364,7 +364,7 @@ def list_my_imports(user_key: str, project_id: str | None = None) -> list[dict]:
         out.append(
             _manifest_to_card(
                 m,
-                scope="my-imports",
+                scope="imports",
                 imported=True,
                 installed_in_project=coord in installed,
                 published=publications.is_published(coord),

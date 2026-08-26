@@ -1,6 +1,6 @@
 /**
  * Apply→canvas bridge events (memo dev/48 §3.3) — the typed mirror of
- * ``agentsPaletteEvents.ts`` for agent-applied graph mutations.
+ * ``agentCatalogEvents.ts`` for agent-applied graph mutations.
  *
  * The apply endpoint mutates the SAVED spec; these events carry the applied
  * mutation to the LIVE React Flow canvas in the same user action, so the next

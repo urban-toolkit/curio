@@ -21,7 +21,7 @@ jest.mock("../../api/agentsApi", () => ({
 }));
 
 import { agentsApi } from "../../api/agentsApi";
-import { AgentsCatalogDrawer } from "../../components/agents/catalog/AgentsCatalogDrawer";
+import { AgentCatalogDrawer } from "../../components/agents/catalog/AgentCatalogDrawer";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 
@@ -41,7 +41,7 @@ function card(id: string, over: Record<string, unknown> = {}) {
     published: false,
     publishable: false,
     requiresAgents: [],
-    scope: "global",
+    scope: "browse",
     ...over,
   };
 }
@@ -49,7 +49,7 @@ function card(id: string, over: Record<string, unknown> = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   api.catalog.mockResolvedValue({ agents: [card("agent.node-explainer")] } as any);
-  api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent", { scope: "my-imports", imported: true })] } as any);
+  api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent", { scope: "imports", imported: true })] } as any);
   api.listProjectAgents.mockResolvedValue({ agents: [] } as any);
   api.installToProject.mockResolvedValue({ agents: [] } as any);
   api.uninstallFromProject.mockResolvedValue({ agents: [] } as any);
@@ -80,51 +80,51 @@ beforeEach(() => {
   } as any);
 });
 
-describe("AgentsCatalogDrawer", () => {
+describe("AgentCatalogDrawer", () => {
   it("is hidden (not accessible) when not presented", () => {
     // dev/43: the drawer stays mounted through the exit slide; while not
     // presented it is aria-hidden and pointer-inert, never abruptly removed.
     const { container } = render(
-      <AgentsCatalogDrawer presented={false} projectId="p1" pinned={false} onPinToggle={jest.fn()} />,
+      <AgentCatalogDrawer presented={false} projectId="p1" pinned={false} onPinToggle={jest.fn()} />,
     );
     expect(screen.queryByRole("dialog", { name: "Agent Catalog" })).not.toBeInTheDocument();
     const root = container.querySelector("[data-curio-agent-catalog-drawer]");
     expect(root).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("renders the three scopes and the global cards", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    expect(screen.getByText("Global Catalog")).toBeInTheDocument();
-    expect(screen.getByText("My Imports")).toBeInTheDocument();
-    expect(screen.getByText("Installed in this project")).toBeInTheDocument();
+  it("renders the three tabs and the browse cards", async () => {
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    expect(screen.getByText("Browse all")).toBeInTheDocument();
+    expect(screen.getByText("My imports")).toBeInTheDocument();
+    expect(screen.getByText("In dataflow")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Install" })).toBeInTheDocument();
   });
 
-  it("switching to My Imports fetches and shows Delete", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+  it("switching to My imports fetches and shows Delete", async () => {
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("My Imports"));
+    fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(api.listImports).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
   });
 
   it("Install disabled without a project", async () => {
-    render(<AgentsCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Install" })).toBeDisabled();
   });
 
-  it("shows Publish only for a publishable My Imports card and publishes on click", async () => {
+  it("shows Publish only for a publishable My imports card and publishes on click", async () => {
     api.listImports.mockResolvedValue({
       agents: [
-        card("agent.my-custom", { scope: "my-imports", imported: true, publishable: true }),
-        card("agent.node-explainer", { scope: "my-imports", imported: true, publishable: false }),
+        card("agent.my-custom", { scope: "imports", imported: true, publishable: true }),
+        card("agent.node-explainer", { scope: "imports", imported: true, publishable: false }),
       ],
     } as any);
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    fireEvent.click(screen.getByText("My Imports"));
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(screen.getByText("my-custom")).toBeInTheDocument());
     // Exactly one Publish control — the built-in card (publishable:false) shows none.
     const publishBtns = screen.getAllByRole("button", { name: /publish/i });
@@ -134,7 +134,7 @@ describe("AgentsCatalogDrawer", () => {
   });
 
   it("clicking Install calls the install endpoint", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Install" }));
     await waitFor(() =>
@@ -155,7 +155,7 @@ describe("AgentsCatalogDrawer", () => {
         }),
       ],
     } as any);
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("Dataflow Builder")).toBeInTheDocument());
     expect(screen.getByText(/Requires:/)).toBeInTheDocument();
     expect(screen.getByText("Node Content Builder (not installed)")).toBeInTheDocument();
@@ -179,7 +179,7 @@ describe("AgentsCatalogDrawer", () => {
         }),
       ],
     } as any);
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("Dataflow Builder")).toBeInTheDocument());
     expect(screen.getByText("Node Content Builder ✓")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Install" })).toBeInTheDocument();
@@ -192,8 +192,8 @@ describe("AgentsCatalogDrawer", () => {
     api.uninstallFromProject.mockRejectedValue(
       new Error("agent.node-content-builder@1.0.0 is required by Dataflow Builder (agent.dataflow-builder@1.0.0) — uninstall that agent first"),
     );
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    fireEvent.click(screen.getByText("Installed in this project"));
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    fireEvent.click(screen.getByText("In dataflow"));
     await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
     await waitFor(() =>
@@ -203,7 +203,7 @@ describe("AgentsCatalogDrawer", () => {
 
   it("header carries the Pin and a Close, like the other catalog drawers", async () => {
     const onPinToggle = jest.fn();
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={onPinToggle} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={onPinToggle} />);
     const pin = screen.getByRole("button", { name: "Pin drawer open" });
     expect(pin).toHaveAttribute("aria-pressed", "false");
     // The drawer used to omit this, on the grounds that the other catalog
@@ -219,7 +219,7 @@ describe("AgentsCatalogDrawer", () => {
   });
 
   it("a pinned roster header exposes Unpin", () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned onPinToggle={jest.fn()} />);
     expect(screen.getByRole("button", { name: "Unpin drawer" })).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -227,8 +227,8 @@ describe("AgentsCatalogDrawer", () => {
     api.listProjectAgents = jest.fn().mockResolvedValue({
       agents: [card("agent.chat-agent", { scope: "installed", installedInProject: true })],
     } as any);
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    fireEvent.click(screen.getByText("Installed in this project"));
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    fireEvent.click(screen.getByText("In dataflow"));
     await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
     const cog = screen.getByRole("button", { name: /project agent settings/i });
     expect(cog).toBeEnabled();
@@ -238,24 +238,24 @@ describe("AgentsCatalogDrawer", () => {
     );
   });
 
-  it("global and My Imports scopes show no settings cog", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+  it("the browse and My imports tabs show no settings cog", async () => {
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: /project agent settings/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("My Imports"));
+    fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: /project agent settings/i })).not.toBeInTheDocument();
   });
 
   it("the roster header's Agent settings cog opens the account scope (dev/24)", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /agent settings/i }));
     await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
   });
 
   it("the footer Import agent button opens the upload modal", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Import agent" }));
     await waitFor(() =>
@@ -264,13 +264,13 @@ describe("AgentsCatalogDrawer", () => {
   });
 });
 
-describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () => {
+describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => {
   it("a previously visited tab renders its cache instantly — no Loading reset", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("My Imports"));
+    fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Global Catalog"));
+    fireEvent.click(screen.getByText("Browse all"));
     // Cached rows are visible immediately; no Loading… flash, no blanking.
     expect(screen.getByText("node-explainer")).toBeInTheDocument();
     expect(screen.queryByText("Loading…")).toBeNull();
@@ -280,28 +280,28 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
     api.listImports.mockResolvedValue({
       agents: [
         card("agent.node-content-builder", {
-          scope: "my-imports",
+          scope: "imports",
           imported: true,
           installedInProject: true,
         }),
       ],
     } as any);
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("My Imports"));
+    fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Uninstall" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
   });
 
   it("My Imports is fetched with the open project's id (lockfile truth)", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    fireEvent.click(screen.getByText("My Imports"));
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(api.listImports).toHaveBeenCalledWith("p1"));
   });
 
   it("a lifecycle action refreshes every scope so all tabs agree", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     api.catalog.mockClear();
     api.listImports.mockClear();
@@ -316,13 +316,13 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
   });
 
   it("a refresh error keeps the cached rows (banner over content)", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     api.listImports.mockRejectedValue(new Error("network down"));
-    fireEvent.click(screen.getByText("My Imports"));
+    fireEvent.click(screen.getByText("My imports"));
     // First visit fails → error banner; switch back: Global cache intact.
     await waitFor(() => expect(screen.getByText("network down")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Global Catalog"));
+    fireEvent.click(screen.getByText("Browse all"));
     expect(screen.getByText("node-explainer")).toBeInTheDocument();
   });
 
@@ -330,7 +330,7 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
     api.catalog.mockResolvedValue({
       agents: [card("agent.node-explainer"), card("agent.dataset-finder", { category: "data" })],
     } as any);
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     const input = screen.getByPlaceholderText("Search agents, publishers, tags…");
     fireEvent.change(input, { target: { value: "explainer" } });
@@ -341,7 +341,7 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
   });
 
   it("a no-match query shows the search-specific empty message (dev/68)", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     fireEvent.change(screen.getByPlaceholderText("Search agents, publishers, tags…"), {
       target: { value: "zzz-no-such-agent" },
@@ -355,7 +355,7 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
     api.catalog.mockResolvedValue({
       agents: [card("agent.zeta-agent"), card("agent.alpha-agent")],
     } as any);
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("zeta-agent")).toBeInTheDocument());
     const names = () =>
       screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
@@ -368,11 +368,11 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
   });
 
   it("the search query persists across scope tab switches (dev/68)", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     const input = screen.getByPlaceholderText("Search agents, publishers, tags…");
     fireEvent.change(input, { target: { value: "chat" } });
-    fireEvent.click(screen.getByText("My Imports"));
+    fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
     expect(input).toHaveValue("chat");
   });
@@ -382,7 +382,7 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
       agents: [card("agent.node-explainer"), card("agent.dataset-finder", { category: "data" })],
     } as any);
     const { container } = render(
-      <AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />,
+      <AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />,
     );
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     const avatars = container.querySelectorAll(".cardAvatar");
@@ -404,10 +404,10 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
     api.catalog
       .mockImplementationOnce(() => slow as any)
       .mockResolvedValue({ agents: [card("agent.fresh-agent")] } as any);
-    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    fireEvent.click(screen.getByText("My Imports"));
+    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Global Catalog"));
+    fireEvent.click(screen.getByText("Browse all"));
     await waitFor(() => expect(screen.getByText("fresh-agent")).toBeInTheDocument());
     // The slow FIRST response lands late: it must be dropped, not repainted.
     await act(async () => {

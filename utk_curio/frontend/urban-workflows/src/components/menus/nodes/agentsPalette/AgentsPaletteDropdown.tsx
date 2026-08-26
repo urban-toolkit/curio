@@ -3,8 +3,8 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronDown, faChevronUp, faRobot } from "@fortawesome/free-solid-svg-icons";
 import { agentsApi, type AgentCard } from "../../../../api/agentsApi";
 import { useFlowContext } from "../../../../providers/FlowProvider";
-import { useAgentsCatalogDrawerControls } from "../../../../providers/AgentsCatalogDrawerProvider";
-import { AGENTS_PALETTE_REFRESH_EVENT } from "../../../../utils/agentsPaletteEvents";
+import { useAgentCatalogDrawerControls } from "../../../../providers/AgentCatalogDrawerProvider";
+import { AGENT_CATALOG_REFRESH_EVENT } from "../../../../utils/agentCatalogEvents";
 import { PaletteAccordion } from "../paletteAccordion";
 import { TOOLS_PALETTE_DROPDOWN_ATTR } from "../toolsPaletteDismiss";
 import { AgentPaletteRow } from "./AgentPaletteRow";
@@ -23,8 +23,8 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
   const [agents, setAgents] = useState<AgentCard[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
   const { projectId } = useFlowContext();
-  const { openAgentsCatalogDrawer, isAgentsCatalogDrawerOpen } =
-    useAgentsCatalogDrawerControls();
+  const { openAgentCatalogDrawer, isAgentCatalogDrawerOpen } =
+    useAgentCatalogDrawerControls();
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -45,8 +45,8 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
 
   useEffect(() => {
     const onRefresh = () => load();
-    window.addEventListener(AGENTS_PALETTE_REFRESH_EVENT, onRefresh);
-    return () => window.removeEventListener(AGENTS_PALETTE_REFRESH_EVENT, onRefresh);
+    window.addEventListener(AGENT_CATALOG_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(AGENT_CATALOG_REFRESH_EVENT, onRefresh);
   }, [load]);
 
   // Escape closes — but let the catalog drawer own Escape while it is open so
@@ -54,11 +54,11 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
   useEffect(() => {
     if (!open) return;
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape" && !isAgentsCatalogDrawerOpen) setOpen(false);
+      if (ev.key === "Escape" && !isAgentCatalogDrawerOpen) setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, isAgentsCatalogDrawerOpen]);
+  }, [open, isAgentCatalogDrawerOpen]);
 
   // No outside-click dismissal, deliberately: ToolsMenu owns a single
   // `activePalette`, so the Datasets/Packages palettes close only when their
@@ -68,8 +68,8 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
 
   const total = agents.length;
   const openDrawer = useCallback(() => {
-    openAgentsCatalogDrawer();
-  }, [openAgentsCatalogDrawer]);
+    openAgentCatalogDrawer();
+  }, [openAgentCatalogDrawer]);
 
   return (
     <div

@@ -11,7 +11,7 @@ jest.mock("../../api/agentsApi", () => ({
 
 import { agentsApi } from "../../api/agentsApi";
 import { useAgentAttachments } from "../../components/agents/attach/useAgentAttachments";
-import { AGENT_DOCK_REFRESH_EVENT } from "../../utils/agentsPaletteEvents";
+import { AGENT_DOCK_REFRESH_EVENT } from "../../utils/agentCatalogEvents";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 

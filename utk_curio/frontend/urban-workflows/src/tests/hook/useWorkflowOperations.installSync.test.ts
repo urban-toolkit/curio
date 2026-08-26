@@ -41,7 +41,7 @@ import { useWorkflowOperations } from "../../hook/useWorkflowOperations";
 import { projectsApi } from "../../api/projectsApi";
 import { TrillGenerator } from "../../TrillGenerator";
 import { DATASET_CATALOG_REFRESH_EVENT } from "../../services/datasetCatalog/datasetCatalogApi";
-import { AGENT_DOCK_REFRESH_EVENT } from "../../utils/agentsPaletteEvents";
+import { AGENT_DOCK_REFRESH_EVENT } from "../../utils/agentCatalogEvents";
 
 const makeDeps = () =>
   ({

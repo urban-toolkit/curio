@@ -15,7 +15,7 @@ import {
   type AgentUsage,
 } from "../../../api/agentsApi";
 import { notifyAgentCanvasMutation } from "../../../utils/agentCanvasEvents";
-import { notifyAgentsPaletteRefresh } from "../../../utils/agentsPaletteEvents";
+import { notifyAgentCatalogRefresh } from "../../../utils/agentCatalogEvents";
 import { useAgentAttachments, type AgentAttachmentsState } from "./useAgentAttachments";
 import type { AgentRunStatus } from "./agentRunStatus";
 
@@ -447,7 +447,7 @@ export const AgentAttachmentsProvider: React.FC<{
         }
         // dev/106: a reviewed project.install landed a template (and its
         // required closure) in the lockfile — the AGENTS palette repaints.
-        if (result.installedCoord) notifyAgentsPaletteRefresh();
+        if (result.installedCoord) notifyAgentCatalogRefresh();
         // dev/105 A3: callers that queue follow-ups (the package install
         // review) read the result to walk them one at a time.
         return result;

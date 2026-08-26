@@ -113,7 +113,7 @@ class TestGlobalCatalog:
         # + the authored evaluator (DEC-055) + the package builder (dev/89)
         # + the notes researcher (dev/90).
         assert len(agents) == 21
-        assert all(a["scope"] == "global" and a["provenance"]["trust"] == "built-in" for a in agents)
+        assert all(a["scope"] == "browse" and a["provenance"]["trust"] == "built-in" for a in agents)
         ids = {a["id"] for a in agents}
         assert "agent.node-explainer" in ids
         assert "agent.node-builder" in ids

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { agentsApi, type AgentAttachment, type AgentTarget } from "../../../api/agentsApi";
-import { AGENT_DOCK_REFRESH_EVENT, notifyAgentDockRefresh } from "../../../utils/agentsPaletteEvents";
+import { AGENT_DOCK_REFRESH_EVENT, notifyAgentDockRefresh } from "../../../utils/agentCatalogEvents";
 
 /**
  * Self-contained hook for a project's agent attachments: the dock reads them,

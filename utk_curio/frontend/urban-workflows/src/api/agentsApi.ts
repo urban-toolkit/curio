@@ -31,7 +31,9 @@ export interface AgentCard {
   published: boolean;
   /** Eligible for Publish: an owned, store-backed definition (not a built-in). */
   publishable: boolean;
-  scope: "global" | "my-imports" | "installed";
+  /** Which list this card came from. Same vocabulary as the drawer's tabs
+   *  (AgentScope) - one set of words for one idea. */
+  scope: "browse" | "imports" | "installed";
   /** dev/106: server-resolved hard dependencies (``requiresAgents``) — what an
    * Install adds alongside this agent. ``[]`` for every leaf agent. */
   requiresAgents: AgentRequirement[];

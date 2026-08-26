@@ -6,10 +6,10 @@ const mockOpenDrawer = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ projectId: "p1" }),
 }));
-jest.mock("../../providers/AgentsCatalogDrawerProvider", () => ({
-  useAgentsCatalogDrawerControls: () => ({
-    openAgentsCatalogDrawer: mockOpenDrawer,
-    isAgentsCatalogDrawerOpen: false,
+jest.mock("../../providers/AgentCatalogDrawerProvider", () => ({
+  useAgentCatalogDrawerControls: () => ({
+    openAgentCatalogDrawer: mockOpenDrawer,
+    isAgentCatalogDrawerOpen: false,
   }),
 }));
 jest.mock("../../api/agentsApi", () => ({
@@ -19,9 +19,9 @@ jest.mock("../../api/agentsApi", () => ({
 import { agentsApi } from "../../api/agentsApi";
 import { AgentsPaletteDropdown } from "../../components/menus/nodes/agentsPalette/AgentsPaletteDropdown";
 import {
-  AGENTS_PALETTE_REFRESH_EVENT,
+  AGENT_CATALOG_REFRESH_EVENT,
   AGENT_DRAG_MIME,
-} from "../../utils/agentsPaletteEvents";
+} from "../../utils/agentCatalogEvents";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 
@@ -124,7 +124,7 @@ describe("AgentsPaletteDropdown", () => {
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalledTimes(1));
     api.listProjectAgents.mockClear();
     act(() => {
-      window.dispatchEvent(new Event(AGENTS_PALETTE_REFRESH_EVENT));
+      window.dispatchEvent(new Event(AGENT_CATALOG_REFRESH_EVENT));
     });
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalledTimes(1));
   });

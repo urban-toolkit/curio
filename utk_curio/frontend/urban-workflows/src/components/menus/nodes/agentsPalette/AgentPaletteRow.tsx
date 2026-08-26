@@ -2,7 +2,7 @@ import React, { memo, useCallback } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../../api/agentsApi";
-import { AGENT_DRAG_MIME } from "../../../../utils/agentsPaletteEvents";
+import { AGENT_DRAG_MIME } from "../../../../utils/agentCatalogEvents";
 import { agentCategoryKey } from "./agentCategoryStyle";
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
 import rowStyles from "./AgentPaletteRow.module.css";

@@ -25,7 +25,7 @@ import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
-import { notifyAgentDockRefresh } from "../utils/agentsPaletteEvents";
+import { notifyAgentDockRefresh } from "../utils/agentCatalogEvents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";

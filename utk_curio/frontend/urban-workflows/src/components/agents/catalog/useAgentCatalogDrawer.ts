@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { agentsApi, AgentCard } from "../../../api/agentsApi";
-import { notifyAgentsPaletteRefresh } from "../../../utils/agentsPaletteEvents";
+import { notifyAgentCatalogRefresh } from "../../../utils/agentCatalogEvents";
 
 /**
  * Self-contained data hook for the Agents Catalog drawer. Owns the active
@@ -20,11 +20,11 @@ import { notifyAgentsPaletteRefresh } from "../../../utils/agentsPaletteEvents";
  * - Errors keep the cached rows (banner over content, never instead of it).
  */
 
-export type AgentScope = "global" | "my-imports" | "installed";
+export type AgentScope = "browse" | "imports" | "installed";
 
-const ALL_SCOPES: AgentScope[] = ["global", "my-imports", "installed"];
+const ALL_SCOPES: AgentScope[] = ["browse", "imports", "installed"];
 
-export interface AgentsCatalogDrawerState {
+export interface AgentCatalogDrawerState {
   scope: AgentScope;
   setScope: (s: AgentScope) => void;
   cards: AgentCard[];
@@ -40,11 +40,11 @@ export interface AgentsCatalogDrawerState {
   unpublish: (coord: string) => Promise<void>;
 }
 
-export function useAgentsCatalogDrawer(
+export function useAgentCatalogDrawer(
   presented: boolean,
   projectId: string | null,
-): AgentsCatalogDrawerState {
-  const [scope, setScope] = useState<AgentScope>("global");
+): AgentCatalogDrawerState {
+  const [scope, setScope] = useState<AgentScope>("browse");
   const [cardsByScope, setCardsByScope] = useState<
     Partial<Record<AgentScope, AgentCard[]>>
   >({});
@@ -52,8 +52,8 @@ export function useAgentsCatalogDrawer(
   const [busyCoord, setBusyCoord] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const seqRef = useRef<Record<AgentScope, number>>({
-    global: 0,
-    "my-imports": 0,
+    browse: 0,
+    imports: 0,
     installed: 0,
   });
 
@@ -67,9 +67,9 @@ export function useAgentsCatalogDrawer(
     async (s: AgentScope) => {
       const seq = ++seqRef.current[s];
       let resp: { agents: AgentCard[] };
-      if (s === "global") {
+      if (s === "browse") {
         resp = await agentsApi.catalog(projectId ?? undefined);
-      } else if (s === "my-imports") {
+      } else if (s === "imports") {
         resp = await agentsApi.listImports(projectId ?? undefined);
       } else {
         resp = projectId ? await agentsApi.listProjectAgents(projectId) : { agents: [] };
@@ -118,7 +118,7 @@ export function useAgentsCatalogDrawer(
       setError(null);
       try {
         await fn();
-        notifyAgentsPaletteRefresh(); // keep the AGENTS palette in sync
+        notifyAgentCatalogRefresh(); // keep the AGENTS palette in sync
         await refreshAll(); // every tab agrees immediately (dev/47)
       } catch (e) {
         setError(e instanceof Error ? e.message : "Action failed");

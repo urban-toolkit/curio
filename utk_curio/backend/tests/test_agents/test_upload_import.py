@@ -57,7 +57,7 @@ class TestUploadImport:
         r = _upload(client, token)
         assert r.status_code == 201, r.get_data(as_text=True)
         card = r.get_json()
-        assert card["scope"] == "my-imports"
+        assert card["scope"] == "imports"
         assert card["imported"] is True
         assert card["publishable"] is True  # reachable at last
         assert card["provenance"]["trust"] == "imported"

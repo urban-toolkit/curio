@@ -6,8 +6,8 @@ jest.mock("../../providers/FlowProvider", () => ({
 }));
 
 const mockPaletteRefresh = jest.fn();
-jest.mock("../../utils/agentsPaletteEvents", () => ({
-  notifyAgentsPaletteRefresh: () => mockPaletteRefresh(),
+jest.mock("../../utils/agentCatalogEvents", () => ({
+  notifyAgentCatalogRefresh: () => mockPaletteRefresh(),
 }));
 
 jest.mock("../../api/agentsApi", () => ({

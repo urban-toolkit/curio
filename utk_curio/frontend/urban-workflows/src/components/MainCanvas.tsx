@@ -46,7 +46,7 @@ import {
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
 import { agentsApi } from "../api/agentsApi";
-import { readAgentDragCoord, notifyAgentDockRefresh, pickNodeAtPoint, hasAgentDrag, type AgentDropTarget } from "../utils/agentsPaletteEvents";
+import { readAgentDragCoord, notifyAgentDockRefresh, pickNodeAtPoint, hasAgentDrag, type AgentDropTarget } from "../utils/agentCatalogEvents";
 import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";

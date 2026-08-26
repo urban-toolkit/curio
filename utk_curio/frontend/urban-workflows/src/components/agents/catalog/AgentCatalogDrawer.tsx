@@ -13,11 +13,11 @@ import { SortMode } from "../../packages/publishing/packageTypes";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import cardStyles from "../../packages/publishing/PackageCard.module.css";
-import styles from "./AgentsCatalogDrawer.module.css";
+import styles from "./AgentCatalogDrawer.module.css";
 import { matchesAgentSearch, sortAgentCards, installLabel, installTitle } from "./agentListUtils";
-import { AgentScope, useAgentsCatalogDrawer } from "./useAgentsCatalogDrawer";
+import { AgentScope, useAgentCatalogDrawer } from "./useAgentCatalogDrawer";
 
-export interface AgentsCatalogDrawerProps {
+export interface AgentCatalogDrawerProps {
   /** When true, the scrim fades in and the panel slides in from the right
    * (memo dev/43 — the same two-phase presentation as the Nodes/Datasets
    * drawers). The drawer stays mounted while false during the exit slide. */
@@ -32,16 +32,24 @@ export interface AgentsCatalogDrawerProps {
   onExitComplete?: () => void;
 }
 
+// Slot names come from the shared vocabulary (datasetCatalogDrawerTypes'
+// TAB_LABEL): "Browse all" and "In dataflow" mean the same thing in every
+// catalog, and the third is this kind's own.
+//
+// No "featured" slot: both peers declare one, but the Node drawer maps it onto
+// "Browse all" as a dead member, and agents have nothing to feature. A tab
+// that renders the same rows under a second name is worse than three honest
+// ones.
 const SCOPES: { key: AgentScope; label: string }[] = [
-  { key: "global", label: "Global Catalog" },
-  { key: "my-imports", label: "My Imports" },
-  { key: "installed", label: "Installed in this project" },
+  { key: "browse", label: "Browse all" },
+  { key: "imports", label: "My imports" },
+  { key: "installed", label: "In dataflow" },
 ];
 
 const SUBTITLE: Record<AgentScope, string> = {
-  global: "Install agents from the catalog into this project.",
-  "my-imports": "Your private account definitions — publish to the Catalog Hub or install.",
-  installed: "Templates available in this project's palette.",
+  browse: "Agents available to this dataflow.",
+  imports: "Your own agent definitions. Publish one to the Agent Catalog, or add it here.",
+  installed: "Agents added to this dataflow.",
 };
 
 /**
@@ -49,14 +57,14 @@ const SUBTITLE: Record<AgentScope, string> = {
  * catalog chrome — DrawerTabs tab styling, PackageSearchRow (search + sort),
  * the PackageCard row grid with a category-tinted avatar, and the
  * CatalogPublishPill — so agents match the Data / Node catalog drawers
- * (dev/68). Data + lifecycle live in ``useAgentsCatalogDrawer``.
+ * (dev/68). Data + lifecycle live in ``useAgentCatalogDrawer``.
  *
  * Per DEC-042 (dev/21) the static dark roster header carries the **Pin button
  * only** — no Close, no agent identity, no agent-cycling controls. Dismissal is
  * the backdrop/Escape (gated by the pin); the opened agent view has its own
  * identity header (AgentChatPanel).
  */
-export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
+export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
   presented,
   projectId,
   pinned,
@@ -64,7 +72,7 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
   onRequestClose,
   onExitComplete,
 }) => {
-  const c = useAgentsCatalogDrawer(presented, projectId);
+  const c = useAgentCatalogDrawer(presented, projectId);
   const panelRef = useRef<HTMLElement>(null);
   // Installed-scope card whose Project agent settings modal is open (dev/23).
   const [settingsCoord, setSettingsCoord] = useState<string | null>(null);
@@ -227,7 +235,7 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
           onImported={() => {
             setImportOpen(false);
             // The new definition lives in My Imports — show it.
-            c.setScope("my-imports");
+            c.setScope("imports");
             void c.reload();
           }}
         />
@@ -251,7 +259,7 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
 const AgentRow: React.FC<{
   card: AgentCard;
   scope: AgentScope;
-  state: ReturnType<typeof useAgentsCatalogDrawer>;
+  state: ReturnType<typeof useAgentCatalogDrawer>;
   hasProject: boolean;
   onOpenSettings: () => void;
 }> = ({ card, scope, state, hasProject, onOpenSettings }) => {
@@ -339,7 +347,7 @@ const AgentRow: React.FC<{
           </button>
         )}
 
-        {scope === "my-imports" ? (
+        {scope === "imports" ? (
           <>
             {/* Publish → Catalog Hub. The pill only shows for eligible (owned,
                 store-backed) definitions — built-ins report publishable=false,
@@ -365,7 +373,7 @@ const AgentRow: React.FC<{
           </>
         ) : null}
 
-        {scope === "global" && !card.imported ? (
+        {scope === "browse" && !card.imported ? (
           <button
             type="button"
             className={cardStyles.btnSecondary}

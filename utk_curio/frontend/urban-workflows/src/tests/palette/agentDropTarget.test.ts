@@ -1,4 +1,4 @@
-import { pickNodeAtPoint, hasAgentDrag, AGENT_DRAG_MIME, type NodeRect } from "../../utils/agentsPaletteEvents";
+import { pickNodeAtPoint, hasAgentDrag, AGENT_DRAG_MIME, type NodeRect } from "../../utils/agentCatalogEvents";
 
 /**
  * `hasAgentDrag` decides whether `dragover` should set `dropEffect="copy"`. It

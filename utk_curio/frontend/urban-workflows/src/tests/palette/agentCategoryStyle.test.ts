@@ -28,7 +28,7 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
 /** Every stylesheet that paints an agent by category. */
 const AGENT_CATEGORY_SURFACES = [
-  "components/agents/catalog/AgentsCatalogDrawer.module.css",
+  "components/agents/catalog/AgentCatalogDrawer.module.css",
   "components/menus/nodes/agentsPalette/AgentPaletteRow.module.css",
   "components/agents/attach/AgentAvatarBadge.module.css",
   "components/agents/attach/AgentChatPanel.module.css",
@@ -104,7 +104,7 @@ describe("agent category stylesheets", () => {
   it("the retired accent stripe is gone from the drawer", () => {
     // PackageCard.module.css no longer defines `.cardAccent`; the family that
     // coloured it would only have painted a stray div in the grid's first slot.
-    expect(read("components/agents/catalog/AgentsCatalogDrawer.module.css")).not.toContain(
+    expect(read("components/agents/catalog/AgentCatalogDrawer.module.css")).not.toContain(
       ".accent_",
     );
     expect(read("components/packages/publishing/PackageCard.module.css")).not.toContain(

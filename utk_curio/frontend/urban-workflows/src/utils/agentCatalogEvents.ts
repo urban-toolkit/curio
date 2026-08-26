@@ -4,11 +4,11 @@
  * after an install/uninstall so the palette re-reads the project lockfile without
  * a page reload; the palette subscribes.
  */
-export const AGENTS_PALETTE_REFRESH_EVENT = "curio:agents-palette-refresh";
+export const AGENT_CATALOG_REFRESH_EVENT = "curio:agent-catalog-refresh";
 
-export function notifyAgentsPaletteRefresh(): void {
+export function notifyAgentCatalogRefresh(): void {
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(AGENTS_PALETTE_REFRESH_EVENT));
+    window.dispatchEvent(new Event(AGENT_CATALOG_REFRESH_EVENT));
   }
 }
 

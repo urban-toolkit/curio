@@ -40,7 +40,7 @@ import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
-import { useAgentsCatalogDrawerControls } from "../../../providers/AgentsCatalogDrawerProvider";
+import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDrawerProvider";
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
@@ -102,7 +102,7 @@ export default function UpMenu({
     const { showToast } = useToastContext();
     const ensureWorkflowDeps = useEnsureWorkflowDeps();
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
-    const { openAgentsCatalogDrawer } = useAgentsCatalogDrawerControls();
+    const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
     const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
@@ -510,7 +510,7 @@ export default function UpMenu({
                             <div
                                 className={styles.dropDownRow}
                                 onClick={() => {
-                                    openAgentsCatalogDrawer();
+                                    openAgentCatalogDrawer();
                                     setActiveMenu(null);
                                 }}
                             >

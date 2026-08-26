@@ -10,7 +10,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { useFlowContext } from "./FlowProvider";
-import { AgentsCatalogDrawer } from "../components/agents/catalog/AgentsCatalogDrawer";
+import { AgentCatalogDrawer } from "../components/agents/catalog/AgentCatalogDrawer";
 
 /**
  * Mounts the Agents Catalog drawer and exposes open/close controls, mirroring
@@ -23,16 +23,16 @@ import { AgentsCatalogDrawer } from "../components/agents/catalog/AgentsCatalogD
  * project. Rendered via a portal so it overlays the canvas.
  */
 
-/** Panel slide duration — keep in sync with `.panel` in AgentsCatalogDrawer.module.css */
+/** Panel slide duration — keep in sync with `.panel` in AgentCatalogDrawer.module.css */
 const DRAWER_MOTION_MS = 300;
 
-type AgentsCatalogDrawerContextValue = {
-  openAgentsCatalogDrawer: () => void;
-  closeAgentsCatalogDrawer: () => void;
-  isAgentsCatalogDrawerOpen: boolean;
+type AgentCatalogDrawerContextValue = {
+  openAgentCatalogDrawer: () => void;
+  closeAgentCatalogDrawer: () => void;
+  isAgentCatalogDrawerOpen: boolean;
 };
 
-const AgentsCatalogDrawerContext = createContext<AgentsCatalogDrawerContextValue | null>(null);
+const AgentCatalogDrawerContext = createContext<AgentCatalogDrawerContextValue | null>(null);
 
 // jsdom (tests) has no matchMedia — degrade to "no reduced motion".
 function subscribeReducedMotion(onStoreChange: () => void): () => void {
@@ -48,7 +48,7 @@ function getReducedMotionSnapshot(): boolean {
     : false;
 }
 
-export function AgentsCatalogDrawerProvider({ children }: { children: React.ReactNode }) {
+export function AgentCatalogDrawerProvider({ children }: { children: React.ReactNode }) {
   const prefersReducedMotion = useSyncExternalStore(
     subscribeReducedMotion,
     getReducedMotionSnapshot,
@@ -83,7 +83,7 @@ export function AgentsCatalogDrawerProvider({ children }: { children: React.Reac
     queueMicrotask(() => el?.focus?.());
   }, [clearExitTimer]);
 
-  const closeAgentsCatalogDrawer = useCallback(() => {
+  const closeAgentCatalogDrawer = useCallback(() => {
     clearExitTimer();
     setPresented(false);
     exitTimerRef.current = window.setTimeout(
@@ -92,7 +92,7 @@ export function AgentsCatalogDrawerProvider({ children }: { children: React.Reac
     );
   }, [clearExitTimer, finishClose, prefersReducedMotion]);
 
-  const openAgentsCatalogDrawer = useCallback(() => {
+  const openAgentCatalogDrawer = useCallback(() => {
     clearExitTimer();
     exitSettledRef.current = false;
     preOpenFocusRef.current = document.activeElement as HTMLElement | null;
@@ -110,11 +110,11 @@ export function AgentsCatalogDrawerProvider({ children }: { children: React.Reac
   useEffect(() => {
     if (!presented) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !pinned) closeAgentsCatalogDrawer();
+      if (e.key === "Escape" && !pinned) closeAgentCatalogDrawer();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [presented, pinned, closeAgentsCatalogDrawer]);
+  }, [presented, pinned, closeAgentCatalogDrawer]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -129,21 +129,21 @@ export function AgentsCatalogDrawerProvider({ children }: { children: React.Reac
 
   const ctx = useMemo(
     () => ({
-      openAgentsCatalogDrawer,
-      closeAgentsCatalogDrawer,
-      isAgentsCatalogDrawerOpen: mounted,
+      openAgentCatalogDrawer,
+      closeAgentCatalogDrawer,
+      isAgentCatalogDrawerOpen: mounted,
     }),
-    [openAgentsCatalogDrawer, closeAgentsCatalogDrawer, mounted],
+    [openAgentCatalogDrawer, closeAgentCatalogDrawer, mounted],
   );
 
   const drawer = mounted
     ? createPortal(
-        <AgentsCatalogDrawer
+        <AgentCatalogDrawer
           presented={presented}
           projectId={projectId ?? null}
           pinned={pinned}
           onPinToggle={() => setPinned((v) => !v)}
-          onRequestClose={closeAgentsCatalogDrawer}
+          onRequestClose={closeAgentCatalogDrawer}
           onExitComplete={finishClose}
         />,
         document.body,
@@ -151,18 +151,18 @@ export function AgentsCatalogDrawerProvider({ children }: { children: React.Reac
     : null;
 
   return (
-    <AgentsCatalogDrawerContext.Provider value={ctx}>
+    <AgentCatalogDrawerContext.Provider value={ctx}>
       {children}
       {drawer}
-    </AgentsCatalogDrawerContext.Provider>
+    </AgentCatalogDrawerContext.Provider>
   );
 }
 
-export function useAgentsCatalogDrawerControls(): AgentsCatalogDrawerContextValue {
-  const v = useContext(AgentsCatalogDrawerContext);
+export function useAgentCatalogDrawerControls(): AgentCatalogDrawerContextValue {
+  const v = useContext(AgentCatalogDrawerContext);
   if (!v) {
     throw new Error(
-      "useAgentsCatalogDrawerControls must be used within AgentsCatalogDrawerProvider",
+      "useAgentCatalogDrawerControls must be used within AgentCatalogDrawerProvider",
     );
   }
   return v;
