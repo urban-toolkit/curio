@@ -584,8 +584,9 @@ def _execute_web_fetch(params: dict) -> tuple[str, str]:
 
 
 def _execute_web_search(params: dict) -> tuple[str, str]:
-    """dev/67-4: deployment-configured search — ``CURIO_SEARCH_URL`` is a URL
-    template with ``{q}`` (GET; any API key rides the URL) returning JSON.
+    """Web search - ``CURIO_SEARCH_URL`` is a URL template with ``{q}``
+    (GET; any API key rides the URL) returning JSON. Unset, it falls back to
+    :data:`DEFAULT_SEARCH_URL`, so search works without configuration.
 
     Accepted response shapes (dev/90 A3 — the common public search APIs over
     a plain keyed GET, so no provider server is ever required): a top-level
@@ -594,8 +595,10 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
     ``web.results`` (Brave-shaped proxies); row fields ``title``,
     ``url|link|href``, ``snippet|content|description``. Header-authenticated
     APIs are NOT supported — the contract is key-in-URL, stated honestly.
-    Absent configuration errors honestly; results still flow through the
-    egress policy (dev/90 A2: the provider host itself is operator-trusted)."""
+    DuckDuckGo's ``RelatedTopics`` is handled too, since that is the default.
+    Results flow through the egress policy either way; the provider host is
+    trusted because configuration (or this module's default) named it, never
+    because a model asked for it."""
     import os
     from urllib.parse import quote
 
@@ -604,11 +607,11 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
     query = params.get("q")
     if not isinstance(query, str) or not query.strip():
         return "error", "params.q must be a non-empty query string"
-    template = os.environ.get("CURIO_SEARCH_URL") or ""
+    template = os.environ.get("CURIO_SEARCH_URL") or DEFAULT_SEARCH_URL
     if "{q}" not in template:
         return "error", (
             "web search is not configured for this deployment "
-            "(set CURIO_SEARCH_URL) — verify direct URLs with web.fetch instead"
+            "(set CURIO_SEARCH_URL) - verify direct URLs with web.fetch instead"
         )
     try:
         # dev/90 A2: the provider host is OPERATOR configuration, so it is
@@ -637,8 +640,22 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
     return "ok", _truncate(json.dumps({"results": rows}, ensure_ascii=False))
 
 
+#: Where ``web.search`` looks when the deployment names no provider.
+#:
+#: DuckDuckGo's Instant Answer API needs no key and no signup, so an install
+#: nobody configured still has a working search tool. Two honest caveats: it
+#: returns instant-answer topics rather than ranked web results, so coverage
+#: is thinner than a real search API; and, like any default endpoint, a query
+#: reaches a third party. That is narrower than it sounds - the tool runs only
+#: when a user runs an agent that declares a search capability, never on its
+#: own - but an operator who wants somewhere else (a local SearXNG, SerpAPI,
+#: Google Programmable Search) sets ``CURIO_SEARCH_URL`` or
+#: ``--agent-search-url``.
+DEFAULT_SEARCH_URL = "https://api.duckduckgo.com/?q={q}&format=json&no_html=1"
+
+
 def _search_rows_of(payload) -> list | None:
-    """The result rows of one provider response (dev/90 A3 shapes)."""
+    """The result rows of one provider response."""
     if not isinstance(payload, dict):
         return payload if isinstance(payload, list) else None
     for key in ("results", "organic_results", "items"):
@@ -648,4 +665,39 @@ def _search_rows_of(payload) -> list | None:
     web = payload.get("web")
     if isinstance(web, dict) and isinstance(web.get("results"), list):
         return web["results"]
+    related = payload.get("RelatedTopics")
+    if isinstance(related, list):
+        return _duckduckgo_rows(related)
     return None
+
+
+def _duckduckgo_rows(related: list) -> list:
+    """Flatten DuckDuckGo's ``RelatedTopics`` into the common row shape.
+
+    The default provider answers in its own format: a flat list of
+    ``{FirstURL, Text}``, interleaved with category groups that nest the same
+    thing under ``{Name, Topics}``. One level of nesting is all the API
+    produces, so this flattens exactly one level rather than recursing.
+
+    ``Text`` is a single string that leads with the title, so it serves as
+    both title and snippet; the title is clipped at the first sentence-like
+    break so a card is not the whole paragraph twice over.
+    """
+    rows: list = []
+    for entry in related:
+        if not isinstance(entry, dict):
+            continue
+        nested = entry.get("Topics")
+        if isinstance(nested, list):
+            rows.extend(
+                item for item in nested
+                if isinstance(item, dict) and item.get("FirstURL")
+            )
+        elif entry.get("FirstURL"):
+            rows.append(entry)
+    out = []
+    for row in rows:
+        text = str(row.get("Text") or "")
+        title = text.split(" - ", 1)[0] if " - " in text else text
+        out.append({"title": title, "url": row.get("FirstURL"), "snippet": text})
+    return out

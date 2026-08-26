@@ -2,8 +2,8 @@ import React, { useState, useEffect } from "react";
 import ModalShell from "./ModalShell";
 import modal from "./modal-content.module.css";
 import styles from "./AiSettingsModal.module.css";
-import { AgentSettingsModal } from "./agents/settings/AgentSettingsModal";
 import { useUserContext } from "../providers/UserProvider";
+import { agentsApi, ProviderDefault } from "../api/agentsApi";
 
 interface Props {
   isOpen: boolean;
@@ -62,12 +62,26 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState(PROVIDER_INFO.openai.model);
-  // Two questions, one surface: which model, and how much it may spend.
-  // They used to live in two modals reached from two places.
-  const [tab, setTab] = useState<"provider" | "limits">("provider");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // What this deployment configured with --llm-provider / --llm-base-url /
+  // --llm-model. Those flags and this panel write the same account-wide
+  // setting, so the flags' values belong here as the inherited value rather
+  // than being invisible to the user they apply to.
+  const [deployed, setDeployed] = useState<ProviderDefault | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || user?.is_guest) return;
+    let live = true;
+    agentsApi
+      .providerDefault()
+      .then((d) => { if (live) setDeployed(d); })
+      // A deployment default is a nicety, not a prerequisite: if the lookup
+      // fails the panel still edits the user's own config.
+      .catch(() => { if (live) setDeployed(null); });
+    return () => { live = false; };
+  }, [isOpen, user?.is_guest]);
 
   useEffect(() => {
     if (isOpen && user) {
@@ -75,7 +89,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setUiMode(mode);
       setBaseUrl(user.llm_base_url || "");
       setApiKey("");
-      setModel(user.llm_model || PROVIDER_INFO[mode].model);
+      setModel(user.llm_model || "");
       setError(null);
       setSuccess(false);
     }
@@ -83,10 +97,11 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const handleModeChange = (newMode: UiMode) => {
     setUiMode(newMode);
-    const defaultModel = PROVIDER_INFO[newMode].model;
-    if (defaultModel) {
-      setModel(defaultModel);
-    }
+    // Clear rather than stamp a suggestion in: an empty box means "use the
+    // inherited model", which the placeholder names. Writing the suggestion
+    // into the value would save it as an explicit override the user never
+    // chose, and quietly detach them from the deployment default.
+    setModel("");
     if (newMode !== "custom") {
       setBaseUrl("");
     }
@@ -139,36 +154,24 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </>
         ) : (
           <>
-            <nav className={styles.settingsTabs} aria-label="AI settings sections">
-              <button
-                type="button"
-                className={`${styles.settingsTab}${tab === "provider" ? ` ${styles.settingsTabActive}` : ""}`}
-                aria-pressed={tab === "provider"}
-                onClick={() => setTab("provider")}
-              >
-                Provider
-              </button>
-              <button
-                type="button"
-                className={`${styles.settingsTab}${tab === "limits" ? ` ${styles.settingsTabActive}` : ""}`}
-                aria-pressed={tab === "limits"}
-                onClick={() => setTab("limits")}
-              >
-                Agent limits
-              </button>
-            </nav>
-
-            {tab === "limits" ? (
-              /* The account scope of the agent policy editor, rendered inline
-                 rather than as a second modal. The drawer's per-agent cog
-                 still opens the same component for a project override. */
-              <AgentSettingsModal scope="account" embedded onClose={onClose} />
-            ) : (
-          <>
             <p className={styles.providerNote}>
               This provider answers every AI surface in Curio: the agents, the
-              node-authoring assistants and chat. Leave it unset and those
-              surfaces say so rather than calling anything.
+              node-authoring assistants and chat.
+              {deployed?.model ? (
+                <>
+                  {" "}Whoever runs this Curio set a default of{" "}
+                  <strong>{deployed.model}</strong>
+                  {deployed.baseUrl ? <> at <code>{deployed.baseUrl}</code></> : null}.
+                  Leave a field blank to use it, or fill it in to override it
+                  for your account.
+                </>
+              ) : (
+                <>
+                  {" "}No default is configured on this deployment, so those
+                  surfaces say so rather than calling anything until you set one
+                  here.
+                </>
+              )}
             </p>
             <div className={modal.field}>
               <label className={modal.label}>Provider</label>
@@ -197,7 +200,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder={info.baseUrlPlaceholder}
+                  placeholder={deployed?.baseUrl || info.baseUrlPlaceholder}
                 />
                 <span className={modal.hint}>Any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, Groq, Azure, …)</span>
               </div>
@@ -207,7 +210,13 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <label className={modal.label}>
                 API Key{" "}
                 <span className={styles.optional}>
-                  {user?.has_llm_api_key ? "(saved - leave blank to keep)" : uiMode === "custom" ? "(optional for keyless servers)" : "(required)"}
+                  {user?.has_llm_api_key
+                    ? "(saved - leave blank to keep)"
+                    : deployed?.hasApiKey
+                      ? "(optional - this deployment provides one)"
+                      : uiMode === "custom"
+                        ? "(optional for keyless servers)"
+                        : "(required)"}
                 </span>
               </label>
               <input
@@ -232,7 +241,11 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 type="text"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder={info.model || "e.g. llama3.2"}
+                placeholder={
+                  deployed?.model
+                    ? `${deployed.model} (from this deployment)`
+                    : info.model || "e.g. llama3.2"
+                }
               />
             </div>
 
@@ -247,8 +260,6 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>
-          </>
-            )}
           </>
         )}
       </div>

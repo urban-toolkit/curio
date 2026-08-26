@@ -239,28 +239,25 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.getByRole("button", { name: "Unpin drawer" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("installed scope shows the labeled Project agent settings cog (dev/23)", async () => {
+  it("no card offers a per-agent settings cog, in any scope", async () => {
+    // There used to be one per In-dataflow card, opening a run/spend policy
+    // editor. Curio no longer caps either, so the editor and its three scopes
+    // are gone and a card's actions are add, remove, publish.
     api.listProjectAgents = jest.fn().mockResolvedValue({
       agents: [card("agent.chat-agent", { scope: "installed", installedInProject: true })],
     } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    fireEvent.click(screen.getByText("In dataflow"));
-    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
-    const cog = screen.getByRole("button", { name: /project agent settings/i });
-    expect(cog).toBeEnabled();
-    fireEvent.click(cog);
-    await waitFor(() =>
-      expect(screen.getByText("Project agent default")).toBeInTheDocument(),
-    );
-  });
-
-  it("the browse and My imports tabs show no settings cog", async () => {
-    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: /project agent settings/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("My imports"));
-    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: /project agent settings/i })).not.toBeInTheDocument();
+    for (const tab of ["My imports", "In dataflow"]) {
+      fireEvent.click(screen.getByText(tab));
+      await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+      // Scoped to the card: the drawer header keeps its own AI Settings
+      // button, which is the provider, not a per-agent policy.
+      const row = screen.getByText("chat-agent").closest("article")!;
+      expect(
+        within(row).queryByRole("button", { name: /settings/i }),
+      ).not.toBeInTheDocument();
+    }
   });
 
   it("the header cog opens AI Settings, which owns the account scope", async () => {

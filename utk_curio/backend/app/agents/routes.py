@@ -95,6 +95,31 @@ def list_catalog():
 
 
 # ── My Imports (account scope) ───────────────────────────────────────────────
+@agents_bp.route("/provider-default", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def get_provider_default():
+    """What a user inherits when they configure no provider of their own.
+
+    ``curio.py start``'s ``--llm-provider`` / ``--llm-base-url`` /
+    ``--llm-model`` set exactly these three, so the flags are one more way of
+    writing the same account-wide setting AI Settings edits. The panel reads
+    this to show the deployment's choice as the inherited value rather than
+    inventing a placeholder model of its own.
+
+    The API key is reported only as a boolean. Its value never leaves the
+    server, which is also why there is no ``--llm-api-key``.
+    """
+    from utk_curio.backend import config
+
+    return jsonify({
+        "apiType": config.DEFAULT_LLM_API_TYPE or None,
+        "baseUrl": config.DEFAULT_LLM_BASE_URL or None,
+        "model": config.DEFAULT_LLM_MODEL or None,
+        "hasApiKey": bool(config.DEFAULT_LLM_API_KEY),
+    }), 200
+
+
 @agents_bp.route("/imports", methods=["GET"])
 @require_auth
 def list_imports():

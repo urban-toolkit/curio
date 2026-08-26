@@ -6,7 +6,7 @@ Sits over the filesystem stores (``storage`` = definition artifacts, ``imports``
 rules, and the project lockfile is read/written through ``projects.storage``.
 
 Import and Install are separate explicit commands and never chain (DEC-029).
-User-facing overview: ``docs/AGENTS.md``.
+User-facing overview: ``docs/AGENT-CATALOG.md``.
 """
 
 from __future__ import annotations

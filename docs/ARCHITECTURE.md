@@ -724,7 +724,7 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 Defined in `backend/app/agents/routes.py` over `backend/app/agents/services.py`; all
 require authentication, and every project endpoint checks ownership (404 when the
 project is not the caller's). See [AGENT-CATALOG.md](AGENT-CATALOG.md) for the
-user-facing model and [AGENTS.md](AGENTS.md) for the runtime.
+user-facing model, the manifest contract, and the storage layers.
 
 Catalog and account scope:
 

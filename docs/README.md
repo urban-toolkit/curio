@@ -7,8 +7,7 @@
 - [Authoring nodes](AUTHORING-NODES.md): build your own node, from a clone to a shareable package
 - [Node catalog](NODE-CATALOG.md)
 - [Data catalog](DATA-CATALOG.md)
-- [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents
-- [Hookable agents](AGENTS.md): the agent runtime, manifest contract, and `/api/agents`
+- [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
 - [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
 

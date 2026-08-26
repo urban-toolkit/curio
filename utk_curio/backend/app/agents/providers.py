@@ -10,7 +10,7 @@ the plan's module-encapsulation memo). Callers resolve a :class:`ProviderConfig`
 The dispatch below was extracted verbatim from ``app/api/routes.py::_call_llm``
 (behavior-preserving) and is the seam a future LangChain adapter would sit behind.
 
-User-facing overview: ``docs/AGENTS.md``.
+User-facing overview: ``docs/AGENT-CATALOG.md``.
 """
 
 from __future__ import annotations

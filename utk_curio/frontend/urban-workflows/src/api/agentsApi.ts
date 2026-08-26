@@ -15,6 +15,14 @@ const BACKEND_URL = process.env.BACKEND_URL || "";
  * Import (account) and Install (project) are separate commands; neither chains.
  */
 
+/** The deployment-wide provider default, with no secret in it. */
+export interface ProviderDefault {
+  apiType: string | null;
+  baseUrl: string | null;
+  model: string | null;
+  hasApiKey: boolean;
+}
+
 /** One agent card as returned by the backend (camelCase). */
 export interface AgentCard {
   id: string; // e.g. "agent.node-explainer"
@@ -685,6 +693,15 @@ export const agentsApi = {
   catalog(projectId?: string): Promise<AgentListResponse> {
     const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
     return apiFetch(`/api/agents/catalog${q}`);
+  },
+
+  /** What a user inherits when they configure no provider of their own.
+   *
+   * The launcher's --llm-provider / --llm-base-url / --llm-model write exactly
+   * these, so AI Settings can present the deployment's choice as the inherited
+   * value rather than inventing a placeholder. The key is a boolean only. */
+  providerDefault(): Promise<ProviderDefault> {
+    return apiFetch("/api/agents/provider-default");
   },
 
   /** Account "My imports". Pass a projectId to mark which are in the dataflow

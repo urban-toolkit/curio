@@ -362,8 +362,36 @@ class TestWebTools:
         status, text = self._fetch({})
         assert status == "error" and "params.url" in text
 
-    def test_web_search_unconfigured_errors_honestly(self, monkeypatch):
+    def test_web_search_falls_back_to_the_default_provider(self, monkeypatch):
+        """Unset is no longer unconfigured: search works out of the box."""
+        from utk_curio.backend.app.agents import egress
+        from utk_curio.backend.app.agents.egress import EgressResult
+
         monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
+        seen: dict = {}
+
+        def _fake_fetch(url, **kwargs):
+            seen["url"] = url
+            seen["trusted_host"] = kwargs.get("trusted_host")
+            return EgressResult(url=url, final_url=url, status=200,
+                                content_type="application/json",
+                                body='{"RelatedTopics": []}')
+
+        monkeypatch.setattr(egress, "fetch", _fake_fetch)
+        status, _ = tools.execute_read_tool(
+            "web.search", user_key="42", project_id="none", target=None,
+            params={"q": "chicago heat dataset"},
+        )
+        assert status == "ok"
+        assert seen["url"].startswith("https://api.duckduckgo.com/")
+        assert "q=chicago%20heat%20dataset" in seen["url"]
+        # The default names the host, so it is operator-trusted the same way a
+        # configured one is - not because the model asked for it.
+        assert seen["trusted_host"] == ("api.duckduckgo.com", None)
+
+    def test_a_template_without_the_placeholder_errors_honestly(self, monkeypatch):
+        # The remaining misconfiguration: a template that cannot carry a query.
+        monkeypatch.setenv("CURIO_SEARCH_URL", "https://api.provider.test/v1?key=K")
         status, text = tools.execute_read_tool(
             "web.search", user_key="42", project_id="none", target=None,
             params={"q": "chicago heat dataset"},
@@ -485,6 +513,52 @@ class TestWebSearchTrustedProvider:
         )
         assert status == "ok"
         assert "trusted_host" not in seen["kwargs"]
+
+
+class TestDuckDuckGoShape:
+    """The default provider answers in its own format, so the parser has to
+    read it or an unconfigured install would search and find nothing."""
+
+    def _search(self, monkeypatch, body: str):
+        from utk_curio.backend.app.agents import egress
+        from utk_curio.backend.app.agents.egress import EgressResult
+
+        monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
+        monkeypatch.setattr(egress, "fetch", lambda url, **kw: EgressResult(
+            url=url, final_url=url, status=200,
+            content_type="application/json", body=body))
+        status, text = tools.execute_read_tool(
+            "web.search", user_key="42", project_id="none", target=None,
+            params={"q": "chicago"},
+        )
+        assert status == "ok", text
+        return json.loads(text)["results"]
+
+    def test_flat_related_topics(self, monkeypatch):
+        rows = self._search(monkeypatch, json.dumps({"RelatedTopics": [
+            {"FirstURL": "https://w.test/a", "Text": "Chicago - a city in Illinois"},
+        ]}))
+        assert rows == [{
+            "title": "Chicago",
+            "url": "https://w.test/a",
+            "snippet": "Chicago - a city in Illinois",
+        }]
+
+    def test_grouped_topics_are_flattened_one_level(self, monkeypatch):
+        rows = self._search(monkeypatch, json.dumps({"RelatedTopics": [
+            {"Name": "Places", "Topics": [
+                {"FirstURL": "https://w.test/b", "Text": "Loop - downtown"},
+            ]},
+            {"FirstURL": "https://w.test/c", "Text": "Chicago River"},
+        ]}))
+        assert [r["url"] for r in rows] == ["https://w.test/b", "https://w.test/c"]
+
+    def test_entries_without_a_url_are_dropped(self, monkeypatch):
+        rows = self._search(monkeypatch, json.dumps({"RelatedTopics": [
+            {"Result": "<a>no FirstURL here</a>"},
+            {"FirstURL": "https://w.test/d", "Text": "Kept"},
+        ]}))
+        assert [r["url"] for r in rows] == ["https://w.test/d"]
 
 
 class TestWebSearchProviderShapes:

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/agent-package.v1.json",
   "title": "Curio Hookable Agent Manifest (v1)",
-  "description": "Schema for a Curio hookable-agent manifest.json. An agent ships in a directory named '<agentId>@<version>' containing this manifest and a prompts/ directory with the system preamble and instruction assets referenced by digest. Field names are camelCase. Agent package ids begin with 'agent.' to distinguish them from node packages ('curio.builtin' etc.). Capabilities are semantic behavior contracts, kept independent of the prompt files that implement them. This schema is the canonical spec; the backend validator in utk_curio/backend/app/agents/manifest.py implements the supported subset. User-facing overview: docs/AGENTS.md.",
+  "description": "Schema for a Curio hookable-agent manifest.json. An agent ships in a directory named '<agentId>@<version>' containing this manifest and a prompts/ directory with the system preamble and instruction assets referenced by digest. Field names are camelCase. Agent package ids begin with 'agent.' to distinguish them from node packages ('curio.builtin' etc.). Capabilities are semantic behavior contracts, kept independent of the prompt files that implement them. This schema is the canonical spec; the backend validator in utk_curio/backend/app/agents/manifest.py implements the supported subset. User-facing overview: docs/AGENT-CATALOG.md.",
   "type": "object",
   "required": ["id", "version", "name", "category", "capabilities", "provenance"],
   "additionalProperties": true,

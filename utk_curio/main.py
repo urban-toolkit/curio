@@ -1164,9 +1164,10 @@ def main():
     parser.add_argument(
         "--agent-search-url", default=None, metavar="TEMPLATE",
         help=(
-            "URL template for the agents' web-search tool (sets "
-            "CURIO_SEARCH_URL). Unset, the tool is unavailable; agents never "
-            "reach an endpoint the operator did not name."
+            "URL template for the agents' web-search tool, with {q} for the "
+            "query (sets CURIO_SEARCH_URL). Defaults to DuckDuckGo's "
+            "keyless Instant Answer API. Point it at a local SearXNG, "
+            "SerpAPI, or Google Programmable Search for ranked web results."
         ),
     )
     parser.add_argument(

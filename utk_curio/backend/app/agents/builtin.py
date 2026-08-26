@@ -19,7 +19,7 @@ Prompt-byte materialization (copying ``llm-prompts/`` into a user store on
 install) is a later step; the manifest ``prompts.instruction.path`` here is the
 package-relative name the asset takes once materialized.
 
-User-facing overview: ``docs/AGENTS.md``.
+User-facing overview: ``docs/AGENT-CATALOG.md``.
 """
 
 from __future__ import annotations

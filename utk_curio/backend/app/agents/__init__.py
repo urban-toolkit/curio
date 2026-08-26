@@ -5,6 +5,6 @@ the definition/import/project-template/attachment lifecycle. Kept as a
 self-contained ``agents/`` package with narrow public entry points so agent
 and LLM behavior does not leak into flow/node/dataset modules.
 
-User-facing overview: ``docs/AGENTS.md``. Canonical manifest spec:
+User-facing overview: ``docs/AGENT-CATALOG.md``. Canonical manifest spec:
 ``docs/schemas/agent-package.v1.json``.
 """

@@ -12,7 +12,7 @@ path-containment guard in ``app/common/safe_paths.py``. Companion modules:
 ``imports.py`` (the account-level "My Imports" registry) and ``project_agents.py``
 (the per-project installed-template lockfile).
 
-User-facing overview: ``docs/AGENTS.md``.
+User-facing overview: ``docs/AGENT-CATALOG.md``.
 """
 
 from __future__ import annotations

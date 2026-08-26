@@ -7,7 +7,7 @@ node-package lockfile ``spec["dataflow"]["packages"]`` (see
 coordinate here; uninstalling removes it. Nothing else about the project spec is
 touched, and there is no database row — the project file is the source of truth.
 
-User-facing overview: ``docs/AGENTS.md``.
+User-facing overview: ``docs/AGENT-CATALOG.md``.
 """
 
 from __future__ import annotations

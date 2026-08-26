@@ -368,9 +368,9 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
         expect(
             page.get_by_role("heading", name="AI Settings", level=2)
         ).to_be_visible(timeout=15000)
+        # One panel, no tabs: AI Settings sets the provider and nothing else.
+        # It briefly carried an "Agent limits" tab, captured here as a second
+        # surface, until the run and spend caps came out.
         gallery.shot("modal-ai-settings")
-
-        page.get_by_role("button", name="Agent limits", exact=True).click(timeout=10000)
-        gallery.shot("modal-ai-settings-agent-limits")
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-ai-settings", str(exc))

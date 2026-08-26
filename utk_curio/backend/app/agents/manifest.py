@@ -17,7 +17,7 @@ Key invariants enforced here (the point of this module):
 * Prompt assets are referenced by *contained* package-relative path — no
   absolute paths and no ``..`` escapes.
 
-User-facing overview: ``docs/AGENTS.md``.
+User-facing overview: ``docs/AGENT-CATALOG.md``.
 """
 
 from __future__ import annotations

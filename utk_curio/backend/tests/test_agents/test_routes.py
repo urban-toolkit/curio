@@ -7962,3 +7962,55 @@ class TestRestartHonestyOnApply:
         applied_text = next(t["text"] for t in turns
                             if "Applied: package" in (t.get("text") or ""))
         assert "Restart Curio" not in applied_text
+
+
+class TestProviderDefault:
+    """What AI Settings shows as the inherited provider.
+
+    `curio.py start --llm-provider/--llm-base-url/--llm-model` and the AI
+    Settings panel write the same account-wide setting, so the deployment's
+    choice has to be readable by the panel it applies to.
+    """
+
+    URL = "/api/agents/provider-default"
+
+    def test_reports_what_the_launcher_flags_set(self, client, user_and_token, monkeypatch):
+        from utk_curio.backend import config
+
+        monkeypatch.setattr(config, "DEFAULT_LLM_API_TYPE", "anthropic")
+        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "https://llm.example.test/v1")
+        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "some-model")
+        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "sk-secret")
+        _, token = user_and_token
+        body = client.get(self.URL, headers=_auth(token)).get_json()
+        assert body == {
+            "apiType": "anthropic",
+            "baseUrl": "https://llm.example.test/v1",
+            "model": "some-model",
+            "hasApiKey": True,
+        }
+
+    def test_never_returns_the_key_itself(self, client, user_and_token, monkeypatch):
+        # The reason there is no --llm-api-key is that a key should not travel
+        # where it need not. The same rule applies to this response.
+        from utk_curio.backend import config
+
+        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "sk-secret")
+        _, token = user_and_token
+        raw = client.get(self.URL, headers=_auth(token)).get_data(as_text=True)
+        assert "sk-secret" not in raw
+
+    def test_an_unconfigured_install_reports_nulls(self, client, user_and_token, monkeypatch):
+        from utk_curio.backend import config
+
+        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "")
+        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
+        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "")
+        _, token = user_and_token
+        body = client.get(self.URL, headers=_auth(token)).get_json()
+        assert body["baseUrl"] is None and body["model"] is None
+        assert body["hasApiKey"] is False
+
+    def test_requires_auth(self, client):
+        assert client.get(self.URL).status_code == 401
+

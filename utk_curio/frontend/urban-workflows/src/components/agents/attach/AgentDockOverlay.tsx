@@ -4,7 +4,6 @@ import { useReactFlow } from "reactflow";
 import { AgentDock } from "./AgentDock";
 import { AgentChatPanel } from "./AgentChatPanel";
 import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
-import { AgentSettingsModal } from "../settings/AgentSettingsModal";
 import { composeAgentRunContext } from "./agentRunContext";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -24,7 +23,6 @@ export const AgentDockOverlay: React.FC = () => {
   // is reachable.
   useAgentCanvasMutations();
   // Attachment id whose settings modal is open (memo dev/42), or null.
-  const [settingsFor, setSettingsFor] = useState<string | null>(null);
   if (!ctx) return null;
 
   const canvasAttachments = ctx.attachments.filter((a) => a.target.kind === "canvas");
@@ -84,9 +82,6 @@ export const AgentDockOverlay: React.FC = () => {
                 )
               }
               onClose={ctx.closeChat}
-              onOpenSettings={
-                projectId ? () => setSettingsFor(selected.attachmentId) : undefined
-              }
               toolActivity={ctx.toolActivity[selected.attachmentId] ?? []}
               runStatus={ctx.runStatus[selected.attachmentId] ?? null}
               onApplyProposal={(proposalId) =>
@@ -127,17 +122,6 @@ export const AgentDockOverlay: React.FC = () => {
               onSaveIntent={(intent) => ctx.saveIntent(selected.attachmentId, intent)}
               onSaveTitle={(title) => ctx.saveTitle(selected.attachmentId, title)}
               onClearConversation={() => ctx.clearConversation(selected.attachmentId)}
-            />,
-            document.body,
-          )
-        : null}
-      {settingsFor && projectId
-        ? createPortal(
-            <AgentSettingsModal
-              scope="attachment"
-              projectId={projectId}
-              attachmentId={settingsFor}
-              onClose={() => setSettingsFor(null)}
             />,
             document.body,
           )

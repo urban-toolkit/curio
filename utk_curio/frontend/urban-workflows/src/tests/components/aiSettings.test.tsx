@@ -1,17 +1,17 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 
 /**
  * AI Settings is the one account-level place the models are configured.
  *
- * Before this, the answer to "how is my AI set up?" lived in two modals reached
- * from two different places: the header's LLM Settings held the provider, and
- * the agent drawer's cog held the spend limits that apply to it. They are two
- * halves of one question, so they are now two tabs of one surface.
+ * It has one job: which provider answers Curio's AI surfaces. It briefly grew a
+ * second "Agent limits" tab holding run and spend caps, which is gone - Curio
+ * does not police usage, so there was nothing left for those fields to set.
  *
- * The provider itself did not move. `agents/provider_config.py` already read
- * the same `user.llm_*` fields this modal writes - the agents were always using
- * it. What changed is that the modal says so.
+ * The deployment's own default is part of this screen rather than hidden behind
+ * it. `curio.py start --llm-provider/--llm-base-url/--llm-model` write the same
+ * account-wide setting this panel edits, so the panel shows what they wrote as
+ * the inherited value.
  */
 
 const SIGNED_IN = {
@@ -34,22 +34,32 @@ jest.mock("../../providers/UserProvider", () => ({
   }),
 }));
 
-// The embedded account-policy editor. Its own behaviour is covered by
-// tests/settings/; here it only needs to prove which tab hosts it.
-jest.mock("../../components/agents/settings/AgentSettingsModal", () => ({
-  AgentSettingsModal: ({ scope, embedded }: { scope: string; embedded?: boolean }) => (
-    <div data-testid="agent-settings" data-scope={scope} data-embedded={String(!!embedded)}>
-      agent limits
-    </div>
-  ),
+let mockDefault: unknown = {
+  apiType: null,
+  baseUrl: null,
+  model: null,
+  hasApiKey: false,
+};
+let mockDefaultRejects = false;
+
+jest.mock("../../api/agentsApi", () => ({
+  agentsApi: {
+    providerDefault: jest.fn(() =>
+      mockDefaultRejects ? Promise.reject(new Error("nope")) : Promise.resolve(mockDefault),
+    ),
+  },
 }));
 
 import AiSettingsModal from "../../components/AiSettingsModal";
+import { agentsApi } from "../../api/agentsApi";
 
 const open = () => render(<AiSettingsModal isOpen onClose={jest.fn()} />);
 
 beforeEach(() => {
   mockUser = { ...SIGNED_IN };
+  mockDefault = { apiType: null, baseUrl: null, model: null, hasApiKey: false };
+  mockDefaultRejects = false;
+  jest.clearAllMocks();
 });
 
 describe("AI Settings", () => {
@@ -59,15 +69,20 @@ describe("AI Settings", () => {
     expect(screen.queryByText("LLM Settings")).toBeNull();
   });
 
-  it("opens on the Provider tab", () => {
+  it("shows the provider form, with no second tab", () => {
     open();
-    expect(screen.getByRole("button", { name: "Provider" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    // The Provider *panel* is showing: its OpenAI/Anthropic/Gemini/Custom
-    // picker is a button group, not a labelled form control.
+    // The OpenAI/Anthropic/Gemini/Custom picker is a button group, not a
+    // labelled form control, so it is the landmark for "the form is here".
     expect(screen.getByRole("button", { name: "OpenAI" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Agent limits" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Provider" })).toBeNull();
+  });
+
+  it("mentions no quota, budget or run limit anywhere", () => {
+    // The whole point of removing the limits tab: Curio does not present a
+    // surface for capping what a user may spend.
+    const { container } = open();
+    expect(container.textContent).not.toMatch(/quota|budget|runs per day|limit/i);
   });
 
   it("says which surfaces this provider answers", () => {
@@ -78,34 +93,63 @@ describe("AI Settings", () => {
     expect(screen.getByText(/node-authoring assistants and chat/i)).toBeInTheDocument();
   });
 
-  it("hosts the account-scope agent limits on its second tab", async () => {
-    open();
-    expect(screen.queryByTestId("agent-settings")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Agent limits" }));
-    await waitFor(() => expect(screen.getByTestId("agent-settings")).toBeInTheDocument());
-  });
-
-  it("embeds that editor rather than stacking a second modal", async () => {
-    open();
-    fireEvent.click(screen.getByRole("button", { name: "Agent limits" }));
-    const embedded = await screen.findByTestId("agent-settings");
-    expect(embedded).toHaveAttribute("data-scope", "account");
-    // `embedded` drops the editor's own ModalShell AND its role="dialog" - two
-    // nested dialogs would make an unscoped get_by_role lookup ambiguous.
-    expect(embedded).toHaveAttribute("data-embedded", "true");
-  });
-
   it("renders nothing when closed", () => {
     const { container } = render(<AiSettingsModal isOpen={false} onClose={jest.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });
 });
 
-describe("AI Settings for a guest", () => {
-  it("says who configures it instead of offering fields that cannot take effect", () => {
+describe("the deployment default is visible to the user it applies to", () => {
+  it("names the model and endpoint the launcher flags set", async () => {
+    mockDefault = {
+      apiType: "openai_compatible",
+      baseUrl: "https://llm.example.test/v1",
+      model: "some-model",
+      hasApiKey: true,
+    };
+    open();
+    // --llm-model
+    expect(await screen.findByText("some-model")).toBeInTheDocument();
+    // --llm-base-url
+    expect(screen.getByText("https://llm.example.test/v1")).toBeInTheDocument();
+    expect(screen.getByText(/leave a field blank to use it/i)).toBeInTheDocument();
+  });
+
+  it("offers it as the model placeholder rather than as a saved value", async () => {
+    // A suggestion written into the value would save as an explicit override
+    // the user never chose, detaching them from the deployment default.
+    mockDefault = { apiType: "openai_compatible", baseUrl: null, model: "some-model", hasApiKey: false };
+    open();
+    const box = await screen.findByPlaceholderText("some-model (from this deployment)");
+    expect(box).toHaveValue("");
+  });
+
+  it("says the key is optional when the deployment supplies one", async () => {
+    mockDefault = { apiType: "openai_compatible", baseUrl: null, model: "m", hasApiKey: true };
+    open();
+    expect(
+      await screen.findByText(/this deployment provides one/i),
+    ).toBeInTheDocument();
+  });
+
+  it("says plainly when nothing is configured", async () => {
+    open();
+    await waitFor(() => expect(agentsApi.providerDefault).toHaveBeenCalled());
+    expect(screen.getByText(/no default is configured/i)).toBeInTheDocument();
+  });
+
+  it("still edits the user's own config when the lookup fails", async () => {
+    // A deployment default is a nicety, not a prerequisite.
+    mockDefaultRejects = true;
+    open();
+    await waitFor(() => expect(agentsApi.providerDefault).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "OpenAI" })).toBeInTheDocument();
+  });
+
+  it("is not fetched for a guest, who cannot act on it", async () => {
     mockUser = { is_guest: true };
     open();
     expect(screen.getByText(/configured by whoever runs this/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Agent limits" })).toBeNull();
+    expect(agentsApi.providerDefault).not.toHaveBeenCalled();
   });
 });

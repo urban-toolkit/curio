@@ -8,7 +8,7 @@ the agent analogue of the node-package shared catalog under ``<repo_root>/packag
 Only an owned, store-backed, non-built-in definition may be published — enforced
 in ``services.publish_agent``; this module just does the validated copy/list/remove.
 
-User-facing overview: ``docs/AGENTS.md``.
+User-facing overview: ``docs/AGENT-CATALOG.md``.
 """
 
 from __future__ import annotations

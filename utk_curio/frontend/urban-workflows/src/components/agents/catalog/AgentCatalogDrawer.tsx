@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../api/agentsApi";
-import { AgentSettingsModal } from "../settings/AgentSettingsModal";
 
 /**
  * Loaded on demand. A static import would pull AI Settings' whole module
@@ -82,8 +81,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
 }) => {
   const c = useAgentCatalogDrawer(presented, projectId);
   const panelRef = useRef<HTMLElement>(null);
-  // Installed-scope card whose Project agent settings modal is open (dev/23).
-  const [settingsCoord, setSettingsCoord] = useState<string | null>(null);
   // The header cog opens AI Settings, which owns the account scope.
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   // Upload-import (dev/36), opened from the footer's Import package button.
@@ -214,7 +211,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
                 scope={c.scope}
                 state={c}
                 hasProject={!!projectId}
-                onOpenSettings={() => setSettingsCoord(card.dirName)}
               />
             ))}
           </div>
@@ -248,14 +244,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
           }}
         />
       ) : null}
-      {settingsCoord && projectId ? (
-        <AgentSettingsModal
-          scope="project"
-          projectId={projectId}
-          coord={settingsCoord}
-          onClose={() => setSettingsCoord(null)}
-        />
-      ) : null}
       {accountSettingsOpen ? (
         /* The account scope lives in AI Settings now, on its "Agent limits"
            tab, beside the provider those limits apply to. This drawer opens
@@ -274,8 +262,7 @@ const AgentRow: React.FC<{
   scope: AgentScope;
   state: ReturnType<typeof useAgentCatalogDrawer>;
   hasProject: boolean;
-  onOpenSettings: () => void;
-}> = ({ card, scope, state, hasProject, onOpenSettings }) => {
+}> = ({ card, scope, state, hasProject }) => {
   const busy = state.busyCoord === card.dirName;
   // The shared catalog card grid: 72px avatar | body | action. There is no
   // accent stripe - it was dropped from every catalog card because the
@@ -326,23 +313,14 @@ const AgentRow: React.FC<{
       </div>
 
       <div className={cardStyles.cardAction}>
-        {/* Per-scope action controls, matching the concept:
-            Browse all -> Add to dataflow (or Remove from dataflow if already in)
-            My imports  -> Add to dataflow + Publish pill + Delete
-            In dataflow -> Remove from dataflow */}
-        {/* Project-agent-default scope entry (dev/23): labeled cog, installed
-            scope only — palette rows and other scopes stay action-free. */}
-        {scope === "installed" ? (
-          <button
-            type="button"
-            className={cardStyles.btnSecondary}
-            disabled={!hasProject}
-            aria-haspopup="dialog"
-            onClick={onOpenSettings}
-          >
-            <FontAwesomeIcon icon={faGear} aria-hidden /> Project agent settings
-          </button>
-        ) : null}
+        {/* Per-scope action controls:
+            Browse all  -> Add to dataflow (or Remove from dataflow if in)
+            My imports  -> Add to dataflow + Publish pill + Remove from account
+            In dataflow -> Remove from dataflow
+
+            There is no per-agent settings cog. Curio no longer offers a
+            surface for capping runs or spend, so the three policy scopes it
+            used to open have nothing left to edit. */}
         {scope === "installed" || card.installedInProject ? (
           <button
             type="button"

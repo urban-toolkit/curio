@@ -6,20 +6,19 @@ three catalogs, alongside the [Node Catalog](NODE-CATALOG.md) and the
 drop on the canvas and the Data Catalog manages the *data* those nodes read, the
 Agent Catalog manages the *assistants* you attach to them.
 
-This guide covers the catalog: what an agent package is, where its state lives,
-the three surfaces you manage agents from, and which layer each action writes.
-For the agent runtime itself, meaning the manifest contract, capabilities,
-prompts, tools, and the chat and review loop, see [AGENTS.md](AGENTS.md). The two
-do not overlap: this file is the catalog model, that one is the agent model.
+This guide covers what an agent is, where its state lives, the three surfaces
+you manage agents from, which layer each action writes, and how to write one of
+your own.
 
-This guide is in five parts, plus operator notes:
+This guide is in six parts, plus operator notes:
 
 - [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): the storage layers, agent ids, and what ships built in.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, and walkthroughs.
 - [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, and the difference between the two.
 - [4. Importing, publishing, and sharing](#4-importing-publishing-and-sharing): authoring your own definitions.
-- [5. Settings and limits](#5-settings-and-limits): the three policy scopes and where each is edited.
-- [Operator notes](#operator-notes): the provider requirement, launcher flags, and quotas.
+- [5. The provider](#5-the-provider): which model answers, and where it is set.
+- [6. Writing your own agent](#6-writing-your-own-agent): the manifest contract and capabilities.
+- [Operator notes](#operator-notes): the provider requirement and launcher flags.
 
 ---
 
@@ -48,7 +47,7 @@ Agent ids always begin with **`agent.`**, which keeps them distinct from node
 package ids (`curio.builtin`, `ai.urbanlab.uhvi`) and dataset ids
 (`data.urbanlab.chicago-boundary`). The manifest is validated against
 [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json); see
-[AGENTS.md section 2](AGENTS.md#2-the-agent-manifest) for the field table.
+[part 6](#6-writing-your-own-agent) for the field table.
 
 **Twenty-one agents ship with Curio**, declared in
 [`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py) and
@@ -104,7 +103,6 @@ after an **Add to dataflow**, a **Remove from dataflow**, or an **Attach**:
 | **Definition store**, the immutable agent itself | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` + `prompts/`) | Seeded from the built-ins; **Import agent** adds one; **Publish** copies one to the shared catalog. |
 | **My imports** (account) | `.curio/users/<user-key>/imported-agents.json` | **Import agent** adds a coordinate; removing an import drops it. The analogue of `default-packages.json`. |
 | **In dataflow** (per-dataflow lockfile) | `spec.trill.json` then `dataflow.agents[]` | **Add to dataflow** adds an entry for the open dataflow; **Remove from dataflow** removes it. |
-| **Per-dataflow defaults** | `spec.trill.json` then `dataflow.agentDefaults` | Materialized by **Add to dataflow**, edited by the card's settings cog, dropped on removal. |
 | **Attachments**, a private agent instance bound to a target | `spec.trill.json` then `dataflow.agentAttachments` | **Attach** (dragging an agent onto a node or the canvas) creates one; **Detach** deletes it and its transcript. |
 | **Usage ledger** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends a reserve and settle pair. Append-only; not user-editable. |
 
@@ -191,7 +189,7 @@ the left rail, click a card to read its full detail, and use **Add to my
 account** to keep it. Open a dataflow afterwards to add it there.
 
 **I want to write my own agent.** Author a `manifest.json` and its prompt files
-([AGENTS.md section 2](AGENTS.md#2-the-agent-manifest)), then use the drawer's
+([part 6](#6-writing-your-own-agent)), then use the drawer's
 **Import agent** footer button. It lands in **My imports** as your own
 definition. Adding it to a dataflow and publishing it are separate actions.
 
@@ -224,7 +222,7 @@ Where an agent proposes a change to your dataflow, it does not apply it. The
 proposal surfaces as a **review card**, and applying it is a separate explicit
 click that re-checks the target has not drifted since the proposal was minted.
 Dismissing it leaves nothing behind. See
-[AGENTS.md section 6](AGENTS.md#6-catalog--lifecycle-api) for the mechanics.
+[ARCHITECTURE.md](ARCHITECTURE.md#agent-routes) for the endpoints behind this.
 
 ### Required agents
 
@@ -255,41 +253,119 @@ that has already added the agent.
 
 ---
 
-## 5. Settings and limits
+## 5. The provider
 
-Agents are the one catalog whose entries cost money to run, so they carry a
-policy model the other two do not need. Three scopes nest, each able only to
-**tighten** what the one above it allows:
+Every agent, on every dataflow, is answered by one model. Which one is an
+account-level setting, edited in **AI Settings** from the header.
 
-| Scope | Edited from | Stored in | Covers |
-|---|---|---|---|
-| **Account** | **AI Settings** in the header, the **Agent limits** tab | `.curio/users/<key>/agents/settings.json` | Your default runs per day, daily budget, and max output tokens. |
-| **Per-dataflow** | The settings cog on an **In dataflow** card | `spec.trill.json` then `dataflow.agentDefaults` | One added agent's limits within one dataflow. |
-| **Per-attachment** | The attachment's own settings | `spec.trill.json` then `dataflow.agentAttachments` | One bound instance's limits. |
+| Field | What it is |
+|---|---|
+| Provider | OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint. |
+| Base URL | Only for a custom endpoint: Ollama, LM Studio, vLLM, Groq, Azure. |
+| API key | Stored per account. Leave blank to keep the saved one. |
+| Model | The model name. Leave blank to inherit the deployment's. |
 
-Above all three sits the **deployment ceiling**, which no user scope can exceed.
-Curio sets none of its own: `runsPerDay`, `dailyBudgetUsd`, and
-`estimatedCostPerRunUsd` all ship unset, because the operator pays for the
-tokens and the ceiling is theirs to impose. Only `maxOutputTokens` carries a
-shipped bound. An operator adds a run ceiling with `CURIO_AGENT_RUNS_PER_DAY`.
+Whoever runs the Curio install can set a default for all four with
+`curio.py start` flags (see [Operator notes](#operator-notes)). Those flags and
+this panel write the same account-wide setting, so AI Settings shows the
+deployment's choice as the inherited value and you override it only by typing
+something else. Leave a field blank and you stay on the deployment default,
+including when the operator later changes it.
 
-The effective value at any point is
-`attachment ?? project ?? account ?? deployment`, clamped downward on read, so a
-limit loosened upstream never silently widens a scope that tightened it. Where
-no ceiling is configured, there is nothing to clamp against and the user's own
-value stands.
+**Curio does not meter, cap, or bill agent runs.** There is no quota screen and
+no spend limit to configure, because the tokens are billed to whoever's key is
+in use and the ceiling is theirs to impose, not Curio's to assume. An operator
+who wants a run ceiling sets `CURIO_AGENT_RUNS_PER_DAY`; nothing is capped
+otherwise.
 
-The **provider**, meaning which model actually answers, is a separate question
-with a single answer, and lives in the **Provider** tab of the same **AI
-Settings** modal. It is account-level: every agent, on every dataflow, uses it.
-That is why the two live in one modal rather than two.
+Curio does keep a local record of what ran, in an append-only per-day file under
+`.curio/users/<key>/agents/ledger/`. It is written from the token counts each
+provider already returns on the completion itself: no usage or billing API is
+ever called, and no request is made for it.
 
-Runs are admitted through an append-only per-day ledger under a file lock, so two
-concurrent runs competing for the last slot serialize to exactly one admission.
-A denied run consumes nothing and returns `429` with the limit it hit and when it
-resets. With no limit configured at any scope the ledger still records every run,
-so the usage figures the settings screens show are accurate whether or not
-anything is gating.
+---
+
+## 6. Writing your own agent
+
+An agent package is a directory named `<agentId>@<version>` holding a
+`manifest.json` and a `prompts/` directory. The manifest uses **camelCase**
+field names and is validated against
+[`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json) (JSON
+Schema Draft 2020-12), which is the source of truth for what a manifest may
+declare. The backend validator in
+[`app/agents/manifest.py`](../utk_curio/backend/app/agents/manifest.py)
+implements the supported subset.
+
+A minimal, complete manifest:
+
+```json
+{
+  "$schema": "../../docs/schemas/agent-package.v1.json",
+  "id": "agent.node-explainer",
+  "name": "Node Explainer",
+  "category": "node",
+  "version": "1.0.0",
+  "purpose": "Explain what a node or its output does.",
+  "roles": ["explanation"],
+  "capabilities": [
+    { "id": "node.explain", "contractVersion": "1" },
+    { "id": "node.output.interpret", "contractVersion": "1" }
+  ],
+  "prompts": {
+    "system": { "path": "prompts/default_preamble.txt", "sha256": "<sha256>", "variables": [] },
+    "instruction": { "path": "prompts/single_box_explanation.txt", "sha256": "<sha256>", "variables": ["nodeContext"] }
+  },
+  "compatibleTargets": [{ "kind": "node", "requires": ["code-or-output"] }],
+  "inputs": { "reads": ["nodeContext"], "requiredConfig": [] },
+  "outputs": ["explanation"],
+  "runtime": { "execution": "foreground", "reviewPolicy": "report-only" },
+  "provenance": { "publisher": "curio", "license": "MIT", "trust": "built-in" }
+}
+```
+
+| Field | Required | What it declares |
+|---|---|---|
+| `id` | Yes | `agent.`-prefixed, kebab-case package id. Pairs with `version` to form the directory `<id>@<version>`. |
+| `version` | Yes | Semver-style version string. |
+| `name` | Yes | Human-readable name shown in the catalog. |
+| `category` | Yes | One of `data`, `node`, `canvas`, `package`, `evaluate`. See [Categories](#categories). |
+| `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the semantic contracts this agent implements. |
+| `provenance` | Yes | `{ publisher, license?, trust? }`; `trust` is one of `built-in`, `global`, `imported`. |
+| `purpose`, `roles` | | One-line description and display roles. |
+| `delegatesTo` | | Other `agent.` ids this agent may call. A preferred implementation only: it grants nothing and never adds or imports anything. |
+| `requiresAgents` | | A subset of `delegatesTo`: the agents this one is not functional without. See [Required agents](#required-agents). |
+| `prompts` | | Prompt assets by package-relative `path` + `sha256` + declared `variables`. Absolute paths and `..` escapes are rejected. |
+| `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. |
+| `inputs`, `outputs` | | Context the agent reads, config it requires, and the named outputs it produces. |
+| `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
+| `providerRequirements` | | Provider *capability* requirements such as `structured-output`. Credentials are never in a manifest. |
+| `tools` | | Typed, allowlisted tool **requirements**. Never executable code, and never a permission grant. |
+| `settingsDefaults` | | Non-secret seed suggestions. A manifest cannot create a new trusted profile family implicitly. |
+
+The directory name is authoritative: the loader cross-checks it against the
+manifest's `id` and `version` and rejects a mismatch, exactly as the
+node-package loader does.
+
+### Capabilities
+
+A **capability** is a semantic contract, meaning *what* an agent does, kept
+deliberately separate from the prompt file that implements it. A capability id
+is two or more dot-separated lowercase segments:
+
+```
+node.explain            dataflow.orchestrate       package.recommend
+node.output.interpret   dataset.fetch.author       connection.propose
+```
+
+Capability ids drive catalog discovery, orchestration and substitution, and are
+**never** used for authorization. Because they are contracts rather than assets,
+a capability id must not contain a prompt filename, a path separator, an
+underscore, or `.txt`: `node.explain` is valid, `single_box_explanation_prompt`
+and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced
+without changing the contract.
+
+Once written, import the package through the drawer's **Import agent** button
+([part 4](#4-importing-publishing-and-sharing)).
 
 ---
 
@@ -320,7 +396,7 @@ Agent configuration follows Curio's convention: an operator knob is a documented
 | `--llm-base-url` | `CURIO_DEFAULT_LLM_BASE_URL` | The default endpoint. |
 | `--llm-model` | `CURIO_DEFAULT_LLM_MODEL` | The default model. |
 | `--guest-llm-api-key` | `GUEST_LLM_API_KEY` | The gate on guest AI. No key, no guest access. |
-| `--agent-search-url` | `CURIO_SEARCH_URL` | The endpoint for agents with a search capability. |
+| `--agent-search-url` | `CURIO_SEARCH_URL` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API. Point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked web results. |
 
 A flag writes its variable only when passed, so a value already set in the
 environment is not cleared by a start that omits it. That matters here more than
@@ -332,7 +408,8 @@ would disable every AI surface.
 | Variable | Why there is no flag |
 |---|---|
 | `CURIO_DEFAULT_LLM_API_KEY` (or `AICONN_API_KEY`) | A key passed as an argument is visible in the process list to every user on the host. Set it in the environment. |
-| `CURIO_AGENT_RUNS_PER_DAY` | Curio ships no run cap and offers no flag to pick one, so nothing invites a default back in. Set the variable if your deployment wants a ceiling. |
+| `CURIO_AGENT_RUNS_PER_DAY` | Curio ships no run cap, has no interface for one, and offers no flag to pick one, so nothing invites a default back in. Set the variable if your deployment wants a ceiling. |
+| `CURIO_AGENT_PRICE_TABLE` | Path to a JSON price table for the local usage ledger. The built-in table is empty; without one, the ledger records tokens and no USD. |
 | `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | Guests inherit the default provider and only the key gates access. These are an escape hatch for the rare split-provider deployment. |
 
 The package-build variables (`CURIO_BUILD_*`, `CURIO_JS_*`,
@@ -347,19 +424,21 @@ configuration. The only restriction is the ownership check described in
 you imported. On a multi-tenant deployment, any signed-in user can publish an
 agent they authored into the shared catalog.
 
-### The ledger needs no operational care
+### The usage ledger needs no operational care
 
-The per-day ledger files under `.curio/users/<key>/agents/ledger/` are the record
-of what ran and what it cost. They are append-only and rotate by date. Deleting
-an old day's file loses that day's usage history and nothing else; deleting the
-current day's file resets today's quota, which is worth knowing but not something
-to schedule.
+The per-day files under `.curio/users/<key>/agents/ledger/` record what ran.
+They are append-only, rotate by date, and are written from token counts the
+provider already returned on each completion, so nothing polls anything. They
+are not surfaced in the interface.
+
+Deleting an old day's file loses that day's history and nothing else. Deleting
+today's file resets today's counters, which matters only on a deployment that
+set `CURIO_AGENT_RUNS_PER_DAY`. There is no cleanup job to schedule.
 
 ---
 
 ## See also
 
-- [`docs/AGENTS.md`](AGENTS.md): the agent runtime, meaning the manifest contract, capabilities, prompts, tools, and the chat and review loop.
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the node package catalog, whose storage and publish model this mirrors.
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): the dataset catalog, the closest peer to this one.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#agent-routes): the agent HTTP API reference and backend module layout.

@@ -11,7 +11,7 @@ Import is account-private: adding a coordinate here records that the account has
 imported that definition. It does not install into any project (that is
 ``project_agents.py``) and does not publish.
 
-User-facing overview: ``docs/AGENTS.md``.
+User-facing overview: ``docs/AGENT-CATALOG.md``.
 """
 
 from __future__ import annotations
