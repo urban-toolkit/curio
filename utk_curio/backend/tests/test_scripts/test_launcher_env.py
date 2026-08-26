@@ -148,9 +148,6 @@ AGENT_AND_BUILD_KEYS = (
 NO_FLAG_KEYS = (
     # A key in argv is visible in the process list to every user on the host.
     "CURIO_DEFAULT_LLM_API_KEY",
-    # Curio ships no run cap: the ceiling is the operator's to impose, and a
-    # flag would invite us to pick a default again.
-    "CURIO_AGENT_RUNS_PER_DAY",
     # The package-build subsystem, which is not part of the agent catalog.
     "CURIO_BUILD_ESBUILD",
     "CURIO_BUILD_PREVIEW_RUNNER",

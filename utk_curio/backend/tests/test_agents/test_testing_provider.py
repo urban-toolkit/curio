@@ -89,57 +89,30 @@ class TestUsageAccounting:
         assert usage == {"inputTokens": 5, "outputTokens": 7}
 
 
-class TestFileScript:
-    """The e2e path: the backend runs in another process, so the script is a file."""
+class TestNoFileScript:
+    """The out-of-process JSON script path is gone.
 
-    def _write(self, tmp_path, monkeypatch, payload) -> None:
-        path = tmp_path / "llm-script.json"
-        path.write_text(json.dumps(payload), encoding="utf-8")
-        monkeypatch.setenv("CURIO_TESTING_LLM_SCRIPT", str(path))
+    It existed so an e2e running against a live backend could script a
+    reply. Nothing ever used it: the agent e2e suite covers the drawer, the
+    palette and the requiresAgents closure, none of which runs a turn. If a
+    chat e2e is written later, that is the point to add it back."""
 
-    def test_first_matching_rule_wins(self, tmp_path, monkeypatch):
-        self._write(tmp_path, monkeypatch, {
-            "rules": [
-                {"match": "explain", "reply": "an explanation"},
-                {"match": "explain", "reply": "never reached"},
-            ],
-        })
-        reply = testing_provider.run_scripted_completion(
-            [{"role": "user", "content": "please explain this node"}]
+    def test_no_env_var_is_read(self, tmp_path, monkeypatch):
+        script = tmp_path / "script.json"
+        script.write_text('{"default": "from file"}', encoding="utf-8")
+        monkeypatch.setenv("CURIO_TESTING_LLM_SCRIPT", str(script))
+        monkeypatch.setattr(testing_provider, "enabled", lambda: True)
+        testing_provider.reset()
+        assert (
+            testing_provider.run_scripted_completion([])
+            == testing_provider.FALLBACK_REPLY
         )
-        assert reply == "an explanation"
 
-    def test_matching_spans_every_message(self, tmp_path, monkeypatch):
-        """The instruction usually arrives as the system turn, not the user's."""
-        self._write(tmp_path, monkeypatch, {
-            "rules": [{"match": "node_build_instruction", "reply": "built"}],
-        })
-        reply = testing_provider.run_scripted_completion([
-            {"role": "system", "content": "…node_build_instruction…"},
-            {"role": "user", "content": "go"},
-        ])
-        assert reply == "built"
-
-    def test_default_applies_when_no_rule_matches(self, tmp_path, monkeypatch):
-        self._write(tmp_path, monkeypatch, {
-            "rules": [{"match": "nope", "reply": "x"}],
-            "default": "the default",
-        })
-        assert testing_provider.run_scripted_completion(
-            [{"role": "user", "content": "anything"}]
-        ) == "the default"
-
-    def test_the_queue_takes_precedence_over_the_file(self, tmp_path, monkeypatch):
-        self._write(tmp_path, monkeypatch, {"default": "from file"})
+    def test_the_queue_is_the_only_way_to_script_a_reply(self, monkeypatch):
+        monkeypatch.setattr(testing_provider, "enabled", lambda: True)
+        testing_provider.reset()
         testing_provider.push_reply("from queue")
         assert testing_provider.run_scripted_completion([]) == "from queue"
-        assert testing_provider.run_scripted_completion([]) == "from file"
-
-    def test_an_unreadable_script_does_not_crash_the_run(self, tmp_path, monkeypatch):
-        path = tmp_path / "broken.json"
-        path.write_text("{not json", encoding="utf-8")
-        monkeypatch.setenv("CURIO_TESTING_LLM_SCRIPT", str(path))
-        assert testing_provider.run_scripted_completion([]) == testing_provider.FALLBACK_REPLY
 
 
 class TestDispatch:

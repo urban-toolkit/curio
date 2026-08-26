@@ -12,24 +12,15 @@ that answers the same way twice. Pointing it at a script keeps the WHOLE
 backend loop under test - tools, policy, quotas, the ledger, the content parser
 - while making the model the one part that cannot vary.
 
-Two ways to script it:
+Scripted through ``push_reply(...)`` / ``push_replies(...)``: an in-process
+FIFO for pytest. Each call pops one reply; the queue is per-process and cleared
+by :func:`reset`.
 
-* ``push_reply(...)`` / ``push_replies(...)`` - an in-process FIFO, for pytest.
-  Each call pops one reply; the queue is per-process and cleared by
-  :func:`reset`.
-* ``CURIO_TESTING_LLM_SCRIPT`` - a path to a JSON file, for e2e, where the
-  backend runs in another process. Shape::
-
-      {
-        "rules": [
-          {"match": "substring of the prompt", "reply": "..."},
-          {"match": "another", "reply": "...", "usage": {"in": 10, "out": 20}}
-        ],
-        "default": "..."
-      }
-
-  Rules are tried in order against the concatenated prompt text; the first
-  whose ``match`` appears wins. The queue takes precedence over the file.
+There was also a ``CURIO_TESTING_LLM_SCRIPT`` file, so an out-of-process e2e
+could script a reply. Nothing ever used it - the agent e2e suite covers the
+drawer, the palette and the requiresAgents closure, none of which runs a turn -
+so it was speculative infrastructure and came out. If a chat e2e is written
+later, that is the point to add it back.
 
 When nothing matches, :data:`FALLBACK_REPLY` is returned rather than raising:
 a test that forgot to script one leg of a multi-turn conversation should fail
@@ -38,8 +29,6 @@ on the assertion it cares about, not on an exception from the provider.
 
 from __future__ import annotations
 
-import json
-import os
 import threading
 from collections import deque
 
@@ -91,47 +80,12 @@ def pending() -> int:
         return len(_queue)
 
 
-def _prompt_text(messages: list) -> str:
-    parts = []
-    for m in messages or []:
-        content = m.get("content") if isinstance(m, dict) else None
-        if isinstance(content, str):
-            parts.append(content)
-    return "\n".join(parts)
-
-
-def _from_script(messages: list) -> tuple[str, dict | None] | None:
-    """First matching rule from ``CURIO_TESTING_LLM_SCRIPT``, if configured."""
-    path = os.environ.get("CURIO_TESTING_LLM_SCRIPT")
-    if not path:
-        return None
-    try:
-        with open(path, encoding="utf-8") as handle:
-            script = json.load(handle)
-    except (OSError, ValueError):
-        # A broken script file must not masquerade as a model that had nothing
-        # to say - but it also must not crash a suite mid-run, so fall through
-        # to the default reply and let the assertion report the mismatch.
-        return None
-    if not isinstance(script, dict):
-        return None
-
-    prompt = _prompt_text(messages)
-    for rule in script.get("rules") or []:
-        if not isinstance(rule, dict):
-            continue
-        needle = rule.get("match")
-        if isinstance(needle, str) and needle and needle in prompt:
-            return str(rule.get("reply") or FALLBACK_REPLY), rule.get("usage")
-
-    default = script.get("default")
-    if isinstance(default, str):
-        return default, script.get("defaultUsage")
-    return None
-
-
 def run_scripted_completion(messages: list, usage_out: dict | None = None) -> str:
     """Return the next scripted reply and record its token usage.
+
+    ``messages`` is unread. It stays in the signature so this drops into
+    ``run_chat_completion``'s call shape unchanged: the queue decides the
+    reply, not the prompt.
 
     Raises :class:`TestingProviderUnavailable` when called outside a test run.
     """
@@ -143,12 +97,7 @@ def run_scripted_completion(messages: list, usage_out: dict | None = None) -> st
 
     with _lock:
         queued = _queue.popleft() if _queue else None
-
-    if queued is not None:
-        reply, usage = queued
-    else:
-        scripted = _from_script(messages)
-        reply, usage = scripted if scripted is not None else (FALLBACK_REPLY, None)
+    reply, usage = queued if queued is not None else (FALLBACK_REPLY, None)
 
     counts = usage if isinstance(usage, dict) else DEFAULT_USAGE
     if usage_out is not None:

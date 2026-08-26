@@ -24,7 +24,6 @@ from utk_curio.backend.app.agents import (
     imports,
     ledger,
     policy,
-    pricing,
     project_agents,
     publications,
     quotas,
@@ -533,33 +532,15 @@ def get_project_agent_defaults(
     m = _resolve_definition(user_key, coord)
     acct = account_settings.read_record(user_key)["settings"]
     eff = policy.effective(acct, record.get("settings") or {})
-    used = quotas.runs_used_today(user_key)
-    estimate = eff["cost"]["estimatedCostPerRunUsd"]["value"]
-    summary = _pricing_summary(config)
     return {
         "coord": coord,
         "name": m.name if m else coord,
         "revision": record.get("revision", 1),
         "settings": record.get("settings", {}),
-        "effective": {
-            "quotas": {
-                "runsPerDay": {**eff["quotas"]["runsPerDay"], "usedToday": used},
-                # Actual tokens counted this window (memo dev/37).
-                "usageToday": quotas.usage_today(user_key),
-            },
-            "cost": {
-                **eff["cost"],
-                "estimatedSpendTodayUsd": round(used * estimate, 6)
-                if estimate is not None
-                else None,
-                # Actual USD settled this window (memo dev/40) — Actual or null.
-                "actualSpendTodayUsd": _actual_spend_today(
-                    user_key, bool(summary and summary["priced"])
-                ),
-                "pricing": summary,
-            },
-            "resources": dict(eff["resources"]),
-        },
+        "effective": {"resources": dict(eff["resources"])},
+        # Token counts from the local ledger. Reported, never enforced.
+        "usageToday": quotas.usage_today(user_key),
+        "usedToday": quotas.runs_used_today(user_key),
     }
 
 
@@ -603,46 +584,17 @@ def update_project_agent_defaults(
     return get_project_agent_defaults(user_key, project_id, coord, config)
 
 
-def _pricing_summary(config: ProviderConfig | None) -> dict | None:
-    """No-secrets pricing view for the Cost screen (memo dev/40): the caller's
-    provider/model, whether a deployment price exists, and its effective date.
-    ``None`` when no provider config resolves (e.g. keyless guests)."""
-    if config is None:
-        return None
-    snapshot = pricing.price_snapshot(config.api_type, config.model)
-    return {
-        "provider": config.api_type,
-        "model": config.model,
-        "priced": snapshot is not None,
-        "effectiveDate": snapshot.get("effectiveDate") if snapshot else None,
-    }
-
-
-def _actual_spend_today(user_key: str, priced: bool) -> float | None:
-    """Actual USD settled this window — a number once anything real exists to
-    show (a price is configured, or priced spend already accrued); ``None``
-    otherwise, so the UI never renders a fake $0.00 for unpriced deployments."""
-    spend = ledger.aggregates(user_key)["actualSpendUsd"]
-    return spend if (priced or spend > 0) else None
-
-
 def get_account_settings(user_key: str, config: ProviderConfig | None = None) -> dict:
     """The Account-policy scope (memo dev/24): record + effective + ceilings."""
     record = account_settings.read_record(user_key)
-    summary = _pricing_summary(config)
     return {
         "revision": record["revision"],
         "settings": record["settings"],
         "effective": policy.effective(record["settings"]),
         "ceilings": policy.deployment_defaults(),
+        # Token counts from the local ledger. Reported, never enforced.
         "usedToday": quotas.runs_used_today(user_key),
-        # Actual tokens counted this window (memo dev/37) — never estimated.
         "usageToday": quotas.usage_today(user_key),
-        # Actual USD settled this window (memo dev/40) — Actual or null.
-        "actualSpendTodayUsd": _actual_spend_today(
-            user_key, bool(summary and summary["priced"])
-        ),
-        "pricing": summary,
     }
 
 
@@ -918,10 +870,8 @@ def get_attachment_settings(
     user_key: str, project_id: str, attachment_id: str, config: "ProviderConfig | None" = None
 ) -> dict:
     """The Attached-instance policy scope: the record's tighten-only overrides
-    plus the three-layer effective view. ``usedToday`` meters the **binding**
-    scope — an attachment-source limit shows this attachment's ledger count,
-    a project-source limit the template count, otherwise the account count —
-    so the meter always measures what the limit actually counts."""
+    plus the three-layer effective view. ``usedToday`` is this attachment's own
+    run count from the local ledger - reported for context, never enforced."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     coord = record.get("coord", "")
@@ -931,40 +881,15 @@ def get_attachment_settings(
     attachment_settings = record.get("settings") or {}
     eff = policy.effective(acct, project_record.get("settings") or {}, attachment_settings)
     agg = ledger.aggregates(user_key)
-    runs = eff["quotas"]["runsPerDay"]
-    if runs["source"] == "attachment":
-        used = agg["byAttachment"].get(attachment_id, 0)
-    elif runs["source"] == "project":
-        used = agg["byTemplate"].get(f"{project_id}/{coord}", 0)
-    else:
-        used = agg["runs"]
-    estimate = eff["cost"]["estimatedCostPerRunUsd"]["value"]
-    summary = _pricing_summary(config)
     return {
         "attachmentId": attachment_id,
         "coord": coord,
         "name": m.name if m else coord,
         "revision": record.get("revision", 1),
         "settings": attachment_settings,
-        "effective": {
-            "quotas": {
-                "runsPerDay": {**runs, "usedToday": used},
-                "usageToday": quotas.usage_today(user_key),
-            },
-            "cost": {
-                **eff["cost"],
-                # Estimated spend is account-wide runs × the account estimate,
-                # exactly as the project scope reports it (memo dev/24).
-                "estimatedSpendTodayUsd": round(agg["runs"] * estimate, 6)
-                if estimate is not None
-                else None,
-                "actualSpendTodayUsd": _actual_spend_today(
-                    user_key, bool(summary and summary["priced"])
-                ),
-                "pricing": summary,
-            },
-            "resources": dict(eff["resources"]),
-        },
+        "effective": {"resources": dict(eff["resources"])},
+        "usedToday": agg["byAttachment"].get(attachment_id, 0),
+        "usageToday": quotas.usage_today(user_key),
     }
 
 
@@ -4976,7 +4901,7 @@ def _generate_conversation_title(
     try:
         # The title call is internal housekeeping, not an execution (dev/37):
         # it writes no execution record and holds no reservation, but its
-        # tokens still cost — the ledger counts them (dev/40).
+        # tokens are still spent, so the ledger counts them.
         usage_sink: dict = {}
         raw = run_chat_completion(
             config,
@@ -4987,12 +4912,7 @@ def _generate_conversation_title(
             max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,
             usage_out=usage_sink,
         )
-        ledger.record_housekeeping_usage(
-            user_key,
-            usage_sink,
-            price=pricing.price_snapshot(config.api_type, config.model),
-            note="title-call",
-        )
+        ledger.record_housekeeping_usage(user_key, usage_sink, note="title-call")
         title = sanitize_title(raw)
         if title is None:
             return
@@ -5015,38 +4935,28 @@ def _run_policy(
     spec: dict,
     attachment_record: dict | None = None,
 ) -> dict:
-    """Admission + dispatch inputs from the effective policy (memos dev/24/42).
+    """Dispatch inputs from the effective policy.
 
-    ``template_limit``/``attachment_limit`` apply only when their scope is the
-    tightest source; the account counter is gated at the account-effective
-    value. The attachment key is always recorded (ledger attribution)."""
+    This used to be admission as well: it resolved the account, template and
+    attachment run ceilings and the budget the ledger gated on. Nothing is
+    gated now, so what is left is the one field that shapes the call itself
+    (``max_output_tokens``) plus the keys the ledger records for attribution.
+    """
     acct = account_settings.read_record(user_key)["settings"]
     record = project_agents.agent_defaults(spec).get(coord) or {}
     attachment_settings = (attachment_record or {}).get("settings") or {}
-    acc_eff = policy.effective(acct)
     full_eff = policy.effective(acct, record.get("settings") or {}, attachment_settings)
-    runs = full_eff["quotas"]["runsPerDay"]
     attachment_id = (attachment_record or {}).get("attachmentId")
+    max_output = full_eff["resources"]["maxOutputTokens"]["value"]
     return {
         "admit": {
-            "account_limit": acc_eff["quotas"]["runsPerDay"]["value"],
             "template_key": f"{project_id}/{coord}",
-            "template_limit": runs["value"] if runs["source"] == "project" else None,
             "attachment_key": attachment_id if isinstance(attachment_id, str) else None,
-            "attachment_limit": runs["value"] if runs["source"] == "attachment" else None,
-            "daily_budget_usd": full_eff["cost"]["dailyBudgetUsd"]["value"],
-            "estimated_cost_per_run_usd": full_eff["cost"]["estimatedCostPerRunUsd"]["value"],
         },
-        "max_output_tokens": full_eff["resources"]["maxOutputTokens"]["value"],
-        # Flat effective-policy snapshot pinned on the execution record
-        # (DEC-031): what was admitted, not where each value came from —
-        # instance tightening flows in with zero pins-code changes (dev/42).
-        "policy_pins": {
-            "runsPerDay": runs["value"],
-            "maxOutputTokens": full_eff["resources"]["maxOutputTokens"]["value"],
-            "dailyBudgetUsd": full_eff["cost"]["dailyBudgetUsd"]["value"],
-            "estimatedCostPerRunUsd": full_eff["cost"]["estimatedCostPerRunUsd"]["value"],
-        },
+        "max_output_tokens": max_output,
+        # Flat effective-policy snapshot pinned on the execution record: what
+        # was dispatched, not where each value came from.
+        "policy_pins": {"maxOutputTokens": max_output},
     }
 
 
@@ -5067,23 +4977,21 @@ def _execution_record(
     started: float,
     status: str,
     tool_calls: list | None = None,
-    cost_usd: float | None = None,
     delegations: list | None = None,
     refused_rounds: int = 0,
 ) -> dict:
-    """Assemble the per-run execution record persisted on the agent turn
-    (memo dev/37). ``usage`` is Actual counts or ``None``, never estimated
-    (memo dev/11) — summed across loop rounds when tools ran (dev/41), which
-    is also when ``toolCalls`` (additive) records what executed. ``costUsd``
-    (dev/40) is the ledger settlement's Actual USD — null unless a deployment
-    price existed for the run. ``delegations`` (additive, dev/48) lists the
-    run's child execution records — each with its own pins, usage, costUsd,
-    and ``parentExecutionId`` back-link."""
+    """Assemble the per-run execution record persisted on the agent turn.
+
+    ``usage`` is actual token counts or ``None``, never estimated - summed
+    across loop rounds when tools ran, which is also when ``toolCalls``
+    records what executed. There is no ``costUsd``: Curio ships no price
+    table, so a USD figure would be invented. ``delegations`` lists the run's
+    child execution records, each with its own pins, usage, and
+    ``parentExecutionId`` back-link."""
     record = {
         "executionId": execution_id,
         "pins": pins,
         "usage": dict(usage) if usage else None,
-        "costUsd": cost_usd,
         "durationMs": int((time.monotonic() - started) * 1000),
         "status": status,
     }
@@ -7128,7 +7036,6 @@ def run_attachment(
     # snapshot pinned here is what settlement charges.
     reservation = ledger.reserve(
         user_key,
-        price=pricing.price_snapshot(config.api_type, config.model),
         reservation_id=execution_id,
         **run_policy["admit"],
     )
@@ -7316,7 +7223,7 @@ def run_attachment(
             error=True,
             execution=_execution_record(
                 execution_id, pins, usage_total, started, "error", tool_calls,
-                cost_usd=settled["costUsd"], delegations=delegations,
+                     delegations=delegations,
             ),
         )
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
@@ -7325,7 +7232,7 @@ def run_attachment(
     settled = ledger.settle(user_key, reservation, usage=usage_total or None, status="ok")
     execution = _execution_record(
         execution_id, pins, usage_total, started, "ok", tool_calls,
-        cost_usd=settled["costUsd"], delegations=delegations,
+                     delegations=delegations,
         refused_rounds=refusals_used,
     )
     _persist_exchange(
@@ -7382,7 +7289,6 @@ def stream_attachment(
     # plain 429 before any streaming begins, and consumes/persists nothing.
     reservation = ledger.reserve(
         user_key,
-        price=pricing.price_snapshot(config.api_type, config.model),
         reservation_id=execution_id,
         **run_policy["admit"],
     )
@@ -7694,7 +7600,7 @@ def stream_attachment(
                 error=True,
                 execution=_execution_record(
                     execution_id, pins, usage_total, started, "error", tool_calls,
-                    cost_usd=settled["costUsd"], delegations=delegations,
+                     delegations=delegations,
                 ),
             )
             yield ("error", f"agent run failed: {exc}")
@@ -7706,7 +7612,7 @@ def stream_attachment(
         )
         execution = _execution_record(
             execution_id, pins, usage_total, started, "ok", tool_calls,
-            cost_usd=settled["costUsd"], delegations=delegations,
+                     delegations=delegations,
             refused_rounds=refusals_used,
         )
         _persist_exchange(

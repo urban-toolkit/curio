@@ -465,10 +465,15 @@ describe("agentsApi", () => {
   it("agent settings: GET/PATCH account + PATCH project defaults", () => {
     agentsApi.getAgentSettings();
     expect(mockFetch).toHaveBeenCalledWith("/api/agents/settings");
-    agentsApi.updateAgentSettings(3, { quotas: { runsPerDay: 10 } });
+    // maxOutputTokens is the only editable field left: runsPerDay and the
+    // cost section went with the metering Curio no longer does.
+    agentsApi.updateAgentSettings(3, { resources: { maxOutputTokens: 512 } });
     expect(mockFetch).toHaveBeenLastCalledWith("/api/agents/settings", {
       method: "PATCH",
-      body: JSON.stringify({ revision: 3, settings: { quotas: { runsPerDay: 10 } } }),
+      body: JSON.stringify({
+        revision: 3,
+        settings: { resources: { maxOutputTokens: 512 } },
+      }),
     });
     agentsApi.updateProjectAgentDefaults("p1", "agent.chat-agent@1.0.0", 2, {});
     expect(mockFetch).toHaveBeenLastCalledWith(

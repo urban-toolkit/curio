@@ -167,19 +167,17 @@ def run_delegate(
     ``parentExecutionId`` link — which the caller stores under the parent
     record's ``delegations``. Never raises: a child failure is data.
     """
-    from utk_curio.backend.app.agents import ledger, pricing, services
+    from utk_curio.backend.app.agents import ledger, services
     from utk_curio.backend.app.projects import storage as projects_storage
 
     child_id = uuid.uuid4().hex
     started = time.monotonic()
 
-    def _record(status: str, usage: dict, cost_usd: float | None, pins: dict) -> dict:
+    def _record(status: str, usage: dict, pins: dict) -> dict:
         record = services._execution_record(child_id, pins, usage, started, status)
         record["parentExecutionId"] = parent_execution_id
         record["coord"] = coord
         record["capability"] = capability
-        if cost_usd is not None:
-            record["costUsd"] = cost_usd
         return record
 
     pins: dict = {"coord": coord, "provider": config.api_type, "model": config.model}
@@ -190,7 +188,7 @@ def run_delegate(
             return (
                 "error",
                 f"delegate {coord} has no instruction prompt available",
-                _record("error", {}, None, pins),
+                _record("error", {}, pins),
             )
         preamble = services._resolve_prompt_text(user_key, coord, "system")
         # Depth-1 structurally: the delegate's own prompts, NO tail instruction.
@@ -209,20 +207,9 @@ def run_delegate(
             "tools": [],  # structurally tool-less (DEC-046)
             "policy": run_policy["policy_pins"],
         }
-        reservation = ledger.reserve(
-            user_key,
-            price=pricing.price_snapshot(config.api_type, config.model),
-            reservation_id=child_id,
-            **admit,
-        )
-    except ledger.QuotaExceeded as exc:
-        return (
-            "error",
-            f"delegate {coord} was not admitted: {exc}",
-            _record("error", {}, None, pins),
-        )
-    except Exception as exc:  # resolution/policy failure — data, not an error
-        return ("error", f"delegate {coord} could not start: {exc}", _record("error", {}, None, pins))
+        reservation = ledger.reserve(user_key, reservation_id=child_id, **admit)
+    except Exception as exc:  # resolution/policy failure - data, not an error
+        return ("error", f"delegate {coord} could not start: {exc}", _record("error", {}, pins))
 
     usage_sink: dict = {}
     try:
@@ -242,7 +229,7 @@ def run_delegate(
         return (
             "error",
             f"delegate {coord} failed: {exc}",
-            _record("error", usage_sink, settled["costUsd"], pins),
+            _record("error", usage_sink, pins),
         )
     settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="ok")
     text = reply if isinstance(reply, str) else str(reply)
@@ -250,7 +237,7 @@ def run_delegate(
         text = text[:DELEGATE_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
     # The child's reply is returned verbatim as data — NEVER parsed for
     # toolRequest/delegateRequest (depth-1 by construction).
-    return ("ok", text, _record("ok", usage_sink, settled["costUsd"], pins))
+    return ("ok", text, _record("ok", usage_sink, pins))
 
 
 # ── dev/106: the hard-dependency closure ─────────────────────────────────────

@@ -1,18 +1,19 @@
-"""Effective agent policy: resolution + downward-only validation (memos
-``dev/24``/``dev/42``).
+"""Effective agent policy: resolution + downward-only validation.
 
-One resolver serves both the settings screens (display) and run admission
-(enforcement), so what a user sees is exactly what runs hit. Resolution per
-field is ``attachment ?? project ?? account ?? deployment``, **clamped
-downward at read** — a stored value looser than its parent scope's effective
-value can never leak through, even if it was legal when written.
+Resolution per field is ``attachment ?? project ?? account ?? deployment``,
+**clamped downward at read**: a stored value looser than its parent scope's
+effective value can never leak through, even if it was legal when written.
 ``validate_patch`` additionally rejects loosening at write time with
-field-specific messages (memo ``dev/11``'s tighten-only rule).
+field-specific messages.
 
-v1 fields (all optional per scope):
-  quotas.runsPerDay              int > 0    account + project + attachment
-  cost.dailyBudgetUsd            number > 0 account + project + attachment
-  cost.estimatedCostPerRunUsd    number > 0 account only (pricing, not per-instance)
+**One field remains.** ``quotas.runsPerDay`` and the whole ``cost`` section
+(``dailyBudgetUsd``, ``estimatedCostPerRunUsd``) are gone with the metering
+they served: Curio does not cap or price agent runs. ``maxOutputTokens`` stays
+because it is not a quota at all - it is passed to the provider as
+``max_tokens`` on every completion, so it shapes one reply rather than
+rationing a day's worth.
+
+Fields (optional per scope):
   resources.maxOutputTokens      int > 0    account + project + attachment
 """
 
@@ -20,17 +21,10 @@ from __future__ import annotations
 
 import numbers
 
-from utk_curio.backend.app.agents import quotas
-
 DEPLOYMENT_MAX_OUTPUT_TOKENS = 4096
 
 # section -> {key: (numeric_kind, account_allowed, project_allowed, attachment_allowed)}
 _FIELDS: dict[str, dict[str, tuple[str, bool, bool, bool]]] = {
-    "quotas": {"runsPerDay": ("int", True, True, True)},
-    "cost": {
-        "dailyBudgetUsd": ("number", True, True, True),
-        "estimatedCostPerRunUsd": ("number", True, False, False),
-    },
     "resources": {"maxOutputTokens": ("int", True, True, True)},
 }
 
@@ -56,8 +50,6 @@ def _value(settings: dict | None, section: str, key: str):
 def deployment_defaults() -> dict:
     """The deployment scope: env-derived defaults that double as ceilings."""
     return {
-        "quotas": {"runsPerDay": quotas.runs_per_day_limit()},
-        "cost": {"dailyBudgetUsd": None, "estimatedCostPerRunUsd": None},
         "resources": {"maxOutputTokens": DEPLOYMENT_MAX_OUTPUT_TOKENS},
     }
 
@@ -99,10 +91,6 @@ def effective(
             key: _resolve(section, key, account_settings, project_settings, attachment_settings)
             for key in keys
         }
-    budget = out["cost"]["dailyBudgetUsd"]["value"]
-    estimate = out["cost"]["estimatedCostPerRunUsd"]["value"]
-    # The estimated-budget gate is active only when both halves are configured.
-    out["cost"]["configured"] = budget is not None and estimate is not None
     return out
 
 

@@ -104,7 +104,7 @@ after an **Add to dataflow**, a **Remove from dataflow**, or an **Attach**:
 | **My imports** (account) | `.curio/users/<user-key>/imported-agents.json` | **Import agent** adds a coordinate; removing an import drops it. The analogue of `default-packages.json`. |
 | **In dataflow** (per-dataflow lockfile) | `spec.trill.json` then `dataflow.agents[]` | **Add to dataflow** adds an entry for the open dataflow; **Remove from dataflow** removes it. |
 | **Attachments**, a private agent instance bound to a target | `spec.trill.json` then `dataflow.agentAttachments` | **Attach** (dragging an agent onto a node or the canvas) creates one; **Detach** deletes it and its transcript. |
-| **Usage ledger** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends a reserve and settle pair. Append-only; not user-editable. |
+| **Usage ledger** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends a reserve and settle pair. Append-only, not user-editable, and not surfaced in the interface. |
 
 The same tolerances apply as elsewhere in the catalog: a missing registry file
 is an empty list, a corrupt one is treated as empty (reads never raise), and one
@@ -272,16 +272,22 @@ deployment's choice as the inherited value and you override it only by typing
 something else. Leave a field blank and you stay on the deployment default,
 including when the operator later changes it.
 
-**Curio does not meter, cap, or bill agent runs.** There is no quota screen and
-no spend limit to configure, because the tokens are billed to whoever's key is
-in use and the ceiling is theirs to impose, not Curio's to assume. An operator
-who wants a run ceiling sets `CURIO_AGENT_RUNS_PER_DAY`; nothing is capped
-otherwise.
+**Curio does not meter, cap, or bill agent runs.** There is no quota screen, no
+spend limit, and no way to configure either: the tokens are billed to whoever's
+key is in use, so the ceiling is theirs to impose rather than Curio's to assume.
+No run is ever refused for usage.
+
+The one adjacent setting that survives is **max output tokens**, and it is not a
+quota: it is passed to the provider as `max_tokens` on every completion, so it
+shapes one reply rather than rationing a day's worth. It resolves
+`attachment ?? project ?? account ?? deployment`, clamped downward on read, and
+is editable through the agent settings API rather than the interface.
 
 Curio does keep a local record of what ran, in an append-only per-day file under
 `.curio/users/<key>/agents/ledger/`. It is written from the token counts each
 provider already returns on the completion itself: no usage or billing API is
-ever called, and no request is made for it.
+ever called, and no USD figure is computed, because Curio has no price table and
+would have to invent the numbers.
 
 ---
 
@@ -408,8 +414,6 @@ would disable every AI surface.
 | Variable | Why there is no flag |
 |---|---|
 | `CURIO_DEFAULT_LLM_API_KEY` (or `AICONN_API_KEY`) | A key passed as an argument is visible in the process list to every user on the host. Set it in the environment. |
-| `CURIO_AGENT_RUNS_PER_DAY` | Curio ships no run cap, has no interface for one, and offers no flag to pick one, so nothing invites a default back in. Set the variable if your deployment wants a ceiling. |
-| `CURIO_AGENT_PRICE_TABLE` | Path to a JSON price table for the local usage ledger. The built-in table is empty; without one, the ledger records tokens and no USD. |
 | `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | Guests inherit the default provider and only the key gates access. These are an escape hatch for the rare split-provider deployment. |
 
 The package-build variables (`CURIO_BUILD_*`, `CURIO_JS_*`,
@@ -431,9 +435,9 @@ They are append-only, rotate by date, and are written from token counts the
 provider already returned on each completion, so nothing polls anything. They
 are not surfaced in the interface.
 
-Deleting an old day's file loses that day's history and nothing else. Deleting
-today's file resets today's counters, which matters only on a deployment that
-set `CURIO_AGENT_RUNS_PER_DAY`. There is no cleanup job to schedule.
+Deleting a day's file loses that day's history and nothing else: no limit is
+computed from it, so nothing changes for the user. Nothing expires the files
+automatically and there is no cleanup job to schedule.
 
 ---
 

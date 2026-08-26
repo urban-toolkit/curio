@@ -19,7 +19,6 @@ from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
 
 from utk_curio.backend.app.agents import services as agents_services
-from utk_curio.backend.app.agents.quotas import QuotaExceeded
 from utk_curio.backend.app.agents.provider_config import ProviderConfigError
 from utk_curio.backend.app.agents.services import AgentServiceError
 
@@ -196,7 +195,7 @@ def unpublish_agent(coord: str):
 
 
 def _optional_provider_config():
-    """The caller's resolved provider config for the no-secrets pricing view
+    """The caller's resolved provider config for the settings payloads
     (memo dev/40) — None when none resolves (e.g. keyless guests), never an
     error: settings screens must load regardless."""
     from utk_curio.backend.app.agents.provider_config import (
@@ -901,13 +900,6 @@ def run_attachment(project_id: str, attachment_id: str):
         return _error("project not found", 404)
     except ProviderConfigError as exc:
         return _error(str(exc), 400)
-    except QuotaExceeded as exc:
-        return (
-            jsonify(
-                {"error": str(exc), "quota": True, "reason": exc.reason, "resetAt": exc.reset_at}
-            ),
-            429,
-        )
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200
@@ -954,13 +946,6 @@ def stream_attachment(project_id: str, attachment_id: str):
         return _error("project not found", 404)
     except ProviderConfigError as exc:
         return _error(str(exc), 400)
-    except QuotaExceeded as exc:
-        return (
-            jsonify(
-                {"error": str(exc), "quota": True, "reason": exc.reason, "resetAt": exc.reset_at}
-            ),
-            429,
-        )
     except AgentServiceError as exc:
         return _svc_error(exc)
 

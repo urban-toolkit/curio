@@ -1,54 +1,47 @@
 import {
-  setRetentionDeclaration,
   backupPostureLine,
   permanentDeletionNotice,
   GUEST_COMMINGLING_NOTICE,
 } from "../../services/retentionCopy";
 
-describe("retentionCopy (DEC-057, dev/88)", () => {
-  afterEach(() => setRetentionDeclaration(null));
-
-  it("undeclared posture is stated as undeclared — never guessed", () => {
+/**
+ * The copy used to have three states, driven by an operator declaration in
+ * `.curio/agents-retention.json`: "no backups", "up to N days", or undeclared.
+ * That declaration is gone, so only the honest undeclared line remains - which
+ * is what an unconfigured deployment already said.
+ */
+describe("retentionCopy", () => {
+  it("states the backup posture as undeclared, never guessed", () => {
     expect(backupPostureLine()).toContain("has not declared its backup posture");
     expect(backupPostureLine()).toContain("may retain copies");
   });
 
-  it("a declared no-backups posture states finality", () => {
-    setRetentionDeclaration({ backups: "none" });
-    expect(backupPostureLine()).toBe(
-      "This deployment declares no backups: once deleted here, the data is gone.",
-    );
+  it("never claims finality it cannot control", () => {
+    // The failure mode this guards: a confident "gone forever" on a deployment
+    // whose operator backups say otherwise.
+    const line = backupPostureLine();
+    expect(line).not.toMatch(/gone|permanent|forever|irreversible/i);
   });
 
-  it("a declared expiry window states the number verbatim", () => {
-    setRetentionDeclaration({ backups: { expiryDays: 30 } });
-    expect(backupPostureLine()).toContain("up to 30 days after deletion");
-  });
-
-  it("invalid declarations degrade to undeclared", () => {
-    setRetentionDeclaration({ backups: { expiryDays: -3 } });
-    expect(backupPostureLine()).toContain("has not declared");
-    setRetentionDeclaration({ backups: "always" });
-    expect(backupPostureLine()).toContain("has not declared");
-    setRetentionDeclaration("garbage");
-    expect(backupPostureLine()).toContain("has not declared");
-  });
-
-  it("the permanent-deletion notice scopes the claim to the live store", () => {
-    setRetentionDeclaration({ backups: "none" });
+  it("scopes permanence to this deployment's live store", () => {
     const notice = permanentDeletionNotice();
     expect(notice).toContain("this deployment's live store immediately");
-    expect(notice).toContain("the data is gone");
+    expect(notice).toContain(backupPostureLine());
   });
 
-  it("re-seeding replaces the prior declaration", () => {
-    setRetentionDeclaration({ backups: "none" });
-    setRetentionDeclaration({ backups: { expiryDays: 7 } });
-    expect(backupPostureLine()).toContain("up to 7 days");
-  });
-
-  it("the guest notice states the shared-store reality plainly", () => {
-    expect(GUEST_COMMINGLING_NOTICE).toContain("shared guest space");
+  it("tells guests their space is shared before they sign in", () => {
+    expect(GUEST_COMMINGLING_NOTICE).toContain("single shared guest space");
     expect(GUEST_COMMINGLING_NOTICE).toContain("deletable by");
+  });
+
+  it("uses no em or en dashes", () => {
+    // House rule for user-facing text.
+    for (const text of [
+      backupPostureLine(),
+      permanentDeletionNotice(),
+      GUEST_COMMINGLING_NOTICE,
+    ]) {
+      expect(text).not.toMatch(/[–—]/);
+    }
   });
 });

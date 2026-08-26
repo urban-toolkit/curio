@@ -19,7 +19,7 @@ future dependency isolation is new parameter values, never a redesign.
 Every invocation appends one audit row (sizes and outcomes, NEVER payload
 contents) to the per-package day-file ledger under
 ``.curio/users/<key>/package-backend-ledger/<dir_name>/`` — append-only,
-archived by the dev/87 retention sweep when the operator declares it.
+kept until an operator prunes it; nothing expires it automatically.
 """
 
 from __future__ import annotations
@@ -262,7 +262,7 @@ def build_overlay(user_key: str, dir_name: str, deps: dict,
 def remove_backend_residue(user_key: str, dir_name: str) -> dict[str, bool]:
     """dev/97: the uninstall sweep dev/91 §6.7 promised — overlay, data dir,
     and pin entry go; the invocation LEDGER deliberately survives (append-only
-    audit history is retention's to expire, never uninstall's). Best-effort
+    audit history outlives an uninstall). Best-effort
     per item, loud on failure, returns what was actually removed."""
     import shutil
 

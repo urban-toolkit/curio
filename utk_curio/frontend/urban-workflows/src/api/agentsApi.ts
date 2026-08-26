@@ -547,10 +547,13 @@ export interface AgentTarget {
   targetId?: string;
 }
 
-/** Editable policy fields (memo dev/24). Absent/omitted = inherit. */
+/** Editable policy fields. Absent/omitted = inherit.
+ *
+ * One field. `quotas.runsPerDay` and the whole `cost` section went with the
+ * metering they served: Curio does not cap or price agent runs, and there is
+ * no interface for either. `maxOutputTokens` stays because it is not a quota -
+ * it is passed to the provider as `max_tokens` on every completion. */
 export interface AgentPolicySettings {
-  quotas?: { runsPerDay?: number };
-  cost?: { dailyBudgetUsd?: number; estimatedCostPerRunUsd?: number };
   resources?: { maxOutputTokens?: number };
 }
 
@@ -560,54 +563,27 @@ export interface EffectiveField {
   source: "deployment" | "account" | "project" | "attachment" | null;
 }
 
-/** No-secrets pricing view for the Cost screen (memo dev/40): the caller's
- * provider/model, whether a deployment price exists, and its effective date. */
-export interface AgentPricingSummary {
-  provider: string;
-  model: string;
-  priced: boolean;
-  effectiveDate: string | null;
-}
-
 export interface EffectivePolicy {
-  quotas: {
-    runsPerDay: EffectiveField & { usedToday?: number };
-    /** Actual tokens counted this window (memo dev/37); absent on old payloads. */
-    usageToday?: AgentUsage;
-  };
-  cost: {
-    dailyBudgetUsd: EffectiveField;
-    estimatedCostPerRunUsd: EffectiveField;
-    configured: boolean;
-    estimatedSpendTodayUsd?: number | null;
-    /** Actual USD settled this window (memo dev/40) — Actual or null, never
-     * an estimate and never a fabricated $0.00 for unpriced deployments. */
-    actualSpendTodayUsd?: number | null;
-    pricing?: AgentPricingSummary | null;
-  };
   resources: { maxOutputTokens: EffectiveField; provider?: string; model?: string };
 }
 
+/** Token counts from the local ledger, reported by every settings scope.
+ * Never enforced: nothing is capped, and no USD figure is computed. */
+interface LedgerUsageReadout {
+  usedToday?: number;
+  usageToday?: AgentUsage;
+}
+
 /** The Account-policy scope (GET/PATCH /api/agents/settings). */
-export interface AccountAgentSettings {
+export interface AccountAgentSettings extends LedgerUsageReadout {
   revision: number;
   settings: AgentPolicySettings & Record<string, unknown>;
   effective: EffectivePolicy;
-  ceilings: {
-    quotas: { runsPerDay: number };
-    resources: { maxOutputTokens: number };
-    cost: Record<string, number | null>;
-  };
-  usedToday: number;
-  /** Actual tokens counted this window (memo dev/37); absent on old payloads. */
-  usageToday?: AgentUsage;
-  /** Actual USD settled this window (memo dev/40); null until real. */
-  actualSpendTodayUsd?: number | null;
-  pricing?: AgentPricingSummary | null;
+  ceilings: { resources: { maxOutputTokens: number } };
 }
 
-/** The project-agent-default scope for one installed template (memos dev/23/24). */
-export interface ProjectAgentDefaults {
+/** The project-agent-default scope for one installed template. */
+export interface ProjectAgentDefaults extends LedgerUsageReadout {
   coord: string;
   name: string;
   revision: number;
@@ -615,9 +591,9 @@ export interface ProjectAgentDefaults {
   effective: EffectivePolicy;
 }
 
-/** The Attached-instance policy scope (memo dev/42): tighten-only overrides
- * on one attachment, sharing the record's optimistic revision. */
-export interface AttachmentAgentSettings {
+/** The Attached-instance policy scope: tighten-only overrides on one
+ * attachment, sharing the record's optimistic revision. */
+export interface AttachmentAgentSettings extends LedgerUsageReadout {
   attachmentId: string;
   coord: string;
   name: string;
@@ -630,7 +606,7 @@ export interface AttachmentAgentSettings {
 /**
  * POST to an SSE endpoint and dispatch each parsed event frame (the dev/22
  * transport, shared by the chat and Solve streams — dev/63). Pre-stream
- * failures (quota 429, 404, …) throw an Error carrying `status`/`body` like
+ * failures (404, 400, …) throw an Error carrying `status`/`body` like
  * `apiFetch`; frame payloads are JSON-decoded before dispatch.
  */
 async function postSseStream(
@@ -1016,7 +992,7 @@ export const agentsApi = {
    * reply plus the run's execution identity and Actual usage when the server
    * sends them (memo dev/37; absent from old servers). Unknown event names are
    * skipped, so the parser tolerates future envelope additions. Pre-stream
-   * failures (quota 429, 404, …) throw an Error carrying `status`/`body` like
+   * failures (404, 400, …) throw an Error carrying `status`/`body` like
    * `apiFetch`; a mid-stream `error` event throws too.
    */
   async runAttachmentStream(

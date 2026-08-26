@@ -580,7 +580,7 @@ phase** loads every declared handler in a real sandbox worker - a failed probe b
 exactly as a failed preview. Both install authorities pin the entry's digest; invocation
 verify-on-read refuses drift with reinstall guidance. Every invocation appends an audit row
 (sizes and outcomes, never payloads) under `package-backend-ledger/`, archived by the
-operator's `packageBackend.ledgerArchiveAfterDays` retention declaration (`docs/RETENTION.md`).
+operator pruning it; nothing expires it automatically.
 Operator seams: `CURIO_BACKEND_SANDBOX_PYTHON` pins the worker interpreter, and
 `CURIO_BACKEND_OVERLAY_MAX_MB` (default 512) caps the per-package dependency overlay.
 **Handler dependencies are isolated** (dev/97): a backend-bearing package's declared python

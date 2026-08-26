@@ -1207,11 +1207,9 @@ class TestExecutionRecords:
         assert pins["model"] == DEFAULT_LLM_MODEL
         # dev/39: granted tools are pinned; the registry ships empty.
         assert pins["tools"] == []
+        # One pin left: the run caps and the budget it used to record are gone.
         assert pins["policy"] == {
-            "runsPerDay": policy.deployment_defaults()["quotas"]["runsPerDay"],
             "maxOutputTokens": policy.DEPLOYMENT_MAX_OUTPUT_TOKENS,
-            "dailyBudgetUsd": None,
-            "estimatedCostPerRunUsd": None,
         }
 
     def test_run_usage_null_when_provider_reports_none(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -1372,7 +1370,7 @@ class TestExecutionRecords:
             f"/api/agents/projects/{alice_project}/defaults/agent.chat-agent@1.0.0",
             headers=_auth(token),
         ).get_json()
-        assert proj["effective"]["quotas"]["usageToday"] == expected
+        assert proj["usageToday"] == expected
 
     def test_uploaded_definition_prompt_digest_is_pinned(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # A digest-stamped definition (upload-import, memo dev/36) pins the
@@ -2471,63 +2469,54 @@ class TestAttachmentSettings:
         assert body["attachmentId"] == att_id
         assert body["settings"] == {}
         assert body["revision"] == 1
-        # Curio ships no run cap, so nothing sets this: the ceiling is the
-        # operator's to impose through CURIO_AGENT_RUNS_PER_DAY. The clamp
-        # itself is covered below, against an explicitly configured one.
-        assert body["effective"]["quotas"]["runsPerDay"] == {
-            "value": None, "source": None, "usedToday": 0,
+        # One field survives the metering removal, and it is not a quota:
+        # maxOutputTokens is passed to the provider as max_tokens.
+        assert body["effective"] == {
+            "resources": {"maxOutputTokens": {"value": 4096, "source": "deployment"}}
         }
-        assert "actualSpendTodayUsd" in body["effective"]["cost"]
+        assert body["usedToday"] == 0
+        assert body["usageToday"] == {"inputTokens": 0, "outputTokens": 0}
 
     def test_patch_tightens_and_binds(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
         att_id = self._attach(client, token, alice_project)
-        r = self._patch(client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 3}})
+        r = self._patch(
+            client, token, alice_project, att_id, 1,
+            {"resources": {"maxOutputTokens": 256}},
+        )
         assert r.status_code == 200, r.get_data(as_text=True)
         body = r.get_json()
-        assert body["settings"] == {"quotas": {"runsPerDay": 3}}
-        assert body["effective"]["quotas"]["runsPerDay"] == {
-            "value": 3, "source": "attachment", "usedToday": 0,
+        assert body["settings"] == {"resources": {"maxOutputTokens": 256}}
+        assert body["effective"]["resources"]["maxOutputTokens"] == {
+            "value": 256, "source": "attachment",
         }
         assert body["revision"] == 2
 
-    def test_patch_loosening_past_a_configured_ceiling_is_a_400(
-        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    def test_patch_loosening_past_the_ceiling_is_a_400(
+        self, client, user_and_token, tmp_curio, alice_project
     ):
-        # Tighten-only is enforced against whatever ceiling binds. With no
-        # deployment ceiling there is nothing to exceed (the case below), so
-        # this one configures one first.
-        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "50")
+        # Tighten-only still holds for the one field left. Unlike the retired
+        # run cap, maxOutputTokens always has a deployment ceiling, so there is
+        # no "no ceiling configured" case to pair with this one.
         _, token = user_and_token
         att_id = self._attach(client, token, alice_project)
         r = self._patch(
-            client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 999999}}
+            client, token, alice_project, att_id, 1,
+            {"resources": {"maxOutputTokens": 999999}},
         )
         assert r.status_code == 400
         assert "may not exceed" in r.get_json()["error"]
 
-    def test_without_a_deployment_ceiling_any_limit_is_accepted(
+    def test_the_retired_sections_are_refused_by_name(
         self, client, user_and_token, tmp_curio, alice_project
     ):
-        # The flip side, and the point of removing the shipped 200/day: with
-        # no ceiling configured, Curio does not second-guess the number a user
-        # chooses. It is the operator's tokens being spent.
+        # A client still sending quotas or cost is told, not silently ignored.
         _, token = user_and_token
         att_id = self._attach(client, token, alice_project)
-        r = self._patch(
-            client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 999999}}
-        )
-        assert r.status_code == 200, r.get_data(as_text=True)
-        assert r.get_json()["effective"]["quotas"]["runsPerDay"]["value"] == 999999
-
-    def test_estimate_not_editable_here(self, client, user_and_token, tmp_curio, alice_project):
-        _, token = user_and_token
-        att_id = self._attach(client, token, alice_project)
-        r = self._patch(
-            client, token, alice_project, att_id, 1, {"cost": {"estimatedCostPerRunUsd": 0.1}}
-        )
-        assert r.status_code == 400
-        assert "not editable" in r.get_json()["error"]
+        for payload in ({"quotas": {"runsPerDay": 3}}, {"cost": {"dailyBudgetUsd": 1}}):
+            r = self._patch(client, token, alice_project, att_id, 1, payload)
+            assert r.status_code == 400, payload
+            assert "unknown settings section" in r.get_json()["error"]
 
     def test_shared_revision_an_intent_edit_stales_a_settings_draft(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
@@ -2544,66 +2533,45 @@ class TestAttachmentSettings:
     def test_clear_overrides_restores_the_project_profile(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
         att_id = self._attach(client, token, alice_project)
-        self._patch(client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 3}})
+        self._patch(
+            client, token, alice_project, att_id, 1,
+            {"resources": {"maxOutputTokens": 256}},
+        )
         r = self._patch(client, token, alice_project, att_id, 2, {})
         assert r.status_code == 200
         body = r.get_json()
         assert body["settings"] == {}
-        assert body["effective"]["quotas"]["runsPerDay"]["source"] is None
+        assert body["effective"]["resources"]["maxOutputTokens"]["source"] == "deployment"
 
-    def test_attachment_limit_enforced_per_attachment(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_runs_are_attributed_per_attachment_but_never_limited(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        # This case used to prove a per-attachment run cap 429'd one sibling
+        # while the other kept running. Nothing is capped now, so what is left
+        # worth asserting is the attribution the ledger still records.
         self._mock_run(monkeypatch)
         _, token = user_and_token
         att_a = self._attach(client, token, alice_project)
         att_b = self._attach(client, token, alice_project)
-        self._patch(client, token, alice_project, att_a, 1, {"quotas": {"runsPerDay": 1}})
-        url_a = f"/api/agents/projects/{alice_project}/attachments/{att_a}/run"
-        url_b = f"/api/agents/projects/{alice_project}/attachments/{att_b}/run"
-        assert client.post(url_a, json={"message": "q"}, headers=_auth(token)).status_code == 200
-        r = client.post(url_a, json={"message": "q"}, headers=_auth(token))
-        assert r.status_code == 429
-        assert "attachment's run limit" in r.get_json()["error"]
-        assert r.get_json()["reason"] == "quota"
-        # The sibling attachment of the same template keeps running.
-        assert client.post(url_b, json={"message": "q"}, headers=_auth(token)).status_code == 200
-        # The binding-scope meter shows THIS attachment's count.
-        body = self._get(client, token, alice_project, att_a).get_json()
-        assert body["effective"]["quotas"]["runsPerDay"]["usedToday"] == 1
+        url = lambda a: f"/api/agents/projects/{alice_project}/attachments/{a}/run"
+        for _ in range(3):
+            assert client.post(url(att_a), json={"message": "q"}, headers=_auth(token)).status_code == 200
+        assert client.post(url(att_b), json={"message": "q"}, headers=_auth(token)).status_code == 200
+        a_body = self._get(client, token, alice_project, att_a).get_json()
+        b_body = self._get(client, token, alice_project, att_b).get_json()
+        assert a_body["usedToday"] == 3
+        assert b_body["usedToday"] == 1
 
-    def test_tightened_max_output_tokens_reaches_the_provider_and_pins(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        seen = self._mock_run(monkeypatch)
-        _, token = user_and_token
-        att_id = self._attach(client, token, alice_project)
-        self._patch(
-            client, token, alice_project, att_id, 1, {"resources": {"maxOutputTokens": 256}}
-        )
-        client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
-            json={"message": "q"}, headers=_auth(token),
-        )
-        assert seen[0] == 256
-        turns = client.get(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
-            headers=_auth(token),
-        ).get_json()["turns"]
-        # DEC-031: the pins reflect the instance tightening, structurally.
-        assert turns[1]["execution"]["pins"]["policy"]["maxOutputTokens"] == 256
+class TestRunsAreRecordedNotRationed:
+    """What replaced the metering classes.
 
-    def test_settings_die_with_the_attachment(self, client, user_and_token, tmp_curio, alice_project):
-        _, token = user_and_token
-        att_id = self._attach(client, token, alice_project)
-        self._patch(client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 3}})
-        client.delete(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}",
-            headers=_auth(token),
-        )
-        assert self._get(client, token, alice_project, att_id).status_code == 404
-
-
-class TestLedgerAndPricing:
-    """T3 (memo dev/40, DEC-044) on the run path: reservations settle with
-    pinned prices, costUsd rides the execution record, the settings payloads
-    expose Actual USD, and the fail-closed budget rule denies by name."""
+    ``TestLedgerAndPricing`` asserted that reservations settled with a pinned
+    price, that ``costUsd`` rode the execution record, and that a configured
+    budget with no price denied the run. ``TestQuotaAdmission`` asserted both
+    run paths 429'd once a daily limit was hit. Curio does not cap or price
+    agent runs any more, so both claims are gone and the opposite is asserted
+    here: runs are recorded, never refused.
+    """
 
     def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
@@ -2614,252 +2582,75 @@ class TestLedgerAndPricing:
         )
         return r.get_json()["attachmentId"]
 
-    def _mock_run(self, monkeypatch, usage=None):
+    def _mock_run(self, monkeypatch, reply="ok"):
         from utk_curio.backend.app.agents import services as services_mod
 
-        def _fake_run(config, messages, usage_out=None, **kwargs):
+        def _fake_run(config, messages, **kwargs):
+            # The usage sink is what the ledger records; a mock that ignores it
+            # would make the token assertions below vacuous.
+            sink = kwargs.get("usage_out")
+            if sink is not None:
+                sink["inputTokens"] = 12
+                sink["outputTokens"] = 34
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
-                if usage_out is not None:
-                    usage_out.update({"inputTokens": 5, "outputTokens": 3})
                 return "Title"
-            if usage is not None and usage_out is not None:
-                usage_out.update(usage)
-            return "ok"
+            return reply
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
-
-    def _price_default_provider(self, tmp_path, monkeypatch, rate_in=3.0, rate_out=15.0):
-        import json as _json
-
-        from utk_curio.backend.app.agents import pricing
-        # Read through the module, not as a from-import: the suite's conftest
-        # stands in for the operator and patches these attributes, so a
-        # module-level snapshot would see the (empty) shipped defaults.
-        from utk_curio.backend.app.agents.provider_config import (
-            DEFAULT_LLM_API_TYPE,
-            DEFAULT_LLM_MODEL,
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
         )
 
-        path = tmp_path / "prices.json"
-        path.write_text(
-            _json.dumps(
-                {
-                    f"{DEFAULT_LLM_API_TYPE}/{DEFAULT_LLM_MODEL}": {
-                        "inputUsdPerMtok": rate_in,
-                        "outputUsdPerMtok": rate_out,
-                        "effectiveDate": "2026-07-01",
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
-        monkeypatch.setenv(pricing.PRICE_TABLE_ENV, str(path))
-
-    def test_priced_run_settles_cost_onto_the_execution_record(self, client, user_and_token, tmp_curio, tmp_path, monkeypatch):
-        self._price_default_provider(tmp_path, monkeypatch)
-        self._mock_run(monkeypatch, usage={"inputTokens": 1_000_000, "outputTokens": 100_000})
-        user, token = user_and_token
-        r_proj = client.post(
-            "/api/projects",
-            json={"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []},
-            headers=_auth(token),
-        )
-        project_id = r_proj.get_json()["id"]
-        att_id = self._attach_builtin(client, token, project_id)
-        client.post(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
-            json={"message": "q"}, headers=_auth(token),
-        )
-        turns = client.get(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}/session",
-            headers=_auth(token),
-        ).get_json()["turns"]
-        # $3/Mtok in + $15/Mtok out on 1M/100k tokens = $4.50 Actual.
-        assert turns[1]["execution"]["costUsd"] == 4.5
-        # The settings payloads carry Actual USD (run + priced title call).
-        acct = client.get("/api/agents/settings", headers=_auth(token)).get_json()
-        assert acct["actualSpendTodayUsd"] == pytest.approx(4.5, abs=0.001)
-        assert acct["pricing"]["priced"] is True
-        assert acct["pricing"]["effectiveDate"] == "2026-07-01"
-
-    def test_unpriced_run_is_honest_nulls(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        self._mock_run(monkeypatch, usage={"inputTokens": 12, "outputTokens": 34})
-        _, token = user_and_token
-        att_id = self._attach_builtin(client, token, alice_project)
-        client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
-            json={"message": "q"}, headers=_auth(token),
-        )
-        turns = client.get(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
-            headers=_auth(token),
-        ).get_json()["turns"]
-        assert turns[1]["execution"]["costUsd"] is None
-        assert turns[1]["execution"]["usage"] == {"inputTokens": 12, "outputTokens": 34}
-        acct = client.get("/api/agents/settings", headers=_auth(token)).get_json()
-        assert acct["actualSpendTodayUsd"] is None  # never a fake $0.00
-        assert acct["pricing"]["priced"] is False
-        proj = client.get(
-            f"/api/agents/projects/{alice_project}/defaults/agent.chat-agent@1.0.0",
-            headers=_auth(token),
-        ).get_json()
-        assert proj["effective"]["cost"]["actualSpendTodayUsd"] is None
-        assert proj["effective"]["cost"]["pricing"]["priced"] is False
-
-    def test_fail_closed_budget_without_estimate_or_price(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        # REQ-COST-001 — the tranche's one deliberate behavior change, by name:
-        # a configured hard cap with an unknowable per-run cost denies the run.
-        from utk_curio.backend.app.agents import quotas
-        from utk_curio.backend.app.projects.services import _user_dir_key
-
+    def test_many_runs_all_succeed_and_all_count(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        # The old ceiling was 200/day and an env var could lower it. Neither
+        # exists, so nothing here can 429 for usage.
         self._mock_run(monkeypatch)
-        user, token = user_and_token
-        att_id = self._attach_builtin(client, token, alice_project)
-        r = client.patch(
-            "/api/agents/settings",
-            json={"revision": 1, "settings": {"cost": {"dailyBudgetUsd": 1.0}}},
-            headers=_auth(token),
-        )
-        assert r.status_code == 200
-        r = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
-            json={"message": "q"}, headers=_auth(token),
-        )
-        assert r.status_code == 429
-        body = r.get_json()
-        assert body["reason"] == "budget"
-        assert "no cost estimate or price" in body["error"]
-        assert body["resetAt"]
-        # Denied: nothing consumed, nothing persisted.
-        assert quotas.runs_used_today(_user_dir_key(user)) == 0
-        turns = client.get(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
-            headers=_auth(token),
-        ).get_json()["turns"]
-        assert turns == []
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "2")  # deliberately ignored
+        _, token = user_and_token
+        att = self._attach_builtin(client, token, alice_project)
+        url = f"/api/agents/projects/{alice_project}/attachments/{att}/run"
+        for _ in range(5):
+            r = client.post(url, json={"message": "q"}, headers=_auth(token))
+            assert r.status_code == 200, r.get_data(as_text=True)
+        body = client.get("/api/agents/settings", headers=_auth(token)).get_json()
+        assert body["usedToday"] == 5
 
-    def test_budget_with_estimate_still_gates_as_before(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_no_execution_record_carries_a_usd_figure(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        # Curio ships no price table, so a cost would have to be invented.
         self._mock_run(monkeypatch)
         _, token = user_and_token
-        att_id = self._attach_builtin(client, token, alice_project)
-        client.patch(
-            "/api/agents/settings",
-            json={"revision": 1, "settings": {"cost": {"dailyBudgetUsd": 0.30, "estimatedCostPerRunUsd": 0.10}}},
-            headers=_auth(token),
-        )
-        url = f"/api/agents/projects/{alice_project}/attachments/{att_id}/run"
-        for _ in range(3):
-            assert client.post(url, json={"message": "q"}, headers=_auth(token)).status_code == 200
-        r = client.post(url, json={"message": "q"}, headers=_auth(token))
-        assert r.status_code == 429
-        assert r.get_json()["reason"] == "budget"
-
-    def test_error_run_settles_and_releases_nothing_extra(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents import quotas
-        from utk_curio.backend.app.projects.services import _user_dir_key
-
-        def _boom(config, messages, usage_out=None, **kwargs):
-            if usage_out is not None:
-                usage_out.update({"inputTokens": 7, "outputTokens": 0})
-            raise RuntimeError("boom")
-
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _boom)
-        user, token = user_and_token
-        att_id = self._attach_builtin(client, token, alice_project)
+        att = self._attach_builtin(client, token, alice_project)
         r = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
-            json={"message": "q"}, headers=_auth(token),
-        )
-        assert r.status_code == 502
-        # The failed run settled: run counted, usage recorded, cost null.
-        assert quotas.runs_used_today(_user_dir_key(user)) == 1
-        assert quotas.usage_today(_user_dir_key(user)) == {"inputTokens": 7, "outputTokens": 0}
-        turns = client.get(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
-            headers=_auth(token),
-        ).get_json()["turns"]
-        assert turns[1]["execution"]["status"] == "error"
-        assert turns[1]["execution"]["costUsd"] is None
-
-
-class TestQuotaAdmission:
-    """Both run paths admit up to the daily limit, then 429 with a stable body
-    (memo dev/22): a denied run consumes nothing and persists nothing."""
-
-    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
-        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
-        r = client.post(
-            f"/api/agents/projects/{project_id}/attachments",
-            json={"coord": coord, "target": {"kind": "canvas"}},
-            headers=_auth(token),
-        )
-        return r.get_json()["attachmentId"]
-
-    def test_run_denied_after_limit_with_stable_429(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "2")
-        monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m, **kw: "ok"
-        )
-        _, token = user_and_token
-        att_id = self._attach_builtin(client, token, alice_project)
-        url = f"/api/agents/projects/{alice_project}/attachments/{att_id}/run"
-        for _ in range(2):
-            assert client.post(url, json={"message": "q"}, headers=_auth(token)).status_code == 200
-        r = client.post(url, json={"message": "q3"}, headers=_auth(token))
-        assert r.status_code == 429
-        body = r.get_json()
-        assert body["quota"] is True
-        assert "resetAt" in body and "limit" in body["error"]
-        # The denied message was not persisted to the session.
-        turns = client.get(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
-            headers=_auth(token),
-        ).get_json()["turns"]
-        assert len(turns) == 4  # two admitted exchanges only
-
-    def test_stream_denied_with_plain_429_before_streaming(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "1")
-
-        def _fake_stream(config, messages, **kwargs):
-            yield "ok"
-
-        monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
-        )
-        # The admitted first run's title call must not reach a real provider —
-        # and must not consume the single quota slot (memo dev/25).
-        monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
-            lambda c, m, **kw: "Stream Title",
-        )
-        _, token = user_and_token
-        att_id = self._attach_builtin(client, token, alice_project)
-        url = f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream"
-        first = client.post(url, json={"message": "q"}, headers=_auth(token))
-        first.get_data()
-        assert first.status_code == 200
-        r = client.post(url, json={"message": "q2"}, headers=_auth(token))
-        assert r.status_code == 429
-        assert r.mimetype == "application/json"
-        assert r.get_json()["quota"] is True
-
-    def test_invalid_request_consumes_no_quota(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "1")
-        monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m, **kw: "ok"
-        )
-        _, token = user_and_token
-        att_id = self._attach_builtin(client, token, alice_project)
-        # A 404 run (unknown attachment) must not consume the single slot.
-        client.post(
-            f"/api/agents/projects/{alice_project}/attachments/ghost/run",
-            json={"message": "q"}, headers=_auth(token),
-        )
-        r = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            f"/api/agents/projects/{alice_project}/attachments/{att}/run",
             json={"message": "q"}, headers=_auth(token),
         )
         assert r.status_code == 200
+        raw = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att}/session",
+            headers=_auth(token),
+        ).get_data(as_text=True)
+        assert "costUsd" not in raw
+        assert "actualSpendTodayUsd" not in raw
+
+    def test_settings_payloads_report_tokens_without_a_budget_section(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        self._mock_run(monkeypatch)
+        _, token = user_and_token
+        att = self._attach_builtin(client, token, alice_project)
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att}/run",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        body = client.get("/api/agents/settings", headers=_auth(token)).get_json()
+        assert body["usageToday"]["inputTokens"] > 0
+        assert "cost" not in body["effective"]
+        assert "quotas" not in body["effective"]
+        assert "pricing" not in body
+
 
 
 class TestProjectAgentDefaults:
@@ -2883,7 +2674,6 @@ class TestProjectAgentDefaults:
         )
 
     def test_install_materializes_and_get_returns_effective_view(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "5")
         _, token = user_and_token
         self._install(client, token, alice_project)
         r = self._get(client, token, alice_project)
@@ -2893,10 +2683,10 @@ class TestProjectAgentDefaults:
         assert body["name"] == "Chat"
         assert body["revision"] == 1
         assert body["settings"] == {}  # built-ins carry no settingsDefaults
-        q = body["effective"]["quotas"]["runsPerDay"]
-        assert q == {"value": 5, "usedToday": 0, "source": "deployment"}
-        assert body["effective"]["cost"]["configured"] is False
-        assert body["effective"]["cost"]["estimatedSpendTodayUsd"] is None
+        # Token counts are reported alongside the record, not inside a
+        # quota section: nothing is being measured against a limit.
+        assert body["usedToday"] == 0
+        assert body["usageToday"] == {"inputTokens": 0, "outputTokens": 0}
         # No-secrets provider summary from the request user's resolved config.
         res = body["effective"]["resources"]
         assert res["maxOutputTokens"] == {"value": 4096, "source": "deployment"}
@@ -2919,7 +2709,7 @@ class TestProjectAgentDefaults:
             json={"message": "q"}, headers=_auth(token),
         )
         body = self._get(client, token, alice_project).get_json()
-        assert body["effective"]["quotas"]["runsPerDay"]["usedToday"] == 1
+        assert body["usedToday"] == 1
 
     def test_not_installed_404_and_uninstall_drops(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
@@ -3008,77 +2798,70 @@ class TestSettingsScreensApi:
             headers=_auth(token),
         )
 
-    def test_account_get_patch_roundtrip_and_409(self, client, user_and_token, tmp_curio, monkeypatch):
-        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "100")
+    def test_account_get_patch_roundtrip_and_409(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         body = client.get("/api/agents/settings", headers=_auth(token)).get_json()
         assert body["revision"] == 1 and body["settings"] == {}
-        assert body["effective"]["quotas"]["runsPerDay"]["source"] == "deployment"
-        assert body["ceilings"]["quotas"]["runsPerDay"] == 100
-        r = self._patch_account(client, token, 1, {"quotas": {"runsPerDay": 30}, "cost": {"estimatedCostPerRunUsd": 0.05}})
+        assert body["effective"]["resources"]["maxOutputTokens"]["source"] == "deployment"
+        assert body["ceilings"] == {"resources": {"maxOutputTokens": 4096}}
+        r = self._patch_account(client, token, 1, {"resources": {"maxOutputTokens": 1024}})
         assert r.status_code == 200, r.get_data(as_text=True)
         out = r.get_json()
         assert out["revision"] == 2
-        assert out["effective"]["quotas"]["runsPerDay"] == {"value": 30, "source": "account"}
-        # Stale revision → 409, no change.
+        assert out["effective"]["resources"]["maxOutputTokens"] == {
+            "value": 1024, "source": "account",
+        }
+        # Stale revision -> 409, no change.
         assert self._patch_account(client, token, 1, {}).status_code == 409
         assert client.get("/api/agents/settings", headers=_auth(token)).get_json()["revision"] == 2
 
-    def test_tighten_only_400s(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "100")
+    def test_tighten_only_400s(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        r = self._patch_account(client, token, 1, {"quotas": {"runsPerDay": 500}})
+        r = self._patch_account(client, token, 1, {"resources": {"maxOutputTokens": 999999}})
         assert r.status_code == 400
         assert "inherited limit" in r.get_json()["error"]
-        self._patch_account(client, token, 1, {"quotas": {"runsPerDay": 30}})
+        self._patch_account(client, token, 1, {"resources": {"maxOutputTokens": 1024}})
         self._install_and_attach(client, token, alice_project)
-        r = self._patch_project(client, token, alice_project, 1, {"quotas": {"runsPerDay": 60}})
+        r = self._patch_project(
+            client, token, alice_project, 1, {"resources": {"maxOutputTokens": 2048}}
+        )
         assert r.status_code == 400
-        r = self._patch_project(client, token, alice_project, 1, {"cost": {"estimatedCostPerRunUsd": 1}})
-        assert r.status_code == 400  # estimate is account-only
 
-    def test_project_limit_gates_runs_and_reset_restores(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "100")
+    def test_the_retired_sections_are_refused_by_name(
+        self, client, user_and_token, tmp_curio
+    ):
+        # quotas and cost are not merely ignored: a client still sending them
+        # is told, so a stale caller fails loudly rather than silently.
+        _, token = user_and_token
+        for payload in ({"quotas": {"runsPerDay": 30}}, {"cost": {"dailyBudgetUsd": 1}}):
+            r = self._patch_account(client, token, 1, payload)
+            assert r.status_code == 400, payload
+            assert "unknown settings section" in r.get_json()["error"]
+
+    def test_reset_to_agent_default_clears_the_override(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        # This pair of cases used to prove a project run limit 429'd the second
+        # run, and that an account budget 429'd with reason "budget". Neither
+        # gate exists; what is still worth asserting is that clearing an
+        # override falls back to the inherited value.
         monkeypatch.setattr(
             "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m, **kw: "ok"
         )
         _, token = user_and_token
         att = self._install_and_attach(client, token, alice_project)
-        r = self._patch_project(client, token, alice_project, 1, {"quotas": {"runsPerDay": 1}})
+        r = self._patch_project(
+            client, token, alice_project, 1, {"resources": {"maxOutputTokens": 256}}
+        )
         assert r.status_code == 200, r.get_data(as_text=True)
-        assert r.get_json()["effective"]["quotas"]["runsPerDay"] == {
-            "value": 1, "source": "project", "usedToday": 0,
+        assert r.get_json()["effective"]["resources"]["maxOutputTokens"] == {
+            "value": 256, "source": "project",
         }
         url = f"/api/agents/projects/{alice_project}/attachments/{att}/run"
         assert client.post(url, json={"message": "q"}, headers=_auth(token)).status_code == 200
-        denied = client.post(url, json={"message": "q"}, headers=_auth(token))
-        assert denied.status_code == 429
-        assert denied.get_json()["reason"] == "quota"
-        assert "project run limit" in denied.get_json()["error"]
-        # Reset to agent default clears the override → runs admit again.
         r = self._patch_project(client, token, alice_project, 2, {})
-        assert r.get_json()["effective"]["quotas"]["runsPerDay"]["source"] == "deployment"
+        assert r.get_json()["effective"]["resources"]["maxOutputTokens"]["source"] == "deployment"
         assert client.post(url, json={"message": "q"}, headers=_auth(token)).status_code == 200
-
-    def test_budget_gates_runs_with_budget_reason(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "100")
-        monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m, **kw: "ok"
-        )
-        _, token = user_and_token
-        att = self._install_and_attach(client, token, alice_project)
-        self._patch_account(client, token, 1, {"cost": {"dailyBudgetUsd": 0.1, "estimatedCostPerRunUsd": 0.06}})
-        url = f"/api/agents/projects/{alice_project}/attachments/{att}/run"
-        assert client.post(url, json={"message": "q"}, headers=_auth(token)).status_code == 200
-        denied = client.post(url, json={"message": "q"}, headers=_auth(token))
-        assert denied.status_code == 429
-        assert denied.get_json()["reason"] == "budget"
-        assert "budget" in denied.get_json()["error"]
-        # The GET view reports the estimated spend so far.
-        body = client.get(
-            f"/api/agents/projects/{alice_project}/defaults/{self.COORD}", headers=_auth(token)
-        ).get_json()
-        assert body["effective"]["cost"]["estimatedSpendTodayUsd"] == 0.06
 
     def test_max_output_tokens_reaches_the_provider(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # seen[0] is the conversation run; a first run adds the small-capped
@@ -3108,9 +2891,14 @@ class TestSettingsScreensApi:
         spec = projects_storage.read_spec(ukey, alice_project)
         spec["dataflow"]["agentDefaults"][self.COORD]["settings"]["profileId"] = "seed-p"
         projects_storage.write_spec(ukey, alice_project, spec)
-        r = self._patch_project(client, token, alice_project, 1, {"quotas": {"runsPerDay": 9}})
+        r = self._patch_project(
+            client, token, alice_project, 1, {"resources": {"maxOutputTokens": 256}}
+        )
         assert r.status_code == 200
-        assert r.get_json()["settings"] == {"profileId": "seed-p", "quotas": {"runsPerDay": 9}}
+        assert r.get_json()["settings"] == {
+            "profileId": "seed-p",
+            "resources": {"maxOutputTokens": 256},
+        }
 
 
 class TestMaterializePreamble:
