@@ -1,7 +1,6 @@
 import React, { ReactNode } from "react";
 import CSS from "csstype";
 import curioLogoWhite from "assets/curio_logo_white.png";
-import urbaniteLogo from "assets/urbanite.png";
 import scoutLogo from "assets/scout.png";
 import autarkLogo from "assets/autark.png";
 import utkLogo from "assets/utk.png";
@@ -13,7 +12,6 @@ interface Props {
 }
 
 const siblingLogos = [
-  { src: urbaniteLogo, alt: "Urbanite", href: "https://urbantk.org/urbanite", label: "urbantk.org/urbanite", filter: "grayscale(1)" },
   { src: scoutLogo,    alt: "Scout",    href: "https://urbantk.org/scout",    label: "urbantk.org/scout",    filter: "grayscale(1)" },
   { src: autarkLogo,   alt: "Autark",   href: "https://autarkjs.org",          label: "autarkjs.org",          filter: "brightness(0) invert(1)" },
 ];

@@ -55,7 +55,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
   </tr>
   <tr>
     <td align="center" width="33%">
-      <strong>LLM integration via Urbanite</strong><br/>
+      <strong>AI assistance for authoring</strong><br/>
       <sub>Natural-language assistance for dataflow authoring</sub>
     </td>
     <td align="center" width="33%">

@@ -216,7 +216,7 @@ npm run build
 
 ## LLM configuration
 
-Curio includes an LLM Assistant sidebar available on the canvas. This feature was originally developed as part of **Urbanite**, a project that has since been migrated into Curio. The assistant lets users ask questions and receive AI-generated guidance in the context of their active dataflow.
+Curio includes an AI assistant sidebar available on the canvas, toggled by the **AI assistance** button in the top bar. It lets you ask questions and receive guidance in the context of your active dataflow. Which model answers is set in **AI Settings**, the same place the Agent Catalog's agents read.
 
 To use the LLM Assistant, Curio needs access to an LLM API. Each user can connect their own account, or you can configure a shared key for guest users.
 

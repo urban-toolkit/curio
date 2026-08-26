@@ -24,6 +24,7 @@ import {
     faFloppyDisk,
     faPlus,
     faRobot,
+    faWandMagicSparkles,
     faUsers,
     faTableColumns,
     faUpRightAndDownLeftFromCenter,
@@ -515,7 +516,7 @@ export default function UpMenu({
                                 }}
                             >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faRobot} />
-                                <button className={styles.noStyleButton}>Agents Catalog</button>
+                                <button className={styles.noStyleButton}>Agent Catalog</button>
                             </div>
                             <div
                                 className={styles.dropDownRow}
@@ -583,13 +584,16 @@ export default function UpMenu({
                     )}
                 </div>
 
-                {/* Urbanite AI toggle */}
+                {/* LLM authoring assistance. Deliberately NOT faRobot: that glyph
+                    is the Agent Catalog's kind icon now, and this is a different
+                    feature. Configured in AI Settings, like everything else that
+                    calls a model. */}
                 <button
                     className={clsx(styles.button, aiModeOn && styles.aiIconActive)}
                     onClick={toggleAI}
-                    title="Urbanite AI"
+                    title="AI assistance"
                 >
-                    <FontAwesomeIcon icon={faRobot} />
+                    <FontAwesomeIcon icon={faWandMagicSparkles} />
                 </button>
 
                 {/* Real-time collaboration side panel toggle. Only rendered

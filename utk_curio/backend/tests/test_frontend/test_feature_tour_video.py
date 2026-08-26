@@ -710,11 +710,11 @@ def scene_libraries(ctx: Ctx) -> None:
 def scene_ai(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.say(
-        "Urbanite: LLM assistance for authoring",
+        "AI assistance for authoring",
         "Describe the goal of a dataflow and ask for nodes to fill it in.",
         hold=2600,
     )
-    ai = page.get_by_role("button", name="Urbanite AI")
+    ai = page.get_by_role("button", name="AI assistance")
     tour.click(ai, force=True)
     tour.beat(2600)
     tour.click(ai, force=True, hold=600)
