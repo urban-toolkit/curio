@@ -64,6 +64,15 @@ def run_chat_completion(
     4096 and the others use provider defaults.
     """
     api_type = config.api_type
+    if api_type == "testing":
+        # Scripted, deterministic, no network. Guarded on CURIO_TESTING inside
+        # run_scripted_completion, so this branch cannot be reached on a real
+        # deployment even if a config names it. See agents/testing_provider.py.
+        from utk_curio.backend.app.agents.testing_provider import (
+            run_scripted_completion,
+        )
+
+        return run_scripted_completion(messages, usage_out=usage_out)
     if api_type == "anthropic":
         import anthropic
         system_parts = [m["content"] for m in messages if m["role"] == "system"]
@@ -134,6 +143,16 @@ def stream_chat_completion(
     Callers that stop iterating close the underlying provider stream.
     """
     api_type = config.api_type
+    if api_type == "testing":
+        # The scripted reply, delivered as a single chunk. Splitting it would
+        # only test the splitter: what the SSE runtime needs from a provider
+        # is a deterministic sequence of deltas, and one is a sequence.
+        from utk_curio.backend.app.agents.testing_provider import (
+            run_scripted_completion,
+        )
+
+        yield run_scripted_completion(messages, usage_out=usage_out)
+        return
     if api_type == "anthropic":
         import anthropic
         system_parts = [m["content"] for m in messages if m["role"] == "system"]

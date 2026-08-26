@@ -35,7 +35,7 @@ from utk_curio.backend.app.agents import (
 from utk_curio.backend.app.agents import egress, node_context, verify
 from utk_curio.backend.app.agents.policy import PolicyValidationError, StaleRevisionError
 from utk_curio.backend.app.agents.attachments import AttachmentError
-from utk_curio.backend.app.agents.manifest import AgentManifest
+from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES, AgentManifest
 from utk_curio.backend.app.agents.providers import (
     ProviderConfig,
     run_chat_completion,
@@ -52,6 +52,35 @@ class AgentServiceError(Exception):
     def __init__(self, message: str, status: int = 400):
         super().__init__(message)
         self.status = status
+
+
+def agent_catalog_facets(cards: list[dict]) -> dict[str, dict[str, int]]:
+    """Count a card list along the axes the browse page rails on.
+
+    Mirrors ``datasets.domain.dedup.catalog_facets``: every key is seeded at
+    zero so a rail renders a complete, stable set of rows rather than only the
+    facets that happen to be populated, and the counts come from the same list
+    the caller is about to return, never a second query.
+
+    ``category`` is the manifest's own vocabulary. ``origin`` is provenance:
+    an agent shipped with Curio, one published into the catalog, or one the
+    user imported into their own account.
+    """
+    facets: dict[str, dict[str, int]] = {
+        "category": {c: 0 for c in AGENT_CATEGORIES},
+        "origin": {"builtin": 0, "published": 0, "imported": 0},
+    }
+    for card in cards:
+        category = card.get("category")
+        if category in facets["category"]:
+            facets["category"][category] += 1
+        if card.get("published"):
+            facets["origin"]["published"] += 1
+        elif card.get("imported"):
+            facets["origin"]["imported"] += 1
+        else:
+            facets["origin"]["builtin"] += 1
+    return facets
 
 
 def _manifest_to_card(

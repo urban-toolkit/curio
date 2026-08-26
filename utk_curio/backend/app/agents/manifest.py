@@ -43,7 +43,10 @@ VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$")
 # Package-relative asset path: printable, no whitespace, no leading slash.
 _ASSET_PATH_RE = re.compile(r"^[A-Za-z0-9_.][A-Za-z0-9_./-]*$")
 
-_CATEGORIES = ("data", "node", "canvas", "package", "evaluate")
+#: The manifest category vocabulary, exported so the catalog facets rail on
+#: exactly these keys instead of restating them.
+AGENT_CATEGORIES = ("data", "node", "canvas", "package", "evaluate")
+_CATEGORIES = AGENT_CATEGORIES
 _EXECUTIONS = ("foreground", "background")
 _REVIEW_POLICIES = ("report-only", "review-before-apply")
 _TARGET_KINDS = ("node", "canvas", "connection")

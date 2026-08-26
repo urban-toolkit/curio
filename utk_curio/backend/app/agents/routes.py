@@ -8,16 +8,19 @@ separate explicit endpoints; nothing auto-chains.
 
 from __future__ import annotations
 
+import functools
 import json
 
 from flask import Blueprint, Response, g, jsonify, request, stream_with_context
 
 from utk_curio.backend.app.projects import repositories as projects_repo
+from utk_curio.backend.app.projects.repositories import NotFoundError
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
 
 from utk_curio.backend.app.agents import services as agents_services
 from utk_curio.backend.app.agents.quotas import QuotaExceeded
+from utk_curio.backend.app.agents.provider_config import ProviderConfigError
 from utk_curio.backend.app.agents.services import AgentServiceError
 
 agents_bp = Blueprint("agents_api", __name__, url_prefix="/api/agents")
@@ -28,20 +31,67 @@ def _error(message: str, status: int = 400):
 
 
 def _svc_error(exc: AgentServiceError):
-    return jsonify({"error": str(exc)}), exc.status
+    """One place decides what an AgentServiceError looks like on the wire.
+
+    Kept as the explicit form the handlers already call so the mapping has a
+    single definition without rewriting 32 call sites; :func:`_map_agent_errors`
+    below reuses it for anything that escapes a handler.
+    """
+    return _error(str(exc), getattr(exc, "status", 400))
+
+
+def _map_agent_errors(fn):
+    """Catch the service-layer exceptions a handler does not catch itself.
+
+    The Data Catalog's ``datasets/routes.py::_map_catalog_errors`` is the model:
+    applied BELOW ``require_auth`` so auth failures are not swallowed, mapping
+    a missing dataflow to 404 and an unconfigured provider to a 400 that names
+    AI Settings.
+
+    Deliberately additive rather than a replacement for the per-handler
+    ``try/except AgentServiceError``. Those 32 blocks work and are covered;
+    collapsing them into this decorator is a mechanical dedent across handlers
+    with differing shapes (several carry a second ``except``), which is churn
+    this phase does not need. The decorator still gives one place to add a new
+    mapping, and it widens the guard to a handler's prelude and tail, which the
+    inner ``try`` never covered.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except AgentServiceError as exc:
+            return _svc_error(exc)
+        except ProviderConfigError as exc:
+            # Curio ships no built-in provider; say where to configure one
+            # rather than surfacing a bare 500 from deep in a provider SDK.
+            return _error(str(exc), 400)
+        except NotFoundError:
+            return _error("Dataflow not found", 404)
+
+    return wrapper
 
 
 # ── Global Catalog (built-in definitions) ────────────────────────────────────
 @agents_bp.route("/catalog", methods=["GET"])
 @require_auth
+@_map_agent_errors
 def list_catalog():
-    """The Global Catalog scope — built-in agent definitions available to import/install.
+    """The Global Catalog scope - agent definitions available to import/install.
 
     Optional ``?projectId=`` marks which are already installed in that project.
+
+    The response carries ``facets`` alongside the rows, matching the shape the
+    Data Catalog returns (``{"items", "facets"}``): the browse page's category
+    rail reads its counts straight off it, and the drawer's tab badges seed
+    from it before the rows land. ``agents`` is kept as an alias of ``items``
+    so the existing drawer keeps working while the browse page is built.
     """
     project_id = request.args.get("projectId") or None
     agents = agents_services.list_global_catalog(_user_dir_key(g.user), project_id)
-    return jsonify({"agents": agents}), 200
+    facets = agents_services.agent_catalog_facets(agents)
+    return jsonify({"items": agents, "agents": agents, "facets": facets}), 200
 
 
 # ── My Imports (account scope) ───────────────────────────────────────────────
