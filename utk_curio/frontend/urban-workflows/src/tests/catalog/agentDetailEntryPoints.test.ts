@@ -64,7 +64,7 @@ describe("the agent browse page reports only what it can know", () => {
     expect(drawer).toContain("req.visible");
     // The field, not the word: the comment above the list explains why it is
     // deliberately unread, so a bare substring match would hit that instead.
-    expect(drawer).not.toMatch(/req\.installedInProject/);
+    expect(drawer).not.toMatch(/\breq\.installedInProject\b/);
   });
 
   it("claims no freshness it cannot measure", () => {
