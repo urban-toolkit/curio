@@ -3,9 +3,9 @@
 
 .card {
   margin-top: 8px;
-  border: 1px solid #e3e3e6;
+  border: 1px solid var(--curio-border);
   border-radius: 10px;
-  background: #fafafb;
+  background: var(--curio-surface-muted);
   padding: 10px 12px;
 }
 
@@ -15,7 +15,7 @@
   gap: 8px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #333;
+  color: var(--curio-text-primary);
 }
 
 .accentDot {
@@ -31,7 +31,7 @@
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #8a8a90;
+  color: var(--curio-text-meta);
 }
 
 .lane {
@@ -43,7 +43,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #6b7280;
+  color: var(--curio-text-secondary);
   margin-bottom: 4px;
 }
 
@@ -57,8 +57,8 @@
 }
 
 .row {
-  background: #fff;
-  border: 1px solid #ececee;
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
   border-radius: 8px;
   padding: 8px 10px;
 }
@@ -91,15 +91,15 @@
 .name {
   font-size: 0.82rem;
   font-weight: 600;
-  color: #333;
+  color: var(--curio-text-primary);
 }
 
 .badge {
   font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #6b7280;
-  border: 1px solid #d9d9de;
+  color: var(--curio-text-secondary);
+  border: 1px solid var(--curio-border-strong);
   border-radius: 999px;
   padding: 1px 8px;
 }
@@ -112,15 +112,15 @@
 }
 
 .installedChip {
-  color: #2f7d4f;
-  border: 1px solid #bfe3cd;
-  background: #f0faf4;
+  color: var(--curio-success-text);
+  border: 1px solid var(--curio-success-bg);
+  background: var(--curio-success-bg);
 }
 
 .notInstalledChip {
-  color: #6b7280;
-  border: 1px solid #e3e3e6;
-  background: #f7f7f8;
+  color: var(--curio-text-secondary);
+  border: 1px solid var(--curio-border);
+  background: var(--curio-surface-muted);
 }
 
 .meta,
@@ -128,15 +128,15 @@
 .fit,
 .requirement {
   font-size: 0.74rem;
-  color: #555;
+  color: var(--curio-text-secondary);
   word-break: break-word;
 }
 
 .url {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #6b7280;
+  color: var(--curio-text-secondary);
 }
 
 .requirement {
-  color: #8a6d1f;
+  color: var(--curio-warning-text);
 }

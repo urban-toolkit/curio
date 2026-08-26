@@ -14,18 +14,18 @@
   justify-content: center;
   border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.12);
-  background: #fff;
+  background: var(--curio-card-bg);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   cursor: pointer;
-  color: #3567c7; /* overridden by a category tint class */
+  color: var(--curio-role-running-fg); /* overridden by a category tint class */
   padding: 0;
 }
 
 /* Selected agent: the app's standard blue focus border (same treatment used on
    selected package cards / headers), so the clicked agent is clearly highlighted. */
 .badgeActive .avatar {
-  border-color: var(--curio-accent-sky-fg, #3567c7);
-  outline: 2px solid var(--curio-accent-sky-fg, #3567c7);
+  border-color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+  outline: 2px solid var(--curio-accent-sky-fg, var(--curio-focus-ring));
   outline-offset: 1px;
 }
 
@@ -42,8 +42,8 @@
   height: 16px;
   border-radius: 50%;
   border: none;
-  background: #1e1f23;
-  color: #fff;
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
   font-size: 10px;
   line-height: 1;
   cursor: pointer;
@@ -70,7 +70,7 @@
   padding: 3px 8px;
   border-radius: 6px;
   background: rgba(20, 21, 25, 0.95);
-  color: #fff;
+  color: var(--curio-text-on-dark);
   font-size: 11px;
   font-weight: 500;
   line-height: 1.3;

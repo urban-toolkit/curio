@@ -56,13 +56,13 @@
   --curio-danger-text: #C0392B;
   --curio-danger-bg: #FDF0EE;
   --curio-danger-border: #E8A79E;
-  --curio-success-text: #2F8F4A;
+  --curio-success-text: var(--curio-accent-mint-fg);
+  --curio-success-bg: var(--curio-accent-mint-bg);
   /* Completes the status triad. A warning is not an error: the agent review
      card distinguishes a blocking finding (danger) from an advisory one, and
-     collapsing them would erase a severity the UI deliberately shows. The
-     value is the amber already chosen for contrast on a light surface by
-     --curio-format-parquet-on-tint, so this names a role, not a new hue. */
-  --curio-warning-text: #996300;
+     collapsing them would erase a severity the UI deliberately shows. */
+  --curio-warning-text: var(--curio-accent-amber-fg);
+  --curio-warning-bg: var(--curio-accent-amber-bg);
 
   /* ── Typography ────────────────────────────────────────────────────── */
   --curio-font-family: Rubik, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -100,6 +100,14 @@
   --curio-accent-sky-fg:   #3567C7;
   --curio-accent-mint-bg:  #DFF2E1;
   --curio-accent-mint-fg:  #2F8F4A;
+  /* Amber, for the advisory tier between success and danger. The values are
+     the Parquet format pair's, deliberately: that tint and that text colour
+     are already proven to clear contrast together in this palette, so this
+     introduces a role rather than an untested colour. Separate names because
+     a format is not a role - Parquet's tint must be free to change without
+     dragging every warning with it. */
+  --curio-accent-amber-bg:  #FFF0DC;
+  --curio-accent-amber-fg:  #996300;
 
   /* ── Dataset format palette ────────────────────────────────────────────
      One colour per dataset format, used by every surface that keys a colour
@@ -209,6 +217,11 @@
   --curio-role-published-bg: var(--curio-accent-sky-bg);
   --curio-role-installed-fg: var(--curio-accent-mint-fg);
   --curio-role-installed-bg: var(--curio-accent-mint-bg);
+  /* Work in flight: an agent solving, a phase in progress. Distinct from
+     'published', which happens to share the raw accent - the two mean
+     different things and must be free to diverge. */
+  --curio-role-running-fg: var(--curio-accent-sky-fg);
+  --curio-role-running-bg: var(--curio-accent-sky-bg);
   --curio-focus-ring: var(--curio-accent-sky-fg);
 
   /* ── Overlay / layering scale ──────────────────────────────────────────

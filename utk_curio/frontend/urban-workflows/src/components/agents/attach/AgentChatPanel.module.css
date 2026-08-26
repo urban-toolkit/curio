@@ -1,7 +1,8 @@
 /* Attached-agent chat panel, styled to the approved concept screens
    (png-concepts/03 + 06) and the "Chat feedback visual system" contract in
-   docs/03-ui-decisions.md: grouped surfaces (#f7f7f8), hairline borders
-   (#ececee), 12px radii, raised white inner panels, dark right-aligned user
+   docs/03-ui-decisions.md: grouped surfaces (--curio-surface-muted), hairline
+   borders (--curio-border), 12px radii, raised card-bg inner panels, dark
+   right-aligned user
    bubbles, avatar-prefixed agent rows, soft chips, 16px gutters. */
 
 /* Full-height right drawer flush with the viewport top (portal to <body>):
@@ -21,8 +22,8 @@
   z-index: 1100;
   display: flex;
   flex-direction: column;
-  background: var(--curio-card-bg, #fff);
-  border-left: 1px solid var(--curio-border, #ececee);
+  background: var(--curio-card-bg, var(--curio-card-bg));
+  border-left: 1px solid var(--curio-border, var(--curio-border));
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
   overflow: hidden;
 }
@@ -37,8 +38,8 @@
   /* Flush with the viewport top; the extra top padding optically aligns the
      identity row with the adjacent main top bar. */
   padding: 14px 12px 12px;
-  background: var(--curio-top-bar-bg, #1e1f23);
-  color: var(--curio-text-on-dark, #fff);
+  background: var(--curio-top-bar-bg, var(--curio-top-bar-bg));
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
 }
 
 .headerRow {
@@ -62,26 +63,26 @@
   border: none;
   border-radius: 6px;
   background: none;
-  color: #cfd0d3;
+  color: var(--curio-text-muted);
   font-size: 12px;
   cursor: pointer;
 }
 
 .cycleBtn:hover:not(:disabled),
 .cycleBtn:focus-visible {
-  background: #2c2d33;
-  color: #fff;
+  background: var(--curio-top-bar-bg-hover);
+  color: var(--curio-text-on-dark);
 }
 
 .cycleBtn:disabled {
-  color: #5c5d66;
+  color: var(--curio-text-secondary);
   cursor: default;
 }
 
 .headerBot {
   flex: none;
   font-size: 16px;
-  color: #3567c7; /* overridden by a category tint class */
+  color: var(--curio-role-running-fg); /* overridden by a category tint class */
   display: flex;
   align-items: center;
 }
@@ -89,7 +90,7 @@
 .position {
   flex: none;
   font-size: 11px;
-  color: #9a9ba2;
+  color: var(--curio-text-meta);
 }
 
 /* Category tints — same palette as AgentAvatarBadge (icon color, white chip). */
@@ -101,7 +102,7 @@
 .title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--curio-text-on-dark, #fff);
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -149,12 +150,12 @@
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;
-  background: #2c2d33;
-  color: var(--curio-text-on-dark, #fff);
+  background: var(--curio-top-bar-bg-hover);
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
 }
 
 .titleInput:focus {
-  outline: 2px solid var(--curio-accent-sky-fg, #3567c7);
+  outline: 2px solid var(--curio-accent-sky-fg, var(--curio-focus-ring));
   outline-offset: 1px;
 }
 
@@ -162,7 +163,7 @@
 .titleError {
   flex: none;
   font-size: 11px;
-  color: #f2a6a0;
+  color: var(--curio-danger);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -170,7 +171,7 @@
 
 .subtitle {
   font-size: 11px;
-  color: #b9bac1;
+  color: var(--curio-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -181,8 +182,8 @@
   flex: none;
   font-size: 10px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #b6b7bf;
-  background: #2c2d33;
+  color: var(--curio-text-muted);
+  background: var(--curio-top-bar-bg-hover);
   border-radius: 999px;
   padding: 2px 8px;
 }
@@ -197,15 +198,15 @@
   border: none;
   border-radius: 8px;
   background: none;
-  color: #cfd0d3;
+  color: var(--curio-text-muted);
   font-size: 13px;
   cursor: pointer;
 }
 
 .headerBtn:hover,
 .headerBtn:focus-visible {
-  background: #2c2d33;
-  color: var(--curio-text-on-dark, #fff);
+  background: var(--curio-top-bar-bg-hover);
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
 }
 
 /* ── initial intent, rendered as the conversation's first message ── */
@@ -243,7 +244,7 @@
   padding: 0;
   font-size: 11px;
   font-weight: 600;
-  color: var(--curio-accent-sky-fg, #3567c7);
+  color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
   cursor: pointer;
 }
 
@@ -256,15 +257,15 @@
   border: none;
   border-radius: 6px;
   background: none;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
   font-size: 11px;
   cursor: pointer;
 }
 
 .intentEdit:hover,
 .intentEdit:focus-visible {
-  background: #ececee;
-  color: var(--curio-text-primary, #1e1f23);
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary, var(--curio-text-primary));
 }
 
 .intentEditor {
@@ -275,19 +276,19 @@
   width: 100%;
   min-height: 88px;
   resize: vertical;
-  background: #fff;
-  border: 1px solid #ececee;
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
   border-radius: 12px;
   padding: 10px 12px;
   font-size: 12px;
   line-height: 1.45;
   font-family: inherit;
-  color: var(--curio-text-primary, #1e1f23);
+  color: var(--curio-text-primary, var(--curio-text-primary));
   box-sizing: border-box;
 }
 
 .intentTextarea:focus {
-  outline: 2px solid var(--curio-accent-sky-fg, #3567c7);
+  outline: 2px solid var(--curio-accent-sky-fg, var(--curio-focus-ring));
   outline-offset: 1px;
 }
 
@@ -304,8 +305,8 @@
   padding: 5px 14px;
   font-size: 11px;
   font-weight: 600;
-  background: var(--curio-accent-sky-fg, #3567c7);
-  color: #fff;
+  background: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+  color: var(--curio-text-on-dark);
   cursor: pointer;
 }
 
@@ -315,19 +316,19 @@
 }
 
 .intentCancel {
-  border: 1px solid #ececee;
+  border: 1px solid var(--curio-border);
   border-radius: 999px;
   padding: 4px 12px;
   font-size: 11px;
   font-weight: 600;
-  background: #fff;
-  color: var(--curio-text-primary, #1e1f23);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary, var(--curio-text-primary));
   cursor: pointer;
 }
 
 .intentError {
   font-size: 11px;
-  color: #b3423a;
+  color: var(--curio-danger-text);
 }
 
 /* ── transcript: grouped surface with bubbles / agent rows ── */
@@ -351,7 +352,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: #f7f7f8;
+  background: var(--curio-surface-muted);
 }
 
 /* Programmatically focusable (tabindex="-1") as the Jump pill's focus
@@ -369,8 +370,8 @@
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
-  background: var(--curio-top-bar-bg, #1e1f23);
-  color: var(--curio-text-on-dark, #fff);
+  background: var(--curio-top-bar-bg, var(--curio-top-bar-bg));
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
 }
 
 .agentRow {
@@ -404,8 +405,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  border: 1px solid #ececee;
-  background: #fff;
+  border: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
   font-size: 11px;
 }
 
@@ -414,35 +415,35 @@
   width: 100%;
   padding: 8px 12px;
   border-radius: 12px;
-  border: 1px solid #ececee;
-  background: #fff;
+  border: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
   font-size: 12.5px;
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--curio-text-primary, #1e1f23);
+  color: var(--curio-text-primary, var(--curio-text-primary));
 }
 
 /* Soft status tone for failures — gentle fill + hairline, never saturated. */
 .msgError {
-  background: #fdf3f2;
-  border-color: #f2d6d3;
-  color: #8a3c36;
+  background: var(--curio-danger-bg);
+  border-color: var(--curio-danger-border);
+  color: var(--curio-danger-strong);
 }
 
 .systemLine {
   align-self: center;
   font-size: 11px;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
   text-align: center;
   padding: 2px 10px;
 }
 
 .systemError {
-  background: #fdf3f2;
-  border: 1px solid #f2d6d3;
+  background: var(--curio-danger-bg);
+  border: 1px solid var(--curio-danger-border);
   border-radius: 999px;
-  color: #8a3c36;
+  color: var(--curio-danger-strong);
 }
 
 .retry {
@@ -451,7 +452,7 @@
   padding: 0 0 0 6px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--curio-accent-sky-fg, #3567c7);
+  color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
   cursor: pointer;
 }
 
@@ -463,23 +464,23 @@
      multiline composer grows (memo dev/77). */
   align-items: flex-end;
   padding: 12px 16px;
-  background: var(--curio-card-bg, #fff);
-  border-top: 1px solid #ececee;
+  background: var(--curio-card-bg, var(--curio-card-bg));
+  border-top: 1px solid var(--curio-border);
 }
 
 .input {
   flex: 1;
   min-width: 0;
   padding: 9px 14px;
-  border: 1px solid #ececee;
+  border: 1px solid var(--curio-border);
   /* Half the one-row height: renders as the same pill at a single line, a
      rounded rectangle once the textarea grows — never a distorted stadium. */
   border-radius: 18px;
   font-size: 12.5px;
   font-family: inherit;
   line-height: 1.45;
-  background: #f7f7f8;
-  color: var(--curio-text-primary, #1e1f23);
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary, var(--curio-text-primary));
   /* Growth is content-driven (useAutoGrowTextarea) — no manual drag handle,
      no scrollbar until the height cap is reached. */
   resize: none;
@@ -487,9 +488,9 @@
 }
 
 .input:focus {
-  outline: 2px solid var(--curio-accent-sky-fg, #3567c7);
+  outline: 2px solid var(--curio-accent-sky-fg, var(--curio-focus-ring));
   outline-offset: 1px;
-  background: #fff;
+  background: var(--curio-card-bg);
 }
 
 .send {
@@ -501,8 +502,8 @@
   justify-content: center;
   border: none;
   border-radius: 50%;
-  background: var(--curio-accent-sky-fg, #3567c7);
-  color: #fff;
+  background: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+  color: var(--curio-text-on-dark);
   font-size: 13px;
   cursor: pointer;
 }
@@ -522,8 +523,8 @@
   margin-bottom: 0;
 }
 .msgAgent pre {
-  background: #fff;
-  border: 1px solid #ececee;
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
   border-radius: 8px;
   padding: 8px 10px;
   overflow-x: auto;
@@ -541,8 +542,8 @@
   align-items: center;
   gap: 6px;
   padding: 8px 16px 0;
-  background: var(--curio-card-bg, #fff);
-  border-top: 1px solid #ececee;
+  background: var(--curio-card-bg, var(--curio-card-bg));
+  border-top: 1px solid var(--curio-border);
 }
 
 .suggestedLabel {
@@ -550,17 +551,17 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #8a8a8e;
+  color: var(--curio-text-meta);
   margin-right: 2px;
 }
 
 .suggestedChip {
-  border: 1px solid #ececee;
-  background: #f7f7f8;
+  border: 1px solid var(--curio-border);
+  background: var(--curio-surface-muted);
   border-radius: 999px;
   padding: 4px 12px;
   font-size: 0.78rem;
-  color: #333;
+  color: var(--curio-text-primary);
   cursor: pointer;
   max-width: 260px;
   overflow: hidden;
@@ -570,8 +571,8 @@
 
 .suggestedChip:hover,
 .suggestedChip:focus-visible {
-  background: #eef1f6;
-  border-color: #d8dde6;
+  background: var(--curio-surface-muted);
+  border-color: var(--curio-border-strong);
 }
 
 /* The chips row visually joins the footer beneath it. */
@@ -588,8 +589,8 @@
   gap: 8px;
   min-height: 24px;
   padding: 3px 16px;
-  background: var(--curio-card-bg, #fff);
-  border-top: 1px solid #ececee;
+  background: var(--curio-card-bg, var(--curio-card-bg));
+  border-top: 1px solid var(--curio-border);
 }
 
 .statusStripSpacer {
@@ -609,19 +610,19 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid #ececee;
-  background: #f7f7f8;
+  border: 1px solid var(--curio-border);
+  background: var(--curio-surface-muted);
   border-radius: 8px;
   padding: 5px 12px;
   font-size: 0.76rem;
-  color: #555;
+  color: var(--curio-text-secondary);
   cursor: pointer;
   min-height: 28px;
 }
 
 .attachmentSettingsBtn:hover,
 .attachmentSettingsBtn:focus-visible {
-  background: #eef1f6;
-  border-color: #d8dde6;
-  color: #333;
+  background: var(--curio-surface-muted);
+  border-color: var(--curio-border-strong);
+  color: var(--curio-text-primary);
 }

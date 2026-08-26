@@ -4,7 +4,7 @@
 .counter {
   flex: none;
   font-size: 11px;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

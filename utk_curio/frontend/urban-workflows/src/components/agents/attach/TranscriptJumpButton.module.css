@@ -14,8 +14,8 @@
   padding: 5px 12px;
   border: none;
   border-radius: 999px;
-  background: var(--curio-top-bar-bg, #1e1f23);
-  color: var(--curio-text-on-dark, #fff);
+  background: var(--curio-top-bar-bg, var(--curio-top-bar-bg));
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
   font-size: 12px;
   font-weight: 600;
   line-height: 1;
@@ -29,7 +29,7 @@
 }
 
 .jump:focus-visible {
-  outline: 2px solid var(--curio-top-bar-bg, #1e1f23);
+  outline: 2px solid var(--curio-top-bar-bg, var(--curio-focus-ring));
   outline-offset: 2px;
 }
 

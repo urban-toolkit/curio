@@ -4,8 +4,8 @@
    panel for dense content. */
 
 .card {
-  background: #f7f7f8;
-  border: 1px solid #ececee;
+  background: var(--curio-surface-muted);
+  border: 1px solid var(--curio-border);
   border-radius: 12px;
   padding: 12px 16px;
   margin-top: 8px;
@@ -18,7 +18,7 @@
   gap: 8px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #333;
+  color: var(--curio-text-primary);
 }
 
 .accentDot {
@@ -34,12 +34,12 @@
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #8a8a8e;
+  color: var(--curio-text-meta);
 }
 
 .inner {
-  background: #fff;
-  border: 1px solid #ececee;
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
   border-radius: 8px;
   padding: 8px 12px;
   margin-top: 8px;
@@ -47,7 +47,7 @@
 
 .line {
   font-size: 0.85rem;
-  color: #444;
+  color: var(--curio-text-secondary);
   margin: 2px 0;
   white-space: pre-wrap;
   word-break: break-word;

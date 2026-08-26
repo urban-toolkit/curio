@@ -7,15 +7,15 @@
   position: relative;
   margin: 8px 0 4px 8px;
   padding: 7px 10px 7px 18px;
-  border: 1px solid #e3e6ea;
+  border: 1px solid var(--curio-border);
   border-radius: 8px;
-  background: #fafbfc;
+  background: var(--curio-surface-muted);
   font-size: 12px;
 }
 
 .failed {
-  border-color: #e7b7b7;
-  background: #fdf7f7;
+  border-color: var(--curio-danger-border);
+  background: var(--curio-danger-bg);
 }
 
 /* The icon notch: overlapping the top-left corner, category-tinted. */
@@ -26,7 +26,7 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--curio-card-bg);
   border: 1.5px solid currentColor;
   display: flex;
   align-items: center;
@@ -55,11 +55,11 @@ button.badge:focus-visible {
 
 .title {
   font-weight: 600;
-  color: #2d3339;
+  color: var(--curio-text-primary);
 }
 
 .name {
-  color: #6a737d;
+  color: var(--curio-text-secondary);
 }
 
 .status {
@@ -73,18 +73,18 @@ button.badge:focus-visible {
 }
 
 .statusOk {
-  color: #1e7d43;
-  background: #e5f4ea;
+  color: var(--curio-success-text);
+  background: var(--curio-success-bg);
 }
 
 .statusFailed {
-  color: #b23434;
-  background: #fbe9e9;
+  color: var(--curio-danger-text);
+  background: var(--curio-danger-bg);
 }
 
 .summary {
   margin-top: 3px;
-  color: #57606a;
+  color: var(--curio-text-secondary);
   overflow-wrap: anywhere;
 }
 

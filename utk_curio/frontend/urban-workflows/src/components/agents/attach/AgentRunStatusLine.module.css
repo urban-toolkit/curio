@@ -7,7 +7,7 @@
   gap: 6px;
   min-width: 0;
   font-size: 11px;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -55,11 +55,11 @@
 }
 
 .done .icon {
-  color: #4caf72;
+  color: var(--curio-success-text);
 }
 
 .error {
-  color: #8a3c36;
+  color: var(--curio-danger-strong);
 }
 
 /* Follow-up marker: same soft-pill grammar as the session chip. */
@@ -67,9 +67,9 @@
   flex: none;
   padding: 1px 8px;
   border-radius: 999px;
-  border: 1px solid #f0e2c0;
-  background: #fdf8ec;
-  color: #8a6d2f;
+  border: 1px solid var(--curio-warning-bg);
+  background: var(--curio-warning-bg);
+  color: var(--curio-warning-text);
   font-size: 10px;
   font-weight: 600;
 }

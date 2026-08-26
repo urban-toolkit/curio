@@ -12,26 +12,26 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
 }
 
 .title {
   margin: 4px 0 0;
   font-size: 16px;
   font-weight: 600;
-  color: var(--curio-text-primary, #1e1f23);
+  color: var(--curio-text-primary, var(--curio-text-primary));
 }
 
 .coord {
   margin: 2px 0 12px;
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
 }
 
 .state {
   font-size: 12px;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
 }
 
 .retry {
@@ -41,13 +41,13 @@
   padding: 0;
   font-size: 12px;
   font-weight: 600;
-  color: var(--curio-accent-sky-fg, #3567c7);
+  color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
   cursor: pointer;
 }
 
 .section {
-  background: #f7f7f8;
-  border: 1px solid #ececee;
+  background: var(--curio-surface-muted);
+  border: 1px solid var(--curio-border);
   border-radius: 12px;
   padding: 10px 12px;
   margin-bottom: 8px;
@@ -57,7 +57,7 @@
   margin: 0 0 6px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--curio-text-primary, #1e1f23);
+  color: var(--curio-text-primary, var(--curio-text-primary));
 }
 
 .row {
@@ -66,15 +66,15 @@
   justify-content: space-between;
   gap: 12px;
   font-size: 12px;
-  color: var(--curio-text-primary, #1e1f23);
+  color: var(--curio-text-primary, var(--curio-text-primary));
 }
 
 .provenance {
   flex: none;
   font-size: 10px;
-  color: var(--curio-text-secondary, #8a8b93);
-  background: #fff;
-  border: 1px solid #ececee;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
   border-radius: 999px;
   padding: 2px 8px;
 }
@@ -82,7 +82,7 @@
 .footnote {
   margin: 10px 0 0;
   font-size: 11px;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
 }
 
 /* ── editable shell additions (memo dev/24) ── */
@@ -99,13 +99,13 @@
   padding: 5px 12px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
   cursor: pointer;
 }
 
 .tabActive {
-  background: var(--curio-top-bar-bg, #1e1f23);
-  color: var(--curio-text-on-dark, #fff);
+  background: var(--curio-top-bar-bg, var(--curio-top-bar-bg));
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
 }
 
 .field {
@@ -118,38 +118,38 @@
 .fieldLabel {
   font-size: 12px;
   font-weight: 600;
-  color: var(--curio-text-primary, #1e1f23);
+  color: var(--curio-text-primary, var(--curio-text-primary));
 }
 
 .input {
   width: 180px;
   padding: 6px 10px;
-  border: 1px solid #ececee;
+  border: 1px solid var(--curio-border);
   border-radius: 8px;
   font-size: 12px;
-  background: #fff;
-  color: var(--curio-text-primary, #1e1f23);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary, var(--curio-text-primary));
 }
 
 .input:focus {
-  outline: 2px solid var(--curio-accent-sky-fg, #3567c7);
+  outline: 2px solid var(--curio-accent-sky-fg, var(--curio-focus-ring));
   outline-offset: 1px;
 }
 
 .meta {
   margin: 4px 0 0;
   font-size: 11px;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
 }
 
 .error {
   font-size: 11px;
-  color: #b3423a;
+  color: var(--curio-danger-text);
 }
 
 .notice {
   font-size: 11px;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
 }
 
 .footer {
@@ -169,8 +169,8 @@
   padding: 6px 18px;
   font-size: 12px;
   font-weight: 600;
-  background: var(--curio-accent-sky-fg, #3567c7);
-  color: #fff;
+  background: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+  color: var(--curio-text-on-dark);
   cursor: pointer;
 }
 
@@ -180,12 +180,12 @@
 }
 
 .resetBtn {
-  border: 1px solid #ececee;
+  border: 1px solid var(--curio-border);
   border-radius: 999px;
   padding: 5px 14px;
   font-size: 12px;
   font-weight: 600;
-  background: #fff;
-  color: var(--curio-text-primary, #1e1f23);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary, var(--curio-text-primary));
   cursor: pointer;
 }

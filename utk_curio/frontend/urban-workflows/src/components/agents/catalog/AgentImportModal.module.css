@@ -9,14 +9,14 @@
   margin: 0 0 6px;
   font-size: 16px;
   font-weight: 600;
-  color: var(--curio-text-primary, #1e1f23);
+  color: var(--curio-text-primary, var(--curio-text-primary));
 }
 
 .hint {
   margin: 0 0 12px;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: var(--curio-text-secondary, var(--curio-text-meta));
 }
 
 .picker input {
@@ -26,9 +26,9 @@
 .summary {
   margin: 10px 0 0;
   font-size: 12px;
-  color: var(--curio-text-primary, #1e1f23);
-  background: #f7f7f8;
-  border: 1px solid #ececee;
+  color: var(--curio-text-primary, var(--curio-text-primary));
+  background: var(--curio-surface-muted);
+  border: 1px solid var(--curio-border);
   border-radius: 10px;
   padding: 8px 10px;
 }
@@ -36,7 +36,7 @@
 .error {
   margin: 10px 0 0;
   font-size: 12px;
-  color: #b3423a;
+  color: var(--curio-danger-text);
   white-space: pre-wrap;
 }
 
@@ -48,13 +48,13 @@
 }
 
 .cancel {
-  border: 1px solid #ececee;
+  border: 1px solid var(--curio-border);
   border-radius: 999px;
   padding: 6px 14px;
   font-size: 12px;
   font-weight: 600;
-  background: #fff;
-  color: var(--curio-text-primary, #1e1f23);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary, var(--curio-text-primary));
   cursor: pointer;
 }
 
@@ -64,8 +64,8 @@
   padding: 6px 18px;
   font-size: 12px;
   font-weight: 600;
-  background: var(--curio-top-bar-bg, #1e1f23);
-  color: var(--curio-text-on-dark, #fff);
+  background: var(--curio-top-bar-bg, var(--curio-top-bar-bg));
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
   cursor: pointer;
 }
 
