@@ -222,7 +222,7 @@ To use the LLM Assistant, Curio needs access to an LLM API. Each user can connec
 
 ### Logged-in users
 
-Logged-in users configure their own LLM connection from the **Projects page**. Click the **LLM Settings** button in the top navigation bar to open the settings panel.
+Logged-in users configure their own LLM connection from the **Projects page**. Click the **AI Settings** button in the top navigation bar to open the settings panel. It has two tabs: **Provider**, which is the model every agent uses, and **Agent limits**, which is how much they may spend.
 
 The following providers are supported:
 

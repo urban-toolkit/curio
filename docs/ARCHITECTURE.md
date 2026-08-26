@@ -637,7 +637,7 @@ Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING
 
 ## Backend API Reference
 
-The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the LLM and spatial-join handlers in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
+The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, agents in `backend/app/agents/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
 
 ### Core Routes
 
@@ -651,9 +651,6 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
 | `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
-| `/llm/chat` | POST | Proxy a chat completion using the user's stored LLM config |
-| `/llm/check` | POST | Token-budget probe for the LLM chat surface |
-| `/llm/clean` | GET | Reset a chat's server-side history |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
 
 File ingestion is **not** here - it lives in the datasets blueprint as `POST /api/datasets/import`.
@@ -722,6 +719,52 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `/api/dataflows/<dataflowId>/datasets/install` | POST | Attach a dataset to one dataflow (`datasetId`, optional `sourceItem`, `nodeTitle`) |
 | `/api/dataflows/<dataflowId>/datasets/<id>` | DELETE | Detach a dataset from one dataflow (keeps the account asset) |
 
+### Agent Routes
+
+Defined in `backend/app/agents/routes.py` over `backend/app/agents/services.py`; all
+require authentication, and every project endpoint checks ownership (404 when the
+project is not the caller's). See [AGENT-CATALOG.md](AGENT-CATALOG.md) for the
+user-facing model and [AGENTS.md](AGENTS.md) for the runtime.
+
+Catalog and account scope:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/catalog` | GET | List the agent definitions available to add (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
+| `/api/agents/imports` | GET | List the account's imported definitions, as cards |
+| `/api/agents/imports` | POST | Record `<id>@<version>` in My imports. Never adds to a dataflow |
+| `/api/agents/imports/upload` | POST | Upload a user-authored definition (`manifest` + `prompts` as JSON, no archives). Trust forced to `imported`, digests stamped from the bytes, **409** on an existing coordinate |
+| `/api/agents/imports/<coord>` | DELETE | Drop it from My imports. The definition stays on disk |
+| `/api/agents/publications` | POST | Publish an owned, imported, store-backed definition to the shared catalog |
+| `/api/agents/publications/<coord>` | DELETE | Unpublish it. Owner only |
+| `/api/agents/settings` | GET | Account agent policy: record, effective policy, deployment ceilings, runs used today |
+| `/api/agents/settings` | PATCH | Edit it. Tighten-only against the ceilings; optimistic `revision`, **409** on stale |
+
+Per-dataflow scope:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/projects/<projectId>` | GET | The dataflow's added agents, from its `dataflow.agents` lockfile |
+| `/api/agents/projects/<projectId>/install` | POST | Add `{coord}` **and its `requiresAgents` closure** in one spec write. Resolves the closure before writing: **409** naming the missing ids, nothing written |
+| `/api/agents/projects/<projectId>/<coord>` | DELETE | Remove it and its defaults record. **409** naming the dependents while another added agent requires it |
+| `/api/agents/projects/<projectId>/defaults/<coord>` | GET | One added agent's per-dataflow `{revision, settings}` plus the effective policy with per-field provenance |
+| `/api/agents/projects/<projectId>/defaults/<coord>` | PATCH | Edit it. Tighten-only against the account-effective policy; `{"settings": {}}` resets to the agent default |
+
+Attachments and runs:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/projects/<projectId>/attachments` | GET, POST | List, or bind an added agent to a `{kind: node\|canvas\|connection, targetId?}`. Never auto-adds |
+| `/api/agents/projects/<projectId>/attachments/<id>` | DELETE, PATCH | Detach (also deletes the transcript), or set the editable initial intent |
+| `/api/agents/projects/<projectId>/attachments/<id>/settings` | GET, PATCH | The attachment policy scope: tighten-only overrides over the three-layer effective view |
+| `/api/agents/projects/<projectId>/attachments/<id>/session` | GET, DELETE | The persisted chat transcript, or clear it (the attachment survives) |
+| `/api/agents/projects/<projectId>/attachments/<id>/run` | POST | Run one turn. Returns `{reply, executionId, usage, content}`; persists both turns |
+| `/api/agents/projects/<projectId>/attachments/<id>/run/stream` | POST | The same turn as Server-Sent Events: `execution` then `delta` chunks, tool rounds, `review_required`, `content`, `done` |
+| `/api/agents/projects/<projectId>/attachments/<id>/proposals/<proposalId>` | POST `/apply`, DELETE | Apply a pending review proposal (the only mutation path; re-checks the pinned digest, **409** on drift) or dismiss it |
+
+Runs are admitted through the append-only per-day ledger under a file lock; a denied
+run persists nothing and returns a stable **429** `{error, quota, reason, resetAt}`.
+
 ### Starter Routes
 
 | Endpoint | Method | Purpose |
@@ -769,6 +812,9 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/ConnectionValidator.ts` | Edge validation logic |
 | `src/api/` | API client wrappers (`packagesApi`, `projectsApi`); `authApi` lives at `src/utils/authApi.ts` |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |
+| `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
+| `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
+| `src/components/AiSettingsModal.tsx` | AI Settings: the Provider tab and the account-scope Agent limits tab |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend
@@ -794,6 +840,19 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/models.py` | `DatasetIndexEntry`, the index's SQLAlchemy table |
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
+| `backend/app/agents/routes.py` | `/api/agents/*` endpoints (catalog, imports, publications, per-dataflow, attachments, runs) |
+| `backend/app/agents/services.py` | The facade every agent route calls; owns the `requiresAgents` closure on add and the dependent check on remove |
+| `backend/app/agents/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES` |
+| `backend/app/agents/builtin.py` | The 21 built-in agents, as a data-driven roster |
+| `backend/app/agents/storage.py` | Definition store under `.curio/users/<u>/agents/<coord>/` |
+| `backend/app/agents/imports.py` | My imports registry (`imported-agents.json`) |
+| `backend/app/agents/project_agents.py` | The per-dataflow lockfile in `spec.dataflow.agents` |
+| `backend/app/agents/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
+| `backend/app/agents/provider_config.py` | The single provider resolver: guest env, then per-user `llm_*`, then the deployment default |
+| `backend/app/agents/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported |
+| `backend/app/agents/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives |
+| `backend/app/agents/policy.py` | Effective-policy resolver (`attachment ?? project ?? account ?? deployment`), clamped downward |
+| `backend/app/agents/ledger.py` | Append-only per-day usage ledger; flock-guarded reserve and settle |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |
 | `backend/extensions.py` | SQLAlchemy and Flask-Migrate initialization |
 

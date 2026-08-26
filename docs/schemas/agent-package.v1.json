@@ -21,7 +21,7 @@
       "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9.-]+)?$",
       "description": "Semver-style version. Pre-release / build metadata accepted. The on-disk directory is '<id>@<version>'."
     },
-    "name": { "type": "string", "minLength": 1, "description": "Human-readable agent name shown in the Agents Catalog." },
+    "name": { "type": "string", "minLength": 1, "description": "Human-readable agent name shown in the Agent Catalog." },
     "category": {
       "type": "string",
       "enum": ["data", "node", "canvas", "package", "evaluate"],

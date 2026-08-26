@@ -342,10 +342,11 @@ CURIO_NO_PROJECT=1 pytest \
 
 ## Catalog surfaces
 
-**No seeding is needed.** Both catalogs are live directory scans of committed
+**No seeding is needed.** All three catalogs are live scans of committed
 content: the Node Catalog reads `<repo_root>/packages/`, the Data Catalog reads
-`<repo_root>/datasets/` (surfacing as `origin: "hub"`). A fresh test user already
-sees five packages and three datasets.
+`<repo_root>/datasets/` (surfacing as `origin: "hub"`), and the Agent Catalog
+reads the built-in roster in `app/agents/builtin.py`. A fresh test user already
+sees five packages, three datasets and twenty-one agents.
 
 **Only `curio.example-ui@1` may be installed in a test.** It declares no python
 dependencies, so nothing shells out to pip. `curio.weather@1`,
@@ -372,8 +373,18 @@ Other things that surprise people here:
 - The **"In dataflow" tab renders `MyPackagesList`, not `PackageCard`**, so the
   `data-pkg-dir` attribute is absent there; key on the row's `Remove {name}`
   aria-label.
-- Card roots carry `data-pkg-dir` / `data-dataset-id`. Prefer them over display
-  copy, which has been renamed repeatedly.
+- Card roots carry `data-pkg-dir` / `data-dataset-id` / `data-agent-coord`.
+  Prefer them over display copy, which has been renamed repeatedly.
+- **Adding an agent needs no permissions dialog.** It is a lockfile write with
+  no pip involved, so watch the install POST itself rather than a confirm step.
+  Removing one *does* confirm, and Playwright's default for a dialog is
+  **dismiss** - without `page.once("dialog", lambda d: d.accept())` the click
+  silently does nothing and later assertions fail for the wrong reason.
+- **The agent palette's footer sits below the fold at 1280x720.** Its panel is
+  `max-height: calc(100vh - 152px)` with `overflow: hidden`, so entering through
+  `Browse Agent Catalog +` (how the Node suite enters) is not clickable at this
+  suite's viewport. Reach the drawer from the **Data** menu instead, and open
+  the palette separately when the test needs it mounted.
 - **`packagesApi` percent-encodes the dirName**, so the `@` in
   `curio.canvas.draft.<slug>@1` reaches the wire as `%40`. An
   `expect_response` predicate built from the raw dirName never fires; match on
@@ -382,11 +393,12 @@ Other things that surprise people here:
   `#pkg-meta-runtime` (`compatibility.curioRuntime`) is not carried on
   `PackagePayload`, so `PackageMetadataModal` opens it blank every time and a
   reopened modal can never show what was saved. The Node settings modal's
-  `Provenance tab` / `Explanation tab` checkboxes are canvas-local:
-  `applyCanvasTemplateConfigToTemplateDraft` does not copy `hasProvenance` /
-  `hasExplanation` into the template draft and `toApiPayload` emits no such
-  manifest field. Asserting either through an archive fails for reasons that
-  have nothing to do with the archive.
+  `Provenance tab` checkbox is canvas-local:
+  `applyCanvasTemplateConfigToTemplateDraft` does not copy `hasProvenance` into
+  the template draft and `toApiPayload` emits no such manifest field. Asserting
+  it through an archive fails for reasons that have nothing to do with the
+  archive. (The Explanation tab it used to sit beside is gone;
+  `agent.node-explainer` replaced it.)
 - **Node settings port rows have no label, id or test id**, and their class
   names are hashed CSS modules. Locate the section by its heading text and step
   up one level (`get_by_text("Input ports", exact=True).locator("xpath=..")`),
