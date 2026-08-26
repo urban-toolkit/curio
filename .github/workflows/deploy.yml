@@ -209,9 +209,15 @@ jobs:
           # Port 2000 is deliberately not published (it executes user
           # code), so reach it from inside the container. curl is present:
           # the image's HEALTHCHECK uses it.
+          #
+          # `< /dev/null` is load-bearing. This whole script is fed to the
+          # remote shell as `bash -s` on STDIN, and `docker compose exec -T`
+          # forwards ITS stdin to the container, so without the redirect it
+          # swallows the rest of the script: bash hits EOF, exits 0, and
+          # every step below here silently never runs.
           echo "=== node execution isolation ==="
           version_json="$(docker compose -p curio-dev exec -T curio \
-                            curl -sf http://127.0.0.1:2000/version 2>/dev/null \
+                            curl -sf http://127.0.0.1:2000/version 2>/dev/null < /dev/null \
                           | tr -d ' \r\n' || true)"
           case "$version_json" in
             *'"isolation":"fork"'*)
@@ -344,9 +350,15 @@ jobs:
           # Port 2000 is deliberately not published (it executes user
           # code), so reach it from inside the container. curl is present:
           # the image's HEALTHCHECK uses it.
+          #
+          # `< /dev/null` is load-bearing. This whole script is fed to the
+          # remote shell as `bash -s` on STDIN, and `docker compose exec -T`
+          # forwards ITS stdin to the container, so without the redirect it
+          # swallows the rest of the script: bash hits EOF, exits 0, and
+          # every step below here silently never runs.
           echo "=== node execution isolation ==="
           version_json="$(docker compose -p curio exec -T curio \
-                            curl -sf http://127.0.0.1:2000/version 2>/dev/null \
+                            curl -sf http://127.0.0.1:2000/version 2>/dev/null < /dev/null \
                           | tr -d ' \r\n' || true)"
           case "$version_json" in
             *'"isolation":"fork"'*)
