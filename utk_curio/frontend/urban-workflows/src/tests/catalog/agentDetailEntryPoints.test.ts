@@ -87,10 +87,42 @@ describe("the account-scope CTA says what the click does", () => {
     expect(drawer).not.toContain("Add to dataflow");
   });
 
-  it("never says Install", () => {
+  it("never says Install, anywhere on an agent surface", () => {
     // The word the catalogs retired: it described neither scope.
-    for (const file of [BROWSE, CARD, DRAWER]) {
-      expect(read(file)).not.toMatch(/>\s*Install\s*</);
+    //
+    // This case used to read only the three browse-page files, which is
+    // exactly why `agentListUtils.installLabel` kept rendering an "Install"
+    // button through the entire terminology pass - the e2e caught it, this
+    // suite did not. It now walks every agent component. Comment lines are
+    // skipped so the explanation of why the word is banned may still name it.
+    const dirs = [
+      "components/agents",
+      "pages/agents",
+      "components/menus/nodes/agentsPalette",
+    ];
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name)) files.push(full);
+      }
+    };
+    for (const d of dirs) walk(path.join(SRC, d));
+    // A guard on the guard: a moved directory would pass vacuously.
+    expect(files.length).toBeGreaterThan(20);
+
+    const commentLine = /^\s*(\/\*|\*|\/\/)/;
+    const bareInstall = /["'>]\s*Install(ing)?\s*[…"'<]/;
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+        if (commentLine.test(line)) continue;
+        if (bareInstall.test(line)) {
+          offenders.push(`${path.relative(SRC, file)}: ${line.trim()}`);
+        }
+      }
     }
+    expect(offenders).toEqual([]);
   });
 });

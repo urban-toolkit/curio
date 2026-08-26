@@ -327,9 +327,9 @@ const AgentRow: React.FC<{
 
       <div className={cardStyles.cardAction}>
         {/* Per-scope action controls, matching the concept:
-            Global → Install (or Uninstall if already in project)
-            My Imports → Install + Publish pill + Delete
-            Installed → Uninstall */}
+            Browse all -> Add to dataflow (or Remove from dataflow if already in)
+            My imports  -> Add to dataflow + Publish pill + Delete
+            In dataflow -> Remove from dataflow */}
         {/* Project-agent-default scope entry (dev/23): labeled cog, installed
             scope only — palette rows and other scopes stay action-free. */}
         {scope === "installed" ? (
@@ -350,7 +350,7 @@ const AgentRow: React.FC<{
             disabled={busy || !hasProject}
             onClick={() => state.uninstall(card.dirName)}
           >
-            Uninstall
+            Remove from dataflow
           </button>
         ) : (
           <button

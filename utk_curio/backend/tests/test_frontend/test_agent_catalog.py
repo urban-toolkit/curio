@@ -139,6 +139,18 @@ def _card(drawer, coord: str):
     return drawer.locator(f'article[data-agent-coord="{coord}"]')
 
 
+def _installed_coords(current_server: str, token: str, project_id: str) -> set[str]:
+    """The project's agent lockfile, as coordinates.
+
+    ``GET /api/agents/projects/<id>`` answers with full cards rather than a
+    list of strings - unlike the packages route, whose ``{"packages": [...]}``
+    really is a list of dir names. Reducing to coordinates here keeps that
+    difference in one place instead of in every assertion.
+    """
+    rows = api_json(f"{current_server}/api/agents/projects/{project_id}", token)["agents"]
+    return {row["dirName"] for row in rows}
+
+
 def test_drawer_lists_catalog_agents(
     app_frontend: "FrontendPage", current_server: str, page
 ):
@@ -222,17 +234,21 @@ def test_add_agent_propagates_to_palette(
         f"asserts a single-coordinate install. Use the closure test instead."
     )
 
-    lock_before = api_json(
-        f"{current_server}/api/agents/projects/{project_id}", token
-    )["agents"]
+    lock_before = _installed_coords(current_server, token, project_id)
 
-    # 2. Enter from the palette footer, which leaves the palette mounted for
-    #    the post-condition below.
-    palette = open_tools_palette(page, "agents")
-    palette.get_by_role("button", name=re.compile(r"^Browse Agent Catalog")).click(
-        force=True
-    )
-    drawer = _drawer(page)
+    # 2. Open the palette FIRST and leave it mounted, then reach the drawer
+    #    from the Data menu. Opening the drawer does not change ToolsMenu's
+    #    `activePalette`, so the palette survives underneath - which is what
+    #    makes the post-condition below a claim about a live repaint rather
+    #    than about a fresh fetch on mount.
+    #
+    #    Not the palette's own "Browse Agent Catalog +" footer, which is how the
+    #    Node suite enters: the panel is `max-height: calc(100vh - 152px)` with
+    #    `overflow: hidden`, so at this suite's 1280x720 viewport that footer
+    #    sits below the fold and Playwright refuses the click even with
+    #    force=True.
+    open_tools_palette(page, "agents")
+    drawer = _open_drawer_from_menu(page)
     card = _card(drawer, AGENT_COORD)
     expect(card).to_have_count(1, timeout=15000)
 
@@ -262,11 +278,9 @@ def test_add_agent_propagates_to_palette(
     ).to_have_count(1, timeout=20000)
 
     # 6. Diagnostic read: localises a UI failure to backend vs frontend.
-    lock_after = api_json(
-        f"{current_server}/api/agents/projects/{project_id}", token
-    )["agents"]
-    assert set(lock_after) == set(lock_before) | {AGENT_COORD}, (
-        f"lockfile went from {lock_before} to {lock_after}"
+    lock_after = _installed_coords(current_server, token, project_id)
+    assert lock_after == lock_before | {AGENT_COORD}, (
+        f"lockfile went from {sorted(lock_before)} to {sorted(lock_after)}"
     )
 
 
@@ -318,10 +332,8 @@ def test_requires_agents_closure_is_disclosed_and_installed(
     ).to_be_visible(timeout=20000)
 
     # The server wrote the whole closure, not just the row that was clicked.
-    installed = api_json(
-        f"{current_server}/api/agents/projects/{project_id}", token
-    )["agents"]
-    assert DEPENDENT_COORD in installed, installed
+    installed = _installed_coords(current_server, token, project_id)
+    assert DEPENDENT_COORD in installed, sorted(installed)
     assert any(coord.startswith(REQUIRED_ID) for coord in installed), (
-        f"the required {REQUIRED_ID} was not installed alongside it: {installed}"
+        f"the required {REQUIRED_ID} was not installed alongside it: {sorted(installed)}"
     )

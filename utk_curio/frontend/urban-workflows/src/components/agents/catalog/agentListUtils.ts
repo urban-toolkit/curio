@@ -40,21 +40,33 @@ export function missingRequiredAgents(card: AgentCard): AgentCard["requiresAgent
   return (card.requiresAgents ?? []).filter((r) => !r.installedInProject);
 }
 
-/** dev/106: the Install button's label — "Install" when the closure is
- * satisfied, "Install +N required" when the click adds N more agents. */
+/**
+ * The add button's label.
+ *
+ * "Add to dataflow" is the shared catalog wording - the same string the Node
+ * and Data drawers use for the same per-dataflow write. This used to say
+ * "Install", which `catalogCopy.test.tsx` bans outright because it described
+ * neither scope: the drawer writes one dataflow's lockfile, while a browse
+ * page writes the account.
+ *
+ * When the closure adds more than the row that was clicked, the count rides in
+ * the label so the click is disclosed before it happens.
+ */
 export function installLabel(card: AgentCard): string {
   const missing = missingRequiredAgents(card);
-  return missing.length ? `Install +${missing.length} required` : "Install";
+  return missing.length
+    ? `Add to dataflow (+${missing.length} required)`
+    : "Add to dataflow";
 }
 
-/** dev/106: the Install button's title — names what the click adds, or the
- * dependency that cannot be resolved (the server will refuse). */
+/** The add button's title - names what else the click adds, or the dependency
+ * that cannot be resolved (the server will refuse). */
 export function installTitle(card: AgentCard): string | undefined {
   const missing = missingRequiredAgents(card);
   if (!missing.length) return undefined;
   const unresolvable = missing.filter((r) => !r.visible);
   if (unresolvable.length) {
-    return `Cannot install: requires ${unresolvable.map((r) => r.id).join(", ")}, not available in the catalog or your imports`;
+    return `Cannot add: requires ${unresolvable.map((r) => r.id).join(", ")}, not available in the catalog or your imports`;
   }
-  return `Also installs ${missing.map((r) => r.name).join(", ")} (required)`;
+  return `Also adds ${missing.map((r) => r.name).join(", ")} (required)`;
 }

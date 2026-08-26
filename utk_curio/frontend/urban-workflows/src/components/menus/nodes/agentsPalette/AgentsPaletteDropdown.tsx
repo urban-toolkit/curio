@@ -11,7 +11,7 @@ import { AgentPaletteRow } from "./AgentPaletteRow";
 import styles from "./AgentsPalette.module.css";
 
 /**
- * The AGENTS tools-panel palette. Shares the Datasets/Packages palette pattern
+ * The Agent Catalog tools-panel palette. Shares the Datasets/Packages pattern
  * (dark vertical trigger card + dark dropdown panel + orange catalog footer),
  * differing only in content. Lists the active project's installed agent
  * templates as draggable rows (drag to attach — handled in MainCanvas),
@@ -95,7 +95,7 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
           title={open ? "Close agent palette" : "Open agent palette"}
         >
           <FontAwesomeIcon icon={faRobot} className={styles.triggerIcon} />
-          <span className={styles.triggerLabel}>Agents</span>
+          <span className={styles.triggerLabel}>Agent Catalog</span>
           <span className={styles.triggerCount}>{total}</span>
           <FontAwesomeIcon
             icon={open ? faChevronUp : faChevronDown}

@@ -64,7 +64,7 @@ describe("AgentsPaletteDropdown", () => {
   it("shows the installed count and lists agents when opened", async () => {
     render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalledWith("p1"));
-    fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
     expect(await screen.findByText("node-explainer")).toBeInTheDocument();
     // Row shows the install coordinate (major only) and a compatible-target pill.
     expect(screen.getByText("agent.node-explainer@1")).toBeInTheDocument();
@@ -74,7 +74,7 @@ describe("AgentsPaletteDropdown", () => {
   it("footer opens the catalog drawer", async () => {
     render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
     fireEvent.click(screen.getByRole("button", { name: /Browse Agent Catalog/i }));
     expect(mockOpenDrawer).toHaveBeenCalled();
   });
@@ -82,7 +82,7 @@ describe("AgentsPaletteDropdown", () => {
   it("clicking a row opens the drawer", async () => {
     render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
     fireEvent.click(await screen.findByText("node-explainer"));
     expect(mockOpenDrawer).toHaveBeenCalled();
   });
@@ -91,7 +91,7 @@ describe("AgentsPaletteDropdown", () => {
     api.listProjectAgents.mockResolvedValue({ agents: [] });
     render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
     expect(
       screen.getByText(/No agents installed in this project yet/i),
     ).toBeInTheDocument();
@@ -102,7 +102,7 @@ describe("AgentsPaletteDropdown", () => {
   it("a row is a drag source writing the agent coordinate", async () => {
     render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
     await screen.findByText("node-explainer");
     const dragHandle = screen.getByTitle(/Drag onto a node or the canvas to attach/i);
     const setData = jest.fn();
@@ -119,7 +119,7 @@ describe("AgentsPaletteDropdown", () => {
   it("keeps the trigger column and open panel as direct children of the root", async () => {
     render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-    const trigger = screen.getByRole("button", { name: /Agents/i });
+    const trigger = screen.getByRole("button", { name: /Agent Catalog/i });
     const column = trigger.parentElement as HTMLElement; // .column
     const root = column.parentElement as HTMLElement;
     expect(root.className).toContain("root");

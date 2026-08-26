@@ -108,7 +108,7 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.getByText("My imports")).toBeInTheDocument();
     expect(screen.getByText("In dataflow")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Install" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeInTheDocument();
   });
 
   it("switching to My imports fetches and shows Delete", async () => {
@@ -120,10 +120,10 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
   });
 
-  it("Install disabled without a project", async () => {
+  it("Add to dataflow disabled without a project", async () => {
     render(<AgentCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Install" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeDisabled();
   });
 
   it("shows Publish only for a publishable My imports card and publishes on click", async () => {
@@ -143,16 +143,16 @@ describe("AgentCatalogDrawer", () => {
     await waitFor(() => expect(api.publish).toHaveBeenCalledWith("agent.my-custom@1.0.0"));
   });
 
-  it("clicking Install calls the install endpoint", async () => {
+  it("clicking Add to dataflow calls the install endpoint", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Install" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
     );
   });
 
-  it("discloses a missing required dependency on the card and the Install button (dev/106)", async () => {
+  it("discloses a missing required dependency on the card and the Add button", async () => {
     api.catalog.mockResolvedValue({
       agents: [
         card("agent.dataflow-builder", {
@@ -169,15 +169,15 @@ describe("AgentCatalogDrawer", () => {
     await waitFor(() => expect(screen.getByText("Dataflow Builder")).toBeInTheDocument());
     expect(screen.getByText(/Requires:/)).toBeInTheDocument();
     expect(screen.getByText("Node Content Builder (not installed)")).toBeInTheDocument();
-    const btn = screen.getByRole("button", { name: "Install +1 required" });
-    expect(btn).toHaveAttribute("title", "Also installs Node Content Builder (required)");
+    const btn = screen.getByRole("button", { name: "Add to dataflow (+1 required)" });
+    expect(btn).toHaveAttribute("title", "Also adds Node Content Builder (required)");
     fireEvent.click(btn);
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.dataflow-builder@1.0.0"),
     );
   });
 
-  it("a satisfied dependency renders a check and a plain Install (dev/106)", async () => {
+  it("a satisfied dependency renders a check and a plain Add to dataflow", async () => {
     api.catalog.mockResolvedValue({
       agents: [
         card("agent.dataflow-builder", {
@@ -192,7 +192,7 @@ describe("AgentCatalogDrawer", () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("Dataflow Builder")).toBeInTheDocument());
     expect(screen.getByText("Node Content Builder ✓")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Install" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeInTheDocument();
   });
 
   it("a 409 from uninstalling a required dependency surfaces verbatim (dev/106)", async () => {
@@ -205,7 +205,7 @@ describe("AgentCatalogDrawer", () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     fireEvent.click(screen.getByText("In dataflow"));
     await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove from dataflow" }));
     await waitFor(() =>
       expect(screen.getByText(/is required by Dataflow Builder/)).toBeInTheDocument(),
     );
@@ -293,7 +293,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     expect(screen.queryByText("Loading…")).toBeNull();
   });
 
-  it("an imported AND installed agent shows Uninstall on My Imports (Node Content Builder regression)", async () => {
+  it("an imported AND installed agent shows Remove from dataflow on My imports", async () => {
     api.listImports.mockResolvedValue({
       agents: [
         card("agent.node-content-builder", {
@@ -307,8 +307,8 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Uninstall" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add to dataflow" })).toBeNull();
   });
 
   it("My Imports is fetched with the open project's id (lockfile truth)", async () => {
@@ -323,7 +323,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     api.catalog.mockClear();
     api.listImports.mockClear();
     api.listProjectAgents.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Install" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
     await waitFor(() => expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"));
     await waitFor(() => {
       expect(api.catalog).toHaveBeenCalled();
