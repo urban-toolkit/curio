@@ -1,0 +1,44 @@
+/*
+ * Category-keyed rules for the agent browse card.
+ *
+ * The layout itself is ../catalog/CatalogBrowseLayout.module.css, shared with
+ * the other two browse pages. Only the parts keyed off a category live here -
+ * the same split PackageBrowseCard.module.css uses, and for the same reason:
+ * the dynamic `strip_<key>` / `tagAccent_<key>` lookups need a module that
+ * declares every key the resolver can produce.
+ *
+ * Keys are palette buckets, not agent categories (see agentCategoryStyle.ts).
+ * Three of the four are the node-category colours; `dataflow` is the kind
+ * colour the projects list paints a dataflow with, which is what a
+ * canvas-scoped agent acts on.
+ */
+
+.strip_data        { background: var(--curio-category-data-fg); }
+.strip_computation { background: var(--curio-category-computation-fg); }
+.strip_dataflow    { background: var(--curio-kind-dataflow-fg); }
+.strip_package     { background: var(--curio-category-package-fg); }
+
+.cardActive.card_data        { border-color: var(--curio-category-data-fg); }
+.cardActive.card_computation { border-color: var(--curio-category-computation-fg); }
+.cardActive.card_dataflow    { border-color: var(--curio-kind-dataflow-fg); }
+.cardActive.card_package     { border-color: var(--curio-category-package-fg); }
+
+.tagAccent_data {
+    background: var(--curio-category-data-bg);
+    color: var(--curio-category-data-on-tint);
+}
+
+.tagAccent_computation {
+    background: var(--curio-category-computation-bg);
+    color: var(--curio-category-computation-on-tint);
+}
+
+.tagAccent_dataflow {
+    background: var(--curio-kind-dataflow-bg);
+    color: var(--curio-kind-dataflow-fg);
+}
+
+.tagAccent_package {
+    background: var(--curio-category-package-bg);
+    color: var(--curio-category-package-on-tint);
+}

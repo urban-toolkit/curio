@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 /**
- * Guards the Node Catalog / Data Catalog drawers against drifting apart again.
+ * Guards the Node, Data and Agent Catalog drawers against drifting apart again.
  *
  * The two drawers render the same screen from the same stylesheet, but each page
  * used to hand-assemble its own markup. They diverged: the word "Published" was
@@ -22,6 +22,7 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 const DRAWERS = [
   "pages/catalog/PackageBrowseDrawer.tsx",
   "pages/dataHub/DataCatalogBrowseDrawer.tsx",
+  "pages/agents/AgentCatalogBrowseDrawer.tsx",
 ];
 
 describe("catalog drawer parity", () => {

@@ -85,6 +85,7 @@ import CatalogMasterPage from "./pages/catalog/CatalogMasterPage";
 import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
 import DataCatalogBrowse from "./pages/dataHub/DataCatalogBrowse";
 import DataCatalogDetail from "./pages/dataHub/DataCatalogDetail";
+import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
 import DataHubPage from "./pages/dataHub/DataHubPage";
 import { ProjectLoader } from "./components/ProjectLoader";
 
@@ -184,6 +185,7 @@ const App: React.FC = () => {
                       <Route path="nodes" element={<NodeCatalogBrowse />} />
                       <Route path="data" element={<DataCatalogBrowse />} />
                       <Route path="data/:datasetId" element={<DataCatalogDetail />} />
+                      <Route path="agents" element={<AgentCatalogBrowse />} />
                     </Route>
                     <Route
                       path="/data-hub/:datasetId?"

@@ -688,6 +688,37 @@
   flex-shrink: 0;
 }
 
+/* Dismissible banner above the card grid: an action error, or a summary of
+   what an install just did. NodeCatalogBrowse still writes this with inline
+   styles - two of them, in two hardcoded colour pairs - which is exactly the
+   drift the token palette exists to end. Declared here so every browse page
+   can share one, and so the colours come from tokens. */
+.browseBanner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 12px 24px 0;
+    padding: 10px 14px;
+    border: 1px solid var(--curio-danger-border);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-danger-bg);
+    color: var(--curio-danger-text);
+    font-family: var(--curio-font-family);
+    font-size: var(--curio-font-size-md);
+}
+
+.browseBannerDismiss {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
 .drawerKindHero {
   margin: 16px 20px 0;
   height: 112px;

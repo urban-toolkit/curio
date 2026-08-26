@@ -124,3 +124,124 @@ def test_deploy_seeds_examples_like_with_examples():
 
     set_environment_variables(**BASE, deploy=True)
     assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
+
+
+# --------------------------------------------------------------------------- #
+# The agent catalog and package-build knobs
+# --------------------------------------------------------------------------- #
+#
+# Both features arrived configured entirely through the environment. Curio's
+# convention is a documented flag whose help names the variable it sets, so
+# these are the argparse side of that. The three kinds that stay env-only are
+# asserted below too, so a later change has to be deliberate about it.
+
+AGENT_AND_BUILD_KEYS = (
+    "CURIO_DEFAULT_LLM_API_TYPE",
+    "CURIO_DEFAULT_LLM_BASE_URL",
+    "CURIO_DEFAULT_LLM_MODEL",
+    "CURIO_DEFAULT_LLM_API_KEY",
+    "GUEST_LLM_API_KEY",
+    "CURIO_AGENT_RUNS_PER_DAY",
+    "CURIO_SEARCH_URL",
+    "CURIO_BUILD_ESBUILD",
+    "CURIO_BUILD_PREVIEW_RUNNER",
+    "CURIO_BUILD_PREVIEW_POLICY",
+    "CURIO_JS_REGISTRY_URL",
+    "CURIO_JS_BLOCK_UNPINNED",
+    "CURIO_BACKEND_SANDBOX_PYTHON",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_agent_env():
+    """Clear these before AND after.
+
+    ``set_environment_variables`` mutates ``os.environ`` in place, so a value
+    written here outlives the test. Clearing only on the way in left
+    CURIO_BUILD_ESBUILD and friends set for every suite that ran afterwards -
+    which surfaced as six unrelated failures in test_agents, but only when the
+    two directories were collected together.
+    """
+    saved = {k: os.environ.pop(k, None) for k in AGENT_AND_BUILD_KEYS}
+    try:
+        yield
+    finally:
+        for key, value in saved.items():
+            os.environ.pop(key, None)
+            if value is not None:
+                os.environ[key] = value
+
+
+class TestAgentAndBuildFlags:
+    def test_every_flag_reaches_its_variable(self):
+        set_environment_variables(
+            **BASE,
+            llm_provider="anthropic",
+            llm_base_url="https://example.test/v1",
+            llm_model="some-model",
+            llm_api_key="k",
+            guest_llm_api_key="gk",
+            agent_runs_per_day=25,
+            agent_search_url="https://search.test/?q={query}",
+            build_esbuild="/usr/bin/esbuild",
+            build_preview_runner="/usr/bin/preview",
+            build_preview_policy="skip",
+            js_registry_url="https://registry.test",
+            js_block_unpinned=True,
+            package_backend_python="/usr/bin/python3",
+        )
+        assert os.environ["CURIO_DEFAULT_LLM_API_TYPE"] == "anthropic"
+        assert os.environ["CURIO_DEFAULT_LLM_BASE_URL"] == "https://example.test/v1"
+        assert os.environ["CURIO_DEFAULT_LLM_MODEL"] == "some-model"
+        assert os.environ["CURIO_DEFAULT_LLM_API_KEY"] == "k"
+        assert os.environ["GUEST_LLM_API_KEY"] == "gk"
+        assert os.environ["CURIO_AGENT_RUNS_PER_DAY"] == "25"
+        assert os.environ["CURIO_SEARCH_URL"] == "https://search.test/?q={query}"
+        assert os.environ["CURIO_BUILD_ESBUILD"] == "/usr/bin/esbuild"
+        assert os.environ["CURIO_BUILD_PREVIEW_RUNNER"] == "/usr/bin/preview"
+        assert os.environ["CURIO_BUILD_PREVIEW_POLICY"] == "skip"
+        assert os.environ["CURIO_JS_REGISTRY_URL"] == "https://registry.test"
+        assert os.environ["CURIO_JS_BLOCK_UNPINNED"] == "1"
+        assert os.environ["CURIO_BACKEND_SANDBOX_PYTHON"] == "/usr/bin/python3"
+
+    def test_omitted_flags_leave_the_environment_alone(self):
+        """Unlike the boolean knobs above, these are absent rather than "0".
+
+        An operator who configured a provider through the environment (or a
+        .env) must not have it cleared by a start that simply did not repeat
+        the flag - an empty CURIO_DEFAULT_LLM_MODEL means "no provider", which
+        would silently disable every AI surface.
+        """
+        set_environment_variables(**BASE)
+        for key in AGENT_AND_BUILD_KEYS:
+            assert key not in os.environ, key
+
+    def test_js_block_unpinned_is_only_set_when_asked(self):
+        set_environment_variables(**BASE, js_block_unpinned=False)
+        assert "CURIO_JS_BLOCK_UNPINNED" not in os.environ
+
+
+class TestVariablesThatStayEnvOnly:
+    """The three kinds that deliberately have no flag.
+
+    Recorded as a test so removing one is a decision rather than an accident.
+    """
+
+    def test_parent_to_child_plumbing_has_no_flag(self):
+        # Written by backend_runtime when it spawns a package backend, and by
+        # install_preview_runner into the wrapper it generates. A user setting
+        # these by hand would be configuring one subprocess invocation.
+        import utk_curio.main as launcher
+
+        source = Path(launcher.__file__).read_text(encoding="utf-8")
+        for key in ("CURIO_PKG_ENTRY", "CURIO_PKG_NET_ALLOWED", "CURIO_PREVIEW_REACTFLOW_UMD"):
+            assert key not in source, key
+
+    def test_test_only_switches_have_no_flag(self):
+        # CURIO_TESTING_LLM_SCRIPT is read only when CURIO_TESTING is set;
+        # exposing it on the launcher would advertise a test seam as an
+        # operator feature.
+        import utk_curio.main as launcher
+
+        source = Path(launcher.__file__).read_text(encoding="utf-8")
+        assert "CURIO_TESTING_LLM_SCRIPT" not in source

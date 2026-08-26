@@ -29,7 +29,7 @@ function activeLabels(container: HTMLElement): string[] {
 }
 
 describe('AppSectionTabs', () => {
-  test('renders the three sections as sibling links', () => {
+  test('renders the four sections as sibling links', () => {
     const { getByRole } = renderAt('/projects');
 
     const nav = getByRole('navigation', { name: 'Main sections' });
@@ -42,6 +42,7 @@ describe('AppSectionTabs', () => {
       ['Projects', '/projects'],
       ['Node Catalog', '/catalog/nodes'],
       ['Data Catalog', '/catalog/data'],
+      ['Agent Catalog', '/catalog/agents'],
     ]);
   });
 

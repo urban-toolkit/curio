@@ -103,6 +103,7 @@ describe('projects page chrome', () => {
       'Projects',
       'Node Catalog',
       'Data Catalog',
+      'Agent Catalog',
     ]);
   });
 

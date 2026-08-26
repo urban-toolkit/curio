@@ -58,8 +58,21 @@ export interface AgentInstallResponse {
   required: string[];
 }
 
+/** Facet counts, keyed by facet then by value. Every key is present at zero,
+ *  so a rail renders a complete set of rows rather than only the populated
+ *  ones - the same contract `GET /api/datasets/catalog` returns. */
+export interface AgentCatalogFacets {
+  category: Record<string, number>;
+  origin: Record<string, number>;
+}
+
 interface AgentListResponse {
+  /** The rows. `agents` is the historical name and still returned; `items`
+   *  matches the other catalogs and is what new surfaces should read. */
   agents: AgentCard[];
+  items?: AgentCard[];
+  /** Present on `/catalog` only; the scoped lists have nothing to facet. */
+  facets?: AgentCatalogFacets;
 }
 
 /** A private agent instance attached to a node/canvas/connection. */
