@@ -439,13 +439,34 @@ instead of in-process. `utk_curio/sandbox/isolation/`:
 | `util/staging.py` | Artifacts in and out of a child's scratch directory |
 | `hardening.py` | Filesystem permissions, and the startup audit that verifies them |
 
-Three design points worth knowing:
+Five design points worth knowing:
 
 - **The parent keeps every privilege the child must not have.** It owns the
   DuckDB connection, resolves artifacts, and enforces session scoping. The child
   sees only a scratch directory of staged files. Frames are already stored as
   parquet files, so staging an input is a hardlink and persisting an output is a
   rename: the parent never parses bytes a child produced.
+- **One execution account, not one per Curio user.** `--exec-user` names a
+  single OS account that every user's nodes run as. The boundary this buys is
+  therefore *node code against the host*, not *user A against user B*. What
+  keeps two users apart is session scoping in the parent, which the child cannot
+  reach at all: `staging._read_row` reports another session's artifact as
+  **missing** rather than forbidden, so its existence cannot be probed. Two
+  consequences follow from the shared uid, and neither is fixed by a mode bit:
+  concurrent children can reach each other's scratch directories, and a node can
+  find a sibling through `/proc`. Per-user OS accounts would close that, at the
+  cost of copying instead of hardlinking every staged input, because `chown`
+  acts on the inode. That is the trade being made, deliberately.
+- **A node's writes go through the parent, never straight into a store.** The
+  path is child, then scratch directory, then the parent's validated
+  `persist_output`, then the backend's `auto_install_node_output`. Because the
+  child never writes into an indexed store, it cannot forge a manifest or a
+  catalog entry. Under `--exec-user` the child's cwd is a per-user work
+  directory (`.curio/exec-scratch/users/<key>/`), which is the one place it may
+  write: it is `0700` and owned by the execution account, it persists between
+  runs, and a `docs` symlink is dropped in so the bundled examples' relative
+  reads still resolve. A relative write anywhere else fails, since the launch
+  tree is root-owned by then.
 - **No pickle in either direction.** A child's manifest carries a kind tag,
   JSON scalars, and flat filenames only. Unpickling a hostile child's output in
   the privileged parent would hand back most of what isolation removed.
@@ -471,8 +492,8 @@ would be stronger but needs `CAP_SYS_ADMIN`, which Docker does not grant by
 default.
 
 > [!IMPORTANT]
-> **Implementation status.** The confinement code now runs in CI. Two jobs
-> cover it, and they cover different halves:
+> **Implementation status.** The confinement code runs in CI. Three jobs cover
+> it, and each covers a different half:
 >
 > - `test-gpu` runs `tests/test_isolation_linux.py` on the Linux runner: the
 >   fork, the seccomp filter (socket, connect and ptrace denied), the rlimits,
@@ -482,14 +503,27 @@ default.
 >   the Python-node workflows against it. This is where *ordinary nodes still
 >   work* is demonstrated. It asserts the stack actually came up isolated
 >   before trusting the result.
+> - `test-gpu-exec-user` boots a third stack with `--isolation=fork
+>   --exec-user curio-exec`, the same pair `docker-compose.deploy.yml` ships,
+>   and asserts the **filesystem** half over the sandbox's HTTP API
+>   (`tests/live/test_exec_user_boundary.py`). This is the only job whose
+>   children are unprivileged: everywhere else they run as root, and root reads
+>   through any mode bit. It pins that node code really is `curio-exec` and not
+>   uid 0, that a hardlinked input still reaches the child, that the work
+>   directory is `0700` and owned by the execution account, and that
+>   `instance/`, `.curio/data`, `.curio/users`, `datasets/` and another user's
+>   file named by absolute path are all denied.
 >
-> Two gaps remain, both deliberate. The isolated CI stack runs without
-> `--exec-user`, because hardening those paths breaks the e2e harness's
-> host-side ground-truth step (see `docker-compose.ci-isolated.yml`), so the
-> **filesystem** half is covered only by unit tests. And `--isolation` still
-> defaults to `auto`, which still resolves to `off`: a local `curio start`
-> changes nothing. The deployed instances pass `--isolation=fork
-> --exec-user curio-exec` explicitly, via `docker-compose.deploy.yml`.
+> It is a separate job because `--exec-user` and the e2e harness cannot
+> coexist: hardening `.curio/data` breaks the host-side ground-truth step, which
+> executes every code node in the test process and writes artifacts there as the
+> runner user. So that job drops the workflow comparison and asserts over the
+> API instead (see `docker-compose.ci-exec-user.yml`).
+>
+> One gap remains, deliberately: `--isolation` still defaults to `auto`, which
+> still resolves to `off`, so a local `curio start` changes nothing. The
+> deployed instances pass `--isolation=fork --exec-user curio-exec` explicitly,
+> via `docker-compose.deploy.yml`.
 
 `POST /install` (`pip install` into the sandbox's interpreter) is off unless
 `--allow-runtime-install` is passed. It defaults on for a local single-user

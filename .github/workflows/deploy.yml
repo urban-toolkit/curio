@@ -191,11 +191,40 @@ jobs:
             fi
             sleep 5
           done
-          # Isolation is fail-closed, so a healthy stack has already proved it
-          # came up isolated -- but say so in the log, because "in-process"
-          # here would mean the overlay stopped being applied.
-          docker compose -p curio-dev logs --no-color curio 2>/dev/null \
-            | grep -m1 "node execution isolation:" || true
+          # Isolation is fail-closed, so a healthy stack has already proved
+          # it came up isolated. Assert it anyway: a stack booted WITHOUT
+          # the deploy overlay would have neither auth nor isolation and
+          # would still be perfectly healthy, which is exactly the
+          # regression worth catching.
+          #
+          # Ask the sandbox, do not grep the logs. The startup banner goes
+          # to the sandbox subprocess's stderr, which curio.py routes into
+          # .curio/messages.log, so `docker compose logs` carries only the
+          # launcher's own output. The grep this replaces could therefore
+          # never match, and passed silently on every deploy. /version
+          # reports the mode the sandbox actually resolved, which is the
+          # question being asked, and it is the same answer the UI badge
+          # shows.
+          #
+          # Port 2000 is deliberately not published (it executes user
+          # code), so reach it from inside the container. curl is present:
+          # the image's HEALTHCHECK uses it.
+          echo "=== node execution isolation ==="
+          version_json="$(docker compose -p curio-dev exec -T curio \
+                            curl -sf http://127.0.0.1:2000/version 2>/dev/null \
+                          | tr -d ' \r\n' || true)"
+          case "$version_json" in
+            *'"isolation":"fork"'*)
+              echo "OK: node execution is isolated (fork)"
+              ;;
+            *)
+              echo "::error::the deployed stack is NOT isolated. /version said: ${version_json:-nothing}. Node code would run in-process with the sandbox's own privileges."
+              docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+                'grep -i isolation .curio/messages.log 2>/dev/null | tail -20' || true
+              docker compose -p curio-dev logs --no-color --tail=100 curio || true
+              exit 1
+              ;;
+          esac
 
           echo "=== docker ps (post-deploy) ==="
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true
@@ -297,11 +326,40 @@ jobs:
             fi
             sleep 5
           done
-          # Isolation is fail-closed, so a healthy stack has already proved it
-          # came up isolated -- but say so in the log, because "in-process"
-          # here would mean the overlay stopped being applied.
-          docker compose -p curio logs --no-color curio 2>/dev/null \
-            | grep -m1 "node execution isolation:" || true
+          # Isolation is fail-closed, so a healthy stack has already proved
+          # it came up isolated. Assert it anyway: a stack booted WITHOUT
+          # the deploy overlay would have neither auth nor isolation and
+          # would still be perfectly healthy, which is exactly the
+          # regression worth catching.
+          #
+          # Ask the sandbox, do not grep the logs. The startup banner goes
+          # to the sandbox subprocess's stderr, which curio.py routes into
+          # .curio/messages.log, so `docker compose logs` carries only the
+          # launcher's own output. The grep this replaces could therefore
+          # never match, and passed silently on every deploy. /version
+          # reports the mode the sandbox actually resolved, which is the
+          # question being asked, and it is the same answer the UI badge
+          # shows.
+          #
+          # Port 2000 is deliberately not published (it executes user
+          # code), so reach it from inside the container. curl is present:
+          # the image's HEALTHCHECK uses it.
+          echo "=== node execution isolation ==="
+          version_json="$(docker compose -p curio exec -T curio \
+                            curl -sf http://127.0.0.1:2000/version 2>/dev/null \
+                          | tr -d ' \r\n' || true)"
+          case "$version_json" in
+            *'"isolation":"fork"'*)
+              echo "OK: node execution is isolated (fork)"
+              ;;
+            *)
+              echo "::error::the deployed stack is NOT isolated. /version said: ${version_json:-nothing}. Node code would run in-process with the sandbox's own privileges."
+              docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+                'grep -i isolation .curio/messages.log 2>/dev/null | tail -20' || true
+              docker compose -p curio logs --no-color --tail=100 curio || true
+              exit 1
+              ;;
+          esac
 
           echo "=== docker ps (post-deploy) ==="
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true
