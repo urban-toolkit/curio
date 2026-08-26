@@ -280,9 +280,21 @@ export const AgentSettingsModal: React.FC<{
               : `Project agent settings for ${data?.name ?? coord}`
         }
       >
-        <p className={styles.scope}>{SCOPE_BANNER[scope]}</p>
-        <h2 className={styles.title}>{scope === "account" ? "Agent settings" : data?.name ?? coord}</h2>
-        {scope !== "account" ? <p className={styles.coord}>{coord ?? data?.coord ?? ""}</p> : null}
+        {/* The host owns the heading when embedded. AI Settings already says
+            "AI Settings" and names this pane "Agent limits" on its tab, so
+            repeating "ACCOUNT POLICY / Agent settings" underneath stacked two
+            titles on one panel. */}
+        {embedded ? null : (
+          <>
+            <p className={styles.scope}>{SCOPE_BANNER[scope]}</p>
+            <h2 className={styles.title}>
+              {scope === "account" ? "Agent settings" : data?.name ?? coord}
+            </h2>
+            {scope !== "account" ? (
+              <p className={styles.coord}>{coord ?? data?.coord ?? ""}</p>
+            ) : null}
+          </>
+        )}
 
         <nav className={styles.tabs} aria-label="Settings screens">
           {(
