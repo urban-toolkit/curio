@@ -6,7 +6,7 @@ import styles from "./AgentImportModal.module.css";
 
 /**
  * Import package (memo dev/36): upload a user-authored agent definition —
- * one `manifest.json` plus its `.txt` prompt files — into My Imports as an
+ * one `manifest.json` plus its `.txt` prompt files - into My imports as an
  * owned, publishable definition. Server-side rules are authoritative (forced
  * `imported` trust, digest stamping, exact file correspondence, size limits,
  * immutability 409s); this modal assembles the payload and shows the server's
@@ -52,7 +52,7 @@ export const AgentImportModal: React.FC<{
         <h2 className={styles.title}>Import agent package</h2>
         <p className={styles.hint}>
           Pick one <code>manifest.json</code> and its <code>.txt</code> prompt files. The
-          import lands in <strong>My Imports</strong> as your own definition — installing
+          import lands in <strong>My imports</strong> as your own definition. Adding it
           and publishing stay separate actions.
         </p>
 

@@ -23,7 +23,7 @@ describe("agentsApi", () => {
     expect(mockFetch).toHaveBeenLastCalledWith("/api/agents/catalog?projectId=proj%201");
   });
 
-  it("listImports() GETs the My Imports scope", () => {
+  it("listImports() GETs the My imports scope", () => {
     agentsApi.listImports();
     expect(mockFetch).toHaveBeenCalledWith("/api/agents/imports");
   });

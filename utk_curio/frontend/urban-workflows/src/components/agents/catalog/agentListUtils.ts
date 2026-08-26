@@ -2,7 +2,7 @@ import type { AgentCard } from "../../../api/agentsApi";
 import { SortMode } from "../../packages/publishing/packageTypes";
 
 /**
- * Free-text match for the Agents Catalog search bar ("Search agents, hooks,
+ * Free-text match for the Agent Catalog search bar ("Search agents, publishers,
  * keywords..."): name, id, purpose, category, capabilities, hooks and
  * publisher, case-insensitive. Mirrors packageUtils.matchesSearch.
  */

@@ -54,7 +54,7 @@ const INTENT_CLAMP_CHARS = 280;
  * Per DEC-042 (dev/21) the opened agent view has ONE dark top header carrying
  * the master agent identity, the ‹ › agent-cycling arrows (walking all
  * attachments in the dataflow), the identification details (attached target +
- * session chip), and Close — no Pin, and no static "Agents Catalog" bar (that
+ * session chip), and Close — no Pin, and no static "Agent Catalog" bar (that
  * chrome is exclusive to the Agents Roster drawer). Below the header: the
  * intent-as-first-message transcript and pill input, unchanged.
  *

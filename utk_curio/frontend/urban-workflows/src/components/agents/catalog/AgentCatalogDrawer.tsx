@@ -61,7 +61,7 @@ const SUBTITLE: Record<AgentScope, string> = {
 };
 
 /**
- * Three-scope Agents Catalog drawer (the Agents Roster). Reuses the shared
+ * Three-scope Agent Catalog drawer (the Agents Roster). Reuses the shared
  * catalog chrome — DrawerTabs tab styling, PackageSearchRow (search + sort),
  * the PackageCard row grid with a category-tinted avatar, and the
  * CatalogPublishPill — so agents match the Data / Node catalog drawers
@@ -242,7 +242,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
           onClose={() => setImportOpen(false)}
           onImported={() => {
             setImportOpen(false);
-            // The new definition lives in My Imports — show it.
+            // The new definition lives in My imports, so show that tab.
             c.setScope("imports");
             void c.reload();
           }}
@@ -366,7 +366,7 @@ const AgentRow: React.FC<{
 
         {scope === "imports" ? (
           <>
-            {/* Publish → Catalog Hub. The pill only shows for eligible (owned,
+            {/* Publish to the shared catalog. The pill only shows for eligible (owned,
                 store-backed) definitions — built-ins report publishable=false,
                 so no dead button appears. */}
             <CatalogPublishPill
@@ -376,8 +376,8 @@ const AgentRow: React.FC<{
               busy={busy}
               onPublish={() => state.publish(card.dirName)}
               variant="hub"
-              publishedTitle="Listed in the Agents Catalog Hub"
-              publishActionTitle="Publish this owned definition to the Agents Catalog Hub"
+              publishedTitle="Listed in the Agent Catalog"
+              publishActionTitle="Publish this agent into the shared catalog (agents/)"
             />
             <button
               type="button"

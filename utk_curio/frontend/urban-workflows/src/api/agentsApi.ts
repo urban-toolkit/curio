@@ -3,14 +3,14 @@ import { apiFetch, getToken } from "../utils/authApi";
 const BACKEND_URL = process.env.BACKEND_URL || "";
 
 /**
- * REST client for ``/api/agents`` — the three-scope Agents Catalog and its
+ * REST client for ``/api/agents`` - the three-scope Agent Catalog and its
  * lifecycle commands. Mirrors ``packagesApi.ts``: every request goes through
  * the shared ``apiFetch`` (Bearer header + JSON parse + error handling).
  *
- * The three scopes:
- *  - Global Catalog       → ``catalog()`` (the built-in definitions)
- *  - My Imports (account) → ``listImports()`` + ``import``/``removeImport``
- *  - Installed in project → ``listProjectAgents()`` + ``install``/``uninstall``
+ * The three scopes, named here as the drawer tabs name them:
+ *  - Browse all  (catalog) → ``catalog()`` (the built-in definitions)
+ *  - My imports  (account) → ``listImports()`` + ``import``/``removeImport``
+ *  - In dataflow (project) → ``listProjectAgents()`` + ``install``/``uninstall``
  *
  * Import (account) and Install (project) are separate commands; neither chains.
  */
@@ -681,20 +681,20 @@ function coordParam(coord: string): string {
 }
 
 export const agentsApi = {
-  /** Global Catalog — the built-in definitions. Pass a projectId to mark installed ones. */
+  /** Browse all - the built-in definitions. Pass a projectId to mark the ones in the dataflow. */
   catalog(projectId?: string): Promise<AgentListResponse> {
     const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
     return apiFetch(`/api/agents/catalog${q}`);
   },
 
-  /** Account "My Imports". Pass a projectId to mark which are installed in
+  /** Account "My imports". Pass a projectId to mark which are in the dataflow
    * that project (memo dev/47 — the lockfile is the one source of truth). */
   listImports(projectId?: string): Promise<AgentListResponse> {
     const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
     return apiFetch(`/api/agents/imports${q}`);
   },
 
-  /** Record a definition coordinate in My Imports (does not install into a project). */
+  /** Record a definition coordinate in My imports (does not add it to a dataflow). */
   import(coord: string): Promise<{ coord: string; imported: boolean }> {
     return apiFetch("/api/agents/imports", {
       method: "POST",
@@ -706,7 +706,7 @@ export const agentsApi = {
    * Upload a user-authored definition (memo dev/36): the manifest plus its
    * prompt texts. The server forces trust to "imported", stamps digests from
    * the bytes, and rejects duplicates/oversize/mismatched files. Returns the
-   * new (publishable) My Imports card. Nothing auto-installs or publishes.
+   * new (publishable) My imports card. Nothing auto-installs or publishes.
    */
   uploadImport(
     manifest: Record<string, unknown>,
@@ -718,7 +718,7 @@ export const agentsApi = {
     });
   },
 
-  /** Drop a coordinate from My Imports. */
+  /** Drop a coordinate from My imports. */
   removeImport(coord: string): Promise<{ coord: string; imported: boolean }> {
     return apiFetch(`/api/agents/imports/${coordParam(coord)}`, { method: "DELETE" });
   },
@@ -746,7 +746,7 @@ export const agentsApi = {
     );
   },
 
-  /** Publish an owned, imported definition to the Global Catalog (imported-only). */
+  /** Publish an owned, imported definition to the Agent Catalog (imported-only). */
   publish(coord: string): Promise<{ coord: string; published: boolean }> {
     return apiFetch("/api/agents/publications", {
       method: "POST",

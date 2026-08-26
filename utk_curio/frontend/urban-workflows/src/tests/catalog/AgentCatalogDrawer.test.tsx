@@ -311,7 +311,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     expect(screen.queryByRole("button", { name: "Add to dataflow" })).toBeNull();
   });
 
-  it("My Imports is fetched with the open project's id (lockfile truth)", async () => {
+  it("My imports is fetched with the open project's id (lockfile truth)", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(api.listImports).toHaveBeenCalledWith("p1"));

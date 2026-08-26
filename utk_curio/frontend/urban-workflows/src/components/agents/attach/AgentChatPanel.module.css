@@ -14,7 +14,7 @@
   right: 0;
   top: 0;
   bottom: 0;
-  /* Catalog-drawer sizing parity (memo dev/46): the Agents Catalog panel's
+  /* Catalog-drawer sizing parity (memo dev/46): the Agent Catalog panel's
      exact dimensions, in the same scale family as the Nodes/Datasets
      drawers. Content scales (85% bubbles, min-width:0 columns). */
   width: 560px;
@@ -30,7 +30,7 @@
 
 /* ── header (DEC-042, dev/21): ONE dark top header for the opened agent view —
    the ‹ › cycling arrows, agent identity, session details, and Close. No Pin,
-   and no static "Agents Catalog" bar (that chrome is roster-drawer-only). ── */
+   and no static "Agent Catalog" bar (that chrome is roster-drawer-only). ── */
 .header {
   display: flex;
   flex-direction: column;

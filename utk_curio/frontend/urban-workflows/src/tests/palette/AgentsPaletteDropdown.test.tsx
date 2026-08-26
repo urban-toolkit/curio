@@ -93,7 +93,7 @@ describe("AgentsPaletteDropdown", () => {
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
     expect(
-      screen.getByText(/No agents installed in this project yet/i),
+      screen.getByText(/No agents added yet/i),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Browse Agent Catalog/i }));
     expect(mockOpenDrawer).toHaveBeenCalled();

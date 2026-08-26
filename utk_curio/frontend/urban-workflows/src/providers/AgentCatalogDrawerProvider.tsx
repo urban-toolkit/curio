@@ -13,7 +13,7 @@ import { useFlowContext } from "./FlowProvider";
 import { AgentCatalogDrawer } from "../components/agents/catalog/AgentCatalogDrawer";
 
 /**
- * Mounts the Agents Catalog drawer and exposes open/close controls, mirroring
+ * Mounts the Agent Catalog drawer and exposes open/close controls, mirroring
  * ``NodeCatalogDrawerProvider``'s two-phase presentation (memo dev/43): the
  * drawer mounts closed and slides in on the next frames; closing keeps it
  * mounted through the exit slide and unmounts on `onExitComplete` (with a

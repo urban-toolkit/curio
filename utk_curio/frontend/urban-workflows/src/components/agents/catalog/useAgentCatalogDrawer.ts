@@ -3,7 +3,7 @@ import { agentsApi, AgentCard } from "../../../api/agentsApi";
 import { notifyAgentCatalogRefresh } from "../../../utils/agentCatalogEvents";
 
 /**
- * Self-contained data hook for the Agents Catalog drawer. Owns the active
+ * Self-contained data hook for the Agent Catalog drawer. Owns the active
  * scope, a **per-scope card cache**, and the lifecycle actions — all over
  * ``agentsApi``.
  *
@@ -58,7 +58,7 @@ export function useAgentCatalogDrawer(
   });
 
   // A project switch invalidates every scope's cache (installed state is
-  // per-project; My Imports marks installs against the open project too).
+  // per-project; My imports marks installs against the open project too).
   useEffect(() => {
     setCardsByScope({});
   }, [projectId]);

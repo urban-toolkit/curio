@@ -110,7 +110,7 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
           </div>
           <div className={styles.scroll}>
             <PaletteAccordion
-              title="Installed in this project"
+              title="Agents in dataflow"
               count={total}
               selected
               defaultOpen
@@ -121,7 +121,7 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
                 ))
               ) : (
                 <div className={styles.sectionEmpty}>
-                  No agents installed in this project yet.
+                  No agents added yet.
                 </div>
               )}
             </PaletteAccordion>
