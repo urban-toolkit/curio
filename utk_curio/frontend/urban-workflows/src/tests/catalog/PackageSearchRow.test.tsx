@@ -74,11 +74,11 @@ describe("PackageSearchRow", () => {
         sort="new"
         onSearchChange={onSearchChange}
         onSortChange={jest.fn()}
-        placeholder="Search agents, hooks, keywords..."
+        placeholder="Search agents, publishers, tags…"
         sortAriaLabel="Sort agents"
       />,
     );
-    fireEvent.change(screen.getByPlaceholderText("Search agents, hooks, keywords..."), {
+    fireEvent.change(screen.getByPlaceholderText("Search agents, publishers, tags…"), {
       target: { value: "explainer" },
     });
     expect(onSearchChange).toHaveBeenCalledWith("explainer");

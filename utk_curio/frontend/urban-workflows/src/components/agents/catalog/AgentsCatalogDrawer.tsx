@@ -6,6 +6,9 @@ import { AgentSettingsModal } from "../settings/AgentSettingsModal";
 import { AgentImportModal } from "./AgentImportModal";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
+import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
+import footerStyles from "../../packages/publishing/DrawerFooter.module.css";
+import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
 import { SortMode } from "../../packages/publishing/packageTypes";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
@@ -96,53 +99,53 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
 
   return (
     <div
-      className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
-      data-curio-agents-catalog-drawer="true"
+      className={`${shell.overlayRoot} ${styles.overlayRoot} ${
+        presented ? shell.overlayRootPresented : ""
+      }`}
+      data-curio-agent-catalog-drawer="true"
       aria-hidden={!presented}
     >
+      {/* The scrim's label is deliberately NOT the header close button's. The
+          Node drawer gives both the same accessible name, which makes an
+          unscoped get_by_role lookup ambiguous - its own e2e has to resolve
+          the dialog by heading to work around it. */}
       <button
         type="button"
-        className={styles.scrim}
-        aria-label="Close agents catalog"
+        className={shell.scrim}
+        aria-label="Dismiss Agent Catalog"
         onClick={() => {
           if (!pinned) onRequestClose?.();
         }}
       />
       <aside
         ref={panelRef}
-        className={styles.panel}
+        className={shell.drawer}
         role="dialog"
         aria-modal="true"
-        aria-label="Agents Catalog"
+        aria-labelledby="agent-catalog-drawer-title"
         tabIndex={-1}
         onTransitionEnd={handlePanelTransitionEnd}
       >
-      <div className={styles.header}>
-        <button
-          type="button"
-          className={`${styles.pinBtn} ${pinned ? styles.pinBtnActive : ""}`}
-          aria-label={pinned ? "Unpin drawer" : "Pin drawer open"}
-          aria-pressed={pinned}
-          title={pinned ? "Unpin drawer" : "Pin drawer (backdrop won't close)"}
-          onClick={onPinToggle}
-        >
-          <FontAwesomeIcon icon={faThumbtack} aria-hidden />
-        </button>
-        <FontAwesomeIcon icon={faRobot} className={styles.titleIcon} aria-hidden />
-        <span className={styles.title}>Agents Catalog</span>
-        {/* Account-policy entry (docs/02 cog #1; the DEC-042-sanctioned header
-            control besides the Pin). */}
-        <button
-          type="button"
-          className={styles.headerSettingsBtn}
-          aria-haspopup="dialog"
-          onClick={() => setAccountSettingsOpen(true)}
-        >
-          <FontAwesomeIcon icon={faGear} aria-hidden /> Agent settings
-        </button>
-      </div>
-
-      <p className={styles.subtitle}>{SUBTITLE[c.scope]}</p>
+      <DrawerHeader
+        kind="agent"
+        title="Agent Catalog"
+        titleId="agent-catalog-drawer-title"
+        subtitle={SUBTITLE[c.scope]}
+        closeAriaLabel="Close Agent Catalog drawer"
+        pinned={pinned}
+        onPinToggle={onPinToggle}
+        onClose={() => onRequestClose?.()}
+        actions={
+          <button
+            type="button"
+            className={styles.headerSettingsBtn}
+            aria-haspopup="dialog"
+            onClick={() => setAccountSettingsOpen(true)}
+          >
+            <FontAwesomeIcon icon={faGear} aria-hidden /> Agent settings
+          </button>
+        }
+      />
 
       {/* Shared catalog search/sort bar (dev/68) — the same component, order
           and geometry as the Data/Node catalog drawers, per the concept. */}
@@ -151,7 +154,7 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
         sort={sort}
         onSearchChange={setSearch}
         onSortChange={setSort}
-        placeholder="Search agents, hooks, keywords..."
+        placeholder="Search agents, publishers, tags…"
         sortAriaLabel="Sort agents"
       />
 
@@ -169,35 +172,54 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
         ))}
       </nav>
 
-      {c.error ? <p className={styles.error}>{c.error}</p> : null}
+      <div className={shell.scrollBody}>
+        {c.error ? (
+          <div className={shell.error} role="alert">
+            {c.error}
+          </div>
+        ) : null}
 
-      {c.loading ? (
-        <p className={styles.empty}>Loading…</p>
-      ) : visibleCards.length === 0 ? (
-        <p className={styles.empty}>
-          {c.cards.length > 0
-            ? "No agents match your search."
-            : "No agents in this scope yet."}
-        </p>
-      ) : (
-        <div className={styles.list}>
-          {visibleCards.map((card) => (
-            <AgentRow
-              key={card.dirName}
-              card={card}
-              scope={c.scope}
-              state={c}
-              hasProject={!!projectId}
-              onOpenSettings={() => setSettingsCoord(card.dirName)}
-            />
-          ))}
-        </div>
-      )}
+        {c.loading ? (
+          <div className={shell.empty}>Loading agents…</div>
+        ) : visibleCards.length === 0 ? (
+          <div className={shell.empty}>
+            {c.cards.length > 0
+              ? "No agents match the current filters."
+              : c.scope === "installed"
+                ? "No agents added to this dataflow yet."
+                : "No agents match the current filters."}
+          </div>
+        ) : (
+          <div className={shell.cardList}>
+            {visibleCards.map((card) => (
+              <AgentRow
+                key={card.dirName}
+                card={card}
+                scope={c.scope}
+                state={c}
+                hasProject={!!projectId}
+                onOpenSettings={() => setSettingsCoord(card.dirName)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
-      {/* Upload-import entry (dev/36) — the concept's footer button. */}
-      <button type="button" className={styles.importPackageBtn} onClick={() => setImportOpen(true)}>
-        Import package
-      </button>
+      {/* The shared footer's geometry, but its own control: DrawerFooter wraps
+          a single-archive file input, and an agent import is a manifest plus
+          its prompt files, picked inside AgentImportModal. Reusing the styles
+          keeps this footer identical to the other two drawers; reusing the
+          component would have meant shipping the wrong picker. */}
+      <footer className={footerStyles.footer}>
+        <button
+          type="button"
+          className={footerStyles.footerPrimary}
+          aria-haspopup="dialog"
+          onClick={() => setImportOpen(true)}
+        >
+          Import agent
+        </button>
+      </footer>
 
       {importOpen ? (
         <AgentImportModal

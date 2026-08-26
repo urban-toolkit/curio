@@ -11,7 +11,8 @@
 
 .kindIcon_dataset,
 .kindIcon_package,
-.kindIcon_dataflow {
+.kindIcon_dataflow,
+.kindIcon_agent {
   background: var(--curio-surface-muted);
   color: var(--curio-text-primary);
 }

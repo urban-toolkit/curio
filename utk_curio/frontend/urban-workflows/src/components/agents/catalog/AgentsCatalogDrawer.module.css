@@ -1,199 +1,79 @@
-/* ── Overlay + slide transition (memo dev/43) ──────────────────────────────
-   The same pattern, timings, and easings as the Nodes/Datasets drawers:
-   scrim opacity 240ms cubic-bezier(0.4, 0, 0.2, 1); panel transform 300ms
-   cubic-bezier(0.32, 0.72, 0, 1) — keep in sync with DRAWER_MOTION_MS in
-   AgentsCatalogDrawerProvider.tsx. */
+/*
+ * Canvas slide-over Agent Catalog drawer - what is specific to this drawer.
+ *
+ * The panel itself (overlay root, scrim, sliding drawer, scroll body, section
+ * label, card list, empty/error states, action-error banner) is the shared
+ * ../../packages/publishing/CatalogDrawerShell.module.css, which the Node and
+ * Data Catalog drawers also import. This file used to restate all of it -
+ * overlay, scrim, panel, its own transition timings, its own empty and error
+ * blocks - which is how the first two drawers drifted apart in six places
+ * before the shell was extracted.
+ *
+ * Sub-component styles live in their own CSS modules:
+ *   DrawerHeader.module.css     - top bar, subtitle
+ *   DrawerTabs.module.css       - tab strip
+ *   PackageSearchRow.module.css - search input + sort select
+ *   PackageCard.module.css      - card grid, avatar tile, action buttons
+ *   DrawerFooter.module.css     - footer geometry
+ *
+ * Category colour is not here either: it folds onto the shared palette in
+ * ../../menus/nodes/agentsPalette/agentCategoryStyle.ts.
+ */
 
+/* This drawer's tier in the overlay scale (see curioTokens.css). Consumed by
+   .overlayRoot in the shared shell. Above the Data Catalog drawer: an agent
+   drawer can be opened over it, never the other way round. */
 .overlayRoot {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  display: flex;
-  justify-content: flex-end;
-  pointer-events: none;
+    --curio-drawer-z: var(--curio-z-agent-drawer);
 }
 
-.overlayRootPresented {
-  pointer-events: auto;
-}
-
-.scrim {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  padding: 0;
-  background: rgba(20, 21, 25, 0.28);
-  opacity: 0;
-  cursor: pointer;
-  transition: opacity 240ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.panel {
-  position: relative;
-  z-index: 1;
-  width: 560px;
-  max-width: 92vw;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--curio-card-bg, #fff);
-  color: var(--curio-text-primary, #1e1f23);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
-  outline: none;
-  transform: translate3d(100%, 0, 0);
-  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
-  will-change: transform;
-}
-
-.overlayRootPresented .scrim {
-  opacity: 1;
-}
-
-.overlayRootPresented .panel {
-  transform: translate3d(0, 0, 0);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .scrim,
-  .panel {
-    transition-duration: 0.01ms;
-  }
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: var(--curio-top-bar-bg, #1e1f23);
-  color: var(--curio-text-on-dark, #fff);
-}
-
-.title {
-  font-size: 15px;
-  font-weight: 600;
-  flex: 1;
-}
-
-/* Roster header controls (DEC-042): the Pin is the only button here. */
-.pinBtn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  border-radius: 8px;
-  color: var(--curio-text-on-dark, #fff);
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.pinBtn:hover,
-.pinBtn:focus-visible {
-  background: #2c2d33;
-}
-
-.pinBtnActive {
-  color: var(--curio-accent-sky-fg, #7fa7e8);
-  transform: rotate(45deg);
-}
-
-.titleIcon {
-  color: #f2933f; /* the Agents' canvas-orange bot, per the concept */
-  font-size: 16px;
-}
-
-.subtitle {
-  padding: 8px 16px 0;
-  font-size: 12px;
-  color: var(--curio-text-secondary, #5b5c63);
-}
-
-.list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 16px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* Card structure/buttons come from the shared PackageCard.module.css grid
-   (accent | avatar | body | action), like DatasetCard (dev/68). Only the
-   agent-specific category tints and the avatar glyph size live here. */
-
+/* The robot glyph inside the shared .cardAvatar tile. */
 .avatarIcon {
-  font-size: 22px;
+    font-size: 24px;
 }
 
-/* Category-tinted left accent bars — hues shared with the AGENTS palette and
-   the dataset accents where they coincide (agentCategoryStyle.ts). Unknown
-   categories keep the neutral cardAccent/cardAvatar defaults. */
-
-/* Category-tinted avatars (light surface; !important mirrors the dataset
-   avatar_* overrides of the cardAvatar fallback). */
-.avatar_data     { background: var(--curio-category-data-bg) !important;        color: var(--curio-category-data-on-tint); }
+/* Category-tinted avatar tiles on this light surface. The keys are palette
+   buckets, not agent categories - see agentCategoryStyle.ts. `!important`
+   mirrors the dataset drawer: it overrides .cardAvatar's neutral fallback. */
+.avatar_data     { background: var(--curio-category-data-bg) !important;          color: var(--curio-category-data-on-tint); }
 .avatar_computation { background: var(--curio-category-computation-bg) !important; color: var(--curio-category-computation-on-tint); }
-.avatar_dataflow { background: var(--curio-kind-dataflow-bg) !important;      color: var(--curio-kind-dataflow-fg); }
-.avatar_package  { background: var(--curio-category-package-bg) !important;   color: var(--curio-category-package-on-tint); }
+.avatar_dataflow { background: var(--curio-kind-dataflow-bg) !important;           color: var(--curio-kind-dataflow-fg); }
+.avatar_package  { background: var(--curio-category-package-bg) !important;        color: var(--curio-category-package-on-tint); }
 
-.empty,
-.error {
-  padding: 24px 16px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--curio-text-secondary, #5b5c63);
-}
-
-.error {
-  color: var(--curio-accent-peach-fg, #e86a3c);
-}
-
-/* Account-policy entry in the roster header (dev/24) — labeled cog. */
+/* Account-policy entry in the header's actions slot. Phase 2h folds this into
+   AI Settings, at which point the slot goes away with it. */
 .headerSettingsBtn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: none;
-  border-radius: 8px;
-  padding: 5px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  background: none;
-  color: var(--curio-text-on-dark, #fff);
-  cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    border-radius: var(--curio-radius-sm);
+    padding: 4px 8px;
+    color: var(--curio-text-on-dark);
+    font-family: var(--curio-font-family);
+    font-size: var(--curio-font-size-sm);
+    cursor: pointer;
 }
 
 .headerSettingsBtn:hover,
 .headerSettingsBtn:focus-visible {
-  background: #2c2d33;
+    background: var(--curio-top-bar-bg-hover);
 }
 
-/* Footer upload-import entry (dev/36), per the approved concept's footer button. */
-.importPackageBtn {
-  margin: 8px 16px 16px;
-  padding: 10px 0;
-  border: none;
-  border-radius: 10px;
-  background: var(--curio-top-bar-bg, #1e1f23);
-  color: var(--curio-text-on-dark, #fff);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.importPackageBtn:hover,
-.importPackageBtn:focus-visible {
-  background: #2c2d33;
-}
-
-/* dev/106: the hard-dependency disclosure line under a card's tags. */
+/* The hard-dependency disclosure under a card's tags: what an Install also
+   adds, and whether each requirement can be resolved. */
 .requiresLine {
-  margin-top: 4px;
-  font-size: 11px;
-  color: #6b7280;
+    margin: 4px 0 0;
+    font-size: var(--curio-font-size-xs);
+    color: var(--curio-text-meta);
 }
-.requireMet { color: #2d7a4f; }
-.requireMissing { color: #b3651c; font-weight: 600; }
+
+.requireMet {
+    color: var(--curio-success-text);
+}
+
+.requireMissing {
+    color: var(--curio-warning-text);
+    font-weight: 600;
+}

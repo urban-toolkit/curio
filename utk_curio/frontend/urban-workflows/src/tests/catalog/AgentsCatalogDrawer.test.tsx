@@ -87,8 +87,8 @@ describe("AgentsCatalogDrawer", () => {
     const { container } = render(
       <AgentsCatalogDrawer presented={false} projectId="p1" pinned={false} onPinToggle={jest.fn()} />,
     );
-    expect(screen.queryByRole("dialog", { name: "Agents Catalog" })).not.toBeInTheDocument();
-    const root = container.querySelector("[data-curio-agents-catalog-drawer]");
+    expect(screen.queryByRole("dialog", { name: "Agent Catalog" })).not.toBeInTheDocument();
+    const root = container.querySelector("[data-curio-agent-catalog-drawer]");
     expect(root).toHaveAttribute("aria-hidden", "true");
   });
 
@@ -201,15 +201,19 @@ describe("AgentsCatalogDrawer", () => {
     );
   });
 
-  it("roster header shows the Pin only (DEC-042): no Close button", async () => {
+  it("header carries the Pin and a Close, like the other catalog drawers", async () => {
     const onPinToggle = jest.fn();
     render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={onPinToggle} />);
     const pin = screen.getByRole("button", { name: "Pin drawer open" });
     expect(pin).toHaveAttribute("aria-pressed", "false");
-    // DEC-042: no Close button inside the drawer (the scrim outside the
-    // dialog carries the dismissal, like the other catalog drawers).
-    const dialog = screen.getByRole("dialog", { name: "Agents Catalog" });
-    expect(within(dialog).queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
+    // The drawer used to omit this, on the grounds that the other catalog
+    // drawers dismiss through the scrim. They do not - both render a close
+    // button from the shared DrawerHeader - so a dialog with no in-dialog
+    // dismissal was the odd one out, and the harder one to leave by keyboard.
+    const dialog = screen.getByRole("dialog", { name: "Agent Catalog" });
+    expect(
+      within(dialog).getByRole("button", { name: "Close Agent Catalog drawer" }),
+    ).toBeInTheDocument();
     fireEvent.click(pin);
     expect(onPinToggle).toHaveBeenCalledTimes(1);
   });
@@ -250,10 +254,10 @@ describe("AgentsCatalogDrawer", () => {
     await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
   });
 
-  it("the footer Import package button opens the upload modal (dev/36)", async () => {
+  it("the footer Import agent button opens the upload modal", async () => {
     render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Import package" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import agent" }));
     await waitFor(() =>
       expect(screen.getByRole("dialog", { name: "Import agent package" })).toBeInTheDocument(),
     );
@@ -328,7 +332,7 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
     } as any);
     render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    const input = screen.getByPlaceholderText("Search agents, hooks, keywords...");
+    const input = screen.getByPlaceholderText("Search agents, publishers, tags…");
     fireEvent.change(input, { target: { value: "explainer" } });
     expect(screen.getByText("node-explainer")).toBeInTheDocument();
     expect(screen.queryByText("dataset-finder")).toBeNull();
@@ -339,11 +343,12 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
   it("a no-match query shows the search-specific empty message (dev/68)", async () => {
     render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.change(screen.getByPlaceholderText("Search agents, hooks, keywords..."), {
+    fireEvent.change(screen.getByPlaceholderText("Search agents, publishers, tags…"), {
       target: { value: "zzz-no-such-agent" },
     });
-    expect(screen.getByText("No agents match your search.")).toBeInTheDocument();
-    expect(screen.queryByText("No agents in this scope yet.")).toBeNull();
+    expect(
+      screen.getByText("No agents match the current filters."),
+    ).toBeInTheDocument();
   });
 
   it('"Sort: Name" reorders rows alphabetically; "Sort: New" keeps roster order (dev/68)', async () => {
@@ -365,7 +370,7 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
   it("the search query persists across scope tab switches (dev/68)", async () => {
     render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    const input = screen.getByPlaceholderText("Search agents, hooks, keywords...");
+    const input = screen.getByPlaceholderText("Search agents, publishers, tags…");
     fireEvent.change(input, { target: { value: "chat" } });
     fireEvent.click(screen.getByText("My Imports"));
     await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
