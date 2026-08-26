@@ -382,7 +382,9 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     const avatars = container.querySelectorAll(".cardAvatar");
     expect(avatars).toHaveLength(2);
-    expect(avatars[0].className).toContain("avatar_node");
+    // Categories fold onto the shared palette buckets, so a `node` agent takes
+    // the neutral the Node Catalog already uses for a package.
+    expect(avatars[0].className).toContain("avatar_package");
     expect(avatars[1].className).toContain("avatar_data");
     // Decorative — hidden from the accessibility tree.
     avatars.forEach((el) => expect(el).toHaveAttribute("aria-hidden"));

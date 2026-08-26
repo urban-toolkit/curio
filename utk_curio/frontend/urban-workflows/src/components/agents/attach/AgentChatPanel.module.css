@@ -93,12 +93,10 @@
 }
 
 /* Category tints — same palette as AgentAvatarBadge (icon color, white chip). */
-.tint_canvas   { color: #f2933f; }
-.tint_data     { color: #4caf72; }
-.tint_node     { color: #3567c7; }
-.tint_evaluate { color: #7b5bd6; }
-.tint_package  { color: #17a2b8; }
-.tint_default  { color: #3567c7; }
+.tint_data     { color: var(--curio-category-data-fg); }
+.tint_computation { color: var(--curio-category-computation-fg); }
+.tint_dataflow { color: var(--curio-kind-dataflow-fg); }
+.tint_package  { color: var(--curio-category-package-fg); }
 
 .title {
   font-size: 13px;

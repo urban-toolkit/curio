@@ -72,7 +72,11 @@ export function useDatasetCatalogDrawer(presented: boolean) {
 
   useEffect(() => {
     if (!presented) return;
-    const onRefresh = () => void catalog.reload({ bustCache: true });
+    // No per-key bustCache: notifyDatasetCatalogRefresh invalidates the whole
+    // cache before it dispatches, so every key is already gone by the time
+    // this listener runs. The old argument busted one key and left the
+    // palette's differently-keyed entry stale.
+    const onRefresh = () => void catalog.reload();
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
   }, [catalog.reload, presented]);

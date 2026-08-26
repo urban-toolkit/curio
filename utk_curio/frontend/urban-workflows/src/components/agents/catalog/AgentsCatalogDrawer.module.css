@@ -131,19 +131,13 @@
 /* Category-tinted left accent bars — hues shared with the AGENTS palette and
    the dataset accents where they coincide (agentCategoryStyle.ts). Unknown
    categories keep the neutral cardAccent/cardAvatar defaults. */
-.accent_canvas   { background: #f2933f; }
-.accent_data     { background: #4caf72; }
-.accent_node     { background: #5b9bd5; }
-.accent_evaluate { background: #9b7fda; }
-.accent_package  { background: #26c6da; }
 
 /* Category-tinted avatars (light surface; !important mirrors the dataset
    avatar_* overrides of the cardAvatar fallback). */
-.avatar_canvas   { background: #fdeadd !important; color: #b3651c; }
-.avatar_data     { background: #e3f4eb !important; color: #2d7a4f; }
-.avatar_node     { background: #e0eaf8 !important; color: #2a5fa0; }
-.avatar_evaluate { background: #ece4f8 !important; color: #5c3fa0; }
-.avatar_package  { background: #ddf4f6 !important; color: #1a8a9a; }
+.avatar_data     { background: var(--curio-category-data-bg) !important;        color: var(--curio-category-data-on-tint); }
+.avatar_computation { background: var(--curio-category-computation-bg) !important; color: var(--curio-category-computation-on-tint); }
+.avatar_dataflow { background: var(--curio-kind-dataflow-bg) !important;      color: var(--curio-kind-dataflow-fg); }
+.avatar_package  { background: var(--curio-category-package-bg) !important;   color: var(--curio-category-package-on-tint); }
 
 .empty,
 .error {

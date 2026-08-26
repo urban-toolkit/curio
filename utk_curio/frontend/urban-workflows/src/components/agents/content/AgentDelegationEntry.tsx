@@ -28,9 +28,7 @@ export const AgentDelegationEntry: React.FC<{
       onOpenChat &&
       (delegateExists ? delegateExists(part.attachmentId) : true),
   );
-  const tint =
-    styles[`tint_${agentCategoryKey(part.category)}` as keyof typeof styles] ??
-    styles.tint_default;
+  const tint = styles[`tint_${agentCategoryKey(part.category)}` as keyof typeof styles];
   const failed = part.status === "failed";
   return (
     <div

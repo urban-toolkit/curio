@@ -36,8 +36,7 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
   onOpen?: () => void;
 }) {
   const key = agentCategoryKey(agent.category);
-  const avatarClass =
-    rowStyles[`avatar_${key}` as keyof typeof rowStyles] ?? rowStyles.avatar_default;
+  const avatarClass = rowStyles[`avatar_${key}` as keyof typeof rowStyles];
   const tooltip = agent.purpose || agent.capabilities.join(" · ");
   // Show one pill per compatible target kind (Canvas / Node / Connection) so a
   // dual-compatible agent clearly advertises both. Deduped, order preserved.
@@ -71,9 +70,7 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
         <span className={rowStyles.coord}>{shortCoord(agent)}</span>
         <span className={rowStyles.pills}>
           {hooks.map((h) => {
-            const chipClass =
-              rowStyles[`chip_${agentCategoryKey(h)}` as keyof typeof rowStyles] ??
-              rowStyles.chip_default;
+            const chipClass = rowStyles[`chip_${agentCategoryKey(h)}` as keyof typeof rowStyles];
             return (
               <span
                 key={h}

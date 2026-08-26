@@ -28,17 +28,13 @@
 }
 
 /* ── category-tinted avatars (the drag handle box) ───────────────────────── */
-.avatar_canvas   { color: #fbaa69; background: rgba(251, 170, 105, 0.16); border-color: rgba(251, 170, 105, 0.40); }
-.avatar_data     { color: #7dd49a; background: rgba(76, 175, 114, 0.16);  border-color: rgba(76, 175, 114, 0.40); }
-.avatar_node     { color: #91bde8; background: rgba(91, 155, 213, 0.16);  border-color: rgba(91, 155, 213, 0.40); }
-.avatar_evaluate { color: #bea8f0; background: rgba(155, 127, 218, 0.16); border-color: rgba(155, 127, 218, 0.40); }
-.avatar_package  { color: #70dde8; background: rgba(38, 198, 218, 0.16);  border-color: rgba(38, 198, 218, 0.40); }
-.avatar_default  { color: #fbfcf6; }
+.avatar_data     { color: color-mix(in srgb, var(--curio-category-data-fg) 55%, white);        background: color-mix(in srgb, var(--curio-category-data-fg) 16%, transparent);        border-color: color-mix(in srgb, var(--curio-category-data-fg) 40%, transparent); }
+.avatar_computation { color: color-mix(in srgb, var(--curio-category-computation-fg) 55%, white); background: color-mix(in srgb, var(--curio-category-computation-fg) 16%, transparent); border-color: color-mix(in srgb, var(--curio-category-computation-fg) 40%, transparent); }
+.avatar_dataflow { color: color-mix(in srgb, var(--curio-kind-dataflow-fg) 55%, white);      background: color-mix(in srgb, var(--curio-kind-dataflow-fg) 16%, transparent);      border-color: color-mix(in srgb, var(--curio-kind-dataflow-fg) 40%, transparent); }
+.avatar_package  { color: color-mix(in srgb, var(--curio-category-package-fg) 55%, white);   background: color-mix(in srgb, var(--curio-category-package-fg) 16%, transparent);   border-color: color-mix(in srgb, var(--curio-category-package-fg) 40%, transparent); }
 
 /* ── category-colored chips ──────────────────────────────────────────────── */
-.chip_canvas   { background: rgba(251, 170, 105, 0.22); color: #fbaa69; }
-.chip_data     { background: rgba(76, 175, 114, 0.22);  color: #7dd49a; }
-.chip_node     { background: rgba(91, 155, 213, 0.22);  color: #91bde8; }
-.chip_evaluate { background: rgba(155, 127, 218, 0.22); color: #bea8f0; }
-.chip_package  { background: rgba(38, 198, 218, 0.22);  color: #70dde8; }
-.chip_default  { /* inherit the neutral packageKindCategoryChip default */ }
+.chip_data     { background: color-mix(in srgb, var(--curio-category-data-fg) 22%, transparent);        color: color-mix(in srgb, var(--curio-category-data-fg) 55%, white); }
+.chip_computation { background: color-mix(in srgb, var(--curio-category-computation-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-category-computation-fg) 55%, white); }
+.chip_dataflow { background: color-mix(in srgb, var(--curio-kind-dataflow-fg) 22%, transparent);      color: color-mix(in srgb, var(--curio-kind-dataflow-fg) 55%, white); }
+.chip_package  { background: color-mix(in srgb, var(--curio-category-package-fg) 22%, transparent);   color: color-mix(in srgb, var(--curio-category-package-fg) 55%, white); }

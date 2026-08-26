@@ -17,9 +17,7 @@ export const AgentAvatarBadge: React.FC<{
   onOpen: () => void;
   onDetach: () => void;
 }> = ({ attachment, active, onOpen, onDetach }) => {
-  const tint =
-    styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles] ??
-    styles.tint_default;
+  const tint = styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles];
   // "<name>: <title>" once the conversation is titled (memo dev/25), so
   // multiple instances of the same template stay distinguishable.
   const displayName = attachmentDisplayName(attachment);

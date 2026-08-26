@@ -234,15 +234,15 @@ const AgentRow: React.FC<{
   onOpenSettings: () => void;
 }> = ({ card, scope, state, hasProject, onOpenSettings }) => {
   const busy = state.busyCoord === card.dirName;
-  // Shared catalog card grid (accent | avatar | body | action) with the
-  // category-tinted robot avatar left-aligned, matching the Data/Node rows
-  // and the approved concept (dev/68).
+  // The shared catalog card grid: 72px avatar | body | action. There is no
+  // accent stripe - it was dropped from every catalog card because the
+  // avatar tint already carries the category, and PackageCard.module.css no
+  // longer defines .cardAccent, so the div was rendering unstyled into the
+  // grid's first column and displacing the avatar.
   const categoryKey = agentCategoryKey(card.category);
-  const accentClass = styles[`accent_${categoryKey}` as keyof typeof styles] ?? "";
   const avatarClass = styles[`avatar_${categoryKey}` as keyof typeof styles] ?? "";
   return (
     <article className={cardStyles.card}>
-      <div className={`${cardStyles.cardAccent} ${accentClass}`} aria-hidden />
       <div className={`${cardStyles.cardAvatar} ${avatarClass}`} aria-hidden>
         <FontAwesomeIcon icon={faRobot} className={styles.avatarIcon} />
       </div>

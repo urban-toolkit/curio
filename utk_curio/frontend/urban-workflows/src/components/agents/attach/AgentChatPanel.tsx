@@ -300,9 +300,7 @@ export const AgentChatPanel: React.FC<{
     lastPrefill.current = prompt;
   };
 
-  const tint =
-    styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles] ??
-    styles.tint_default;
+  const tint = styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles];
 
   const targetLabel =
     attachment.target.kind === "canvas"
