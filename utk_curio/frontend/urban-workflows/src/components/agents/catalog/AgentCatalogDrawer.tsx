@@ -289,7 +289,7 @@ const AgentRow: React.FC<{
     // palette and its card on /catalog/agents all carry the same coordinate,
     // which is what lets an install be asserted end to end without reading a
     // hashed CSS class. data-pkg-dir and data-dataset-id do the same job.
-    <article className={cardStyles.card} data-agent-coord={card.dirName}>
+    <article className={`${cardStyles.card} ${styles.agentCard}`} data-agent-coord={card.dirName}>
       <div className={`${cardStyles.cardAvatar} ${avatarClass}`} aria-hidden>
         <FontAwesomeIcon icon={faRobot} className={styles.avatarIcon} />
       </div>
@@ -362,7 +362,7 @@ const AgentRow: React.FC<{
         ) : (
           <button
             type="button"
-            className={cardStyles.btnInstall}
+            className={`${cardStyles.btnInstall} ${styles.installBtn}`}
             disabled={busy || !hasProject}
             title={hasProject ? installTitle(card) : "Open a project to install"}
             onClick={() => state.install(card.dirName)}

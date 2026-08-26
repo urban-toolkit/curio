@@ -40,8 +40,8 @@
 .avatar_dataflow { background: var(--curio-kind-dataflow-bg) !important;           color: var(--curio-kind-dataflow-fg); }
 .avatar_package  { background: var(--curio-category-package-bg) !important;        color: var(--curio-category-package-on-tint); }
 
-/* Account-policy entry in the header's actions slot. Phase 2h folds this into
-   AI Settings, at which point the slot goes away with it. */
+/* Account-policy entry in the header's actions slot: it opens AI Settings,
+   the single account-level place the provider and the agent limits are set. */
 .headerSettingsBtn {
     display: inline-flex;
     align-items: center;
@@ -76,4 +76,31 @@
 .requireMissing {
     color: var(--curio-warning-text);
     font-weight: 600;
+}
+
+/* Stable card geometry when a label is long.
+ *
+ * The shared card grid is `72px 1fr auto`, so its third column widens to fit
+ * the longest button on the card. Every peer's labels are short enough that
+ * this never shows, but "Add to dataflow (+1 required)" is nearly twice the
+ * width of the plain label: it took enough from the body column that the tag
+ * row wrapped into a narrow stack, giving one card in the list a different
+ * shape from the rest. Pin the column instead and let the label wrap inside.
+ *
+ * Element-qualified so it beats the shared `.card` on specificity rather than
+ * on bundle order, which CSS modules do not guarantee.
+ */
+article.agentCard {
+    grid-template-columns: 72px 1fr 140px;
+}
+
+/* The shared button is a fixed-height single line, so a wrapped label would
+   overflow it. Grow instead, keeping the one-line height as the floor so the
+   short labels are unchanged. */
+button.installBtn {
+    height: auto;
+    min-height: var(--curio-input-height);
+    padding: 6px 12px;
+    line-height: 1.25;
+    white-space: normal;
 }
