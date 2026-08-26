@@ -45,6 +45,16 @@ function card(id: string) {
   };
 }
 
+/**
+ * ToolsMenu owns which palette is open - the three share one strip, so the
+ * dropdown is controlled. This holds that state locally so the tests can keep
+ * driving it the way a user does: click the trigger, then assert.
+ */
+function ControlledAgentsPalette() {
+  const [open, setOpen] = React.useState(false);
+  return <AgentsPaletteDropdown open={open} setOpen={setOpen} />;
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   api.listProjectAgents.mockResolvedValue({ agents: [card("agent.node-explainer")] });
@@ -52,7 +62,7 @@ beforeEach(() => {
 
 describe("AgentsPaletteDropdown", () => {
   it("shows the installed count and lists agents when opened", async () => {
-    render(<AgentsPaletteDropdown />);
+    render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalledWith("p1"));
     fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
     expect(await screen.findByText("node-explainer")).toBeInTheDocument();
@@ -62,15 +72,15 @@ describe("AgentsPaletteDropdown", () => {
   });
 
   it("footer opens the catalog drawer", async () => {
-    render(<AgentsPaletteDropdown />);
+    render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Browse Agents Catalog/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Browse Agent Catalog/i }));
     expect(mockOpenDrawer).toHaveBeenCalled();
   });
 
   it("clicking a row opens the drawer", async () => {
-    render(<AgentsPaletteDropdown />);
+    render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
     fireEvent.click(await screen.findByText("node-explainer"));
@@ -79,18 +89,18 @@ describe("AgentsPaletteDropdown", () => {
 
   it("empty state shows the hint and the catalog footer opens the drawer", async () => {
     api.listProjectAgents.mockResolvedValue({ agents: [] });
-    render(<AgentsPaletteDropdown />);
+    render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
     expect(
       screen.getByText(/No agents installed in this project yet/i),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Browse Agents Catalog/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Browse Agent Catalog/i }));
     expect(mockOpenDrawer).toHaveBeenCalled();
   });
 
   it("a row is a drag source writing the agent coordinate", async () => {
-    render(<AgentsPaletteDropdown />);
+    render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
     await screen.findByText("node-explainer");
@@ -107,7 +117,7 @@ describe("AgentsPaletteDropdown", () => {
   // DIRECT children of the root. This guards against a refactor that nests them
   // and silently makes the dropdown click-through to the canvas again.
   it("keeps the trigger column and open panel as direct children of the root", async () => {
-    render(<AgentsPaletteDropdown />);
+    render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     const trigger = screen.getByRole("button", { name: /Agents/i });
     const column = trigger.parentElement as HTMLElement; // .column
@@ -115,12 +125,12 @@ describe("AgentsPaletteDropdown", () => {
     expect(root.className).toContain("root");
     expect(column.parentElement).toBe(root);
     fireEvent.click(trigger);
-    const panel = await screen.findByRole("region", { name: /Agents palette/i });
+    const panel = await screen.findByRole("region", { name: /Agent palette/i });
     expect(panel.parentElement).toBe(root);
   });
 
   it("refreshes on the palette-refresh event", async () => {
-    render(<AgentsPaletteDropdown />);
+    render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalledTimes(1));
     api.listProjectAgents.mockClear();
     act(() => {

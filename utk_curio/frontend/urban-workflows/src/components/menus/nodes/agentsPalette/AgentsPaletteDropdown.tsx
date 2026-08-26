@@ -16,10 +16,17 @@ import styles from "./AgentsPalette.module.css";
  * differing only in content. Lists the active project's installed agent
  * templates as draggable rows (drag to attach — handled in MainCanvas),
  * refreshes when the catalog drawer changes the lockfile, and opens the drawer
- * via "Browse Agents Catalog +".
+ * via "Browse Agent Catalog +".
  */
-export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
-  const [open, setOpen] = useState(false);
+export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
+  open,
+  setOpen,
+}: {
+  /** Owned by ToolsMenu: the three palettes share one strip, so only one
+   *  may be open. Uncontrolled state here would let two open at once. */
+  open: boolean;
+  setOpen: (value: boolean) => void;
+}) {
   const [agents, setAgents] = useState<AgentCard[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
   const { projectId } = useFlowContext();
@@ -82,10 +89,10 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
         <button
           type="button"
           className={`${styles.trigger} ${open ? styles.triggerOpen : ""}`}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen(!open)}
           aria-expanded={open}
           aria-haspopup="true"
-          title={open ? "Close agents palette" : "Open agents palette"}
+          title={open ? "Close agent palette" : "Open agent palette"}
         >
           <FontAwesomeIcon icon={faRobot} className={styles.triggerIcon} />
           <span className={styles.triggerLabel}>Agents</span>
@@ -97,7 +104,7 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
         </button>
       </div>
       {open ? (
-        <div className={styles.panel} role="region" aria-label="Agents palette">
+        <div className={styles.panel} role="region" aria-label="Agent palette">
           <div className={styles.panelHeader}>
             <div className={styles.title}>Agents</div>
           </div>
@@ -128,7 +135,7 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
               className={styles.catalogButton}
               onClick={openDrawer}
             >
-              Browse Agents Catalog +
+              Browse Agent Catalog +
             </button>
           </div>
         </div>

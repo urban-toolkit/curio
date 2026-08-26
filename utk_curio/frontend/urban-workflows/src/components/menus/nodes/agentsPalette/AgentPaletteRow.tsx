@@ -51,7 +51,11 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
   );
 
   return (
-    <div className={packageStyles.packageKindRow}>
+    // The cross-surface identity attribute, matching data-dataset-id on a
+    // dataset row and data-package-palette-coords on a package one: a card in
+    // the drawer and its row here share one identifier, which is what lets an
+    // install be asserted end to end without reading a hashed CSS class.
+    <div className={packageStyles.packageKindRow} data-agent-coord={agent.dirName}>
       <div
         className={`${packageStyles.packageKindRowDrag} ${avatarClass}`}
         draggable

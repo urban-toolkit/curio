@@ -36,6 +36,10 @@ jest.mock("../../components/menus/nodes/datasetPalette", () => ({
     DatasetsPaletteDropdown: paletteStub("datasets"),
 }));
 
+jest.mock("../../components/menus/nodes/agentsPalette", () => ({
+    AgentsPaletteDropdown: paletteStub("agents"),
+}));
+
 jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
     PackagesPaletteDropdown: paletteStub("packages"),
     groupPalettePackages: () => [],
@@ -63,12 +67,14 @@ import ToolsMenu from "../../components/menus/nodes/ToolsMenu";
 
 const datasetsPanel = () => screen.queryByTestId("datasets-panel");
 const packagesPanel = () => screen.queryByTestId("packages-panel");
+const agentsPanel = () => screen.queryByTestId("agents-panel");
 
 describe("ToolsMenu palette coordination", () => {
-    test("both palettes start closed", () => {
+    test("every palette starts closed", () => {
         render(<ToolsMenu />);
         expect(datasetsPanel()).toBeNull();
         expect(packagesPanel()).toBeNull();
+        expect(agentsPanel()).toBeNull();
     });
 
     test("a trigger opens its own palette", () => {
@@ -90,6 +96,31 @@ describe("ToolsMenu palette coordination", () => {
         // ...and back again, so neither direction is special-cased.
         fireEvent.click(screen.getByText("toggle datasets"));
         expect(datasetsPanel()).not.toBeNull();
+        expect(packagesPanel()).toBeNull();
+    });
+
+    test("the third palette is in the same strip, not beside it", () => {
+        // Agents joined the rail after the other two. The invariant that matters
+        // is that it shares the single `activePalette` slot rather than keeping
+        // its own open state - two panels in one strip overlap.
+        render(<ToolsMenu />);
+        fireEvent.click(screen.getByText("toggle agents"));
+        expect(agentsPanel()).not.toBeNull();
+        expect(datasetsPanel()).toBeNull();
+        expect(packagesPanel()).toBeNull();
+
+        fireEvent.click(screen.getByText("toggle packages"));
+        expect(packagesPanel()).not.toBeNull();
+        expect(agentsPanel()).toBeNull();
+
+        fireEvent.click(screen.getByText("toggle agents"));
+        expect(agentsPanel()).not.toBeNull();
+        expect(packagesPanel()).toBeNull();
+
+        // Its own trigger closes it, leaving the strip empty.
+        fireEvent.click(screen.getByText("toggle agents"));
+        expect(agentsPanel()).toBeNull();
+        expect(datasetsPanel()).toBeNull();
         expect(packagesPanel()).toBeNull();
     });
 

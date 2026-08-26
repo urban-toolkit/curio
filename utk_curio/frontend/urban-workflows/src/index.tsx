@@ -105,19 +105,19 @@ const MainCanvasRoute: React.FC = () => (
             components (UpMenu, PackagesPaletteDropdown), so scoping it here
             doesn't reduce reach. */}
         <NodeCatalogDrawerProvider>
-          <AgentCatalogDrawerProvider>
           <DatasetCatalogDrawerProvider>
-            <StarterProvider>
-              <ProjectLoader>
-                <PackagePaletteProvider>
-                  <DatasetPaletteProvider>
-                    <MainCanvas />
-                  </DatasetPaletteProvider>
-                </PackagePaletteProvider>
-              </ProjectLoader>
-            </StarterProvider>
+            <AgentCatalogDrawerProvider>
+              <StarterProvider>
+                <ProjectLoader>
+                  <PackagePaletteProvider>
+                    <DatasetPaletteProvider>
+                      <MainCanvas />
+                    </DatasetPaletteProvider>
+                  </PackagePaletteProvider>
+                </ProjectLoader>
+              </StarterProvider>
+            </AgentCatalogDrawerProvider>
           </DatasetCatalogDrawerProvider>
-          </AgentCatalogDrawerProvider>
         </NodeCatalogDrawerProvider>
       </FlowProvider>
     </CollaborationProvider>
