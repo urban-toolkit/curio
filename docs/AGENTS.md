@@ -126,7 +126,7 @@ An agent's `providerRequirements` declare what it needs from a provider (e.g. `s
 | Provider type | `CURIO_DEFAULT_LLM_API_TYPE` | `--llm-provider` | `openai_compatible` |
 | Base URL | `CURIO_DEFAULT_LLM_BASE_URL` | `--llm-base-url` | *(empty)* |
 | Model | `CURIO_DEFAULT_LLM_MODEL` | `--llm-model` | *(empty)* |
-| API key | `CURIO_DEFAULT_LLM_API_KEY` / `AICONN_API_KEY` | `--llm-api-key` | *(unset)* |
+| API key | `CURIO_DEFAULT_LLM_API_KEY` / `AICONN_API_KEY` | *(none, on purpose)* | *(unset)* |
 
 Resolution rules:
 
@@ -134,7 +134,7 @@ Resolution rules:
 - An **unconfigured** user falls back to the deployment default above, and is told plainly when there is none.
 - **Guests** use `GUEST_LLM_*`, which inherits `DEFAULT_LLM_*` unless separately overridden. `GUEST_LLM_API_KEY` is the gate: with no key deployed, guests get no AI, and AI Settings says so rather than offering fields that cannot take effect.
 
-Operators point the whole install at a provider with the launcher flags above, each of which names the variable it sets; individual users still override per-account under AI Settings. The API key is read from `AICONN_API_KEY` (the same name used by the connection harness) when a dedicated `CURIO_DEFAULT_LLM_API_KEY` is not set. A flag writes its variable only when passed, so a value already in the environment survives a start that omits it.
+Operators point the whole install at a provider with the launcher flags above, each of which names the variable it sets. There is deliberately no `--llm-api-key`: a key in argv is visible in the process list to every user on the host, so the key is environment-only. Individually, users still override per-account under AI Settings. The API key is read from `AICONN_API_KEY` (the same name used by the connection harness) when a dedicated `CURIO_DEFAULT_LLM_API_KEY` is not set. A flag writes its variable only when passed, so a value already in the environment survives a start that omits it.
 
 Provider *dispatch* lives in a provider-neutral port, [`app/agents/providers.py`](../utk_curio/backend/app/agents/providers.py) - `run_chat_completion(ProviderConfig, messages)`. It is the single place the `openai` / `anthropic` / `google-generativeai` SDKs are used, so LLM behavior stays out of the route/flow/node layers. A resolved provider config (from AI Settings or the default above) is handed to the port; callers never import a provider SDK directly. A future LangChain adapter, if adopted, would sit behind this same port without changing callers.
 

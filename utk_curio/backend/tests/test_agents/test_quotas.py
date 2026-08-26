@@ -13,18 +13,30 @@ UKEY = "42"
 
 
 class TestLimitConfig:
-    def test_default_limit(self, monkeypatch):
+    def test_no_cap_is_shipped(self, monkeypatch):
+        # Curio used to default to 200 runs/day, which meant an unconfigured
+        # install still enforced a number Curio picked. The operator pays for
+        # the tokens, so the ceiling is theirs to set.
         monkeypatch.delenv("CURIO_AGENT_RUNS_PER_DAY", raising=False)
-        assert quotas.runs_per_day_limit() == quotas.DEFAULT_RUNS_PER_DAY
+        assert quotas.runs_per_day_limit() is None
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "7")
         assert quotas.runs_per_day_limit() == 7
 
-    def test_invalid_and_nonpositive_fall_back(self, monkeypatch):
+    def test_invalid_and_nonpositive_read_as_unset(self, monkeypatch):
+        # Unset rather than a substitute of our own: a typo must not quietly
+        # impose a limit nobody asked for.
         for bad in ("abc", "0", "-3"):
             monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", bad)
-            assert quotas.runs_per_day_limit() == quotas.DEFAULT_RUNS_PER_DAY
+            assert quotas.runs_per_day_limit() is None
+
+    def test_no_ceiling_admits_without_counting_against_one(self, tmp_curio):
+        # The ledger reads None the way it already reads an unset template or
+        # attachment limit: record the run, gate nothing.
+        for _ in range(3):
+            ledger.reserve(UKEY, account_limit=None)
+        assert quotas.runs_used_today(UKEY) == 3
 
 
 class TestLedgerBackedReads:

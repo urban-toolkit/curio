@@ -139,10 +139,19 @@ AGENT_AND_BUILD_KEYS = (
     "CURIO_DEFAULT_LLM_API_TYPE",
     "CURIO_DEFAULT_LLM_BASE_URL",
     "CURIO_DEFAULT_LLM_MODEL",
-    "CURIO_DEFAULT_LLM_API_KEY",
     "GUEST_LLM_API_KEY",
-    "CURIO_AGENT_RUNS_PER_DAY",
     "CURIO_SEARCH_URL",
+)
+
+#: Variables an operator may set, that deliberately have NO launcher flag.
+#: Each is asserted flagless in TestVariablesThatStayEnvOnly below.
+NO_FLAG_KEYS = (
+    # A key in argv is visible in the process list to every user on the host.
+    "CURIO_DEFAULT_LLM_API_KEY",
+    # Curio ships no run cap: the ceiling is the operator's to impose, and a
+    # flag would invite us to pick a default again.
+    "CURIO_AGENT_RUNS_PER_DAY",
+    # The package-build subsystem, which is not part of the agent catalog.
     "CURIO_BUILD_ESBUILD",
     "CURIO_BUILD_PREVIEW_RUNNER",
     "CURIO_BUILD_PREVIEW_POLICY",
@@ -162,7 +171,7 @@ def _isolate_agent_env():
     which surfaced as six unrelated failures in test_agents, but only when the
     two directories were collected together.
     """
-    saved = {k: os.environ.pop(k, None) for k in AGENT_AND_BUILD_KEYS}
+    saved = {k: os.environ.pop(k, None) for k in AGENT_AND_BUILD_KEYS + NO_FLAG_KEYS}
     try:
         yield
     finally:
@@ -179,30 +188,14 @@ class TestAgentAndBuildFlags:
             llm_provider="anthropic",
             llm_base_url="https://example.test/v1",
             llm_model="some-model",
-            llm_api_key="k",
             guest_llm_api_key="gk",
-            agent_runs_per_day=25,
             agent_search_url="https://search.test/?q={query}",
-            build_esbuild="/usr/bin/esbuild",
-            build_preview_runner="/usr/bin/preview",
-            build_preview_policy="skip",
-            js_registry_url="https://registry.test",
-            js_block_unpinned=True,
-            package_backend_python="/usr/bin/python3",
         )
         assert os.environ["CURIO_DEFAULT_LLM_API_TYPE"] == "anthropic"
         assert os.environ["CURIO_DEFAULT_LLM_BASE_URL"] == "https://example.test/v1"
         assert os.environ["CURIO_DEFAULT_LLM_MODEL"] == "some-model"
-        assert os.environ["CURIO_DEFAULT_LLM_API_KEY"] == "k"
         assert os.environ["GUEST_LLM_API_KEY"] == "gk"
-        assert os.environ["CURIO_AGENT_RUNS_PER_DAY"] == "25"
         assert os.environ["CURIO_SEARCH_URL"] == "https://search.test/?q={query}"
-        assert os.environ["CURIO_BUILD_ESBUILD"] == "/usr/bin/esbuild"
-        assert os.environ["CURIO_BUILD_PREVIEW_RUNNER"] == "/usr/bin/preview"
-        assert os.environ["CURIO_BUILD_PREVIEW_POLICY"] == "skip"
-        assert os.environ["CURIO_JS_REGISTRY_URL"] == "https://registry.test"
-        assert os.environ["CURIO_JS_BLOCK_UNPINNED"] == "1"
-        assert os.environ["CURIO_BACKEND_SANDBOX_PYTHON"] == "/usr/bin/python3"
 
     def test_omitted_flags_leave_the_environment_alone(self):
         """Unlike the boolean knobs above, these are absent rather than "0".
@@ -216,9 +209,34 @@ class TestAgentAndBuildFlags:
         for key in AGENT_AND_BUILD_KEYS:
             assert key not in os.environ, key
 
-    def test_js_block_unpinned_is_only_set_when_asked(self):
-        set_environment_variables(**BASE, js_block_unpinned=False)
-        assert "CURIO_JS_BLOCK_UNPINNED" not in os.environ
+    def test_the_flag_set_is_exactly_these_five(self):
+        """A guard on the guard: a new flag must be a decision, not a drift.
+
+        The launcher grew thirteen of these at once, eight of which were
+        either not ours to set (a run cap), unsafe as an argument (an API
+        key), or belonged to a different subsystem entirely. Adding one back
+        should require editing this list.
+        """
+        import re
+
+        import utk_curio.main as launcher
+
+        source = Path(launcher.__file__).read_text(encoding="utf-8")
+        # Read from source rather than by building the parser: the parser is
+        # constructed inside main(), and TestVariablesThatStayEnvOnly below
+        # already reads the file the same way.
+        flags = set(
+            re.findall(
+                r'"(--(?:llm|guest-llm|agent|build|js|package)-[a-z-]+)"', source
+            )
+        )
+        assert flags == {
+            "--llm-provider",
+            "--llm-base-url",
+            "--llm-model",
+            "--guest-llm-api-key",
+            "--agent-search-url",
+        }, sorted(flags)
 
 
 class TestVariablesThatStayEnvOnly:

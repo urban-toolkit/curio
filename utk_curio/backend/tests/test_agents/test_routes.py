@@ -2471,8 +2471,12 @@ class TestAttachmentSettings:
         assert body["attachmentId"] == att_id
         assert body["settings"] == {}
         assert body["revision"] == 1
-        assert body["effective"]["quotas"]["runsPerDay"]["source"] == "deployment"
-        assert body["effective"]["quotas"]["runsPerDay"]["usedToday"] == 0
+        # Curio ships no run cap, so nothing sets this: the ceiling is the
+        # operator's to impose through CURIO_AGENT_RUNS_PER_DAY. The clamp
+        # itself is covered below, against an explicitly configured one.
+        assert body["effective"]["quotas"]["runsPerDay"] == {
+            "value": None, "source": None, "usedToday": 0,
+        }
         assert "actualSpendTodayUsd" in body["effective"]["cost"]
 
     def test_patch_tightens_and_binds(self, client, user_and_token, tmp_curio, alice_project):
@@ -2487,7 +2491,13 @@ class TestAttachmentSettings:
         }
         assert body["revision"] == 2
 
-    def test_patch_loosening_is_a_400(self, client, user_and_token, tmp_curio, alice_project):
+    def test_patch_loosening_past_a_configured_ceiling_is_a_400(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        # Tighten-only is enforced against whatever ceiling binds. With no
+        # deployment ceiling there is nothing to exceed (the case below), so
+        # this one configures one first.
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "50")
         _, token = user_and_token
         att_id = self._attach(client, token, alice_project)
         r = self._patch(
@@ -2495,6 +2505,20 @@ class TestAttachmentSettings:
         )
         assert r.status_code == 400
         assert "may not exceed" in r.get_json()["error"]
+
+    def test_without_a_deployment_ceiling_any_limit_is_accepted(
+        self, client, user_and_token, tmp_curio, alice_project
+    ):
+        # The flip side, and the point of removing the shipped 200/day: with
+        # no ceiling configured, Curio does not second-guess the number a user
+        # chooses. It is the operator's tokens being spent.
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        r = self._patch(
+            client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 999999}}
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert r.get_json()["effective"]["quotas"]["runsPerDay"]["value"] == 999999
 
     def test_estimate_not_editable_here(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
@@ -2525,7 +2549,7 @@ class TestAttachmentSettings:
         assert r.status_code == 200
         body = r.get_json()
         assert body["settings"] == {}
-        assert body["effective"]["quotas"]["runsPerDay"]["source"] == "deployment"
+        assert body["effective"]["quotas"]["runsPerDay"]["source"] is None
 
     def test_attachment_limit_enforced_per_attachment(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         self._mock_run(monkeypatch)

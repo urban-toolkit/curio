@@ -307,7 +307,7 @@ def aggregates(user_key: str, day: str | None = None) -> dict:
 def reserve(
     user_key: str,
     *,
-    account_limit: int,
+    account_limit: int | None,
     template_key: str | None = None,
     template_limit: int | None = None,
     attachment_key: str | None = None,
@@ -320,8 +320,8 @@ def reserve(
     """Atomically admit one run, or raise :class:`QuotaExceeded`.
 
     One critical section owns admission: read the day's aggregates, check the
-    account limit → the template limit → the attachment limit (dev/42) → the
-    budget spend ladder, append the reserve entry. Two concurrent last-slot
+    account limit (when one is set) → the template limit → the attachment
+    limit (dev/42) → the budget spend ladder, append the reserve entry. Two concurrent last-slot
     attempts serialize; exactly one admits (`REQ-QUOTA-001`). *price* is the
     immutable snapshot pinned for settlement (`dev/05`:1242); a table edit
     mid-day never rewrites what an earlier run was charged.
@@ -338,7 +338,10 @@ def reserve(
                 _append(user_key, day, seed)
                 entries = [seed]
         agg = _aggregate(entries)
-        if agg["runs"] >= account_limit:
+        # ``None`` means no ceiling, the same way the template and attachment
+        # limits below have always read it. Curio ships no run cap; the
+        # operator sets one through CURIO_AGENT_RUNS_PER_DAY, or nobody does.
+        if account_limit is not None and agg["runs"] >= account_limit:
             raise QuotaExceeded(
                 f"daily agent-run limit reached ({account_limit}/day)", _reset_at(now)
             )

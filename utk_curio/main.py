@@ -96,7 +96,7 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, allow_runtime_install=None, isolation=None, exec_user=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, llm_api_key=None, guest_llm_api_key=None, agent_runs_per_day=None, agent_search_url=None, build_esbuild=None, build_preview_runner=None, build_preview_policy=None, js_registry_url=None, js_block_unpinned=False, package_backend_python=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, allow_runtime_install=None, isolation=None, exec_user=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -176,31 +176,13 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         os.environ["CURIO_DEFAULT_LLM_BASE_URL"] = str(llm_base_url)
     if llm_model:
         os.environ["CURIO_DEFAULT_LLM_MODEL"] = str(llm_model)
-    if llm_api_key:
-        os.environ["CURIO_DEFAULT_LLM_API_KEY"] = str(llm_api_key)
     if guest_llm_api_key:
         os.environ["GUEST_LLM_API_KEY"] = str(guest_llm_api_key)
 
-    # Agent runtime policy.
-    if agent_runs_per_day:
-        os.environ["CURIO_AGENT_RUNS_PER_DAY"] = str(agent_runs_per_day)
+    # The agents' web-search tool. Unset, the tool is unavailable: an agent
+    # never reaches an endpoint the operator did not name.
     if agent_search_url:
         os.environ["CURIO_SEARCH_URL"] = str(agent_search_url)
-
-    # Package build service. Without a compiler configured, a package that
-    # needs one is refused rather than half-built.
-    if build_esbuild:
-        os.environ["CURIO_BUILD_ESBUILD"] = str(build_esbuild)
-    if build_preview_runner:
-        os.environ["CURIO_BUILD_PREVIEW_RUNNER"] = str(build_preview_runner)
-    if build_preview_policy:
-        os.environ["CURIO_BUILD_PREVIEW_POLICY"] = str(build_preview_policy)
-    if js_registry_url:
-        os.environ["CURIO_JS_REGISTRY_URL"] = str(js_registry_url)
-    if js_block_unpinned:
-        os.environ["CURIO_JS_BLOCK_UNPINNED"] = "1"
-    if package_backend_python:
-        os.environ["CURIO_BACKEND_SANDBOX_PYTHON"] = str(package_backend_python)
 
     os.environ["ENABLE_COLLAB"] = "1" if collab else "0"
 
@@ -1166,15 +1148,9 @@ def main():
         "--llm-model", default=None, metavar="NAME",
         help="Default model name (sets CURIO_DEFAULT_LLM_MODEL). No default.",
     )
-    parser.add_argument(
-        "--llm-api-key", default=None, metavar="KEY",
-        help=(
-            "API key for the default provider (sets "
-            "CURIO_DEFAULT_LLM_API_KEY; AICONN_API_KEY is also read). Prefer "
-            "the environment variable on a shared host - an argument is "
-            "visible in the process list."
-        ),
-    )
+    # There is deliberately no --llm-api-key. A key passed as an argument is
+    # visible in the process list to every user on the host; set
+    # CURIO_DEFAULT_LLM_API_KEY (or AICONN_API_KEY) in the environment instead.
     parser.add_argument(
         "--guest-llm-api-key", default=None, metavar="KEY",
         help=(
@@ -1186,68 +1162,11 @@ def main():
         ),
     )
     parser.add_argument(
-        "--agent-runs-per-day", type=int, default=None, metavar="N",
-        help=(
-            "Deployment ceiling on agent runs per user per day (sets "
-            "CURIO_AGENT_RUNS_PER_DAY). A user or project may set a lower "
-            "limit, never a higher one."
-        ),
-    )
-    parser.add_argument(
         "--agent-search-url", default=None, metavar="TEMPLATE",
         help=(
             "URL template for the agents' web-search tool (sets "
             "CURIO_SEARCH_URL). Unset, the tool is unavailable; agents never "
             "reach an endpoint the operator did not name."
-        ),
-    )
-    parser.add_argument(
-        "--build-esbuild", default=None, metavar="PATH",
-        help=(
-            "esbuild binary used to bundle agent-authored node packages (sets "
-            "CURIO_BUILD_ESBUILD). Without it, a package needing a compile is "
-            "refused rather than half-built."
-        ),
-    )
-    parser.add_argument(
-        "--build-preview-runner", default=None, metavar="PATH",
-        help=(
-            "Executable that renders a package preview before it can be "
-            "applied (sets CURIO_BUILD_PREVIEW_RUNNER). Generate the bundled "
-            "reference runner with "
-            "`python -m utk_curio.tools.install_preview_runner`."
-        ),
-    )
-    parser.add_argument(
-        "--build-preview-policy", default=None, choices=["require", "skip"],
-        help=(
-            "What to do when no preview runner is configured (sets "
-            "CURIO_BUILD_PREVIEW_POLICY). 'skip' lets a draft reach review "
-            "unpreviewed, recorded in its provenance and stated on the review "
-            "card; for deployments that genuinely cannot run a browser."
-        ),
-    )
-    parser.add_argument(
-        "--js-registry-url", default=None, metavar="URL",
-        help=(
-            "The only npm registry package builds may resolve from (sets "
-            "CURIO_JS_REGISTRY_URL). Unset, JS dependency resolution is "
-            "unavailable."
-        ),
-    )
-    parser.add_argument(
-        "--js-block-unpinned", action="store_true", default=False,
-        help=(
-            "Refuse JS dependencies that are not pinned to an exact version "
-            "(sets CURIO_JS_BLOCK_UNPINNED=1)."
-        ),
-    )
-    parser.add_argument(
-        "--package-backend-python", default=None, metavar="PATH",
-        help=(
-            "Interpreter that runs package backend handlers (sets "
-            "CURIO_BACKEND_SANDBOX_PYTHON, default: the interpreter running "
-            "Curio)."
         ),
     )
     parser.add_argument(
@@ -1300,16 +1219,8 @@ def main():
         llm_provider=args.llm_provider,
         llm_base_url=args.llm_base_url,
         llm_model=args.llm_model,
-        llm_api_key=args.llm_api_key,
         guest_llm_api_key=args.guest_llm_api_key,
-        agent_runs_per_day=args.agent_runs_per_day,
         agent_search_url=args.agent_search_url,
-        build_esbuild=args.build_esbuild,
-        build_preview_runner=args.build_preview_runner,
-        build_preview_policy=args.build_preview_policy,
-        js_registry_url=args.js_registry_url,
-        js_block_unpinned=args.js_block_unpinned,
-        package_backend_python=args.package_backend_python,
     )
 
     # if os.getenv("CURIO_DEV") != "1":

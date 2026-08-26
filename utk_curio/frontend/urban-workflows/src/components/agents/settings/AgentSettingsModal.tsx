@@ -254,7 +254,10 @@ export const AgentSettingsModal: React.FC<{
         onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
       />
       <span className={styles.provenance}>
-        {eff.source ? `effective ${eff.value} · from ${eff.source}` : "not set"}
+        {/* "No limit" rather than "not set": for a quota those read very
+            differently, and since Curio ships no run cap this is the state an
+            unconfigured install is actually in. */}
+        {eff.source ? `effective ${eff.value} · from ${eff.source}` : "No limit"}
         {hint ? ` · ${hint}` : ""}
       </span>
     </label>
@@ -333,7 +336,11 @@ export const AgentSettingsModal: React.FC<{
                   "Runs per day",
                   "runsPerDay",
                   eff.quotas.runsPerDay,
-                  data.ceilings ? `≤ ${data.ceilings.quotas.runsPerDay}` : undefined,
+                  // No ceiling configured means nothing to show a bound
+                  // against; `≤ null` would be worse than silence.
+                  data.ceilings?.quotas?.runsPerDay != null
+                    ? `≤ ${data.ceilings.quotas.runsPerDay}`
+                    : undefined,
                 )}
                 <p className={styles.meta}>
                   {data.usedToday} runs · {data.usageToday.inputTokens} in /{" "}

@@ -267,10 +267,17 @@ policy model the other two do not need. Three scopes nest, each able only to
 | **Per-dataflow** | The settings cog on an **In dataflow** card | `spec.trill.json` then `dataflow.agentDefaults` | One added agent's limits within one dataflow. |
 | **Per-attachment** | The attachment's own settings | `spec.trill.json` then `dataflow.agentAttachments` | One bound instance's limits. |
 
-Above all three sits the **deployment ceiling**, which an operator sets and no
-user scope can exceed. The effective value at any point is
+Above all three sits the **deployment ceiling**, which no user scope can exceed.
+Curio sets none of its own: `runsPerDay`, `dailyBudgetUsd`, and
+`estimatedCostPerRunUsd` all ship unset, because the operator pays for the
+tokens and the ceiling is theirs to impose. Only `maxOutputTokens` carries a
+shipped bound. An operator adds a run ceiling with `CURIO_AGENT_RUNS_PER_DAY`.
+
+The effective value at any point is
 `attachment ?? project ?? account ?? deployment`, clamped downward on read, so a
-limit loosened upstream never silently widens a scope that tightened it.
+limit loosened upstream never silently widens a scope that tightened it. Where
+no ceiling is configured, there is nothing to clamp against and the user's own
+value stands.
 
 The **provider**, meaning which model actually answers, is a separate question
 with a single answer, and lives in the **Provider** tab of the same **AI
@@ -280,7 +287,9 @@ That is why the two live in one modal rather than two.
 Runs are admitted through an append-only per-day ledger under a file lock, so two
 concurrent runs competing for the last slot serialize to exactly one admission.
 A denied run consumes nothing and returns `429` with the limit it hit and when it
-resets.
+resets. With no limit configured at any scope the ledger still records every run,
+so the usage figures the settings screens show are accurate whether or not
+anything is gating.
 
 ---
 
@@ -310,9 +319,7 @@ Agent configuration follows Curio's convention: an operator knob is a documented
 | `--llm-provider` | `CURIO_DEFAULT_LLM_API_TYPE` | The default provider kind. |
 | `--llm-base-url` | `CURIO_DEFAULT_LLM_BASE_URL` | The default endpoint. |
 | `--llm-model` | `CURIO_DEFAULT_LLM_MODEL` | The default model. |
-| `--llm-api-key` | `CURIO_DEFAULT_LLM_API_KEY` | The default key. Prefer the variable: an argument is visible in the process list on a shared host. |
 | `--guest-llm-api-key` | `GUEST_LLM_API_KEY` | The gate on guest AI. No key, no guest access. |
-| `--agent-runs-per-day` | `CURIO_AGENT_RUNS_PER_DAY` | The deployment ceiling on runs. |
 | `--agent-search-url` | `CURIO_SEARCH_URL` | The endpoint for agents with a search capability. |
 
 A flag writes its variable only when passed, so a value already set in the
@@ -320,9 +327,17 @@ environment is not cleared by a start that omits it. That matters here more than
 for a boolean knob: an empty `CURIO_DEFAULT_LLM_MODEL` means "no provider" and
 would disable every AI surface.
 
-`GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, and `GUEST_LLM_MODEL` stay
-environment-only. Guests inherit the default provider and only the key gates
-access; these exist as an escape hatch for the rare split-provider deployment.
+### Variables with no flag, on purpose
+
+| Variable | Why there is no flag |
+|---|---|
+| `CURIO_DEFAULT_LLM_API_KEY` (or `AICONN_API_KEY`) | A key passed as an argument is visible in the process list to every user on the host. Set it in the environment. |
+| `CURIO_AGENT_RUNS_PER_DAY` | Curio ships no run cap and offers no flag to pick one, so nothing invites a default back in. Set the variable if your deployment wants a ceiling. |
+| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | Guests inherit the default provider and only the key gates access. These are an escape hatch for the rare split-provider deployment. |
+
+The package-build variables (`CURIO_BUILD_*`, `CURIO_JS_*`,
+`CURIO_BACKEND_SANDBOX_PYTHON`) belong to the package-build subsystem rather
+than to this catalog, and have no launcher flags either.
 
 ### There is no publish gate for agents
 
