@@ -77,7 +77,7 @@ def run_segmentation(model, processor, image_path: str, classes: List[str], imag
         color = CITYSCAPES_COLORS.get(int(cls_id), (128, 128, 128))
         overlay[pred == cls_id] = color
     stem = os.path.splitext(image_id)[0]
-    overlay_target = os.path.join(cache.overlays_dir(), f"{stem}_overlay.png")
+    overlay_target = os.path.join(cache.overlays_dir(user_key), f"{stem}_overlay.png")
     PILImage.fromarray(overlay).save(overlay_target)
 
     # If the caller asked for a specific class set, filter + renormalize so
@@ -129,6 +129,7 @@ def run_batch(
     classes: List[str],
     progress_cb=None,
     hf_token: Optional[str] = None,
+    user_key: str = "guest",
 ) -> Iterator[dict]:
     """Run inference over a list of images, yielding one result dict per image.
 
@@ -148,7 +149,7 @@ def run_batch(
     # detached worker thread, where the request context is gone.
     cached = hf.get_cached_model(model_id, hf_token)
     if cached is None:
-        hf.load_model(model_id, model_type, hf_token)
+        hf.load_model(model_id, model_type, hf_token, user_key)
         cached = hf.get_cached_model(model_id, hf_token)
     model, processor, _ = cached
 

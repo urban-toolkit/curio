@@ -16,12 +16,24 @@ entitlement and was invisible to the people it applied to. It is now:
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 
 import pytest
 
 from utk_curio.backend.app.streetvision.services import huggingface as hf
+
+
+@pytest.fixture()
+def launch_dir(tmp_path, monkeypatch):
+    """Anchor ``.curio/`` under a temp dir, the way the path helpers resolve it.
+
+    Not ``tmp_curio``: that fixture lives in the per-package conftests and this
+    file sits above them.
+    """
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    return tmp_path
 
 
 @pytest.fixture(autouse=True)
@@ -111,6 +123,59 @@ class TestCacheKeying:
         assert fp != hf._token_fingerprint("hf_other")
 
 
+class TestPerUserCacheDirs:
+    """Both on-disk caches live under the caller's own user directory.
+
+    They were one deployment-wide tree at ``.curio/streetvision/``, with
+    ``STREETVISION_CACHE_DIR`` and ``STREETVISION_MODEL_CACHE_DIR`` overrides.
+    All of it is gone: the panoramas were fetched with one user's Google Maps
+    key, the overlays computed from their runs, and the model weights possibly
+    downloaded against a gated licence only their account accepted.
+    """
+
+    def test_image_and_overlay_dirs_are_scoped_to_the_user(self, launch_dir):
+        from utk_curio.backend.app.streetvision.services import cache
+
+        mine = cache.images_dir("7")
+        theirs = cache.images_dir("guest")
+        assert mine != theirs
+        for path in (mine, theirs):
+            assert os.path.join(".curio", "users") in path
+            assert "streetvision" in path
+
+    def test_model_cache_is_scoped_to_the_user(self, launch_dir):
+        assert hf._model_cache_dir("7") != hf._model_cache_dir("guest")
+        assert os.path.join("users", "7") in hf._model_cache_dir("7")
+
+    def test_no_env_override_is_honoured(self, monkeypatch, launch_dir):
+        from utk_curio.backend.app.streetvision.services import cache
+
+        monkeypatch.setenv("STREETVISION_CACHE_DIR", "/somewhere/else")
+        monkeypatch.setenv("STREETVISION_MODEL_CACHE_DIR", "/somewhere/else")
+        assert "/somewhere/else" not in cache.images_dir("7")
+        assert "/somewhere/else" not in hf._model_cache_dir("7")
+
+    def test_a_bogus_user_key_cannot_escape_the_store(self, launch_dir):
+        from utk_curio.backend.app.streetvision.services import cache
+
+        # The shared guard: only "guest" or a numeric id is a user key.
+        for bad in ("../../etc", "guest/../7", "alice"):
+            with pytest.raises(ValueError):
+                cache.user_root(bad)
+            with pytest.raises(ValueError):
+                hf._model_cache_dir(bad)
+
+    def test_one_users_overlay_is_not_found_for_another(self, launch_dir):
+        from utk_curio.backend.app.streetvision.services import cache
+
+        target = os.path.join(cache.overlays_dir("7"), "pano_overlay.png")
+        with open(target, "wb") as handle:
+            handle.write(b"png")
+        assert cache.overlay_path("7", "pano.jpg") == target
+        # The miss that matters: it is somebody else's file.
+        assert cache.overlay_path("guest", "pano.jpg") is None
+
+
 class TestThreadHandover:
     def test_load_model_accepts_an_explicit_token(self, monkeypatch):
         # The worker thread has no request context, so the token has to arrive
@@ -122,7 +187,7 @@ class TestThreadHandover:
         with pytest.raises(ValueError):
             # An unsupported model_type is the cheapest way to reach the end of
             # the token-handling block without importing torch.
-            hf.load_model("m", "not-a-type", "hf_explicit")
+            hf.load_model("m", "not-a-type", "hf_explicit", "7")
         assert "resolved" not in called, "an explicit token must not be re-resolved"
 
     def test_load_model_resolves_when_not_given_one(self, monkeypatch):

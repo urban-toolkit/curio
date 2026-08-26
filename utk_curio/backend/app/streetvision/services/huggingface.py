@@ -10,6 +10,11 @@ import hashlib
 import os
 from typing import Dict, Optional, Tuple
 
+from utk_curio.backend.app.packages.storage import (
+    _user_key_segment,
+    _users_base,
+)
+
 # In-process model cache: (model_id, token fingerprint) -> (model, processor
 # or None, model_type).
 #
@@ -33,6 +38,28 @@ def _token_fingerprint(token: Optional[str]) -> str:
     if not token:
         return "anon"
     return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+
+
+def resolve_user_key() -> str:
+    """Whose ``.curio/users/<key>/streetvision/`` this request reads and writes.
+
+    Falls back to the shared guest key, which is what the rest of Curio does
+    for an unauthenticated caller: these routes carry no ``@require_auth``, and
+    with ``--no-project`` there is no signed-in user at all.
+
+    Must be called from a request context; the worker thread has none, so the
+    key is captured alongside the token and handed down.
+    """
+    try:
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        from utk_curio.backend.app.users.dependencies import get_current_user
+
+        user = get_current_user()
+        if user is not None:
+            return _user_dir_key(user)
+    except Exception:
+        pass
+    return "guest"
 
 
 def resolve_hf_token() -> Optional[str]:
@@ -62,21 +89,28 @@ def resolve_hf_token() -> Optional[str]:
     return os.environ.get("CURIO_DEFAULT_HUGGINGFACE_TOKEN") or None
 
 
-def _model_cache_dir() -> str:
-    """Return the on-disk HuggingFace Hub model cache root.
+def _model_cache_dir(user_key: str) -> str:
+    """``.../users/<user_key>/streetvision/model_cache/``.
 
-    Defaults to ``$CURIO_LAUNCH_CWD/.curio/streetvision/model_cache`` so
-    Curio's runtime state lives in the standard ``.curio/`` location —
-    gitignored, easy to clear, and matches the convention used by the
-    per-user package store + the SQLite DB. Override with
-    ``STREETVISION_MODEL_CACHE_DIR`` for deployments that want a shared
-    pre-warmed cache elsewhere.
+    This was one deployment-wide directory with a
+    ``STREETVISION_MODEL_CACHE_DIR`` override "for deployments that want a
+    shared pre-warmed cache". Both are gone, because sharing the directory
+    shares the entitlement: a *gated* model is downloaded against a licence one
+    HuggingFace account accepted, so the first user to fetch it would leave the
+    weights sitting where every later caller could load them, whatever their
+    own account was allowed. This is the on-disk half of the same leak the
+    in-process cache key closes.
+
+    The cost is honest and worth stating: N users who each download the same
+    large model now hold N copies. Public models carry no entitlement, so if
+    that ever bites, the fix is to share only the tokenless ones rather than to
+    put gated weights back in a common directory.
     """
-    override = os.environ.get("STREETVISION_MODEL_CACHE_DIR")
-    if override:
-        return override
-    launch_cwd = os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd()
-    return os.path.join(launch_cwd, ".curio", "streetvision", "model_cache")
+    return os.path.join(
+        str(_users_base() / _user_key_segment(user_key)),
+        "streetvision",
+        "model_cache",
+    )
 
 
 def search_models(task: str, query: str, limit: int = 20) -> list:
@@ -103,14 +137,19 @@ def search_models(task: str, query: str, limit: int = 20) -> list:
     return results
 
 
-def load_model(model_id: str, model_type: str, token: Optional[str] = None) -> str:
+def load_model(
+    model_id: str,
+    model_type: str,
+    token: Optional[str] = None,
+    user_key: str = "guest",
+) -> str:
     """Load a model into the in-process cache. Lazy-imports torch/transformers/ultralytics."""
     token = token if token is not None else resolve_hf_token()
     key = (model_id, _token_fingerprint(token))
     if key in _model_cache:
         return f"Model {model_id} already loaded (cached)"
 
-    cache_dir = _model_cache_dir()
+    cache_dir = _model_cache_dir(user_key)
 
     if model_type == "segmentation":
         from transformers import AutoImageProcessor

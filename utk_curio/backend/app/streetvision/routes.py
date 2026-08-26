@@ -229,8 +229,9 @@ def inference_run():
         from .services import huggingface as hf_svc
 
         hf_token = hf_svc.resolve_hf_token()
+        user_key = hf_svc.resolve_user_key()
     except ImportError:
-        hf_token = None
+        hf_token, user_key = None, "guest"
 
     job_id = jobs.create_job(total_images=len(images))
     jobs.start_inference(
@@ -241,6 +242,7 @@ def inference_run():
         classes=classes,
         api_key=api_key,
         hf_token=hf_token,
+        user_key=user_key,
     )
     return jsonify({"job_id": job_id, "status": "queued", "total_images": len(images)})
 
@@ -258,7 +260,12 @@ def inference_results(job_id: str):
 def inference_overlay(image_id: str):
     """Serve the segmentation overlay PNG for a single image (used by the
     CV Gallery's inspect view)."""
-    path = cache.overlay_path(image_id)
+    # Scoped to the caller: this route has no @require_auth, so before the
+    # cache was per-user anyone who could guess an image id could read another
+    # user's overlay.
+    from .services import huggingface as hf_svc
+
+    path = cache.overlay_path(hf_svc.resolve_user_key(), image_id)
     if not path:
         return jsonify({"error": "overlay not found"}), 404
     return send_file(path, mimetype="image/png")
