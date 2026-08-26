@@ -1,9 +1,0 @@
-::placeholder {
-    color: #d3d3d3;
-    opacity: 1; 
-}
-
-input:focus {
-    outline: none;
-    box-shadow: none;
-}

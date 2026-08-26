@@ -13,7 +13,6 @@ import {
     faCircle,
     faCircleDot,
 } from "@fortawesome/free-solid-svg-icons";
-import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { CATEGORY_FALLBACK_FG, categoryFg } from "../constants/nodeCategoryPalette";
@@ -167,14 +166,10 @@ export const NodeContainer = ({
     const [saveAsOpen, setSaveAsOpen] = useState(false);
     const [configOpen, setConfigOpen] = useState(false);
     const [comments, setComments] = useState<IComment[]>([]);
-    const [goal, setGoal] = useState(data.goal);
     const [pinnedToDashboard, setPinnedToDashboard] = useState<boolean>(!!dashboardPins[nodeId]);
     const [expectedInputType, setExpectedInputType] = useState(data.in);
     const [expectedOutputType, setExpectedOutputType] = useState(data.out);
-    const [isConnectionLeftOpen, setIsConnectionLeftOpen] = useState(false);
-    const [isConnectionRightOpen, setIsConnectionRightOpen] = useState(false);
     const [showWarnings, setShowWarnings] = useState<boolean>(false);
-    const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
     const [currentNodeWidth, setCurrentNodeWidth] = useState<number | undefined>(
         nodeWidth
     );
@@ -185,11 +180,6 @@ export const NodeContainer = ({
     // spatial-join, etc.) start minimized: they have no body to expand and the
     // 50×180 footprint is their default render.
     const [minimized, setMinimized] = useState(!!noContent);
-    const { llmRequest, setCurrentEventPipeline, AIModeRef } = useLLMContext();
-
-    useEffect(() => {
-        setGoal(data.goal);
-    }, [data.goal])
 
     useEffect(() => {
         if (nodeWidth !== undefined) {
@@ -358,33 +348,6 @@ export const NodeContainer = ({
         };
     }, [dashboardOn, dashboardLocked]);
 
-    const updateDataGoal = (goal: string) => {
-        if(data.goal != goal){
-
-            setCurrentEventPipeline("Directly editing a Subtask");
-
-            let newData = {...data}; 
-            newData.goal = goal; 
-            updateDataNode(nodeId, newData);
-        }
-    }
-
-    const generateSubtaskFromExec = async (node_content: string, node_type: NodeType, current_task: string) => {
-        try {
-            let result = await llmRequest("default_preamble", "new_subtask_from_exec_prompt", " Node content: " + node_content + "\n" + "Node type: " + node_type + " Task: " + current_task);
-            
-            console.log("generateSubtaskFromExec result", result);
-
-            let new_subtask = result.result;
-
-            setGoal(new_subtask);
-            updateDataGoal(new_subtask);
-        } catch (error) {
-            console.error("Error communicating with LLM", error);
-            showToast("Error communicating with LLM", "error");
-        }
-    }
-
     const deleteComment = (commentId: number) => {
         setComments(comments.filter((comment) => comment.id !== commentId));
     };
@@ -435,87 +398,6 @@ export const NodeContainer = ({
     const handleChangeExpectedOutputType = (event: React.ChangeEvent<HTMLSelectElement>) => {
         setExpectedOutputType(event.target.value as SupportedType);
     };
-
-    const generateConnectionSuggestions = async (nodes: any, edges: any, workflowNameRef: any, workflowGoal: string, inOrOut: string) => {
-
-        let trill_spec = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current, workflowGoal);
-
-        try {
-    
-            let result = await llmRequest("default_preamble", "new_connection_prompt", "Dataflow task: " + workflowGoal + "\n nodeId: " + nodeId + "\n Subtask: " + goal + "\n Your suggested nodes will be connected to the: " + inOrOut + "\n Current Trill: " + JSON.stringify(trill_spec));
-
-            let clean_result = result.result.replaceAll("```json", "").replaceAll("```python", "");
-            clean_result = clean_result.replaceAll("```", "");
-
-            console.log("generateConnectionSuggestions result", clean_result);
-
-            let parsed_result = JSON.parse(clean_result);
-            parsed_result.dataflow.name = workflowNameRef.current;
-
-            parsed_result.dataflow.edges = [];
-
-            for(const node of parsed_result.dataflow.nodes){
-                if(inOrOut == "input"){
-                    parsed_result.dataflow.edges.push({
-                        id: "reactflow__" + node.id + "_" + nodeId + "_1",
-                        source: node.id,
-                        target: nodeId
-                    }); 
-                }else if(inOrOut == "output"){
-                    parsed_result.dataflow.edges.push({
-                        id: "reactflow__" + nodeId + "_" + node.id + "_1",
-                        source: nodeId,
-                        target: node.id
-                    });  
-                }
-            }
-
-            loadTrill(parsed_result, "connection");
-        } catch (error) {
-            console.error("Error communicating with LLM", error);
-            showToast("Error communicating with LLM", "error");
-        }
-
-    }
-
-    const generateContentNode = async (nodes: any, edges: any, workflowNameRef: any, goal: string, workflowGoal: string) => {
-
-        const isConfirmed = window.confirm("Are you sure you want to proceed? This will overwrite the node's content.");
-    
-        if(isConfirmed){
-
-            let trill_spec = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current, workflowGoal);
-
-            try {
-
-                for(const node of trill_spec.dataflow.nodes){ // reseting the content of the node before sending to the LLM
-                    if(node.id == nodeId){
-                        node.content = "";
-                    }
-                }
-
-                let result = await llmRequest("default_preamble", "new_content_prompt", "Current Trill: " + JSON.stringify(trill_spec) + "\n" + " Node ID: " + nodeId + "\n" + "Subtask: "+goal+" Task: " + "\n" + workflowGoal);
-
-                // Shared extraction (dev/57): fences, language ids, wrappers,
-                // and surrounding prose removed — legitimate content untouched.
-                let clean_result = extractNodeContent(result.result);
-
-                console.log("generateContentNode result", clean_result);
-
-                updateDefaultCode(nodeId, clean_result);
-
-            } catch (error) {
-                console.error("Error communicating with LLM", error);
-                showToast("Error communicating with LLM", "error");
-            }
-        }
-
-    }
-
-    const clickGenerateContentNode = () => {
-        setCurrentEventPipeline("Generate content for node");
-        generateContentNode(getNodes(), getEdges(), workflowNameRef, goal, workflowGoal);
-    }
 
     const nodeIconTranslation = (nodeType: NodeTemplateId) => {
         try { return getNodeDescriptor(nodeType).icon; }
@@ -625,102 +507,6 @@ export const NodeContainer = ({
                         Accept Suggestion
                 </button> :
                 null
-            }
-
-            {!minimized && AIModeRef.current ?
-                <button style={{border: "none", background: "none", color: "#1d3853", ...(isSubtasksOpen ? openSubtasksButton : closedSubtasksButton)}} onClick={() => setIsSubtasksOpen(!isSubtasksOpen)}>
-                    <FontAwesomeIcon icon={faAnglesUp} style={{...(isSubtasksOpen ? {} : {transform: "rotate(180deg)"})}} />
-                </button> : null            
-            }
-
-            {!minimized && isSubtasksOpen ?
-                <div style={{...goalInput, ...(currentNodeWidth ? {width: (currentNodeWidth-4)+"px"} : {}), ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: "50%", pointerEvents: "none"} : {})}} className={"nodrag"}>
-                    <label htmlFor={nodeId+"_goal_box_input"}>Subtask: </label>
-                    <input id={nodeId+"_goal_box_input"} type={"text"} style={{width: "65%", border: "none", background: "transparent", color: "rgb(251, 252, 246)", borderBottom: "1px solid rgb(46, 91, 136)"}} value={goal} onBlur={() => {updateDataGoal(goal)}} onChange={(value: any) => {setGoal(value.target.value)}}/>
-                    <button style={buttonStyle} onClick={() => {
-                        if(AIModeRef.current)
-                            clickGenerateContentNode();
-                    }} >Get code</button>
-                </div> : null
-            }
-
-            {!minimized && data.warnings != undefined && data.warnings.length > 0 ?
-                <div style={{display: "flex", flexDirection: "row", position: "absolute", bottom: "-45px", right: "20px", ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: "50%"} : {})}}>   
-                    <FontAwesomeIcon style={{fontSize: "24px", color: "#e8c548"}} icon={faTriangleExclamation} onMouseEnter={() => {setShowWarnings(true)}} onMouseLeave={() => {setShowWarnings(false)}} />
-                    <ul style={{padding: "5px", backgroundColor: "white", border: "1px solid black", zIndex: 300, position: "fixed", width: "300px", height: "200px", marginLeft: "30px", overflowY: "auto", ...(showWarnings ? {} : {display: "none"})}}>
-                        {   
-                            data.warnings.map((warning: string, index: number) => (
-                                <li key={nodeId+"_warning_"+index} ><p>{warning}</p></li>
-                            ))
-                        }
-                    </ul> 
-                </div> : null
-            }
-
-            {!minimized && (handleType == "in/out" || handleType == "in") && AIModeRef.current ?
-                <button style={{border: "none", background: "none", color: "#1d3853", ...(isConnectionLeftOpen ? openConnectionLeftButton : closedConnectionLeftButton)}} onClick={() => setIsConnectionLeftOpen(!isConnectionLeftOpen)}>
-                    <FontAwesomeIcon icon={faAnglesUp} style={{...(isConnectionLeftOpen ? {transform: "rotate(90deg)"} : {transform: "rotate(270deg)"})}} />
-                </button> : null            
-            }
-
-            {!minimized && (handleType == "in/out" || handleType == "out") && AIModeRef.current ?
-                <button style={{border: "none", background: "none", color: "#1d3853", ...(isConnectionRightOpen ? openConnectionRightButton : closedConnectionRightButton)}} onClick={() => setIsConnectionRightOpen(!isConnectionRightOpen)}>
-                    <FontAwesomeIcon icon={faAnglesUp} style={{...(isConnectionRightOpen ? {transform: "rotate(270deg)"} : {transform: "rotate(90deg)"})}} />
-                </button> : null            
-            }
-
-            {!minimized && isConnectionLeftOpen && (handleType == "in/out" || handleType == "in") ?
-                <div style={inputTypeSelect}>
-                    <select id={nodeId+"_expected_box_input_type"} value={expectedInputType} onChange={handleChangeExpectedInputType}>
-                        {Object.values(SupportedType).map((type) => {
-
-                            if(ConnectionValidator._inputTypesSupported[data.nodeType].includes(type))
-                                return <option key={type} value={type}>
-                                    {type}
-                                </option>
-                            else
-                                return null
-                        })}
-                        <option value="MUTLIPLE">MULTIPLE</option>
-                        <option value="DEFAULT">EXPECTED INPUT</option>
-                    </select>
-                </div> : null
-            }
-
-            {!minimized && isConnectionLeftOpen && (handleType == "in/out" || handleType == "in") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
-                <FontAwesomeIcon
-                    style={newInConnectionStyle as any}
-                    icon={faCirclePlus}
-                    onClick={() => {
-                        if(AIModeRef.current)
-                            generateConnectionSuggestions(getNodes(), getEdges(), workflowNameRef, goal, "input")
-                    }} /> : null
-            }
-
-            {
-                !minimized && isConnectionRightOpen && (handleType == "in/out" || handleType == "out") ?
-                <div style={outputTypeSelect}>
-                    <select id={nodeId+"_expected_box_output_type"} value={expectedOutputType} onChange={handleChangeExpectedOutputType}>
-                        {Object.values(SupportedType).map((type) => {
-
-                            if(ConnectionValidator._outputTypesSupported[data.nodeType].includes(type))
-                                return <option key={type} value={type}>
-                                    {type}
-                                </option>
-                            else
-                                return null
-                        })}
-                        <option value="MUTLIPLE">MULTIPLE</option>
-                        <option value="DEFAULT">EXPECTED OUTPUT</option>
-                    </select>
-                </div> : null
-            }
-
-            {!minimized && isConnectionRightOpen && (handleType == "in/out" || handleType == "out") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
-                <FontAwesomeIcon style={newOutConnectionStyle as any} icon={faCirclePlus} onClick={() => {
-                    if(AIModeRef.current)
-                        generateConnectionSuggestions(getNodes(), getEdges(), workflowNameRef, goal, "output")
-                }} /> : null
             }
 
             {(!dashboardOn || !dashboardLocked) && !noContent && <div
@@ -893,8 +679,6 @@ export const NodeContainer = ({
                                             }}
                                             onClick={() => {
                                                 playNodesUpTo(data.nodeId);
-                                                if(AIModeRef.current)
-                                                    generateSubtaskFromExec((code ? code : ""), data.nodeType, workflowGoal);
                                             }}
                                         />
                                     )}

@@ -24,7 +24,6 @@ import {
     faFloppyDisk,
     faPlus,
     faRobot,
-    faWandMagicSparkles,
     faUsers,
     faTableColumns,
     faUpRightAndDownLeftFromCenter,
@@ -50,12 +49,10 @@ export default function UpMenu({
     setDashBoardMode,
     setDashboardOn,
     dashboardOn,
-    setAIMode,
 }: {
     setDashBoardMode: (mode: boolean) => void;
     setDashboardOn: (mode: boolean) => void;
     dashboardOn: boolean;
-    setAIMode: (value: boolean) => void;
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
@@ -63,7 +60,6 @@ export default function UpMenu({
     const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
-    const [aiModeOn, setAiModeOn] = useState(false);
 
     const menuBarRef = useRef<HTMLDivElement>(null);
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
@@ -147,12 +143,6 @@ export default function UpMenu({
             setAllMinimized(0);
         }
         setActiveMenu(null);
-    };
-
-    const toggleAI = () => {
-        const next = !aiModeOn;
-        setAiModeOn(next);
-        setAIMode(next);
     };
 
     const handleNewWorkflow = () => {
@@ -584,17 +574,6 @@ export default function UpMenu({
                     )}
                 </div>
 
-                {/* LLM authoring assistance. Deliberately NOT faRobot: that glyph
-                    is the Agent Catalog's kind icon now, and this is a different
-                    feature. Configured in AI Settings, like everything else that
-                    calls a model. */}
-                <button
-                    className={clsx(styles.button, aiModeOn && styles.aiIconActive)}
-                    onClick={toggleAI}
-                    title="AI assistance"
-                >
-                    <FontAwesomeIcon icon={faWandMagicSparkles} />
-                </button>
 
                 {/* Real-time collaboration side panel toggle. Only rendered
                     when --collab is on; the badge surfaces the live peer

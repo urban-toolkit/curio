@@ -29,15 +29,12 @@ import { buttonStyle } from "./styles";
 import { ToolsMenu, UpMenu } from "components/menus";
 import UniDirectionalEdge from "./edges/UniDirectionalEdge";
 import "./MainCanvas.css";
-import LLMChat from "./LLMChat";
-import { useLLMContext } from "../providers/LLMProvider";
 import { TrillGenerator } from "../TrillGenerator";
 import VersionBadge from "./VersionBadge";
 
 import html2canvas from "html2canvas";
 
 import FloatingPanel from "./FloatingPanel";
-import WorkflowGoal from "./menus/top/WorkflowGoal";
 import { DashboardPanel } from "./DashboardPanel";
 import { CollaborationSidePanel } from "./collab/CollaborationSidePanel";
 import {
@@ -111,7 +108,6 @@ export function MainCanvas() {
     }, []);
 
     const { createCodeNode } = useCode();
-    const { llmRequest, AIModeRef, setAIMode } = useLLMContext();
 
     // One stable RF type avoids remounting editors when ``loadInstalledPackages`` re-registers manifests.
     const nodeTypes = useMemo(
@@ -210,67 +206,6 @@ export function MainCanvas() {
         });
     }
 
-    const generateExplanation = async (_: React.MouseEvent<HTMLButtonElement>) => {
-
-        // Take a screenshot for the explanation
-        let image_url = await captureScreenshot();
-
-        let trill_spec = TrillGenerator.generateTrill(selectedComponents.nodes, selectedComponents.edges, workflowNameRef.current, workflowGoal);
-
-        let text = JSON.stringify(trill_spec)
-
-        llmRequest("default_preamble", "explanation_prompt", text).then((response: any) => {
-            console.log("Response:", response);
-
-            setFloatingPanels((prev: any) => {
-                let uniqueId = crypto.randomUUID()+"";
-                
-                return {
-                    ...prev,
-                    [uniqueId]: {
-                        title: "Explanation from "+workflowNameRef.current,
-                        imageUrl: image_url,
-                        markdownText: response.result
-                    }
-                }
-            });
-        })
-        .catch((error: any) => {
-            console.error("Error:", error);
-        });
-    }
-
-    const generateDebug = async (_: React.MouseEvent<HTMLButtonElement>) => {
-        // Take a screenshot for the debugging
-        let image_url = await captureScreenshot();
-
-        let trill_spec = TrillGenerator.generateTrill(selectedComponents.nodes, selectedComponents.edges, workflowNameRef.current, workflowGoal);
-
-        let text = JSON.stringify(trill_spec) + "\n\n" + ""
-
-        llmRequest("default_preamble", "debug_prompt", text).then((response: any) => {
-            console.log("Response:", response);
-
-            setFloatingPanels((prev: any) => {
-                let uniqueId = crypto.randomUUID()+"";
-                
-                return {
-                    ...prev,
-                    [uniqueId]: {
-                        title: "Debugging "+workflowNameRef.current,
-                        imageUrl: image_url,
-                        markdownText: response.result
-                    }
-                }
-            });
-        })
-        .catch((error: any) => {
-            console.error("Error:", error);
-        });
-
-    }
-
-    // Delete a floating box from the list based on the id
     const deleteFloatingPanel = (id: string) => {
         setFloatingPanels((prev: any) => {
             const next = { ...prev };
@@ -530,7 +465,6 @@ export function MainCanvas() {
                 setDashBoardMode={(value) => handleDashboardToggle(value)}
                 setDashboardOn={handleDashboardToggle}
                 dashboardOn={dashboardOn}
-                setAIMode={setAIMode}
             />}
             {!dashboardOn && <CollaborationSidePanel />}
 
@@ -574,50 +508,9 @@ export function MainCanvas() {
             >
                 {!dashboardOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}
                 {!dashboardOn && <Controls />}
-                {AIModeRef.current ? <WorkflowGoal /> : null}
-                {AIModeRef.current ? <LLMChat /> : null}
             </ReactFlow>
             {!isSharedView ? <AgentDockOverlay /> : null}
             </div>
-            {/*{isComponentsSelected ? (
-                <button
-                    id={"explainButton"}
-                    style={{
-                        bottom: "50px",
-                        left: "30%",
-                        position: "fixed",
-                        zIndex: 10,
-                        padding: "8px 16px",
-                        backgroundColor: "#007bff",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                    }}
-                    onClick={generateExplanation}
-                >
-                    Explain
-                </button>
-            ) : null}
-            {isComponentsSelected ? (
-                <button
-                    style={{
-                        bottom: "50px",
-                        left: "40%",
-                        position: "fixed",
-                        zIndex: 10,
-                        padding: "8px 16px",
-                        backgroundColor: "#007bff",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                    }}
-                    onClick={generateDebug}
-                >
-                    Debug
-                </button>
-            ) : null}*/}
             <input hidden type="file" name="file" id="file" />
 
         </div> : loadingAnimation() }

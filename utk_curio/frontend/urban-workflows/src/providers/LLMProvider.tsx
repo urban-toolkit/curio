@@ -12,28 +12,17 @@ interface LLMContextProps {
     llmRequest: (preamble_file: string, prompt_file: string, text: string, chatId?: string) => any;
     setCurrentEventPipeline: (eventName: string) => void;
     currentEventPipeline: string;
-    AIModeRef: React.MutableRefObject<boolean>;
-    setAIMode: (value: boolean) => void;
 }
 
 export const LLMContext = createContext<LLMContextProps>({
     llmRequest: () => {},
     setCurrentEventPipeline: () => {},
     currentEventPipeline: "",
-    AIModeRef: { current: false },
-    setAIMode: () => {}
 });
 
 const LLMProvider = ({ children }: { children: ReactNode }) => {
 
     const [currentEventPipeline, setCurrentEventPipeline] = useState("");
-
-    const [AIMode, _setAIMode] = useState<boolean>(false);
-    const AIModeRef = React.useRef(AIMode);
-    const setAIMode = (data: any) => {
-        AIModeRef.current = data;
-        _setAIMode(data);
-    };
 
     const authHeader = (): Record<string, string> => {
         const token = getToken();
@@ -90,8 +79,6 @@ const LLMProvider = ({ children }: { children: ReactNode }) => {
                 llmRequest,
                 setCurrentEventPipeline,
                 currentEventPipeline,
-                AIModeRef,
-                setAIMode
             }}
         >
             {children}
