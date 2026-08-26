@@ -11,6 +11,8 @@ on:
       # Define the CI stack itself (ports, volumes, and the --auth boot flags).
       - 'docker-compose.yml'
       - 'docker-compose.ci.yml'
+      - 'docker-compose.ci-isolated.yml'
+      - 'docker-compose.ci-exec-user.yml'
       - '.github/workflows/docker-compose.yml'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -30,6 +32,8 @@ on:
       # Define the CI stack itself (ports, volumes, and the --auth boot flags).
       - 'docker-compose.yml'
       - 'docker-compose.ci.yml'
+      - 'docker-compose.ci-isolated.yml'
+      - 'docker-compose.ci-exec-user.yml'
       - '.github/workflows/docker-compose.yml'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -102,6 +106,13 @@ jobs:
       CURIO_E2E_FRONTEND_PORT: "8100"
       FLASK_SANDBOX_HOST: localhost
       FLASK_SANDBOX_PORT: "2020"
+      # The sandbox requires a shared secret on its code-execution routes
+      # (utk_curio/sandbox/app/auth.py). Host-side Playwright calls it
+      # directly, so container and pytest must agree on the value. A literal
+      # is fine here and not a credential: docker-compose.ci.yml publishes the
+      # sandbox on the runner's loopback only, and the stack is torn down with
+      # the job. Every other launch mints a random token per start.
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
 
     steps:
       # On the persistent self-hosted runner, the previous run's container
@@ -116,6 +127,39 @@ jobs:
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
+
+      # The sandbox executes arbitrary node code. Production must never
+      # publish its port; only the CI overlay does, and only on loopback.
+      # Guards the configuration the live instances actually run.
+      - name: 🔒 Assert the production deploy configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=$(docker compose -f docker-compose.yml -f docker-compose.deploy.yml config)
+
+          # The sandbox executes arbitrary node code. Production must never
+          # publish its port; only the CI overlays do, and only on loopback.
+          if echo "$config" | grep -qE 'published: "?2000"?'; then
+            echo "::error::docker-compose.deploy.yml publishes sandbox port 2000" >&2
+            echo "$config" | grep -B 2 -A 2 'published' >&2
+            exit 1
+          fi
+          echo "OK: the deploy configuration does not publish the sandbox port."
+
+          # Isolation is what stops a node author reading every password hash.
+          # Dropping either flag would silently return the live instances to
+          # in-process execution, and nothing at runtime would complain --
+          # `off` is a valid mode. Read from `compose config` rather than the
+          # file so an override that removes the command is caught too.
+          for flag in -- --isolation fork --exec-user curio-exec; do
+            [ "$flag" = "--" ] && continue
+            if ! echo "$config" | grep -qF -- "$flag"; then
+              echo "::error::the deploy command no longer carries '$flag'; the live instances would run node code in-process" >&2
+              echo "$config" | grep -A 30 'command:' >&2
+              exit 1
+            fi
+          done
+          echo "OK: the deploy configuration runs node execution isolated."
 
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio-ci build --parallel
@@ -263,4 +307,324 @@ jobs:
           # Hand the container-written (root-owned) files back to the runner
           # user so they don't accumulate; the pre-checkout step is the real
           # safety net for the next run.
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+  # Second stack, same runner, booted with --isolation=fork so a real workload
+  # runs through the confined path. Runs after test-gpu rather than beside it:
+  # the runner takes one job at a time, and both want the GPU and the bind
+  # mounts. See docker-compose.ci-isolated.yml for why this stack drops --auth
+  # and --exec-user, and what that does and does not cover.
+  #
+  # Scoped to the workflows whose nodes are Python, because isolation wraps
+  # /exec only -- /execJs spawns Node either way (sandbox/app/api.py). Running
+  # the full matrix here would double a 23-minute e2e pass to re-prove the JS
+  # and WebGPU paths the first job already covered.
+  test-gpu-isolated:
+    needs: test-gpu
+    # Even if the in-process suite failed, this one's result is independent
+    # information and worth having -- unless the run was cancelled.
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, linux, gpu, curio]
+    timeout-minutes: 45
+
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
+      CURIO_WEBGPU_BACKEND: hardware
+      CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
+      # A fourth port triple: prod is 2000/5002/8080, curio-dev 2010/5012/8090,
+      # the in-process CI stack 2020/5022/8100.
+      CURIO_CONTAINER_NAME: curio-ci-iso
+      CURIO_PORT_2000: "2030"
+      CURIO_PORT_5002: "5032"
+      CURIO_PORT_8080: "8110"
+      BACKEND_URL: "http://localhost:5032"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5032"
+      CURIO_E2E_SANDBOX_PORT: "2030"
+      CURIO_E2E_FRONTEND_PORT: "8110"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2030"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      # Python nodes only; see the note above the job.
+      ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json
+
+    steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔨 Build all service images in parallel
+        run: docker compose -p curio-ci-iso build --parallel
+
+      - name: ▶️ Start containers
+        run: docker compose -p curio-ci-iso up -d
+
+      - name: 🧪 Wait for services to become healthy
+        id: stack_healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 300 bash -euo pipefail -c '
+            while true; do
+              cid="$(docker compose -p curio-ci-iso ps -a -q curio | head -n1 || true)"
+              if [[ -z "${cid}" ]]; then sleep 2; continue; fi
+              state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
+              health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
+              if [[ "${health}" == "healthy" ]]; then echo "healthy"; break; fi
+              if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then break; fi
+              if [[ "${state}" == "exited" ]]; then
+                echo "the isolated stack exited during startup. Logs:"
+                docker compose -p curio-ci-iso logs --no-color --tail=200 curio || true
+                exit 1
+              fi
+              sleep 2
+            done
+          '
+
+      # The whole point of the job: prove the stack is actually isolated before
+      # reading anything into the test results. Without this a silently
+      # degraded boot (fork unavailable, pyseccomp missing) would run the
+      # in-process path and report a green "isolated" run.
+      - name: 🔒 Assert node execution is actually isolated
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ask the sandbox, do not read the logs. The startup banner goes to
+          # the sandbox subprocess's stderr, which curio.py routes into
+          # .curio/messages.log -- `docker compose logs` only carries the
+          # launcher's own output, so grepping it here found nothing and failed
+          # a stack that may well have been isolated.
+          #
+          # /version reports the mode the sandbox *resolved*, which is the
+          # question being asked, and it is the same answer the UI badge shows.
+          mode="$(curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version" \
+                  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("isolation",""))')"
+          if [ "$mode" != "fork" ]; then
+            echo "::error::the stack did not come up isolated (/version reported '${mode:-nothing}')" >&2
+            docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+              'grep -i isolation .curio/messages.log 2>/dev/null | tail -20' >&2 || true
+            exit 1
+          fi
+          echo "OK: the sandbox reports node execution isolation = fork"
+
+      - name: 🐍 Set up Python (for e2e)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 🔧 Give .curio/ permissions for host-side tests
+        run: |
+          docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c \
+            || mkdir -p .curio/playwright/expected
+
+      - name: 🎭 Run the Python-node workflows against the isolated stack
+        run: |
+          bash scripts/test.sh --e2e-only --use-existing \
+            --workflows "$ISOLATED_WORKFLOWS"
+
+      - name: 📋 Capture sandbox/backend logs
+        if: always()
+        run: |
+          docker compose -p curio-ci-iso logs --no-color --tail=8000 \
+            > "$GITHUB_WORKSPACE/isolated-container-logs.txt" 2>&1 || true
+          # Where the sandbox's own stderr actually lands, including the
+          # isolation banner, every [isolation] warning, and a child's
+          # faulthandler traceback when one dies on a signal. Root-owned on the
+          # mounted workspace, so read it out through a root container.
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null' \
+            > "$GITHUB_WORKSPACE/isolated-messages.txt" 2>&1 || true
+
+      - name: 📤 Upload isolated-stack logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: isolated-container-logs
+          path: |
+            isolated-container-logs.txt
+            isolated-messages.txt
+          retention-days: 7
+
+      - name: 🧹 Tear down containers
+        if: always()
+        run: |
+          docker compose -p curio-ci-iso down -v --remove-orphans || true
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+  # The only job that boots what the deploy actually ships: --isolation fork
+  # WITH --exec-user, so node code runs as an unprivileged account instead of
+  # as root.
+  #
+  # Why this is a third job rather than a flag on test-gpu-isolated: setting
+  # --exec-user hardens ./instance and ./.curio/data to 0700/0600 root-owned at
+  # boot, and the e2e harness computes its ground truth by executing every code
+  # node in the HOST test process and writing artifacts into .curio/data as the
+  # runner user. The two cannot coexist -- the comparison dies with EACCES
+  # before a browser is driven. So this job drops the workflow comparison and
+  # asserts the boundary over the sandbox's HTTP API instead, which touches
+  # none of the hardened paths from the host.
+  #
+  # What it buys: every isolation test that exists today runs its children as
+  # root, and root reads through any mode bit. Two of this branch's defects
+  # (the hardlinked staged input at 0600 root, and the scratch root inside a
+  # 0700 store) were therefore invisible to CI and were found by reading and by
+  # a deployed instance. This job is where that class of defect fails fast.
+  test-gpu-exec-user:
+    needs: test-gpu-isolated
+    # Independent information, same as the isolated job -- and it must not be
+    # skipped just because an earlier suite was red, since a permissions
+    # regression is exactly the kind of thing that also breaks other jobs.
+    # Serialized behind them because all three share the runner's workspace.
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, linux, gpu, curio]
+    timeout-minutes: 30
+
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-exec-user.yml
+      # A fifth port triple: prod 2000/5002/8080, curio-dev 2010/5012/8090,
+      # the in-process CI stack 2020/5022/8100, the isolated one 2030/5032/8110.
+      CURIO_CONTAINER_NAME: curio-ci-exec-user
+      CURIO_PORT_2000: "2040"
+      CURIO_PORT_5002: "5042"
+      CURIO_PORT_8080: "8120"
+      BACKEND_URL: "http://localhost:5042"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      # Read by utk_curio/sandbox/tests/live/test_exec_user_boundary.py. The
+      # token is under a different name on purpose: the sandbox test tree's
+      # conftest pops CURIO_SANDBOX_TOKEN for the whole session so the
+      # in-container unit suite reaches the unauthenticated local mode.
+      CURIO_LIVE_SANDBOX_URL: "http://localhost:2040"
+      CURIO_LIVE_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      CURIO_LIVE_LAUNCH_DIR: /app
+      CURIO_LIVE_EXEC_USER: curio-exec
+
+    steps:
+      # Must be first, and matters more here than in the other jobs: this stack
+      # chmods the bind-mounted ./instance, ./.curio/data and ./datasets to
+      # 0700 root-owned, and ./datasets is part of the git checkout. Without
+      # this, actions/checkout runs as the runner user over a tree it can no
+      # longer write.
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔨 Build all service images in parallel
+        run: docker compose -p curio-ci-exec-user build --parallel
+
+      # Hardening skips a path that does not exist (hardening.harden_paths),
+      # and so does the audit. A fresh CI workspace has no .curio/users and may
+      # have no instance/, so without this the boundary tests for those would
+      # find nothing to be denied -- and they refuse to pass vacuously, which
+      # would be a red job for something that is not a defect. Create them
+      # before boot, which is also the state any real deployment is in.
+      #
+      # The canary is the point of the .curio/users case: defect 5 was an
+      # isolated node reading ANOTHER user's imported datasets by absolute
+      # path, bypassing the permission check the backend does on the way in.
+      # A directory that is empty cannot demonstrate that it is closed.
+      - name: 🌱 Seed the paths the boundary is asserted against
+        run: |
+          set -euo pipefail
+          mkdir -p .curio/data .curio/users/some-other-user instance datasets
+          echo "another user's private dataset"             > .curio/users/some-other-user/canary.txt
+
+      - name: ▶️ Start containers
+        run: docker compose -p curio-ci-exec-user up -d
+
+      # The boot is itself an assertion. --isolation fork on an instance with
+      # auth on is FAIL-CLOSED (isolation/hardening.py::apply_and_report): a
+      # sandbox that cannot confine, or that finds a sensitive path still
+      # readable by curio-exec after hardening, exits rather than serve. So a
+      # stack that never becomes healthy is a real result, not flake, and the
+      # logs collected below are the diagnosis.
+      - name: 🧪 Wait for services to become healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 420 bash -euo pipefail -c '
+            while true; do
+              cid="$(docker compose -p curio-ci-exec-user ps -a -q curio | head -n1 || true)"
+              if [[ -z "${cid}" ]]; then sleep 2; continue; fi
+              state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
+              health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
+              if [[ "${health}" == "healthy" ]]; then echo "healthy"; break; fi
+              if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then break; fi
+              if [[ "${state}" == "exited" ]]; then
+                echo "the exec-user stack exited during startup (fail-closed isolation refuses to serve unconfined). Logs:"
+                docker compose -p curio-ci-exec-user logs --no-color --tail=200 curio || true
+                exit 1
+              fi
+              sleep 2
+            done
+          '
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Only pytest. The suite talks to the sandbox over HTTP and imports
+      # nothing from the project, deliberately: it must see the stack the way a
+      # node does, not through the code under test.
+      - name: 📦 Install pytest
+        run: python -m pip install --quiet "pytest==9.0.3"
+
+      # Every test in that module skips when CURIO_LIVE_SANDBOX_URL is unset,
+      # which is what keeps it inert during the ordinary unit run -- and what
+      # would make this job green over an entirely un-run suite if the variable
+      # were ever dropped from the env block above. So read the summary line
+      # afterwards and require that something actually passed.
+      #
+      # Deliberately not "no skips": test_the_deployment_secret_cannot_be_read
+      # skips by design when the stack has no .env, which is the case here, and
+      # a rule that forbade that would just get deleted the first time it fired.
+      - name: 🔒 Assert the isolation boundary holds under --exec-user
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CURIO_LIVE_SANDBOX_URL:-}" \
+            || { echo "::error::CURIO_LIVE_SANDBOX_URL is unset, so the whole suite would skip" >&2; exit 1; }
+          python -m pytest utk_curio/sandbox/tests/live -v -ra | tee exec-user-pytest.txt
+          summary="$(tail -1 exec-user-pytest.txt)"
+          grep -qE '[0-9]+ passed' <<<"$summary" \
+            || { echo "::error::no test in the boundary suite actually ran: $summary" >&2; exit 1; }
+
+      - name: 📋 Capture sandbox/backend logs
+        if: always()
+        run: |
+          docker compose -p curio-ci-exec-user logs --no-color --tail=8000 \
+            > "$GITHUB_WORKSPACE/exec-user-container-logs.txt" 2>&1 || true
+          # Where the sandbox's own stderr lands, including the isolation
+          # banner, every [isolation] warning and the hardening audit's
+          # findings. Root-owned on the mounted workspace, so read it out
+          # through a root container.
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null' \
+            > "$GITHUB_WORKSPACE/exec-user-messages.txt" 2>&1 || true
+
+      - name: 📤 Upload exec-user stack logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: exec-user-container-logs
+          path: |
+            exec-user-container-logs.txt
+            exec-user-messages.txt
+            exec-user-pytest.txt
+          retention-days: 7
+
+      - name: 🧹 Tear down containers
+        if: always()
+        run: |
+          docker compose -p curio-ci-exec-user down -v --remove-orphans || true
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true

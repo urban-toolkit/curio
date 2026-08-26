@@ -233,6 +233,111 @@ class TestSandboxTransportErrors(unittest.TestCase):
         self.assertEqual(kwargs['timeout'], SANDBOX_GET_TIMEOUT)
         self.assertEqual(SANDBOX_GET_TIMEOUT, 300)
 
+    # ---- Sandbox shared secret ---------------------------------------------
+
+    @patch.dict(os.environ, {"CURIO_SANDBOX_TOKEN": "backend-side-token"})
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_exec_attaches_the_sandbox_token(self, mock_session):
+        """The sandbox rejects /exec without it (sandbox/app/auth.py)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'stdout': [], 'stderr': '',
+            'output': {'path': 'art_x', 'dataType': 'dataframe'},
+        }
+        mock_session.post.return_value = mock_response
+
+        self.client.post(
+            '/processPythonCode',
+            json={"code": "    return 1", "nodeType": "DATA_LOADING", "input": {}},
+            headers=self._auth_headers(),
+        )
+
+        _, kwargs = mock_session.post.call_args
+        self.assertEqual(
+            kwargs['headers']['X-Curio-Sandbox-Token'], "backend-side-token"
+        )
+
+    @patch.dict(os.environ, {"CURIO_SANDBOX_TOKEN": "backend-side-token"})
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_token_does_not_clobber_a_callers_own_headers(self, mock_session):
+        """/exec sets Content-Type; the arrow path sets Accept."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'stdout': [], 'stderr': '',
+            'output': {'path': 'art_x', 'dataType': 'dataframe'},
+        }
+        mock_session.post.return_value = mock_response
+
+        self.client.post(
+            '/processPythonCode',
+            json={"code": "    return 1", "nodeType": "DATA_LOADING", "input": {}},
+            headers=self._auth_headers(),
+        )
+
+        _, kwargs = mock_session.post.call_args
+        self.assertEqual(kwargs['headers']['Content-Type'], 'application/json')
+        self.assertIn('X-Curio-Sandbox-Token', kwargs['headers'])
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_no_token_configured_sends_no_header(self, mock_session):
+        """A bare `python -m backend.server` pairs with an unguarded sandbox."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'stdout': [], 'stderr': '',
+            'output': {'path': 'art_x', 'dataType': 'dataframe'},
+        }
+        mock_session.post.return_value = mock_response
+
+        env = dict(os.environ)
+        env.pop("CURIO_SANDBOX_TOKEN", None)
+        with patch.dict(os.environ, env, clear=True):
+            self.client.post(
+                '/processPythonCode',
+                json={"code": "    return 1", "nodeType": "DATA_LOADING", "input": {}},
+                headers=self._auth_headers(),
+            )
+
+        _, kwargs = mock_session.post.call_args
+        self.assertNotIn('X-Curio-Sandbox-Token', kwargs['headers'] or {})
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_sandbox_401_becomes_a_clear_error_not_a_500(self, mock_session):
+        """A token mismatch must name its cause.
+
+        Without this the /exec caller would hit `response.json()` on an error
+        body and report 'sandbox returned non-JSON' plus a 500, which says
+        nothing about the two processes disagreeing on the secret.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_session.post.return_value = mock_response
+
+        resp = self.client.post(
+            '/processPythonCode',
+            json={"code": "    return 1", "nodeType": "DATA_LOADING", "input": {}},
+            headers=self._auth_headers(),
+        )
+
+        self.assertEqual(resp.status_code, 502, resp.data)
+        body = resp.get_json()
+        self.assertEqual(body['error'], 'sandbox_unauthorized')
+        self.assertEqual(body['path'], '/exec')
+        self.assertIn('CURIO_SANDBOX_TOKEN', body['message'])
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_get_401_becomes_a_clear_error(self, mock_session):
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_session.get.return_value = mock_response
+
+        resp = self.client.get('/get?fileName=x', headers=self._auth_headers())
+
+        self.assertEqual(resp.status_code, 502, resp.data)
+        self.assertEqual(resp.get_json()['error'], 'sandbox_unauthorized')
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -81,6 +81,18 @@ def get_shared_data_dir() -> str:
 # DuckDB artifact helpers
 # ---------------------------------------------------------------------------
 
+def sandbox_auth_header() -> dict:
+    """Header proving to the sandbox that a caller may use its guarded routes.
+
+    /exec, /execJs, /get and /install require a shared secret rather than a
+    user token (utk_curio/sandbox/app/auth.py); the backend attaches the same
+    one in ``_sandbox_call``. Empty when unset, matching the sandbox's
+    unauthenticated local-dev mode.
+    """
+    token = os.environ.get('CURIO_SANDBOX_TOKEN', '').strip()
+    return {'X-Curio-Sandbox-Token': token} if token else {}
+
+
 def load_artifact_as_dict(artifact_id: str) -> dict:
     """Fetch a stored artifact from the sandbox and return its parsed representation."""
     import requests as _req
@@ -89,6 +101,7 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
     resp = _req.get(
         f'http://{sandbox_host}:{sandbox_port}/get',
         params={'fileName': artifact_id},
+        headers=sandbox_auth_header(),
         timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
     )
     if not resp.ok:
@@ -601,6 +614,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
                 "nodeType": node.raw_type,
                 "dataType": data_type,
             },
+            headers=sandbox_auth_header(),
             timeout=120,
         )
         resp.raise_for_status()
@@ -1156,6 +1170,7 @@ def api_json(
     payload: dict | None = None,
     timeout: float = 10.0,
     raw: bool = False,
+    extra_headers: dict | None = None,
 ):
     """Authenticated JSON request against the backend, stdlib only.
 
@@ -1163,11 +1178,18 @@ def api_json(
     seeding or persistence problem fail in about a second with the offending
     payload, instead of as a 15-second locator timeout that says nothing about
     which side broke.
+
+    ``extra_headers`` carries anything the target needs beyond the bearer token.
+    The sandbox is the case that needs it: its code-execution routes require a
+    shared secret rather than a user token (see the ``sandbox_auth_headers``
+    fixture).
     """
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     headers = {"Authorization": f"Bearer {token}"}
     if data is not None:
         headers["Content-Type"] = "application/json"
+    if extra_headers:
+        headers.update(extra_headers)
     req = Request(url, data=data, headers=headers, method=method)
     with urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
         body = resp.read()

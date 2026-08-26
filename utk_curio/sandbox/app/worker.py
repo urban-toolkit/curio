@@ -574,6 +574,54 @@ def resolve_pkg_entry_url(specifier, root_node_modules):
     return entry_path.as_uri()
 
 
+# ── Node-internal stream crash ───────────────────────────────────────────────
+
+# Node's bundled HTTP client asserts on its own state rather than raising:
+#
+#   AssertionError [ERR_ASSERTION]: assert(!this.paused)
+#       at Parser.finish (node:internal/deps/undici/undici:7388:9)
+#       at Socket.onHttpSocketEnd (node:internal/deps/undici/undici:7827:34)
+#
+# undici pauses its parser to apply backpressure while the consumer works on a
+# chunk, and asserts if the socket ends in that window. Any JS node that streams
+# a file and does per-chunk work is exposed: @urban-toolkit/autk-db's
+# `streamPbfBlocks` awaits a callback for every block of the PBF it is reading
+# over HTTP from the backend's /file route, so the OSM examples sit in that
+# window for most of their runtime.
+#
+# It aborts the process from inside an internal event handler. There is no
+# exception to catch (the JS wrapper's try//catch never sees it), no partial
+# result, and no user-code defect to report - the same node succeeds on the next
+# run. It is intermittent: in one CI run 10 of 12 autk-grammar executions
+# finished normally and 2 died here, and it has been observed on main as well as
+# on this branch.
+_NODE_INTERNAL_STREAM_CRASH_MARKERS = ('assert(!this.paused)', 'undici')
+
+
+def is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) -> bool:
+    """Whether Node aborted inside its own HTTP parser, losing the execution.
+
+    Narrow on purpose - all three must hold:
+
+    - the process failed (``exit_code`` non-zero),
+    - it produced no result line, so nothing of the run survived and re-running
+      cannot discard a result the user would otherwise have seen,
+    - stderr carries the assertion *and* names undici, so a user's own
+      ``assert`` cannot be mistaken for it.
+
+    A user-code error does not match: the wrapper catches it and still prints a
+    ``__CURIO_JSON_RESULT__`` line with ``success: false``. Nor does a killed or
+    OOM process, which leaves no such stderr. Callers may therefore treat a true
+    return as "this run told us nothing" and retry it.
+    """
+    if exit_code == 0:
+        return False
+    if any(line.startswith('__CURIO_JSON_RESULT__') for line in stdout_lines):
+        return False
+    stderr_text = '\n'.join(stderr_lines)
+    return all(marker in stderr_text for marker in _NODE_INTERNAL_STREAM_CRASH_MARKERS)
+
+
 def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
     """
     Execute user JavaScript code in an isolated Node.js subprocess.
@@ -678,8 +726,6 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
                   .replace('__ARG_JSON__', arg_json)
                   .replace('__USER_CODE__', indented))
 
-        print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
-
         # NODE_PATH is consulted only by the CommonJS require() resolver (not ESM),
         # so it does NOT resolve the top-level autk-db ESM import - that is handled
         # by rewriting it to an absolute file URL above. We still point NODE_PATH at
@@ -693,54 +739,82 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
                 str(root_node_modules) + (os.pathsep + existing if existing else '')
             )
 
-        proc = subprocess.Popen(
-            ['node', '--input-type=commonjs'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding='utf-8', errors='replace', cwd=cwd,
-            env=node_env,
-        )
+        def _run_node():
+            """Run the script in one Node subprocess.
 
-        stdout_lines: list[str] = []
-        stderr_lines: list[str] = []
+            Returns ``(exit_code, stdout_lines, stderr_lines)``. Factored out of
+            the body only so a crash inside Node itself can be retried: every
+            input it reads (``script``, ``cwd``, ``node_env``) is fully built by
+            this point, so a second call re-runs the same execution rather than a
+            different one.
+            """
+            print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
+            t_start = time.perf_counter()
 
-        def _stream(pipe, lines, label):
-            for line in pipe:
-                line = line.rstrip('\n')
-                lines.append(line)
-                if not line.startswith('__CURIO_JSON_RESULT__'):
-                    print(f"[execJs] {label}: {line}", file=_sys.stderr, flush=True)
+            proc = subprocess.Popen(
+                ['node', '--input-type=commonjs'],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding='utf-8', errors='replace', cwd=cwd,
+                env=node_env,
+            )
 
-        def _write_stdin(proc, data):
+            stdout_lines: list[str] = []
+            stderr_lines: list[str] = []
+
+            def _stream(pipe, lines, label):
+                for line in pipe:
+                    line = line.rstrip('\n')
+                    lines.append(line)
+                    if not line.startswith('__CURIO_JSON_RESULT__'):
+                        print(f"[execJs] {label}: {line}", file=_sys.stderr, flush=True)
+
+            def _write_stdin(proc, data):
+                try:
+                    proc.stdin.write(data)
+                    proc.stdin.close()
+                except BrokenPipeError:
+                    pass
+
+            t_in  = threading.Thread(target=_write_stdin, args=(proc, script), daemon=True)
+            t_out = threading.Thread(target=_stream, args=(proc.stdout, stdout_lines, 'stdout'), daemon=True)
+            t_err = threading.Thread(target=_stream, args=(proc.stderr, stderr_lines, 'stderr'), daemon=True)
+            t_in.start()
+            t_out.start()
+            t_err.start()
+
             try:
-                proc.stdin.write(data)
-                proc.stdin.close()
-            except BrokenPipeError:
-                pass
+                proc.wait(timeout=3000)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                t_in.join()
+                t_out.join()
+                t_err.join()
+                raise
 
-        t_in  = threading.Thread(target=_write_stdin, args=(proc, script), daemon=True)
-        t_out = threading.Thread(target=_stream, args=(proc.stdout, stdout_lines, 'stdout'), daemon=True)
-        t_err = threading.Thread(target=_stream, args=(proc.stderr, stderr_lines, 'stderr'), daemon=True)
-        t_in.start()
-        t_out.start()
-        t_err.start()
-
-        try:
-            proc.wait(timeout=3000)
-        except subprocess.TimeoutExpired:
-            proc.kill()
             t_in.join()
             t_out.join()
             t_err.join()
-            raise
 
-        t_in.join()
-        t_out.join()
-        t_err.join()
+            print(f"[execJs] Node.js finished  total={time.perf_counter()-t_start:.3f}s  "
+                  f"exit={proc.returncode}  node={node_type}",
+                  file=_sys.stderr, flush=True)
+            return proc.returncode, stdout_lines, stderr_lines
 
-        t1 = time.perf_counter()
-        print(f"[execJs] Node.js finished  total={t1-t0:.3f}s  exit={proc.returncode}  node={node_type}",
-              file=_sys.stderr, flush=True)
+        exit_code, stdout_lines, stderr_lines = _run_node()
+
+        # One retry, and only for a crash inside Node's own HTTP parser. See
+        # is_node_internal_stream_crash for why re-running is the only response
+        # available to us. The cost is bounded: a run that does not hit it pays
+        # one substring scan of stderr.
+        if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines):
+            print(f"[execJs] Node died inside its own HTTP parser before user code "
+                  f"could either fail or produce a result; retrying once  "
+                  f"node={node_type}", file=_sys.stderr, flush=True)
+            exit_code, stdout_lines, stderr_lines = _run_node()
+            print(f"[execJs] retry {'hit it too' if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) else 'cleared it'}"
+                  f"  total_with_retry={time.perf_counter()-t0:.3f}s  node={node_type}",
+                  file=_sys.stderr, flush=True)
 
         # Extract result from stdout - a single line prefixed with __CURIO_JSON_RESULT__.
         RESULT_PREFIX = '__CURIO_JSON_RESULT__'

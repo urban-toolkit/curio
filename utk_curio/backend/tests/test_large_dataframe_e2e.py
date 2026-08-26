@@ -78,6 +78,47 @@ def _wait_for_live(port: int, proc: subprocess.Popen, deadline: float) -> bool:
     return False
 
 
+def _process_has_exited(pid: int) -> bool:
+    """Has the process at *pid* exited, counting an unreaped zombie as exited?
+
+    ``psutil.pid_exists`` asks the wrong question on POSIX. A process that has
+    exited but has not been waited on is a zombie, and it keeps a ``/proc``
+    entry, so ``pid_exists`` still returns True. Inside the Docker image PID 1
+    is ``exec python curio.py start``, which does not reap orphans, so a
+    reloader worker that self-destructs exactly as intended lingers as a zombie
+    indefinitely.
+
+    What this test actually cares about is whether the worker released the
+    DuckDB lock and its file descriptors, and a zombie has released both. On
+    Windows there are no zombies, so this is equivalent to ``pid_exists``
+    there.
+    """
+    try:
+        import psutil  # type: ignore
+
+        return psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+    except ImportError:
+        return True
+    except Exception:
+        # NoSuchProcess, or AccessDenied on a pid we no longer own.
+        return True
+
+
+def _describe_processes(pids) -> str:
+    """pid -> status, for a failure message that says what was actually seen."""
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        return str(list(pids))
+    described = []
+    for pid in pids:
+        try:
+            described.append(f"{pid}={psutil.Process(pid).status()}")
+        except Exception:
+            described.append(f"{pid}=gone")
+    return ", ".join(described) or "none"
+
+
 def _shutdown_sandbox(proc: subprocess.Popen) -> None:
     """Cleanly shut down the sandbox subprocess.
 
@@ -282,6 +323,15 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         # other tests' artifacts.
         env["CURIO_SHARED_DATA"] = WATCHDOG_DATA_REL
         env["PYTHONUNBUFFERED"] = "1"
+        # The supervisor/worker pair IS the thing under test, so ask for the
+        # reloader explicitly instead of inheriting whatever the environment
+        # happens to say. Inside the Docker image os.environ carries
+        # FLASK_USE_RELOADER=0 (docker-compose.yml disables it, because runtime
+        # file writes trip the watcher and drop in-flight requests), which left
+        # this test asserting that a reloader it had just disabled had spawned a
+        # worker. It never surfaced because psutil was undeclared, so the skip
+        # above fired in CI; declaring psutil made the test real.
+        env["FLASK_USE_RELOADER"] = "1"
 
         proc = subprocess.Popen(
             [sys.executable, "-m", "utk_curio.sandbox.server"],
@@ -322,16 +372,17 @@ class TestLargeDataFrameE2E(unittest.TestCase):
             still_alive: list[int] = []
             while time.time() < deadline:
                 still_alive = [pid for pid in worker_pids
-                               if psutil.pid_exists(pid)]
+                               if not _process_has_exited(pid)]
                 if not still_alive:
                     break
                 time.sleep(0.25)
 
             self.assertEqual(
                 still_alive, [],
-                f"sandbox worker(s) {still_alive} survived after supervisor was "
-                "killed — the parent-watchdog in sandbox/server.py "
-                "(_self_destruct_when_parent_dies) regressed",
+                f"sandbox worker(s) survived after the supervisor was killed, "
+                f"so the parent-watchdog in sandbox/server.py "
+                f"(_self_destruct_when_parent_dies) regressed. Observed: "
+                f"{_describe_processes(worker_pids)}",
             )
         finally:
             _shutdown_sandbox(proc)

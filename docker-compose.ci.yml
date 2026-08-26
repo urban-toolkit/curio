@@ -23,11 +23,42 @@
 #    backend/sandbox/frontend children curio.py spawns. `exec` keeps python as
 #    PID 1 so `docker compose down` still signals it directly.
 #
+# 3. The sandbox is reachable from the host. The image default keeps the
+#    sandbox on 127.0.0.1 inside the container and publishes no port for it,
+#    because it executes arbitrary user code and only the backend needs to
+#    reach it. CI is the one context that genuinely needs more: Playwright
+#    runs on the HOST and test_alive.py / test_library_install_integration.py
+#    call the sandbox directly. So this overlay -- and only this overlay --
+#    binds it to 0.0.0.0 and publishes it to the host's loopback (never
+#    0.0.0.0, so it stays off the runner's network). CURIO_SANDBOX_TOKEN is
+#    pinned to a known value so the host-side pytest can authenticate; the
+#    workflow exports the same value into the pytest environment.
+#
 # Deliberately NOT docker-compose.deploy.yml: that overlay also passes
 # --no-allow-publish, which would disable the two catalog mutators that the
 # publish-catalog tests exercise. CI wants auth on and publish still allowed.
 services:
   curio:
+    # Process-count cap for the isolation test suite.
+    #
+    # test_isolation_linux.py can provoke process exhaustion, and inside
+    # the container those tests run as root, which bypasses RLIMIT_NPROC.
+    # This runner shares a host with the live curio and curio-dev stacks,
+    # so bound the container rather than trusting the code under test.
+    #
+    # Deliberately NO mem_limit. Setting one (12g) coincided with
+    # test_node_execution[06-autark-what-if-shadow-study] timing out at
+    # 120s waiting for its data pool to render, a test that passes on
+    # main. That example parses city-scale PBFs and drives WebGPU, and a
+    # mem_limit without memswap_limit lets the container swap instead of
+    # allocating, which shows up as exactly that kind of slowdown. The
+    # risk a memory cap guarded is already covered: RLIMIT_AS bounds each
+    # child (child._apply_rlimits) and the fork bomb is opt-in.
+    pids_limit: 4096
+    environment:
+      - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+    ports:
+      - "127.0.0.1:${CURIO_PORT_2000:-2000}:2000"
     command:
       - sh
       - -c

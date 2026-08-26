@@ -15,6 +15,29 @@ _sandbox_session = requests.Session()
 SANDBOX_EXEC_TIMEOUT     = 600  # /processPythonCode and /processJavaScriptCode
 SANDBOX_GET_TIMEOUT      = 300  # /get (full artifact JSON)
 SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
+# /version is a cached constant on the sandbox side, and the version badge is
+# waiting on it, so it gets a short deadline rather than a generous one.
+SANDBOX_VERSION_TIMEOUT  = 5
+
+
+SANDBOX_TOKEN_HEADER = "X-Curio-Sandbox-Token"
+
+
+def _sandbox_headers(existing):
+    """Merge the shared secret into a caller's headers without clobbering them.
+
+    The sandbox executes arbitrary code, so every guarded route requires this
+    header (see utk_curio/sandbox/app/auth.py). The token is minted per launch
+    by main.py::set_environment_variables and inherited by both processes.
+    Absent (a bare `python -m backend.server`), we send nothing and the sandbox
+    runs in its unauthenticated local-dev mode.
+    """
+    token = os.getenv("CURIO_SANDBOX_TOKEN", "").strip()
+    if not token:
+        return existing
+    headers = dict(existing or {})
+    headers[SANDBOX_TOKEN_HEADER] = token
+    return headers
 
 
 def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs):
@@ -25,6 +48,11 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
     of letting the exception escape (which would otherwise surface to the
     browser as an opaque 'NetworkError when attempting to fetch resource').
 
+    Also attaches the sandbox shared secret, and translates the sandbox's 401
+    into a clear error rather than letting callers hit it as an unparseable
+    body (`/get` would report it as 'Error loading artifact', `/exec` as
+    'sandbox returned non-JSON' plus a 500).
+
     On success returns the `requests.Response` object directly so callers can
     parse the JSON / forward it as before.
 
@@ -34,8 +62,9 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
     """
     url = api_address + ":" + str(api_port) + path
     fn = getattr(_sandbox_session, method)
+    kwargs['headers'] = _sandbox_headers(kwargs.get('headers'))
     try:
-        return fn(url, timeout=timeout, **kwargs)
+        response = fn(url, timeout=timeout, **kwargs)
     except requests.Timeout as e:
         print(f"[backend {label}] sandbox call timed out after {timeout}s: {e}", flush=True)
         return jsonify({
@@ -56,6 +85,21 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
                         f'({api_address}:{api_port}).'),
             'path': path,
         }), 502
+
+    if response.status_code == 401:
+        print(f"[backend {label}] sandbox rejected the shared secret on {path}", flush=True)
+        return jsonify({
+            'error': 'sandbox_unauthorized',
+            'message': (f'The sandbox rejected the backend on {path}. The two '
+                        'processes disagree about CURIO_SANDBOX_TOKEN - this '
+                        'usually means one of them was started outside '
+                        "'curio start' or was restarted without the other."),
+            'path': path,
+        }), 502
+
+    return response
+
+
 from utk_curio.backend.app.users.dependencies import require_auth, get_current_token
 import os
 import time
@@ -163,8 +207,28 @@ def live():
 
 @bp.route('/version')
 def version():
+    """Version, plus how node code is actually being executed.
+
+    The isolation mode comes from the sandbox rather than from this process's
+    own environment: the sandbox is where the requested mode is resolved
+    against what the platform can actually do, so `CURIO_ISOLATION` here would
+    report an intention, not a fact. Degrades to 'unknown' rather than failing
+    -- the version badge must still render when the sandbox is slow or down.
+    """
     from utk_curio import __version__
-    return jsonify({'version': __version__})
+
+    isolation = 'unknown'
+    try:
+        response = _sandbox_session.get(
+            api_address + ":" + str(api_port) + '/version',
+            timeout=SANDBOX_VERSION_TIMEOUT,
+        )
+        if response.status_code == 200:
+            isolation = response.json().get('isolation', 'unknown')
+    except (requests.RequestException, ValueError):
+        pass
+
+    return jsonify({'version': __version__, 'isolation': isolation})
 
 @bp.route('/file/<path:filename>', methods=['GET'])
 def serve_launch_cwd_file(filename: str):
@@ -316,6 +380,24 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
         return {}
 
 
+def _exec_user_key():
+    """The current user's on-disk storage key, or None when there is no user.
+
+    Matches the key ``auto_install_node_output`` files a node's output under,
+    so a user's work directory and their computed datasets agree about who they
+    belong to. Returns None rather than raising: an unauthenticated launch
+    (``CURIO_NO_AUTH=1``) has no user, and the sandbox then falls back to the
+    launch directory exactly as it did before.
+    """
+    try:
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user = getattr(g, "user", None)
+        return _user_dir_key(user) if user is not None else None
+    except Exception:  # noqa: BLE001 - a work directory is a convenience
+        return None
+
+
 @bp.route('/processPythonCode', methods=['POST'])
 @require_auth
 def process_python_code():
@@ -337,6 +419,12 @@ def process_python_code():
     dataset_paths = _resolve_exec_dataset_paths(
         code, request.json.get("dataflowId") or None,
     )
+    # Under isolation the sandbox gives each user a persistent work directory,
+    # so a node's relative reads and writes land somewhere that belongs to
+    # them instead of the launch tree. The storage key, not a name, and only
+    # this route knows it: the sandbox has no notion of who is logged in, and
+    # the in-process path ignores it entirely.
+    exec_user_key = _exec_user_key()
     t1 = _time.perf_counter()
     response = _sandbox_call(
         'post', '/exec',
@@ -349,6 +437,7 @@ def process_python_code():
             "session_id": session_id,
             "save_dataset": bool(save_output_dataset),
             "dataset_paths": dataset_paths,
+            "user_key": exec_user_key,
         }),
         headers={"Content-Type": "application/json"},
     )
