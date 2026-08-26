@@ -248,7 +248,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             grammar={editorTabs.grammar}
             widgets={editorTabs.widgets}
             provenance={editorTabs.provenance}
-            explanation={editorTabs.explanation}
             disableWidgets={adapter.editor.disableWidgets}
             setOutputCallback={setOutputCallback}
             data={data}

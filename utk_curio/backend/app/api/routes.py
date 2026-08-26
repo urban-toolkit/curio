@@ -105,41 +105,7 @@ import os
 import time
 from utk_curio.backend.config import (
     CURIO_DEFAULT_SAVE_NODE_OUTPUT,
-    GUEST_LLM_API_TYPE,
 )
-from utk_curio.backend.app.agents.providers import ProviderConfig, run_chat_completion
-
-
-def _resolve_llm_config():
-    """Legacy tuple shim over the agents-owned resolver (``ADR-AG-012`` bridge).
-
-    Resolution now lives in ``app/agents/provider_config.py`` (memo ``dev/22``);
-    the legacy ``/llm/*`` handlers keep their exact contract — including the
-    400 for guests without a deployed key — by reading through it.
-    """
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
-
-    try:
-        cfg = resolve_provider_config(g.user)
-    except ProviderConfigError as exc:
-        abort(400, description=str(exc))
-    return cfg.api_key, cfg.api_type, cfg.base_url, cfg.model
-
-
-def _call_llm(api_key: str, api_type: str, base_url: str, model: str, messages: list) -> str:
-    """Dispatch an LLM chat completion via the agents provider port.
-
-    Provider dispatch (and the raw provider SDKs) lives in
-    ``app/agents/providers.py`` so LLM behavior stays out of the route layer;
-    this thin wrapper preserves the existing call signature.
-    """
-    return run_chat_completion(
-        ProviderConfig(api_key=api_key, api_type=api_type, base_url=base_url, model=model),
-        messages,
-    )
 
 # The Flask app
 from utk_curio.backend.app.api import bp
@@ -148,11 +114,6 @@ from utk_curio.backend.app.api import bp
 # Sandbox address
 api_address='http://'+os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1')
 api_port=int(os.getenv('FLASK_SANDBOX_PORT', 2000))
-
-conversation = {}
-
-tokens_left = 200000 # Tokens allowed per minute
-last_refresh = time.time() # Last time that 60 minutes elapsed
 
 
 def _parse_input_ref(req_input: dict | None) -> dict:
@@ -686,97 +647,6 @@ def get_loaded_files_metadata(folder_path):
         metadata += f"File name: {file}\nColumns: {', '.join(columns)}\nGeometry type: {geometry_type}\n\n"
 
     return metadata
-
-@bp.route('/llm/chat', methods=['POST'])
-@require_auth
-def llm_chat():
-    global conversation
-
-    data = request.get_json()
-
-    preamble_file = data.get("preamble", None)
-    prompt_file = data.get("prompt", None)
-    text = data.get("text", None)
-    chatId = data.get("chatId", None)
-
-    past_conversation = []
-
-    if chatId is not None and chatId in conversation:
-        past_conversation = conversation[chatId]
-
-    prompt_preamble_file = open("./llm-prompts/"+preamble_file+".txt")
-    prompt_preamble = prompt_preamble_file.read()
-
-    prompt_preamble += "In case you need. This is the list of files and metadata currently loaded into the system"
-
-    metadata = get_loaded_files_metadata("./")
-
-    prompt_preamble += "\n" + metadata
-
-    prompt_file_obj = open("./llm-prompts/"+prompt_file+".txt")
-    prompt_text = prompt_file_obj.read()
-
-    if len(past_conversation) == 0:
-        past_conversation.append({"role": "system", "content": prompt_preamble + "\n" + prompt_text})
-
-    past_conversation.append({"role": "user", "content": text})
-
-    api_key, api_type, base_url, model = _resolve_llm_config()
-    assistant_reply = _call_llm(api_key, api_type, base_url, model, past_conversation)
-
-    past_conversation.append({"role": "assistant", "content": assistant_reply})
-
-    if chatId is not None:
-        conversation[chatId] = past_conversation
-
-    return jsonify({"result": assistant_reply})
-
-@bp.route('/llm/check', methods=['POST'])
-@require_auth
-def llm_check():
-    global tokens_left
-    global last_refresh
-
-    # Non-openai_compatible providers don't have a per-minute token budget.
-    user = g.user
-    api_type = (user.llm_api_type if not user.is_guest else GUEST_LLM_API_TYPE) or "openai_compatible"
-    if api_type != "openai_compatible":
-        return jsonify({"result": "yes"})
-
-    data = request.get_json()
-    chatId = data.get("chatId", None)
-    text = data.get("text", None)
-
-    past_conversation = list(conversation.get(chatId, []))
-    past_conversation.append({"role": "user", "content": text or ""})
-
-    total_tokens = sum(len(m["content"].split()) * 1.5 for m in past_conversation)
-
-    now_time = time.time()
-
-    if (now_time - last_refresh) >= 60:
-        tokens_left = 200000
-
-    if tokens_left > total_tokens:
-        tokens_left -= total_tokens
-        return jsonify({"result": "yes"})
-
-    return jsonify({"result": (60 - (now_time - last_refresh))})
-
-@bp.route('/llm/clean', methods=['GET'])
-@require_auth
-def llm_clean():
-    global conversation
-
-    chatId = request.args.get('chatId', None)
-
-    if chatId is None:
-        return jsonify({"message": "You need to specify which chatId is being cleaned"}), 400
-
-    conversation[chatId] = []
-
-    return jsonify({"message": "Success"}), 200
-
 
 @bp.route('/spatial_join', methods=['POST'])
 def spatial_join():

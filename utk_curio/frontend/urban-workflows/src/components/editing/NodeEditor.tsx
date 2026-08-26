@@ -28,7 +28,6 @@ import {
     faRightFromBracket,
 } from "@fortawesome/free-solid-svg-icons";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
-import NodeExplanation from "./NodeExplanation";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
@@ -49,7 +48,6 @@ type NodeEditorProps = {
     defaultValue: any;
     floatCode?: any;
     provenance?: boolean;
-    explanation?: boolean;
     customWidgetsCallback?: any;
     contentComponent?: any;
     disableWidgets?: boolean; // Added prop to freeze widget buttons
@@ -71,7 +69,6 @@ function NodeEditor({
     defaultValue,
     floatCode,
     provenance,
-    explanation,
     customWidgetsCallback,
     contentComponent,
     disableWidgets,
@@ -297,16 +294,6 @@ function NodeEditor({
                                     </Tab.Pane>
                                 ) : null}
 
-                                {(explanation ?? (code || grammar)) ? (
-                                    <Tab.Pane eventKey="explanation" style={{ height: "100%" }}>
-                                        <NodeExplanation
-                                            node_type={nodeType}
-                                            code={data.code}
-                                            current_input={data.in}
-                                            current_output={data.out}
-                                        />
-                                    </Tab.Pane>
-                                ) : null}
 
                                 {provenance == undefined || provenance ? (
                                     <Tab.Pane
@@ -421,22 +408,6 @@ function NodeEditor({
                                                 <FontAwesomeIcon
                                                     icon={faSpellCheck}
                                                 />
-                                            </Nav.Link>
-                                        </Nav.Item>
-                                    </OverlayTrigger>
-                                </Col>
-                            ) : null}
-
-                            {(explanation ?? (code || grammar)) ? (
-                                <Col>
-                                    <OverlayTrigger
-                                        placement="right"
-                                        delay={overlayTriggerProps}
-                                        overlay={<Tooltip>Explanation</Tooltip>}
-                                    >
-                                        <Nav.Item style={navItemStyle}>
-                                            <Nav.Link eventKey="explanation" style={navLinkStyle}>
-                                                <FontAwesomeIcon icon={faList} />
                                             </Nav.Link>
                                         </Nav.Item>
                                     </OverlayTrigger>

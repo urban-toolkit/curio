@@ -75,7 +75,6 @@ import { PackagePaletteProvider } from "./providers/PackagePaletteContext";
 import { DatasetPaletteProvider } from "./providers/DatasetPaletteContext";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
-import LLMProvider from "./providers/LLMProvider";
 import { RequireAuth } from "./components/RequireAuth";
 
 import SignIn from "./pages/auth/SignIn";
@@ -151,7 +150,6 @@ const App: React.FC = () => {
       <BackendHealthBanner>
         <ToastProvider>
             <ReactFlowProvider>
-              <LLMProvider>
                 <ProvenanceProvider>
                   <UserProvider>
                     <Routes>
@@ -210,7 +208,6 @@ const App: React.FC = () => {
                     </Routes>
                   </UserProvider>
                 </ProvenanceProvider>
-              </LLMProvider>
             </ReactFlowProvider>
         </ToastProvider>
       </BackendHealthBanner>

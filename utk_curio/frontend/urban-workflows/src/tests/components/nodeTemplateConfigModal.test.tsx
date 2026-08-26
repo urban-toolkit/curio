@@ -132,8 +132,6 @@ describe("NodeTemplateConfigModal - editor mode cascade", () => {
     expect(screen.getByLabelText("hasGrammar")).toBeChecked();
     expect(screen.getByLabelText("hasCode")).not.toBeChecked();
     expect(screen.getByLabelText("hasWidgets")).not.toBeChecked();
-    // Still an editor with a body, so an explanation still makes sense.
-    expect(screen.getByLabelText("Explanation tab")).toBeEnabled();
 
     save();
     expect(onSave).toHaveBeenCalledWith(
@@ -162,9 +160,11 @@ describe("NodeTemplateConfigModal - editor mode cascade", () => {
     );
   });
 
-  test("none clears every body flag and disables the Explanation tab", () => {
+  test("none clears every body flag", () => {
+    // The Explanation-tab flag used to be asserted here too. That tab is gone -
+    // agent.node-explainer does the same job with more context - so there is no
+    // longer a body flag that depends on code-or-grammar being present.
     renderModal();
-    fireEvent.click(screen.getByLabelText("Explanation tab"));
     fireEvent.change(screen.getByLabelText("Editor mode"), {
       target: { value: "none" },
     });
@@ -172,11 +172,6 @@ describe("NodeTemplateConfigModal - editor mode cascade", () => {
     expect(screen.getByLabelText("hasCode")).not.toBeChecked();
     expect(screen.getByLabelText("hasWidgets")).not.toBeChecked();
     expect(screen.getByLabelText("hasGrammar")).not.toBeChecked();
-    // With no code and no grammar there is nothing to explain, so the flag is
-    // forced off as well as disabled - a disabled-but-checked box would save a
-    // value the user can no longer see or change.
-    expect(screen.getByLabelText("Explanation tab")).toBeDisabled();
-    expect(screen.getByLabelText("Explanation tab")).not.toBeChecked();
   });
 
   test("switching back to code restores python", () => {

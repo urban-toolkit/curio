@@ -72,7 +72,6 @@ export function NodeTemplateConfigModal({
         next.hasWidgets = false;
         next.hasGrammar = false;
       }
-      if (!next.hasCode && !next.hasGrammar) next.hasExplanation = false;
       return next;
     });
   }, []);
@@ -191,15 +190,6 @@ export function NodeTemplateConfigModal({
               onChange={(e) => patch({ hasProvenance: e.target.checked })}
             />
             Provenance tab
-          </label>
-          <label className={styles.checkRow}>
-            <input
-              type="checkbox"
-              checked={config.hasExplanation}
-              disabled={!config.hasCode && !config.hasGrammar}
-              onChange={(e) => patch({ hasExplanation: e.target.checked })}
-            />
-            Explanation tab
           </label>
         </div>
 

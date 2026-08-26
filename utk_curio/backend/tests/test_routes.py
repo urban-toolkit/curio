@@ -57,6 +57,12 @@ def test_removed_legacy_routes_stay_removed(app):
         "/installPackages",
         "/upload",
         "/api/packages/install-deps",
+        # The pre-agent LLM assistance. Its last caller was the node editor's
+        # Explanation tab, replaced by agent.node-explainer - which reads a
+        # richer nodeContext from the backend and shares the same prompt file.
+        "/llm/chat",
+        "/llm/check",
+        "/llm/clean",
     ]
     with app.app_context():
         app_routes = {rule.rule for rule in current_app.url_map.iter_rules()}
