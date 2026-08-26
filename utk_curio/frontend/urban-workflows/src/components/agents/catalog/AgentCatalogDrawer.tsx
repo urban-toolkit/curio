@@ -348,7 +348,14 @@ const AgentRow: React.FC<{
             type="button"
             className={cardStyles.btnSecondary}
             disabled={busy || !hasProject}
-            onClick={() => state.uninstall(card.dirName)}
+            onClick={() => {
+              // Both peers confirm this one (NodeCatalogDrawer.onUninstall,
+              // useDatasetCatalogDrawer.onUnpublish): it is a lockfile write
+              // the user cannot undo with a second click, and any agent
+              // attached from this dataflow goes with it.
+              if (!window.confirm(`Remove ${card.name} (${card.dirName}) from this dataflow?`)) return;
+              state.uninstall(card.dirName);
+            }}
           >
             Remove from dataflow
           </button>
@@ -385,7 +392,11 @@ const AgentRow: React.FC<{
               disabled={busy}
               onClick={() => state.removeImport(card.dirName)}
             >
-              Delete
+              {/* Not "Delete": `services.remove_import` drops the registry
+                  entry and leaves the definition on disk, so the old label
+                  promised a destruction that never happened. This is the same
+                  call the browse page makes, under the same name. */}
+              Remove from my account
             </button>
           </>
         ) : null}

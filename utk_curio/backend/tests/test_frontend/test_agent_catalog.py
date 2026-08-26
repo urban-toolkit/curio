@@ -283,6 +283,36 @@ def test_add_agent_propagates_to_palette(
         f"lockfile went from {sorted(lock_before)} to {sorted(lock_after)}"
     )
 
+    # 7. The round trip back. Removal confirms, as it does in the Node and Data
+    #    drawers, and Playwright's default for a dialog is DISMISS - so without
+    #    this handler the click would silently do nothing and the assertions
+    #    below would fail for the wrong reason.
+    drawer = _open_drawer_from_menu(page)
+    card = _card(drawer, AGENT_COORD)
+    expect(card).to_have_count(1, timeout=20000)
+
+    page.once("dialog", lambda dialog: dialog.accept())
+    with page.expect_response(
+        lambda r: "/api/agents/projects/" in r.url
+        and r.request.method == "DELETE"
+        and r.ok,
+        timeout=30000,
+    ):
+        card.get_by_role("button", name="Remove from dataflow", exact=True).click()
+
+    expect(
+        card.get_by_role("button", name=re.compile(r"^Add to dataflow"))
+    ).to_be_visible(timeout=20000)
+
+    # The palette empties without a reload, the mirror of step 5.
+    drawer.get_by_role("button", name="Close Agent Catalog drawer").click()
+    expect(page.locator(DRAWER_ROOT)).to_have_count(0, timeout=5000)
+    expect(
+        page.locator(f'#agents-palette [data-agent-coord="{AGENT_COORD}"]')
+    ).to_have_count(0, timeout=20000)
+
+    assert _installed_coords(current_server, token, project_id) == lock_before
+
 
 def test_requires_agents_closure_is_disclosed_and_installed(
     app_frontend: "FrontendPage", current_server: str, page

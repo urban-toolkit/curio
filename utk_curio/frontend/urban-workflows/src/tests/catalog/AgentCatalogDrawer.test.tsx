@@ -111,13 +111,16 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeInTheDocument();
   });
 
-  it("switching to My imports fetches and shows Delete", async () => {
+  it("switching to My imports fetches and offers Remove from my account", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(api.listImports).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    // Not "Delete": the call drops the registry entry and leaves the
+    // definition on disk, so the drawer says what the browse page says.
+    expect(screen.getByRole("button", { name: "Remove from my account" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
   it("Add to dataflow disabled without a project", async () => {
@@ -205,7 +208,10 @@ describe("AgentCatalogDrawer", () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     fireEvent.click(screen.getByText("In dataflow"));
     await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
+    // Removal now confirms, as it does in the Node and Data drawers.
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Remove from dataflow" }));
+    confirmSpy.mockRestore();
     await waitFor(() =>
       expect(screen.getByText(/is required by Dataflow Builder/)).toBeInTheDocument(),
     );
