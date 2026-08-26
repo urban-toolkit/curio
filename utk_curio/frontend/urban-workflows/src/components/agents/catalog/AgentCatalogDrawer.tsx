@@ -285,7 +285,11 @@ const AgentRow: React.FC<{
   const categoryKey = agentCategoryKey(card.category);
   const avatarClass = styles[`avatar_${categoryKey}` as keyof typeof styles] ?? "";
   return (
-    <article className={cardStyles.card}>
+    // The cross-surface identity attribute: this card, its row in the tools
+    // palette and its card on /catalog/agents all carry the same coordinate,
+    // which is what lets an install be asserted end to end without reading a
+    // hashed CSS class. data-pkg-dir and data-dataset-id do the same job.
+    <article className={cardStyles.card} data-agent-coord={card.dirName}>
       <div className={`${cardStyles.cardAvatar} ${avatarClass}`} aria-hidden>
         <FontAwesomeIcon icon={faRobot} className={styles.avatarIcon} />
       </div>

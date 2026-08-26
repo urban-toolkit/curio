@@ -1222,6 +1222,7 @@ def skip_if_shared_view(page, *, timeout: float = 4000) -> None:
 _TOOLS_PALETTES = {
     "packages": ("#packages-palette", "Open node package palette", "Package templates"),
     "datasets": ("#datasets-palette", "Open dataset palette", "Dataset palette"),
+    "agents": ("#agents-palette", "Open agent palette", "Agent palette"),
 }
 
 

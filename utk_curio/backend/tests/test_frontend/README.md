@@ -195,6 +195,7 @@ Two families of baseline live in that folder:
   workflow path: `canvas-authoring`, `package-roundtrip`,
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
   `library-manager`, `node-catalog-drawer`, `data-catalog-drawer`,
+  `agent-catalog-drawer`,
   `dataset-export`, `dataset-lineage`, `autark-grammar-edit`,
   `merge-flow-authoring`, `canvas-delete-key`, `projects-page-scroll`,
   `global-imports`, `uhvi-install`, `data-pool-scroll`,
@@ -288,6 +289,7 @@ test_frontend/
   test_dataset_palette.py     # computed dataset shows in the dataset palette and persists
   test_node_catalog.py        # Node Catalog drawer: list, search, add/remove -> palette
   test_data_catalog.py        # Data Catalog drawer: hub datasets, search, add/remove, import
+  test_agent_catalog.py       # Agent Catalog drawer: list, search, add -> palette, requiresAgents closure
   test_dataset_export.py      # Data Catalog detail panel -> Export: the downloaded name and bytes
   test_dataset_lineage_e2e.py # one edge -> the dataset's lineage grows (panel, card badge, server)
   test_computed_json_output_e2e.py # dict/scalar node output installs as json, no warning (#180)

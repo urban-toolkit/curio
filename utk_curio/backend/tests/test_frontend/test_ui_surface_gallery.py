@@ -203,6 +203,17 @@ def test_gallery_pages(gallery, owner, app_frontend, current_server, page):
     )
     gallery.shot("page-catalog-data")
 
+    # The third catalog page. Reviewed against the two above: same header
+    # band, same rail, same card geometry, or the reskin is not done.
+    try:
+        page.goto(base + "/catalog/agents")
+        expect(page.get_by_role("heading", name="Agent Catalog", level=1)).to_be_visible(
+            timeout=20000
+        )
+        gallery.shot("page-catalog-agents")
+    except (PlaywrightTimeoutError, AssertionError) as exc:
+        gallery.miss("page-catalog-agents", str(exc))
+
     # Dataset detail page. Navigated by id read from the catalog API rather
     # than by clicking a card's "View details": the id is what the route keys
     # on, and asking the backend for it keeps the capture working whatever the
@@ -266,6 +277,7 @@ def test_gallery_canvas_and_drawers(gallery, owner, app_frontend, current_server
     for kind, label in (
         ("packages", "canvas-palette-packages"),
         ("datasets", "canvas-palette-datasets"),
+        ("agents", "canvas-palette-agents"),
     ):
         try:
             open_tools_palette(page, kind)
@@ -277,6 +289,7 @@ def test_gallery_canvas_and_drawers(gallery, owner, app_frontend, current_server
     for menu_entry, label in (
         ("Node Catalog", "drawer-node-catalog"),
         ("Data Catalog", "drawer-data-catalog"),
+        ("Agent Catalog", "drawer-agent-catalog"),
     ):
         try:
             # Fresh load per drawer. Driving both from one page left the Data
@@ -342,3 +355,22 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
         gallery.shot("modal-dataset-detail")
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-dataset-detail", str(exc))
+
+    # AI Settings, which now carries the agent spend limits on its second tab.
+    # Captured from the projects page because that is where its header button
+    # lives; the canvas reaches the same modal through the drawer's cog.
+    try:
+        page.goto(app_frontend.base_url + "/projects")
+        expect(page.get_by_role("heading", name="Projects", level=1)).to_be_visible(
+            timeout=20000
+        )
+        page.get_by_role("button", name="AI Settings", exact=True).click(timeout=15000)
+        expect(
+            page.get_by_role("heading", name="AI Settings", level=2)
+        ).to_be_visible(timeout=15000)
+        gallery.shot("modal-ai-settings")
+
+        page.get_by_role("button", name="Agent limits", exact=True).click(timeout=10000)
+        gallery.shot("modal-ai-settings-agent-limits")
+    except (PlaywrightTimeoutError, AssertionError) as exc:
+        gallery.miss("modal-ai-settings", str(exc))

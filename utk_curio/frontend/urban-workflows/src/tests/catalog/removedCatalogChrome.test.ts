@@ -38,6 +38,7 @@ describe("removed catalog chrome stays removed", () => {
     for (const page of [
       "pages/catalog/NodeCatalogBrowse.tsx",
       "pages/dataHub/DataCatalogBrowse.tsx",
+      "pages/agents/AgentCatalogBrowse.tsx",
     ]) {
       expect(read(page)).not.toMatch(/viewToggle/);
     }
