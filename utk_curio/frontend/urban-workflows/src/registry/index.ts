@@ -19,6 +19,7 @@ import '../adapters/vegaLiteAdapter';
 // `__curioPendingPackages__`. We drain those here so registration
 // completes deterministically.
 import * as ReactNS from 'react';
+import { getToken } from '../utils/authApi';
 import * as ReactFlowNS from 'reactflow';
 import { registerBehavior } from './behaviorRegistry';
 
@@ -35,6 +36,11 @@ if (typeof window !== 'undefined') {
     ...(w.curio ?? {}),
     registerBehavior,
     backendUrl: process.env.BACKEND_URL ?? '',
+    // A getter, not a value: a package bundle evaluates once at load, long
+    // before sign-in, so a captured string would be stale forever. Packages
+    // whose backend needs to know WHO is calling (the Street Vision node, for
+    // the caller's own HuggingFace token) send this as a Bearer header.
+    getAuthToken: () => getToken(),
   };
   const pending: Array<(c: { registerBehavior: typeof registerBehavior }) => void> =
     Array.isArray(w.__curioPendingPackages__) ? w.__curioPendingPackages__ : [];

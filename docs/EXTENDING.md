@@ -63,20 +63,39 @@ Curio supports two patterns for third-party API keys; pick by who the key belong
 
 - **Per-user secrets** (Google Maps, Mapbox, OpenAI personal keys, …) → make it a **text input on the node itself**, held in React state for the session. The behavior hook passes it to the backend as a request-body field. Never persist to the dataflow spec (it would leak when shared) or to `localStorage` (it would survive logout). The Street View Fetcher node is the worked example; see [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx) and the `api_key` body field in [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py).
 
-- **Operator-wide secrets** that every user of a deployment shares (an internal data-source token, a back-of-house HuggingFace token) → keep using `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. The Street Vision blueprint still does this for `HUGGINGFACE_TOKEN` because gated-model access is the operator's concern, not the user's.
+- **Per-account credentials that outlive a session** (a HuggingFace token, an LLM provider key) -> store them on the user row and edit them in **AI Settings**, with a deployment-wide fallback from a `curio.py start` flag. The HuggingFace token is the worked example: gated models are unlocked per HuggingFace account by accepting a licence, so a single operator token could not represent what each user is entitled to download. It resolves as *the caller's own token, else the deployment default* in [`streetvision/services/huggingface.py`](../utk_curio/backend/app/streetvision/services/huggingface.py)::`resolve_hf_token`.
 
-For the operator pattern, surface presence in `/health` so the frontend can warn the user before they trigger an action that needs the key:
+- **Genuinely operator-wide secrets** that no user should override (an internal data-source token) -> `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. Prefer a documented `curio.py start` flag that names the variable, so the knob is discoverable.
+
+Two things the per-account pattern has to get right, and both bit us:
+
+**Resolve in the request, use it downstream.** Street Vision runs inference on a
+detached worker thread, where `g` is gone. The route resolves the token and
+passes it into the job; resolving it inside the worker would silently fall back
+to the deployment value.
+
+**Put the credential in any cache key it affects.** The model cache was keyed on
+`model_id` alone. The first user to download a gated model would seed an entry
+every later caller hit for free, including one whose account had never accepted
+that licence. The key is now `(model_id, token fingerprint)`, hashed rather than
+raw so the token is not sitting where a traceback could print it.
+
+Surface presence, never the value, in `/health` so the frontend can warn before
+an action that needs the credential:
 
 ```python
 @bp.get("/health")
 def health():
-    return jsonify({
-        "status": "healthy",
-        "has_huggingface_token": bool(os.environ.get("HUGGINGFACE_TOKEN")),
-    })
+    from .services import huggingface as hf_svc
+
+    # True when a token resolves for THIS caller: their own, or the fallback.
+    return jsonify({"status": "healthy", "has_huggingface_token": bool(hf_svc.resolve_hf_token())})
 ```
 
-Document the env var in the package's `README.md` and in the user-facing example doc. Never check secrets into git.
+A package whose backend needs to know *who* is calling must send the bearer
+token: read `window.curio.getAuthToken()` (a getter, because a package bundle
+evaluates once at boot, before sign-in) and pass it as an `Authorization`
+header. Never check secrets into git.
 
 ### 3.3 Public APIs without auth
 

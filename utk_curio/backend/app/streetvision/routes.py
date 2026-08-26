@@ -15,8 +15,6 @@ so a corrupt install fails per-request with a 503 instead of crashing the
 backend on boot.
 """
 
-import os
-
 from flask import jsonify, request, send_file
 
 from . import bp, jobs
@@ -37,10 +35,15 @@ def health():
     """Lightweight liveness check. The Google Maps API key is supplied
     per-request by the Street View Fetcher node, not from the backend
     environment, so it isn't reported here."""
-    return jsonify({
-        "status": "healthy",
-        "has_huggingface_token": bool(os.environ.get("HUGGINGFACE_TOKEN")),
-    })
+    try:
+        from .services import huggingface as hf_svc
+
+        has_token = bool(hf_svc.resolve_hf_token())
+    except ImportError:
+        has_token = False
+    # True when a token resolves for THIS caller: their own account setting, or
+    # the deployment default behind --huggingface-token.
+    return jsonify({"status": "healthy", "has_huggingface_token": has_token})
 
 
 # ── HuggingFace model search ────────────────────────────────────────
@@ -220,6 +223,15 @@ def inference_run():
     # fetch already embed the key, so the generic HTTP path works without it).
     api_key = (body.get("api_key") or "").strip() or None
 
+    # Resolve the caller's HuggingFace token HERE, while the request context
+    # still exists: the worker thread below has none.
+    try:
+        from .services import huggingface as hf_svc
+
+        hf_token = hf_svc.resolve_hf_token()
+    except ImportError:
+        hf_token = None
+
     job_id = jobs.create_job(total_images=len(images))
     jobs.start_inference(
         job_id=job_id,
@@ -228,6 +240,7 @@ def inference_run():
         model_type=model_type,
         classes=classes,
         api_key=api_key,
+        hf_token=hf_token,
     )
     return jsonify({"job_id": job_id, "status": "queued", "total_images": len(images)})
 

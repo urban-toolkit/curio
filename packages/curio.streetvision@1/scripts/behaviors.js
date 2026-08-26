@@ -1018,6 +1018,15 @@ function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == 
 
 // See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/streetvision");
+// Compiled from sources/hfCvInferenceBehavior.tsx. Identifies the signed-in
+// user so the backend can resolve THEIR HuggingFace token for gated models;
+// without it only the deployment-wide token is available.
+function authHeaders() {
+  var _c = typeof window !== 'undefined' ? window.curio : undefined;
+  var get = _c && _c.getAuthToken;
+  var token = typeof get === 'function' ? get() : undefined;
+  return token ? { Authorization: "Bearer ".concat(token) } : {};
+}
 var CLASS_SUGGESTIONS = ['building', 'road', 'sidewalk', 'vegetation', 'pole', 'fence', 'wall', 'traffic sign'];
 var S = {
   root: {
@@ -1209,7 +1218,7 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
     setBackendUp = _useState2[1];
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
     var check = function check() {
-      fetch("".concat(API_BASE, "/health")).then(function (r) {
+      fetch("".concat(API_BASE, "/health"), { headers: authHeaders() }).then(function (r) {
         return r.json();
       }).then(function () {
         return setBackendUp(true);
@@ -1269,7 +1278,7 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
     var t = setTimeout(function () {
       setModelsLoading(true);
       setModelsError(null);
-      fetch("".concat(API_BASE, "/models/search?task=").concat(task, "&query=").concat(encodeURIComponent(query))).then(/*#__PURE__*/function () {
+      fetch("".concat(API_BASE, "/models/search?task=").concat(task, "&query=").concat(encodeURIComponent(query)), { headers: authHeaders() }).then(/*#__PURE__*/function () {
         var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(r) {
           var d;
           return _regenerator().w(function (_context) {
@@ -1472,9 +1481,9 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
     setView('running');
     fetch("".concat(API_BASE, "/inference/run"), {
       method: 'POST',
-      headers: {
+      headers: Object.assign({
         'Content-Type': 'application/json'
-      },
+      }, authHeaders()),
       body: JSON.stringify({
         images: images,
         model: selectedModel,

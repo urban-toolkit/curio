@@ -19,6 +19,10 @@ class User(db.Model):
     llm_base_url = db.Column(db.String(500), nullable=True)
     llm_api_key = db.Column(db.String(255), nullable=True)
     llm_model = db.Column(db.String(100), nullable=True)
+    # Gated-model access on HuggingFace is a per-person entitlement (you
+    # accept a model's licence with your own account), so this is an
+    # account setting rather than one shared deployment secret.
+    huggingface_token = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
         db.DateTime,

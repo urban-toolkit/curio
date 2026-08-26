@@ -62,6 +62,10 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState(PROVIDER_INFO.openai.model);
+  // A second credential, for a different provider: HuggingFace gates some
+  // models behind a licence you accept with your own account, so the token is
+  // per user rather than one the operator holds for everybody.
+  const [hfToken, setHfToken] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -90,6 +94,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setBaseUrl(user.llm_base_url || "");
       setApiKey("");
       setModel(user.llm_model || "");
+      setHfToken("");
       setError(null);
       setSuccess(false);
     }
@@ -122,9 +127,11 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         baseUrl: uiMode === "custom" ? baseUrl : "",
         apiKey: apiKey || undefined,
         model: model || undefined,
+        huggingfaceToken: hfToken || undefined,
       });
       setSuccess(true);
       setApiKey("");
+      setHfToken("");
       setTimeout(onClose, 800);
     } catch (e: any) {
       setError(e.message || "Failed to save settings.");
@@ -247,6 +254,42 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                     : info.model || "e.g. llama3.2"
                 }
               />
+            </div>
+
+            <div className={modal.field}>
+              <label className={modal.label}>
+                HuggingFace token{" "}
+                <span className={styles.optional}>
+                  {user?.has_huggingface_token
+                    ? "(saved - leave blank to keep)"
+                    : "(optional)"}
+                </span>
+              </label>
+              <input
+                className={modal.input}
+                type="password"
+                value={hfToken}
+                onChange={(e) => setHfToken(e.target.value)}
+                placeholder={
+                  user?.has_huggingface_token
+                    ? "••••••••  (unchanged)"
+                    : "hf_..."
+                }
+                autoComplete="new-password"
+              />
+              <span className={modal.hint}>
+                Only needed for <strong>gated</strong> models in the Street
+                Vision node, which you unlock by accepting each model's licence
+                on your own HuggingFace account. Public models need no token.
+              </span>
+              <a
+                href="https://huggingface.co/settings/tokens"
+                target="_blank"
+                rel="noreferrer"
+                className={styles.keyLink}
+              >
+                Get your HuggingFace token →
+              </a>
             </div>
 
             {error && <p className={modal.error}>{error}</p>}

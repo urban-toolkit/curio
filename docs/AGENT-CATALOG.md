@@ -264,6 +264,7 @@ account-level setting, edited in **AI Settings** from the header.
 | Base URL | Only for a custom endpoint: Ollama, LM Studio, vLLM, Groq, Azure. |
 | API key | Stored per account. Leave blank to keep the saved one. |
 | Model | The model name. Leave blank to inherit the deployment's. |
+| HuggingFace token | Not for agents: it unlocks *gated* models in the Street Vision node. It sits here because it is the same kind of setting, a model credential you hold per account. Public models need none. |
 
 Whoever runs the Curio install can set a default for all four with
 `curio.py start` flags (see [Operator notes](#operator-notes)). Those flags and
@@ -402,6 +403,7 @@ Agent configuration follows Curio's convention: an operator knob is a documented
 | `--llm-base-url` | `CURIO_DEFAULT_LLM_BASE_URL` | The default endpoint. |
 | `--llm-model` | `CURIO_DEFAULT_LLM_MODEL` | The default model. |
 | `--guest-llm-api-key` | `GUEST_LLM_API_KEY` | The gate on guest AI. No key, no guest access. |
+| `--huggingface-token` | `CURIO_DEFAULT_HUGGINGFACE_TOKEN` | Fallback HuggingFace token for the Street Vision node's gated models. Each user can set their own in AI Settings, which wins over this. Not an agent setting, but it lives in the same panel. |
 | `--agent-search-url` | `CURIO_SEARCH_URL` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API. Point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked web results. |
 
 A flag writes its variable only when passed, so a value already set in the

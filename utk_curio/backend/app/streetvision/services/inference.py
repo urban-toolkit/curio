@@ -128,6 +128,7 @@ def run_batch(
     model_type: str,
     classes: List[str],
     progress_cb=None,
+    hf_token: Optional[str] = None,
 ) -> Iterator[dict]:
     """Run inference over a list of images, yielding one result dict per image.
 
@@ -143,10 +144,12 @@ def run_batch(
     """
     from . import huggingface as hf
 
-    cached = hf.get_cached_model(model_id)
+    # The token is captured in the request and passed down: this runs on a
+    # detached worker thread, where the request context is gone.
+    cached = hf.get_cached_model(model_id, hf_token)
     if cached is None:
-        hf.load_model(model_id, model_type)
-        cached = hf.get_cached_model(model_id)
+        hf.load_model(model_id, model_type, hf_token)
+        cached = hf.get_cached_model(model_id, hf_token)
     model, processor, _ = cached
 
     total = len(images)

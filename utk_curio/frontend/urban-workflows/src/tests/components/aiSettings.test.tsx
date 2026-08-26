@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 /**
  * AI Settings is the one account-level place the models are configured.
@@ -27,11 +27,10 @@ const SIGNED_IN = {
 // evaluated does not re-bind it.
 let mockUser: Record<string, unknown> = { ...SIGNED_IN };
 
+const mockUpdate = jest.fn().mockResolvedValue(undefined);
+
 jest.mock("../../providers/UserProvider", () => ({
-  useUserContext: () => ({
-    user: mockUser,
-    updateLlmConfig: jest.fn().mockResolvedValue(undefined),
-  }),
+  useUserContext: () => ({ user: mockUser, updateLlmConfig: mockUpdate }),
 }));
 
 let mockDefault: unknown = {
@@ -96,6 +95,45 @@ describe("AI Settings", () => {
   it("renders nothing when closed", () => {
     const { container } = render(<AiSettingsModal isOpen={false} onClose={jest.fn()} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("the HuggingFace token", () => {
+  it("is offered as an account setting, not an operator-only env var", async () => {
+    // Gated models are unlocked per HuggingFace account by accepting a
+    // licence, so one shared deployment token cannot represent what each user
+    // may download. It used to live only in HUGGINGFACE_TOKEN.
+    open();
+    expect(
+      screen.getByPlaceholderText("hf_..."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/only needed for/i)).toBeInTheDocument();
+    expect(screen.getByText(/gated/i)).toBeInTheDocument();
+  });
+
+  it("shows it as saved without ever rendering the value", () => {
+    mockUser = { ...SIGNED_IN, has_huggingface_token: true };
+    open();
+    const box = screen.getByPlaceholderText(/unchanged/i);
+    expect(box).toHaveValue("");
+    expect(screen.getByText(/leave blank to keep/i)).toBeInTheDocument();
+  });
+
+  it("sends it only when the user typed one", async () => {
+    open();
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][0].huggingfaceToken).toBeUndefined();
+  });
+
+  it("sends what the user typed", async () => {
+    open();
+    fireEvent.change(screen.getByPlaceholderText("hf_..."), {
+      target: { value: "hf_mine" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][0].huggingfaceToken).toBe("hf_mine");
   });
 });
 

@@ -20,6 +20,24 @@ import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/sr
 // See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/streetvision`;
 
+/**
+ * Headers that identify the signed-in user to the backend.
+ *
+ * The two endpoints below resolve a HuggingFace token to download gated models
+ * with, and it is the *caller's* token: gated access is granted per account,
+ * against a licence that account accepted. Without this header the backend can
+ * only fall back to the deployment-wide token, so a user's own token in AI
+ * Settings would never take effect.
+ *
+ * `getAuthToken` is a getter on `window.curio` rather than a value because this
+ * bundle evaluates once at boot, before sign-in.
+ */
+function authHeaders(): Record<string, string> {
+  const get = typeof window !== 'undefined' && (window as any).curio?.getAuthToken;
+  const token = typeof get === 'function' ? get() : undefined;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 type ModelType = 'segmentation' | 'detection';
 
 interface ModelSearchResult {
@@ -135,7 +153,7 @@ export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [backendUp, setBackendUp] = useState(false);
   useEffect(() => {
     const check = () => {
-      fetch(`${API_BASE}/health`).then(r => r.json())
+      fetch(`${API_BASE}/health`, { headers: authHeaders() }).then(r => r.json())
         .then(() => setBackendUp(true))
         .catch(() => setBackendUp(false));
     };
@@ -166,7 +184,7 @@ export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
     const t = setTimeout(() => {
       setModelsLoading(true);
       setModelsError(null);
-      fetch(`${API_BASE}/models/search?task=${task}&query=${encodeURIComponent(query)}`)
+      fetch(`${API_BASE}/models/search?task=${task}&query=${encodeURIComponent(query)}`, { headers: authHeaders() })
         .then(async r => {
           const d = await r.json().catch(() => ({}));
           if (!r.ok) {
@@ -271,7 +289,7 @@ export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
 
     fetch(`${API_BASE}/inference/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({
         images,
         model: selectedModel,
