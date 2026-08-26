@@ -3,6 +3,14 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../api/agentsApi";
 import { AgentSettingsModal } from "../settings/AgentSettingsModal";
+
+/**
+ * Loaded on demand. A static import would pull AI Settings' whole module
+ * graph - it reads UserProvider, which reaches the package registry and
+ * through it vega - into every canvas that mounts this drawer, to render a
+ * modal that is usually closed.
+ */
+const AiSettingsModal = React.lazy(() => import("../../AiSettingsModal"));
 import { AgentImportModal } from "./AgentImportModal";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
@@ -76,7 +84,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
   const panelRef = useRef<HTMLElement>(null);
   // Installed-scope card whose Project agent settings modal is open (dev/23).
   const [settingsCoord, setSettingsCoord] = useState<string | null>(null);
-  // Account-policy scope (dev/24), opened from the roster header cog.
+  // The header cog opens AI Settings, which owns the account scope.
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   // Upload-import (dev/36), opened from the footer's Import package button.
   const [importOpen, setImportOpen] = useState(false);
@@ -150,7 +158,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
             aria-haspopup="dialog"
             onClick={() => setAccountSettingsOpen(true)}
           >
-            <FontAwesomeIcon icon={faGear} aria-hidden /> Agent settings
+            <FontAwesomeIcon icon={faGear} aria-hidden /> AI Settings
           </button>
         }
       />
@@ -249,7 +257,12 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         />
       ) : null}
       {accountSettingsOpen ? (
-        <AgentSettingsModal scope="account" onClose={() => setAccountSettingsOpen(false)} />
+        /* The account scope lives in AI Settings now, on its "Agent limits"
+           tab, beside the provider those limits apply to. This drawer opens
+           that one surface rather than a second modal for half the answer. */
+        <React.Suspense fallback={null}>
+          <AiSettingsModal isOpen onClose={() => setAccountSettingsOpen(false)} />
+        </React.Suspense>
       ) : null}
       </aside>
     </div>

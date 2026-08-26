@@ -91,8 +91,15 @@ export const AgentSettingsModal: React.FC<{
   coord?: string;
   /** Required for the attachment scope (memo dev/42). */
   attachmentId?: string;
+  /**
+   * Render the editor WITHOUT its own ModalShell, for a host that already
+   * owns a surface. AI Settings uses this for the account scope so there is
+   * one account-level entry point instead of two modals for one question
+   * ("how is my AI set up?"), and so the two never stack.
+   */
+  embedded?: boolean;
   onClose: () => void;
-}> = ({ scope, projectId, coord, attachmentId, onClose }) => {
+}> = ({ scope, projectId, coord, attachmentId, embedded = false, onClose }) => {
   const [data, setData] = useState<Loaded | null>(null);
   const [drafts, setDrafts] = useState<Drafts>(draftsFrom({}));
   const [tab, setTab] = useState<Tab>("quotas");
@@ -255,12 +262,17 @@ export const AgentSettingsModal: React.FC<{
 
   const eff = data?.effective;
 
-  return (
-    <ModalShell onClose={close} layer="overlay">
+  const body = (
       <div
         className={styles.body}
-        role="dialog"
+        // An embedded copy is not its own dialog - the host already is one,
+        // and nesting role="dialog" makes an unscoped get_by_role lookup
+        // ambiguous for tests and confusing for a screen reader.
+        role={embedded ? undefined : "dialog"}
         aria-label={
+          embedded
+            ? undefined
+            :
           scope === "account"
             ? "Agent settings (account policy)"
             : scope === "attachment"
@@ -409,6 +421,12 @@ export const AgentSettingsModal: React.FC<{
           </>
         )}
       </div>
+  );
+
+  if (embedded) return body;
+  return (
+    <ModalShell onClose={close} layer="overlay">
+      {body}
     </ModalShell>
   );
 };

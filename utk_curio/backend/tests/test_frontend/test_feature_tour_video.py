@@ -355,7 +355,7 @@ def scene_projects(ctx: Ctx) -> None:
         "Point Curio at OpenAI, Anthropic, Gemini or your own endpoint.",
         hold=2200,
     )
-    tour.click(page.get_by_role("button", name="LLM Settings"))
+    tour.click(page.get_by_role("button", name="AI Settings"))
     tour.beat(2200)
     page.keyboard.press("Escape")
     tour.beat(600)

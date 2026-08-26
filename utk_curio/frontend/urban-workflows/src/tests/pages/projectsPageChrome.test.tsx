@@ -58,7 +58,7 @@ jest.mock('../../api/projectsApi', () => ({
 }));
 jest.mock('../../NotebookConvertor', () => ({ notebookToTrill: jest.fn() }));
 jest.mock('../../components/DataflowThumbnail', () => ({ __esModule: true, default: () => null }));
-jest.mock('../../components/LlmSettingsModal', () => ({ __esModule: true, default: () => null }));
+jest.mock('../../components/AiSettingsModal', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../components/VersionBadge', () => ({ __esModule: true, default: () => null }));
 
 import ProjectsList from '../../pages/projects/ProjectsList';
@@ -88,10 +88,10 @@ beforeEach(() => {
 });
 
 describe('projects page chrome', () => {
-  test('the top bar keeps only LLM Settings — no Catalog button', async () => {
+  test('the top bar keeps only AI Settings — no Catalog button', async () => {
     const { getByRole, queryByRole } = await renderPage();
 
-    expect(getByRole('button', { name: 'LLM Settings' })).toBeTruthy();
+    expect(getByRole('button', { name: 'AI Settings' })).toBeTruthy();
     expect(queryByRole('button', { name: /catalog/i })).toBeNull();
   });
 

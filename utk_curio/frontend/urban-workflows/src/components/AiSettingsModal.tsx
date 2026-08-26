@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import ModalShell from "./ModalShell";
 import modal from "./modal-content.module.css";
-import styles from "./LlmSettingsModal.module.css";
+import styles from "./AiSettingsModal.module.css";
+import { AgentSettingsModal } from "./agents/settings/AgentSettingsModal";
 import { useUserContext } from "../providers/UserProvider";
 
 interface Props {
@@ -54,13 +55,16 @@ function uiModeFromSaved(apiType: string | null, baseUrl: string | null): UiMode
   return "openai";
 }
 
-const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
+const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const { user, updateLlmConfig } = useUserContext();
 
   const [uiMode, setUiMode] = useState<UiMode>("openai");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState(PROVIDER_INFO.openai.model);
+  // Two questions, one surface: which model, and how much it may spend.
+  // They used to live in two modals reached from two places.
+  const [tab, setTab] = useState<"provider" | "limits">("provider");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -121,12 +125,13 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   return (
     <ModalShell onClose={onClose}>
       <div className={modal.content}>
-        <h2 className={modal.title}>LLM Settings</h2>
+        <h2 className={modal.title}>AI Settings</h2>
 
         {user?.is_guest ? (
           <>
             <p className={styles.guestNotice}>
-              LLM settings are managed by your administrator.
+              AI features for guest accounts are configured by whoever runs this
+              Curio. If they are unavailable, ask them to set a guest API key.
             </p>
             <div className={modal.buttonRow}>
               <button className={modal.ghostBtn} onClick={onClose}>Close</button>
@@ -134,6 +139,37 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </>
         ) : (
           <>
+            <nav className={styles.settingsTabs} aria-label="AI settings sections">
+              <button
+                type="button"
+                className={`${styles.settingsTab}${tab === "provider" ? ` ${styles.settingsTabActive}` : ""}`}
+                aria-pressed={tab === "provider"}
+                onClick={() => setTab("provider")}
+              >
+                Provider
+              </button>
+              <button
+                type="button"
+                className={`${styles.settingsTab}${tab === "limits" ? ` ${styles.settingsTabActive}` : ""}`}
+                aria-pressed={tab === "limits"}
+                onClick={() => setTab("limits")}
+              >
+                Agent limits
+              </button>
+            </nav>
+
+            {tab === "limits" ? (
+              /* The account scope of the agent policy editor, rendered inline
+                 rather than as a second modal. The drawer's per-agent cog
+                 still opens the same component for a project override. */
+              <AgentSettingsModal scope="account" embedded onClose={onClose} />
+            ) : (
+          <>
+            <p className={styles.providerNote}>
+              This provider answers every AI surface in Curio: the agents, the
+              node-authoring assistants and chat. Leave it unset and those
+              surfaces say so rather than calling anything.
+            </p>
             <div className={modal.field}>
               <label className={modal.label}>Provider</label>
               <div className={styles.modeTabs}>
@@ -212,10 +248,12 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               </button>
             </div>
           </>
+            )}
+          </>
         )}
       </div>
     </ModalShell>
   );
 };
 
-export default LlmSettingsModal;
+export default AiSettingsModal;

@@ -80,6 +80,16 @@ beforeEach(() => {
   } as any);
 });
 
+// AI Settings reads UserProvider, which reaches the package registry and
+// through it vega (ESM, unloadable under jest). projectsPageChrome and
+// projectsListScroll mock it for the same reason. What this file asserts is
+// that the cog opens it - not what it contains.
+jest.mock("../../components/AiSettingsModal", () => ({
+  __esModule: true,
+  default: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div data-testid="ai-settings-modal">AI Settings</div> : null,
+}));
+
 describe("AgentCatalogDrawer", () => {
   it("is hidden (not accessible) when not presented", () => {
     // dev/43: the drawer stays mounted through the exit slide; while not
@@ -247,11 +257,18 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.queryByRole("button", { name: /project agent settings/i })).not.toBeInTheDocument();
   });
 
-  it("the roster header's Agent settings cog opens the account scope (dev/24)", async () => {
+  it("the header cog opens AI Settings, which owns the account scope", async () => {
+    // The account policy moved into AI Settings, on its "Agent limits" tab,
+    // beside the provider those limits apply to. The drawer opens that one
+    // surface instead of a second modal holding half the answer. AI Settings
+    // is loaded lazily here (a static import would pull UserProvider, the
+    // package registry and vega into every canvas), so the assertion waits.
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /agent settings/i }));
-    await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /ai settings/i }));
+    await waitFor(() =>
+      expect(screen.getByTestId("ai-settings-modal")).toBeInTheDocument(),
+    );
   });
 
   it("the footer Import agent button opens the upload modal", async () => {
