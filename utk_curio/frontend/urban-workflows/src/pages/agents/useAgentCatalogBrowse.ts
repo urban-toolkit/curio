@@ -3,6 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { agentsApi, type AgentCard, type AgentCatalogFacets } from "../../api/agentsApi";
 import { notifyAgentCatalogRefresh } from "../../utils/agentCatalogEvents";
 import type { SortMode } from "../../components/packages/publishing/packageTypes";
+import {
+  matchesAgentSearch,
+  sortAgentCards,
+} from "../../components/agents/catalog/agentListUtils";
 
 /**
  * State behind `/catalog/agents`, the account-scope Agent Catalog.
@@ -58,18 +62,6 @@ export interface AgentCatalogBrowseState {
   onUnpublish: (agent: AgentCard) => Promise<void>;
 }
 
-function matches(agent: AgentCard, query: string): boolean {
-  if (!query) return true;
-  const q = query.toLowerCase();
-  return (
-    agent.name.toLowerCase().includes(q) ||
-    agent.id.toLowerCase().includes(q) ||
-    (agent.purpose ?? "").toLowerCase().includes(q) ||
-    (agent.provenance?.publisher ?? "").toLowerCase().includes(q) ||
-    agent.capabilities.some((c) => c.toLowerCase().includes(q)) ||
-    agent.hooks.some((h) => h.toLowerCase().includes(q))
-  );
-}
 
 export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
   const [search, setSearch] = useState("");
@@ -165,23 +157,19 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
   );
 
   const filtered = useMemo(() => {
+    // The drawer's helpers, not a second copy. The private one here had already
+    // drifted three ways: it did not trim the query, did not match `category`
+    // (so "canvas" found category matches in the drawer and nothing here), and
+    // sorted with a bare localeCompare rather than the shared base-sensitivity
+    // comparator, so the two surfaces could order one roster differently.
     const rows = agents.filter((agent) => {
-      if (!matches(agent, search)) return false;
+      if (!matchesAgentSearch(agent, search)) return false;
       if (filter === "imported" && !agent.imported) return false;
       if (filter === "published" && !agent.published) return false;
       if (categoryFilter && agent.category !== categoryFilter) return false;
       return true;
     });
-    const sorted = [...rows];
-    if (sort === "name") {
-      sorted.sort((a, b) => a.name.localeCompare(b.name));
-    } else {
-      // "new" has no timestamp to sort by on an agent card, so it holds the
-      // roster order the backend returned (built-ins first, then published).
-      // Named rather than silently aliased to `name`, which would make the two
-      // options look broken by rendering identically.
-    }
-    return sorted;
+    return sortAgentCards(rows, sort);
   }, [agents, search, filter, categoryFilter, sort]);
 
   const categories = useMemo<[string, number][]>(() => {

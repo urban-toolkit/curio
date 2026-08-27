@@ -509,6 +509,54 @@ export const NodeContainer = ({
                 null
             }
 
+            {/* Per-node warnings. `updateWarnings` maps them onto nodes from
+                the spec and `useCode.loadTrill` round-trips them, so the data
+                has never stopped flowing; the indicator was deleted along with
+                the retired AI-mode chrome, which left the channel writing into
+                nothing and a user with no way to see a flagged node. */}
+            {!minimized && Array.isArray(data.warnings) && data.warnings.length > 0 ? (
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "row",
+                        position: "absolute",
+                        bottom: "-45px",
+                        right: "20px",
+                        ...((data.suggestionType != "none" && data.suggestionType != undefined)
+                            ? { opacity: "50%" }
+                            : {}),
+                    }}
+                >
+                    <FontAwesomeIcon
+                        style={{ fontSize: "24px", color: "#e8c548" }}
+                        icon={faTriangleExclamation}
+                        title={`${data.warnings.length} warning${data.warnings.length === 1 ? "" : "s"}`}
+                        onMouseEnter={() => setShowWarnings(true)}
+                        onMouseLeave={() => setShowWarnings(false)}
+                    />
+                    <ul
+                        style={{
+                            padding: "5px",
+                            backgroundColor: "white",
+                            border: "1px solid black",
+                            zIndex: 300,
+                            position: "fixed",
+                            width: "300px",
+                            maxHeight: "200px",
+                            marginLeft: "30px",
+                            overflowY: "auto",
+                            ...(showWarnings ? {} : { display: "none" }),
+                        }}
+                    >
+                        {data.warnings.map((warning: string, index: number) => (
+                            <li key={nodeId + "_warning_" + index}>
+                                <p>{warning}</p>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            ) : null}
+
             {(!dashboardOn || !dashboardLocked) && !noContent && <div
                 id={nodeId + "resizer"}
                 className={"resizer nowheel nodrag"}

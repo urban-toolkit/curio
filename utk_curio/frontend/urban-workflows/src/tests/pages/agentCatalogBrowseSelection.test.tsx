@@ -101,3 +101,27 @@ describe("/catalog/agents selection", () => {
     );
   });
 });
+
+describe("/catalog/agents search matches the drawer", () => {
+  it("finds an agent by its category, as the drawer does", async () => {
+    // The page carried a private `matches` that omitted `category`, so
+    // searching "node" listed category matches in the canvas drawer and
+    // nothing on the page. Both now call matchesAgentSearch.
+    const { result } = renderHook(() => useAgentCatalogBrowse());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setSearch("node"));
+    expect(result.current.filtered.map((a) => a.dirName)).toEqual([
+      "agent.chat-agent",
+      "agent.debug-agent",
+    ]);
+  });
+
+  it("trims the query, as the drawer does", async () => {
+    const { result } = renderHook(() => useAgentCatalogBrowse());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setSearch("  Debug  "));
+    expect(result.current.filtered.map((a) => a.dirName)).toEqual(["agent.debug-agent"]);
+  });
+});
