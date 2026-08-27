@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
+import { authHeaders } from './apiAuth';
 
 /**
  * HuggingFace CV Inference behavior.
@@ -20,23 +21,8 @@ import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/sr
 // See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/streetvision`;
 
-/**
- * Headers that identify the signed-in user to the backend.
- *
- * The two endpoints below resolve a HuggingFace token to download gated models
- * with, and it is the *caller's* token: gated access is granted per account,
- * against a licence that account accepted. Without this header the backend can
- * only fall back to the deployment-wide token, so a user's own token in AI
- * Settings would never take effect.
- *
- * `getAuthToken` is a getter on `window.curio` rather than a value because this
- * bundle evaluates once at boot, before sign-in.
- */
-function authHeaders(): Record<string, string> {
-  const get = typeof window !== 'undefined' && (window as any).curio?.getAuthToken;
-  const token = typeof get === 'function' ? get() : undefined;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+// Shared with cvGalleryBehavior, which needs the same identity to read back
+// the overlays this node's runs wrote. See sources/apiAuth.ts.
 
 type ModelType = 'segmentation' | 'detection';
 

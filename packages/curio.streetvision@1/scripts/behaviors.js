@@ -12,6 +12,41 @@ return /******/ (() => { // webpackBootstrap
 /******/ 	"use strict";
 /******/ 	var __webpack_modules__ = ({
 
+/***/ "../../../packages/curio.streetvision@1/sources/apiAuth.ts"
+/*!*****************************************************************!*\
+  !*** ../../../packages/curio.streetvision@1/sources/apiAuth.ts ***!
+  \*****************************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   authHeaders: () => (/* binding */ authHeaders)
+/* harmony export */ });
+/**
+ * Headers that identify the signed-in user to the Street Vision backend.
+ *
+ * Every route in this package resolves per-account state from the caller:
+ * `/models/search` and `/inference/run` resolve the HuggingFace token that
+ * unlocks gated models (granted per account, against a licence that account
+ * accepted), and `/inference/overlay/<id>` resolves which user's overlay cache
+ * to read. Without this header the backend falls back to the shared guest key,
+ * so a signed-in user's own token never takes effect and their overlays are
+ * looked up in somebody else's directory.
+ *
+ * `getAuthToken` is a getter on `window.curio` rather than a value because this
+ * bundle evaluates once at boot, before sign-in.
+ */
+function authHeaders() {
+  var _curio;
+  var get = typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.getAuthToken);
+  var token = typeof get === 'function' ? get() : undefined;
+  return token ? {
+    Authorization: "Bearer ".concat(token)
+  } : {};
+}
+
+/***/ },
+
 /***/ "../../../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx"
 /*!****************************************************************************!*\
   !*** ../../../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx ***!
@@ -24,6 +59,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _apiAuth__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./apiAuth */ "../../../packages/curio.streetvision@1/sources/apiAuth.ts");
 function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 var _curio;
 function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
@@ -41,6 +77,8 @@ function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) 
 function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
 function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t["return"] && (u = t["return"](), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
 function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+
+
 
 /**
  * CV Gallery behavior.
@@ -403,6 +441,19 @@ var useCvGalleryBehavior = function useCvGalleryBehavior(data, nodeState) {
   var overlayUrl = function overlayUrl(item) {
     return !item.demo_mode && item.class_ratios ? "".concat(API_BASE, "/inference/overlay/").concat(encodeURIComponent(item.image_id)) : null;
   };
+
+  // Overlays are cached per user, and the route resolves *which* user from the
+  // Authorization header. A bare `<img src>` cannot send one, so a signed-in
+  // user's request resolved to the shared guest key and 404'd on every tile.
+  // Fetch with the header instead and render the bytes through an object URL.
+  var _useState15 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
+    _useState16 = _slicedToArray(_useState15, 2),
+    overlayObjectUrl = _useState16[0],
+    setOverlayObjectUrl = _useState16[1];
+  var _useState17 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
+    _useState18 = _slicedToArray(_useState17, 2),
+    overlayFailed = _useState18[0],
+    setOverlayFailed = _useState18[1];
   var aggStats = results.length > 0 ? function () {
     var allClasses = new Map();
     results.forEach(function (r) {
@@ -460,6 +511,35 @@ var useCvGalleryBehavior = function useCvGalleryBehavior(data, nodeState) {
   }, [results, data, nodeState]);
   var inspectedItem = inspectIdx !== null ? results[inspectIdx] : null;
   var isSegmentation = (payload === null || payload === void 0 ? void 0 : payload.model_type) === 'segmentation';
+  var inspectedOverlayUrl = inspectedItem ? overlayUrl(inspectedItem) : null;
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
+    if (!inspectedOverlayUrl) {
+      setOverlayObjectUrl(null);
+      setOverlayFailed(false);
+      return;
+    }
+    var objectUrl = null;
+    var cancelled = false;
+    setOverlayObjectUrl(null);
+    setOverlayFailed(false);
+    fetch(inspectedOverlayUrl, {
+      headers: (0,_apiAuth__WEBPACK_IMPORTED_MODULE_1__.authHeaders)()
+    }).then(function (r) {
+      return r.ok ? r.blob() : Promise.reject(new Error("HTTP ".concat(r.status)));
+    }).then(function (blob) {
+      if (cancelled) return;
+      objectUrl = URL.createObjectURL(blob);
+      setOverlayObjectUrl(objectUrl);
+    })["catch"](function () {
+      if (!cancelled) setOverlayFailed(true);
+    });
+    // Revoke on unmount and whenever the inspected image changes, or each
+    // visit to the inspector leaks a blob for the lifetime of the document.
+    return function () {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [inspectedOverlayUrl]);
   var contentComponent = /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: S.root
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
@@ -755,8 +835,8 @@ var useCvGalleryBehavior = function useCvGalleryBehavior(data, nodeState) {
     onError: function onError(e) {
       e.target.style.background = '#e2e8f0';
     }
-  }), overlayUrl(inspectedItem) && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
-    src: overlayUrl(inspectedItem),
+  }), overlayObjectUrl && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
+    src: overlayObjectUrl,
     alt: "overlay",
     style: {
       position: 'absolute',
@@ -767,7 +847,7 @@ var useCvGalleryBehavior = function useCvGalleryBehavior(data, nodeState) {
       mixBlendMode: 'multiply',
       opacity: 0.6
     }
-  }), !overlayUrl(inspectedItem) && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+  }), !overlayObjectUrl && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       position: 'absolute',
       inset: 0,
@@ -785,7 +865,7 @@ var useCvGalleryBehavior = function useCvGalleryBehavior(data, nodeState) {
       padding: '4px 10px',
       borderRadius: 6
     }
-  }, inspectedItem.demo_mode ? 'Demo — no real overlay' : 'Overlay unavailable')))), inspectedItem.class_ratios && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+  }, inspectedItem.demo_mode ? 'Demo, no real overlay' : !inspectedOverlayUrl || overlayFailed ? 'Overlay unavailable' : 'Loading overlay...')))), inspectedItem.class_ratios && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       marginTop: 10
     }
@@ -977,6 +1057,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _apiAuth__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./apiAuth */ "../../../packages/curio.streetvision@1/sources/apiAuth.ts");
 var _curio;
 function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
 function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
@@ -1000,6 +1081,8 @@ function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" !=
 function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 
+
+
 /**
  * HuggingFace CV Inference behavior.
  *
@@ -1019,26 +1102,9 @@ function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == 
 // See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/streetvision");
 
-/**
- * Headers that identify the signed-in user to the backend.
- *
- * The two endpoints below resolve a HuggingFace token to download gated models
- * with, and it is the *caller's* token: gated access is granted per account,
- * against a licence that account accepted. Without this header the backend can
- * only fall back to the deployment-wide token, so a user's own token in AI
- * Settings would never take effect.
- *
- * `getAuthToken` is a getter on `window.curio` rather than a value because this
- * bundle evaluates once at boot, before sign-in.
- */
-function authHeaders() {
-  var _curio2;
-  var get = typeof window !== 'undefined' && ((_curio2 = window.curio) === null || _curio2 === void 0 ? void 0 : _curio2.getAuthToken);
-  var token = typeof get === 'function' ? get() : undefined;
-  return token ? {
-    Authorization: "Bearer ".concat(token)
-  } : {};
-}
+// Shared with cvGalleryBehavior, which needs the same identity to read back
+// the overlays this node's runs wrote. See sources/apiAuth.ts.
+
 var CLASS_SUGGESTIONS = ['building', 'road', 'sidewalk', 'vegetation', 'pole', 'fence', 'wall', 'traffic sign'];
 var S = {
   root: {
@@ -1231,7 +1297,7 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
     var check = function check() {
       fetch("".concat(API_BASE, "/health"), {
-        headers: authHeaders()
+        headers: (0,_apiAuth__WEBPACK_IMPORTED_MODULE_1__.authHeaders)()
       }).then(function (r) {
         return r.json();
       }).then(function () {
@@ -1293,7 +1359,7 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
       setModelsLoading(true);
       setModelsError(null);
       fetch("".concat(API_BASE, "/models/search?task=").concat(task, "&query=").concat(encodeURIComponent(query)), {
-        headers: authHeaders()
+        headers: (0,_apiAuth__WEBPACK_IMPORTED_MODULE_1__.authHeaders)()
       }).then(/*#__PURE__*/function () {
         var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(r) {
           var d;
@@ -1499,7 +1565,7 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
       method: 'POST',
       headers: _objectSpread({
         'Content-Type': 'application/json'
-      }, authHeaders()),
+      }, (0,_apiAuth__WEBPACK_IMPORTED_MODULE_1__.authHeaders)()),
       body: JSON.stringify({
         images: images,
         model: selectedModel,
