@@ -185,7 +185,10 @@ export const AgentCatalogBrowse: React.FC = () => {
               <AgentCatalogBrowseCard
                 key={agent.dirName}
                 agent={agent}
-                selected={selectedCoord === agent.dirName}
+                // Follow what the drawer actually shows, not the raw state:
+                // on arrival the selection is `undefined` and the drawer falls
+                // back to the first row, which should read as selected.
+                selected={selectedAgent?.dirName === agent.dirName}
                 busy={busyCoord === agent.dirName}
                 catalogPublishAllowed
                 onSelect={() => setSelectedCoord(agent.dirName)}

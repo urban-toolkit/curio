@@ -47,8 +47,9 @@ export interface AgentCatalogBrowseState {
   importedCount: number;
   publishedCount: number;
 
-  selectedCoord: string | null;
-  setSelectedCoord: (coord: string | null) => void;
+  /** `undefined` = nothing chosen yet (show the first); `null` = closed. */
+  selectedCoord: string | null | undefined;
+  setSelectedCoord: (coord: string | null | undefined) => void;
   selectedAgent: AgentCard | null;
 
   onImport: (agent: AgentCard) => Promise<void>;
@@ -80,7 +81,12 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
   const [loading, setLoading] = useState(true);
   const [busyCoord, setBusyCoord] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [selectedCoord, setSelectedCoord] = useState<string | null>(null);
+  // Tri-state, matching useNodeCatalogBrowse and DataCatalogBrowse: `undefined`
+  // means "nothing chosen yet, fall back to the first row" and `null` means the
+  // user closed the drawer. Collapsing the two (a plain `string | null`) made
+  // Close unusable, because the auto-select effect could not tell a dismissal
+  // from a fresh page and immediately reopened on `filtered[0]`.
+  const [selectedCoord, setSelectedCoord] = useState<string | null | undefined>(undefined);
 
   const setCategoryFilter = useCallback(
     (updater: (prev: string) => string) => setCategoryFilterRaw(updater),
@@ -192,17 +198,28 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
     return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [facets, agents]);
 
-  const selectedAgent = useMemo(
-    () => agents.find((a) => a.dirName === selectedCoord) ?? null,
-    [agents, selectedCoord],
-  );
-
-  // Auto-select the first row so the detail drawer has something to show, the
-  // way both peers do.
-  useEffect(() => {
-    if (selectedCoord == null && filtered.length > 0) {
-      setSelectedCoord(filtered[0].dirName);
+  // Resolve the tri-state: an explicit close stays closed, an explicit pick
+  // wins, and "nothing chosen yet" falls back to the first visible row so the
+  // drawer has something to show on arrival.
+  const selectedAgent = useMemo(() => {
+    if (selectedCoord === null) return null;
+    if (selectedCoord != null) {
+      return filtered.find((a) => a.dirName === selectedCoord) ?? null;
     }
+    return filtered[0] ?? null;
+  }, [filtered, selectedCoord]);
+
+  // Keep the explicit selection honest as the filters change: drop back to the
+  // undefined default when the chosen agent leaves the visible set, and never
+  // resurrect a drawer the user closed.
+  useEffect(() => {
+    if (filtered.length === 0) {
+      if (selectedCoord !== undefined) setSelectedCoord(undefined);
+      return;
+    }
+    if (selectedCoord === null) return;
+    if (selectedCoord != null && filtered.some((a) => a.dirName === selectedCoord)) return;
+    if (selectedCoord !== undefined) setSelectedCoord(undefined);
   }, [filtered, selectedCoord]);
 
   return {
