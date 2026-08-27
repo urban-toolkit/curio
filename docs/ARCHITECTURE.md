@@ -84,29 +84,55 @@ The frontend is a React/TypeScript application built on [React Flow](https://rea
 
 ### Provider Hierarchy
 
-State is managed through a nested context-provider tree rather than a global store. From outermost to innermost (as assembled in `src/index.tsx`):
+State is managed through a nested context-provider tree rather than a global
+store. Indentation below is containment: each entry wraps everything indented
+beneath it.
+
+The tree is in two parts, because the split matters. Only the first part is
+app-wide; the rest exists on the dataflow route alone, so a component on
+`/projects` or `/catalog/*` can reach `useUserContext` but not `useFlowContext`.
+
+App-wide, in `src/index.tsx`:
 
 ```
-BackendHealthBanner       Offline / unreachable-backend notice
-  ToastProvider           App-wide toasts
-    ReactFlowProvider
-      ProvenanceProvider  Provenance tracking
-        UserProvider      Auth / user profile
-          DialogProvider  Modal dialogs
-            CollaborationProvider   Presence, locks, proposals (must wrap FlowProvider)
-              FlowProvider          Nodes, edges, outputs, interactions  ← primary state
-                NodeCatalogDrawerProvider
-                DatasetCatalogDrawerProvider
-                AgentCatalogDrawerProvider
-                  StarterProvider   Per-template starter source snippets
-                    ProjectLoader
-                      PackagePaletteProvider
-                        DatasetPaletteProvider
+BrowserRouter
+  BackendHealthBanner        Offline / unreachable-backend notice
+    ToastProvider            App-wide toasts
+      ReactFlowProvider
+        ProvenanceProvider   Provenance tracking
+          UserProvider       Auth / user profile
+            Routes           every route below this point
 ```
 
-`AgentAttachmentsProvider` is the exception to "assembled in `index.tsx`": it
-mounts inside `MainCanvas.tsx`, around the canvas itself, because it needs React
-Flow and only applies where there is a dataflow to attach to.
+Per dataflow route, in `MainCanvasRoute` (same file):
+
+```
+DialogProvider                       Modal dialogs
+  CollaborationProvider              Presence, locks, proposals
+    FlowProvider                     Nodes, edges, outputs  <- primary state
+      NodeCatalogDrawerProvider
+        DatasetCatalogDrawerProvider
+          AgentCatalogDrawerProvider
+            StarterProvider          Per-template starter source snippets
+              ProjectLoader
+                PackagePaletteProvider
+                  DatasetPaletteProvider
+                    MainCanvas
+                      AgentAttachmentsProvider   Attached agents, in MainCanvas.tsx
+```
+
+Two orderings here are load-bearing rather than incidental:
+
+- `CollaborationProvider` must wrap `FlowProvider`. Outside it, FlowProvider's
+  mutation paths get the no-op default context and silently drop every peer
+  edit.
+- The three catalog drawer providers must sit inside `FlowProvider`, because a
+  drawer's Install writes to the open dataflow. Outside it, `useFlowContext`
+  returns no-op defaults and Install appears to succeed while doing nothing.
+
+`AgentAttachmentsProvider` is the one provider not assembled in `index.tsx`: it
+mounts inside `MainCanvas.tsx`, because it needs React Flow's instance and only
+applies where there is a dataflow to attach agents to.
 
 Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProvenance()`). Components call these hooks rather than reaching into global variables.
 
