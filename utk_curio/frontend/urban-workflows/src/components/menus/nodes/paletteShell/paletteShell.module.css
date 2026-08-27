@@ -1,16 +1,28 @@
-/* Shared chrome for the tools-panel palette dropdowns (Datasets, Packages,
-   Agents). Single source of truth for the trigger card + dropdown panel + orange
-   catalog footer that were previously duplicated across each palette's module.
-   Palettes consume these via CSS-Modules `composes`, keeping their own
-   palette-specific classes (sort toggle, package toolbar, agent row chips, …)
-   local. Do not add palette-specific rules here. */
+/* Shared chrome for the tools-panel palette dropdowns: the trigger card, the
+   dropdown panel and the orange catalog footer.
+
+   Intended as the single source of truth for all three palettes, but composed
+   today by the AGENTS palette alone - Datasets and Packages still carry their
+   own near-identical copies, so this file is "shared" by one. That is how the
+   three drifted apart (the trigger kept the geometry of a narrow icon-only rail
+   the other two had already left, and this header centred its title while both
+   peers left-aligned theirs).
+
+   Until the other two are migrated onto it, DatasetsPaletteDropdown.module.css
+   is the reference: when a value here disagrees with it, this file is the one
+   that is wrong. Palettes keep their own palette-specific classes (sort toggle,
+   package toolbar, agent row chips, …) local; do not add those here. */
 
 /* ── layout ──────────────────────────────────────────────────────────────── */
+/* Column, not row: the trigger is the only thing in flow, and .panel below is
+   lifted out of the flow entirely. A row here would put the open panel *beside*
+   the trigger inside the rail, which is what made the rail jump from ~56px to
+   ~444px wide whenever this palette opened. Matches
+   DatasetsPaletteDropdown.module.css and ToolsMenuPackagePalette.module.css. */
 .root {
   display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
   flex-shrink: 0;
   /* The palette dock (.paletteDock) is pointer-events: none so clicks fall
      through its gaps to the canvas; re-enable events on each palette's subtree. */
@@ -21,23 +33,33 @@
   pointer-events: auto;
 }
 
+/* No width: the column stretches to the rail, so this trigger is the same size
+   as the Node and Data ones stacked above it. The 56px that used to be pinned
+   here dates from when this palette was a narrow icon-only strip; the rail
+   redesign widened the other two and this shell was never brought along, which
+   left the Agent Catalog trigger half the width and, because the label then
+   wrapped, nearly twice the height of its peers (56x94 against their 102x50). */
 .column {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
-  width: 56px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
 /* ── trigger card ────────────────────────────────────────────────────────── */
+/* `width: 100%` + `box-sizing: border-box` + 8px padding, matching
+   DatasetsPaletteDropdown and ToolsMenuPackagePalette exactly. The old
+   `min-width: 56px` / `10px 8px` pair belonged to the narrow rail this shell
+   was written for. */
 .trigger {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  min-width: 56px;
-  padding: 10px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 5px;
   background-color: #1e1f23;
@@ -48,6 +70,19 @@
 
 .trigger:hover {
   background-color: #2c2d32;
+}
+
+/* Icon, count and chevron share one row, with the label beneath - two rows, not
+   four stacked children. Both peers do exactly this
+   (DatasetsPaletteDropdown.module.css `.triggerTop`,
+   ToolsMenuPackagePalette.module.css `.packagePaletteTriggerTop`), and it is
+   what makes all three triggers the same 50px height. */
+.triggerTop {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .triggerOpen {
@@ -87,21 +122,26 @@
   opacity: 0.85;
 }
 
-.emptyHint {
-  margin: 0;
-  color: rgba(251, 252, 246, 0.68);
-  font-size: 8px;
-  font-weight: 500;
-  line-height: 1.25;
-  padding: 0 2px;
-  text-align: center;
-}
-
 /* ── dropdown panel ──────────────────────────────────────────────────────── */
+/* Absolutely positioned against #tools-palette-dock (the only positioned
+   ancestor, being `position: fixed`) so the panel opens beside the built-in rail
+   without widening it, and starts level with the top of the rail rather than at
+   its own trigger's y.
+
+   This was missed when the Agent Catalog joined the rail: the two peers were
+   converted in 9f81f1d6, and 3fa39bf5 added Agents by touching only .tsx, so
+   this shell kept the pre-rail in-flow layout. That cost two things - the rail
+   widened to ~444px whenever Agents opened, and the panel hung down from a
+   trigger already near the fold, putting "Browse Agent Catalog +" off screen at
+   1280x720. */
 .panel {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 10px;
   width: min(380px, calc(100vw - 120px));
   min-height: 0;
-  max-height: calc(100vh - 152px);
+  max-height: calc(100vh - 170px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -112,11 +152,18 @@
   color: #fbfcf6;
 }
 
+/* flex-start, not center: both peers pin the title to the same 10px left inset
+   (DatasetsPaletteDropdown.module.css `.panelHeader`,
+   ToolsMenuPackagePalette.module.css `.packagePaletteToolbar`, whose comment
+   says it deliberately matches the dataset header). Centred here, the title
+   jumped ~150px sideways when you switched between the three palettes.
+   `justify-content` is what moves it - the title below is a shrink-to-fit flex
+   item, so its own `text-align` has no rendered effect either way. */
 .panelHeader {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 34px;
   padding: 0 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -128,7 +175,9 @@
   font-weight: 700;
   letter-spacing: 0.8px;
   line-height: 1.2;
-  text-align: center;
+  /* Matches both peers. Inert while the title shrink-wraps its text; it starts
+     mattering if the label ever wraps or the item grows. */
+  text-align: left;
   text-transform: uppercase;
 }
 

@@ -4,6 +4,7 @@
 .root { composes: root from "../paletteShell/paletteShell.module.css"; }
 .column { composes: column from "../paletteShell/paletteShell.module.css"; }
 .trigger { composes: trigger from "../paletteShell/paletteShell.module.css"; }
+.triggerTop { composes: triggerTop from "../paletteShell/paletteShell.module.css"; }
 .triggerOpen { composes: triggerOpen from "../paletteShell/paletteShell.module.css"; }
 .triggerIcon { composes: triggerIcon from "../paletteShell/paletteShell.module.css"; }
 .triggerLabel { composes: triggerLabel from "../paletteShell/paletteShell.module.css"; }

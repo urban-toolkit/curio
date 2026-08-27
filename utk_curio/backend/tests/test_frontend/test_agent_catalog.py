@@ -242,11 +242,11 @@ def test_add_agent_propagates_to_palette(
     #    makes the post-condition below a claim about a live repaint rather
     #    than about a fresh fetch on mount.
     #
-    #    Not the palette's own "Browse Agent Catalog +" footer, which is how the
-    #    Node suite enters: the panel is `max-height: calc(100vh - 152px)` with
-    #    `overflow: hidden`, so at this suite's 1280x720 viewport that footer
-    #    sits below the fold and Playwright refuses the click even with
-    #    force=True.
+    #    Entering from the menu rather than the palette's own "Browse Agent
+    #    Catalog +" footer is what keeps the palette mounted underneath, which
+    #    is the whole point here. (The footer is reachable now that the panel is
+    #    positioned against the dock like its two peers; it was below the fold
+    #    while the panel still hung off its own trigger.)
     open_tools_palette(page, "agents")
     drawer = _open_drawer_from_menu(page)
     card = _card(drawer, AGENT_COORD)

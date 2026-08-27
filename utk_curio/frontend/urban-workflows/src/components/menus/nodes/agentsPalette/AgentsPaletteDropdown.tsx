@@ -1,6 +1,6 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faChevronDown, faChevronUp, faRobot } from "@fortawesome/free-solid-svg-icons";
+import { faChevronLeft, faChevronRight, faRobot } from "@fortawesome/free-solid-svg-icons";
 import { agentsApi, type AgentCard } from "../../../../api/agentsApi";
 import { useFlowContext } from "../../../../providers/FlowProvider";
 import { useAgentCatalogDrawerControls } from "../../../../providers/AgentCatalogDrawerProvider";
@@ -28,10 +28,8 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
   setOpen: (value: boolean) => void;
 }) {
   const [agents, setAgents] = useState<AgentCard[]>([]);
-  const rootRef = useRef<HTMLDivElement>(null);
   const { projectId } = useFlowContext();
-  const { openAgentCatalogDrawer, isAgentCatalogDrawerOpen } =
-    useAgentCatalogDrawerControls();
+  const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -56,22 +54,15 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
     return () => window.removeEventListener(AGENT_CATALOG_REFRESH_EVENT, onRefresh);
   }, [load]);
 
-  // Escape closes — but let the catalog drawer own Escape while it is open so
-  // the palette stays behind it (e.g. right after installing an agent).
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape" && !isAgentCatalogDrawerOpen) setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, isAgentCatalogDrawerOpen]);
-
-  // No outside-click dismissal, deliberately: ToolsMenu owns a single
-  // `activePalette`, so the Datasets/Packages palettes close only when their
-  // own trigger is clicked again or the other trigger takes the strip. A
-  // bespoke listener here would make this palette behave unlike the two it
-  // sits beside.
+  // No Escape / outside-click dismissal on purpose: the palette stays open until
+  // its own trigger is clicked again (or another palette claims the strip), so
+  // browsing the canvas or the Agent Catalog never collapses it. Both peers say
+  // the same thing in the same words (DatasetsPaletteDropdown.tsx,
+  // PackagesPaletteDropdown.tsx).
+  //
+  // There used to be an Escape listener here, directly above a comment claiming
+  // this palette deliberately behaved like the other two - true of outside-click,
+  // false of Escape.
 
   const total = agents.length;
   const openDrawer = useCallback(() => {
@@ -82,7 +73,6 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
     <div
       id="agents-palette"
       className={styles.root}
-      ref={rootRef}
       {...{ [TOOLS_PALETTE_DROPDOWN_ATTR]: "true" }}
     >
       <div className={styles.column}>
@@ -94,13 +84,15 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
           aria-haspopup="true"
           title={open ? "Close agent palette" : "Open agent palette"}
         >
-          <FontAwesomeIcon icon={faRobot} className={styles.triggerIcon} />
+          <span className={styles.triggerTop}>
+            <FontAwesomeIcon icon={faRobot} className={styles.triggerIcon} />
+            <span className={styles.triggerCount}>{total}</span>
+            <FontAwesomeIcon
+              icon={open ? faChevronLeft : faChevronRight}
+              className={styles.triggerChevron}
+            />
+          </span>
           <span className={styles.triggerLabel}>Agent Catalog</span>
-          <span className={styles.triggerCount}>{total}</span>
-          <FontAwesomeIcon
-            icon={open ? faChevronUp : faChevronDown}
-            className={styles.triggerChevron}
-          />
         </button>
       </div>
       {open ? (
