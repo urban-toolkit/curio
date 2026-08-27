@@ -18,8 +18,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-class ProviderError(RuntimeError):
-    """Raised for provider-dispatch problems surfaced to the caller."""
 
 
 @dataclass(frozen=True)

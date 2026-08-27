@@ -142,6 +142,14 @@ def create_job(user_key: str, request: PackageBuildRequest) -> tuple[BuildJob, b
     """
     digest = request_digest(request)
     key = (user_key, digest)
+    # Expire this user's stale ``ready`` jobs first. Nothing else called
+    # ``sweep_expired_jobs``: there is no scheduler and no lifecycle route, so
+    # READY_JOB_TTL_SECONDS was a constant with no effect and a ready job stayed
+    # ready forever, holding its staged artifact against a request whose inputs
+    # may have moved on. Doing it here ties the sweep to the one moment the user
+    # is demonstrably still building, at the cost of a short walk over their own
+    # jobs.
+    sweep_expired_jobs(user_key)
     with _LOCK:
         existing = _JOBS.get(key)
         if existing is not None:

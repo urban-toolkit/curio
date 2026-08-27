@@ -203,3 +203,27 @@ class TestHygieneAndExpiry:
         create_job("guest", _request(note="fresh"))
         terminal = [j for j in list_jobs("guest") if j.phase == "failed"]
         assert len(terminal) <= 2
+
+
+def test_creating_a_job_expires_this_users_stale_ready_jobs():
+    """``ready`` jobs actually expire, because something calls the sweep.
+
+    ``sweep_expired_jobs`` had no production caller: no scheduler, no lifecycle
+    route, nothing. ``READY_JOB_TTL_SECONDS`` was a constant with no effect, so
+    a ready job stayed ready indefinitely and kept its staged artifact against
+    a request whose inputs had long since moved on.
+    """
+    build_jobs.reset_registry()
+
+    old, created = create_job("u1", _request(note="old"))
+    assert created
+    result = PackageBuildResult(status="ready", input_digest=old.build_id,
+                                artifact_digest="a" * 64, archive_size=10)
+    execute(old, [("packaging", lambda j: attach_result(j, result))])
+    assert old.phase == "ready"
+    # Age it past the TTL.
+    old.updated_at -= build_jobs.READY_JOB_TTL_SECONDS + 1
+
+    create_job("u1", _request(note="new"))
+
+    assert old.phase == "expired"

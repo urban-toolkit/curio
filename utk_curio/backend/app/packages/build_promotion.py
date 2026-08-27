@@ -55,11 +55,6 @@ log = logging.getLogger(__name__)
 
 PROMOTION_CONTRACT_VERSION = "1"
 
-STEP_ORDER = (
-    "verified", "backed-up", "installed", "lockfile-updated",
-    "registry-ready", "nodes-created",
-)
-
 # Journal statuses. ``awaiting-activation`` = installed (+ lockfile) but the
 # frontend has not yet confirmed registry refresh + node insertion.
 _ACTIVE_STATUSES = ("awaiting-activation",)

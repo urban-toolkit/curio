@@ -129,47 +129,6 @@ def _resolve_input(spec: WorkflowSpec, node_id: str, outputs: dict) -> tuple[str
     return str([outputs[uid] for uid in upstreams if uid in outputs]), "outputs"
 
 
-def execute_workflow_programmatically(spec: WorkflowSpec, seed: int = 42) -> dict[str, str]:
-    """Execute every code node via the sandbox HTTP API and return
-    ``{node_id: artifact dict}`` — the e2e comparison runner, byte-equivalent
-    with its test-tree original (raises on the first failure)."""
-    outputs: dict[str, dict] = {}
-    expected: dict[str, dict] = {}
-    for node in spec.topo_sorted_nodes():
-        if node.category != "code" or node.type not in PY_CODE_TYPES:
-            upstreams = spec.upstream_nodes(node.id)
-            if len(upstreams) == 1 and upstreams[0] in outputs:
-                outputs[node.id] = outputs[upstreams[0]]
-            elif len(upstreams) > 1:
-                outputs[node.id] = {
-                    "path": [outputs[uid] for uid in upstreams if uid in outputs],
-                    "dataType": "outputs",
-                }
-            continue
-        file_path, data_type = _resolve_input(spec, node.id, outputs)
-        resolved = resolve_widget_placeholders(node.content)
-        seeded = seed_node_code(resolved, seed)
-        result = _http_exec(
-            "/exec",
-            {
-                "code": textwrap.indent(seeded, "    "),
-                "file_path": file_path,
-                # The on-the-wire namespaced id so checkIOType matches the
-                # browser path.
-                "nodeType": node.raw_type,
-                "dataType": data_type,
-            },
-        )
-        out = result.get("output") or {}
-        if not out.get("path"):
-            raise RuntimeError(
-                f"Node {node.id} ({node.type}) failed:\n{result.get('stderr', '')}"
-            )
-        outputs[node.id] = {"path": out["path"], "dataType": out["dataType"]}
-        expected[node.id] = load_artifact_as_dict(out["path"])
-    return expected
-
-
 def _ancestor_slice(spec: WorkflowSpec, target_id: str) -> set[str]:
     """The target + every data-flow ancestor (reverse BFS — the server twin
     of ``playNodesUpTo``'s subgraph selection)."""

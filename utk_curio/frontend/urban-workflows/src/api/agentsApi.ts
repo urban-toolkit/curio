@@ -804,19 +804,6 @@ export const agentsApi = {
     );
   },
 
-  /** dev/52 Solve (DEC-048): one authenticated batch filling the applied
-   * plan's pending nodes; optional nodeIds = the Retry subset. */
-  solveAttachment(
-    projectId: string,
-    attachmentId: string,
-    nodeIds?: string[],
-  ): Promise<AgentSolveResult> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve`,
-      { method: "POST", body: JSON.stringify(nodeIds ? { nodeIds } : {}) },
-    );
-  },
-
   /** Dismiss a pending review proposal without applying it. */
   dismissProposal(
     projectId: string,

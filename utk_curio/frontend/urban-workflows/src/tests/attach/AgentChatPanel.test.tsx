@@ -582,18 +582,12 @@ describe("AgentChatPanel package-install review (memo dev/84)", () => {
   });
 });
 
-describe("AgentChatPanel attachment settings cog (memo dev/42)", () => {
-  it("renders the labeled cog beneath the header and opens settings", () => {
-    const onOpenSettings = jest.fn();
-    renderPanel({ onOpenSettings });
-    const cog = screen.getByRole("button", { name: /attachment settings/i });
-    // DEC-042: the cog lives in the content area, never the dark header.
-    expect(cog.className).toMatch(/attachmentSettingsBtn/);
-    fireEvent.click(cog);
-    expect(onOpenSettings).toHaveBeenCalledTimes(1);
-  });
-
-  it("no cog when the callback is absent", () => {
+describe("AgentChatPanel has no attachment settings cog", () => {
+  it("renders none, because there is no per-attachment settings surface", () => {
+    // The cog was gated on an `onOpenSettings` prop that no production caller
+    // ever passed: the modal behind it was deleted with the account-scope
+    // settings move, and the panel kept a branch only its own test could
+    // reach. A green test over an unreachable surface reads as coverage.
     renderPanel();
     expect(screen.queryByRole("button", { name: /attachment settings/i })).toBeNull();
   });

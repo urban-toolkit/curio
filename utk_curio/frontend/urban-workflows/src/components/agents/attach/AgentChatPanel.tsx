@@ -91,7 +91,6 @@ export const AgentChatPanel: React.FC<{
   /** Opens the shared settings modal at the Attached-instance scope (memo
    * dev/42) — the labeled cog beneath the header (the docs/08 anatomy slot;
    * never in the DEC-042 header itself). Omitted → no cog. */
-  onOpenSettings?: () => void;
   /** Review-before-apply actions (memo dev/41); omitted → cards render inert. */
   /** Resolves with the apply result when the caller has one (dev/105 A3: the
    * package install review walks `followUpProposals` from it). */
@@ -141,7 +140,6 @@ export const AgentChatPanel: React.FC<{
   onClose,
   toolActivity = [],
   runStatus,
-  onOpenSettings,
   onApplyProposal,
   onDismissProposal,
   onApplyPlanNode,
@@ -543,19 +541,6 @@ export const AgentChatPanel: React.FC<{
           would scroll away with the content). */}
       <div className={styles.messagesWrap}>
       <div className={styles.messages} ref={messagesRef} tabIndex={-1}>
-        {/* ⚙ Attachment settings (docs/08 anatomy, memo dev/42): the labeled
-            cog sits at the top of the white content area, beneath the DEC-042
-            header — never in it. */}
-        {onOpenSettings ? (
-          <button
-            type="button"
-            className={styles.attachmentSettingsBtn}
-            aria-haspopup="dialog"
-            onClick={onOpenSettings}
-          >
-            <FontAwesomeIcon icon={faGear} aria-hidden="true" /> Attachment settings
-          </button>
-        ) : null}
         {/* The initial intent reads as the conversation's first message (a
             plain user bubble), collapsed by default, with show more/less and
             an edit pencil. */}
