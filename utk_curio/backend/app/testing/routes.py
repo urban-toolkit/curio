@@ -12,19 +12,23 @@ can drive a real agent turn against the running backend without a key or a
 network. See ``app/agents/testing_provider.py``.
 
 The blueprint is registered by ``create_app`` in every non-production
-environment (``CURIO_ENV != 'prod'``, see ``backend/config.py::_is_dev``).
-``CURIO_TESTING=1`` is **not** required for the stub-login/stub-project
-endpoints to work; that flag only controls whether the backend uses a
-dedicated test DB or the default one. The ``agent-script`` routes are the
-exception - they 404 without it, because unlike the others they read prompt
-text back out of the process.
+environment (``CURIO_ENV != 'prod'``, see ``backend/config.py::_is_dev``), and
+**every route in it additionally requires ``CURIO_TESTING``**.
+
+Both factors are needed. ``CURIO_ENV`` defaults to ``"dev"``, so registration
+alone would mount these on any deployment whose operator never set it, and
+``stub-login`` issues a valid session for an arbitrary username with no
+password. ``CURIO_TESTING`` is the deliberate "this process is a test rig"
+signal: ``tests/conftest.py`` exports it at import time and the e2e harness
+passes it to the server subprocess it starts, so both suites see the routes and
+a normal ``curio.py start`` does not.
 """
 
 from __future__ import annotations
 
-from flask import Blueprint, abort, jsonify, request
+from flask import Blueprint, jsonify, request
 
-from utk_curio.backend.config import _is_dev
+from utk_curio.backend.config import _is_dev, _is_testing
 from utk_curio.backend.app.agents import testing_provider
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.users import repositories as user_repo
@@ -36,15 +40,42 @@ from utk_curio.backend.app.projects.schemas import ProjectCreate
 testing_bp = Blueprint("testing", __name__, url_prefix="/api/testing")
 
 
-def _guard() -> None:
-    """Abort with 404 in production.
+@testing_bp.before_request
+def _guard():
+    """Refuse with 404 unless this is a dev environment *and* a test run.
 
-    Belt-and-braces: ``create_app`` already gates blueprint registration on
-    ``_is_dev()``, but we also refuse at request time in case the env
-    changes mid-session (e.g. by a restart that reused the port).
+    Two factors, deliberately. ``_is_dev()`` alone is not a gate: ``CURIO_ENV``
+    defaults to ``"dev"`` (see ``backend/config.py``), so an operator who never
+    sets it gets these routes mounted on a real deployment. That matters more
+    here than anywhere else in Curio, because ``stub-login`` below issues a
+    valid session for an arbitrary username with no password, and ``reset-db``
+    empties tables. Requiring ``CURIO_TESTING`` as well means the endpoints
+    exist only when something deliberately said "this process is a test rig".
+
+    ``tests/conftest.py`` exports ``CURIO_TESTING`` at import time and the e2e
+    harness passes it to the server subprocess, so both suites are unaffected.
+
+    A ``before_request`` returning a response rather than a per-handler
+    ``abort(404)``: it covers every route in the blueprint including any added
+    later, and it does not go through ``create_app``'s
+    ``@app.errorhandler(Exception)``, which catches ``HTTPException`` too and
+    would turn this refusal into a 500 that reads as a server fault. Same
+    reasoning as :func:`_scripted_guard` below.
     """
-    if not _is_dev():
-        abort(404)
+    if not _is_dev() or not _is_testing():
+        return jsonify({"error": "not found"}), 404
+    return None
+
+
+#: The only tables ``reset-db`` will empty. Ordered child-before-parent so the
+#: deletes do not trip foreign keys.
+_RESETTABLE_TABLES: tuple[str, ...] = (
+    "exec_cache_entry",
+    "project",
+    "auth_attempt",
+    "user_session",
+    "user",
+)
 
 
 def _empty_spec() -> dict:
@@ -73,16 +104,17 @@ def stub_login():
     Body (JSON):
       * ``username`` – required; looked up first, created if missing.
       * ``name`` – display name, required when creating.
-      * ``password`` – optional; when provided the hash is (re)stored so
-        the normal ``/api/auth/signin`` form keeps working for the same
-        account in follow-up test steps.
+      * ``password`` – optional; used only when *creating* the user, so the
+        normal ``/api/auth/signin`` form works for the same account in
+        follow-up test steps. It is never applied to an account that already
+        exists: rewriting a stored hash from an unauthenticated endpoint is an
+        account takeover, and no test needs it.
       * ``email`` – optional.
 
     Response: same shape as ``/api/auth/signup`` / ``/api/auth/signin``
     (``{"user": {...}, "token": "..."}``). Callers install ``token`` as the
     ``session_token`` cookie and the SPA is immediately authenticated.
     """
-    _guard()
     body = request.get_json(silent=True) or {}
     username = (body.get("username") or "").strip()
     name = (body.get("name") or "").strip() or username
@@ -104,9 +136,6 @@ def stub_login():
             type="programmer",
         )
         created = True
-    elif password:
-        user.password_hash = security.hash_password(password)
-        db.session.commit()
 
     session = user_repo.create_session(user.id)
     return (
@@ -139,22 +168,32 @@ def reset_db():
     whose DB path differs from what ``conftest.py`` resolves).
 
     Body (JSON, all optional):
-      * ``tables`` – list of table names to truncate.  Defaults to the
-        standard mutable set (user, user_session, project, auth_attempt,
-        exec_cache_entry).
+      * ``tables`` – subset of the mutable set to truncate. Anything outside
+        that set is refused rather than executed: the name goes into raw SQL,
+        and "which tables may a test wipe" is a decision for this module, not
+        for the request body.
 
     Response: ``{"truncated": [...table names...]}``
     """
-    _guard()
-    default_tables = [
-        "exec_cache_entry",
-        "project",
-        "auth_attempt",
-        "user_session",
-        "user",
-    ]
     body = request.get_json(silent=True) or {}
-    tables = body.get("tables") or default_tables
+    requested = body.get("tables")
+    if requested is None:
+        tables = list(_RESETTABLE_TABLES)
+    else:
+        if not isinstance(requested, list):
+            return jsonify({"error": "tables must be a list"}), 400
+        unknown = [t for t in requested if t not in _RESETTABLE_TABLES]
+        if unknown:
+            return (
+                jsonify(
+                    {
+                        "error": f"not resettable: {', '.join(map(str, unknown))}",
+                        "allowed": list(_RESETTABLE_TABLES),
+                    }
+                ),
+                400,
+            )
+        tables = requested
 
     truncated = []
     for table in tables:
@@ -180,7 +219,6 @@ def stub_project():
 
     Response: ``ProjectSummary``-shaped JSON for the newly created row.
     """
-    _guard()
     body = request.get_json(silent=True) or {}
     username = (body.get("username") or "").strip()
     if not username:

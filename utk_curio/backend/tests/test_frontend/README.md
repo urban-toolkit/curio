@@ -66,10 +66,10 @@ Used by `test_auth_flow.py`, `test_project_save_load.py`, `test_project_dirty_gu
 
 Use when auth is incidental setup rather than the subject of the test (e.g. `test_workflows.py`'s parametrized canvas checks, one signup per workflow class ≈ seconds saved). The browser session is prepared through test-only backend endpoints instead of the signup UI:
 
-1. `POST /api/testing/stub-login` → create-or-find a user, store the password hash, return `{user, token, created}`.
+1. `POST /api/testing/stub-login` → create-or-find a user, return `{user, token, created}`. The password is stored only when the account is created; an existing account keeps the hash it had.
 2. `POST /api/testing/stub-project` → seed an empty `Project` owned by that user and return `{id, name, slug, …}`.
 
-The blueprint lives in [`utk_curio/backend/app/testing/routes.py`](../../app/testing/routes.py) and is **only registered by `create_app` when `CURIO_TESTING=1`**; each handler also re-guards at request time with `abort(404)`. Helpers:
+The blueprint lives in [`utk_curio/backend/app/testing/routes.py`](../../app/testing/routes.py). `create_app` registers it whenever `_is_dev()` (`CURIO_ENV != 'prod'`), and a blueprint-level `before_request` then refuses with 404 unless **both** `_is_dev()` and `CURIO_TESTING` hold. `CURIO_ENV` defaults to `dev`, so the second factor is what keeps `stub-login` off an ordinary deployment. Helpers:
 
 | Helper | What it does |
 |---|---|
