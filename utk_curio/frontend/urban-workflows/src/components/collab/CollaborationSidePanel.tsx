@@ -17,7 +17,7 @@ export const CollaborationSidePanel: React.FC = () => {
     const collab = useCollab();
 
     // Visibility is gated on the panelOpen flag in CollaborationProvider —
-    // toggled by the trigger button next to AI assistance in the UpMenu.
+    // toggled by the 👥 trigger button in the UpMenu.
     if (!collab.enabled || !collab.panelOpen) return null;
 
     return (

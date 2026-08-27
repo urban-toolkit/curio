@@ -31,7 +31,7 @@ This document is meant for **undergraduate students** involved in the Curio proj
 
 In-browser map rendering and GPU compute are provided by the **Autark** grammar (`@urban-toolkit/autk-grammar`). It is exposed in dataflows through a single `Autark` node whose "UrbanSpec" declaratively combines data loading (OSM/PBF), GPU `compute` (WGSL), and `map` / `plot` rendering. How a spec references data arriving from upstream nodes, using either the `upstream` keyword or named layer references, is covered in [ARCHITECTURE.md](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
-**AI assistance** adds model-backed help for dataflow authoring, from the button in the top bar. It shares one provider with the Agent Catalog and chat, configured in **AI Settings**.
+The **Agent Catalog** adds model-backed help for dataflow authoring: attach an agent to a node, a connection, or the canvas, and chat with it from the dock. Which model answers is configured in **AI Settings**.
 
 If you would like to learn more about the design and research behind Curio, please see the research papers linked in the repository.
 

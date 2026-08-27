@@ -55,8 +55,8 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
   </tr>
   <tr>
     <td align="center" width="33%">
-      <strong>AI assistance for authoring</strong><br/>
-      <sub>Natural-language assistance for dataflow authoring</sub>
+      <strong>Agent Catalog</strong><br/>
+      <sub>Attach AI agents to a node, a connection, or the whole dataflow</sub>
     </td>
     <td align="center" width="33%">
       <strong>Jupyter Notebook import</strong><br/>

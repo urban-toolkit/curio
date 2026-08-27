@@ -1,4 +1,4 @@
-"""Built-in agent definitions — the 13 prompt-agent migrations + composites.
+"""Built-in agent definitions — the twenty-one agents Curio ships with.
 
 Data-driven roster generated from the canonical prompt→agent map (plan memo
 ``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.txt``,
@@ -7,8 +7,8 @@ instruction assets are net-new but live in the same directory so resolution
 and materialization work unchanged.
 Each roster entry is turned into a manifest dict and validated through
 ``parse_agent_manifest``, so the built-ins can never drift from the manifest
-contract. This roster is the **Global Catalog** source (real content the drawer
-browses) and the resolution source for importing/installing a built-in.
+contract. This roster is what the catalog browses and the resolution source for
+importing or installing a built-in.
 
 ``agent.generated-content-evaluator`` shipped as a net-new AUTHORED built-in
 under ``DEC-055`` (memo dev/85 resolved ``OQ-007``: authored, not migrated —
@@ -95,9 +95,9 @@ class BuiltinAgentSpec:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
 
 
-# The 13 releasable prompt-agent migrations (dev/06 canonical map) + the P5
-# composites (dev/48). The blocked generated-content evaluator is deliberately
-# omitted.
+# The prompt-agent migrations (dev/06 canonical map) plus the P5 composites
+# (dev/48) and the package-authoring agents: twenty-one in all, which is the
+# number docs/AGENT-CATALOG.md quotes and test_prompt_assets parametrizes over.
 BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     BuiltinAgentSpec("agent.chat-agent", "Chat", "node",
                      "Conversational assistant for a node or the canvas.",

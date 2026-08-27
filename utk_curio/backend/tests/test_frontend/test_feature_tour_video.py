@@ -707,20 +707,6 @@ def scene_libraries(ctx: Ctx) -> None:
     ).to_have_count(0, timeout=10000)
 
 
-def scene_ai(ctx: Ctx) -> None:
-    page, tour = ctx.page, ctx.tour
-    tour.say(
-        "AI assistance for authoring",
-        "Describe the goal of a dataflow and ask for nodes to fill it in.",
-        hold=2600,
-    )
-    ai = page.get_by_role("button", name="AI assistance")
-    tour.click(ai, force=True)
-    tour.beat(2600)
-    tour.click(ai, force=True, hold=600)
-    tour.hush()
-
-
 def scene_linked_views(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.chapter(
@@ -952,7 +938,6 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("lineage", scene_lineage),
     ("nodecatalog", scene_node_catalog),
     ("libraries", scene_libraries),
-    ("ai", scene_ai),
     ("linkedviews", scene_linked_views),
     ("dashboard", scene_dashboard),
     ("provenance", scene_provenance),
@@ -966,7 +951,7 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
 #: Scenes that assume a dataflow canvas is already open. Used only to decide
 #: where a partial re-record has to start from.
 CANVAS_SCENES = {
-    "datacatalog", "build", "lineage", "nodecatalog", "libraries", "ai",
+    "datacatalog", "build", "lineage", "nodecatalog", "libraries",
     "linkedviews", "dashboard", "provenance", "interaction", "autark",
 }
 

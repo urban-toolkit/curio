@@ -18,11 +18,10 @@ Invariants (dev/15 / DEC-046, structural rather than bookkept):
   instruction and its reply is never parsed for ``toolRequest`` /
   ``delegateRequest`` — no nested tools, no delegation cycles, without a
   depth counter anywhere.
-- **Independent authorization**: the child reserves and settles its own
-  ledger pair under the CHILD agent's effective policy; the parent's
-  attachment is recorded for attribution only. A child failure (provider
-  error, quota 429, missing prompt) is data the parent recovers from, never
-  a parent-run error.
+- **Independent accounting**: the child reserves and settles its own ledger
+  pair; the parent's attachment is recorded for attribution only. A child
+  failure (provider error, missing prompt) is data the parent recovers from,
+  never a parent-run error.
 """
 
 from __future__ import annotations

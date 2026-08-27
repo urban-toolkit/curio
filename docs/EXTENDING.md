@@ -156,11 +156,11 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs. That is f
 
 ### 3.6 Caching expensive responses
 
-[`streetvision/services/cache.py`](../utk_curio/backend/app/streetvision/services/cache.py) stores fetched Street View images under `instance/streetvision_cache/` so re-running with the same bbox doesn't re-hit Google (and re-bill the user). Pattern:
+[`streetvision/services/cache.py`](../utk_curio/backend/app/streetvision/services/cache.py) stores fetched Street View images under `.curio/users/<user-key>/streetvision/images/` (overlays alongside, under `overlays/`) so re-running with the same bbox doesn't re-hit Google (and re-bill the user). Pattern:
 
 - Cache key = hash of the request inputs (e.g., `pano_id + size`).
 - TTL: forever for immutable content (an image at a coordinate); a few hours for content that changes (model lists).
-- Store under `instance/<package-name>_cache/` so it lives alongside Curio's other ephemeral state (gitignored).
+- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. A deployment-wide cache is a cross-user read wherever the serving route is unauthenticated: Street Vision's overlay route has no `@require_auth`, so a shared directory let anyone who could guess an image id fetch somebody else's imagery. That is why this cache moved, and why the previous `STREETVISION_CACHE_DIR` override no longer exists.
 
 ### 3.7 The error contract back to the frontend
 

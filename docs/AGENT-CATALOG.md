@@ -103,8 +103,11 @@ drew the same robot. No agent surface *declares* a colour; they are all born in
 
 ### Origins
 
-Alongside its category, every card carries an **origin**, which is provenance
-rather than function, and which the browse page also rails on:
+Alongside its category, every agent has an **origin**, which is provenance
+rather than function. It is backend metadata: the browse page counts it in its
+facets but does not currently offer it as a filter, and no card renders it as a
+chip. What the page's left rail offers is a **status** rail (All agents / In my
+account / Published) and a **category** rail.
 
 | Origin | Meaning |
 |---|---|
@@ -162,7 +165,7 @@ they are **not** interchangeable:
 
 - **The `/catalog/agents` page** is the account-level library view. Reach it from
   `/projects` and the **Agent Catalog** tab in the section nav. You can browse,
-  filter by category and origin, search, read an agent's full detail, and add an
+  filter by status and category, search, read an agent's full detail, and add an
   agent to your account. You **cannot add an agent to a dataflow from here**,
   because adding is relative to a dataflow and this page has none.
 - **The Agent Catalog drawer** (inside the canvas) is the working surface. Open
@@ -208,7 +211,7 @@ the left Tools panel's **Agent Catalog** dropdown. Drag it onto a node or onto
 empty canvas to attach it, which opens its chat panel.
 
 **I want to browse everything available without opening a dataflow.** Go to
-`/projects` and pick the **Agent Catalog** tab. Filter by category or origin in
+`/projects` and pick the **Agent Catalog** tab. Filter by status or category in
 the left rail, click a card to read its full detail, and use **Add to my
 account** to keep it. Open a dataflow afterwards to add it there.
 

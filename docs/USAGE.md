@@ -9,6 +9,8 @@
   - [Logged-in users](#logged-in-users)
   - [Guest users](#guest-users)
 - [Node Catalog](#node-catalog)
+- [Data Catalog](#data-catalog)
+- [Agent Catalog](#agent-catalog)
 - [Real-time collaboration](#real-time-collaboration)
 - [Quick start](#quick-start)
 
@@ -216,13 +218,15 @@ npm run build
 
 ## LLM configuration
 
-Curio includes an AI assistant sidebar available on the canvas, toggled by the **AI assistance** button in the top bar. It lets you ask questions and receive guidance in the context of your active dataflow. Which model answers is set in **AI Settings**, the same place the Agent Catalog's agents read.
+Curio's AI surfaces (the Agent Catalog's agents, the node-authoring assistants, and chat) all answer through one provider, configured in **AI Settings**.
 
-To use the LLM Assistant, Curio needs access to an LLM API. Each user can connect their own account, or you can configure a shared key for guest users.
+Curio ships no endpoint of its own, so an instance whose operator configures nothing resolves no provider and says so rather than sending prompts somewhere nobody chose. Each user can connect their own account, or you can configure a shared key for guest users.
 
 ### Logged-in users
 
-Logged-in users configure their own LLM connection from the **Projects page**. Click the **AI Settings** button in the top navigation bar to open the settings panel. It has two tabs: **Provider**, which is the model every agent uses, and **Agent limits**, which is how much they may spend.
+Logged-in users configure their own connection in **AI Settings**, reachable from the **Projects page** and the catalog pages via the top navigation bar, and on the canvas from the Agent Catalog drawer's header.
+
+The panel sets the provider, base URL, API key, model, and a HuggingFace token (used only for gated models in the Street Vision node). Each field falls back to the deployment default when you leave it blank, so filling in only one box keeps the rest of the operator's configuration. Key and base URL are not inherited across providers: switching to Anthropic does not lend you the deployment's OpenAI-compatible endpoint.
 
 The following providers are supported:
 
@@ -311,6 +315,65 @@ Because the shared catalog root defaults to `<repo_root>/datasets/`, pip install
 > checkout (see [Authoring nodes](AUTHORING-NODES.md)).
 
 For the full walkthrough, covering storage layers, the action matrix, computed datasets and lineage, OSM PBF imports, publishing, and previews, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
+
+## Agent Catalog
+
+Agents are AI assistants you attach to your dataflow. Curio ships twenty-one of
+them, covering chat, debugging, node authoring, dataset discovery, planning and
+evaluation. Which model answers is the provider set in **AI Settings** above.
+
+There are two scopes, and they are different writes:
+
+- **`/catalog/agents`**, the third tab beside the node and data catalogs, is
+  your **account**. Adding an agent here makes it available to every dataflow.
+- **The Agent Catalog drawer**, opened on the canvas from **Data → Agent
+  Catalog** or the agents tab in the left rail, adds an agent to **this
+  dataflow**.
+
+### Attaching an agent
+
+Drag an agent from the left rail's agents palette onto the canvas. Where you
+drop it is what it attaches to:
+
+- **a node**, for agents that reason about one node's content or output,
+- **a connection**, for agents that reason about an edge between two nodes,
+- **the canvas**, for agents that work over the whole dataflow.
+
+An agent only accepts the targets its manifest declares, so dropping one
+somewhere it does not belong is refused rather than silently rebound. Node
+agents appear as a badge on their node; canvas and connection agents appear in
+the dock at the top of the canvas.
+
+### Working with an agent
+
+Click an agent to open its chat panel. From there you can rename the
+conversation, clear it, cycle through every attached agent with the ‹ › arrows,
+and edit the initial intent the agent starts from. Agents that propose changes
+(new nodes, edges, node content, packages) put them up for review first: nothing
+lands on your canvas until you apply it.
+
+The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
+strip adds planning phases, per-node progress, **Solve** (fill in the planned
+nodes in one batch) and **Simulation Mode** (walk the plan without executing).
+
+The goal box in the dock is shared with your agents: several of them, the
+Dataflow Task Planner most of all, are written around knowing what the dataflow
+is for. It is saved with the project.
+
+### What an agent may reach
+
+Agents run under a default-deny egress policy. Web fetches are restricted to
+http and https, refused when a host resolves to a non-public address, capped in
+body size and redirect count, and bounded per run. A refusal surfaces in the
+chat as "refused by the egress policy", which means the address was internal or
+otherwise disallowed, not that the site was down.
+
+The agents' web-search tool defaults to DuckDuckGo's keyless Instant Answer API.
+Operators who would rather not send queries to a third party can point
+`--agent-search-url` at their own provider, or elsewhere entirely.
+
+For the full guide, covering the roster, agent packages, delegation, publishing,
+and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
 
 ## Real-time collaboration
 

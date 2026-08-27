@@ -248,9 +248,10 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         />
       ) : null}
       {accountSettingsOpen ? (
-        /* The account scope lives in AI Settings now, on its "Agent limits"
-           tab, beside the provider those limits apply to. This drawer opens
-           that one surface rather than a second modal for half the answer. */
+        /* The account scope lives in AI Settings now, beside the provider it
+           applies to. This drawer opens that one surface rather than a second
+           modal for half the answer. On the canvas it is the ONLY way there:
+           GlobalPageHeader renders only on /projects and /catalog/*. */
         <React.Suspense fallback={null}>
           <AiSettingsModal isOpen onClose={() => setAccountSettingsOpen(false)} />
         </React.Suspense>

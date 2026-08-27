@@ -87,14 +87,26 @@ The frontend is a React/TypeScript application built on [React Flow](https://rea
 State is managed through a nested context-provider tree rather than a global store. From outermost to innermost (as assembled in `src/index.tsx`):
 
 ```
-ReactFlowProvider
-  LLMProvider          LLM chat
-  ProvenanceProvider   Provenance tracking
-  UserProvider         Auth / user profile
-  DialogProvider       Modal dialogs
-  FlowProvider         Nodes, edges, outputs, interactions  ← primary state
-    StarterProvider    Per-template starter source snippets (formerly TemplateProvider)
+BackendHealthBanner       Offline / unreachable-backend notice
+  ToastProvider           App-wide toasts
+    ReactFlowProvider
+      ProvenanceProvider  Provenance tracking
+        UserProvider      Auth / user profile
+          DialogProvider  Modal dialogs
+            CollaborationProvider   Presence, locks, proposals (must wrap FlowProvider)
+              FlowProvider          Nodes, edges, outputs, interactions  ← primary state
+                NodeCatalogDrawerProvider
+                DatasetCatalogDrawerProvider
+                AgentCatalogDrawerProvider
+                  StarterProvider   Per-template starter source snippets
+                    ProjectLoader
+                      PackagePaletteProvider
+                        DatasetPaletteProvider
 ```
+
+`AgentAttachmentsProvider` is the exception to "assembled in `index.tsx`": it
+mounts inside `MainCanvas.tsx`, around the canvas itself, because it needs React
+Flow and only applies where there is a dataflow to attach to.
 
 Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProvenance()`). Components call these hooks rather than reaching into global variables.
 
@@ -776,11 +788,11 @@ never an automatic write:
 | `/api/agents/projects/<projectId>/attachments/<id>/solve/cancel` | POST | Stop dispatching new children; undispatched targets revert to pending. **409** when nothing is running |
 | `/api/agents/projects/<projectId>/attachments/<id>/simulate` | POST | Simulation Mode, as Server-Sent Events |
 | `/api/agents/projects/<projectId>/attachments/<id>/simulate/cancel` | POST | Stop at the next action boundary; what is done stays done |
-| `/api/agents/projects/<projectId>/attachments/<id>/run-node` | POST | Execute the dataflow *through* one node, using its saved content |
-| `/api/agents/projects/<projectId>/attachments/<id>/validate-node` | POST | Generate, execute-through, validate, self-correct, then propose, for one node |
+| `/api/agents/projects/<projectId>/attachments/<id>/run-node` | POST | Execute the dataflow *through* one node, using its saved content, as Server-Sent Events |
+| `/api/agents/projects/<projectId>/attachments/<id>/validate-node` | POST | Generate, execute-through, validate, self-correct, then propose, for one node, as Server-Sent Events |
 | `/api/agents/.../proposals/<proposalId>/apply-node` | POST | Apply one planned node from a pending dataflow-plan proposal |
 | `/api/agents/.../proposals/<proposalId>/apply-edges` | POST | Apply the plan's edges: the connection review stage |
-| `/api/agents/.../proposals/<proposalId>/plan-goals` | POST | Edit one planned node's goal before it is created |
+| `/api/agents/.../proposals/<proposalId>/plan-goals` | PATCH | Edit one planned node's goal before it is created |
 
 Every run appends to a per-day ledger under a file lock
 (`.curio/users/<key>/agents/ledger/`), written from the token counts each
@@ -840,7 +852,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |
 | `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
 | `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
-| `src/components/AiSettingsModal.tsx` | AI Settings: the Provider tab and the account-scope Agent limits tab |
+| `src/components/AiSettingsModal.tsx` | AI Settings: the account-level provider, model and credentials every AI surface reads |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend

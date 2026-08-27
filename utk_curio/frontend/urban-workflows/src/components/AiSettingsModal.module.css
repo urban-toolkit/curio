@@ -79,38 +79,7 @@
   margin-bottom: 8px;
 }
 
-/* Section tabs inside the modal: Provider | Agent limits. Same visual language
-   as the catalog drawers' DrawerTabs, kept local because that stylesheet is
-   sized for a full-width drawer strip rather than a modal. */
-.settingsTabs {
-    display: flex;
-    gap: 4px;
-    margin: 0 0 16px;
-    border-bottom: 1px solid var(--curio-border);
-}
-
-.settingsTab {
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    padding: 8px 12px;
-    color: var(--curio-text-secondary);
-    font-family: var(--curio-font-family);
-    font-size: var(--curio-font-size-md);
-    cursor: pointer;
-}
-
-.settingsTab:hover {
-    color: var(--curio-text-primary);
-}
-
-.settingsTabActive {
-    color: var(--curio-text-primary);
-    border-bottom-color: var(--curio-text-primary);
-    font-weight: 600;
-}
-
-/* One line under the tab strip naming what this provider is actually for. */
+/* One line naming what this provider is actually for. */
 .providerNote {
     margin: 0 0 16px;
     color: var(--curio-text-secondary);
