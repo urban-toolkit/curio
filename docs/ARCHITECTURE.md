@@ -85,43 +85,43 @@ The frontend is a React/TypeScript application built on [React Flow](https://rea
 ### Provider Hierarchy
 
 State is managed through a nested context-provider tree rather than a global
-store. Indentation below is containment: each entry wraps everything indented
-beneath it.
+store. Every provider wraps exactly one child, so the tree is really a single
+chain: the lists below run from outermost to innermost, each entry containing
+the one after it.
 
-The tree is in two parts, because the split matters. Only the first part is
-app-wide; the rest exists on the dataflow route alone, so a component on
-`/projects` or `/catalog/*` can reach `useUserContext` but not `useFlowContext`.
+The chain comes in two parts, and the split matters. Only the first is app-wide;
+the rest exists on the dataflow route alone, which is why a component rendered
+on `/projects` or `/catalog/*` can call `useUserContext` but not
+`useFlowContext`.
 
 App-wide, in `src/index.tsx`:
 
-```
-BrowserRouter
-  BackendHealthBanner        Offline / unreachable-backend notice
-    ToastProvider            App-wide toasts
-      ReactFlowProvider
-        ProvenanceProvider   Provenance tracking
-          UserProvider       Auth / user profile
-            Routes           every route below this point
-```
+1. `BrowserRouter`
+2. `BackendHealthBanner`: offline / unreachable-backend notice
+3. `ToastProvider`: app-wide toasts
+4. `ReactFlowProvider`
+5. `ProvenanceProvider`: provenance tracking
+6. `UserProvider`: auth / user profile
+7. `Routes`: every route lives below this point
 
-Per dataflow route, in `MainCanvasRoute` (same file):
+Per dataflow route, inside `MainCanvasRoute` in the same file:
 
-```
-DialogProvider                       Modal dialogs
-  CollaborationProvider              Presence, locks, proposals
-    FlowProvider                     Nodes, edges, outputs  <- primary state
-      NodeCatalogDrawerProvider
-        DatasetCatalogDrawerProvider
-          AgentCatalogDrawerProvider
-            StarterProvider          Per-template starter source snippets
-              ProjectLoader
-                PackagePaletteProvider
-                  DatasetPaletteProvider
-                    MainCanvas
-                      AgentAttachmentsProvider   Attached agents, in MainCanvas.tsx
-```
+1. `DialogProvider`: modal dialogs
+2. `CollaborationProvider`: presence, locks, proposals
+3. `FlowProvider`: nodes, edges, outputs, interactions. The primary state
+4. `NodeCatalogDrawerProvider`
+5. `DatasetCatalogDrawerProvider`
+6. `AgentCatalogDrawerProvider`
+7. `StarterProvider`: per-template starter source snippets
+8. `ProjectLoader`
+9. `PackagePaletteProvider`
+10. `DatasetPaletteProvider`
+11. `MainCanvas`
+12. `AgentAttachmentsProvider`: the attached agents, mounted in `MainCanvas.tsx`
+    rather than `index.tsx` because it needs React Flow's instance and only
+    applies where there is a dataflow to attach agents to
 
-Two orderings here are load-bearing rather than incidental:
+Two of these orderings are load-bearing rather than incidental:
 
 - `CollaborationProvider` must wrap `FlowProvider`. Outside it, FlowProvider's
   mutation paths get the no-op default context and silently drop every peer
@@ -129,10 +129,6 @@ Two orderings here are load-bearing rather than incidental:
 - The three catalog drawer providers must sit inside `FlowProvider`, because a
   drawer's Install writes to the open dataflow. Outside it, `useFlowContext`
   returns no-op defaults and Install appears to succeed while doing nothing.
-
-`AgentAttachmentsProvider` is the one provider not assembled in `index.tsx`: it
-mounts inside `MainCanvas.tsx`, because it needs React Flow's instance and only
-applies where there is a dataflow to attach agents to.
 
 Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProvenance()`). Components call these hooks rather than reaching into global variables.
 
