@@ -28,12 +28,21 @@ Scene ids, in order: see ``SCENES`` at the bottom of this file.
 The AI provider:
 
 The ``aisettings`` scene types a base URL, an API key and a model into AI
-Settings on camera, from the ``LLM_*`` constants below, and ``agentrun`` then
-asks a real question of that endpoint. Curio ships no provider of its own, and
-the account the tour signs up starts with none, so this is not decoration:
-without it every agent surface refuses to run and ``agentrun`` records nothing
-worth keeping. Point the constants somewhere else to record against a different
-endpoint.
+Settings on camera, and ``agentrun`` then asks a real question of that endpoint.
+Curio ships no provider of its own, and the account the tour signs up starts
+with none, so this is not decoration: without it every agent surface refuses to
+run.
+
+The endpoint and model default to the constants below; **the key is never one of
+them**. It is read from ``.curio/tour-provider.json`` (``.curio/`` is
+gitignored) or ``CURIO_TOUR_LLM_API_KEY``, so recording the tour never requires
+a credential in the repository::
+
+    {"baseUrl": "https://…/", "model": "…", "apiKey": "sk-…"}
+
+With no key the two scenes that need a live provider show their surface, say so
+in a caption and skip the call - a recording of an agent erroring is worse than
+one that admits it is unconfigured.
 
 A scene that raises is reported and the tour carries on to the next one, so a
 single broken step still yields a usable video. The test then fails at the end
@@ -43,6 +52,7 @@ to a remote model, so it is also the one most likely to be the scene that broke.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -113,9 +123,17 @@ CARD = 'article:not([role="status"])'
 # on this deployment" copy is on screen to be read.
 #
 # The key renders as dots: the field is type="password" (AiSettingsModal.tsx).
-LLM_BASE_URL = "https://sage200.evl.uic.edu/"
-LLM_MODEL = "gemma4"
-LLM_API_KEY = "sk-QJx3nVlwdKbbbwYI_1dxJg"
+#
+# The endpoint and model are not secret and stay here so a checkout records
+# against the same provider by default. The key is not: it is read from
+# ``.curio/tour-provider.json`` (``.curio/`` is gitignored) or
+# ``CURIO_TOUR_LLM_API_KEY``, so it never becomes a committed credential. With
+# no key, the scenes that need a live provider say so on camera and skip their
+# live half rather than recording an agent that visibly errors.
+PROVIDER_FILE = os.path.join(REPO_ROOT, ".curio", "tour-provider.json")
+
+_DEFAULT_BASE_URL = "https://sage200.evl.uic.edu/"
+_DEFAULT_MODEL = "gemma4"
 
 # Agents the tour adds to the dataflow. The order matters on screen:
 #   node-explainer   attaches to a node and is the one that answers live;
@@ -174,6 +192,26 @@ def _log(message: str) -> None:
         message.encode(encoding, "replace").decode(encoding, "replace"),
         flush=True,
     )
+
+
+def _load_provider() -> tuple[str, str, str]:
+    """``(baseUrl, model, apiKey)`` from the local file, env, then defaults."""
+    data: dict = {}
+    try:
+        with open(PROVIDER_FILE, encoding="utf-8") as handle:
+            data = json.load(handle) or {}
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError) as exc:
+        _log(f"[tour] ignoring unreadable {PROVIDER_FILE}: {exc}")
+    return (
+        str(data.get("baseUrl") or os.environ.get("CURIO_TOUR_LLM_BASE_URL") or _DEFAULT_BASE_URL),
+        str(data.get("model") or os.environ.get("CURIO_TOUR_LLM_MODEL") or _DEFAULT_MODEL),
+        str(data.get("apiKey") or os.environ.get("CURIO_TOUR_LLM_API_KEY") or ""),
+    )
+
+
+LLM_BASE_URL, LLM_MODEL, LLM_API_KEY = _load_provider()
 
 
 @dataclass
@@ -329,26 +367,6 @@ def _center_on(page, node_id: str, *, zoom: float = 0.9) -> None:
     page.wait_for_timeout(1000)
 
 
-_PALETTE_TRIGGERS = {
-    "datasets": ("#datasets-palette", "Close dataset palette"),
-    "packages": ("#packages-palette", "Close node package palette"),
-    "agents": ("#agents-palette", "Close agent palette"),
-}
-
-
-def _close_tools_palette(page, kind: str) -> None:
-    """Collapse a left-rail palette so it stops covering the canvas.
-
-    The palettes open into a strip over the pane, which is right for authoring
-    and wrong for filming the graph that authoring just produced.
-    """
-    root, title = _PALETTE_TRIGGERS[kind]
-    trigger = page.locator(f'{root} button[title="{title}"]')
-    if trigger.count():
-        trigger.first.click(force=True)
-        page.wait_for_timeout(400)
-
-
 def _close_data_drawer(page) -> None:
     page.locator(DRAWER_DATA).locator("header").get_by_role(
         "button", name="Close Data Catalog drawer"
@@ -369,6 +387,35 @@ _AI_FIELDS = {
 
 def _ai_field(page, label: str):
     return page.locator(_AI_FIELDS[label])
+
+
+def _open_ai_settings(ctx: Ctx) -> None:
+    """Open AI Settings from whichever entry point this page has.
+
+    Two exist, and which one is available depends on where the tour is: the
+    header button lives in ``GlobalPageHeader``, which renders on /projects and
+    /catalog/* but *not* on the canvas, where the Agent Catalog drawer's cog is
+    the only route (``docs/AGENT-CATALOG.md`` §5).
+
+    Handling both is what lets ``aisettings`` be re-recorded alongside the canvas
+    scenes: ``CURIO_TOUR_SCENES`` picks one landing page for the whole subset, so
+    a scene that only knew the header could never share a run with them.
+    """
+    page, tour = ctx.page, ctx.tour
+    header_button = page.get_by_role("button", name="AI Settings", exact=True)
+    if header_button.count():
+        tour.click(header_button.first)
+    else:
+        drawer = _open_agent_drawer(ctx)
+        tour.say(
+            "On the canvas, the Agent Catalog holds the way in",
+            "The provider is an account setting, so it sits with the agents it answers.",
+            hold=2600,
+        )
+        tour.click(drawer.get_by_role("button", name=re.compile("AI Settings")).first)
+    expect(
+        page.get_by_role("heading", name="AI Settings", level=2)
+    ).to_be_visible(timeout=15000)
 
 
 # ---------------------------------------------------------------------------
@@ -740,10 +787,23 @@ def scene_ai_settings(ctx: Ctx) -> None:
         "02", "AI Settings",
         "One provider answers every AI surface in Curio.",
     )
-    tour.click(page.get_by_role("button", name="AI Settings"))
-    expect(
-        page.get_by_role("heading", name="AI Settings", level=2)
-    ).to_be_visible(timeout=15000)
+    if not LLM_API_KEY:
+        _log(
+            "[tour] no provider key configured; recording the panel without "
+            f"filling it in. Put one in {PROVIDER_FILE} or "
+            "CURIO_TOUR_LLM_API_KEY to record the agent scenes for real."
+        )
+        _open_ai_settings(ctx)
+        tour.say(
+            "Point Curio at a provider",
+            "OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint.",
+            hold=3000,
+        )
+        tour.hush()
+        tour.click(page.get_by_role("button", name="Cancel", exact=True))
+        return
+
+    _open_ai_settings(ctx)
     tour.say(
         "Per-account, not per-dataflow",
         "The agents, the node-authoring assistants and chat all use this one.",
@@ -819,10 +879,7 @@ def scene_ai_settings(ctx: Ctx) -> None:
 
     # Reopen it: the only durable proof on screen that the key was stored, and
     # the clearest way to show the per-field inheritance the panel implements.
-    tour.click(page.get_by_role("button", name="AI Settings"))
-    expect(
-        page.get_by_role("heading", name="AI Settings", level=2)
-    ).to_be_visible(timeout=15000)
+    _open_ai_settings(ctx)
     remove = page.get_by_role("button", name="Remove saved key", exact=True)
     expect(remove).to_be_visible(timeout=15000)
     tour.focus(remove, hold=1500)
@@ -836,6 +893,12 @@ def scene_ai_settings(ctx: Ctx) -> None:
     expect(
         page.get_by_role("heading", name="AI Settings", level=2)
     ).to_have_count(0, timeout=15000)
+    # If the drawer was the way in (canvas), put it back so the next scene
+    # starts on a clean canvas rather than behind a panel it did not open.
+    closer = page.get_by_role("button", name="Close Agent Catalog drawer")
+    if closer.count():
+        closer.first.click()
+        expect(page.locator(DRAWER_AGENTS)).to_have_count(0, timeout=8000)
     tour.hush()
 
 
@@ -968,7 +1031,7 @@ def scene_build(ctx: Ctx) -> None:
     # in, and the next drop - whose offset is in screen pixels - then lands on
     # top of this node instead of 610px to its right, which makes connect_nodes
     # fail with the output handle covered by the other node's editor.
-    _close_tools_palette(page, "datasets")
+    close_tools_palette(page, "datasets")
 
     tour.say(
         "A Data Loading node, already coded",
@@ -1155,7 +1218,7 @@ def scene_node_catalog(ctx: Ctx) -> None:
         hold=2600,
     )
     tour.hush()
-    _close_tools_palette(page, "packages")
+    close_tools_palette(page, "packages")
 
 
 def scene_libraries(ctx: Ctx) -> None:
@@ -1345,6 +1408,21 @@ def scene_agent_run(ctx: Ctx) -> None:
     composer = panel.get_by_label("Message this agent")
     tour.type_into(composer, "What does this node compute, and why?", delay=38)
     tour.hush()
+
+    if not LLM_API_KEY:
+        # Show the surface, but do not send: with no provider the reply would be
+        # an error bubble, and filming that is worse than filming nothing.
+        _log("[tour] no provider key configured; skipping the live agent run")
+        tour.say(
+            "Attach a provider in AI Settings to run it",
+            "Curio ships no endpoint of its own, so nothing is called until you set one.",
+            hold=3000,
+        )
+        tour.hush()
+        close_chat = panel.get_by_label("Close chat")
+        if close_chat.count():
+            tour.click(close_chat.first)
+        return
 
     # Watch every call the run makes, not just the first one to come back.
     # The panel opens an SSE stream (/run/stream) that answers 200 and then

@@ -385,11 +385,15 @@ Other things that surprise people here:
   Removing one *does* confirm, and Playwright's default for a dialog is
   **dismiss** - without `page.once("dialog", lambda d: d.accept())` the click
   silently does nothing and later assertions fail for the wrong reason.
-- **The agent palette's footer sits below the fold at 1280x720.** Its panel is
-  `max-height: calc(100vh - 152px)` with `overflow: hidden`, so entering through
-  `Browse Agent Catalog +` (how the Node suite enters) is not clickable at this
-  suite's viewport. Reach the drawer from the **Data** menu instead, and open
-  the palette separately when the test needs it mounted.
+- **The agent palette's footer used to sit below the fold at 1280x720.** Its
+  panel hung down from its own trigger, which is the third and lowest in the
+  rail, so `Browse Agent Catalog +` (how the Node suite enters) was off screen.
+  That was a missed conversion rather than a viewport limit: the Datasets and
+  Packages panels became `position: absolute; top: 0; left: 100%` when the
+  palettes moved into the rail, and the Agent Catalog arrived later without the
+  matching CSS. `paletteShell.module.css` now positions it the same way, so the
+  footer is reachable and either entry point works. Reaching the drawer from the
+  **Data** menu is still fine, and is what the tour does.
 - **`packagesApi` percent-encodes the dirName**, so the `@` in
   `curio.canvas.draft.<slug>@1` reaches the wire as `%40`. An
   `expect_response` predicate built from the raw dirName never fires; match on
@@ -589,12 +593,23 @@ invisible and a click would look unmotivated.
 ### The agent scenes need a provider
 
 `aisettings` types a base URL, an API key and a model into AI Settings on
-camera, from the `LLM_*` constants at the top of the module, and `agentrun` then
-asks that endpoint a real question. Curio ships no provider of its own and the
-tour's account starts with none, so those constants are load-bearing rather than
-decorative: point them somewhere else to record against a different endpoint.
-`agentrun` is the only scene that leaves the machine, which makes it the one
-most likely to be the scene that failed.
+camera, and `agentrun` then asks that endpoint a real question. Curio ships no
+provider of its own and the tour's account starts with none, so this is
+load-bearing rather than decorative.
+
+The endpoint and model default to the `LLM_*` constants at the top of the
+module. **The key is not a constant** — put it in `.curio/tour-provider.json`
+(`.curio/` is gitignored) or in `CURIO_TOUR_LLM_API_KEY`:
+
+```json
+{ "baseUrl": "https://…/", "model": "…", "apiKey": "sk-…" }
+```
+
+Without a key both scenes still record: they show the panel and the chat, say so
+in a caption, and skip the call. Filming an agent that visibly errors is worse
+than filming one that admits it is unconfigured. `agentrun` is the only scene
+that leaves the machine, which makes it the one most likely to be the scene that
+failed.
 
 | Variable | Purpose |
 |---|---|
