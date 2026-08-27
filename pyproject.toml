@@ -44,6 +44,13 @@ curio = "utk_curio.main:main"
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.package-data]
+# MANIFEST.in gets these into the sdist; this gets them into the wheel.
+# "llm-prompts" is a data directory inside the utk_curio package rather than a
+# package of its own (the hyphen makes it unimportable), so packages.find never
+# sees it and it needs naming explicitly or the built-in agents ship promptless.
+utk_curio = ["llm-prompts/*.txt"]
+
 [tool.setuptools.dynamic]
 version = {attr = "utk_curio.__version__"}
 

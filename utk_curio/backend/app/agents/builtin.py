@@ -24,10 +24,13 @@ User-facing overview: ``docs/AGENT-CATALOG.md``.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from utk_curio.backend.app.agents.manifest import AgentManifest, parse_agent_manifest
+
+log = logging.getLogger(__name__)
 
 BUILTIN_VERSION = "1.0.0"
 
@@ -431,7 +434,19 @@ def read_prompt_text(coord: str, name: str) -> str | None:
         return None
     filename = spec.prompt_file if name == "instruction" else spec.preamble_file
     path = PROMPT_SOURCE_DIR / filename
-    return path.read_text(encoding="utf-8") if path.is_file() else None
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    # A roster agent names a file that is not there. Returning None silently
+    # would ship the agent with no system or task prompt and no symptom beyond
+    # worse answers, which is precisely what an sdist without
+    # ``utk_curio/llm-prompts/`` used to do. Say so once, loudly, per file.
+    log.error(
+        "built-in agent %s declares prompt %r (%s) but %s is missing; the agent "
+        "will run without it. If this is an installed Curio, the package is "
+        "missing utk_curio/llm-prompts/ (see MANIFEST.in).",
+        coord, name, filename, path,
+    )
+    return None
 
 
 def read_instruction_text(coord: str) -> str | None:
