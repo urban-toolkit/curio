@@ -1252,7 +1252,7 @@ def add_library_route():
     """
     from utk_curio.backend.app.packages import libraries as libs
     from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, install_python_deps,
+        PipInstallError, PipSpecError, install_python_deps,
     )
 
     body = request.get_json(silent=True) or {}
@@ -1274,6 +1274,10 @@ def add_library_route():
     name, version = _split_lib_spec(spec)
     try:
         report = install_python_deps({name: version})
+    except PipSpecError as exc:
+        # A malformed requirement is the caller's mistake, not pip's failure:
+        # answer 400 rather than letting it read as an upstream 502.
+        return _error(str(exc), 400)
     except PipInstallError as exc:
         return _error(f"pip install failed: {exc}", 502)
     libs.add_library(user_key, kind, spec)

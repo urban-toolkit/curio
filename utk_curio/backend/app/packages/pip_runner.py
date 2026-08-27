@@ -28,6 +28,7 @@ Design choices:
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -58,6 +59,48 @@ class UninstallReport:
     kept: list[str]
 
 
+#: A PEP 508 distribution name: alphanumeric ends, ``.``/``-``/``_`` inside.
+#: Anything else is not a package name, and the argv entry built from it is not
+#: a package either.
+_PY_NAME_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
+
+#: A version constraint: comparators, digits, dots, wildcards, commas, and the
+#: npm-ish ``^`` / bare-version forms ``_spec_argv`` accepts. No whitespace, no
+#: shell metacharacters, no URLs.
+_PY_SPEC_RE = re.compile(r"^[\^~=<>!]{0,2}[A-Za-z0-9.*+!_-]+(?:\s*,\s*[~=<>!]{1,2}[A-Za-z0-9.*+!_-]+)*$")
+
+
+class PipSpecError(ValueError):
+    """A requirement that is not a package name plus an optional constraint."""
+
+
+def validate_python_requirement(name: str, spec: str = "") -> None:
+    """Refuse anything that is not ``name`` + an optional version constraint.
+
+    Nothing else validates this. The requirement reaches ``pip install`` as one
+    argv element, and pip is happy to read an argv element as a URL to download
+    and build (``https://host/x.tar.gz`` runs that sdist's ``setup.py``) or as
+    an option (``--index-url=http://attacker/simple`` repoints the whole
+    resolve). Neither is shell injection - every call site passes a list argv
+    with no ``shell=True`` - but both are arbitrary code execution on the host,
+    reachable by any authenticated user through ``POST /api/packages/libraries``
+    and by any package manifest's ``dependencies.python``.
+
+    Checked here rather than only at the route because the route is one of
+    seven call paths: catalog install, install repair, build promotion, overlay
+    build and the launcher all reach pip through manifest-declared names that
+    never pass a request handler.
+    """
+    if not isinstance(name, str) or not _PY_NAME_RE.match(name.strip()):
+        raise PipSpecError(
+            f"{name!r} is not a Python package name. Requirements are a name "
+            f"plus an optional version, not a URL, path or pip option."
+        )
+    spec = (spec or "").strip()
+    if spec and spec != "*" and not _PY_SPEC_RE.match(spec):
+        raise PipSpecError(f"{spec!r} is not a valid version constraint for {name!r}")
+
+
 def _spec_argv(name: str, spec: str) -> str:
     """Build a ``pip install`` argv entry from a manifest ``{name, spec}`` pair.
 
@@ -70,7 +113,11 @@ def _spec_argv(name: str, spec: str) -> str:
       compatible-release ``~=0.14`` so the streetvision / UHVI manifests
       authored in the original PR's npm-influenced style still install.
     - Empty spec — install latest.
+
+    Every requirement passes :func:`validate_python_requirement` first, so a
+    URL, path or pip option cannot become an argv entry.
     """
+    validate_python_requirement(name, spec)
     spec = (spec or "").strip()
     if not spec or spec == "*":
         return name
@@ -176,7 +223,19 @@ def install_python_deps(
                 last_lines.append(stripped)
                 if len(last_lines) > 40:
                     last_lines.pop(0)
-        rc = proc.wait()
+        # The buffered branch below bounds pip with _PIP_TIMEOUT_SECONDS; this
+        # one used a bare wait(), so a mirror that accepts the connection and
+        # then never sends EOF pinned the calling thread forever. Reachable
+        # over HTTP, not just from the CLI: build_overlay streams, and it sits
+        # on the promotion and catalog-install paths.
+        try:
+            rc = proc.wait(timeout=_PIP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise PipInstallError(
+                f"pip timed out after {_PIP_TIMEOUT_SECONDS}s and was killed"
+            )
         if rc != 0:
             tail = "\n".join(last_lines)[-2000:]
             raise PipInstallError(
@@ -237,7 +296,19 @@ def install_python_deps_to_target(
                 last_lines.append(stripped)
                 if len(last_lines) > 40:
                     last_lines.pop(0)
-        rc = proc.wait()
+        # The buffered branch below bounds pip with _PIP_TIMEOUT_SECONDS; this
+        # one used a bare wait(), so a mirror that accepts the connection and
+        # then never sends EOF pinned the calling thread forever. Reachable
+        # over HTTP, not just from the CLI: build_overlay streams, and it sits
+        # on the promotion and catalog-install paths.
+        try:
+            rc = proc.wait(timeout=_PIP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise PipInstallError(
+                f"pip timed out after {_PIP_TIMEOUT_SECONDS}s and was killed"
+            )
         if rc != 0:
             tail = "\n".join(last_lines)[-2000:]
             raise PipInstallError(
@@ -271,6 +342,9 @@ def uninstall_python_deps(names: Iterable[str]) -> UninstallReport:
     names = [n for n in names if n]
     if not names:
         return UninstallReport(removed=[], kept=[])
+    # Same argv, same exposure: ``pip uninstall`` also reads ``-r`` and friends.
+    for name in names:
+        validate_python_requirement(name)
 
     cmd = [sys.executable, "-m", "pip", "uninstall", "-y", *names]
     log.info("Running %s", " ".join(cmd))
