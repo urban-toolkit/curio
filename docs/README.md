@@ -10,6 +10,7 @@
 - [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
 - [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
+- [Upgrading](UPGRADING.md): what changes for an existing deployment, and what to do about it
 
 ## Making contributions
 

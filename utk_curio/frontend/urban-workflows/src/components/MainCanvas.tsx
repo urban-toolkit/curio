@@ -48,6 +48,19 @@ import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";
 
+/**
+ * How far the viewport may pan, in flow coordinates.
+ *
+ * Without a clamp, `minZoom` 0.05 lets a stray trackpad gesture carry the
+ * dataflow far enough off-screen that there is no way back to it short of
+ * reloading. The bound is generous rather than tight: it exists to keep the
+ * work findable, not to constrain where nodes may sit.
+ */
+const CANVAS_EXTENT: [[number, number], [number, number]] = [
+    [-2000, -2000],
+    [6000, 6000],
+];
+
 export function MainCanvas() {
     const { showToast } = useToastContext();
     const { setActivePackageKey } = usePackagePalette();
@@ -503,7 +516,7 @@ export function MainCanvas() {
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
-
+                translateExtent={CANVAS_EXTENT}
                 panOnDrag={!dashboardOn || !dashboardLocked}
                 zoomOnScroll={!dashboardOn || !dashboardLocked}
                 zoomOnPinch={!dashboardOn || !dashboardLocked}
