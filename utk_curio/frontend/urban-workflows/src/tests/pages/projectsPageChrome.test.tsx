@@ -342,4 +342,42 @@ describe('projects detail drawer', () => {
 
     expect(queryByRole('button', { name: 'Open dataflow' })).toBeNull();
   });
+
+  test('a closed drawer stays closed when the list changes', async () => {
+    // The test above passes by doing nothing after the click. The bug was that
+    // Close and "nothing chosen yet" were the same value, so the auto-select
+    // effect resurrected the drawer on the next thing that rebuilt `filtered` -
+    // a keystroke, a filter, a sort, or the refetch after a rename or archive.
+    // Searching is the cheapest of those to reproduce.
+    const { getByRole, getByPlaceholderText, queryByRole } = await renderPage();
+
+    await act(async () => {
+      fireEvent.click(getByRole('button', { name: 'Close' }));
+    });
+    expect(queryByRole('button', { name: 'Open dataflow' })).toBeNull();
+
+    await act(async () => {
+      fireEvent.change(getByPlaceholderText('Search projects…'), {
+        target: { value: 'Bike' },
+      });
+    });
+
+    expect(queryByRole('button', { name: 'Open dataflow' })).toBeNull();
+  });
+
+  test('picking a project after closing reopens the drawer on it', async () => {
+    // The other half of the contract: `null` must mean "closed", not "inert".
+    const { getByRole, getByText, queryByRole } = await renderPage();
+
+    await act(async () => {
+      fireEvent.click(getByRole('button', { name: 'Close' }));
+    });
+    expect(queryByRole('button', { name: 'Open dataflow' })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(getByText('Bike lanes'));
+    });
+
+    expect(getByRole('button', { name: 'Open dataflow' })).toBeTruthy();
+  });
 });
