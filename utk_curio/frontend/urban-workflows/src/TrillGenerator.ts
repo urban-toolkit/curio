@@ -1,4 +1,16 @@
-
+/**
+ * Serializes the canvas into a Trill dataflow document, and keeps its version
+ * history.
+ *
+ * The output format's canonical spec is `docs/schemas/trill.v1.json`; the prose
+ * reference is `docs/TRILL-SPEC.md`. Adding a field here means declaring it
+ * there - `TestDeclaredKeyCoverage` in
+ * `backend/tests/test_projects/test_trill_schema.py` fails on a field the
+ * examples use and the schema does not document, because the schema is
+ * deliberately open and would otherwise accept it in silence.
+ *
+ * `loadTrill` in `hook/useCode.ts` is the matching reader.
+ */
 export class TrillGenerator {
 
     static provenanceJSON: any = {

@@ -28,14 +28,16 @@ dependencies = [
   "altair>=6.1.0",
   "tqdm>=4.67.3",
   "pygments>=2.20.0",
+  # Validates manifests and dataflow specs against docs/schemas/*.json.
+  # See requirements.txt for why this is a floor and not an exact pin.
+  "jsonschema>=4.18",
   "psutil>=5.9",
   "pyseccomp>=0.1.2; sys_platform == 'linux'",
   "pytest==9.0.3",
   "pytest-cov==7.1.0",
   "pytest-playwright==0.7.2",
   "pytest-flask==1.3.0",
-  "allure-pytest==2.16.0",
-  "black==26.3.1"
+  "allure-pytest==2.16.0"
 ]
 
 [project.scripts]

@@ -1,0 +1,572 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/trill.v1.json",
+  "title": "Curio Trill Dataflow Specification (v1)",
+  "description": "Schema for a Curio dataflow document, saved on disk as '.curio/users/<userKey>/projects/<projectId>/spec.trill.json' and shipped in-repo as the examples under 'docs/examples/'. A trill document is a graph: 'dataflow.nodes' are the boxes on the canvas and 'dataflow.edges' the wires between them, plus two optional provenance sections and three backend-owned agent sections. Field names are camelCase except the historical snake_case 'provenance_id'. NODES ARE DEFINED BY PACKAGE MANIFESTS, NOT HERE: a node's 'type' is a coordinate into a manifest's 'templates[].id' (see docs/schemas/node-package.v4.json), and this schema validates only the SHAPE of that coordinate, never whether it resolves. Everything a template decides - which handle ids exist, which port types are compatible, whether the node has code at all, whether it can carry an interaction edge - lives in the manifest and depends on which packages are installed, so it is deliberately unconstrained here; 'scripts/validate_trill.py' and the cross-schema test in test_trill_schema.py cover resolution. This schema is the canonical spec for the format; the backend performs no validation of its own (projects/storage.py reads and writes it as opaque JSON), which makes this document the only written contract. Every object is intentionally open ('additionalProperties: true') because five independent writers emit overlapping but different key sets: TrillGenerator.generateTrill (the canvas), agents/services.py (agent-applied graph edits, which emit deliberately minimal nodes), datasets/application/mutations.py, useDatasetCatalogDrawer.ts, and testing/routes.py. Fields marked deprecated are still accepted on read by hook/useCode.ts but are never written by current code. NOT part of this format: 'graph_preview' (derived server-side in projects/services.py and returned only by the project-list API), the sibling 'manifest.json' written alongside the spec, agent transcripts and the usage ledger (they live under .curio/users/<userKey>/agents/), and the phantom fields 'node.output', 'node.metadata.annotations' and edge type 'Data', which appear only in the stale schema embedded in llm-prompts/default_preamble.txt and are read by nothing. User-facing overview: docs/TRILL-SPEC.md.",
+  "$comment": "Conventions follow docs/schemas/agent-package.v1.json (Draft 2020-12, raw-GitHub $id, prose descriptions, open objects) with two deliberate departures: this schema uses $defs, which the agent schema does not, because dataflowProvenance.versions recurses and several shapes are referenced twice; and it uses dependentRequired for the dashboard coordinate pairs.",
+  "type": "object",
+  "required": ["dataflow"],
+  "additionalProperties": true,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this schema. No writer emits it today; accepted so a hand-authored example can opt into editor validation."
+    },
+    "dataflow": { "$ref": "#/$defs/dataflow" },
+    "nodeProvenance": {
+      "type": "object",
+      "description": "Per-node execution history, keyed by node id. Written on every save from ProvenanceProvider.getAllNodeProvenance() and restored by useCode.loadTrill. Browser-side only - nothing server-side produces or consumes it.",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/nodeExecRecord" }
+      }
+    },
+    "dataflowProvenance": { "$ref": "#/$defs/dataflowProvenance" },
+    "name": {
+      "type": "string",
+      "deprecated": true,
+      "description": "DEPRECATED top-level name. The authoritative name is 'dataflow.name'. Still read as a fallback by execution/workflow_spec.py, and still written by the dev stub in testing/routes.py; a top-level name without a matching 'dataflow.name' is the documented footgun in backend/tests/test_frontend/README.md, because the canvas then loads with an undefined workflow name and the next save is rejected."
+    }
+  },
+  "$defs": {
+    "dataflow": {
+      "allOf": [{ "$ref": "#/$defs/dataflowBase" }],
+      "description": "A live dataflow: the graph plus its metadata and dependency lockfiles, with everything the canvas writer always emits required. TrillGenerator.generateTrill writes all six required fields unconditionally, and all 31 committed examples carry all six, so an absence here is a defect rather than a variation - a missing 'name' is what makes dataflowProvenance.latest interpolate the string 'undefined' into its version keys.",
+      "required": ["nodes", "edges", "name", "task", "timestamp", "provenance_id"]
+    },
+    "snapshotDataflow": {
+      "allOf": [{ "$ref": "#/$defs/dataflowBase" }],
+      "description": "A dataflow as captured inside dataflowProvenance.versions. Same fields as a live one and validated the same way, but only 'nodes' and 'edges' are required: a snapshot is a historical record, most on-disk ones predate the fields a live dataflow must now carry, and history cannot be retroactively completed without falsifying it. Requiring more here would make an otherwise-correct spec permanently invalid on account of its own past.",
+      "required": ["nodes", "edges"]
+    },
+    "dataflowBase": {
+      "type": "object",
+      "description": "Every field a dataflow may carry, with no required list of its own. Referenced by 'dataflow' and 'snapshotDataflow', which differ only in what they require - this keeps the property definitions in one place so the two cannot drift.",
+      "additionalProperties": true,
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "description": "The canvas nodes. May be empty (a new project).",
+          "items": { "$ref": "#/$defs/node" }
+        },
+        "edges": {
+          "type": "array",
+          "description": "The wires between nodes. May be empty.",
+          "items": { "$ref": "#/$defs/edge" }
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable dataflow name, shown in the projects gallery. Always written by TrillGenerator.generateTrill; when it is missing, dataflowProvenance.latest interpolates the string 'undefined' into its version keys."
+        },
+        "task": {
+          "type": "string",
+          "description": "The dataflow's overall goal, as typed into the canvas goal field. Empty string when unset - which is the value in every committed example."
+        },
+        "timestamp": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Save time in epoch MILLISECONDS, from Date.now(). An integer, not a string: the Draft-07 schema embedded in llm-prompts/default_preamble.txt declares this a string, and that is wrong."
+        },
+        "provenance_id": {
+          "type": "string",
+          "description": "Groups the versions in dataflowProvenance. Written as a copy of 'name' by TrillGenerator.generateTrill, so the two normally match. Historical snake_case, unlike every other field."
+        },
+        "packages": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Node-package lockfile: the '<packageId>@<major>' directory names whose manifests must be installed for this dataflow's node types to resolve. BACKEND-OWNED ON UPDATE - packages/spec_packages.py:preserve_project_packages overwrites whatever the client sends with the on-disk value, so a stale tab cannot clobber an install. Sorted and de-duplicated by set_project_packages; sortedness is a writer invariant this schema cannot express. Absent or empty is recoverable: project_packages backfills it from the node types.",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*[a-z0-9]@(?:0|[1-9][0-9]{0,3})$",
+            "description": "A package directory name. The package-id half follows the laxer manifest grammar of node-package.v4.json rather than the stricter one enforced on the package half of node.type, because set_project_packages writes whatever directory is installed."
+          }
+        },
+        "description": {
+          "type": "string",
+          "description": "Longer prose description, shown on the example cards. Emitted only when non-empty, so an unset description is an absent key rather than an empty string."
+        },
+        "datasets": {
+          "type": "array",
+          "description": "Data Catalog references this dataflow depends on. BACKEND-OWNED ON UPDATE - datasets/application/ref_ownership.py:preserve_dataset_refs unconditionally replaces a client-sent value, the only exceptions being a project with no spec or no datasets key on disk. Emitted only when non-empty.",
+          "items": { "$ref": "#/$defs/datasetRef" }
+        },
+        "agents": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Hookable-agent lockfile: the '<agentId>@<version>' directory names installed into this dataflow. BACKEND-OWNED and written only by the agent endpoints - the canvas save path never serializes it - and STRIPPED ON SHARE by agents/project_agents.py:strip_agent_state, so a shared copy of a dataflow never carries it. Note the asymmetry with 'packages': agents pin a full semantic version, packages pin a major only. project_agents.project_agents silently drops malformed entries, so the runtime is more forgiving than this pattern.",
+          "items": { "$ref": "#/$defs/agentCoord" }
+        },
+        "agentAttachments": {
+          "type": "array",
+          "description": "Live agent attachments: which installed agent is bound to which node, edge, or the canvas as a whole, and the state of its current run. BACKEND-OWNED and STRIPPED ON SHARE, exactly like 'agents'. Attachments whose target node or edge has been deleted are pruned on save by agents/attachments.py:prune_orphaned_attachments.",
+          "items": { "$ref": "#/$defs/agentAttachment" }
+        },
+        "agentDefaults": {
+          "type": "object",
+          "deprecated": true,
+          "description": "DEPRECATED legacy per-agent defaults map. No longer written by anything; recognized only so that carry-forward and strip-on-share keep handling it, which stops a canvas save from resurrecting a stale copy. Listed in _AGENT_SPEC_KEYS with the other two agent sections.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "description": "One box on the canvas. Only 'id', 'type', 'x' and 'y' are required, because the agent apply path in agents/services.py writes deliberately minimal nodes - '{id, type, content, goal, x, y}' with no 'in', 'out' or 'metadata' - even though every node in every committed example carries all eight.",
+      "required": ["id", "type", "x", "y"],
+      "additionalProperties": true,
+      "dependentRequired": {
+        "dashboardX": ["dashboardY"],
+        "dashboardY": ["dashboardX"],
+        "dashboardWidth": ["dashboardHeight"],
+        "dashboardHeight": ["dashboardWidth"]
+      },
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique within the dataflow; referenced by edge.source/target and by agentAttachments[].target.targetId. Usually a UUID from the canvas, but hand-authored examples use readable slugs, so no pattern is imposed."
+        },
+        "type": { "$ref": "#/$defs/nodeTypeRef" },
+        "x": {
+          "type": "number",
+          "description": "Canvas x position. Always the WORKFLOW position, never the dashboard one, so saving while in dashboard mode cannot corrupt the layout. May be fractional. When absent, useCode.loadTrill auto-places the node instead of failing."
+        },
+        "y": {
+          "type": "number",
+          "description": "Canvas y position. See 'x'."
+        },
+        "content": {
+          "type": "string",
+          "description": "The node's payload: Python or JavaScript source, or a grammar document (Vega-Lite, Autark), depending on the template's 'engine' and 'editor'. Absent on presentation-only templates - across the committed examples, 'editor: none' in the manifest and an absent-or-empty content correspond exactly."
+        },
+        "in": { "$ref": "#/$defs/portType" },
+        "out": { "$ref": "#/$defs/portType" },
+        "goal": {
+          "type": "string",
+          "description": "This node's sub-goal within the dataflow task. Empty string when unset."
+        },
+        "title": {
+          "type": "string",
+          "description": "Optional display title, used as the header on post-it style nodes and set by agents when they create a node. Emitted only when non-empty."
+        },
+        "width": {
+          "type": "number",
+          "description": "Explicit canvas width in pixels, when the user has resized the node. NOT paired with 'height': the writer and reader gate each independently, so a width-only node is valid and is honored."
+        },
+        "height": {
+          "type": "number",
+          "description": "Explicit canvas height in pixels. See 'width'."
+        },
+        "dashboardPinned": {
+          "type": "boolean",
+          "description": "True when this node appears in dashboard mode. Only ever written as true - false is elided - and read as a truthy check."
+        },
+        "dashboardX": {
+          "type": "number",
+          "description": "Node x position in dashboard mode, independent of the canvas 'x'. Written and read as a pair with 'dashboardY', gated on this member alone, so a lone 'dashboardY' would be silently discarded; dependentRequired forbids that in both directions."
+        },
+        "dashboardY": {
+          "type": "number",
+          "description": "Node y position in dashboard mode. Paired with 'dashboardX'."
+        },
+        "dashboardWidth": {
+          "type": "number",
+          "description": "Node width in dashboard mode. Paired with 'dashboardHeight'."
+        },
+        "dashboardHeight": {
+          "type": "number",
+          "description": "Node height in dashboard mode. Paired with 'dashboardWidth'."
+        },
+        "saveOutputDataset": {
+          "type": "boolean",
+          "description": "When true, this node's output is persisted into the Data Catalog as a computed dataset instead of being discarded after the run."
+        },
+        "metadata": { "$ref": "#/$defs/nodeMetadata" },
+        "nodeWidth": {
+          "type": "number",
+          "deprecated": true,
+          "description": "DEPRECATED alias for 'width', still accepted by useCode.loadTrill as the second of four fallbacks. Never written."
+        },
+        "nodeHeight": {
+          "type": "number",
+          "deprecated": true,
+          "description": "DEPRECATED alias for 'height'. See 'nodeWidth'."
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "deprecated": true,
+          "description": "DEPRECATED per-node warning strings. Read back onto the node by useCode.loadTrill, but the only producer is the LLM coherence prompt, so this never survives a canvas save."
+        },
+        "data": {
+          "type": "object",
+          "deprecated": true,
+          "description": "DEPRECATED React Flow-shaped sub-object. No current writer emits it into a trill file, but projects/services.py still reads 'data.packageTemplateLabel' and 'data.nodeType' when titling computed datasets, so a spec carrying it must stay valid.",
+          "additionalProperties": true,
+          "properties": {
+            "packageTemplateLabel": { "type": "string" },
+            "nodeType": { "type": "string" }
+          }
+        }
+      }
+    },
+    "nodeMetadata": {
+      "type": "object",
+      "description": "Side-channel node information that is not part of the execution payload.",
+      "additionalProperties": true,
+      "properties": {
+        "keywords": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "description": "Indices into the dataflow task's keyword list, bound by the LLM keyword prompt. INTEGERS, not strings or free text. Empty on the overwhelming majority of real nodes."
+        },
+        "appearance": {
+          "type": "object",
+          "description": "Per-node visual appearance, so a recolored node keeps its color across a save.",
+          "additionalProperties": true,
+          "properties": {
+            "backgroundColor": {
+              "type": "string",
+              "description": "Either a named palette entry or a '#rrggbb' hex value - agents are instructed to supply either, so this is deliberately NOT constrained to hex. Invalid values fall back at render time, never at load."
+            }
+          }
+        },
+        "datasetRefs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ids of the Data Catalog datasets this node consumes. Plain id strings, not objects. Emitted only when non-empty."
+        },
+        "datasetSource": { "$ref": "#/$defs/datasetSource" },
+        "width": {
+          "type": "number",
+          "deprecated": true,
+          "description": "DEPRECATED width fallback, third of the four useCode.loadTrill tries. Never written."
+        },
+        "height": {
+          "type": "number",
+          "deprecated": true,
+          "description": "DEPRECATED height fallback. See 'width'."
+        },
+        "nodeWidth": {
+          "type": "number",
+          "deprecated": true,
+          "description": "DEPRECATED width fallback, fourth and last. Never written."
+        },
+        "nodeHeight": {
+          "type": "number",
+          "deprecated": true,
+          "description": "DEPRECATED height fallback, fourth and last. Never written."
+        }
+      }
+    },
+    "datasetSource": {
+      "type": "object",
+      "description": "The single catalog dataset a source node loads, denormalized onto the node so the canvas can label it without a catalog round-trip.",
+      "required": ["datasetId"],
+      "additionalProperties": true,
+      "properties": {
+        "datasetId": { "type": "string", "description": "Catalog id of the dataset." },
+        "title": { "type": "string", "description": "Display title at the time it was applied." },
+        "format": {
+          "type": "string",
+          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle", "osm"],
+          "description": "Dataset format, mirroring DatasetFormat in services/datasetCatalog/datasetCatalogTypes.ts."
+        },
+        "origin": { "$ref": "#/$defs/datasetOrigin" }
+      }
+    },
+    "datasetRef": {
+      "type": "object",
+      "description": "One installed-dataset reference. THREE writer shapes are valid and must all pass: the LEAN folder ref (dirName set; the authoritative metadata lives in the dataset folder's own manifest.json), the FAT LEGACY ref (dirName null or absent, with the metadata inlined because there is no folder manifest to read it from), and the FRONTEND PUBLISH ref (adds publishedToHub). Expressed as anyOf over 'required' alone rather than oneOf, because the fat shape is a superset of the lean one - oneOf would match both branches and fail - and because a failing oneOf reports only 'is not valid under any of the given schemas' instead of naming the offending field. Non-dict entries are skipped by every backend reader rather than raising, so the runtime is more forgiving than this.",
+      "anyOf": [
+        { "required": ["datasetId"] },
+        { "required": ["id"] }
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "datasetId": { "type": "string", "description": "Catalog id of the dataset." },
+        "id": {
+          "type": "string",
+          "deprecated": true,
+          "description": "DEPRECATED alias for 'datasetId', still read in several places and written by nothing. Prefer 'datasetId'."
+        },
+        "dirName": {
+          "type": ["string", "null"],
+          "description": "'<datasetId>@<major>' folder in the user's dataset store. Null or absent on a fat legacy ref; mutations.py notes it can be a present-but-null legacy field, which is why null is valid rather than merely omitted."
+        },
+        "origin": { "$ref": "#/$defs/datasetOrigin" },
+        "producerNodeId": {
+          "type": ["string", "null"],
+          "description": "Id of the node that computed this dataset, or null for an imported one. A ref whose producer is a sink node (a visualization) is pruned on every save."
+        },
+        "consumerNodeIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ids of the nodes that read this dataset. Backend-written only."
+        },
+        "installedAt": {
+          "type": "string",
+          "description": "ISO-8601 timestamp of installation into this dataflow."
+        },
+        "publishedToHub": {
+          "type": "boolean",
+          "description": "True once the dataset has been published to the shared hub. Present on the frontend publish shape."
+        },
+        "title": { "type": "string", "description": "Fat legacy shape: display title." },
+        "description": { "type": "string", "description": "Fat legacy shape: prose description." },
+        "sourceOrigin": { "type": ["string", "null"], "description": "Fat legacy shape: the origin value as it arrived, before normalization." },
+        "uri": { "type": "string", "description": "Fat legacy shape: source URI." },
+        "path": { "type": ["string", "null"], "description": "Fat legacy shape: on-disk path, when there is one." },
+        "format": { "type": "string", "description": "Fat legacy shape: format, defaulting to csv. Deliberately unconstrained here, unlike datasetSource.format, because the legacy writer passes it through unchecked." },
+        "sizeBytes": { "type": ["integer", "null"], "minimum": 0, "description": "Fat legacy shape: size in bytes." },
+        "rowCount": { "type": ["integer", "null"], "minimum": 0, "description": "Fat legacy shape: tabular row count." },
+        "featureCount": { "type": ["integer", "null"], "minimum": 0, "description": "Fat legacy shape: geospatial feature count." },
+        "sourceLabel": { "type": "string", "description": "Fat legacy shape: human-readable source name." },
+        "license": { "type": ["string", "null"], "description": "Fat legacy shape: license identifier." },
+        "tags": { "type": "array", "items": { "type": "string" }, "description": "Fat legacy shape: free-form tags." },
+        "updatedAt": { "type": "string", "description": "Fat legacy shape: ISO-8601 last-modified timestamp." }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "description": "One wire between two nodes. Matches the minimum that execution/workflow_spec.py:parse_workflow hard-requires.",
+      "required": ["id", "source", "target"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique within the dataflow. Two incompatible conventions coexist - hand-authored 'edge1' and React Flow's generated 'reactflow__edge-<source>out-<target>in' - so no pattern is imposed. Historically load-bearing: before handles were persisted, the reader recovered a merge slot by looking for an 'in_N' substring here."
+        },
+        "source": { "type": "string", "description": "Id of the upstream node." },
+        "target": { "type": "string", "description": "Id of the downstream node." },
+        "type": {
+          "type": "string",
+          "enum": ["Interaction"],
+          "description": "Present only on an interaction (bidirectional) edge, along which a selection in a visualization propagates back upstream. Absence means a plain unidirectional data edge - there is no explicit 'Data' value, despite one appearing in the stale preamble schema. The in-canvas EdgeType enum (BIDIRECTIONAL_EDGE / UNIDIRECTIONAL_EDGE) is never persisted. Whether a given template may carry an interaction edge is a manifest question ('bidirectional'), not a schema one."
+        },
+        "sourceHandle": {
+          "type": "string",
+          "description": "Explicit source handle id, normally 'out' or 'in/out' on an interaction edge. Persisted since dev/64; before that a save dropped it."
+        },
+        "targetHandle": {
+          "type": "string",
+          "description": "Explicit target handle id. The observed vocabulary is 'in', 'in/out', the merge-flow slots 'in_0' through 'in_4', and template-specific named ports such as 'in_points' and 'in_polygons'. Deliberately NOT pattern-constrained: the legal set is derived from the template's inputPorts in its package manifest, so a third-party package may name its ports anything. When absent, the reader infers a slot from an 'in_N' substring of edge.id and otherwise falls back to 'in', which cannot recover a named port."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Side-channel edge information.",
+          "additionalProperties": true,
+          "properties": {
+            "keywords": {
+              "type": "array",
+              "items": { "type": "integer" },
+              "description": "Indices into the dataflow task's keyword list. Integers, as on a node."
+            }
+          }
+        }
+      }
+    },
+    "agentAttachment": {
+      "type": "object",
+      "description": "One agent bound to one target, plus the state of its current run. Minted in agents/attachments.py:attach; 'revision' provides optimistic concurrency.",
+      "required": ["attachmentId", "coord", "target", "sessionId", "revision"],
+      "additionalProperties": true,
+      "properties": {
+        "attachmentId": { "type": "string", "description": "Unique id for this attachment, a uuid4 hex string." },
+        "coord": { "$ref": "#/$defs/agentCoord" },
+        "target": { "$ref": "#/$defs/agentTarget" },
+        "sessionId": { "type": "string", "description": "Id of the conversation session backing this attachment, a uuid4 hex string. The transcript itself lives outside the spec." },
+        "revision": { "type": "integer", "minimum": 1, "description": "Bumped on every mutation; a client must send the revision it read or lose the write." },
+        "intent": { "type": "string", "description": "The user's stated intent for this attachment. Removed from the record when cleared rather than set empty." },
+        "title": { "type": "string", "maxLength": 40, "description": "Short display title. Capped at TITLE_MAX_CHARS in agents/attachments.py, which truncates rather than rejecting on the auto-titling path." },
+        "titleEdited": { "type": "boolean", "description": "True once a human has renamed the attachment, which stops auto-titling from overwriting it. Only ever written as true." },
+        "activeProposal": { "$ref": "#/$defs/agentProposal" },
+        "queuedProposals": {
+          "type": "array",
+          "description": "Sibling proposals minted in the same agent reply, awaiting their turn after the active one is resolved.",
+          "items": { "$ref": "#/$defs/agentProposal" }
+        },
+        "planProposal": { "$ref": "#/$defs/agentProposal" },
+        "builderSession": {
+          "type": "object",
+          "description": "Run state for a multi-step builder agent: which phase it is in, per-node status, and cancellation flags. Internal to agents/services.py and deliberately unconstrained - its key set changes with the agent implementation.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "agentTarget": {
+      "type": "object",
+      "description": "What an attachment is bound to. A 'canvas' target addresses the dataflow as a whole and carries no targetId; 'node' and 'connection' targets require one, and are pruned on save if it no longer exists.",
+      "required": ["kind"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["node", "canvas", "connection"],
+          "description": "Mirrors _TARGET_KINDS in agents/attachments.py."
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Id of the target node or edge. Required unless kind is 'canvas'."
+        }
+      },
+      "if": {
+        "properties": { "kind": { "enum": ["node", "connection"] } },
+        "required": ["kind"]
+      },
+      "then": { "required": ["targetId"] }
+    },
+    "agentProposal": {
+      "type": "object",
+      "description": "A pending change an agent wants to make, awaiting human review. The tool-dependent payload (node content, a dataflow plan, a dataset id, and so on) is deliberately left open: it varies per tool and changes with the agent implementation, so constraining it would guarantee false failures.",
+      "required": ["proposalId", "tool", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "proposalId": { "type": "string", "description": "Unique id for this proposal, a uuid4 hex string." },
+        "tool": {
+          "type": "string",
+          "description": "Which agent tool produced the proposal, e.g. 'node.content.write', 'dataflow.plan.write', 'dataset.install', 'package.install'. Not enumerated here: the tool set grows with the agent catalog."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "applied", "dismissed", "superseded", "stale"],
+          "description": "Review state. Only 'pending' awaits a human."
+        },
+        "summary": { "type": "string", "description": "One-line human-readable description shown on the review card." },
+        "mintSequenceId": { "type": "string", "description": "Orders proposals minted in the same agent reply." }
+      }
+    },
+    "nodeExecRecord": {
+      "type": "object",
+      "description": "One execution of one node, recorded browser-side by ProvenanceProvider so the user can replay how a node evolved.",
+      "required": ["id", "parentId", "code", "inputs", "outputs", "startTime", "endTime"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "integer", "description": "Monotonic counter within the session, re-derived from the maximum on load." },
+        "parentId": { "type": ["integer", "null"], "description": "The execution this one descends from, or null for the first." },
+        "code": { "type": "string", "description": "The node's content as executed." },
+        "inputs": { "type": "array", "items": { "type": "string" }, "description": "Input artifact descriptors. Coerced to an empty array if the stored value is not an array." },
+        "outputs": { "type": "array", "items": { "type": "string" }, "description": "Output artifact descriptors. Coerced like 'inputs'." },
+        "startTime": {
+          "type": "string",
+          "description": "Run start as a free-form local time string, e.g. 'Aug 24 2026 17:15:6'. Deliberately NOT constrained with format: date-time - the producer does not emit ISO-8601. Tighten once it does."
+        },
+        "endTime": { "type": "string", "description": "Run end. Same free-form format as 'startTime'." }
+      }
+    },
+    "dataflowProvenance": {
+      "type": "object",
+      "description": "Version history of the dataflow as a whole: a graph of snapshots and the full trill document for each. Written by TrillGenerator.getSerializableDataflowProvenance and restored by loadDataflowProvenance.",
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "description": "Copy of dataflow.provenance_id. Emitted only when that field exists." },
+        "latest": {
+          "type": "string",
+          "description": "Key into 'versions' naming the currently loaded snapshot, formatted '<name>_<timestamp>'. Empty string when there is no history. A value beginning 'undefined_' means dataflow.name was missing when the version was cut."
+        },
+        "graph": { "$ref": "#/$defs/provenanceGraph" },
+        "versions": {
+          "type": "object",
+          "description": "Map of snapshot key to the full trill document captured at that point.",
+          "additionalProperties": { "$ref": "#/$defs/trillSnapshot" }
+        }
+      }
+    },
+    "trillSnapshot": {
+      "type": "object",
+      "description": "A point-in-time copy of a trill document, stored under dataflowProvenance.versions. The only recursion point in this schema, and bound to one level on purpose: a $ref back to the document root would permit unbounded provenance-of-provenance, which nothing produces and which would be a serious file-size bug if it ever happened. Its dataflow is the relaxed 'snapshotDataflow' rather than the live one, because a snapshot is history and most on-disk snapshots are less complete than a dataflow saved today.",
+      "required": ["dataflow"],
+      "additionalProperties": true,
+      "properties": {
+        "dataflow": { "$ref": "#/$defs/snapshotDataflow" }
+      }
+    },
+    "provenanceGraph": {
+      "type": "object",
+      "description": "The version DAG: one node per saved snapshot, one edge per transition, labelled with what changed.",
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "description": "Copy of dataflow.provenance_id." },
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/provenanceGraphNode" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/provenanceGraphEdge" } }
+      }
+    },
+    "provenanceGraphNode": {
+      "type": "object",
+      "description": "One saved version in the provenance DAG.",
+      "required": ["id", "label", "timestamp", "preview"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "description": "'<name>_<timestamp>', matching a key in dataflowProvenance.versions." },
+        "label": { "type": "string", "description": "'<name> (<timestamp>)', for display in the provenance window." },
+        "timestamp": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds, rendered as a date in the provenance window." },
+        "preview": { "$ref": "#/$defs/graphPreview" }
+      }
+    },
+    "provenanceGraphEdge": {
+      "type": "object",
+      "description": "A transition between two saved versions.",
+      "required": ["id", "source", "target", "label"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "description": "'<sourceVersion>_to_<targetVersion>'." },
+        "source": { "type": "string", "description": "Version this change started from." },
+        "target": { "type": "string", "description": "Version this change produced." },
+        "label": { "type": "string", "description": "Human-readable description of the change, e.g. 'Node added'." }
+      }
+    },
+    "graphPreview": {
+      "type": "object",
+      "description": "A reduced projection of a dataflow, used to draw the thumbnail for one provenance version. NOT a dataflow: TrillGenerator._extractGraphPreview emits a different, smaller node shape, so this has its own definitions rather than reusing the node and edge ones.",
+      "additionalProperties": true,
+      "properties": {
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/graphPreviewNode" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/graphPreviewEdge" } }
+      }
+    },
+    "graphPreviewNode": {
+      "type": "object",
+      "description": "One node in a thumbnail projection. Position falls back to 0 and size to null, so nulls here are normal rather than a defect.",
+      "required": ["id", "type", "x", "y"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "description": "The node type, used to pick the thumbnail's category color. Not validated against the node.type grammar: a thumbnail should still draw for a spec this schema would reject." },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "w": { "type": ["number", "null"], "description": "Width, or null when the node has no explicit size." },
+        "h": { "type": ["number", "null"], "description": "Height, or null when the node has no explicit size." }
+      }
+    },
+    "graphPreviewEdge": {
+      "type": "object",
+      "description": "One edge in a thumbnail projection. Carries only its endpoints - no id, type, or handles.",
+      "required": ["source", "target"],
+      "additionalProperties": true,
+      "properties": {
+        "source": { "type": "string" },
+        "target": { "type": "string" }
+      }
+    },
+    "nodeTypeRef": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}(?:\\.[a-z][a-z0-9-]{0,62}){1,5}/[a-z][a-z0-9-]{0,62}(?:@(?:0|[1-9][0-9]{0,3}))?$",
+      "description": "A node template coordinate: '<packageId>/<templateId>' or '<packageId>/<templateId>@<major>', where packageId is two to six dot-separated kebab segments. THIS IS A REFERENCE INTO A PACKAGE MANIFEST, and this schema checks its shape only - whether the template actually exists depends on which packages are installed, so resolution is a job for scripts/validate_trill.py and the cross-schema test, not for validation. The unversioned form resolves at load time to the highest installed major; the versioned form pins one. Both are written: palette-dragged nodes persist the versioned form and there is no load-time normalizer, so the two coexist in real specs and any comparison against an unversioned set must normalize first (packages/spec_packages.py:unversioned_node_type). Deliberately a pattern and never an enum, because packages are user-installable - the frontend's own NodeType enum is already missing a built-in template that the examples use. Mirrors _NODE_TYPE_VERSIONED_RE and _NODE_TYPE_UNVERSIONED_RE in packages/spec_packages.py; the templateId half is the same grammar as templates[].id in docs/schemas/node-package.v4.json."
+    },
+    "agentCoord": {
+      "type": "string",
+      "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*@\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9.-]+)?$",
+      "description": "An installed agent coordinate, '<agentId>@<version>'. Mirrors AGENT_DIR_RE in agents/storage.py, which composes AGENT_ID_RE and VERSION_RE from agents/manifest.py. A FULL semantic version, unlike the major-only pin in dataflow.packages."
+    },
+    "portType": {
+      "type": "string",
+      "enum": ["DEFAULT", "DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"],
+      "description": "A node's declared input or output data type. 'DEFAULT' means unconstrained and is the writer's default, which is why it dominates real specs. The other six mirror SupportedType in the frontend's constants.ts. This enum is the port-type enum of docs/schemas/node-package.v4.json PLUS 'DEFAULT', and the extra value is deliberate: a manifest port declares a capability, whereas this records what a node is currently set to. Do not copy either enum onto the other. 'MULTIPLE' is NOT valid - it exists in the frontend as a display-only label and is never assigned to a node or serialized - and neither is the historical misspelling 'MUTLIPLE', which no longer appears anywhere in the codebase."
+    },
+    "datasetOrigin": {
+      "type": "string",
+      "enum": ["source_node", "computed", "imported", "hub"],
+      "description": "Where a dataset came from. Mirrors DatasetOrigin in services/datasetCatalog/datasetCatalogTypes.ts. The backend normalizer collapses 'hub' to 'imported' and forces 'computed' when a producer node is set, so a stored value is usually one of the first three."
+    }
+  }
+}

@@ -26,6 +26,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [Sandbox Isolation](#sandbox-isolation)
 * [Interactions and Propagation](#interactions-and-propagation)
 * [Provenance Tracking](#provenance-tracking)
+* [The Trill Dataflow Format](#the-trill-dataflow-format)
 * [Python Dependencies](#python-dependencies)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
@@ -628,6 +629,16 @@ The propagation counter (`INodeData.propagation`) is incremented each time an in
 ## Provenance Tracking
 
 Curio records a per-node execution history (start/end time, source code, input/output types, parent execution) so users can replay a node's evolution from the canvas. Tracking lives entirely in the browser: [`src/providers/ProvenanceProvider.tsx`](../utk_curio/frontend/urban-workflows/src/providers/ProvenanceProvider.tsx) keeps the graph in React state and persists it as part of the saved workflow JSON. Nothing is stored server-side.
+
+---
+
+## The Trill Dataflow Format
+
+A saved dataflow is one JSON document, a **trill**, written to `.curio/users/<userKey>/projects/<projectId>/spec.trill.json`. It holds the graph (`dataflow.nodes`, `dataflow.edges`), the dependency lockfiles (`dataflow.packages`, `dataflow.datasets`, `dataflow.agents`), and the two provenance sections described above.
+
+Every trill is validated against [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) (JSON Schema Draft 2020-12). The schema is the source of truth for what fields a dataflow can carry. Note what it deliberately does *not* decide: a node's `type` is a coordinate into a package manifest's `templates[].id`, so which templates exist, which handles are legal, and whether a node has code at all are manifest questions that depend on the installed packages. [`projects/storage.py`](../utk_curio/backend/app/projects/storage.py) performs no validation of its own - it reads and writes the spec as opaque JSON - so the schema and the tests around it are the only enforcement.
+
+Full field reference, ownership rules, and the CLI for checking your own projects: [`docs/TRILL-SPEC.md`](TRILL-SPEC.md).
 
 ---
 

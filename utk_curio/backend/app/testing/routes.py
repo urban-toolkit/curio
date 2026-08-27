@@ -84,10 +84,25 @@ def _empty_spec() -> dict:
     Shape matches what ``FlowProvider`` / ``save_project`` expects when a
     brand-new workflow is persisted: an empty dataflow with no nodes or
     edges. Good enough for "/projects lists this project" assertions.
+
+    The name belongs inside ``dataflow``, not beside it. A top-level ``name``
+    with no ``dataflow.name`` is the footgun described in this suite's README:
+    ``loadParsedTrill`` calls ``setWorkflowName(undefined)``, and the canvas's
+    next save then posts ``name: undefined`` and is rejected. Kept alongside
+    the inner one because ``execution/workflow_spec.py`` still reads the
+    top-level field. Validated against ``docs/schemas/trill.v1.json`` by
+    test_projects/test_trill_schema.py.
     """
     return {
         "name": "StubbedWorkflow",
-        "dataflow": {"nodes": [], "edges": []},
+        "dataflow": {
+            "name": "StubbedWorkflow",
+            "nodes": [],
+            "edges": [],
+            "task": "",
+            "timestamp": 0,
+            "provenance_id": "StubbedWorkflow",
+        },
     }
 
 

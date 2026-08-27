@@ -7,6 +7,13 @@ Because segment validation rejects ``..`` / path separators before the
 filesystem is touched, a traversal attempt like ``project_id="../../etc"``
 fails immediately regardless of how deeply the target would have nested
 under the users base.
+
+The spec written here is a *trill* document (canonical spec:
+``docs/schemas/trill.v1.json``). Note that ``write_spec`` deliberately does not
+validate it - the readers downstream are all tolerant of malformed members, and a
+save-time gate would reject specs users can currently save. Enforcement lives in
+``backend/tests/test_projects/test_trill_schema.py`` and
+``scripts/validate_trill.py`` instead.
 """
 from __future__ import annotations
 

@@ -10,7 +10,21 @@ def _auth(token):
 
 
 def _spec():
-    return {"dataflow": {"name": "route-test", "nodes": [], "edges": []}}
+    # A complete trill, per docs/schemas/trill.v1.json. Completeness matters for
+    # the round-trip assertions below: save_project backfills the identity fields
+    # a spec arrives without (services._ensure_dataflow_identity), so a partial
+    # fixture would not come back equal to itself and the preservation tests
+    # would be measuring the backfill instead of preservation.
+    return {
+        "dataflow": {
+            "name": "route-test",
+            "nodes": [],
+            "edges": [],
+            "task": "",
+            "timestamp": 1748990000000,
+            "provenance_id": "route-test",
+        }
+    }
 
 
 def test_create_project(client, user_and_token, tmp_curio):

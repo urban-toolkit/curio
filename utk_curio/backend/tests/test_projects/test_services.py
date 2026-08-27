@@ -7,7 +7,18 @@ from utk_curio.backend.app.projects.repositories import NotFoundError
 
 
 def _make_spec(name="test"):
-    return {"dataflow": {"name": name, "nodes": [], "edges": []}}
+    # A complete trill, per docs/schemas/trill.v1.json — see the note on _spec()
+    # in test_routes.py for why the round-trip assertions need all six fields.
+    return {
+        "dataflow": {
+            "name": name,
+            "nodes": [],
+            "edges": [],
+            "task": "",
+            "timestamp": 1748990000000,
+            "provenance_id": name,
+        }
+    }
 
 
 def test_save_new_project(app, db, user_and_token, tmp_curio):

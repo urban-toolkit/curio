@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+import time
 from typing import Dict, List, Optional
 from uuid import uuid4
 
@@ -47,6 +48,51 @@ def _is_sink_node_type(node_type) -> bool:
     from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
 
     return unversioned_node_type(node_type) in _SINK_NODE_TYPES
+
+
+def _ensure_dataflow_identity(spec: Optional[dict], name: Optional[str]) -> bool:
+    """Fill in the dataflow identity fields a spec arrived without.
+
+    ``dataflow.name`` / ``task`` / ``timestamp`` / ``provenance_id`` are required
+    by ``docs/schemas/trill.v1.json`` and the canvas writer always emits all four,
+    but ``write_spec`` persists whatever it is handed. A non-canvas client - a
+    script, an agent, an e2e stub - could therefore save a spec that no longer
+    describes itself, and a missing ``name`` is not cosmetic: TrillGenerator
+    interpolates it into every provenance version key, which is where the
+    ``undefined_1787609706100`` keys in older projects came from.
+
+    Only absent fields are filled. The spec's own name always wins - deriving it
+    from the project instead is #148, where seeding turned ``Vega-Lite chained
+    transforms`` into ``Vega lite chained transforms`` (see
+    ``_name_from_spec`` in projects/seed.py). Returns True when anything changed.
+    """
+    if not isinstance(spec, dict):
+        return False
+    dataflow = spec.get("dataflow")
+    if not isinstance(dataflow, dict):
+        return False
+    changed = False
+    if not isinstance(dataflow.get("name"), str) and isinstance(name, str) and name:
+        dataflow["name"] = name
+        changed = True
+    if not isinstance(dataflow.get("task"), str):
+        dataflow["task"] = ""
+        changed = True
+    stamp = dataflow.get("timestamp")
+    # ``not isinstance(stamp, bool)`` because Python counts True as an int while
+    # JSON Schema does not, so a bool would survive here and still fail the schema.
+    if not (isinstance(stamp, int) and not isinstance(stamp, bool)):
+        # Epoch milliseconds, matching Date.now() in TrillGenerator. The server
+        # stamping the save time is the same fact the client would have stamped.
+        dataflow["timestamp"] = int(time.time() * 1000)
+        changed = True
+    if not isinstance(dataflow.get("provenance_id"), str):
+        # The writer's own convention: provenance_id is a copy of the name.
+        fallback = dataflow.get("name")
+        if isinstance(fallback, str) and fallback:
+            dataflow["provenance_id"] = fallback
+            changed = True
+    return changed
 
 
 def _prune_sink_node_dataset_refs(spec: Optional[dict]) -> Optional[dict]:
@@ -416,6 +462,9 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     # package palette starts populated. Caller can override by passing a
     # spec that already declares packages.
     data.spec = seed_spec_with_defaults(ukey, data.spec)
+    # A spec that does not name itself is a spec the canvas reloads with an
+    # undefined workflow name; fill what the client left out (never overwrite).
+    _ensure_dataflow_identity(data.spec, data.name)
 
     storage.write_spec(ukey, project_id, data.spec)
     output_refs = list(data.outputs)
@@ -500,6 +549,10 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             # drop a fresh install. (The client-sent section still seeds
             # ``create()`` — Save a copy / trill import.)
             preserve_dataset_refs(effective_spec, existing_spec)
+            # Same identity backfill as on create: an update may be the first
+            # time a spec written elsewhere reaches disk.
+            if _ensure_dataflow_identity(effective_spec, data.name or project.name):
+                spec_dirty = True
             # Drop attachments whose target node/edge was deleted on the canvas
             # (the carried-forward list is pruned against the new node set).
             pruned = prune_orphaned_attachments(effective_spec)

@@ -17,6 +17,7 @@
 - [Contributing to Curio](CONTRIBUTING.md)
 - [Onboarding for undergraduate students](ONBOARDING.md)
 - [System architecture](ARCHITECTURE.md)
+- [Trill dataflow specification](TRILL-SPEC.md): the JSON format a saved dataflow is stored in
 - [Extending Curio with new node packages](EXTENDING.md)
 
 ## Examples
