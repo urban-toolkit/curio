@@ -25,7 +25,12 @@ export const AgentDockOverlay: React.FC = () => {
   // Attachment id whose settings modal is open (memo dev/42), or null.
   if (!ctx) return null;
 
-  const canvasAttachments = ctx.attachments.filter((a) => a.target.kind === "canvas");
+  // Canvas agents plus connection agents. A connection attachment has no node
+  // to hang a badge on, and rendering it nowhere would leave it invisible and
+  // undetachable while still counting in the chat header's "n of m".
+  const canvasAttachments = ctx.attachments.filter(
+    (a) => a.target.kind === "canvas" || a.target.kind === "connection",
+  );
   const selected = ctx.attachments.find((a) => a.attachmentId === ctx.selectedId) ?? null;
   // DEC-042: the chat header's ‹ › arrows cycle through ALL attached agents in
   // the dataflow (node + canvas targets), in list order, without wrapping.

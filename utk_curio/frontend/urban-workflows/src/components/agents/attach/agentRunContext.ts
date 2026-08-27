@@ -87,6 +87,21 @@ function readFragment(
     }
     case "workflowGoal":
       return canvas.workflowGoal ? "Task: " + canvas.workflowGoal : null;
+    case "connectionSide": {
+      // Only an agent attached to a connection has a side. The vocabulary is
+      // the one new_connection_prompt.txt is written against: it expects to be
+      // "informed if the nodes you are suggesting will be connected into the
+      // input or output of the node", so name both ends in those terms rather
+      // than inventing a source/target framing the prompt does not use.
+      if (attachment.target.kind !== "connection") return null;
+      const edge = (canvas.edges as { id?: string; source?: string; target?: string }[])
+        .find((e) => e?.id === attachment.target.targetId);
+      if (!edge?.source || !edge?.target) return null;
+      return (
+        "Connection: the output of node " + edge.source +
+        " into the input of node " + edge.target
+      );
+    }
     case "nodeContext": {
       const node = findTrillNode(liveTrill(canvas), nodeId);
       if (!node) return null;

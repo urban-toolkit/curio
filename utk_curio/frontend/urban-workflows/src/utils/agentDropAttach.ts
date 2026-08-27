@@ -26,8 +26,11 @@ export interface AgentDropAttachDeps {
  */
 export async function attachAgentOnDrop(deps: AgentDropAttachDeps): Promise<{ target: AgentDropTarget }> {
   let projectId = deps.projectId;
-  if (deps.target.kind === "node") {
-    // Flush the graph so the just-dropped-on node exists in the saved spec the
+  // A connection target is validated against the saved spec's edges exactly
+  // the way a node target is validated against its nodes, so a drop onto a
+  // freshly drawn edge needs the same flush first.
+  if (deps.target.kind === "node" || deps.target.kind === "connection") {
+    // Flush the graph so the just-dropped-on element exists in the saved spec
     // backend validates against. Also covers a never-saved project (create).
     const detail = await deps.saveProject();
     projectId = detail?.id ?? projectId;

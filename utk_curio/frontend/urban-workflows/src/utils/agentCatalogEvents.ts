@@ -38,7 +38,26 @@ export function hasAgentDrag(dt: DataTransfer | null): boolean {
  * element's id; canvas is the project-wide fallback. */
 export type AgentDropTarget =
   | { kind: "node"; targetId: string }
+  | { kind: "connection"; targetId: string }
   | { kind: "canvas" };
+
+/**
+ * The edge under a drop point, or null.
+ *
+ * Hit-tested through the DOM rather than by re-deriving bezier geometry:
+ * React Flow renders every edge with a wide invisible
+ * `.react-flow__edge-interaction` path precisely so a pointer can land on a
+ * curve, and the group carries the edge id in `data-id`. Reimplementing the
+ * curve maths here would be a second, worse source of truth for where an edge
+ * *is*.
+ */
+export function pickEdgeAtPoint(clientX: number, clientY: number): string | null {
+  if (typeof document === "undefined" || !document.elementFromPoint) return null;
+  const el = document.elementFromPoint(clientX, clientY);
+  const edge = el?.closest?.(".react-flow__edge");
+  const id = edge?.getAttribute?.("data-id");
+  return id || null;
+}
 
 export interface XYPoint {
   x: number;

@@ -634,3 +634,26 @@ class TestResearcher:
         assert "https link" in low
         assert "never invent findings" in low
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+
+class TestConnectionBuilderCanBindToAnEdge:
+    """Connection Builder attaches to a node OR to a connection.
+
+    It declares a ``connectionSide`` read, which only means something for an
+    agent bound to one edge: it tells the agent which end it is reasoning from,
+    and its prompt is written to be "informed if the nodes you are suggesting
+    will be connected into the input or output of the node".
+
+    The backend has always accepted ``connection`` targets and the palette has
+    always advertised the kind, but no drop gesture produced one and no agent
+    declared the target, so the read had no producer and the advertised gesture
+    silently attached to the canvas instead.
+    """
+
+    def test_it_declares_both_targets(self):
+        m = builtin.get_builtin_manifest("agent.connection-builder@1.0.0")
+        assert {t.kind for t in m.compatible_targets} == {"node", "connection"}
+
+    def test_it_still_declares_the_side_it_reads(self):
+        m = builtin.get_builtin_manifest("agent.connection-builder@1.0.0")
+        assert "connectionSide" in m.inputs_reads

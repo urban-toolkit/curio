@@ -134,6 +134,13 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
                      "Suggest and create valid node connections.",
                      "new_connection_prompt.txt", ("connection.propose",), ("authoring",),
+                     # Attaches to a node or to a connection. The connection
+                     # target is why this agent declares ``connectionSide``:
+                     # bound to one edge it knows which end it is reasoning
+                     # from. The kind was always accepted by the backend and
+                     # advertised in the palette; only the drop gesture that
+                     # produces one was missing.
+                     targets=("node", "connection"),
                      reads=("workflowGoal", "nodeId", "subtask", "connectionSide", "dataflowContext"),
                      # dev/16 §3.3 addendum via dev/84 (deviation D4): the one
                      # migrated manifest that gains delegatesTo — a proposed
