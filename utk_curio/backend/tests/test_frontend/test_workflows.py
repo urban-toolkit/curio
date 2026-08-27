@@ -16,6 +16,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 # )
 from .utils import (
     save_workflow_test_screenshot,
+    assert_vega_canvas_rendered,
     get_shared_data_dir,
     load_artifact_as_dict,
     execute_workflow_programmatically,
@@ -32,35 +33,6 @@ This test file is to test the loading of workflow files in the frontend.
 To watch the browser (see the menu open): run with --headed, e.g.
 """
 
-# Probe shared by the wait_for_function poll and the final evaluate in the
-# VIS_VEGA canvas check; returns {width, height, nonBlank} or null.
-_VEGA_CANVAS_PROBE_JS = """(containerId) => {
-    const el = document.getElementById(containerId);
-    if (!el) return null;
-    const canvas = el.querySelector('canvas');
-    if (!canvas) return null;
-    const w = canvas.width, h = canvas.height;
-    if (!w || !h) return { width: w, height: h, nonBlank: false };
-    let nonBlank = false;
-    try {
-        const ctx = canvas.getContext('2d');
-        const { data } = ctx.getImageData(0, 0, w, h);
-        for (let i = 0; i < data.length; i += 4) {
-            const r = data[i], g = data[i + 1],
-                  b = data[i + 2], a = data[i + 3];
-            // any opaque, non-white pixel means a mark was drawn
-            if (a !== 0 && !(r === 255 && g === 255 && b === 255)) {
-                nonBlank = true;
-                break;
-            }
-        }
-    } catch (e) {
-        // getImageData throws on a tainted canvas —
-        // treat as drawn rather than failing.
-        nonBlank = true;
-    }
-    return { width: w, height: h, nonBlank };
-}"""
 
 def test_load_workflow_files(workflow_files):
     """
@@ -806,57 +778,10 @@ class TestWorkflowCanvas:
                     # and drew non-blank content (the upstream data turned into
                     # marks). Visual regressions are still caught by the per-node
                     # screenshot comparison in ``_save_screenshot``.
+                    # The probe and its poll live in ``utils`` so the per-dataset
+                    # suite asserts Vega rendering the same way this one does.
                     if node.type == "VIS_VEGA":
-                        vega_container_id = f"vega{node.id}"
-
-                        canvas_locator = node_el.locator(
-                            f"#{vega_container_id} canvas"
-                        )
-                        canvas_locator.first.wait_for(
-                            state="visible", timeout=15000
-                        )
-                        assert canvas_locator.count() >= 1, (
-                            f"Grammar node {node.id} ({node.type}) is missing "
-                            f"its rendered canvas inside #{vega_container_id}"
-                        )
-
-                        # Vega paints asynchronously after the canvas becomes
-                        # visible — on a slow CI runner the canvas can be
-                        # attached and sized before any marks are drawn, so a
-                        # single pixel sample races the paint. Poll the probe
-                        # until it reports drawn content; on timeout fall
-                        # through to one final sample so the asserts below
-                        # still produce the detailed failure message.
-                        try:
-                            self.page.wait_for_function(
-                                "(containerId) => {"
-                                f" const probe = {_VEGA_CANVAS_PROBE_JS};"
-                                "  const info = probe(containerId);"
-                                "  return !!(info && info.width > 0"
-                                "        && info.height > 0 && info.nonBlank);"
-                                "}",
-                                arg=vega_container_id,
-                                timeout=30000,
-                                polling=500,
-                            )
-                        except PlaywrightTimeoutError:
-                            pass
-
-                        canvas_info = self.page.evaluate(
-                            _VEGA_CANVAS_PROBE_JS, vega_container_id
-                        )
-                        assert canvas_info is not None, (
-                            f"Grammar node {node.id} ({node.type}): could not "
-                            f"find a canvas inside #{vega_container_id}"
-                        )
-                        assert canvas_info["width"] > 0 and canvas_info["height"] > 0, (
-                            f"VIS_VEGA node {node.id}: canvas has zero backing "
-                            f"size ({canvas_info['width']}x{canvas_info['height']})"
-                        )
-                        assert canvas_info["nonBlank"], (
-                            f"VIS_VEGA node {node.id}: canvas rendered blank — "
-                            f"no chart marks drawn from the upstream data"
-                        )
+                        assert_vega_canvas_rendered(self.page, node.id)
 
         # ---- VIS_SIMPLE content verification -----------------------------------
         # VIS_SIMPLE has no play button so the loop above skips it.  After all

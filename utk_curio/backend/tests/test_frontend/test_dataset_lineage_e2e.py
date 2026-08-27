@@ -41,7 +41,9 @@ themselves are ``test_canvas_authoring_e2e.py``.
 Not covered: a consumer that has actually *run*. Its pill would read Active, but
 getting there means driving the sandbox, and the Jest panel test already asserts
 that rendering from a fixture. The pill this test sees is Stale, which is the
-correct and deterministic outcome of the gesture it makes - see step 5.
+correct and deterministic outcome of the gesture it makes - see step 5. The
+run itself - loader executes, data crosses the edge, consumer asserts on it -
+is ``test_dataset_catalog_datasets_e2e.py``, for every catalog dataset.
 
 Run::
 

@@ -13,7 +13,9 @@ request and surface as ``origin: "hub"``.
 Covered more cheaply elsewhere and not re-asserted here:
 ``test_datasets/test_dataset_catalog_routes.py`` owns the install route, and
 ``src/tests/components/datasetCardActions.test.tsx`` owns which button a card
-shows for a given prop set.
+shows for a given prop set. This file asserts the datasets are *listed*; that
+each one actually loads and feeds a downstream node is
+``test_dataset_catalog_datasets_e2e.py``, parametrized over the same scan.
 
 Run::
 

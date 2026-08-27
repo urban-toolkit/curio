@@ -1271,6 +1271,34 @@ def open_tools_palette(page, kind: str):
     return panel
 
 
+
+def close_tools_palette(page, kind: str) -> None:
+    """Close a left-rail tool palette, if it is open.
+
+    The open panel is ~545px wide and floats *over* the canvas, so it covers the
+    left third of the drop area. That is invisible to ``drag_to_canvas`` (which
+    dispatches its drop on the pane directly, without hit-testing) but not to
+    ``connect_nodes``, which fails when another element is topmost at a handle's
+    centre. A test that drops a dataset row and then wires the graph therefore
+    has to give the canvas back once the row has been dragged.
+
+    Idempotent and safe to call when nothing is open, mirroring
+    ``open_tools_palette``.
+    """
+    try:
+        root_sel, trigger_title, panel_name = _TOOLS_PALETTES[kind]
+    except KeyError:
+        raise ValueError(
+            f"kind must be one of {sorted(_TOOLS_PALETTES)}, got {kind!r}"
+        ) from None
+    panel = page.locator(root_sel).get_by_role("region", name=panel_name)
+    if panel.count() == 0 or not panel.first.is_visible():
+        return
+    close_title = trigger_title.replace("Open ", "Close ", 1)
+    # ``force=True`` because the ReactFlow pane overlaps the rail.
+    page.locator(f'{root_sel} button[title="{close_title}"]').click(force=True)
+    panel.first.wait_for(state="hidden", timeout=10000)
+
 def install_session_cookie(page, frontend_url: str, token: str) -> None:
     """Install *token* as the ``session_token`` cookie on *page*'s context.
 
@@ -2015,6 +2043,111 @@ def run_node_and_wait(page, node_id: str, *, node_type: str = "",
     wait_for_node_done(page, node_id, node_type=node_type, timeout_ms=timeout_ms)
     return read_node_output_text(page, node_id)
 
+
+
+# Shared by the wait_for_function poll and the final evaluate in
+# ``assert_vega_canvas_rendered``; returns {width, height, nonBlank} or null.
+VEGA_CANVAS_PROBE_JS = """(containerId) => {
+    const el = document.getElementById(containerId);
+    if (!el) return null;
+    const canvas = el.querySelector('canvas');
+    if (!canvas) return null;
+    const w = canvas.width, h = canvas.height;
+    if (!w || !h) return { width: w, height: h, nonBlank: false };
+    let nonBlank = false;
+    try {
+        const ctx = canvas.getContext('2d');
+        const { data } = ctx.getImageData(0, 0, w, h);
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1],
+                  b = data[i + 2], a = data[i + 3];
+            // any opaque, non-white pixel means a mark was drawn
+            if (a !== 0 && !(r === 255 && g === 255 && b === 255)) {
+                nonBlank = true;
+                break;
+            }
+        }
+    } catch (e) {
+        // getImageData throws on a tainted canvas —
+        // treat as drawn rather than failing.
+        nonBlank = true;
+    }
+    return { width: w, height: h, nonBlank };
+}"""
+
+
+def assert_vega_canvas_rendered(page, node_id: str, *, timeout: float = 30000) -> None:
+    """Assert a VIS_VEGA node actually drew marks from its upstream data.
+
+    Vega-Lite renders to a ``<canvas>`` (the renderer switched from SVG in
+    3a2a14a), so there is no DOM structure to diff - what can be checked is that
+    the canvas exists, has a non-zero backing size, and is not blank. The
+    container id is ``"vega" + nodeId``, a convention owned by ``useVega.ts``.
+
+    Vega paints asynchronously after the canvas becomes visible, so on a slow
+    runner the element can be attached and sized before any mark is drawn; a
+    single pixel sample would race the paint. Poll until the probe reports drawn
+    content, then take one final sample so a timeout still produces the detailed
+    assertion message below rather than a bare Playwright timeout.
+    """
+    container_id = f"vega{node_id}"
+    node_el = node_locator(page, node_id)
+    canvas = node_el.locator(f"#{container_id} canvas")
+    canvas.first.wait_for(state="visible", timeout=15000)
+    assert canvas.count() >= 1, (
+        f"Vega node {node_id} is missing its rendered canvas inside "
+        f"#{container_id}"
+    )
+
+    try:
+        page.wait_for_function(
+            "(containerId) => {"
+            f" const probe = {VEGA_CANVAS_PROBE_JS};"
+            "  const info = probe(containerId);"
+            "  return !!(info && info.width > 0"
+            "        && info.height > 0 && info.nonBlank);"
+            "}",
+            arg=container_id,
+            timeout=timeout,
+            polling=500,
+        )
+    except PlaywrightTimeoutError:
+        pass
+
+    info = page.evaluate(VEGA_CANVAS_PROBE_JS, container_id)
+    assert info is not None, (
+        f"Vega node {node_id}: could not find a canvas inside #{container_id}"
+    )
+    assert info["width"] > 0 and info["height"] > 0, (
+        f"Vega node {node_id}: canvas has zero backing size "
+        f"({info['width']}x{info['height']})"
+    )
+    assert info["nonBlank"], (
+        f"Vega node {node_id}: canvas rendered blank — no chart marks drawn "
+        f"from the upstream data"
+    )
+
+
+def set_canvas_zoom(page, zoom: float, *, timeout: float = 15000) -> None:
+    """Pin the ReactFlow viewport so several nodes fit before dropping them.
+
+    A node is 525x350 flow units, so at zoom 1 a 1280x720 viewport has room for
+    two side by side and no more (see ``drag_to_canvas``). Zooming out first is
+    what makes a three-node chain authorable by drag: the drop coordinates stay
+    viewport-relative, but each node paints ``525 * zoom`` px wide, so the
+    spacing needed to keep facing handles exposed shrinks with it.
+
+    Purely a camera change - node positions in flow space are unaffected, and
+    ``save_workflow_test_screenshot`` re-pins its own fitView before capturing,
+    so this does not influence a baseline.
+    """
+    page.wait_for_function(
+        "() => !!window.__curio_reactFlow", timeout=timeout
+    )
+    page.evaluate(
+        "(zoom) => window.__curio_reactFlow.setViewport({ x: 0, y: 0, zoom })",
+        zoom,
+    )
 
 # ---------------------------------------------------------------------------
 # Playwright page wrapper

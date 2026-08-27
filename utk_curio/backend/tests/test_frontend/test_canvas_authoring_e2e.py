@@ -14,6 +14,11 @@ drawer's own behaviour (``test_data_catalog.py``), which button a card shows
 (``src/tests/components/datasetCardActions.test.tsx``), and the per-kind drag
 payload (``src/tests/components/toolsMenuPackagePalette/packageTemplateRow.test.tsx``).
 
+This test uses the CSV hub dataset as *material* for the authoring gestures; it
+is not the dataset's own coverage. Proving each catalog dataset loads and is
+usable - including the geojson ones, which this file deliberately avoids - is
+``test_dataset_catalog_datasets_e2e.py``, one case per catalog entry.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_canvas_authoring_e2e.py -v
