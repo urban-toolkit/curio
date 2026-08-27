@@ -38,6 +38,10 @@ from .workflow_spec import PY_CODE_TYPES, normalize_type
 # SQLAlchemy connections against the shared sqlite file.
 # ---------------------------------------------------------------------------
 
+# Test classes that own a class-scoped browser session and must NOT have the DB
+# truncated between their methods (see ``_clean_db``).
+_SHARED_SESSION_CLASSES = ("TestWorkflowCanvas", "TestAgentChatGallery")
+
 _SQLA_MUTABLE_TABLES = (
     "exec_cache_entry",
     "project",
@@ -448,18 +452,18 @@ def _clean_db(request, test_db_paths) -> None:
     file than the one ``conftest.py`` resolved, so we call
     ``/api/testing/reset-db`` over HTTP instead of touching the file directly.
 
-    Skipped for ``TestWorkflowCanvas`` (class-scoped ``loaded_workflow`` /
-    ``workflow_page``) so tests share one DB-backed session and canvas; a
-    reset between methods would invalidate the stub user's token while the
-    browser still holds the cookie, and the File menu never appears.
+    Skipped for the classes that hold a class-scoped browser session
+    (``loaded_workflow`` / ``workflow_page``) so their tests share one
+    DB-backed session and canvas; a reset between methods would invalidate the
+    stub user's token while the browser still holds the cookie, and the File
+    menu never appears. ``TestAgentChatGallery`` is in that set for the same
+    reason: it logs in once and runs one parameter per built-in agent.
 
     We skip by class name as well as ``fixturenames`` because some pytest
     versions/paths do not list indirect fixtures in ``request.fixturenames``
     early enough for autouse ordering.
     """
-    if getattr(request, "cls", None) and request.cls.__name__ == (
-        "TestWorkflowCanvas"
-    ):
+    if getattr(request, "cls", None) and request.cls.__name__ in _SHARED_SESSION_CLASSES:
         return
     if (
         "loaded_workflow" in request.fixturenames

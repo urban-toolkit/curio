@@ -13,14 +13,22 @@ backend loop under test - tools, the ledger, the content parser
 - while making the model the one part that cannot vary.
 
 Scripted through ``push_reply(...)`` / ``push_replies(...)``: an in-process
-FIFO for pytest. Each call pops one reply; the queue is per-process and cleared
-by :func:`reset`.
+FIFO. Each call pops one reply; the queue is per-process and cleared by
+:func:`reset`.
 
-There was also a ``CURIO_TESTING_LLM_SCRIPT`` file, so an out-of-process e2e
-could script a reply. Nothing ever used it - the agent e2e suite covers the
-drawer, the palette and the requiresAgents closure, none of which runs a turn -
-so it was speculative infrastructure and came out. If a chat e2e is written
-later, that is the point to add it back.
+Out-of-process e2e reaches the same FIFO over HTTP, through
+``/api/testing/agent-script`` (see ``app/testing/routes.py``). A previous
+``CURIO_TESTING_LLM_SCRIPT`` file served that purpose and was removed as
+speculative when nothing used it; the e2e agent suite now runs real turns, and
+the HTTP endpoint is the replacement. It works because the backend serves
+threaded in a single process, so this module's queue is the one every request
+handler sees.
+
+Every call's ``messages`` list is also recorded, readable through
+:func:`captured` / :func:`last_messages`. That is what lets a per-agent test
+prove *which* agent's prompt composed the turn - the run path assembles the
+system turn from the agent's own preamble + instruction, and a reply alone
+cannot distinguish one agent from another.
 
 When nothing matches, :data:`FALLBACK_REPLY` is returned rather than raising:
 a test that forgot to script one leg of a multi-turn conversation should fail
@@ -41,8 +49,14 @@ FALLBACK_REPLY = "This is a scripted test reply."
 #: ledger reserve/settle path and the quota accounting are actually exercised.
 DEFAULT_USAGE = {"in": 12, "out": 34}
 
+#: How many message lists :func:`captured` retains. A bound, not a budget:
+#: a long-lived backend process serving many e2e turns must not grow a list
+#: for the lifetime of the run. Oldest entries drop first.
+MAX_CAPTURED = 64
+
 _lock = threading.Lock()
 _queue: deque = deque()
+_captured: deque = deque(maxlen=MAX_CAPTURED)
 
 
 class TestingProviderUnavailable(RuntimeError):
@@ -69,9 +83,26 @@ def push_replies(*replies: str) -> None:
 
 
 def reset() -> None:
-    """Drop anything still queued. Call between tests."""
+    """Drop anything still queued and everything captured. Call between tests."""
     with _lock:
         _queue.clear()
+        _captured.clear()
+
+
+def captured() -> list:
+    """The ``messages`` list of every call since the last :func:`reset`.
+
+    A copy, so a caller iterating it cannot be surprised by a concurrent run
+    on the backend's other threads.
+    """
+    with _lock:
+        return [list(m) for m in _captured]
+
+
+def last_messages() -> list | None:
+    """The most recent call's ``messages``, or None when nothing ran yet."""
+    with _lock:
+        return list(_captured[-1]) if _captured else None
 
 
 def pending() -> int:
@@ -83,9 +114,9 @@ def pending() -> int:
 def run_scripted_completion(messages: list, usage_out: dict | None = None) -> str:
     """Return the next scripted reply and record its token usage.
 
-    ``messages`` is unread. It stays in the signature so this drops into
-    ``run_chat_completion``'s call shape unchanged: the queue decides the
-    reply, not the prompt.
+    ``messages`` does not choose the reply - the queue does, so a test's
+    scripting stays independent of prompt wording. It is recorded, though, so a
+    test can assert what actually reached the model (see :func:`captured`).
 
     Raises :class:`TestingProviderUnavailable` when called outside a test run.
     """
@@ -96,6 +127,9 @@ def run_scripted_completion(messages: list, usage_out: dict | None = None) -> st
         )
 
     with _lock:
+        # Recorded before the pop, so a reply and the prompt that drew it keep
+        # the same index in a multi-round run.
+        _captured.append(list(messages) if isinstance(messages, list) else [])
         queued = _queue.popleft() if _queue else None
     reply, usage = queued if queued is not None else (FALLBACK_REPLY, None)
 

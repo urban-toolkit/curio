@@ -195,7 +195,8 @@ Two families of baseline live in that folder:
   workflow path: `canvas-authoring`, `package-roundtrip`,
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
   `library-manager`, `node-catalog-drawer`, `data-catalog-drawer`,
-  `agent-catalog-drawer`,
+  `agent-catalog-drawer`, `agent-run` (one per built-in agent, plus a
+  `_chat` companion for the four that mutate), `agent-review-card`,
   `dataset-export`, `dataset-lineage`, `autark-grammar-edit`,
   `merge-flow-authoring`, `canvas-delete-key`, `projects-page-scroll`,
   `global-imports`, `uhvi-install`, `data-pool-scroll`,
@@ -290,6 +291,8 @@ test_frontend/
   test_node_catalog.py        # Node Catalog drawer: list, search, add/remove -> palette
   test_data_catalog.py        # Data Catalog drawer: hub datasets, search, add/remove, import
   test_agent_catalog.py       # Agent Catalog drawer: list, search, add -> palette, requiresAgents closure
+  test_agent_runs_e2e.py      # EVERY built-in agent: install -> attach -> run a scripted turn (NO browser)
+  test_agent_chat_e2e.py      # one chat-panel baseline screenshot per agent + the review-card Apply
   test_dataset_export.py      # Data Catalog detail panel -> Export: the downloaded name and bytes
   test_dataset_lineage_e2e.py # one edge -> the dataset's lineage grows (panel, card badge, server)
   test_computed_json_output_e2e.py # dict/scalar node output installs as json, no warning (#180)
@@ -313,7 +316,7 @@ test_frontend/
   test_feature_tour_video.py  # records the feature-tour screencast (CURIO_TOUR=1; not a test)
 ```
 
-Three of these deliberately do not drive a browser. `test_examples.py` is a
+Four of these deliberately do not drive a browser. `test_examples.py` is a
 structural check on the bundled dataflow JSON, and `test_example_docs_parity.py`
 is its documentation counterpart - it holds each example's walkthrough and its
 `docs/README.md` row to what the JSON actually contains, comparing parsed
@@ -322,6 +325,8 @@ structures rather than text so the prose can stay hand-condensed.
 only to reuse `curio_servers` / `current_server` / `sandbox_server`, and isolates
 the backend-to-sandbox process boundary from every UI concern, so a failure says
 immediately which half broke.
+`test_agent_runs_e2e.py` requests no `page` fixture for the same reason, and is
+described under **Agent runs** below.
 
 ## CURIO_NO_PROJECT-mode tests
 
@@ -421,6 +426,101 @@ Other things that surprise people here:
   (`idle` / `running` / `done` / `error`) and `data-curio-node-output` on the
   inline output box. The last one matters: `.nowheel.nodrag` is on the editor
   wrapper too, so a `.first` match there returns Monaco's rendered code.
+
+## Agent runs
+
+`test_agent_catalog.py` covers the drawer and the palette but never runs a turn.
+These two modules run one, for **every** built-in agent, and both parametrize
+over `app/agents/builtin.py::BUILTIN_AGENTS` directly - add a roster entry and it
+is covered on the next run, or it fails. `test_agent_runs_e2e.py` also asserts
+that the parametrized set equals what `GET /api/agents/catalog` serves, so an
+agent arriving by some other path cannot slip past.
+
+| Module | Browser | What it is for |
+|---|---|---|
+| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. |
+| `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent additionally **applies its proposal and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
+
+**What gets captured, and why it differs by agent.** Only 4 of the 21 built-ins
+can mutate anything - the rest are `report-only` by contract - so there are two
+kinds of evidence and two capture shapes.
+
+| Agent kind | Baselines under `agent-run` | The assertion behind it |
+|---|---|---|
+| report-only (17) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
+| mutate-capable (4) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the proposal was applied and the node was really created or rewritten, on the server *and* on the canvas |
+
+Three things about those captures are deliberate:
+
+- **The report-only baseline is clipped to the panel** (`clip_selector` on
+  `save_workflow_test_screenshot`). A full-page capture was more than half
+  canvas and left rail - nothing about the agent - and worse, it diluted the
+  comparison: a regression inside the panel had to move 20 % of a frame it only
+  partly occupies before the diff would notice.
+- **The mutate baseline closes the chat panel first.** `fitView` spreads nodes
+  across the whole viewport while the panel covers its right ~44 %, so the node
+  the agent just created sits behind it - the canvas is the evidence, and it has
+  to be in frame to be evidence.
+- **A screenshot is never the only check.** A missing baseline is written and
+  passed, so an error banner or an empty transcript would become "expected
+  output" as quietly as a good capture. Every parameter asserts the outcome
+  first, and the PNGs still want reviewing by eye before they are committed.
+
+**No LLM, no key, no network.** `api_type == "testing"` dispatches to the
+scripted provider in [`app/agents/testing_provider.py`](../../app/agents/testing_provider.py),
+which pops replies off an in-process FIFO and records every message list it was
+handed. Three things make that usable from a test:
+
+| Step | How |
+|---|---|
+| Point the user at it | `use_scripted_llm(backend, token)` - a real `PATCH /api/auth/me` writing `llm_api_type: "testing"`, so the production `resolve_provider_config` path is the one under test |
+| Script the replies | `script_agent_replies(backend, *replies)` -> `POST /api/testing/agent-script`. One entry **per provider call**: a reply carrying a `toolRequest` tail is answered by the runtime and the model is prompted again, so script the follow-up too |
+| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script` |
+
+The `agent-script` routes 404 unless `CURIO_TESTING` is set, on top of the
+production guard every route in that blueprint carries - unlike `stub-login`,
+they read prompt text back out of the process.
+
+Things worth knowing before adding to these:
+
+- **The scripted reply proves nothing about *which* agent ran** - it is the same
+  string for every parameter. The per-agent claim is on the captured system
+  prompt, which the run composes from that agent's own preamble + instruction
+  bytes. Keep that assertion or the parametrization becomes decoration.
+- **Never script `web.search` / `web.fetch`.** `agent.node-researcher` and
+  `agent.researcher` declare them and `app/agents/egress.py` really opens
+  sockets. Both also declare a local read tool, which is what the suite uses.
+- **Only three mutate tools are minted here**, and `MINTABLE_TOOLS` is ordered
+  most-specific-first because an agent that declares several gets the first
+  match: `dataflow.plan.write` (so the Dataflow Builder plans rather than
+  creating one node), then `node.create` (applying it puts a NEW node on the
+  canvas - the most visible proof an agent did something), then
+  `node.content.write`. That spread is intentional: one plan, two node
+  creations, one content replacement. The remaining mutate contracts
+  (`dataset.install`, `package.install`, `package.draft.apply`,
+  `node.template.create`) each need a real catalog row, or a run of the isolated
+  build service; their mints are covered in-process by
+  `test_agents/test_routes.py`, and an agent declaring only those falls through
+  to the read-tool leg.
+- **A plan is applied per node**, through the planned row's own
+  `Create node <title>` button and the `apply-node` route - not the card's
+  single `Apply`.
+- **The transcript's vocabulary is `{"role": "user"|"agent", "text": ...}`.**
+  `assistant` exists only in the provider-context mapping in `sessions.py`.
+- **`TestAgentChatGallery` is in `fixtures.py::_SHARED_SESSION_CLASSES`**, so the
+  DB is not truncated between its parameters - it logs in once and each
+  parameter stubs its own *project*. A reset would invalidate the stub user's
+  token while the browser still holds the cookie.
+- Two things inside a capture vary run to run and the 20 % budget absorbs both:
+  the run-status line's wall-clock duration, and the session id in the panel
+  header. Token counts do not vary (`DEFAULT_USAGE` is fixed), so
+  `2 calls x 46 = 92 tokens` is stable for a one-tool-round turn.
+
+**One run at a time.** Two concurrent E2E runs share ports 5002/2000/8080 *and*
+`.curio/test/urban_workflow_test.db`, so the second one's autouse
+`e2e_clean_db` truncates `user_session` out from under the first, which then
+fails with a 401 wherever it happens to be. It looks exactly like a flaky test
+and is not one.
 
 ## Libraries
 

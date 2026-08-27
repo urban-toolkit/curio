@@ -8,7 +8,7 @@ import textwrap
 from pathlib import Path
 from io import BytesIO
 from urllib.request import urlopen, Request
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 import allure
 import pytest
@@ -769,6 +769,23 @@ def _capture_full_page(page: Page):
     return Image.open(BytesIO(raw)).convert("RGB")
 
 
+def _capture_element(page: Page, selector: str):
+    """Return a Pillow RGB image of one element, or raise if it is not there.
+
+    For a baseline whose subject is a panel rather than a page. A full-page
+    capture of, say, an agent chat turn is more than half static canvas and
+    chrome, which does not just waste the image - it dilutes the comparison,
+    since a regression inside the panel is a small fraction of the frame
+    against a 20% budget.
+    """
+    from PIL import Image
+
+    locator = page.locator(selector)
+    locator.wait_for(state="visible", timeout=15000)
+    raw = locator.screenshot()
+    return Image.open(BytesIO(raw)).convert("RGB")
+
+
 def _image_to_png_bytes(img) -> bytes:
     """Encode a Pillow image to PNG bytes for Allure attachments."""
     buf = BytesIO()
@@ -904,6 +921,7 @@ def save_workflow_test_screenshot(
     pixel_threshold: int = 30,
     max_diff_ratio: float = 0.20,
     fit_reactflow: bool = True,
+    clip_selector: str | None = None,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 
@@ -929,6 +947,11 @@ def save_workflow_test_screenshot(
     on ``.react-flow__node`` and would otherwise spend its whole timeout waiting
     for a node that is never going to exist.
 
+    Pass *clip_selector* when the subject of the baseline is one element rather
+    than the page. The capture is then that element's box, so every pixel is
+    about the thing under test and the diff budget is spent on it instead of on
+    surrounding chrome.
+
     Returns the path to the expected screenshot file.
     """
     from PIL import Image, ImageChops, ImageEnhance
@@ -945,11 +968,16 @@ def save_workflow_test_screenshot(
     if fit_reactflow:
         _wait_for_reactflow_ready(page)
 
+    def _capture():
+        if clip_selector is not None:
+            return _capture_element(page, clip_selector)
+        return _capture_full_page(page)
+
     if not os.path.isfile(expected_path):
-        _capture_full_page(page).save(expected_path)
+        _capture().save(expected_path)
 
     expected_img = Image.open(expected_path).convert("RGB")
-    actual_img = _capture_full_page(page)
+    actual_img = _capture()
 
     target_w = max(actual_img.width, expected_img.width)
     target_h = max(actual_img.height, expected_img.height)
@@ -1196,22 +1224,39 @@ def signup_and_enter_new_workflow(
 SESSION_COOKIE_NAME = "session_token"
 
 
-def _post_json(url: str, payload: dict, timeout: float = 10.0) -> dict:
-    """POST *payload* as JSON to *url* and return the parsed JSON body.
+def _request_json(
+    url: str,
+    *,
+    method: str = "GET",
+    payload: dict | None = None,
+    timeout: float = 10.0,
+) -> dict:
+    """Unauthenticated JSON request, returning the parsed body.
 
     Uses ``urllib`` (stdlib only) to match the rest of this module instead
-    of introducing a ``requests`` dependency.
+    of introducing a ``requests`` dependency. For routes behind ``require_auth``
+    use :func:`api_json`, which carries the bearer token.
     """
-    data = json.dumps(payload).encode("utf-8")
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
+        headers={"Content-Type": "application/json"} if data is not None else {},
+        method=method,
     )
     with urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
         body = resp.read().decode("utf-8") or "{}"
         return json.loads(body)
+
+
+def _post_json(url: str, payload: dict, timeout: float = 10.0) -> dict:
+    """POST *payload* as JSON to *url* and return the parsed JSON body."""
+    return _request_json(url, method="POST", payload=payload, timeout=timeout)
+
+
+def _get_json(url: str, timeout: float = 10.0) -> dict:
+    """GET *url* and return the parsed JSON body."""
+    return _request_json(url, method="GET", timeout=timeout)
 
 
 def api_json(
@@ -1317,7 +1362,6 @@ def open_tools_palette(page, kind: str):
     return panel
 
 
-
 def close_tools_palette(page, kind: str) -> None:
     """Close a left-rail tool palette, if it is open.
 
@@ -1345,6 +1389,7 @@ def close_tools_palette(page, kind: str) -> None:
     page.locator(f'{root_sel} button[title="{close_title}"]').click(force=True)
     panel.first.wait_for(state="hidden", timeout=10000)
 
+
 def install_session_cookie(page, frontend_url: str, token: str) -> None:
     """Install *token* as the ``session_token`` cookie on *page*'s context.
 
@@ -1362,6 +1407,77 @@ def install_session_cookie(page, frontend_url: str, token: str) -> None:
             }
         ]
     )
+
+
+def _await_session(backend_url: str, token: str, *, timeout: float = 10.0) -> None:
+    """Block until *token* authenticates, or fail saying it never did.
+
+    Not defensive padding - it closes a real race in this harness. The autouse
+    ``e2e_clean_db`` truncates ``user`` / ``user_session`` straight out of the
+    sqlite file from the pytest process, before and after every test, while the
+    backend serves threaded off a pooled connection. A pooled reader can hold a
+    snapshot taken before the row this call just created, and the next
+    ``require_auth`` request then answers 401.
+
+    A browser test never notices: a page load stands between the stub-login and
+    the first authenticated request. A test that drives the API directly fires
+    the next request microseconds later, which is where the race became visible
+    (an intermittent 401 on one parameter of ``test_agent_runs_e2e.py``). Wait
+    for the state we just asked for instead of assuming it landed.
+    """
+    deadline = time.time() + timeout
+    last = ""
+    while time.time() < deadline:
+        try:
+            api_json(f"{backend_url}/api/auth/me", token)
+            return
+        except HTTPError as exc:  # noqa: PERF203 - the retry IS the point
+            if exc.code != 401:
+                raise
+            last = f"HTTP {exc.code}"
+        except URLError as exc:
+            last = str(exc)
+        time.sleep(0.05)
+    raise AssertionError(
+        f"a freshly stubbed session never authenticated within {timeout}s "
+        f"(last: {last or 'unknown'}) - the backend may not be up, or the DB "
+        f"was truncated after the token was issued"
+    )
+
+
+def stub_db_user(
+    backend_url: str,
+    *,
+    username: str,
+    name: str,
+    password: str = DEFAULT_TEST_PASSWORD,
+    email: str | None = None,
+    project_name: str | None = None,
+    project_spec: dict | None = None,
+) -> dict:
+    """Seed a user (and optionally a project) over HTTP. No browser involved.
+
+    The half of :func:`stub_db_login` that does not touch Playwright, split out
+    for tests that live in this suite to reuse ``curio_servers`` but drive the
+    backend directly - ``test_agent_runs_e2e.py``, like
+    ``test_library_install_integration.py`` before it, requests no ``page``.
+
+    Returns ``{user, token, created}``, plus ``project`` when one was stubbed.
+    """
+    payload = {"username": username, "name": name, "password": password}
+    if email is not None:
+        payload["email"] = email
+    login = _post_json(f"{backend_url}/api/testing/stub-login", payload)
+    _await_session(backend_url, login["token"])
+
+    if project_name is not None:
+        project_payload: dict = {"username": username, "name": project_name}
+        if project_spec is not None:
+            project_payload["spec"] = project_spec
+        login["project"] = _post_json(
+            f"{backend_url}/api/testing/stub-project", project_payload,
+        )
+    return login
 
 
 def stub_db_login(
@@ -1386,21 +1502,20 @@ def stub_db_login(
 
     Returns the parsed ``stub-login`` JSON (``{user, token, created}``),
     augmented with ``project`` when one was stubbed.
-    """
-    payload = {"username": username, "name": name, "password": password}
-    if email is not None:
-        payload["email"] = email
-    login = _post_json(f"{backend_url}/api/testing/stub-login", payload)
-    install_session_cookie(page, frontend_url, login["token"])
 
-    if project_name is not None:
-        project_payload: dict = {"username": username, "name": project_name}
-        if project_spec is not None:
-            project_payload["spec"] = project_spec
-        project = _post_json(
-            f"{backend_url}/api/testing/stub-project", project_payload,
-        )
-        login["project"] = project
+    The HTTP half is :func:`stub_db_user`; this adds the browser cookie. A test
+    with no browser calls that one directly.
+    """
+    login = stub_db_user(
+        backend_url,
+        username=username,
+        name=name,
+        password=password,
+        email=email,
+        project_name=project_name,
+        project_spec=project_spec,
+    )
+    install_session_cookie(page, frontend_url, login["token"])
     return login
 
 
@@ -2090,7 +2205,6 @@ def run_node_and_wait(page, node_id: str, *, node_type: str = "",
     return read_node_output_text(page, node_id)
 
 
-
 # Shared by the wait_for_function poll and the final evaluate in
 # ``assert_vega_canvas_rendered``; returns {width, height, nonBlank} or null.
 VEGA_CANVAS_PROBE_JS = """(containerId) => {
@@ -2195,6 +2309,7 @@ def set_canvas_zoom(page, zoom: float, *, timeout: float = 15000) -> None:
         zoom,
     )
 
+
 # ---------------------------------------------------------------------------
 # Playwright page wrapper
 # ---------------------------------------------------------------------------
@@ -2273,3 +2388,84 @@ class FrontendPage(Page):
 
     def expect_page_title(self, search_title: str):
         expect(self.page).to_have_title(re.compile(search_title))
+
+
+# ── scripted agent turns ─────────────────────────────────────────────────────
+#
+# An agent turn is downstream of one LLM call. These helpers point the caller's
+# own user at the scripted provider and drive its queue over HTTP, so a test can
+# run a real turn - tools, ledger, content parser, session persistence - against
+# the live backend with no key and no network. Contract:
+# ``app/agents/testing_provider.py``.
+
+#: What ``use_scripted_llm`` writes as the user's model name. Never dispatched
+#: anywhere; it exists because ``resolve_provider_config`` treats an empty
+#: ``llm_model`` as "unconfigured" and falls back to the deployment default.
+SCRIPTED_MODEL = "scripted"
+
+
+def use_scripted_llm(backend_url: str, token: str) -> dict:
+    """Point this user's LLM provider at the scripted one.
+
+    Goes through the real settings route (``PATCH /api/auth/me``) rather than a
+    test-only shortcut, so the resolution path under test is the production one:
+    ``resolve_provider_config`` reads these exact columns.
+    """
+    return api_json(
+        f"{backend_url}/api/auth/me",
+        token,
+        method="PATCH",
+        payload={
+            "llm_api_type": "testing",
+            "llm_base_url": "",
+            "llm_api_key": "",
+            "llm_model": SCRIPTED_MODEL,
+        },
+    )
+
+
+def script_agent_replies(backend_url: str, *replies: str, reset: bool = True) -> int:
+    """Queue *replies* for the next agent turns, one per provider call.
+
+    A multi-round run needs one entry per round: a reply carrying a
+    ``toolRequest`` tail is answered by the runtime and the model is prompted
+    again, so script the follow-up too. Returns how many are pending.
+
+    Resets by default. A reply left over from a previous test would be consumed
+    by this one, and the failure would point anywhere but at the cause.
+    """
+    body = _post_json(
+        f"{backend_url}/api/testing/agent-script",
+        {"replies": list(replies), "reset": reset},
+    )
+    return body["pending"]
+
+
+def captured_agent_prompts(backend_url: str) -> list:
+    """Every message list the scripted provider was handed, oldest first.
+
+    Each entry is the OpenAI-style ``[{"role", "content"}, ...]`` the run
+    composed. This is how a per-agent test proves *which* agent ran: the reply
+    is scripted and therefore says nothing, but the system turn carries that
+    agent's own preamble and instruction bytes.
+    """
+    return _get_json(f"{backend_url}/api/testing/agent-script")["captured"]
+
+
+def captured_system_prompt(backend_url: str, *, call: int = 0) -> str:
+    """The system content of one captured call (the first, by default)."""
+    captured = captured_agent_prompts(backend_url)
+    assert captured, "the scripted provider was never called"
+    assert call < len(captured), (
+        f"asked for call {call} but only {len(captured)} were made"
+    )
+    return "\n".join(
+        m.get("content") or ""
+        for m in captured[call]
+        if m.get("role") == "system"
+    )
+
+
+def reset_agent_script(backend_url: str) -> None:
+    """Drop the scripted queue and the capture log."""
+    _request_json(f"{backend_url}/api/testing/agent-script", method="DELETE")

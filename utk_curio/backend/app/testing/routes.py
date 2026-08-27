@@ -6,11 +6,18 @@ installs the returned token as a cookie on the Playwright context so the next
 navigation is already authenticated. ``/api/testing/stub-project`` seeds a
 workflow row owned by that user so ``/projects`` has something to render.
 
+``/api/testing/agent-script`` is the third stub and the newest: it is the
+out-of-process door to the scripted LLM provider's reply queue, so an E2E test
+can drive a real agent turn against the running backend without a key or a
+network. See ``app/agents/testing_provider.py``.
+
 The blueprint is registered by ``create_app`` in every non-production
 environment (``CURIO_ENV != 'prod'``, see ``backend/config.py::_is_dev``).
-``CURIO_TESTING=1`` is **not** required for the endpoints to work; that
-flag only controls whether the backend uses a dedicated test DB or the
-default one.
+``CURIO_TESTING=1`` is **not** required for the stub-login/stub-project
+endpoints to work; that flag only controls whether the backend uses a
+dedicated test DB or the default one. The ``agent-script`` routes are the
+exception - they 404 without it, because unlike the others they read prompt
+text back out of the process.
 """
 
 from __future__ import annotations
@@ -18,6 +25,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, jsonify, request
 
 from utk_curio.backend.config import _is_dev
+from utk_curio.backend.app.agents import testing_provider
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.users import repositories as user_repo
 from utk_curio.backend.app.users import security
@@ -203,3 +211,96 @@ def stub_project():
         ),
         201,
     )
+
+
+# ── scripted agent turns (see app/agents/testing_provider.py) ────────────────
+#
+# The scripted provider's FIFO lives in the backend process, so an in-process
+# pytest can call push_replies directly. The E2E suite cannot: it drives a
+# separate ``curio.py start`` subprocess. These three endpoints are that queue's
+# door, and they are the reason an agent turn is testable end to end without a
+# key, a network, or a model that answers differently twice.
+#
+# Guarded twice over: out of production like every other route here, AND off a
+# developer's ordinary dev server, because unlike stub-login these read prompt
+# text back out of the process.
+
+
+def _scripted_guard():
+    """A 404 response when these routes must not exist, else ``None``.
+
+    Deliberately not ``abort(404)`` like :func:`_guard`. ``create_app`` installs
+    an ``@app.errorhandler(Exception)`` that catches ``HTTPException`` too and
+    rewrites it to a 500, so an aborting guard here would answer 500 and the
+    refusal would read as a server fault. Returning the response walks past that
+    handler and says what it means.
+    """
+    if not _is_dev() or not testing_provider.enabled():
+        return jsonify({"error": "not found"}), 404
+    return None
+
+
+@testing_bp.route("/agent-script", methods=["POST"])
+def agent_script_push():
+    """Queue scripted replies for the next agent turns.
+
+    Body (JSON):
+      * ``replies`` - list of reply strings, consumed in order, one per
+        provider call. A multi-round run (a toolRequest and its follow-up)
+        needs one entry per round.
+      * ``reset`` - drop anything queued and captured first. Defaults to true,
+        which is what a test almost always wants: a leftover reply from a
+        previous test would be consumed by this one and the failure would point
+        anywhere but at the cause.
+
+    Response: ``{"pending": n}``
+    """
+    denied = _scripted_guard()
+    if denied is not None:
+        return denied
+    body = request.get_json(silent=True) or {}
+    replies = body.get("replies")
+    if replies is None:
+        replies = []
+    if not isinstance(replies, list) or not all(isinstance(r, str) for r in replies):
+        return jsonify({"error": "'replies' must be a list of strings"}), 400
+    if body.get("reset", True):
+        testing_provider.reset()
+    testing_provider.push_replies(*replies)
+    return jsonify({"pending": testing_provider.pending()}), 200
+
+
+@testing_bp.route("/agent-script", methods=["GET"])
+def agent_script_read():
+    """What the scripted provider was asked, and what is still queued.
+
+    ``captured`` is one entry per provider call since the last reset, each the
+    OpenAI-style ``[{"role", "content"}, ...]`` list the run composed. A
+    per-agent test asserts against it that the system turn really carried that
+    agent's own instruction bytes - which a reply, being scripted, can never
+    show.
+
+    Response: ``{"pending": n, "captured": [[{role, content}, ...], ...]}``
+    """
+    denied = _scripted_guard()
+    if denied is not None:
+        return denied
+    return (
+        jsonify(
+            {
+                "pending": testing_provider.pending(),
+                "captured": testing_provider.captured(),
+            }
+        ),
+        200,
+    )
+
+
+@testing_bp.route("/agent-script", methods=["DELETE"])
+def agent_script_reset():
+    """Drop the queue and the capture log. ``{"pending": 0}``."""
+    denied = _scripted_guard()
+    if denied is not None:
+        return denied
+    testing_provider.reset()
+    return jsonify({"pending": testing_provider.pending()}), 200

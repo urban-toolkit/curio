@@ -110,6 +110,60 @@ class TestPreambleAndInputs:
             assert builtin.read_prompt_text(coord, "system"), coord
             assert builtin.read_prompt_text(coord, "instruction"), coord
 
+    def test_every_builtin_instruction_is_distinct(self):
+        """No two built-ins may share instruction bytes.
+
+        This is what keeps the per-agent E2E claim from being vacuous.
+        ``test_frontend/test_agent_runs_e2e.py`` proves a given agent ran by
+        asserting its OWN instruction composed the system turn - the scripted
+        reply is identical for every agent and can prove nothing. If two agents
+        shared a prompt file, that assertion would pass for either one and the
+        "every agent is covered" claim would quietly cover one less than it
+        says.
+
+        Two agents legitimately sharing a *preamble* is fine and expected
+        (``default_preamble.txt``); it is the instruction that identifies.
+        """
+        from utk_curio.backend.app.agents import builtin
+
+        by_text: dict[str, list[str]] = {}
+        for spec in builtin.BUILTIN_AGENTS:
+            text = builtin.read_instruction_text(f"{spec.agent_id}@1.0.0")
+            assert text, spec.agent_id
+            by_text.setdefault(text.strip(), []).append(spec.agent_id)
+
+        collisions = {
+            ids[0]: ids for ids in by_text.values() if len(ids) > 1
+        }
+        assert not collisions, (
+            "these built-ins share instruction bytes, so no test can tell which "
+            f"of them actually ran: {list(collisions.values())}"
+        )
+
+    def test_no_instruction_is_a_substring_of_another(self):
+        """A containment collision defeats the same assertion as an exact one.
+
+        The E2E check is ``instruction in system_prompt``, so if agent A's
+        instruction were wholly contained in agent B's, a run of B would satisfy
+        A's assertion too. Distinctness alone does not rule that out.
+        """
+        from utk_curio.backend.app.agents import builtin
+
+        texts = {
+            spec.agent_id: builtin.read_instruction_text(f"{spec.agent_id}@1.0.0").strip()
+            for spec in builtin.BUILTIN_AGENTS
+        }
+        contained = [
+            (inner_id, outer_id)
+            for inner_id, inner in texts.items()
+            for outer_id, outer in texts.items()
+            if inner_id != outer_id and inner in outer
+        ]
+        assert not contained, (
+            "one built-in's instruction is contained in another's, so a run of "
+            f"the outer would satisfy the inner's assertion: {contained}"
+        )
+
 
 class TestNodeBuilderComposite:
     """The dev/48 roster entry — spec per dev/15 §3.4 minus recorded deviations."""
