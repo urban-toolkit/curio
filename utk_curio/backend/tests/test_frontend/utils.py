@@ -111,8 +111,14 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
             f"sandbox /get fileName={artifact_id} -> {resp.status_code}\n"
             f"{resp.text[:2000]}"
         )
-    parsed = resp.json()
-    result = json.loads(json.dumps(parsed, default=str))
+    result = resp.json()
+    # No `json.loads(json.dumps(result, default=str))` round-trip here. It was
+    # a no-op that cost two extra copies of the whole artifact: `resp.json()`
+    # has already parsed the body, so every value is JSON-native and `default`
+    # can never fire. The largest example dataflow
+    # (09-heterogeneous-data-linked-views) died with MemoryError *inside* that
+    # round-trip - it holds the parsed object, the serialized string and the
+    # re-parsed copy at once, on top of the programmatic run's expected map.
     result.pop('filename', None)  # artifact ID varies per execution run
     return result
 

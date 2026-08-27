@@ -19,7 +19,6 @@ blaming the node under validation.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import textwrap
@@ -60,8 +59,13 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
             f"sandbox /get fileName={artifact_id} -> {resp.status_code}\n"
             f"{resp.text[:2000]}"
         )
-    parsed = resp.json()
-    result = json.loads(json.dumps(parsed, default=str))
+    result = resp.json()
+    # No `json.loads(json.dumps(result, default=str))` round-trip: it is a no-op
+    # that costs two extra copies of the whole artifact. `resp.json()` has
+    # already parsed the body, so every value is JSON-native and `default` can
+    # never fire. It matters here because this runs on the agent node-validation
+    # path, against whatever a user's node produced - the e2e harness had the
+    # same line and died with MemoryError on the largest example dataflow.
     result.pop("filename", None)  # artifact ID varies per execution run
     return result
 
