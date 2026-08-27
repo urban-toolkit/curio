@@ -13,6 +13,8 @@ import zipfile
 
 import pytest
 
+from .conftest import write_fake_tool
+
 from utk_curio.backend.app.packages import build_jobs, build_staging
 from utk_curio.backend.app.packages.build_compiler import toolchain_from_env
 from utk_curio.backend.app.packages.build_deps import DependencyPolicy
@@ -34,18 +36,14 @@ def _fresh_jobs():
 
 @pytest.fixture()
 def toolchain(tmp_path, monkeypatch):
-    tool = tmp_path / "fake-esbuild"
-    tool.write_text(_FAKE_ESBUILD, encoding="utf-8")
-    tool.chmod(0o755)
+    tool = write_fake_tool(tmp_path, "fake-esbuild", _FAKE_ESBUILD)
     monkeypatch.setenv("CURIO_BUILD_ESBUILD", str(tool))
     return toolchain_from_env()
 
 
 @pytest.fixture()
 def preview_runner(tmp_path, monkeypatch):
-    tool = tmp_path / "fake-preview-runner"
-    tool.write_text(_FAKE_RUNNER, encoding="utf-8")
-    tool.chmod(0o755)
+    tool = write_fake_tool(tmp_path, "fake-preview-runner", _FAKE_RUNNER)
     monkeypatch.setenv("CURIO_BUILD_PREVIEW_RUNNER", str(tool))
     return runner_from_env()
 

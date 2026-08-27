@@ -12,7 +12,7 @@ four separated directories::
 Isolation posture (dev/89 §3.3):
 
 * **Scrubbed environment** — a worker sees ONLY the minimal env built here
-  (PATH=/usr/bin:/bin, HOME/TMPDIR inside the workspace, locale pins, and the
+  (a minimal system PATH, HOME/TMPDIR inside the workspace, locale pins, and the
   three ``CURIO_BUILD_*_DIR`` pointers) plus the caller's explicit
   ``extra_env``. The host environment — credentials, tokens, package-manager
   configuration — never reaches the child.
@@ -35,6 +35,7 @@ portably on macOS, so the boundary is per-phase policy, stated honestly.
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import signal
@@ -47,6 +48,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
+
+log = logging.getLogger(__name__)
 
 _IS_POSIX = os.name == "posix"
 
@@ -149,7 +152,32 @@ def populate_inputs(workspace: BuildWorkspace, files: Mapping[str, bytes]) -> No
 
 
 def _chmod_tree(root: Path, *, file_mode: int, dir_mode: int) -> None:
+    """Apply a mode across a tree, deepest entry first.
+
+    On Windows this used to return immediately, which quietly made
+    :func:`populate_inputs` a no-op: the input tree was documented as
+    "chmod-locked" and was in fact fully writable, so a worker could rewrite
+    its own inputs mid-build and the tamper test passed with ``status == ok``.
+
+    Windows has no mode bits, but it does honour the read-only *attribute*, and
+    it honours it against the owning process - ``open(path, "a")`` on a
+    read-only file raises ``PermissionError``. That is exactly the guarantee
+    this function exists to provide, so derive the attribute from the POSIX
+    owner-write bit and set it. Directories are left alone: the attribute is
+    meaningless for containment on a directory (Windows ignores it for
+    creation), and the files are what carry the content.
+    """
     if not _IS_POSIX:
+        # `stat.S_IWRITE` clears the attribute, `stat.S_IREAD` sets it.
+        writable = bool(file_mode & 0o200)
+        win_mode = (stat.S_IWRITE | stat.S_IREAD) if writable else stat.S_IREAD
+        for entry in sorted(root.rglob("*"), reverse=True):
+            if not entry.is_file():
+                continue
+            try:
+                os.chmod(entry, win_mode)
+            except OSError:
+                pass
         return
     for entry in sorted(root.rglob("*"), reverse=True):
         try:
@@ -162,9 +190,134 @@ def _chmod_tree(root: Path, *, file_mode: int, dir_mode: int) -> None:
         pass
 
 
+class BuildIsolationUnavailable(RuntimeError):
+    """A build was requested on a platform that cannot bound it.
+
+    Raised for a hosted deployment. A local single-user launch degrades with a
+    warning instead, mirroring ``sandbox.isolation.mode``.
+    """
+
+
+def isolation_capabilities(platform=None, module_probe=None) -> dict[str, object]:
+    """Report which build-isolation primitives this interpreter actually has.
+
+    *platform* and *module_probe* are injectable for the same reason
+    ``sandbox.isolation.mode.capabilities`` makes them injectable: the whole
+    decision table is then exercisable from any host, including the Windows
+    branch that a Linux CI can never reach and the POSIX branch a Windows
+    developer can never reach.
+    """
+    platform = platform if platform is not None else sys.platform
+    if module_probe is None:
+        def module_probe(name):
+            try:
+                __import__(name)
+                return True
+            except Exception:
+                return False
+
+    posix = not platform.startswith("win")
+    # Windows gets its bounds from Job Objects rather than setrlimit: memory,
+    # CPU time and process count through the job, plus tree-kill via
+    # TerminateJobObject. `ctypes` is stdlib, so the only way this is absent is
+    # a build of Python without it.
+    win_job = (not posix) and bool(module_probe("ctypes"))
+    return {
+        "platform": platform,
+        # POSIX: setrlimit. Windows: a Job Object. Neither covers everything -
+        # POSIX has no memory bound on macOS, Windows has no file-size or
+        # open-file bound - so `limits_applied` on the result is the record of
+        # what a given run actually got.
+        "rlimit": (bool(module_probe("resource")) and posix) or win_job,
+        # POSIX mode bits; on Windows the read-only file attribute, which the
+        # OS does enforce against the owning process.
+        "read_only_inputs": True,
+        # POSIX: setsid + killpg. Windows: TerminateJobObject, which is
+        # stronger - it reaches processes started after the job was assigned.
+        "process_group_kill": posix or win_job,
+    }
+
+
+def missing_isolation(caps: Mapping[str, object]) -> list[str]:
+    """Which bounds are needed but absent, most consequential first."""
+    missing = []
+    if not caps.get("rlimit"):
+        missing.append("resource limits (CPU, memory, file size, open files)")
+    if not caps.get("process_group_kill"):
+        missing.append("process-group kill on timeout or cancel")
+    if not caps.get("read_only_inputs"):
+        missing.append("read-only build inputs")
+    return missing
+
+
+def check_build_isolation(*, hosted: bool, caps: Mapping[str, object] | None = None):
+    """Gate a build on this platform's ability to bound it.
+
+    Returns ``(missing, warning)``. Raises :class:`BuildIsolationUnavailable`
+    when *hosted* and anything is missing.
+
+    Why this exists: the worker runs code an **agent** authored, and
+    ``limits_applied`` was only ever *recorded* into provenance - never gated
+    on. So on Windows a build ran with no CPU, memory, file-size or open-file
+    ceiling, with inputs that were not really read-only, and with no way to
+    kill a runaway process group, and nothing in the pipeline noticed. On a
+    shared instance that is the failure this whole module exists to prevent,
+    and it would be invisible: every build would appear to work.
+
+    The local-vs-hosted split is deliberate and matches
+    ``sandbox.isolation.mode``: on a single-user laptop the author and the
+    operator are the same person, so refusing to build would be the wrong
+    trade; on a hosted instance they are not.
+    """
+    caps = caps if caps is not None else isolation_capabilities()
+    missing = missing_isolation(caps)
+    if not missing:
+        return [], None
+    if hosted:
+        raise BuildIsolationUnavailable(
+            "Package building was requested on an instance with user auth "
+            "enabled, but this platform cannot bound a build: missing "
+            + ", ".join(missing)
+            + ". Refusing to run an agent-authored build unbounded. Run the "
+            "Docker image, or build on a POSIX host."
+        )
+    return missing, (
+        "This platform cannot bound a package build ("
+        + ", ".join(missing)
+        + "). The build will run anyway because this is a single-user launch, "
+        "where the package author and the operator are the same person. Do not "
+        "expose this instance to other users without --auth."
+    )
+
+
+def system_path_env() -> dict[str, str]:
+    """The PATH (and, on Windows, the variables the loader needs) for a build
+    child that must NOT inherit the parent environment.
+
+    The point of a minimal env is that a build step sees nothing it was not
+    given. ``PATH=/usr/bin:/bin`` expressed that on POSIX and was hardcoded at
+    three call sites, which made every one of them a no-op-or-worse on Windows:
+    the path does not exist, and a bare ``env`` without ``SystemRoot`` leaves
+    the Windows loader unable to initialise, so a child fails before it runs.
+
+    Returns only the variables needed to start a process, never the caller's.
+    """
+    if os.name == "nt":
+        root = os.environ.get("SystemRoot") or r"C:\Windows"
+        system32 = os.path.join(root, "System32")
+        return {
+            "PATH": os.pathsep.join([system32, root]),
+            # Both are required for process startup on Windows; without
+            # SystemRoot even a fully-qualified executable can fail to load.
+            "SystemRoot": root,
+            "SystemDrive": os.environ.get("SystemDrive") or "C:",
+        }
+    return {"PATH": "/usr/bin:/bin"}
+
+
 def _minimal_env(workspace: BuildWorkspace, extra_env: Mapping[str, str] | None) -> dict[str, str]:
     env = {
-        "PATH": "/usr/bin:/bin",
+        **system_path_env(),
         "HOME": str(workspace.work_dir),
         "TMPDIR": str(workspace.work_dir),
         "LANG": "C.UTF-8",
@@ -180,16 +333,150 @@ def _minimal_env(workspace: BuildWorkspace, extra_env: Mapping[str, str] | None)
     return env
 
 
+# ── Windows bounds: Job Objects ─────────────────────────────────────────────
+#
+# Windows has no setrlimit, which is why the whole bounded-worker contract used
+# to evaporate there. It does have Job Objects, which bound a process tree
+# rather than a process - and for this purpose that is strictly better than
+# rlimits, because a build's grandchildren are inside the same bound and
+# `TerminateJobObject` takes the entire tree down in one call.
+#
+# Mapped here:
+#   memory_bytes   -> ProcessMemoryLimit        (per process in the job)
+#   cpu_seconds    -> PerJobUserTimeLimit       (100ns units, whole job)
+#   max_processes  -> ActiveProcessLimit
+# plus KILL_ON_JOB_CLOSE, so if this backend dies the job dies with it instead
+# of leaving an orphaned build running.
+#
+# Not mapped: file size and open-file count have no Job Object equivalent.
+# `_apply_rlimits` reports exactly what it applied, so provenance stays honest
+# about the difference rather than implying parity.
+
+_JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
+_JOB_OBJECT_LIMIT_JOB_TIME = 0x00000004
+_JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+_JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+
+
+def _win_job_structs():
+    """Build the ctypes structs lazily so importing this module stays portable."""
+    import ctypes
+    from ctypes import wintypes
+
+    class _IoCounters(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_ulonglong) for n in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class _BasicLimits(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64),
+            ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class _ExtendedLimits(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", _BasicLimits),
+            ("IoInfo", _IoCounters),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    return ctypes, _ExtendedLimits
+
+
+def _create_win_job(limits: WorkerLimits) -> tuple[list[str], object | None]:
+    """Create a bounded Job Object. Returns ``(applied_names, handle)``.
+
+    ``handle`` is None when the job could not be created or configured, in
+    which case *nothing* was applied and the caller reports that honestly.
+    """
+    try:
+        ctypes, ExtendedLimits = _win_job_structs()
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.CreateJobObjectW(None, None)
+        if not handle:
+            return [], None
+
+        info = ExtendedLimits()
+        basic = info.BasicLimitInformation
+        flags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        applied: list[str] = ["kill-on-close"]
+
+        if limits.memory_bytes > 0:
+            info.ProcessMemoryLimit = int(limits.memory_bytes)
+            flags |= _JOB_OBJECT_LIMIT_PROCESS_MEMORY
+            applied.append("as")
+        if limits.cpu_seconds > 0:
+            # PerJobUserTimeLimit counts in 100-nanosecond units.
+            basic.PerJobUserTimeLimit = int(limits.cpu_seconds) * 10_000_000
+            flags |= _JOB_OBJECT_LIMIT_JOB_TIME
+            applied.append("cpu")
+        if limits.max_processes > 0:
+            basic.ActiveProcessLimit = int(limits.max_processes)
+            flags |= _JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+            applied.append("nproc")
+
+        basic.LimitFlags = flags
+        info.BasicLimitInformation = basic
+        ok = kernel32.SetInformationJobObject(
+            handle, _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+            ctypes.byref(info), ctypes.sizeof(info),
+        )
+        if not ok:
+            kernel32.CloseHandle(handle)
+            return [], None
+        return applied, handle
+    except Exception:  # ctypes/DLL surprises must never break a build path
+        log.warning("could not create a Windows Job Object for build bounds",
+                    exc_info=True)
+        return [], None
+
+
+def _assign_to_win_job(handle: object, pid: int) -> bool:
+    """Put a started process (and everything it spawns) inside the job."""
+    try:
+        import ctypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # PROCESS_SET_QUOTA | PROCESS_TERMINATE
+        proc = kernel32.OpenProcess(0x0100 | 0x0001, False, int(pid))
+        if not proc:
+            return False
+        try:
+            return bool(kernel32.AssignProcessToJobObject(handle, proc))
+        finally:
+            kernel32.CloseHandle(proc)
+    except Exception:
+        return False
+
+
 def _apply_rlimits(limits: WorkerLimits) -> tuple[list[str], object]:
     """Build the child-side rlimit applier. Returns ``(applied_names, preexec)``.
 
-    Address space and process-count limits are Linux-only: macOS ignores
-    RLIMIT_AS in practice and counts RLIMIT_NPROC per-user, which would make
-    a low bound kill unrelated processes' forks. What actually applied is
-    recorded on the result — never silently assumed.
+    On POSIX the second element is a ``preexec_fn``. On Windows it is a Job
+    Object handle instead, which the caller assigns the started process to -
+    there is no pre-exec hook, and a job bounds the whole process tree rather
+    than one process.
+
+    Address space and process-count limits are Linux-only *on POSIX*: macOS
+    ignores RLIMIT_AS in practice and counts RLIMIT_NPROC per-user, which would
+    make a low bound kill unrelated processes' forks. Windows gets both through
+    the job, and loses file-size and open-file bounds, which have no Job Object
+    equivalent. What actually applied is recorded on the result - never
+    silently assumed, and never claimed to be parity.
     """
     if not _IS_POSIX:
-        return [], None
+        return _create_win_job(limits)
     import resource
 
     plan: list[tuple[str, int, int]] = [
@@ -235,12 +522,27 @@ class _PipeReader(threading.Thread):
             return
 
 
-def _kill_group(proc: subprocess.Popen) -> None:
+def _kill_group(proc: subprocess.Popen, win_job: object | None = None) -> None:
+    """Kill the worker and everything it spawned.
+
+    ``proc.kill()`` alone leaves a runaway grandchild alive on Windows, which is
+    the whole reason the POSIX side uses ``killpg``. ``TerminateJobObject``
+    is the equivalent: every process in the job dies, including ones started
+    after the job was assigned.
+    """
     try:
         if _IS_POSIX:
             os.killpg(proc.pid, signal.SIGKILL)
-        else:
-            proc.kill()
+            return
+        if win_job is not None:
+            try:
+                import ctypes
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                if kernel32.TerminateJobObject(win_job, 1):
+                    return
+            except Exception:
+                pass
+        proc.kill()
     except (ProcessLookupError, PermissionError, OSError):
         pass
 
@@ -271,9 +573,17 @@ def run_worker(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=_IS_POSIX,
-        preexec_fn=preexec,  # noqa: PLW1509 — bounded, exec follows immediately
+        preexec_fn=preexec if _IS_POSIX else None,  # noqa: PLW1509 — exec follows
         close_fds=True,
+        # A new process group is what lets the whole tree be killed on Windows,
+        # the same role start_new_session plays on POSIX.
+        creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if not _IS_POSIX else 0),
     )
+    win_job = None if _IS_POSIX else preexec
+    if win_job is not None and not _assign_to_win_job(win_job, proc.pid):
+        # The bounds did not take, so do not report them as applied. The job is
+        # closed in the finally below; KILL_ON_JOB_CLOSE only affects members.
+        applied = []
     output_exceeded = threading.Event()
     # stdout+stderr share the cap (half each) so total capture stays bounded.
     out_reader = _PipeReader(proc.stdout, max(1, limits.max_output_bytes // 2), output_exceeded)
@@ -291,7 +601,7 @@ def run_worker(
         elif output_exceeded.is_set():
             status = "output-limit"
         if status is not None:
-            _kill_group(proc)
+            _kill_group(proc, win_job)
             break
         time.sleep(0.02)
     proc.wait()
@@ -306,6 +616,15 @@ def run_worker(
         if len(text) > DIAGNOSTIC_TAIL_CHARS:
             text = "…" + text[-DIAGNOSTIC_TAIL_CHARS:]
         return sanitize_diagnostic(text, workspace=workspace)
+
+    if win_job is not None:
+        # KILL_ON_JOB_CLOSE means this also reaps anything still running, so a
+        # build can never leak a process past its own result.
+        try:
+            import ctypes
+            ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle(win_job)
+        except Exception:
+            pass
 
     return WorkerResult(
         status=status,

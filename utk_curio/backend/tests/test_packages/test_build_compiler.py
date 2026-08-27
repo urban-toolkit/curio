@@ -16,6 +16,8 @@ import tarfile
 
 import pytest
 
+from .conftest import write_fake_tool
+
 from utk_curio.backend.app.packages.build_compiler import (
     CompileError,
     CompilerToolchain,
@@ -78,9 +80,7 @@ if any("//EXTRA" in s for s in sources):
 
 @pytest.fixture()
 def toolchain(tmp_path, monkeypatch):
-    tool = tmp_path / "fake-esbuild"
-    tool.write_text(_FAKE_ESBUILD, encoding="utf-8")
-    tool.chmod(0o755)
+    tool = write_fake_tool(tmp_path, "fake-esbuild", _FAKE_ESBUILD)
     monkeypatch.setenv("CURIO_BUILD_ESBUILD", str(tool))
     resolved = toolchain_from_env()
     assert resolved is not None

@@ -40,6 +40,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from utk_curio.backend.app.packages.build_workspace import system_path_env
 from utk_curio.backend.app.packages.build_models import PackageBuildRequest
 from utk_curio.backend.app.packages.build_workspace import (
     BuildWorkspace,
@@ -86,7 +87,7 @@ def runner_from_env() -> PreviewRunner | None:
         probe = subprocess.run(  # noqa: S603 — operator-pinned binary, fixed argv
             [path, "--version"],
             capture_output=True, text=True, timeout=10,
-            env={"PATH": "/usr/bin:/bin"},
+            env=system_path_env(),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         log.warning("CURIO_BUILD_PREVIEW_RUNNER %r is not runnable: %s", path, exc)

@@ -14,6 +14,8 @@ import json
 
 import pytest
 
+from .conftest import write_fake_tool
+
 from utk_curio.backend.app.packages.build_models import parse_build_request
 from utk_curio.backend.app.packages.build_preview import (
     PREVIEW_STATES,
@@ -74,9 +76,7 @@ if "//NO-REPORT" not in doc:
 
 @pytest.fixture()
 def runner(tmp_path, monkeypatch):
-    tool = tmp_path / "fake-preview-runner"
-    tool.write_text(_FAKE_RUNNER, encoding="utf-8")
-    tool.chmod(0o755)
+    tool = write_fake_tool(tmp_path, "fake-preview-runner", _FAKE_RUNNER)
     monkeypatch.setenv("CURIO_BUILD_PREVIEW_RUNNER", str(tool))
     resolved = runner_from_env()
     assert resolved is not None

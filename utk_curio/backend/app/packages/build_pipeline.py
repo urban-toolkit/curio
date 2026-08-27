@@ -108,6 +108,25 @@ def run_build(
         raise RuntimeError(reason)
 
     def _resolving(job_: build_jobs.BuildJob) -> None:
+        # Gate BEFORE any workspace exists or any agent-authored byte is
+        # written: a build this platform cannot bound must not start on a
+        # hosted instance. `limits_applied` used to be recorded into
+        # provenance and never checked, so an unbounded build looked identical
+        # to a bounded one.
+        from utk_curio.backend.app.packages.build_workspace import (
+            BuildIsolationUnavailable,
+            check_build_isolation,
+        )
+        from utk_curio.backend.config import CURIO_NO_AUTH
+
+        try:
+            _missing, _warning = check_build_isolation(hosted=not CURIO_NO_AUTH)
+        except BuildIsolationUnavailable as exc:
+            _fail(job_, str(exc))
+            return
+        if _warning:
+            log.warning("%s", _warning)
+
         ws = create_workspace(job_.build_id)
         ctx["workspace"] = ws
         from utk_curio.backend.app.packages.build_workspace import populate_inputs

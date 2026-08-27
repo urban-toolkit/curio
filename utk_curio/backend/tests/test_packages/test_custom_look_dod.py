@@ -22,6 +22,8 @@ import zipfile
 
 import pytest
 
+from .conftest import write_fake_tool  # noqa: F401  (default_llm_provider is a fixture)
+
 from utk_curio.backend.app.packages import build_jobs, build_promotion, build_staging
 from utk_curio.backend.app.packages.build_extension import installed_package_digest
 from utk_curio.backend.app.packages.build_models import parse_build_request
@@ -139,13 +141,9 @@ def _fresh_jobs():
 
 
 @pytest.fixture()
-def pinned_tools(tmp_path, monkeypatch):
-    esbuild = tmp_path / "fake-esbuild"
-    esbuild.write_text(_FAKE_ESBUILD, encoding="utf-8")
-    esbuild.chmod(0o755)
-    runner = tmp_path / "fake-preview-runner"
-    runner.write_text(_FAKE_RUNNER, encoding="utf-8")
-    runner.chmod(0o755)
+def pinned_tools(tmp_path, monkeypatch, default_llm_provider):
+    esbuild = write_fake_tool(tmp_path, "fake-esbuild", _FAKE_ESBUILD)
+    runner = write_fake_tool(tmp_path, "fake-preview-runner", _FAKE_RUNNER)
     monkeypatch.setenv("CURIO_BUILD_ESBUILD", str(esbuild))
     monkeypatch.setenv("CURIO_BUILD_PREVIEW_RUNNER", str(runner))
 

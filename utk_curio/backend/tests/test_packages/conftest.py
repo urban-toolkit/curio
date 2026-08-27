@@ -151,3 +151,69 @@ def install_packageage(tmp_curio, make_archive):
 def packages_base(tmp_curio):
     """Path to ``.curio/users/`` for the current test workspace."""
     return user_packageages_dir("guest").parent.parent
+
+
+def write_fake_tool(directory, name: str, source: str):
+    """Write an executable stand-in for a pinned build tool, cross-platform.
+
+    The build tests fake ``esbuild`` and the preview runner with a Python
+    script carrying a ``#!/usr/bin/env python3`` shebang plus ``chmod 0o755``.
+    That only runs where the OS honours ``#!``. On Windows the exec fails with
+    ``[WinError 193] %1 is not a valid Win32 application``, which took out 21
+    of these tests at fixture setup and made another 14 fail downstream.
+
+    On POSIX this keeps the shebang script. On Windows it writes the script as
+    ``<name>.py`` next to a ``<name>.cmd`` shim that hands it to *this*
+    interpreter by absolute path - the build code runs its tools under a
+    deliberately minimal environment, so nothing may depend on ``python``
+    being discoverable on PATH.
+
+    Returns the path to hand to ``CURIO_BUILD_ESBUILD`` /
+    ``CURIO_BUILD_PREVIEW_RUNNER``.
+    """
+    import os
+    import sys
+    from pathlib import Path
+
+    directory = Path(directory)
+    if os.name != "nt":
+        tool = directory / name
+        tool.write_text(source, encoding="utf-8")
+        tool.chmod(0o755)
+        return tool
+
+    script = directory / f"{name}.py"
+    script.write_text(source, encoding="utf-8")
+    shim = directory / f"{name}.cmd"
+    # `%*` forwards argv with its original quoting; cmd.exe propagates the
+    # child's exit code, which the version probe and the failure cases rely on.
+    shim.write_text(
+        "@echo off\r\n"
+        f'"{sys.executable}" "{script}" %*\r\n',
+        encoding="utf-8",
+    )
+    return shim
+
+@pytest.fixture()
+def default_llm_provider(monkeypatch):
+    """Stand in for an operator who configured a default LLM provider.
+
+    The DoD scenarios in ``test_custom_look_dod.py`` drive real agent runs, and
+    an agent route resolves a provider before it validates anything else - so
+    with none configured they fail at that first step with
+    ``400 No AI provider is configured`` instead of exercising the package
+    build they are about.
+
+    Curio ships no built-in endpoint (``config.DEFAULT_LLM_*`` are empty),
+    which is deliberate: an instance whose operator configured nothing must not
+    send prompts to a third party. So the test supplies one rather than leaning
+    on a shipped default, exactly as ``test_agents/conftest.py`` does. The URL
+    is unroutable on purpose - every provider call in these tests is stubbed,
+    and one that forgot should fail loudly rather than reach the network.
+    """
+    from utk_curio.backend.app.agents import provider_config
+
+    monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
+    monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "test-model")
+    monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "test-key")

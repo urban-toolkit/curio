@@ -11,6 +11,8 @@ import sys
 import threading
 import time
 
+from unittest import mock
+
 import pytest
 
 from utk_curio.backend.app.packages.build_workspace import (
@@ -124,7 +126,28 @@ class TestBounds:
         # The stored tail stays bounded regardless of what the worker wrote.
         assert len(result.stdout_tail) <= 4_100
 
-    def test_cpu_rlimit_applied_in_child(self, workspace):
+    def test_cpu_bound_is_applied_and_reported(self, workspace):
+        """A CPU bound reaches the worker, on POSIX and on Windows alike.
+
+        This asserted the *mechanism* - it read `resource.getrlimit` from
+        inside the worker - so it could only ever pass on POSIX, and on Windows
+        the payload's own `import resource` failed the run. The guarantee is
+        that a cpu bound was applied; how it was applied is the platform's
+        business (setrlimit, or a Job Object's PerJobUserTimeLimit).
+        """
+        result = _run(
+            workspace,
+            "print('worker ran')",
+            limits=WorkerLimits(wall_time_seconds=20.0, cpu_seconds=7),
+        )
+        assert result.status == "ok"
+        assert "worker ran" in result.stdout_tail
+        assert "cpu" in result.limits_applied
+
+    @pytest.mark.skipif(os.name == "nt", reason="reads POSIX setrlimit directly")
+    def test_posix_rlimit_reaches_the_child_verbatim(self, workspace):
+        # The mechanism check, kept where it can run: the child sees the exact
+        # ceiling, not merely a claim that one was set.
         result = _run(
             workspace,
             "import resource; print(resource.getrlimit(resource.RLIMIT_CPU)[0])",
@@ -132,7 +155,6 @@ class TestBounds:
         )
         assert result.status == "ok"
         assert "7" in result.stdout_tail
-        assert "cpu" in result.limits_applied
 
     def test_cancellation_kills_promptly(self, workspace):
         cancel = threading.Event()
@@ -158,8 +180,31 @@ class TestOutputsAndCleanup:
         assert outputs == {"scripts/behaviors.js": b"registered"}
 
     def test_symlink_output_refused(self, workspace):
+        """The guard runs on every platform; only the setup is privileged.
+
+        Creating a real symlink on Windows needs SeCreateSymbolicLinkPrivilege
+        (WinError 1314), so the fixture cannot be built there - but the guard
+        being tested is `collect_outputs`, which is plain `is_symlink()` logic
+        and identical on both. Where a real link is possible, use one; where it
+        is not, present the same condition to the guard.
+        """
         (workspace.output_dir / "real.txt").write_bytes(b"x")
-        (workspace.output_dir / "link.txt").symlink_to(workspace.output_dir / "real.txt")
+        link = workspace.output_dir / "link.txt"
+        try:
+            link.symlink_to(workspace.output_dir / "real.txt")
+        except OSError:
+            link.write_bytes(b"x")
+            import pathlib
+
+            original = pathlib.Path.is_symlink
+
+            def _fake_is_symlink(self):
+                return self.name == "link.txt" or original(self)
+
+            with mock.patch.object(pathlib.Path, "is_symlink", _fake_is_symlink):
+                with pytest.raises(WorkspaceError, match="symlink"):
+                    collect_outputs(workspace)
+            return
         with pytest.raises(WorkspaceError, match="symlink"):
             collect_outputs(workspace)
 
