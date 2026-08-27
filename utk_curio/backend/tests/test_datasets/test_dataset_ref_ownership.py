@@ -113,6 +113,55 @@ def test_client_save_cannot_drop_fresh_install(client, user_and_token):
     assert [r["datasetId"] for r in _spec_refs(client, token, project_id)] == [imported["id"]]
 
 
+def test_a_first_computed_install_survives_the_carry_forward(client, user_and_token):
+    """Absent on disk is not the same as empty, and this is why it matters.
+
+    A computed dataset's bytes are written into the user's store during
+    *execution*; the payload comes back to the client, and the client is the
+    only thing that puts the ref in the spec (the save-time installer
+    deliberately writes none). So on the very first save the on-disk dataflow
+    has no ``datasets`` key at all - and treating that as "no installs"
+    discarded the client's row, leaving the dataset ``installed: false`` and
+    invisible in the palette.
+
+    The sibling cases above still hold: once the section exists on disk, even
+    as ``[]`` after an uninstall, the client can never resurrect anything.
+    """
+    _, token = user_and_token
+    project_id = create_project(client, token, name="First computed")
+    # Precondition: the project exists but has never had a datasets section.
+    assert _spec_refs(client, token, project_id) == []
+    spec = client.get(
+        f"/api/projects/{project_id}", headers=auth_headers(token)
+    ).get_json()["spec"]
+    assert "datasets" not in (spec.get("dataflow") or {}), (
+        "precondition: no backend-written section on disk yet"
+    )
+
+    ref = {
+        "datasetId": "computed.abc.node-1",
+        "dirName": "computed.abc.node-1@1",
+        "origin": "computed",
+        "producerNodeId": "node-1",
+    }
+    _client_save(client, token, project_id, {
+        "dataflow": {"name": "First computed", "nodes": [], "edges": [],
+                     "datasets": [ref]},
+    })
+    assert [r["datasetId"] for r in _spec_refs(client, token, project_id)] == [
+        "computed.abc.node-1"
+    ]
+
+    # And from here on the section IS on disk, so the guard re-engages: a
+    # second save that omits the row cannot drop it.
+    _client_save(client, token, project_id, {
+        "dataflow": {"name": "First computed", "nodes": [], "edges": []},
+    })
+    assert [r["datasetId"] for r in _spec_refs(client, token, project_id)] == [
+        "computed.abc.node-1"
+    ]
+
+
 def test_outputs_only_update_leaves_refs_untouched(client, user_and_token):
     """An outputs-only PUT (no spec) never touches the section."""
     _, token = user_and_token

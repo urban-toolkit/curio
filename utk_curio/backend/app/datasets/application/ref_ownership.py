@@ -28,11 +28,31 @@ def preserve_dataset_refs(
     refs means "no installs" and yields ``[]`` — keeping the client's rows
     there would reintroduce resurrection.
 
-    The one exception: when there is no spec on disk at all
-    (*existing_spec* is ``None``), the client section is left untouched. That
-    is the seed rule — ``create()`` (Save a copy, trill import, first save)
-    has no carry-forward, and a project whose spec file is missing must not
-    have its seed wiped. Mutates and returns *effective_spec*.
+    Two exceptions, and both are the same rule: carry forward only what the
+    backend has actually written.
+
+    1. No spec on disk at all (*existing_spec* is ``None``) - ``create()``
+       (Save a copy, trill import, first save) has no carry-forward.
+    2. A spec on disk with **no ``datasets`` key**. Absent is not the same as
+       empty: absent means the backend has never written this section, so there
+       is nothing to be authoritative with, and wiping the client's rows throws
+       away the only copy. Empty (``[]``) does mean "no installs" and is
+       carried, because an uninstall writes it.
+
+    Conflating those two is what broke the first install of a computed dataset.
+    The bytes are written into the user's store during execution
+    (``install_computed_output_on_execution``), which hands the payload back to
+    the client; the client is the only thing that puts the ref in the spec, and
+    the save-time installer deliberately writes no ref
+    (``_auto_install_computed_outputs``). So on the very first save the on-disk
+    section does not exist yet, the client's row was discarded, and the dataset
+    came back ``installed: false`` and never reached the palette.
+    ``test_dataset_palette.py`` is the guard.
+
+    Once the section exists on disk the resurrection guard is intact: an
+    uninstall rewrites it (to ``[]`` if it was the last ref), so a stale client
+    mirror can never bring a removed ref back. Mutates and returns
+    *effective_spec*.
     """
     if not isinstance(effective_spec, dict):
         return effective_spec
@@ -42,8 +62,11 @@ def preserve_dataset_refs(
     if not isinstance(dataflow, dict):
         return effective_spec
     existing_df = existing_spec.get("dataflow")
-    on_disk = existing_df.get("datasets") if isinstance(existing_df, dict) else None
-    # Filter to dict rows, matching ``InstalledDatasetRepository.list_refs`` —
+    if not isinstance(existing_df, dict) or "datasets" not in existing_df:
+        # Nothing backend-written to be authoritative with: leave the seed.
+        return effective_spec
+    on_disk = existing_df.get("datasets")
+    # Filter to dict rows, matching ``InstalledDatasetRepository.list_refs`` -
     # malformed residue is dropped rather than carried forever.
     dataflow["datasets"] = [
         ref for ref in (on_disk if isinstance(on_disk, list) else []) if isinstance(ref, dict)
