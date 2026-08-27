@@ -10,7 +10,7 @@ import { useFlowContext } from "../../../providers/FlowProvider";
 
 /**
  * Canvas overlay for CANVAS-target agents: a persistent dock centered at the
- * bottom of the canvas. Node-target agents render at their node instead (see
+ * top of the canvas. Node-target agents render at their node instead (see
  * {@link NodeAgentBadges}). The chat panel opens for whichever attachment is
  * selected — from a dock tile or a node badge.
  */

@@ -69,37 +69,8 @@ what the browse page's rail counts:
 | `evaluate` | Review, validation, and scoring. |
 | `package` | Node packages: recommending and resolving them. |
 
-Each category has its own colour and its own glyph, so a card is identifiable
-at a glance
-([`agentCategoryStyle.ts`](../utk_curio/frontend/urban-workflows/src/components/menus/nodes/agentsPalette/agentCategoryStyle.ts)):
-
-| Category | Colour | Glyph |
-|---|---|---|
-| `node` | rose | a node graph |
-| `canvas` | indigo | the dataflow diagram |
-| `data` | the data blue | a database |
-| `evaluate` | the computation purple | a checked clipboard |
-| `package` | the package grey | a cube |
-
-Three of the five reuse a colour that already means that thing elsewhere in
-Curio, because a hue keeping one meaning matters more than novelty: data is the
-data blue, analysis the computation purple, a package the package grey. Only
-`node` and `canvas` are the agent family's own, and only because nothing in the
-existing palette meant "one node" or "the whole canvas" without already meaning
-something else. The glyphs follow the same rule: the database, the cube and the
-dataflow diagram are the icons every other catalog surface already uses for a
-dataset, a package and a dataflow.
-
-The robot stays as the icon for *an agent* in general, in the section tab and
-the chat surfaces, where the subject is one known agent and its category adds
-nothing.
-
-An earlier version folded all five categories onto existing node-category
-buckets. It held the palette invariant and made the drawer unreadable: `node`
-and `package` both landed on the neutral grey and `canvas` on the dataflow
-slate, so 16 of the 21 built-ins rendered grey or near-grey while every card
-drew the same robot. No agent surface *declares* a colour; they are all born in
-[`curioTokens.css`](../utk_curio/frontend/urban-workflows/src/styles/curioTokens.css).
+Each category carries its own colour and glyph in the interface, so a card is
+identifiable at a glance.
 
 ### Origins
 
@@ -320,13 +291,10 @@ spend limit, and no way to configure either: the tokens are billed to whoever's
 key is in use, so the ceiling is theirs to impose rather than Curio's to assume.
 No run is ever refused for usage.
 
-The one adjacent setting that survives is **max output tokens**, and it is not a
-quota: it is passed to the provider as `max_tokens` on every completion, so it
-shapes one reply rather than rationing a day's worth. It is a deployment
-constant, the same for every run. It used to resolve
-`attachment ?? project ?? account ?? deployment` through three editable scopes,
-but those editors were the limits interface, so nothing could reach them once it
-was removed.
+One adjacent setting is **max output tokens**, and it is not a quota: it is
+passed to the provider as `max_tokens` on every completion, so it shapes one
+reply rather than rationing a day's worth. It is a deployment constant, the same
+for every run.
 
 Curio does keep a local record of what ran, in an append-only per-day file under
 `.curio/users/<key>/agents/ledger/`. It is written from the token counts each
@@ -424,11 +392,11 @@ Once written, import the package through the drawer's **Import agent** button
 
 ### An unconfigured install has no provider
 
-Curio ships with **no default LLM endpoint**. This is deliberate: an earlier
-build defaulted to a specific university endpoint, which meant an unconfigured
-instance silently sent user data to a third party. Today an unconfigured install
-reaches a clear "no provider configured" error instead, and every agent surface
-that is blocked for want of one links to **AI Settings**.
+Curio ships with **no default LLM endpoint**. This is deliberate: a built-in
+default would mean an unconfigured instance silently sending user data to a
+third party nobody chose. An unconfigured install reaches a clear "no provider
+configured" error instead, and every agent surface that is blocked for want of
+one links to **AI Settings**.
 
 So an operator must configure a provider, or each user must configure their own
 in AI Settings, before any agent will run. Guests are a separate case: they can

@@ -115,7 +115,7 @@ Curio no longer ships the multi-step Node Factory wizard. The single supported f
 4. Choose **New package…** (creates a fresh package containing this kind) or an installed package as the target. Read-only packages, including `curio.builtin@1`, are filtered out of the picker; the only way to "modify" a read-only package is to fork into a new one.
 5. After save, the canvas node is rebound automatically to the new package's kind, so re-opening **Node settings** resolves to the new descriptor.
 
-When you save **into an existing package**, the backend preserves the unedited templates' on-disk source, so your other templates are not clobbered. This is a recent fix; older releases would silently overwrite them with starter-code placeholders.
+When you save **into an existing package**, the backend preserves the unedited templates' on-disk source, so your other templates are not clobbered.
 
 > [!IMPORTANT]
 > **Save as package node cannot produce a custom-UI node.** The archive it
@@ -162,7 +162,7 @@ When you save (or upload) a package, it lands in your per-user store:
   manifest.json
   sources/
     <template-id>.{py,js,...}
-  starters/<template-id>/        ← optional starter snippets (legacy: templates/)
+  starters/<template-id>/        ← optional starter snippets
   integrity.json                 ← SHA-256 of every shipped file
 ```
 

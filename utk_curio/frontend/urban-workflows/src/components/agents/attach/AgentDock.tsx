@@ -5,7 +5,7 @@ import styles from "./AgentDock.module.css";
 
 /**
  * Canvas-agent dock: the same avatar chips as the node badges (per the
- * concept), clustered in a persistent bar centered at the bottom of the canvas.
+ * concept), clustered in a persistent bar centered at the top of the canvas.
  * Clicking an avatar opens its chat; the hover ✕ detaches. Renders nothing when
  * there are no canvas agents.
  */

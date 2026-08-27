@@ -86,7 +86,8 @@ DEFAULT_LLM_API_KEY = os.environ.get("CURIO_DEFAULT_LLM_API_KEY") or os.environ.
 )
 
 # Guest LLM config inherits the default provider above unless explicitly
-# overridden, so guests also default to the aiconn provider.
+# overridden. With no deployment default configured, guests inherit nothing and
+# AI stays unavailable to them until an operator sets one.
 GUEST_LLM_API_TYPE = os.environ.get("GUEST_LLM_API_TYPE", DEFAULT_LLM_API_TYPE)
 GUEST_LLM_BASE_URL = os.environ.get("GUEST_LLM_BASE_URL", DEFAULT_LLM_BASE_URL)
 GUEST_LLM_API_KEY = os.environ.get("GUEST_LLM_API_KEY", DEFAULT_LLM_API_KEY)

@@ -153,7 +153,7 @@ When a node produces output, it calls `outputCallback(nodeId, output)`, which up
 
 ### Node Packages and Manifests
 
-Node types are no longer hardcoded into a TypeScript enum. They live in **node packages** under [`packages/<packageId>@<major>/`](../packages/). Each directory ships a `manifest.json` that declares one or more **templates**, the manifest's name for what becomes a `NodeDescriptor` at runtime.
+Node types live in **node packages** under [`packages/<packageId>@<major>/`](../packages/). Each directory ships a `manifest.json` that declares one or more **templates**, the manifest's name for what becomes a `NodeDescriptor` at runtime.
 
 ```
 packages/
@@ -181,7 +181,7 @@ A manifest's `templates[*]` entry maps cleanly to a `NodeDescriptor`:
 }
 ```
 
-[`packagesClient.ts::buildDescriptor`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads each installed manifest and constructs the corresponding `NodeDescriptor` at boot; there is no longer a static enum or a hand-written descriptors file. The frontend `nodeRegistry` is populated entirely from these manifests.
+[`packagesClient.ts::buildDescriptor`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads each installed manifest and constructs the corresponding `NodeDescriptor` at boot. The frontend `nodeRegistry` is populated entirely from these manifests.
 
 Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 

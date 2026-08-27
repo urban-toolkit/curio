@@ -544,9 +544,9 @@ group, because it reuses the built-in `code` behavior and ships no JavaScript at
 The two behavior-hook groups are alternatives, not steps: pick the in-package
 one unless you are adding a behavior to Curio itself.
 
-## 8. Agent-authored packages (dev/89 / dev/90)
+## 8. Agent-authored packages
 
-Everything above describes hand-authoring. Since dev/89, packages can also be **authored by
+Everything above describes hand-authoring. Packages can also be **authored by
 agents**: the **Package Builder** (`agent.package-builder`) turns a described need into one
 reviewed draft through the `package.draft.apply` contract, and an **isolated build service**
 does what `npm run build:packages` does for first-party packages - without ever touching this
@@ -561,13 +561,13 @@ repo's build list:
    externals contract as the webpack config, enforced rather than configured.
 3. The bundle renders in a sandboxed preview (`CURIO_BUILD_PREVIEW_RUNNER`) across five contract
    states - empty, loading, success, malformed-input, error - and a failed preview blocks Apply.
-   **Curio ships a reference runner** (dev/98 - Playwright driving headless Chromium, real
+   **Curio ships a reference runner** (Playwright driving headless Chromium, real
    measured dimensions and real screenshots, the host React globals injected exactly as the
    live runtime provides them): generate its pinned wrapper with
    `python -m utk_curio.tools.install_preview_runner` and export the printed
    `CURIO_BUILD_PREVIEW_RUNNER=…` line (prerequisites are named loudly at generation:
    `python -m playwright install chromium` and the frontend's `node_modules`).
-   `CURIO_BUILD_PREVIEW_POLICY=skip` (dev/90 A9) remains the fallback it was meant to be -
+   `CURIO_BUILD_PREVIEW_POLICY=skip` remains the fallback it was meant to be -
    for deployments that genuinely cannot run a browser, the draft reaches review unpreviewed
    with the skip recorded in its provenance and stated verbatim on the review card. Drop the
    stale skip once a runner is configured. (Caveat, recorded not hidden: on Linux the worker's
@@ -576,15 +576,14 @@ repo's build list:
 4. The user reviews the diff, dependencies, and preview; Apply promotes the **exact reviewed
    artifact digest** through the normal installer (backup held, journaled, rollback honest).
 
-**Looks are prompt-driven, never repo fixtures** (dev/90): the Package Builder's instruction
+**Looks are prompt-driven, never repo fixtures**: the Package Builder's instruction
 carries one generic authoring contract (register exactly the manifest's behavior keys; hook
 `(data, nodeState) => { contentComponent }`; React elements only - never raw HTML; per-instance
 color via `data.appearance.backgroundColor` with derived ink; self-contained, no network). The
 scenario - e.g. the Researcher's post-it notes - lives in the CALLING agent's instruction as
 requirements, and two runs may legitimately generate different code for the same look.
 
-**Generated backend code runs in the package backend sandbox** (dev/91 - Follow-up A
-delivered): a package may declare `backend: { entry: "backend/<file>.py", handlers:
+**Generated backend code runs in the package backend sandbox**: a package may declare `backend: { entry: "backend/<file>.py", handlers:
 [{ name, timeoutClass }] }` plus the `server-code` permission (`server-network` too when its
 code reaches the network - both are shown to the user at review), and link a template's Run
 to a handler via `backendHandler`. The entry exposes `def handle(payload)` (or a `HANDLERS`
@@ -602,18 +601,18 @@ verify-on-read refuses drift with reinstall guidance. Every invocation appends a
 operator pruning it; nothing expires it automatically.
 Operator seams: `CURIO_BACKEND_SANDBOX_PYTHON` pins the worker interpreter, and
 `CURIO_BACKEND_OVERLAY_MAX_MB` (default 512) caps the per-package dependency overlay.
-**Handler dependencies are isolated** (dev/97): a backend-bearing package's declared python
+**Handler dependencies are isolated**: a backend-bearing package's declared python
 deps install at Apply into `.curio/users/<key>/package-backend-overlays/<pkg>/` via
 `pip --target` - the shared interpreter is touched only when the manifest also carries
-warm-sandbox python templates, so the dev/91 §0.1 upgrade blast radius no longer applies to
-handler deps, and the restart notice fires only for the shared-interpreter portion. Workers
+warm-sandbox python templates, so a handler's dependencies cannot disturb the shared
+interpreter, and the restart notice fires only for the shared-interpreter portion. Workers
 receive the overlay on `PYTHONPATH` automatically; a post-Apply probe with the real overlay
 gates activation (rollback on failure). Handlers therefore import declared dependencies
 LAZILY inside `handle()` - they do not exist at build time, and the probe's refusal names
 exactly that fix when an author forgets. Uninstall sweeps the overlay, data dir, and entry
 pin; the invocation ledger survives for retention.
 
-**Activation lifecycle** (dev/92, delivering dev/89 Follow-up B as re-scoped): invocations and
+**Activation lifecycle**: invocations and
 promotes serialize on one per-target lock, so an Apply and a node Run never interleave
 observably; an install whose pip step *actually changed* shared Python libraries says
 "Restart Curio to pick up <libs>" on its success surfaces (running nodes keep the previously
@@ -621,5 +620,5 @@ loaded versions until then - nothing is inferred, pip's own report is the truth)
 handler whose sandbox workers fail three times in a row at the infrastructure level is
 quarantined for 120s with an honest 503 (handler-level errors never count; a reinstall clears
 it immediately). **Resident services, background jobs, and secret mediation remain out of
-scope** - descoped demand-driven with recorded re-open conditions (DEC-064) - and a draft
+scope** - and a draft
 needing them is refused with a finding naming exactly that.
