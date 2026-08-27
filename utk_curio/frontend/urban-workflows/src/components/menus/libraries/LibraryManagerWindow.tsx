@@ -237,9 +237,9 @@ export default function LibraryManagerWindow({
   );
 
   return (
-    <ModalShell onClose={closeModal}>
+    <ModalShell onClose={closeModal} titleId="installed-libraries-title">
       <div className={styles.container}>
-        <h2 className={styles.title}>Installed libraries</h2>
+        <h2 id="installed-libraries-title" className={styles.title}>Installed libraries</h2>
         <p className={styles.subtitle}>
           Python and JavaScript libraries available to Curio, either added directly here or pulled in by installed node packages.
         </p>

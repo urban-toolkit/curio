@@ -80,9 +80,9 @@ function DescriptionModal({
     })();
 
     return (
-        <ModalShell onClose={handleClose}>
+        <ModalShell onClose={handleClose} titleId="description-modal-title">
             <div className={content.content}>
-                <h2 className={content.title}>Description</h2>
+                <h2 id="description-modal-title" className={content.title}>Description</h2>
                 <div>
                     <p>Node Type: {nodeLabel}</p>
                     {custom != undefined && custom ? (

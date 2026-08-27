@@ -53,7 +53,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
   }, [dataflowId, datasetId, liveOutputs, reloadToken]);
 
   return (
-    <ModalShell onClose={onClose} size="xlarge" layer="overlay">
+    <ModalShell onClose={onClose} size="xlarge" layer="overlay" label="Dataset details">
       <DatasetDetailPanel
         dataset={dataset}
         loading={loading}

@@ -202,7 +202,10 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setSuccess(true);
       setApiKey("");
       setHfToken("");
-      setTimeout(onClose, 800);
+      // 2000, not 800: this line is the only feedback that a credential was
+      // stored, and it shared its budget with the panel's own dismissal, so it
+      // was gone in roughly a third of a comfortable read.
+      setTimeout(onClose, 2000);
     } catch (e: any) {
       setError(e.message || "Failed to save settings.");
     } finally {
@@ -221,9 +224,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
     // painted underneath it and the scrim swallowed every click, which left the
     // canvas with no way to reach AI Settings at all. Correct from the
     // /projects and /catalog headers too, so it is unconditional.
-    <ModalShell onClose={onClose} layer="overlay">
+    <ModalShell onClose={onClose} layer="overlay" titleId="ai-settings-title">
       <div className={modal.content}>
-        <h2 className={modal.title}>AI Settings</h2>
+        <h2 id="ai-settings-title" className={modal.title}>AI Settings</h2>
 
         {user?.is_guest ? (
           <>

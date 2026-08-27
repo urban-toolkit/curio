@@ -47,9 +47,9 @@ export const AgentImportModal: React.FC<{
   const hasManifest = files.some((f) => f.name.toLowerCase() === "manifest.json");
 
   return (
-    <ModalShell onClose={onClose} layer="overlay">
-      <div className={styles.body} role="dialog" aria-label="Import agent package">
-        <h2 className={styles.title}>Import agent package</h2>
+    <ModalShell onClose={onClose} layer="overlay" titleId="agent-import-title">
+      <div className={styles.body}>
+        <h2 id="agent-import-title" className={styles.title}>Import agent package</h2>
         <p className={styles.hint}>
           Pick one <code>manifest.json</code> and its <code>.txt</code> prompt files. The
           import lands in <strong>My imports</strong> as your own definition. Adding it
