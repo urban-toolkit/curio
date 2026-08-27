@@ -190,4 +190,19 @@ describe("the deployment default is visible to the user it applies to", () => {
     expect(screen.getByText(/configured by whoever runs this/i)).toBeInTheDocument();
     expect(agentsApi.providerDefault).not.toHaveBeenCalled();
   });
+
+  it("renders on the overlay layer, above the Agent Catalog drawer", () => {
+    // The drawer's header cog is the only route to this panel from the canvas.
+    // Without layer="overlay" the shell paints at --curio-z-modal-base (500)
+    // while the drawer sits at --curio-z-agent-drawer (10048), so the panel
+    // opened *underneath* the drawer and its scrim ate the clicks: the button
+    // looked dead and the canvas had no working way to configure a provider.
+    //
+    // Asserted through the class rather than a computed z-index because jsdom
+    // does not apply stylesheets, which is exactly why the whole suite stayed
+    // green while the feature was unreachable.
+    const { baseElement } = open();
+    expect(baseElement.querySelector(".modalOverlay")).not.toBeNull();
+    expect(baseElement.querySelector(".backdropOverlay")).not.toBeNull();
+  });
 });

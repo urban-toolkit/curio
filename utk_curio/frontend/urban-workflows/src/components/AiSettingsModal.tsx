@@ -145,7 +145,13 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const info = PROVIDER_INFO[uiMode];
 
   return (
-    <ModalShell onClose={onClose}>
+    // `layer="overlay"` because the Agent Catalog drawer's header cog opens
+    // this, and the drawer sits at --curio-z-agent-drawer (10048) behind a
+    // full-viewport scrim. At the default --curio-z-modal-base (500) the panel
+    // painted underneath it and the scrim swallowed every click, which left the
+    // canvas with no way to reach AI Settings at all. Correct from the
+    // /projects and /catalog headers too, so it is unconditional.
+    <ModalShell onClose={onClose} layer="overlay">
       <div className={modal.content}>
         <h2 className={modal.title}>AI Settings</h2>
 
