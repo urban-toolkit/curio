@@ -194,3 +194,57 @@ class TestThreadHandover:
         monkeypatch.setattr(hf, "resolve_hf_token", lambda: "hf_resolved")
         with pytest.raises(ValueError):
             hf.load_model("m", "not-a-type")
+
+
+class TestOverlayIsWrittenForTheCallingUser:
+    """``run_batch`` must hand its ``user_key`` down to ``run_segmentation``.
+
+    The overlay path is per user, so the key has to travel the whole way from
+    the request to the file write. It did not: ``run_segmentation`` read a
+    ``user_key`` that was never a parameter, and ``run_batch`` called it
+    positionally without one. Every image came back as
+    ``NameError: name 'user_key' is not defined``, swallowed by the per-image
+    ``except`` into a result row, so the job "succeeded" with zero overlays.
+
+    Asserting on the handover rather than on real inference keeps this test free
+    of torch, numpy and PIL, which is what let the bug ship unnoticed.
+    """
+
+    def test_run_batch_passes_the_user_key_to_run_segmentation(self, monkeypatch):
+        from utk_curio.backend.app.streetvision.services import inference
+
+        seen = {}
+
+        def _recorder(model, processor, image_path, classes, image_id, user_key):
+            seen["user_key"] = user_key
+            return {"image_id": image_id, "image_url": image_path, "class_ratios": {}}
+
+        monkeypatch.setattr(inference, "run_segmentation", _recorder)
+        # ``run_batch`` does ``from . import huggingface as hf`` at call time,
+        # which resolves the already-imported submodule, so patch that module's
+        # attributes rather than swapping the entry in ``sys.modules``.
+        monkeypatch.setattr(
+            hf, "get_cached_model", lambda model_id, token: ("model", "processor", None)
+        )
+
+        results = list(
+            inference.run_batch(
+                [{"image_id": "pano.jpg", "local_path": "/tmp/pano.jpg"}],
+                "some/model",
+                "segmentation",
+                [],
+                user_key="7",
+            )
+        )
+
+        assert seen.get("user_key") == "7"
+        assert "error" not in results[0], results[0]
+
+    def test_run_segmentation_requires_a_user_key(self):
+        """No default: a silent "guest" would write into the shared folder."""
+        import inspect
+
+        from utk_curio.backend.app.streetvision.services import inference
+
+        param = inspect.signature(inference.run_segmentation).parameters["user_key"]
+        assert param.default is inspect.Parameter.empty

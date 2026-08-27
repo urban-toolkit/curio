@@ -28,12 +28,19 @@ CITYSCAPES_COLORS = {
 }
 
 
-def run_segmentation(model, processor, image_path: str, classes: List[str], image_id: str) -> dict:
+def run_segmentation(
+    model, processor, image_path: str, classes: List[str], image_id: str, user_key: str,
+) -> dict:
     """Run semantic segmentation on a single image; return per-class pixel ratios.
 
     Supports both SegFormer-style models (direct ``logits`` head) and
     Mask2Former / OneFormer-style models (``post_process_semantic_segmentation``
     is preferred when available).
+
+    ``user_key`` selects the overlay cache directory. It is required rather than
+    defaulted: a wrong-but-plausible "guest" would write one user's overlay into
+    the shared guest folder, which is the cross-user leak the per-user split
+    exists to prevent.
     """
     import numpy as np
     import torch
@@ -164,7 +171,9 @@ def run_batch(
             continue
         try:
             if model_type == "segmentation":
-                result = run_segmentation(model, processor, local_path, classes, image_id)
+                result = run_segmentation(
+                    model, processor, local_path, classes, image_id, user_key,
+                )
             elif model_type == "detection":
                 result = run_detection(model, local_path, classes, image_id)
             else:
