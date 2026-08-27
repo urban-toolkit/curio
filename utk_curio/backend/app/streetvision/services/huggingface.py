@@ -113,11 +113,19 @@ def _model_cache_dir(user_key: str) -> str:
     )
 
 
-def search_models(task: str, query: str, limit: int = 20) -> list:
-    """Search HuggingFace Hub for public CV models. Returns a JSON-safe list."""
+def search_models(
+    task: str, query: str, limit: int = 20, *, token: Optional[str] = None,
+) -> list:
+    """Search HuggingFace Hub for CV models. Returns a JSON-safe list.
+
+    With *token*, the search runs as that account and so can see the gated
+    models it has accepted licences for. Without one it lists public models
+    only, which is the right answer for an anonymous caller and the wrong one
+    for a signed-in user who saved a token in AI Settings.
+    """
     from huggingface_hub import HfApi  # light dep; bundled with transformers
 
-    api = HfApi()
+    api = HfApi(token=token or None)
     hf_task = TASK_MAP.get(task, task)
     models = api.list_models(
         filter=hf_task,

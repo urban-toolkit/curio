@@ -206,3 +206,44 @@ describe("the deployment default is visible to the user it applies to", () => {
     expect(baseElement.querySelector(".backdropOverlay")).not.toBeNull();
   });
 });
+
+describe("AI Settings: clearing what was saved", () => {
+  it("sends a blank model so the deployment default can be inherited again", async () => {
+    // `model || undefined` used to be dropped by JSON.stringify, so a cleared
+    // box was omitted from the PATCH and the stale override survived. The
+    // panel's own copy says a blank field inherits the deployment default.
+    mockUser = { ...SIGNED_IN, llm_model: "old-model" };
+    const { baseElement } = open();
+    // The Model box is the only text input on the default (non-custom)
+    // provider; Base URL is hidden and the two secrets are type="password".
+    // Queried from baseElement because ModalShell portals to document.body.
+    const modelBox = baseElement.querySelector('input[type="text"]')!;
+    fireEvent.change(modelBox, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][0]).toMatchObject({ model: "" });
+  });
+
+  it("offers a way to remove a saved API key", async () => {
+    mockUser = { ...SIGNED_IN, has_llm_api_key: true };
+    open();
+    fireEvent.click(screen.getByRole("button", { name: /remove saved key/i }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ apiKey: "" }));
+  });
+
+  it("offers a way to remove a saved HuggingFace token", async () => {
+    mockUser = { ...SIGNED_IN, has_huggingface_token: true };
+    open();
+    fireEvent.click(screen.getByRole("button", { name: /remove saved token/i }));
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith({ huggingfaceToken: "" }),
+    );
+  });
+
+  it("shows no remove control when nothing is saved", () => {
+    mockUser = { ...SIGNED_IN };
+    open();
+    expect(screen.queryByRole("button", { name: /remove saved/i })).toBeNull();
+  });
+});

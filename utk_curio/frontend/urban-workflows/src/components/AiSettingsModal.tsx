@@ -112,6 +112,27 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
     }
   };
 
+  // Revoking a stored secret. The backend clears on an empty string, and a
+  // test already pinned that, but nothing in the UI could send one: the field
+  // treats blank as "keep", so "saved" was a state with no exit.
+  const [removing, setRemoving] = useState<null | "apiKey" | "hfToken">(null);
+
+  const handleRemoveSecret = async (which: "apiKey" | "hfToken") => {
+    setRemoving(which);
+    setError(null);
+    try {
+      await updateLlmConfig(
+        which === "apiKey" ? { apiKey: "" } : { huggingfaceToken: "" },
+      );
+      if (which === "apiKey") setApiKey("");
+      else setHfToken("");
+    } catch (e: any) {
+      setError(e.message || "Failed to remove.");
+    } finally {
+      setRemoving(null);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
@@ -125,8 +146,16 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
       await updateLlmConfig({
         apiType,
         baseUrl: uiMode === "custom" ? baseUrl : "",
+        // Sent verbatim, so clearing the box clears the override. It used to
+        // be `model || undefined`, which JSON.stringify drops, so a blank
+        // field was omitted from the PATCH and the backend kept the old value:
+        // the copy said "leave blank to use the deployment default" and there
+        // was no way to get back to it.
+        model,
+        // Secrets keep "blank means keep" - that is what their labels promise
+        // and re-typing a key to save an unrelated field would be hostile.
+        // Removing one is an explicit action, below.
         apiKey: apiKey || undefined,
-        model: model || undefined,
         huggingfaceToken: hfToken || undefined,
       });
       setSuccess(true);
@@ -245,6 +274,16 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   {info.keyLinkLabel} →
                 </a>
               )}
+              {user?.has_llm_api_key && (
+                <button
+                  type="button"
+                  className={styles.removeSecretBtn}
+                  onClick={() => void handleRemoveSecret("apiKey")}
+                  disabled={removing !== null}
+                >
+                  {removing === "apiKey" ? "Removing…" : "Remove saved key"}
+                </button>
+              )}
             </div>
 
             <div className={modal.field}>
@@ -296,6 +335,16 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               >
                 Get your HuggingFace token →
               </a>
+              {user?.has_huggingface_token && (
+                <button
+                  type="button"
+                  className={styles.removeSecretBtn}
+                  onClick={() => void handleRemoveSecret("hfToken")}
+                  disabled={removing !== null}
+                >
+                  {removing === "hfToken" ? "Removing…" : "Remove saved token"}
+                </button>
+              )}
             </div>
 
             {error && <p className={modal.error}>{error}</p>}

@@ -59,7 +59,11 @@ def models_search():
     except ImportError as e:
         return _missing_extras_response(e)
     try:
-        results = hf.search_models(task, query)
+        # Resolved from the caller, like /inference/run: gated models are a
+        # per-account entitlement, so an unauthenticated search only ever
+        # listed public models and a user with a token could not find the
+        # gated model they had accepted the licence for.
+        results = hf.search_models(task, query, token=hf.resolve_hf_token())
         return jsonify({"models": results})
     except ImportError as e:
         # ``search_models`` defers the ``huggingface_hub`` import until

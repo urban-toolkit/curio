@@ -50,6 +50,29 @@
   margin-top: 2px;
 }
 
+/* Revoke a stored secret. Deliberately quiet: it is a rare, destructive
+   action that should be findable without competing with Save. */
+.removeSecretBtn {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.removeSecretBtn:hover:not(:disabled) {
+  color: var(--curio-role-danger-fg, #b3261e);
+}
+
+.removeSecretBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .guestNotice {
   color: var(--curio-text-secondary);
   font-size: var(--curio-font-size-lg);

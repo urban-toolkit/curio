@@ -58,13 +58,40 @@ class TestResolve:
             "dk", "https://sage200.evl.uic.edu/v1", "llama4-nim",
         )
 
-    def test_configured_user_passthrough_with_fallback_fields(self):
+    @pytest.fixture()
+    def deployment_default(self, monkeypatch):
+        """An operator who configured a default OpenAI-compatible provider."""
+        monkeypatch.setattr(pc, "DEFAULT_LLM_API_TYPE", "openai_compatible")
+        monkeypatch.setattr(pc, "DEFAULT_LLM_API_KEY", "test-key")
+        monkeypatch.setattr(pc, "DEFAULT_LLM_BASE_URL", "https://default.example/v1")
+        monkeypatch.setattr(pc, "DEFAULT_LLM_MODEL", "default-model")
+
+    @pytest.mark.usefixtures("deployment_default")
+    def test_a_model_only_user_still_inherits_the_deployment_credentials(self):
+        """Naming a model must not silently drop the operator's API key.
+
+        Resolution used to switch wholesale on ``llm_model``: filling in only
+        the Model box discarded the deployment's key, base URL and provider
+        type together, so the run went out unauthenticated and failed inside
+        the provider SDK. The modal's own copy ("Leave a field blank to use
+        it") promised the opposite.
+        """
         cfg = resolve_provider_config(
             _user(llm_model="my-model", llm_api_key=None, llm_api_type=None, llm_base_url=None)
         )
         assert (cfg.api_key, cfg.api_type, cfg.base_url, cfg.model) == (
-            "", "openai_compatible", "", "my-model",
+            "test-key", "openai_compatible", "https://default.example/v1", "my-model",
         )
+
+    @pytest.mark.usefixtures("deployment_default")
+    def test_a_user_on_another_provider_inherits_nothing_endpoint_shaped(self):
+        """Key and URL describe one endpoint, so they do not cross providers."""
+        cfg = resolve_provider_config(
+            _user(llm_model="m", llm_api_key=None, llm_api_type="anthropic", llm_base_url=None)
+        )
+        assert (cfg.api_key, cfg.api_type, cfg.base_url, cfg.model) == ("", "anthropic", "", "m")
+
+    def test_explicit_user_fields_always_win(self):
         cfg = resolve_provider_config(
             _user(llm_model="m", llm_api_key="k", llm_api_type="anthropic", llm_base_url="b")
         )
