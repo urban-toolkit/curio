@@ -60,10 +60,14 @@ def _terminate_process_tree(process: "subprocess.Popen", *, timeout: float = 10.
 
     Order matters: the tree is walked via parent-PID links, so the root has to
     still be alive when we ask. Kill the tree first, then reap the root.
-    """
-    if process.poll() is not None:
-        return
 
+    No early return when the root has already exited. A supervisor that died on
+    its own - or was killed without its cleanup running - leaves exactly the
+    children this function exists to remove, and returning early because the
+    root is gone skips them. ``taskkill`` on a dead pid just answers 128, and
+    the POSIX branch's ``getpgid`` raises ``ProcessLookupError``, which is
+    already handled.
+    """
     if sys.platform == "win32":
         # /T = tree, /F = force. Returns 128 when the pid is already gone,
         # which is fine - we only care that nothing survives.
@@ -310,17 +314,6 @@ def curio_servers(session_app, request):
         **spawn_kwargs,
     )
 
-    # Cold-start budget: backend/sandbox imports + webpack compile can easily
-    # exceed the previous 40/45/90s timeouts on Windows.
-    wait_for_port(backend_port, timeout=90.0)
-    wait_for_port(sandbox_port, timeout=120.0)
-    wait_for_port(frontend_port, timeout=180.0)
-
-    # Ensure backend and sandbox respond to /live before tests run
-    host = "127.0.0.1"
-    wait_for_http_ready(f"http://{host}:{backend_port}", timeout=15.0)
-    wait_for_http_ready(f"http://{host}:{sandbox_port}", timeout=15.0)
-
     def shutdown():
         # Let any in-flight request finish before pulling the rug out.
         time.sleep(2)
@@ -339,7 +332,32 @@ def curio_servers(session_app, request):
                     {"port": port},
                 )
 
+    # Registered IMMEDIATELY after Popen, BEFORE the readiness gates below.
+    #
+    # This used to sit after them, and that leaked the whole stack whenever one
+    # failed: the gates allow up to ~6.5 minutes between the spawn and this
+    # line, and any timeout raised out of the fixture with nothing registered to
+    # kill what had already started. The orphans keep 5002/2000/8080 and the
+    # test sqlite file, so the damage lands on the NEXT run - which dies at
+    # conftest import with ``PermissionError: [WinError 32]`` before collecting
+    # a test, or sails through ``wait_for_port`` because a stale process is
+    # answering on the port it is waiting for.
+    #
+    # A slow cold start is exactly when a gate trips, so the failure mode
+    # clustered on the machines least able to absorb it.
     request.addfinalizer(shutdown)
+
+    # Cold-start budget: backend/sandbox imports + webpack compile can easily
+    # exceed the previous 40/45/90s timeouts on Windows.
+    wait_for_port(backend_port, timeout=90.0)
+    wait_for_port(sandbox_port, timeout=120.0)
+    wait_for_port(frontend_port, timeout=180.0)
+
+    # Ensure backend and sandbox respond to /live before tests run
+    host = "127.0.0.1"
+    wait_for_http_ready(f"http://{host}:{backend_port}", timeout=15.0)
+    wait_for_http_ready(f"http://{host}:{sandbox_port}", timeout=15.0)
+
     yield {
         "backend_port": backend_port,
         "sandbox_port": sandbox_port,
