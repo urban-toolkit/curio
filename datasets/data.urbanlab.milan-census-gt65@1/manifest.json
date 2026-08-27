@@ -1,0 +1,33 @@
+{
+  "id": "data.urbanlab.milan-census-gt65",
+  "name": "Milan Census Polygons (over 65)",
+  "version": "1.0.0",
+  "format": "geojson",
+  "description": "Milan census tract polygons trimmed to the gt_65 column (resident population over 65), the exposure denominator for a heat vulnerability analysis.",
+  "publisher": "Urban Analytics Lab",
+  "license": "ISTAT open data",
+  "tags": [
+    "census",
+    "milan",
+    "demographics",
+    "geojson"
+  ],
+  "dataFile": "data/milan-census-gt65.geojson",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "ISTAT",
+  "rowCount": null,
+  "featureCount": 6085,
+  "schema": null,
+  "createdAt": "2026-08-27T00:00:00Z",
+  "updatedAt": "2026-08-27T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null
+}

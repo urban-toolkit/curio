@@ -551,6 +551,49 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     return expected
 """
 
+def _catalog_dataset_paths(code: str) -> dict[str, str]:
+    """Map every ``curio_dataset_path("<id>")`` in *code* to its committed file.
+
+    The browser path gets this mapping from the backend
+    (``_resolve_exec_dataset_paths`` in ``backend/app/api/routes.py``), which
+    posts it to the sandbox as ``dataset_paths``. This helper talks to the
+    sandbox directly -- deliberately, so DuckDB keeps a single writer -- so it
+    has to build the equivalent itself. Without it every example whose loader
+    resolves a dataset by id fails with the sandbox's "not available in this
+    environment", because ``worker.py``'s injected resolver raises on any
+    unmapped id.
+
+    Only *hub* datasets, the ones committed under ``datasets/``, are resolvable
+    here, which is exactly the set the curated examples use. The backend's own
+    scan regex is imported rather than copied so the two cannot drift.
+    """
+    if "curio_dataset_path" not in code:
+        return {}
+
+    from utk_curio.backend.app.api.routes import _DATASET_PATH_CALL_RE
+    from utk_curio.backend.tests.dataset_catalog_coverage import catalog_datasets
+
+    by_id = {d.dataset_id: d.data_file for d in catalog_datasets()}
+    resolved: dict[str, str] = {}
+    missing: list[str] = []
+    for _quote, dataset_id in _DATASET_PATH_CALL_RE.findall(code):
+        data_file = by_id.get(dataset_id)
+        if data_file is None:
+            missing.append(dataset_id)
+        else:
+            resolved[dataset_id] = data_file.resolve().as_posix()
+
+    # Fail loudly rather than letting the sandbox report a generic runtime
+    # error: a typo'd id, or one carrying an ``@major`` the catalog lookup does
+    # not use, is a test-authoring bug and should name itself.
+    assert not missing, (
+        f"curio_dataset_path() references {missing}, which are not in the "
+        f"committed catalog (known: {sorted(by_id)}). Note the call takes the "
+        f"bare manifest id with no '@major'."
+    )
+    return resolved
+
+
 def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     """Execute every code node via the sandbox HTTP API and return {node_id: artifact_id}.
 
@@ -619,6 +662,9 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
                 # enable IO validation that the browser path silently skips.
                 "nodeType": node.raw_type,
                 "dataType": data_type,
+                # The backend resolves these for the browser path; this runner
+                # bypasses the backend, so it resolves them itself.
+                "dataset_paths": _catalog_dataset_paths(indented_code),
             },
             headers=sandbox_auth_header(),
             timeout=120,

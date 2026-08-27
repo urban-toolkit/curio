@@ -171,8 +171,15 @@ def serve_launch_cwd_file(filename: str):
     nodes (e.g. autk-grammar) can fetch binary assets (PBF, GeoTIFF, …) the
     same way Python sandbox nodes read them from disk - one shared root, one
     relative-path convention:
-      Python node:   rasterio.open('docs/examples/data/file.tif')
+      Python node:   rasterio.open('my-data/file.tif')
       Grammar spec:  pbfFileUrl: 'docs/examples/data/file.pbf'
+
+    The grammar example is the live one: the Autark examples (06/07/08/11) fetch
+    their committed ``.osm.pbf`` extracts this way, because ``.pbf`` is not a
+    Data Catalog format and every ``/api/datasets/*`` route requires auth while
+    this one does not. Shipped *Python* nodes no longer read relative paths at
+    all - they resolve ``curio_dataset_path("<id>")`` against the catalog - but
+    a user's own node still can, which is why the root convention stands.
 
     The frontend prepends ``BACKEND_URL`` + ``/file/`` to the relative path at
     run time (see resolveDataSourceUrls in autkGrammarBehavior.tsx).

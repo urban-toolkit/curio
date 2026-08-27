@@ -34,7 +34,7 @@ data.urbanlab.chicago-boundary@1/
   data/chicago.geojson
 ```
 
-Three dataset packages ship with Curio in the committed catalog at `<repo_root>/datasets/`: `data.urbanlab.chicago-boundary@1`, `data.urbanlab.chicago-community-areas@1`, and `data.urbanlab.acs-neighborhood-profile@1`.
+Eleven dataset packages ship with Curio in the committed catalog at `<repo_root>/datasets/`, grouped by the owner of the data: six under `data.urbanlab.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), four under `data.cityofchicago.*` (green roofs, 2010 energy usage, and the speed-camera and red-light violation tables), and one under `data.projectsidewalk.*` (Chicago accessibility labels). Together they are the inputs to the curated example dataflows in `docs/examples/`.
 
 ### Where datasets come from: the four origins
 
@@ -57,10 +57,12 @@ Dataset state lives in three places. As with node packages, knowing which layer 
 |---|---|---|
 | **Shared catalog**, the "hub" every user browses | `<repo_root>/datasets/<datasetId>@<major>/`, or `$CURIO_CATALOG_ROOT` when set | **Publish** writes here; **Unpublish** removes. Read-only otherwise. The directory is *never created eagerly*; see *Operator notes*. |
 | **Per-user dataset store**, the actual bytes you can read | `<CURIO_LAUNCH_CWD>/.curio/users/<user-key>/datasets/<datasetId>@<major>/` | **Import**, **Add to dataflow** (copying a hub dataset in), and the automatic save of node outputs. **Delete** removes it permanently. |
-| **Per-dataflow refs**, what one dataflow declares it needs | `spec.trill.json` → `dataflow.datasets: []` | The drawer's **Add to dataflow** adds an entry for the open dataflow; **Remove from dataflow** removes it. |
+| **Per-dataflow refs**, what one dataflow declares it needs | `spec.trill.json` → `dataflow.datasets: []` | The drawer's **Add to dataflow** adds an entry for the open dataflow; **Remove from dataflow** removes it. The shipped examples carry theirs as committed declarations. |
 
 > [!NOTE]
 > Unlike node packages, datasets have **no per-user "defaults" layer**. Nothing auto-seeds a dataset into every new dataflow, and correspondingly there is no "add everywhere" action. Adding a dataset is always scoped to one dataflow.
+>
+> The seeded **example projects** are the one deliberate exception. Each example declares the datasets it needs in its own `dataflow.datasets` section, exactly as it declares its node packages in `dataflow.packages`, and Curio provisions those into your dataset store when the examples are seeded (`--with-examples` / `--deploy`) and again the first time you open a project. This is a *provisioning* step for a declaration the example already carries, not an "add everywhere": it never touches a dataflow you did not open, and it adds nothing to a new one. See `utk_curio/backend/app/datasets/seed.py`.
 
 The most important consequence: **computed datasets are account-level assets, not project contents.** Running a node saves its output into your per-user store and writes *no* `dataflow.datasets` ref. It appears in the catalog immediately, but it is only "in" a dataflow once you add it there.
 

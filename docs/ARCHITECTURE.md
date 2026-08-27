@@ -537,6 +537,13 @@ Data Catalog loader snippets do not embed absolute paths. They emit
 stays valid when it is shared, moved, or opened by another user on the same
 install.
 
+The curated examples in `docs/examples/` are the reference consumers of this
+mechanism: every one of their loader nodes resolves a committed catalog dataset
+by id. Note the argument is the bare manifest `id`, never the `<id>@<major>`
+`dirName` that `dataflow.datasets` refs carry - `SAFE_DATASET_ID_RE` permits `@`,
+so an id with the major appended passes validation, misses the by-id lookup, and
+fails open into a runtime error from the sandbox.
+
 1. `backend/app/api/routes.py` scans the outgoing code for literal
    `curio_dataset_path("<id>")` calls (single or double quoted), dedupes the
    ids, and caps them at `MAX_EXEC_DATASET_IDS` (32).

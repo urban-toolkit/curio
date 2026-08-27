@@ -171,3 +171,128 @@ def test_example_07_drives_compute_gpgpu():
         "07-autark-gpu-shader.json no longer has a curio.builtin/autk-grammar "
         "node with a wglsFunction — the example's GPU compute step is gone."
     )
+
+
+#: The only ``docs/examples/data`` files that legitimately stay put. The four OSM
+#: extracts are consumed by autk-grammar ``pbfFileUrl`` specs, which take a URL
+#: the *browser* fetches from the unauthenticated ``/file/`` route, not a Python
+#: path a loader can resolve by dataset id -- and ``.pbf`` is not even a catalog
+#: format. The Niteroi raster belongs to the same Autark example. ImageTest/ is a
+#: directory the image fixture globs, and the remaining entries serve only the
+#: legacy ``docs/examples/dataflows`` fixtures.
+_DATA_DIR_ALLOWLIST = (
+    "back_bay.osm.pbf",
+    "chicago_loop.osm.pbf",
+    "lower_mnt.osm.pbf",
+    "niteroi.osm.pbf",
+    "niteroi_lst_verao_2001_2024.tif",
+    "ImageTest",
+    "access_score.geojson",
+    "nyc_zip.geojson",
+    "test.data",
+    "<your-polygons>.geojson",
+)
+
+_DATA_DIR_REF = re.compile(r"docs/examples/data/([A-Za-z0-9_.<>/-]*)")
+
+
+@pytest.mark.parametrize("basename", [inv[0] for inv in EXAMPLE_INVARIANTS])
+def test_examples_read_their_data_from_the_catalog(basename):
+    """Every tabular/raster/vector input resolves by dataset id, not by path.
+
+    A literal ``docs/examples/data/x.csv`` in an example node works on a repo
+    checkout and nowhere else: ``MANIFEST.in`` does not ship ``docs/``, so a pip
+    install has no such tree, and an isolated sandbox cannot reach one. That
+    portability is the whole point of moving these into the Data Catalog, and a
+    single un-migrated node is enough to make an example machine-specific again.
+
+    The ``.md`` is checked alongside the ``.json`` because a stale prose
+    reference is invisible to ``test_example_docs_parity`` -- that only compares
+    fenced code blocks, so a walkthrough can happily document a path its node no
+    longer uses.
+    """
+    for path in (
+        os.path.join(EXAMPLES_DIR, basename),
+        os.path.join(EXAMPLES_DIR, basename[:-5] + ".md"),
+    ):
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        stragglers = sorted({
+            match.group(1)
+            for match in _DATA_DIR_REF.finditer(text)
+            if match.group(1) and not match.group(1).startswith(_DATA_DIR_ALLOWLIST)
+        })
+        assert not stragglers, (
+            f"{os.path.basename(path)} still reads {stragglers} by path. Use "
+            f'curio_dataset_path("<id>") against the Data Catalog '
+            f"(datasets/), or add the file to _DATA_DIR_ALLOWLIST with a reason "
+            f"if it genuinely cannot move."
+        )
+
+
+def test_examples_that_load_catalog_data_declare_it_in_the_spec():
+    """A ``curio_dataset_path`` call and a ``dataflow.datasets`` ref go together.
+
+    The call alone is enough to *execute* -- ``resolve_execution_paths`` hardcodes
+    ``include_hub=True`` -- so an example missing its ref runs fine and simply
+    shows an empty Data palette with nothing marked as in-dataflow. The ref is
+    also what ``datasets/seed.py`` reads to decide what to provision, so without
+    it the dataset is never copied into the user's store either.
+    """
+    for path in _example_json_paths():
+        spec = json.load(open(path, encoding="utf-8"))
+        dataflow = spec["dataflow"]
+        used = set()
+        for node in dataflow["nodes"]:
+            used.update(
+                re.findall(
+                    r"""curio_dataset_path\(\s*["']([^"']+)["']\s*\)""",
+                    node.get("content") or "",
+                )
+            )
+        declared = {
+            ref.get("datasetId")
+            for ref in (dataflow.get("datasets") or [])
+        }
+        missing = sorted(used - declared)
+        assert not missing, (
+            f"{os.path.basename(path)} loads {missing} but does not declare "
+            f"them in dataflow.datasets; add a ref so the dataset is actually "
+            f"added to the dataflow and gets provisioned into the user store"
+        )
+        # The reverse direction too: a ref nothing reads is dead weight that the
+        # seeder would still copy on every boot.
+        unused = sorted(declared - used)
+        assert not unused, (
+            f"{os.path.basename(path)} declares {unused} in dataflow.datasets "
+            f"but no node reads them"
+        )
+
+
+def test_declared_dataset_refs_have_the_shape_the_backend_writes():
+    """Hand-written refs must match ``mutations.py::_ref_from_item``.
+
+    These are authored by hand rather than produced by an install, so nothing
+    else stops them drifting from the six-key folder-ref form the UI writes.
+    ``origin`` is ``imported`` because a project install *is* a user-store copy
+    rather than a hub row, and ``consumerNodeIds`` stays empty because
+    ``base_item`` documents that it must not be used as a count.
+    """
+    expected_keys = {
+        "datasetId",
+        "dirName",
+        "origin",
+        "producerNodeId",
+        "consumerNodeIds",
+        "installedAt",
+    }
+    for path in _example_json_paths():
+        spec = json.load(open(path, encoding="utf-8"))
+        for ref in spec["dataflow"].get("datasets") or []:
+            name = os.path.basename(path)
+            assert set(ref) == expected_keys, f"{name}: {sorted(ref)}"
+            assert ref["dirName"] == f"{ref['datasetId']}@1", f"{name}: {ref}"
+            assert ref["origin"] == "imported", f"{name}: {ref['origin']}"
+            assert ref["consumerNodeIds"] == [], f"{name}: {ref}"
+            assert ref["producerNodeId"] is None, f"{name}: {ref}"
+            assert ref["installedAt"], f"{name}: missing installedAt"

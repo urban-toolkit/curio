@@ -631,6 +631,9 @@ def _with_effective_packages(spec, ukey: str, project_id: str):
 
 
 def load_project(user, project_id: str) -> dict:
+    from utk_curio.backend.app.datasets.seed import (
+        ensure_user_datasets_initialized,
+    )
     from utk_curio.backend.app.packages.services import (
         ensure_user_packages_initialized,
     )
@@ -642,6 +645,11 @@ def load_project(user, project_id: str) -> dict:
     # Defense in depth: a user who has projects from before the builtin-seed
     # fix still needs builtin in their store to render the palette.
     ensure_user_packages_initialized(ukey)
+    # Same argument for datasets: the startup seeder only covers ``guest``, so a
+    # real user opening a seeded example needs the datasets its
+    # ``dataflow.datasets`` refs name copied into their own store, or the Data
+    # palette renders dirName-titled placeholders instead of real rows.
+    ensure_user_datasets_initialized(ukey)
     spec = storage.read_spec(ukey, project_id)
     manifest = storage.read_manifest(ukey, project_id)
 

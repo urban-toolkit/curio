@@ -7,7 +7,7 @@
         "type": "curio.builtin/data-loading",
         "x": 261,
         "y": 209,
-        "content": "import pandas as pd\n\ndf = pd.read_csv(\"docs/examples/data/10-green_roofs.csv\")\nreturn df",
+        "content": "import pandas as pd\n\ndataset_path = curio_dataset_path(\"data.cityofchicago.green-roofs\")\ndf = pd.read_csv(dataset_path)\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -46,7 +46,7 @@
         "type": "curio.builtin/data-loading",
         "x": 283.21219419868953,
         "y": 577.8176987439779,
-        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\n# Read the green-roofs CSV and project to a GeoDataFrame in WGS84.\ngreen_roofs_df = pd.read_csv('docs/examples/data/10-green_roofs.csv')\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\n\n# Spatially attach the Chicago zip-code polygon to each rooftop.\nchicago = gpd.read_file('docs/examples/data/chicago.geojson')\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\n\n# Keep only the columns downstream views actually use, and drop geometry so the\n# DATA_POOL serializes a plain DataFrame instead of the full GeoDataFrame.\nreturn pd.DataFrame(joined[['LONGITUDE', 'LATITUDE', 'VEGETATED_SQFT', 'TOTAL_ROOF_SQFT', 'zip']])\n",
+        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\n# Read the green-roofs CSV and project to a GeoDataFrame in WGS84.\ngreen_roofs_path = curio_dataset_path(\"data.cityofchicago.green-roofs\")\ngreen_roofs_df = pd.read_csv(green_roofs_path)\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\n\n# Spatially attach the Chicago zip-code polygon to each rooftop.\nchicago_path = curio_dataset_path(\"data.urbanlab.chicago-boundary\")\nchicago = gpd.read_file(chicago_path)\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\n\n# Keep only the columns downstream views actually use, and drop geometry so the\n# DATA_POOL serializes a plain DataFrame instead of the full GeoDataFrame.\nreturn pd.DataFrame(joined[['LONGITUDE', 'LATITUDE', 'VEGETATED_SQFT', 'TOTAL_ROOF_SQFT', 'zip']])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -142,6 +142,24 @@
     "name": "Vega-Lite spatial density",
     "task": "",
     "timestamp": 1774933485890,
-    "provenance_id": "DefaultWorkflow"
+    "provenance_id": "DefaultWorkflow",
+    "datasets": [
+      {
+        "datasetId": "data.cityofchicago.green-roofs",
+        "dirName": "data.cityofchicago.green-roofs@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-08-27T00:00:00Z"
+      },
+      {
+        "datasetId": "data.urbanlab.chicago-boundary",
+        "dirName": "data.urbanlab.chicago-boundary@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-08-27T00:00:00Z"
+      }
+    ]
   }
 }

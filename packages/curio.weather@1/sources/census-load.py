@@ -1,5 +1,6 @@
 import geopandas as gpd
 
-gdf = gpd.read_file('docs/examples/data/09-milan_census.geojson')
+dataset_path = curio_dataset_path("data.urbanlab.milan-census-gt65")
+gdf = gpd.read_file(dataset_path)
 
 return gdf

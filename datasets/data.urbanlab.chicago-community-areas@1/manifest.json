@@ -5,8 +5,8 @@
   },
   "createdAt": "2026-05-20T12:00:00Z",
   "dataFile": "data/community-areas.geojson",
-  "description": "Boundary geometries for Chicago community areas.",
-  "featureCount": 77,
+  "description": "Boundary geometries for Chicago community areas. Sample extract: 2 of the 77 community areas.",
+  "featureCount": 2,
   "format": "geojson",
   "id": "data.urbanlab.chicago-community-areas",
   "license": "Open Data",
@@ -30,7 +30,7 @@
         "nullable": false
       }
     ],
-    "geometryType": "MultiPolygon",
+    "geometryType": "Polygon",
     "crs": "EPSG:4326"
   },
   "sourceLabel": "Data Catalog",

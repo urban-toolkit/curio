@@ -39,13 +39,28 @@ flowchart LR
 
 ## Data
 
-- [09-milan_mrt.tif](data/09-milan_mrt.tif): the 2022 mean radiant temperature raster (Milan, July 22, noon). Pre-downsampled by a factor of 4 per dimension and float16-quantized so the file fits in the repo; UTCI precision (about 0.06 °C in this range) is unaffected.
-- [09-milan_weather.csv](data/09-milan_weather.csv): hourly ERA5 weather (Td, Wind, RH) for the same day.
-- [09-milan_census.geojson](data/09-milan_census.geojson): Milan census polygons, trimmed to the `gt_65` (population over 65) column.
+This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
+addresses a dataset by id via `curio_dataset_path("<id>")` rather than by a repo-relative path,
+so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
+
+| Dataset | Id | Format | Size |
+|---|---|---|---|
+| Milan Mean Radiant Temperature | `data.urbanlab.milan-mrt` | geotiff | 1 band, 4632x4142 |
+| Milan ERA5 Hourly Weather | `data.urbanlab.milan-era5-weather` | csv | 24 rows |
+| Milan Census Polygons (over 65) | `data.urbanlab.milan-census-gt65` | geojson | 6,085 features |
+
+All three ship in the committed catalog under `datasets/` and are already added to this dataflow.
+
+### Provenance
+
+The raster is the 2022 mean radiant temperature field for Milan (July 22, noon), pre-downsampled by a
+factor of 4 per dimension and float16-quantized so the file fits in the repo; UTCI precision (about
+0.06 °C in this range) is unaffected. The weather CSV is hourly ERA5 reanalysis (Td, Wind, RH) for the
+same day, re-saved comma-delimited during the move into the catalog (the original export was
+semicolon-delimited, which the catalog's generated loader cannot express). The census polygons are
+trimmed to the `gt_65` (population over 65) column.
 
 Original sources: Milan thermal raster from the [Curio team's bundled tutorial Drive](https://drive.google.com/drive/folders/1-cncKF-omB0av98WzKApKtyJTrgvfa0P?usp=sharing); census polygons from ISTAT.
-
-Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
 
 ## Step 1: Load the mean radiant temperature raster (`Data Loading`)
 
@@ -53,7 +68,8 @@ Read the GeoTIFF directly with `rasterio` and hand the dataset object downstream
 
 ```python
 import rasterio
-src = rasterio.open('docs/examples/data/09-milan_mrt.tif')
+dataset_path = curio_dataset_path("data.urbanlab.milan-mrt")
+src = rasterio.open(dataset_path)
 return src
 ```
 
@@ -63,7 +79,8 @@ The hourly ERA5 file gives air temperature (Td), wind speed (Wind), and relative
 
 ```python
 import pandas as pd
-sensor = pd.read_csv('docs/examples/data/09-milan_weather.csv', delimiter=';')
+dataset_path = curio_dataset_path("data.urbanlab.milan-era5-weather")
+sensor = pd.read_csv(dataset_path)
 return sensor
 ```
 
@@ -132,7 +149,8 @@ A separate branch loads the sociodemographic GeoJSON that carries the `gt_65` co
 
 ```python
 import geopandas as gpd
-gdf = gpd.read_file('docs/examples/data/09-milan_census.geojson')
+dataset_path = curio_dataset_path("data.urbanlab.milan-census-gt65")
+gdf = gpd.read_file(dataset_path)
 return gdf
 ```
 
