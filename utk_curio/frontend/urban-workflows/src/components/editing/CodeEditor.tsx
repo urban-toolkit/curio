@@ -403,6 +403,10 @@ function CodeEditor({
             <div
                 ref={outputRef}
                 className="nowheel nodrag"
+                // The wrapper above carries the same class, so a ".nowheel.nodrag"
+                // lookup resolves to it first and picks up Monaco's rendered code
+                // lines. Tests read the result through this attribute instead.
+                data-curio-node-output="true"
                 style={{
                     flex: 1,
                     minHeight: 0,
