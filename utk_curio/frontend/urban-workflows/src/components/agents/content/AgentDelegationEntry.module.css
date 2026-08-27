@@ -89,7 +89,8 @@ button.badge:focus-visible {
 }
 
 /* Category tints (the palette contract — same values as the chat header). */
-.tint_data     { color: var(--curio-category-data-fg); }
-.tint_computation { color: var(--curio-category-computation-fg); }
-.tint_dataflow { color: var(--curio-kind-dataflow-fg); }
-.tint_package  { color: var(--curio-category-package-fg); }
+.tint_node     { color: var(--curio-category-agent-node-fg); }
+.tint_canvas   { color: var(--curio-category-agent-canvas-fg); }
+.tint_data     { color: var(--curio-category-agent-data-fg); }
+.tint_evaluate { color: var(--curio-category-agent-evaluate-fg); }
+.tint_package  { color: var(--curio-category-agent-package-fg); }

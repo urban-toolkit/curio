@@ -69,13 +69,37 @@ what the browse page's rail counts:
 | `evaluate` | Review, validation, and scoring. |
 | `package` | Node packages: recommending and resolving them. |
 
-Categories are **not** a separate colour family. Each maps onto a bucket that
-already exists in Curio's palette
-([`agentCategoryStyle.ts`](../utk_curio/frontend/urban-workflows/src/components/menus/nodes/agentsPalette/agentCategoryStyle.ts)),
-so a hue means the same thing across all three catalogs and the canvas: `data`
-reuses the data-node blue, `evaluate` the computation purple, `canvas` the
-dataflow slate, and `node` and `package` the neutral package grey. No agent
-surface declares a colour of its own.
+Each category has its own colour and its own glyph, so a card is identifiable
+at a glance
+([`agentCategoryStyle.ts`](../utk_curio/frontend/urban-workflows/src/components/menus/nodes/agentsPalette/agentCategoryStyle.ts)):
+
+| Category | Colour | Glyph |
+|---|---|---|
+| `node` | rose | a node graph |
+| `canvas` | indigo | the dataflow diagram |
+| `data` | the data blue | a database |
+| `evaluate` | the computation purple | a checked clipboard |
+| `package` | the package grey | a cube |
+
+Three of the five reuse a colour that already means that thing elsewhere in
+Curio, because a hue keeping one meaning matters more than novelty: data is the
+data blue, analysis the computation purple, a package the package grey. Only
+`node` and `canvas` are the agent family's own, and only because nothing in the
+existing palette meant "one node" or "the whole canvas" without already meaning
+something else. The glyphs follow the same rule: the database, the cube and the
+dataflow diagram are the icons every other catalog surface already uses for a
+dataset, a package and a dataflow.
+
+The robot stays as the icon for *an agent* in general, in the section tab and
+the chat surfaces, where the subject is one known agent and its category adds
+nothing.
+
+An earlier version folded all five categories onto existing node-category
+buckets. It held the palette invariant and made the drawer unreadable: `node`
+and `package` both landed on the neutral grey and `canvas` on the dataflow
+slate, so 16 of the 21 built-ins rendered grey or near-grey while every card
+drew the same robot. No agent surface *declares* a colour; they are all born in
+[`curioTokens.css`](../utk_curio/frontend/urban-workflows/src/styles/curioTokens.css).
 
 ### Origins
 

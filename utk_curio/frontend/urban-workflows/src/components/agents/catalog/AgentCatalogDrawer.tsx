@@ -17,7 +17,10 @@ import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import footerStyles from "../../packages/publishing/DrawerFooter.module.css";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
 import { SortMode } from "../../packages/publishing/packageTypes";
-import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
+import {
+  agentCategoryIcon,
+  agentCategoryKey,
+} from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import cardStyles from "../../packages/publishing/PackageCard.module.css";
 import styles from "./AgentCatalogDrawer.module.css";
@@ -278,7 +281,7 @@ const AgentRow: React.FC<{
     // hashed CSS class. data-pkg-dir and data-dataset-id do the same job.
     <article className={`${cardStyles.card} ${styles.agentCard}`} data-agent-coord={card.dirName}>
       <div className={`${cardStyles.cardAvatar} ${avatarClass}`} aria-hidden>
-        <FontAwesomeIcon icon={faRobot} className={styles.avatarIcon} />
+        <FontAwesomeIcon icon={agentCategoryIcon(card.category)} className={styles.avatarIcon} />
       </div>
 
       <div className={cardStyles.cardBody}>

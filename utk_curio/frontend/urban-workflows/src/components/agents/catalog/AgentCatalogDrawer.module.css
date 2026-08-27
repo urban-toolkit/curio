@@ -32,13 +32,15 @@
     font-size: 24px;
 }
 
-/* Category-tinted avatar tiles on this light surface. The keys are palette
-   buckets, not agent categories - see agentCategoryStyle.ts. `!important`
-   mirrors the dataset drawer: it overrides .cardAvatar's neutral fallback. */
-.avatar_data     { background: var(--curio-category-data-bg) !important;          color: var(--curio-category-data-on-tint); }
-.avatar_computation { background: var(--curio-category-computation-bg) !important; color: var(--curio-category-computation-on-tint); }
-.avatar_dataflow { background: var(--curio-kind-dataflow-bg) !important;           color: var(--curio-kind-dataflow-fg); }
-.avatar_package  { background: var(--curio-category-package-bg) !important;        color: var(--curio-category-package-on-tint); }
+/* Category-tinted avatar tiles on this light surface. One per agent category
+   (agentCategoryStyle.ts); the glyph varies with them, because a tint alone
+   left 21 identical robots. `!important` mirrors the dataset drawer: it
+   overrides .cardAvatar's neutral fallback. */
+.avatar_node     { background: var(--curio-category-agent-node-bg) !important; color: var(--curio-category-agent-node-on-tint); }
+.avatar_canvas   { background: var(--curio-category-agent-canvas-bg) !important; color: var(--curio-category-agent-canvas-on-tint); }
+.avatar_data     { background: var(--curio-category-agent-data-bg) !important; color: var(--curio-category-agent-data-on-tint); }
+.avatar_evaluate { background: var(--curio-category-agent-evaluate-bg) !important; color: var(--curio-category-agent-evaluate-on-tint); }
+.avatar_package  { background: var(--curio-category-agent-package-bg) !important; color: var(--curio-category-agent-package-on-tint); }
 
 /* Account-policy entry in the header's actions slot: it opens AI Settings,
    the single account-level place the provider and the agent limits are set. */

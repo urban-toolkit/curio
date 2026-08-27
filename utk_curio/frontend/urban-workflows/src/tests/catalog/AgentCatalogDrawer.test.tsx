@@ -369,7 +369,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     expect(input).toHaveValue("chat");
   });
 
-  it("each row leads with the category-tinted robot avatar (dev/68)", async () => {
+  it("each row leads with a per-category avatar, tint and glyph (dev/68)", async () => {
     api.catalog.mockResolvedValue({
       agents: [card("agent.node-explainer"), card("agent.dataset-finder", { category: "data" })],
     } as any);
@@ -379,11 +379,18 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     const avatars = container.querySelectorAll(".cardAvatar");
     expect(avatars).toHaveLength(2);
-    // Categories fold onto the shared palette buckets, so a `node` agent takes
-    // the neutral the Node Catalog already uses for a package.
-    expect(avatars[0].className).toContain("avatar_package");
+    // Each category keeps its own key. These two used to be `avatar_package`
+    // and `avatar_data`, because `node` folded onto the package neutral - the
+    // collapse that left three quarters of the roster the same grey.
+    expect(avatars[0].className).toContain("avatar_node");
     expect(avatars[1].className).toContain("avatar_data");
-    // Decorative — hidden from the accessibility tree.
+    // And the glyph differs too, which the tint alone never achieved: every
+    // card drew the same robot.
+    const glyphs = [...avatars].map(
+      (el) => el.querySelector("svg")?.getAttribute("data-icon"),
+    );
+    expect(glyphs).toEqual(["circle-nodes", "database"]);
+    // Decorative - hidden from the accessibility tree.
     avatars.forEach((el) => expect(el).toHaveAttribute("aria-hidden"));
   });
 

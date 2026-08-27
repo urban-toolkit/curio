@@ -198,6 +198,55 @@
   --curio-category-package-bg: #ECEEF2;
   --curio-category-package-on-tint: #5A6B6C;
 
+  /* ── Agent category palette ────────────────────────────────────────────
+     One colour per *agent* category. A separate family from the node
+     categories above because it is a separate taxonomy: an agent's category
+     says what the agent acts on (a node, the canvas, data, a package) or that
+     it judges rather than acts (evaluate). Those five do not map onto
+     data | computation | vis | package without lying about one of them.
+
+     The first version of this catalog folded all five onto the node buckets to
+     avoid minting hues. It worked, and it made the drawer unreadable: `node`
+     and `package` both landed on the neutral grey and `canvas` on the dataflow
+     slate, so 16 of the 21 built-ins rendered grey or near-grey and the tile
+     stopped telling you anything.
+
+     Three of the five still alias an existing colour, because the tie is
+     honest and a colour keeping one meaning matters more than novelty: data is
+     the data blue, evaluate the computation purple, package the package grey.
+     Only `node` and `canvas` are new, and they are new because nothing in the
+     existing palette means "one node" or "the whole canvas" without already
+     meaning something else.
+
+     Deliberately NOT the raw accents: peach, sky, mint and amber are spoken
+     for by the semantic roles below (update, published, installed, warning).
+     Reusing one here would recreate exactly the collision the role split was
+     introduced to end.
+
+     Keys match `AgentCategory` in api/agentsApi.ts. Guarded by
+     src/tests/styles/agentCategoryPalette.test.ts.
+     ───────────────────────────────────────────────────────────────────── */
+  --curio-category-agent-data-fg: var(--curio-category-data-fg);
+  --curio-category-agent-data-bg: var(--curio-category-data-bg);
+  --curio-category-agent-data-on-tint: var(--curio-category-data-on-tint);
+
+  --curio-category-agent-evaluate-fg: var(--curio-category-computation-fg);
+  --curio-category-agent-evaluate-bg: var(--curio-category-computation-bg);
+  --curio-category-agent-evaluate-on-tint: var(--curio-category-computation-on-tint);
+
+  --curio-category-agent-package-fg: var(--curio-category-package-fg);
+  --curio-category-agent-package-bg: var(--curio-category-package-bg);
+  --curio-category-agent-package-on-tint: var(--curio-category-package-on-tint);
+
+  /* The two new hues: indigo for the whole canvas, rose for one node. */
+  --curio-category-agent-canvas-fg: #4A56C4;
+  --curio-category-agent-canvas-bg: #E7E9FB;
+  --curio-category-agent-canvas-on-tint: #333DA0;
+
+  --curio-category-agent-node-fg: #C2417B;
+  --curio-category-agent-node-bg: #FBE4EF;
+  --curio-category-agent-node-on-tint: #94285A;
+
   /* ── Catalog kind palette ──────────────────────────────────────────────
      One colour per *kind* of catalog item, for the places that identify a
      dataflow / package / dataset rather than a category or a format. Dataflows

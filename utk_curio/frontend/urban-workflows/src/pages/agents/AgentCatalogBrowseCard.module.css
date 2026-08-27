@@ -13,32 +13,39 @@
  * canvas-scoped agent acts on.
  */
 
-.strip_data        { background: var(--curio-category-data-fg); }
-.strip_computation { background: var(--curio-category-computation-fg); }
-.strip_dataflow    { background: var(--curio-kind-dataflow-fg); }
-.strip_package     { background: var(--curio-category-package-fg); }
+.strip_node     { background: var(--curio-category-agent-node-fg); }
+.strip_canvas   { background: var(--curio-category-agent-canvas-fg); }
+.strip_data     { background: var(--curio-category-agent-data-fg); }
+.strip_evaluate { background: var(--curio-category-agent-evaluate-fg); }
+.strip_package  { background: var(--curio-category-agent-package-fg); }
 
-.cardActive.card_data        { border-color: var(--curio-category-data-fg); }
-.cardActive.card_computation { border-color: var(--curio-category-computation-fg); }
-.cardActive.card_dataflow    { border-color: var(--curio-kind-dataflow-fg); }
-.cardActive.card_package     { border-color: var(--curio-category-package-fg); }
+.cardActive.card_node     { border-color: var(--curio-category-agent-node-fg); }
+.cardActive.card_canvas   { border-color: var(--curio-category-agent-canvas-fg); }
+.cardActive.card_data     { border-color: var(--curio-category-agent-data-fg); }
+.cardActive.card_evaluate { border-color: var(--curio-category-agent-evaluate-fg); }
+.cardActive.card_package  { border-color: var(--curio-category-agent-package-fg); }
+
+.tagAccent_node {
+    background: var(--curio-category-agent-node-bg);
+    color: var(--curio-category-agent-node-on-tint);
+}
+
+.tagAccent_canvas {
+    background: var(--curio-category-agent-canvas-bg);
+    color: var(--curio-category-agent-canvas-on-tint);
+}
 
 .tagAccent_data {
-    background: var(--curio-category-data-bg);
-    color: var(--curio-category-data-on-tint);
+    background: var(--curio-category-agent-data-bg);
+    color: var(--curio-category-agent-data-on-tint);
 }
 
-.tagAccent_computation {
-    background: var(--curio-category-computation-bg);
-    color: var(--curio-category-computation-on-tint);
-}
-
-.tagAccent_dataflow {
-    background: var(--curio-kind-dataflow-bg);
-    color: var(--curio-kind-dataflow-fg);
+.tagAccent_evaluate {
+    background: var(--curio-category-agent-evaluate-bg);
+    color: var(--curio-category-agent-evaluate-on-tint);
 }
 
 .tagAccent_package {
-    background: var(--curio-category-package-bg);
-    color: var(--curio-category-package-on-tint);
+    background: var(--curio-category-agent-package-bg);
+    color: var(--curio-category-agent-package-on-tint);
 }
