@@ -1018,14 +1018,26 @@ function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == 
 
 // See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/streetvision");
-// Compiled from sources/hfCvInferenceBehavior.tsx. Identifies the signed-in
-// user so the backend can resolve THEIR HuggingFace token for gated models;
-// without it only the deployment-wide token is available.
+
+/**
+ * Headers that identify the signed-in user to the backend.
+ *
+ * The two endpoints below resolve a HuggingFace token to download gated models
+ * with, and it is the *caller's* token: gated access is granted per account,
+ * against a licence that account accepted. Without this header the backend can
+ * only fall back to the deployment-wide token, so a user's own token in AI
+ * Settings would never take effect.
+ *
+ * `getAuthToken` is a getter on `window.curio` rather than a value because this
+ * bundle evaluates once at boot, before sign-in.
+ */
 function authHeaders() {
-  var _c = typeof window !== 'undefined' ? window.curio : undefined;
-  var get = _c && _c.getAuthToken;
+  var _curio2;
+  var get = typeof window !== 'undefined' && ((_curio2 = window.curio) === null || _curio2 === void 0 ? void 0 : _curio2.getAuthToken);
   var token = typeof get === 'function' ? get() : undefined;
-  return token ? { Authorization: "Bearer ".concat(token) } : {};
+  return token ? {
+    Authorization: "Bearer ".concat(token)
+  } : {};
 }
 var CLASS_SUGGESTIONS = ['building', 'road', 'sidewalk', 'vegetation', 'pole', 'fence', 'wall', 'traffic sign'];
 var S = {
@@ -1218,7 +1230,9 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
     setBackendUp = _useState2[1];
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
     var check = function check() {
-      fetch("".concat(API_BASE, "/health"), { headers: authHeaders() }).then(function (r) {
+      fetch("".concat(API_BASE, "/health"), {
+        headers: authHeaders()
+      }).then(function (r) {
         return r.json();
       }).then(function () {
         return setBackendUp(true);
@@ -1278,7 +1292,9 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
     var t = setTimeout(function () {
       setModelsLoading(true);
       setModelsError(null);
-      fetch("".concat(API_BASE, "/models/search?task=").concat(task, "&query=").concat(encodeURIComponent(query)), { headers: authHeaders() }).then(/*#__PURE__*/function () {
+      fetch("".concat(API_BASE, "/models/search?task=").concat(task, "&query=").concat(encodeURIComponent(query)), {
+        headers: authHeaders()
+      }).then(/*#__PURE__*/function () {
         var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(r) {
           var d;
           return _regenerator().w(function (_context) {
@@ -1481,7 +1497,7 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
     setView('running');
     fetch("".concat(API_BASE, "/inference/run"), {
       method: 'POST',
-      headers: Object.assign({
+      headers: _objectSpread({
         'Content-Type': 'application/json'
       }, authHeaders()),
       body: JSON.stringify({
