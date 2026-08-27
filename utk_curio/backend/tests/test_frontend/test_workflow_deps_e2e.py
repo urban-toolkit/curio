@@ -44,7 +44,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -161,7 +161,7 @@ def test_importing_a_dataflow_installs_its_declared_packages(
     token = result["token"]
     # Register before the install so a mid-test failure still cleans up.
     uninstall_declared_package(token, PKG_DIR)
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     # Precondition, asserted backend-side so a dirty user store is
     # distinguishable from a browser-timing problem. The store persists across
@@ -243,7 +243,7 @@ def test_loading_a_dataflow_with_no_declared_packages_installs_nothing(
         username="nodeps_user",
         project_name="No Declared Deps",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     spec = _dataflow_declaring(PKG_DIR)
     spec["dataflow"]["packages"] = []

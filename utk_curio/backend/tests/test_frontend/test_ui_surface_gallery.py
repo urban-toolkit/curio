@@ -42,7 +42,7 @@ from .utils import (
     open_tools_palette,
     require_project_page,
     require_user_auth,
-    skip_if_shared_view,
+    require_owner_view,
     stub_db_login,
 )
 
@@ -247,7 +247,7 @@ def test_gallery_canvas_and_drawers(gallery, owner, app_frontend, current_server
     project_id = owner["project"]["id"]
     page.goto(app_frontend.base_url + "/dataflow/" + project_id)
     page.wait_for_url("**/dataflow/" + project_id, timeout=20000)
-    skip_if_shared_view(page)
+    require_owner_view(page)
     page.locator(".react-flow__node").first.wait_for(state="visible", timeout=30000)
     gallery.shot("canvas-three-node-categories")
 
@@ -320,7 +320,7 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
     project_id = owner["project"]["id"]
     page.goto(app_frontend.base_url + "/dataflow/" + project_id)
     page.wait_for_url("**/dataflow/" + project_id, timeout=20000)
-    skip_if_shared_view(page)
+    require_owner_view(page)
     node = page.locator(".react-flow__node").first
     node.wait_for(state="visible", timeout=30000)
     node.scroll_into_view_if_needed()

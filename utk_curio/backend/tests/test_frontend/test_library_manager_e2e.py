@@ -54,7 +54,7 @@ from .utils import (
     require_user_auth,
     save_workflow_test_screenshot,
     set_node_code,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
     wait_for_node_done,
     wait_for_node_settled,
@@ -152,7 +152,7 @@ def test_install_library_from_ui_then_use_it(
         username="library_user",
         project_name="Library Install",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     token = session["token"]
     user_id = session["user"]["id"]
     # Register before installing, so a mid-test failure still cleans up.

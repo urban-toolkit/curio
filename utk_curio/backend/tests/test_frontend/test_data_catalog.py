@@ -32,7 +32,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -95,7 +95,7 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
         project_name=project,
         project_spec=_one_node_spec(),
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     return result
 
 

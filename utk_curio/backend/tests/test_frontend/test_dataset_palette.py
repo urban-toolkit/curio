@@ -34,7 +34,7 @@ from .utils import (
     get_shared_data_dir,
     open_tools_palette,
     require_project_page,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -118,7 +118,7 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
 
     # Owner check: a shared-guest session can never see another user's installed
     # datasets, so this test wouldn't be meaningful there.
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     # 2. Now generate/install the computed dataset INTO the saved project:
     #    materialize the dataset dir on disk and reference it from the spec.

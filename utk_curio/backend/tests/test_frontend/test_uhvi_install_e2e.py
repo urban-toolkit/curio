@@ -29,7 +29,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -95,7 +95,7 @@ def test_the_uhvi_package_installs_without_a_geopandas_conflict(
         project_name="UHVI Install",
         project_spec=_one_node_spec(),
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()

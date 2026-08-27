@@ -1204,24 +1204,33 @@ def api_json(
         return body if raw else json.loads(body.decode("utf-8") or "{}")
 
 
-def skip_if_shared_view(page, *, timeout: float = 4000) -> None:
-    """Skip when the dataflow opened read-only as the shared guest.
+def require_owner_view(page, *, timeout: float = 4000) -> None:
+    """Fail when the dataflow opened read-only as the shared guest.
 
-    In a no-auth environment (e.g. ``CURIO_E2E_USE_EXISTING=1`` against a dev
-    server that ignores the injected stub session) the browser is the read-only
-    shared guest: it can't see another user's installed packages or datasets, and
-    catalog fetches come back empty. Skip with a clear reason rather than fail
-    confusingly deep inside a palette or drawer assertion.
+    This used to ``pytest.skip`` here, and that was the wrong call. A dataflow's
+    packages, datasets and agents are visible only to the user who installed
+    them, so a browser that lands as the shared guest sees empty catalogs -
+    which means every test guarded by this is testing nothing. Skipping made
+    that invisible: ``scripts/test.sh`` booted its shared stack without
+    ``--auth``, and 43 tests across 22 files - the whole agent-catalog suite
+    among them - quietly skipped while the run reported green.
+
+    The environment being wrong is a setup bug, and a setup bug should be loud.
+    Detection is unchanged; only the consequence is. The fix when this fires is
+    to boot with ``--auth`` (which ``scripts/test.sh`` and the
+    ``curio_servers`` fixture both now do), never to tolerate the state.
     """
     banner = page.get_by_test_id("shared-view-banner")
     try:
         banner.wait_for(state="visible", timeout=timeout)
     except PlaywrightTimeoutError:
         return  # no banner → authenticated owner, proceed
-    pytest.skip(
-        "Dataflow opened read-only as the shared guest - owner auth is "
-        "unavailable in this e2e environment. Run with CURIO_TESTING=1 "
-        "(without CURIO_E2E_USE_EXISTING) against an auth-enabled server."
+    raise AssertionError(
+        "Dataflow opened read-only as the shared guest, so this test would "
+        "assert against empty catalogs. The stack is running without user "
+        "auth: boot it with `--auth` (scripts/test.sh does, and so does the "
+        "curio_servers fixture), or unset CURIO_NO_AUTH in the pytest "
+        "environment so the fixture passes --auth for you."
     )
 
 

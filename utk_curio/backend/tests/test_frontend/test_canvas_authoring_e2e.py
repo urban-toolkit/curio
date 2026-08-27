@@ -40,7 +40,7 @@ from .utils import (
     run_node_and_wait,
     save_workflow_test_screenshot,
     set_node_code,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -180,7 +180,7 @@ def test_build_and_run_dataflow_from_scratch(
         username="canvas_author",
         project_name="Canvas Authoring",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     token = session["token"]
     project_id = session["project"]["id"]
 

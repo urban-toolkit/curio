@@ -35,7 +35,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -90,7 +90,7 @@ def test_editing_a_middle_line_of_the_autark_grammar_sticks(
         username="autark_editor",
         project_name="Autark Grammar Editing",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     node_id = drag_to_canvas(page, page.locator(AUTK_TILE), at=POS_NODE)
     assert canvas_node_type(page, node_id).split("@", 1)[0] == AUTK_TYPE

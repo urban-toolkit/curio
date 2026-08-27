@@ -56,7 +56,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -137,7 +137,7 @@ def _enter_dataflow(page, app_frontend, current_server, *, username: str):
         project_name="Dataset Export",
         project_spec=_one_node_spec(),
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     # Gate on the canvas before driving the top menu. A node on screen means
     # ProjectLoader finished and UpMenu is mounted; without this the first
     # action is a click on "Data" that fails with a bare 30s locator timeout if

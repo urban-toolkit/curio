@@ -64,7 +64,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -260,7 +260,7 @@ def test_wiring_a_consumer_grows_dataset_lineage(
         username="lineage_wiring",
         project_name="Dataset Lineage",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     token = session["token"]
     project_id = session["project"]["id"]
 

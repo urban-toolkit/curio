@@ -39,7 +39,7 @@ from .utils import (
     run_node_and_wait,
     save_workflow_test_screenshot,
     set_node_code,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -97,7 +97,7 @@ def test_palette_dragged_merge_flow_feeds_its_downstream_node(
         username="merge_author",
         project_name="Merge Flow Authoring",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     token = session["token"]
     project_id = session["project"]["id"]
 

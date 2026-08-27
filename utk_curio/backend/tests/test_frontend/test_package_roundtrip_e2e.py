@@ -58,7 +58,7 @@ from .utils import (
     run_node_and_wait,
     save_workflow_test_screenshot,
     set_node_code,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -315,7 +315,7 @@ def test_save_export_import_and_run_package_nodes(
         username="package_author",
         project_name="Package Roundtrip",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     token = session["token"]
 
     # ------------------------------------------------------------------
@@ -537,7 +537,7 @@ def test_two_kinds_saved_into_one_package_keep_their_own_code(
         username="pkg_two_kinds",
         project_name="Two Kinds",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     token = session["token"]
 
     first = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=POS_FIRST)

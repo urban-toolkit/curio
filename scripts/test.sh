@@ -206,9 +206,18 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # then read. Two e2e tests call the sandbox directly. main.py honours a
   # pre-set value.
   export CURIO_SANDBOX_TOKEN="${CURIO_SANDBOX_TOKEN:-$(python -c 'import secrets; print(secrets.token_urlsafe(32))')}"
+  # --auth is REQUIRED, not optional. The E2E suite exercises the real signup /
+  # signin / guest flows and most of it acts as an authenticated OWNER: a
+  # dataflow's own packages, datasets and agents are visible only to the user
+  # who installed them. Booted without it, 'curio.py start' sets
+  # CURIO_NO_AUTH=1, the browser is the read-only shared guest, every catalog
+  # fetch comes back empty, and 43 tests - the whole agent-catalog suite among
+  # them - skipped instead of running, so a green run proved far less than it
+  # appeared to. The curio_servers fixture already passes --auth when it boots
+  # its own stack; this is the CURIO_E2E_USE_EXISTING=1 path catching up.
   set -m
   CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_LAUNCH_CWD="$REPO_ROOT" \
-    python "$REPO_ROOT/curio.py" start --with-examples &
+    python "$REPO_ROOT/curio.py" start --auth --with-examples &
   CURIO_PID=$!
   set +m
 

@@ -44,7 +44,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -133,7 +133,7 @@ def test_save_node_as_package_export_then_load_back(
     )
     token = result["token"]
     project_id = result["project"]["id"]
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     node = page.locator(f'.react-flow__node[data-id="{NODE_ID}"]')
     node.wait_for(state="visible", timeout=60000)
