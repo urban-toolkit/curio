@@ -131,7 +131,10 @@ class TestSharedRouteExcludesAgentPrivateData:
         assert spec["dataflow"]["agents"] == ["agent.chat-agent@1.0.0"]
         att = spec["dataflow"]["agentAttachments"][0]
         assert att["intent"] == SECRET_INTENT and att["title"] == SECRET_TITLE
-        assert "agentDefaults" in spec["dataflow"]
+        # `agentDefaults` is no longer written: it held the per-dataflow half
+        # of a policy editor whose surfaces were removed. It is still stripped
+        # from a shared spec, which the sibling case above asserts.
+        assert "agentDefaults" not in spec["dataflow"]
 
     def test_agent_endpoints_stay_owner_only(
         self, client, shared_project_with_agent_state, guest_user_and_token
@@ -142,7 +145,6 @@ class TestSharedRouteExcludesAgentPrivateData:
         for path in (
             f"/api/agents/projects/{ctx['project_id']}/attachments",
             f"/api/agents/projects/{ctx['project_id']}/attachments/{att_id}/session",
-            f"/api/agents/projects/{ctx['project_id']}/defaults/agent.chat-agent%401.0.0",
         ):
             r = client.get(path, headers=_auth(other_token))
             assert r.status_code == 404, f"{path} not owner-only: {r.status_code}"

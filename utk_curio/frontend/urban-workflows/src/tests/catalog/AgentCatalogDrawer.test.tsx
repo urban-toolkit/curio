@@ -12,11 +12,7 @@ jest.mock("../../api/agentsApi", () => ({
     uninstallFromProject: jest.fn(),
     publish: jest.fn(),
     unpublish: jest.fn(),
-    getProjectAgentDefaults: jest.fn(),
-    updateProjectAgentDefaults: jest.fn(),
-    getAgentSettings: jest.fn(),
     uploadImport: jest.fn(),
-    updateAgentSettings: jest.fn(),
   },
 }));
 
@@ -54,30 +50,6 @@ beforeEach(() => {
   api.installToProject.mockResolvedValue({ agents: [] } as any);
   api.uninstallFromProject.mockResolvedValue({ agents: [] } as any);
   api.publish.mockResolvedValue({ coord: "x", published: true } as any);
-  const effective = {
-    quotas: { runsPerDay: { value: 200, usedToday: 0, source: "deployment" } },
-    cost: {
-      dailyBudgetUsd: { value: null, source: null },
-      estimatedCostPerRunUsd: { value: null, source: null },
-      configured: false,
-      estimatedSpendTodayUsd: null,
-    },
-    resources: { maxOutputTokens: { value: 4096, source: "deployment" } },
-  };
-  api.getProjectAgentDefaults.mockResolvedValue({
-    coord: "agent.chat-agent@1.0.0",
-    name: "Chat",
-    revision: 1,
-    settings: {},
-    effective,
-  } as any);
-  api.getAgentSettings.mockResolvedValue({
-    revision: 1,
-    settings: {},
-    effective,
-    ceilings: { quotas: { runsPerDay: 200 }, resources: { maxOutputTokens: 4096 }, cost: {} },
-    usedToday: 0,
-  } as any);
 });
 
 // AI Settings reads UserProvider, which reaches the package registry and

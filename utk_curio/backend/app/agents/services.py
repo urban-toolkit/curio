@@ -16,23 +16,19 @@ import time
 import uuid
 
 from utk_curio.backend.app.agents import (
-    account_settings,
     attachments,
     builtin,
     content,
     delegation,
     imports,
     ledger,
-    policy,
     project_agents,
     publications,
-    quotas,
     sessions,
     storage,
     tools,
 )
 from utk_curio.backend.app.agents import egress, node_context, verify
-from utk_curio.backend.app.agents.policy import PolicyValidationError, StaleRevisionError
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES, AgentManifest
 from utk_curio.backend.app.agents.providers import (
@@ -41,6 +37,15 @@ from utk_curio.backend.app.agents.providers import (
     stream_chat_completion,
 )
 from utk_curio.backend.app.projects import storage as projects_storage
+
+#: The output ceiling every agent run is dispatched with.
+#:
+#: This was ``policy.DEPLOYMENT_MAX_OUTPUT_TOKENS``, the deployment floor of a
+#: three-scope resolver (account, per-dataflow, per-attachment) with
+#: tighten-only writes and an optimistic revision. All three editors are gone,
+#: so no user value can exist to resolve against and the resolver had exactly
+#: one input left: this number. Passed to every provider as ``max_tokens``.
+DEPLOYMENT_MAX_OUTPUT_TOKENS = 4096
 
 log = logging.getLogger(__name__)
 
@@ -410,20 +415,6 @@ def remove_import(user_key: str, coord: str) -> dict:
     return {"coord": coord, "imported": False}
 
 
-def _defaults_seed(user_key: str, coord: str) -> dict:
-    """Seed for a fresh project-default record from the definition's
-    ``settingsDefaults`` (built-ins carry none → empty)."""
-    m = _resolve_definition(user_key, coord)
-    if m is None:
-        return {}
-    seed: dict = {}
-    if m.settings_profile_id:
-        seed["profileId"] = m.settings_profile_id
-    if m.settings_profile_version:
-        seed["profileVersion"] = m.settings_profile_version
-    return seed
-
-
 def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
     """Add *coord* AND its ``requiresAgents`` closure to the project's lockfile
     (explicit; never auto-imports).
@@ -466,10 +457,6 @@ def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
     if added:
         project_agents.set_project_agents(spec, current + added)
         dirty = True
-    for c in [coord, *required]:
-        if c not in project_agents.agent_defaults(spec):
-            project_agents.materialize_defaults(spec, c, _defaults_seed(user_key, c))
-            dirty = True
     if dirty:
         projects_storage.write_spec(user_key, project_id, spec)
     return {
@@ -503,117 +490,9 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
     if coord in current:
         project_agents.set_project_agents(spec, [c for c in current if c != coord])
         dirty = True
-    if project_agents.drop_defaults(spec, coord):
-        dirty = True
     if dirty:
         projects_storage.write_spec(user_key, project_id, spec)
     return {"agents": project_agents.project_agents(spec)}
-
-
-def get_project_agent_defaults(
-    user_key: str, project_id: str, coord: str, config: "ProviderConfig | None" = None
-) -> dict:
-    """The project-agent-default scope for one installed template (memo dev/23).
-
-    Returns the per-project record plus the server-computed **effective** v1
-    policy with provenance: the account runs/day quota (+ today's usage) and a
-    no-secrets provider summary. Lazily materializes the record for installs
-    that predate the section. 404 when the coord isn't installed here.
-    """
-    spec = _read_spec_or_404(user_key, project_id)
-    if coord not in project_agents.project_agents(spec):
-        raise AgentServiceError(f"{coord!r} is not installed in this project", 404)
-    record = project_agents.agent_defaults(spec).get(coord)
-    if record is None:
-        record = project_agents.materialize_defaults(
-            spec, coord, _defaults_seed(user_key, coord)
-        )
-        projects_storage.write_spec(user_key, project_id, spec)
-    m = _resolve_definition(user_key, coord)
-    acct = account_settings.read_record(user_key)["settings"]
-    eff = policy.effective(acct, record.get("settings") or {})
-    return {
-        "coord": coord,
-        "name": m.name if m else coord,
-        "revision": record.get("revision", 1),
-        "settings": record.get("settings", {}),
-        "effective": {"resources": dict(eff["resources"])},
-        # Token counts from the local ledger. Reported, never enforced.
-        "usageToday": quotas.usage_today(user_key),
-        "usedToday": quotas.runs_used_today(user_key),
-    }
-
-
-def update_project_agent_defaults(
-    user_key: str,
-    project_id: str,
-    coord: str,
-    revision: object,
-    settings: object,
-    config: "ProviderConfig | None" = None,
-) -> dict:
-    """PATCH the project-agent-default record (memo dev/24): tighten-only
-    against the account-effective policy, optimistic revision, non-policy seed
-    keys (e.g. the manifest profile id) preserved. ``{"settings": {}}`` is
-    `Reset to agent default` for this one template."""
-    if not isinstance(revision, int):
-        raise AgentServiceError("revision must be an integer", 400)
-    spec = _read_spec_or_404(user_key, project_id)
-    if coord not in project_agents.project_agents(spec):
-        raise AgentServiceError(f"{coord!r} is not installed in this project", 404)
-    record = project_agents.agent_defaults(spec).get(coord)
-    if record is None:
-        record = project_agents.materialize_defaults(
-            spec, coord, _defaults_seed(user_key, coord)
-        )
-    if record.get("revision", 1) != revision:
-        raise AgentServiceError(
-            f"project defaults changed (revision {record.get('revision', 1)}, sent {revision})",
-            409,
-        )
-    acct = account_settings.read_record(user_key)["settings"]
-    try:
-        cleaned = policy.validate_patch(settings, "project", policy.effective(acct))
-    except PolicyValidationError as exc:
-        raise AgentServiceError(str(exc), 400) from exc
-    existing = record.get("settings") or {}
-    preserved = {k: v for k, v in existing.items() if k not in policy._FIELDS}
-    record["settings"] = {**preserved, **cleaned}
-    record["revision"] = revision + 1
-    projects_storage.write_spec(user_key, project_id, spec)
-    return get_project_agent_defaults(user_key, project_id, coord, config)
-
-
-def get_account_settings(user_key: str, config: ProviderConfig | None = None) -> dict:
-    """The Account-policy scope (memo dev/24): record + effective + ceilings."""
-    record = account_settings.read_record(user_key)
-    return {
-        "revision": record["revision"],
-        "settings": record["settings"],
-        "effective": policy.effective(record["settings"]),
-        "ceilings": policy.deployment_defaults(),
-        # Token counts from the local ledger. Reported, never enforced.
-        "usedToday": quotas.runs_used_today(user_key),
-        "usageToday": quotas.usage_today(user_key),
-    }
-
-
-def update_account_settings(
-    user_key: str, revision: object, settings: object, config: ProviderConfig | None = None
-) -> dict:
-    """PATCH the account settings record: tighten-only against the deployment
-    ceilings, optimistic revision (409 on stale)."""
-    if not isinstance(revision, int):
-        raise AgentServiceError("revision must be an integer", 400)
-    try:
-        cleaned = policy.validate_patch(settings, "account", policy.effective({}))
-    except PolicyValidationError as exc:
-        raise AgentServiceError(str(exc), 400) from exc
-    try:
-        account_settings.write_settings(user_key, cleaned, revision)
-    except StaleRevisionError as exc:
-        raise AgentServiceError(str(exc), 409) from exc
-    return get_account_settings(user_key, config)
 
 
 def publish_agent(user_key: str, coord: str) -> dict:
@@ -863,68 +742,6 @@ def clear_attachment_session(user_key: str, project_id: str, attachment_id: str)
         attachments.set_title(spec, attachment_id, None, edited=False)
         projects_storage.write_spec(user_key, project_id, spec)
     return {"attachmentId": attachment_id, "sessionId": session_id, "turns": []}
-
-
-# ── attachment settings (the Attached-instance scope, memo dev/42) ───────────
-def get_attachment_settings(
-    user_key: str, project_id: str, attachment_id: str, config: "ProviderConfig | None" = None
-) -> dict:
-    """The Attached-instance policy scope: the record's tighten-only overrides
-    plus the three-layer effective view. ``usedToday`` is this attachment's own
-    run count from the local ledger - reported for context, never enforced."""
-    spec = _read_spec_or_404(user_key, project_id)
-    record = _record_or_404(spec, attachment_id)
-    coord = record.get("coord", "")
-    m = _resolve_definition(user_key, coord)
-    acct = account_settings.read_record(user_key)["settings"]
-    project_record = project_agents.agent_defaults(spec).get(coord) or {}
-    attachment_settings = record.get("settings") or {}
-    eff = policy.effective(acct, project_record.get("settings") or {}, attachment_settings)
-    agg = ledger.aggregates(user_key)
-    return {
-        "attachmentId": attachment_id,
-        "coord": coord,
-        "name": m.name if m else coord,
-        "revision": record.get("revision", 1),
-        "settings": attachment_settings,
-        "effective": {"resources": dict(eff["resources"])},
-        "usedToday": agg["byAttachment"].get(attachment_id, 0),
-        "usageToday": quotas.usage_today(user_key),
-    }
-
-
-def update_attachment_settings(
-    user_key: str,
-    project_id: str,
-    attachment_id: str,
-    revision: object,
-    settings: object,
-    config: "ProviderConfig | None" = None,
-) -> dict:
-    """PATCH the attachment's tighten-only overrides (memo dev/42): validated
-    against the **project-effective** policy, optimistic on the record's
-    shared revision (an intent/title edit invalidates a stale settings draft
-    — one record, one token), ``{"settings": {}}`` = *Clear overrides*."""
-    if not isinstance(revision, int):
-        raise AgentServiceError("revision must be an integer", 400)
-    spec = _read_spec_or_404(user_key, project_id)
-    record = _record_or_404(spec, attachment_id)
-    if record.get("revision", 1) != revision:
-        raise AgentServiceError(
-            f"attachment changed (revision {record.get('revision', 1)}, sent {revision})",
-            409,
-        )
-    coord = record.get("coord", "")
-    acct = account_settings.read_record(user_key)["settings"]
-    project_record = project_agents.agent_defaults(spec).get(coord) or {}
-    parent = policy.effective(acct, project_record.get("settings") or {})
-    try:
-        cleaned = policy.validate_patch(settings, "attachment", parent)
-    except PolicyValidationError as exc:
-        raise AgentServiceError(str(exc), 400) from exc
-    attachments.set_settings(spec, attachment_id, cleaned)
-    projects_storage.write_spec(user_key, project_id, spec)
-    return get_attachment_settings(user_key, project_id, attachment_id, config)
 
 
 # ── review-before-apply (memo dev/41) ────────────────────────────────────────
@@ -4935,27 +4752,25 @@ def _run_policy(
     spec: dict,
     attachment_record: dict | None = None,
 ) -> dict:
-    """Dispatch inputs from the effective policy.
+    """Dispatch inputs for one run.
 
-    This used to be admission as well: it resolved the account, template and
-    attachment run ceilings and the budget the ledger gated on. Nothing is
-    gated now, so what is left is the one field that shapes the call itself
-    (``max_output_tokens``) plus the keys the ledger records for attribution.
+    This was admission, then a policy resolver, and is now neither. It resolved
+    account/template/attachment run ceilings and a budget the ledger gated on
+    (all removed: Curio does not meter agent runs), then a three-scope
+    ``maxOutputTokens``, whose editor had no interface left to reach it. What
+    remains is the deployment-wide output cap and the two keys the ledger
+    records so a run can be attributed to a template and an attachment.
     """
-    acct = account_settings.read_record(user_key)["settings"]
-    record = project_agents.agent_defaults(spec).get(coord) or {}
-    attachment_settings = (attachment_record or {}).get("settings") or {}
-    full_eff = policy.effective(acct, record.get("settings") or {}, attachment_settings)
     attachment_id = (attachment_record or {}).get("attachmentId")
-    max_output = full_eff["resources"]["maxOutputTokens"]["value"]
+    max_output = DEPLOYMENT_MAX_OUTPUT_TOKENS
     return {
         "admit": {
             "template_key": f"{project_id}/{coord}",
             "attachment_key": attachment_id if isinstance(attachment_id, str) else None,
         },
         "max_output_tokens": max_output,
-        # Flat effective-policy snapshot pinned on the execution record: what
-        # was dispatched, not where each value came from.
+        # Pinned on the execution record: what the run was actually dispatched
+        # with, so a later change of the constant does not rewrite history.
         "policy_pins": {"maxOutputTokens": max_output},
     }
 
@@ -5316,7 +5131,7 @@ def _persist_exchange(
 
 # How many tool executions one run may make (memo dev/41): total provider
 # calls per run ≤ MAX_TOOL_ROUNDS + 1. A runtime constant until someone needs
-# to tune it (REQ-QUOTA-001 notes tool quotas as the eventual policy home).
+# to tune it.
 # dev/73: 3 — the Node Builder's documented modify flow (read the node →
 # delegate generation → propose) is a three-round sequence; 2 forced models
 # that follow their instructions to answer in prose instead of proposing.

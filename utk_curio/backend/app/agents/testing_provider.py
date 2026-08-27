@@ -9,7 +9,7 @@ Why this exists: every agent surface worth an end-to-end test (chat, solve, a
 minted proposal, the review card) is downstream of one LLM call. Pointing that
 call at a real provider would make the suite need a key, a network, and a model
 that answers the same way twice. Pointing it at a script keeps the WHOLE
-backend loop under test - tools, policy, quotas, the ledger, the content parser
+backend loop under test - tools, the ledger, the content parser
 - while making the model the one part that cannot vary.
 
 Scripted through ``push_reply(...)`` / ``push_replies(...)``: an in-process

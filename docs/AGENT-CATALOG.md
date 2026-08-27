@@ -280,9 +280,11 @@ No run is ever refused for usage.
 
 The one adjacent setting that survives is **max output tokens**, and it is not a
 quota: it is passed to the provider as `max_tokens` on every completion, so it
-shapes one reply rather than rationing a day's worth. It resolves
-`attachment ?? project ?? account ?? deployment`, clamped downward on read, and
-is editable through the agent settings API rather than the interface.
+shapes one reply rather than rationing a day's worth. It is a deployment
+constant, the same for every run. It used to resolve
+`attachment ?? project ?? account ?? deployment` through three editable scopes,
+but those editors were the limits interface, so nothing could reach them once it
+was removed.
 
 Curio does keep a local record of what ran, in an append-only per-day file under
 `.curio/users/<key>/agents/ledger/`. It is written from the token counts each

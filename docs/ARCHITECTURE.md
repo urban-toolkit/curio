@@ -737,8 +737,6 @@ Catalog and account scope:
 | `/api/agents/imports/<coord>` | DELETE | Drop it from My imports. The definition stays on disk |
 | `/api/agents/publications` | POST | Publish an owned, imported, store-backed definition to the shared catalog |
 | `/api/agents/publications/<coord>` | DELETE | Unpublish it. Owner only |
-| `/api/agents/settings` | GET | Account agent policy: record, effective policy, deployment ceilings, runs used today |
-| `/api/agents/settings` | PATCH | Edit it. Tighten-only against the ceilings; optimistic `revision`, **409** on stale |
 
 Per-dataflow scope:
 
@@ -747,8 +745,6 @@ Per-dataflow scope:
 | `/api/agents/projects/<projectId>` | GET | The dataflow's added agents, from its `dataflow.agents` lockfile |
 | `/api/agents/projects/<projectId>/install` | POST | Add `{coord}` **and its `requiresAgents` closure** in one spec write. Resolves the closure before writing: **409** naming the missing ids, nothing written |
 | `/api/agents/projects/<projectId>/<coord>` | DELETE | Remove it and its defaults record. **409** naming the dependents while another added agent requires it |
-| `/api/agents/projects/<projectId>/defaults/<coord>` | GET | One added agent's per-dataflow `{revision, settings}` plus the effective policy with per-field provenance |
-| `/api/agents/projects/<projectId>/defaults/<coord>` | PATCH | Edit it. Tighten-only against the account-effective policy; `{"settings": {}}` resets to the agent default |
 
 Attachments and runs:
 
@@ -756,14 +752,19 @@ Attachments and runs:
 |---|---|---|
 | `/api/agents/projects/<projectId>/attachments` | GET, POST | List, or bind an added agent to a `{kind: node\|canvas\|connection, targetId?}`. Never auto-adds |
 | `/api/agents/projects/<projectId>/attachments/<id>` | DELETE, PATCH | Detach (also deletes the transcript), or set the editable initial intent |
-| `/api/agents/projects/<projectId>/attachments/<id>/settings` | GET, PATCH | The attachment policy scope: tighten-only overrides over the three-layer effective view |
 | `/api/agents/projects/<projectId>/attachments/<id>/session` | GET, DELETE | The persisted chat transcript, or clear it (the attachment survives) |
 | `/api/agents/projects/<projectId>/attachments/<id>/run` | POST | Run one turn. Returns `{reply, executionId, usage, content}`; persists both turns |
 | `/api/agents/projects/<projectId>/attachments/<id>/run/stream` | POST | The same turn as Server-Sent Events: `execution` then `delta` chunks, tool rounds, `review_required`, `content`, `done` |
 | `/api/agents/projects/<projectId>/attachments/<id>/proposals/<proposalId>` | POST `/apply`, DELETE | Apply a pending review proposal (the only mutation path; re-checks the pinned digest, **409** on drift) or dismiss it |
 
-Runs are admitted through the append-only per-day ledger under a file lock; a denied
-run persists nothing and returns a stable **429** `{error, quota, reason, resetAt}`.
+Every run appends to a per-day ledger under a file lock
+(`.curio/users/<key>/agents/ledger/`), written from the token counts each
+provider returns on the completion itself. It is a record, not a gate: no run is
+refused for usage, no USD is computed, and no endpoint exposes it. There were
+three policy scopes here (account, per-dataflow, per-attachment) with
+tighten-only writes and optimistic revisions; all six endpoints are gone with
+the limits interface they served, and `maxOutputTokens` is now the deployment
+constant `services.DEPLOYMENT_MAX_OUTPUT_TOKENS`.
 
 ### Starter Routes
 
@@ -851,8 +852,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/provider_config.py` | The single provider resolver: guest env, then per-user `llm_*`, then the deployment default |
 | `backend/app/agents/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported |
 | `backend/app/agents/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives |
-| `backend/app/agents/policy.py` | Effective-policy resolver (`attachment ?? project ?? account ?? deployment`), clamped downward |
-| `backend/app/agents/ledger.py` | Append-only per-day usage ledger; flock-guarded reserve and settle |
+| `backend/app/agents/ledger.py` | Append-only per-day record of runs and tokens; flock-guarded. A record, not a gate |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |
 | `backend/extensions.py` | SQLAlchemy and Flask-Migrate initialization |
 

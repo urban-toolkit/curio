@@ -288,22 +288,3 @@ def reconcile_proposal_queue(spec: dict, attachment_id: str) -> bool:
         record.pop("queuedProposals", None)
         changed = True
     return changed
-
-
-def set_settings(spec: dict, attachment_id: str, settings: dict | None) -> dict | None:
-    """Set (or clear with empty/None) the attachment's tighten-only policy
-    overrides (memo dev/42) and bump the record's revision.
-
-    The record's single optimistic ``revision`` covers intent, title, and
-    settings alike — one record, one token — so any concurrent instance edit
-    invalidates a stale settings draft. Returns the record, or ``None`` when
-    the attachment does not exist."""
-    record = get_attachment(spec, attachment_id)
-    if record is None:
-        return None
-    if settings:
-        record["settings"] = settings
-    else:
-        record.pop("settings", None)  # Clear overrides → project profile
-    record["revision"] = int(record.get("revision", 1)) + 1
-    return record

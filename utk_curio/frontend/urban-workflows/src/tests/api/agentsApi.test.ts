@@ -455,33 +455,6 @@ describe("agentsApi", () => {
     );
   });
 
-  it("getProjectAgentDefaults() GETs the escaped defaults path", () => {
-    agentsApi.getProjectAgentDefaults("p1", "agent.chat-agent@1.0.0");
-    expect(mockFetch).toHaveBeenCalledWith(
-      "/api/agents/projects/p1/defaults/agent.chat-agent%401.0.0",
-    );
-  });
-
-  it("agent settings: GET/PATCH account + PATCH project defaults", () => {
-    agentsApi.getAgentSettings();
-    expect(mockFetch).toHaveBeenCalledWith("/api/agents/settings");
-    // maxOutputTokens is the only editable field left: runsPerDay and the
-    // cost section went with the metering Curio no longer does.
-    agentsApi.updateAgentSettings(3, { resources: { maxOutputTokens: 512 } });
-    expect(mockFetch).toHaveBeenLastCalledWith("/api/agents/settings", {
-      method: "PATCH",
-      body: JSON.stringify({
-        revision: 3,
-        settings: { resources: { maxOutputTokens: 512 } },
-      }),
-    });
-    agentsApi.updateProjectAgentDefaults("p1", "agent.chat-agent@1.0.0", 2, {});
-    expect(mockFetch).toHaveBeenLastCalledWith(
-      "/api/agents/projects/p1/defaults/agent.chat-agent%401.0.0",
-      { method: "PATCH", body: JSON.stringify({ revision: 2, settings: {} }) },
-    );
-  });
-
   it("uploadImport() POSTs the manifest + prompt texts (dev/36)", () => {
     agentsApi.uploadImport({ id: "agent.x" }, { "prompts/i.txt": "text" });
     expect(mockFetch).toHaveBeenCalledWith("/api/agents/imports/upload", {

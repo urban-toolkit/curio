@@ -547,61 +547,6 @@ export interface AgentTarget {
   targetId?: string;
 }
 
-/** Editable policy fields. Absent/omitted = inherit.
- *
- * One field. `quotas.runsPerDay` and the whole `cost` section went with the
- * metering they served: Curio does not cap or price agent runs, and there is
- * no interface for either. `maxOutputTokens` stays because it is not a quota -
- * it is passed to the provider as `max_tokens` on every completion. */
-export interface AgentPolicySettings {
-  resources?: { maxOutputTokens?: number };
-}
-
-/** A resolved policy field: value + which scope supplied it. */
-export interface EffectiveField {
-  value: number | null;
-  source: "deployment" | "account" | "project" | "attachment" | null;
-}
-
-export interface EffectivePolicy {
-  resources: { maxOutputTokens: EffectiveField; provider?: string; model?: string };
-}
-
-/** Token counts from the local ledger, reported by every settings scope.
- * Never enforced: nothing is capped, and no USD figure is computed. */
-interface LedgerUsageReadout {
-  usedToday?: number;
-  usageToday?: AgentUsage;
-}
-
-/** The Account-policy scope (GET/PATCH /api/agents/settings). */
-export interface AccountAgentSettings extends LedgerUsageReadout {
-  revision: number;
-  settings: AgentPolicySettings & Record<string, unknown>;
-  effective: EffectivePolicy;
-  ceilings: { resources: { maxOutputTokens: number } };
-}
-
-/** The project-agent-default scope for one installed template. */
-export interface ProjectAgentDefaults extends LedgerUsageReadout {
-  coord: string;
-  name: string;
-  revision: number;
-  settings: AgentPolicySettings & Record<string, unknown>;
-  effective: EffectivePolicy;
-}
-
-/** The Attached-instance policy scope: tighten-only overrides on one
- * attachment, sharing the record's optimistic revision. */
-export interface AttachmentAgentSettings extends LedgerUsageReadout {
-  attachmentId: string;
-  coord: string;
-  name: string;
-  revision: number;
-  settings: AgentPolicySettings & Record<string, unknown>;
-  effective: EffectivePolicy;
-}
-
 /** ``@``/``.`` are legal in a coordinate but must be escaped in a path param. */
 /**
  * POST to an SSE endpoint and dispatch each parsed event frame (the dev/22
@@ -752,42 +697,6 @@ export const agentsApi = {
     return apiFetch(`/api/agents/publications/${coordParam(coord)}`, { method: "DELETE" });
   },
 
-  /** The project-agent-default scope for one installed template. */
-  getProjectAgentDefaults(projectId: string, coord: string): Promise<ProjectAgentDefaults> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/defaults/${coordParam(coord)}`,
-    );
-  },
-
-  /** Edit one template's project defaults (tighten-only, revisioned; {} = reset). */
-  updateProjectAgentDefaults(
-    projectId: string,
-    coord: string,
-    revision: number,
-    settings: AgentPolicySettings,
-  ): Promise<ProjectAgentDefaults> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/defaults/${coordParam(coord)}`,
-      { method: "PATCH", body: JSON.stringify({ revision, settings }) },
-    );
-  },
-
-  /** The Account-policy scope. */
-  getAgentSettings(): Promise<AccountAgentSettings> {
-    return apiFetch("/api/agents/settings");
-  },
-
-  /** Edit the account agent policy (tighten-only vs deployment; revisioned). */
-  updateAgentSettings(
-    revision: number,
-    settings: AgentPolicySettings,
-  ): Promise<AccountAgentSettings> {
-    return apiFetch("/api/agents/settings", {
-      method: "PATCH",
-      body: JSON.stringify({ revision, settings }),
-    });
-  },
-
   /** List the project's private attachments. */
   listAttachments(projectId: string): Promise<{ attachments: AgentAttachment[] }> {
     return apiFetch(`/api/agents/projects/${encodeURIComponent(projectId)}/attachments`);
@@ -834,30 +743,6 @@ export const agentsApi = {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
       { method: "PATCH", body: JSON.stringify({ title }) },
-    );
-  },
-
-  /** The Attached-instance policy scope for one attachment (memo dev/42). */
-  getAttachmentSettings(
-    projectId: string,
-    attachmentId: string,
-  ): Promise<AttachmentAgentSettings> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/settings`,
-    );
-  },
-
-  /** Edit the attachment's tighten-only overrides ({} = Clear overrides);
-   * revisioned on the record's shared token (409 on any concurrent edit). */
-  updateAttachmentSettings(
-    projectId: string,
-    attachmentId: string,
-    revision: number,
-    settings: AgentPolicySettings,
-  ): Promise<AttachmentAgentSettings> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/settings`,
-      { method: "PATCH", body: JSON.stringify({ revision, settings }) },
     );
   },
 

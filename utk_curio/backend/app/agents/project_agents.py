@@ -50,70 +50,15 @@ def set_project_agents(spec: dict, coords: Iterable[str]) -> dict:
     return spec
 
 
-def agent_defaults(spec: dict | None) -> dict:
-    """The project's per-template default records: ``{coord: {revision, settings}}``.
-
-    ``spec["dataflow"]["agentDefaults"]`` — the project-agent-default scope of
-    memo ``dev/11`` (materialized at install, one independent record per
-    project). Missing/malformed reads as empty.
-    """
-    if not isinstance(spec, dict):
-        return {}
-    dataflow = spec.get("dataflow")
-    if not isinstance(dataflow, dict):
-        return {}
-    records = dataflow.get("agentDefaults")
-    if not isinstance(records, dict):
-        return {}
-    return {
-        coord: rec
-        for coord, rec in records.items()
-        if isinstance(coord, str) and AGENT_DIR_RE.match(coord) and isinstance(rec, dict)
-    }
-
-
-def materialize_defaults(spec: dict, coord: str, seed: dict | None = None) -> dict:
-    """Ensure *coord* has a defaults record; return it.
-
-    Idempotent: an existing record is returned untouched (reinstalling never
-    resets a project's profile — memo ``dev/23``). A new record starts at
-    ``{"revision": 1, "settings": seed or {}}``. Mutates *spec*.
-    """
-    if not (isinstance(coord, str) and AGENT_DIR_RE.match(coord)):
-        raise ValueError(f"invalid agent coordinate {coord!r}")
-    dataflow = spec.setdefault("dataflow", {})
-    if not isinstance(dataflow, dict):
-        raise TypeError("spec['dataflow'] must be a dict")
-    records = dataflow.setdefault("agentDefaults", {})
-    if not isinstance(records, dict):
-        records = {}
-        dataflow["agentDefaults"] = records
-    existing = records.get(coord)
-    if isinstance(existing, dict):
-        return existing
-    record = {"revision": 1, "settings": dict(seed) if isinstance(seed, dict) else {}}
-    records[coord] = record
-    return record
-
-
-def drop_defaults(spec: dict, coord: str) -> bool:
-    """Remove *coord*'s defaults record (uninstall); True when one existed."""
-    if not isinstance(spec, dict):
-        return False
-    dataflow = spec.get("dataflow")
-    if not isinstance(dataflow, dict):
-        return False
-    records = dataflow.get("agentDefaults")
-    if not isinstance(records, dict) or coord not in records:
-        return False
-    del records[coord]
-    return True
-
-
-# The backend-owned agent sections of the spec: the install lockfile, the
-# private attachment instances, and the per-template default records. All are
-# written only by the agent endpoints — the canvas save path (TrillGenerator)
-# does not serialize them.
+# The backend-owned agent sections of the spec: the install lockfile and the
+# private attachment instances. Both are written only by the agent endpoints -
+# the canvas save path (TrillGenerator) does not serialize them.
+#
+# ``agentDefaults`` is listed too, and only for stripping. Curio no longer
+# writes it: it held the per-dataflow half of a policy editor whose three
+# surfaces were removed. Specs saved before that still carry the key, and it
+# has to keep being recognised as agent state so a canvas save does not
+# resurrect it into the file.
 _AGENT_SPEC_KEYS = ("agents", "agentAttachments", "agentDefaults")
 
 
