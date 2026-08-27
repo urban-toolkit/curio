@@ -16,7 +16,7 @@ import { useFlowContext } from "../../../providers/FlowProvider";
  */
 export const AgentDockOverlay: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
-  const { projectId, workflowGoal, workflowNameRef } = useFlowContext();
+  const { projectId, workflowGoal, setWorkflowGoal, workflowNameRef } = useFlowContext();
   const { getNodes, getEdges } = useReactFlow();
   // The apply→canvas bridge listener (dev/48 §3.3): applied node creations
   // and content writes land on the LIVE canvas from here, where React Flow
@@ -50,6 +50,12 @@ export const AgentDockOverlay: React.FC = () => {
         selectedId={ctx.selectedId}
         onSelect={ctx.openChat}
         onDetach={onDetach}
+        // Offered as soon as ANY agent is attached, not just a canvas one:
+        // the agents that read the goal most (Node Content Builder,
+        // Connection Builder) attach to nodes.
+        showGoal={ctx.attachments.length > 0}
+        goal={workflowGoal}
+        onGoalChange={setWorkflowGoal}
       />
       {/* Portal to <body>: the chat is a full-height right drawer flush with
           the viewport top — its dark header sits at the top-bar level per the

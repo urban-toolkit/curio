@@ -65,7 +65,7 @@
 }
 
 .removeSecretBtn:hover:not(:disabled) {
-  color: var(--curio-role-danger-fg, #b3261e);
+  color: var(--curio-text-primary);
 }
 
 .removeSecretBtn:disabled {

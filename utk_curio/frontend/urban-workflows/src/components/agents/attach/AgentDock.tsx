@@ -14,10 +14,32 @@ export const AgentDock: React.FC<{
   selectedId: string | null;
   onSelect: (attachmentId: string) => void;
   onDetach: (attachmentId: string) => void;
-}> = ({ attachments, selectedId, onSelect, onDetach }) => {
-  if (attachments.length === 0) return null;
+  /** Shown whenever any agent is attached, canvas-target or not. */
+  showGoal?: boolean;
+  goal?: string;
+  onGoalChange?: (goal: string) => void;
+}> = ({ attachments, selectedId, onSelect, onDetach, showGoal, goal, onGoalChange }) => {
+  if (attachments.length === 0 && !showGoal) return null;
   return (
     <div className={styles.dock} role="toolbar" aria-label="Canvas agents">
+      {showGoal && (
+        // The dataflow's goal. Five built-in agents declare `workflowGoal` in
+        // their manifest `reads` (Node Content Builder, Connection Builder,
+        // Workflow Suggester, Plan Coherence Validator, and the mission
+        // composites), and the Dataflow Task Planner exists to turn a goal
+        // into a plan. The context composer has always had a producer for it;
+        // what disappeared with the old AI-assistance chrome was the only
+        // place to type one, so the value was permanently "" and those agents
+        // ran without the input their prompts are written around.
+        <input
+          className={styles.goalInput}
+          type="text"
+          value={goal ?? ""}
+          onChange={(e) => onGoalChange?.(e.target.value)}
+          placeholder="What is this dataflow for? (shared with your agents)"
+          aria-label="Dataflow goal"
+        />
+      )}
       {attachments.map((a) => (
         <AgentAvatarBadge
           key={a.attachmentId}

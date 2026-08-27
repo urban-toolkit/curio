@@ -17,3 +17,20 @@
 
 /* Avatar chips are the shared AgentAvatarBadge; the chat panel's styles live
    in AgentChatPanel.module.css (concept-aligned visual system). */
+
+/* The dataflow goal, shown in the dock beside the agents that read it. */
+.goalInput {
+  min-width: 260px;
+  max-width: 420px;
+  padding: 4px 10px;
+  border: 1px solid var(--curio-border);
+  border-radius: 999px;
+  background: var(--curio-surface-alt);
+  color: var(--curio-text-primary);
+  font-size: var(--curio-font-size-sm);
+  outline: none;
+}
+
+.goalInput:focus {
+  border-color: var(--curio-border-strong);
+}

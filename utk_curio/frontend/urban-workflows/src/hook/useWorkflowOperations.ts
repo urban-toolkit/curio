@@ -95,6 +95,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const [expandStatus, setExpandStatus] = useState<'expanded' | 'minimized'>('expanded');
     const [suggestionsLeft, setSuggestionsLeft] = useState<number>(0); // Number of suggestions left
     const [workflowGoal, setWorkflowGoal] = useState("");
+    // The save paths run from callbacks that close over stale state, so they
+    // read the goal through a ref, the way the name and description already do.
+    const workflowGoalRef = useRef("");
+    useEffect(() => { workflowGoalRef.current = workflowGoal; }, [workflowGoal]);
     // ``packages`` is the current project's lockfile (``spec.dataflow.packages``).
     // The authoritative copy lives in ``projectPackagesStore`` so non-React
     // code (palette filter, registry bootstrap) can read it without context.
@@ -249,7 +253,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             TrillGenerator.reset();
             setWorkflowName(workflowName);
             setWorkflowDescription(incomingDescription || "");
-            const empty_trill = TrillGenerator.generateTrill([], [], workflowName, "", [], incomingDescription || "", incomingDatasets || []);
+            // `task` is the dataflow's goal. It has always been a spec field
+            // and has always been accepted here, but nothing applied it, so a
+            // saved goal was silently dropped on every open.
+            setWorkflowGoal(task || "");
+            const empty_trill = TrillGenerator.generateTrill([], [], workflowName, task || "", [], incomingDescription || "", incomingDatasets || []);
             TrillGenerator.intializeProvenance(empty_trill);
             setPackages(incomingPackages || []);
             setDataflowDatasets(incomingDatasets || []);
@@ -677,7 +685,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // where it seeds the new project's refs (dev/81). On an update the
         // backend owns dataflow.datasets and ignores whatever is sent here —
         // syncDatasetsFromSavedSpec re-aligns the mirror from the response.
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -941,7 +949,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // Save-a-copy is a CREATE: the serialized datasets section seeds the new
         // project's refs (dev/81) — read from the ref so the copy carries the
         // latest installed datasets.
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 

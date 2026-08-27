@@ -165,3 +165,31 @@ describe("TrillGenerator node appearance (dev/89)", () => {
     expect(byId["plain-1"].title).toBeUndefined();
   });
 });
+
+describe("the dataflow goal", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+  });
+
+  test("round-trips through the spec's task field", () => {
+    // Five built-in agents declare `workflowGoal` in their manifest reads, and
+    // the Dataflow Task Planner exists to turn a goal into a plan. `task` has
+    // always been a spec field, but both save paths hardcoded "" and the load
+    // path ignored the argument it was handed, so a goal never survived a
+    // reload and the agents always saw an empty string.
+    const spec = TrillGenerator.generateTrill(
+      [],
+      [],
+      "Heat risk",
+      "Find neighborhoods with low canopy and high heat",
+    );
+    expect(spec.dataflow.task).toBe(
+      "Find neighborhoods with low canopy and high heat",
+    );
+  });
+
+  test("an absent goal is an empty string, not undefined", () => {
+    const spec = TrillGenerator.generateTrill([], [], "Untitled");
+    expect(spec.dataflow.task).toBe("");
+  });
+});
