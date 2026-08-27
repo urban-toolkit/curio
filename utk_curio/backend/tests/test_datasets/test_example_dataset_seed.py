@@ -22,7 +22,7 @@ from utk_curio.backend.app.datasets.infrastructure.storage import (
     dataset_dir,
 )
 from utk_curio.backend.app.datasets.seed import (
-    ensure_user_datasets_initialized,
+    ensure_dataflow_datasets_installed,
     example_dep_dataset_dirs,
     seed_example_datasets,
 )
@@ -163,19 +163,20 @@ def test_a_dataset_missing_from_the_catalog_is_skipped_not_fatal(monkeypatch):
 
 @pytest.mark.usefixtures("app")
 def test_the_per_user_hook_never_raises(monkeypatch):
-    """``ensure_user_datasets_initialized`` is called from ``load_project``.
+    """``ensure_dataflow_datasets_installed`` is called from ``load_project``.
 
     It must swallow everything: a seeding problem is a degraded palette, never a
     failed project open. Same contract as
     ``packages/services.py::ensure_user_packages_initialized``.
     """
-    def boom(_user_key):
+    def boom(_user_key, _dir_names):
         raise RuntimeError("disk on fire")
 
     monkeypatch.setattr(
-        "utk_curio.backend.app.datasets.seed.seed_example_datasets", boom
+        "utk_curio.backend.app.datasets.seed._install_missing", boom
     )
-    ensure_user_datasets_initialized(USER_KEY)  # must not raise
+    spec = {"dataflow": {"datasets": [{"dirName": example_dep_dataset_dirs()[0]}]}}
+    ensure_dataflow_datasets_installed(USER_KEY, spec)  # must not raise
 
 
 @pytest.mark.usefixtures("app")
@@ -271,15 +272,22 @@ def test_the_examples_and_the_seeder_agree_on_dataset_count():
 
 
 @pytest.mark.usefixtures("app")
-def test_opening_a_project_provisions_the_example_datasets(client, user_and_token, tmp_path, monkeypatch):
-    """The wiring, not just the function: ``GET /api/projects/<id>`` seeds.
+def test_opening_a_project_provisions_the_datasets_it_declares(
+    client, user_and_token, tmp_path, monkeypatch
+):
+    """The wiring, not just the function: ``GET /api/projects/<id>`` provisions.
 
     ``load_project`` is where a real signed-in user first touches the dataset
     system, and the startup seeder only ever covers ``guest``. Without this hook
-    a user could open a seeded example and get a palette of ``dirName``-titled
+    an owner could open a seeded example and get a palette of ``dirName``-titled
     placeholders. Asserted through the route so that removing the call from
     ``projects/services.py`` fails a test rather than just degrading the UI.
+
+    Scoped, too: only what *this* spec declares is copied, so opening a project
+    never drags in data it does not reference.
     """
+    import json as _json
+
     from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
         create_project,
@@ -290,21 +298,47 @@ def test_opening_a_project_provisions_the_example_datasets(client, user_and_toke
     user_key = _user_dir_key(user)
 
     declared = example_dep_dataset_dirs()
-    assert declared, "no example declares a dataset; this test would be vacuous"
-    assert not dataset_dir(user_key, declared[0]).exists(), (
+    assert len(declared) >= 2, "need two datasets to prove the scoping"
+    wanted, other = declared[0], declared[1]
+    assert not dataset_dir(user_key, wanted).exists(), (
         "the store should start empty for a fresh user"
     )
 
-    project_id = create_project(client, token, name="Opens and seeds")
+    project_id = create_project(client, token, name="Opens and provisions")
+    resp = client.put(
+        f"/api/projects/{project_id}",
+        data=_json.dumps({
+            "spec": {
+                "dataflow": {
+                    "name": "Opens and provisions",
+                    "nodes": [],
+                    "edges": [],
+                    "datasets": [{
+                        "datasetId": wanted.rsplit("@", 1)[0],
+                        "dirName": wanted,
+                        "origin": "imported",
+                        "producerNodeId": None,
+                        "consumerNodeIds": [],
+                        "installedAt": "2026-08-27T00:00:00Z",
+                    }],
+                }
+            }
+        }),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
     resp = client.get(
         f"/api/projects/{project_id}",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
 
-    for dir_name in declared:
-        store = dataset_dir(user_key, dir_name)
-        assert (store / "manifest.json").is_file(), (
-            f"{dir_name} was not provisioned by opening a project; is "
-            f"ensure_user_datasets_initialized still called from load_project?"
-        )
+    assert (dataset_dir(user_key, wanted) / "manifest.json").is_file(), (
+        f"{wanted} was not provisioned by opening the project that declares it; "
+        f"is ensure_dataflow_datasets_installed still called from load_project?"
+    )
+    assert not dataset_dir(user_key, other).exists(), (
+        f"{other} is not referenced by this project but was copied anyway; the "
+        f"hook must stay scoped to the opened dataflow"
+    )

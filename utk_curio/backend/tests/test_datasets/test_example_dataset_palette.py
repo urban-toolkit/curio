@@ -140,9 +140,11 @@ def test_after_seeding_the_palette_rows_carry_real_metadata(
     Seeded for *this* user's key, not ``guest``: the dataset store is per user
     (``.curio/users/<key>/datasets/``), and the startup seeder only ever covers
     the shared guest. Provisioning a real signed-in user is precisely the job of
-    ``ensure_user_datasets_initialized``, which ``load_project`` calls.
+    ``ensure_dataflow_datasets_installed``, which ``load_project`` calls.
     """
-    from utk_curio.backend.app.datasets.seed import ensure_user_datasets_initialized
+    from utk_curio.backend.app.datasets.seed import (
+        ensure_dataflow_datasets_installed,
+    )
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     user, token = user_and_token
@@ -150,7 +152,9 @@ def test_after_seeding_the_palette_rows_carry_real_metadata(
     _, refs = _example_refs()
 
     project_id = _project_with_refs(client, token, refs)
-    ensure_user_datasets_initialized(_user_dir_key(user))
+    ensure_dataflow_datasets_installed(
+        _user_dir_key(user), {"dataflow": {"datasets": refs}}
+    )
     rows = _palette_rows(client, token, project_id)
 
     assert len(rows) == len(refs)

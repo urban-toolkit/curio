@@ -102,13 +102,18 @@ def seed_example_datasets(user_key: str) -> list[str]:
     catalog directory is logged and skipped, exactly as the package seeder
     tolerates a fixture it cannot copy.
     """
+    return _install_missing(user_key, example_dep_dataset_dirs())
+
+
+def _install_missing(user_key: str, dir_names: tuple[str, ...]) -> list[str]:
+    """Copy each of *dir_names* into *user_key*'s store unless already complete."""
     from utk_curio.backend.app.datasets.install.installer import (
         InstallerError,
         install_dataset_from_catalog,
     )
 
     seeded: list[str] = []
-    for dir_name in example_dep_dataset_dirs():
+    for dir_name in dir_names:
         # Asked before the install so the return value distinguishes real work
         # from a no-op; the install itself is idempotent either way, so this only
         # decides what gets reported and logged.
@@ -160,27 +165,60 @@ def _is_complete(user_key: str, dir_name: str) -> bool:
     return (store / manifest.data_file).is_file()
 
 
-def ensure_user_datasets_initialized(user_key: str) -> None:
-    """Idempotently provision the example datasets for one user's store.
+def dataflow_dataset_dirs(spec: dict | None) -> tuple[str, ...]:
+    """The catalog dataset directories *one* dataflow spec declares it needs."""
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    declared = dataflow.get("datasets") if isinstance(dataflow, dict) else None
+    if not isinstance(declared, list):
+        return ()
+    dir_names = {
+        ref["dirName"]
+        for ref in declared
+        if isinstance(ref, dict)
+        and isinstance(ref.get("dirName"), str)
+        and "@" in ref["dirName"]
+    }
+    return tuple(sorted(dir_names))
 
-    The startup seeder only runs for the shared ``guest`` user, so the first
-    time a real authenticated user opens a seeded example their dataset store is
-    empty and the Data palette would show ``dirName``-titled placeholder rows
-    with the wrong format chip. Call this at the project-entry boundaries
-    (``save_project``, ``load_project``) so the store is populated by the time
-    the canvas mounts - the same hook, for the same reason, as
+
+def ensure_dataflow_datasets_installed(user_key: str, spec: dict | None) -> None:
+    """Provision the datasets *this* dataflow declares, into *user_key*'s store.
+
+    Called from ``load_project``, which is where a real authenticated user first
+    touches the dataset system: the startup seeder only ever covers the shared
+    ``guest``, so without this an owner opening a seeded example finds an empty
+    store and the Data palette renders ``dirName``-titled placeholder rows with a
+    wrong ``csv`` chip and no counts. Same hook, and the same reason, as
     ``packages/services.py::ensure_user_packages_initialized``.
+
+    Scoped to the opened dataflow rather than to every example-declared dataset,
+    which matters on both counts:
+
+    * **Cost.** This runs inside a project-open request. Provisioning the whole
+      example set would copy tens of megabytes there, on the first open of *any*
+      project - including one that references no datasets at all.
+    * **Semantics.** "Adding a dataset is always scoped to one dataflow"
+      (docs/DATA-CATALOG.md). Opening one example should not deposit five other
+      examples' data in your store.
+
+    Only datasets present in the committed catalog can be provisioned; a ref to
+    something else (a computed output, a dataset imported on another machine) is
+    left alone for the catalog listing to report as it always has.
     """
+    dir_names = dataflow_dataset_dirs(spec)
+    if not dir_names:
+        return
     try:
-        seeded = seed_example_datasets(user_key)
+        seeded = _install_missing(user_key, dir_names)
     except Exception:  # noqa: BLE001 - seeding must never block a project request
         logger.warning(
-            "Example dataset seed failed for user_key=%s", user_key, exc_info=True
+            "Dataflow dataset provisioning failed for user_key=%s", user_key,
+            exc_info=True,
         )
         return
     if seeded:
         logger.info(
-            "Provisioned %d example dataset(s) for user_key=%s: %s",
+            "Provisioned %d dataset(s) for user_key=%s: %s",
             len(seeded),
             user_key,
             ", ".join(seeded),
