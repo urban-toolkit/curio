@@ -38,6 +38,34 @@ class EgressRefused(ValueError):
     """The URL violates the egress policy — refused before any connection."""
 
 
+class CallBudget:
+    """Counts the HTTP requests a run has actually made.
+
+    The per-run bound used to be counted by the *caller*, one tick per
+    candidate row, while a single row could issue a dozen real requests: a
+    Socrata verification fetched twice and each fetch followed up to
+    ``MAX_REDIRECTS`` hops. Counting here, at the one place a request is
+    issued, makes ``MAX_CALLS_PER_RUN`` mean what it says.
+    """
+
+    __slots__ = ("limit", "used")
+
+    def __init__(self, limit: int = MAX_CALLS_PER_RUN) -> None:
+        self.limit = limit
+        self.used = 0
+
+    @property
+    def exhausted(self) -> bool:
+        return self.used >= self.limit
+
+    def spend(self) -> None:
+        if self.exhausted:
+            raise EgressRefused(
+                f"the per-run egress budget of {self.limit} requests is spent"
+            )
+        self.used += 1
+
+
 @dataclass
 class EgressResult:
     url: str
@@ -103,25 +131,55 @@ def check_url(
     if not addresses:
         return False, "the host does not resolve"
     for address in addresses:
-        try:
-            ip = ipaddress.ip_address(address)
-        except ValueError:
-            return False, f"unparseable resolved address {address!r}"
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
-            return False, (
-                f"host {host!r} resolves to a non-public address ({address}) — refused"
-            )
+        ok, reason = _address_is_public(address, host)
+        if not ok:
+            return False, reason
     return True, ""
 
 
-def _default_request(method: str, url: str):
+def _address_is_public(address: str, host: str) -> tuple[bool, str]:
+    """``(ok, reason)`` for one resolved address.
+
+    An ALLOWLIST (``is_global``) rather than a denylist of the private ranges.
+    A denylist has to enumerate every non-public range and stay correct as new
+    ones are assigned, and it was already missing one: RFC 6598 carrier-grade
+    NAT space ``100.64.0.0/10`` is not private, loopback, link-local, reserved,
+    multicast or unspecified, so it passed every check while being directly
+    reachable internal space on CGNAT and cloud-NAT deployments. ``is_global``
+    is the property actually wanted, and CPython keeps it current.
+    """
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False, f"unparseable resolved address {address!r}"
+    # IPv4-mapped IPv6 (``::ffff:169.254.169.254``) is unwrapped first. Modern
+    # CPython delegates the address properties for these, but the floor in
+    # requires-python does not, and the mapped form is a classic bypass.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+    if not ip.is_global:
+        return False, (
+            f"host {host!r} resolves to a non-public address ({address}) — refused"
+        )
+    return True, ""
+
+
+def _peer_address(resp) -> str | None:
+    """The IP this response is actually connected to, or None if unavailable.
+
+    Reaches through requests into urllib3's socket. Best-effort by nature: the
+    attribute chain is private and varies by version, so a None means "could
+    not confirm" rather than "not connected".
+    """
+    try:
+        sock = resp.raw._connection.sock  # type: ignore[attr-defined]
+        return sock.getpeername()[0]
+    except Exception:  # noqa: BLE001 - any failure means "unknown"
+        return None
+
+
+def _default_request(method: str, url: str, *, trusted_host=None):
     """One non-redirecting HTTP request; returns (status, headers, body_bytes,
     location). Import stays local so tests never need requests installed."""
     import requests
@@ -129,12 +187,61 @@ def _default_request(method: str, url: str):
     resp = requests.request(
         method, url, timeout=TIMEOUT_S, allow_redirects=False, stream=True
     )
-    body = b""
-    for chunk in resp.iter_content(chunk_size=8192):
-        body += chunk
-        if len(body) > MAX_BODY_BYTES + 1:
-            break
-    return resp.status_code, dict(resp.headers), body, resp.headers.get("Location")
+    try:
+        # ── Rebinding check ────────────────────────────────────────────────
+        # ``check_url`` resolved and validated the hostname, then discarded the
+        # addresses, and ``requests`` resolves again here. A name server that
+        # answers with a public address for the first lookup and an internal one
+        # for the second passes the policy and connects somewhere else entirely.
+        # Pinning the checked address through requests means overriding
+        # urllib3's connection factory or patching a global resolver, neither of
+        # which is safe in a threaded server, so instead confirm the peer we
+        # actually reached before reading anything from it.
+        #
+        # Residual, stated honestly: the request line and headers are already on
+        # the wire by this point, so a blind GET against an internal service is
+        # not prevented, only its response is withheld. Closing that needs the
+        # connection-factory work.
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        exempt = trusted_host is not None and (host, parsed.port) == trusted_host
+        peer = _peer_address(resp)
+        if peer is not None and not exempt:
+            ok, reason = _address_is_public(peer, host)
+            if not ok:
+                raise EgressRefused(
+                    f"{reason} (connected peer differed from the checked address)"
+                )
+        body = b""
+        for chunk in resp.iter_content(chunk_size=8192):
+            # Checked BEFORE appending: appending first let a whole extra chunk
+            # past the bound on every iteration, so the cap overshot by up to a
+            # chunk (and ``chunk_size`` is only a hint, so possibly more).
+            if len(body) + len(chunk) > MAX_BODY_BYTES:
+                body += chunk[: max(0, MAX_BODY_BYTES + 1 - len(body))]
+                break
+            body += chunk
+        return resp.status_code, dict(resp.headers), body, resp.headers.get("Location")
+    finally:
+        # ``stream=True`` leaves the connection open until the body is drained;
+        # breaking out of the loop above skipped that and leaked it.
+        resp.close()
+
+
+def _accepts_trusted_host(request_fn) -> bool:
+    """Whether *request_fn* takes a ``trusted_host`` keyword.
+
+    Test doubles and older injected callables take ``(method, url)`` only.
+    """
+    import inspect
+
+    try:
+        params = inspect.signature(request_fn).parameters
+    except (TypeError, ValueError):
+        return False
+    if "trusted_host" in params:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 def fetch(
@@ -145,6 +252,7 @@ def fetch(
     resolver=None,
     audit: list | None = None,
     trusted_host: tuple[str, int | None] | None = None,
+    budget: "CallBudget | None" = None,
 ) -> EgressResult:
     """Fetch one URL under the full policy. Raises :class:`EgressRefused` on
     a policy violation (any hop); transport errors propagate (the caller maps
@@ -161,7 +269,19 @@ def fetch(
         ok, reason = check_url(current, resolver=resolver, trusted_host=trusted_host)
         if not ok:
             raise EgressRefused(reason)
-        status, headers, body, location = request_fn(method, current)
+        # Charged per hop, so a redirect chain costs what it actually costs.
+        if budget is not None:
+            budget.spend()
+        # ``trusted_host`` is threaded through so the peer check knows which
+        # host the operator exempted. Decided by signature rather than by
+        # catching TypeError, which would also swallow a TypeError raised
+        # inside the callable and then call it a second time.
+        if _accepts_trusted_host(request_fn):
+            status, headers, body, location = request_fn(
+                method, current, trusted_host=trusted_host
+            )
+        else:
+            status, headers, body, location = request_fn(method, current)
         if status in (301, 302, 303, 307, 308) and location:
             redirects += 1
             if redirects > MAX_REDIRECTS:

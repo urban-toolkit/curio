@@ -5496,7 +5496,12 @@ def _verify_candidate_parts(parts: list) -> None:
     name/columns on top of the generic gate, which covers ANY dataset API);
     URL-less rows are loudly UNVERIFIED. The evidence rides the row into the
     card and the Node Builder handoff."""
-    probed = 0
+    # One budget for the whole pass, spent per real HTTP request rather than
+    # per row. The old counter ticked once per candidate while a single row
+    # could issue a dozen requests (a Socrata probe fetched twice, and every
+    # fetch follows up to MAX_REDIRECTS hops), so the documented bound of
+    # MAX_CALLS_PER_RUN bore no relation to what actually went out.
+    budget = egress.CallBudget(egress.MAX_CALLS_PER_RUN)
     for part in parts:
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
             continue
@@ -5505,16 +5510,16 @@ def _verify_candidate_parts(parts: list) -> None:
             if not isinstance(row, dict):
                 continue
             url = row.get("url")
-            if url and probed < egress.MAX_CALLS_PER_RUN:
-                probed += 1
-                row["verification"] = verify.verify_external_source(url)
-            elif url:
+            if not url:
+                row["verification"] = verify.verify_external_source(None)
+                continue
+            if budget.exhausted:
                 row["verification"] = {
                     "status": "unverified",
                     "detail": "the egress budget was spent before this row — not checked",
                 }
-            else:
-                row["verification"] = verify.verify_external_source(None)
+                continue
+            row["verification"] = verify.verify_external_source(url, budget=budget)
 
 
 def _execute_tool_request(

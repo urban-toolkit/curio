@@ -52,10 +52,10 @@ def _sample_shape(body: str, content_type: str) -> dict:
     return {}
 
 
-def verify_endpoint(url: str, *, request_fn=None, resolver=None) -> dict:
+def verify_endpoint(url: str, *, request_fn=None, resolver=None, budget=None) -> dict:
     """The GENERIC probe — the universal gate for any dataset API URL."""
     try:
-        result = egress.fetch(url, request_fn=request_fn, resolver=resolver)
+        result = egress.fetch(url, request_fn=request_fn, resolver=resolver, budget=budget)
     except egress.EgressRefused as exc:
         return {"status": "refused", "detail": str(exc)[:_DETAIL_MAX], "checkedAt": _now()}
     except Exception as exc:  # transport: unreachable, never a policy claim
@@ -71,6 +71,10 @@ def verify_endpoint(url: str, *, request_fn=None, resolver=None) -> dict:
             "contentType": result.content_type[:100],
             **_sample_shape(result.body, result.content_type),
             "checkedAt": _now(),
+            # The body the probe already read. Private (stripped before the
+            # outcome reaches a card) and present so a refinement can enrich
+            # from it instead of fetching the same URL a second time.
+            "_body": result.body,
         }
     return {
         "status": "unreachable",
@@ -84,7 +88,7 @@ def verify_endpoint(url: str, *, request_fn=None, resolver=None) -> dict:
 _SOCRATA_ID_RE = re.compile(r"/(?:resource|api/views)/([a-z0-9]{4}-[a-z0-9]{4})\b")
 
 
-def verify_socrata(url: str, *, request_fn=None, resolver=None) -> dict:
+def verify_socrata(url: str, *, request_fn=None, resolver=None, budget=None) -> dict:
     """The Socrata refinement: probe the dataset's metadata endpoint and
     extract its real name and columns — richer evidence over the same gate."""
     match = _SOCRATA_ID_RE.search(url)
@@ -93,14 +97,18 @@ def verify_socrata(url: str, *, request_fn=None, resolver=None) -> dict:
         return verify_endpoint(url, request_fn=request_fn, resolver=resolver)
     dataset_id = match.group(1)
     meta_url = f"{parsed_host.group(1)}/api/views/{dataset_id}.json"
-    outcome = verify_endpoint(meta_url, request_fn=request_fn, resolver=resolver)
+    outcome = verify_endpoint(
+        meta_url, request_fn=request_fn, resolver=resolver, budget=budget
+    )
     outcome["provider"] = "socrata"
     outcome["datasetId"] = dataset_id
     if outcome["status"] != "verified":
         return outcome
     try:
-        result = egress.fetch(meta_url, request_fn=request_fn, resolver=resolver)
-        meta = json.loads(result.body)
+        # Reuse the probe's body. This used to re-fetch the identical URL and
+        # throw the first response away, doubling the request count for every
+        # Socrata row and its whole redirect chain with it.
+        meta = json.loads(outcome.get("_body") or "")
         outcome["datasetName"] = str(meta.get("name") or "")[:120]
         columns = meta.get("columns") or []
         outcome["columns"] = [
@@ -120,7 +128,7 @@ _VALIDATORS: list[tuple] = [
 ]
 
 
-def verify_external_source(url: str | None, *, request_fn=None, resolver=None) -> dict:
+def verify_external_source(url: str | None, *, request_fn=None, resolver=None, budget=None) -> dict:
     """The one entry the Dataset Finder gate and the researcher enrichment
     call: dispatch to the matching refinement, else the generic probe; no
     URL at all is an honest ``unverified``."""
@@ -131,10 +139,21 @@ def verify_external_source(url: str | None, *, request_fn=None, resolver=None) -
             "checkedAt": _now(),
         }
     url = url.strip()
+    outcome = None
     for predicate, validator in _VALIDATORS:
         try:
             if predicate(url):
-                return validator(url, request_fn=request_fn, resolver=resolver)
+                outcome = validator(
+                    url, request_fn=request_fn, resolver=resolver, budget=budget
+                )
+                break
         except Exception:
             continue  # a broken refinement never blocks the generic gate
-    return verify_endpoint(url, request_fn=request_fn, resolver=resolver)
+    if outcome is None:
+        outcome = verify_endpoint(
+            url, request_fn=request_fn, resolver=resolver, budget=budget
+        )
+    # ``_body`` is an internal handoff between the probe and its refinement.
+    # It is raw remote content and must not ride the outcome into a card.
+    outcome.pop("_body", None)
+    return outcome

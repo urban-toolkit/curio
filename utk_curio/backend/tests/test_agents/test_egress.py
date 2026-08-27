@@ -160,3 +160,89 @@ class TestTrustedHost:
                 resolver=self.LOCAL,
                 trusted_host=("localhost", 8888),
             )
+
+
+# ---------------------------------------------------------------------------
+# The gaps the merge review found
+# ---------------------------------------------------------------------------
+
+
+class TestAddressPolicyIsAnAllowlist:
+    """``is_global`` rather than a denylist of the ranges we remembered."""
+
+    def test_carrier_grade_nat_space_is_refused(self):
+        # RFC 6598 100.64.0.0/10 is not private, loopback, link-local,
+        # reserved, multicast or unspecified, so the old six-predicate
+        # denylist let it through. It is routable internal space on any
+        # CGNAT or cloud-NAT deployment.
+        ok, reason = egress.check_url(
+            "https://cgnat.example", resolver=lambda h: ["100.64.1.1"]
+        )
+        assert not ok
+        assert "non-public" in reason
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "127.0.0.1",
+            "10.0.0.1",
+            "192.168.1.1",
+            "169.254.169.254",   # cloud metadata
+            "::1",
+            "fc00::1",
+            "::ffff:169.254.169.254",  # IPv4-mapped metadata address
+            "::ffff:127.0.0.1",
+        ],
+    )
+    def test_the_classic_internal_addresses_stay_refused(self, address):
+        ok, _reason = egress.check_url(
+            "https://host.example", resolver=lambda h: [address]
+        )
+        assert not ok
+
+    def test_a_public_address_is_still_allowed(self):
+        ok, reason = egress.check_url(
+            "https://ok.example", resolver=lambda h: ["93.184.216.34"]
+        )
+        assert ok, reason
+
+
+class TestCallBudgetCountsRequests:
+    def test_redirect_hops_are_charged(self):
+        """A redirect chain costs what it actually costs.
+
+        The budget used to be counted one tick per candidate row, so a chain
+        of hops was free and a row could issue many more requests than the
+        documented bound.
+        """
+        budget = egress.CallBudget(limit=3)
+        hops = {"n": 0}
+
+        def _request(method, url, **kwargs):
+            hops["n"] += 1
+            return 302, {}, b"", "https://next.example/again"
+
+        with pytest.raises(egress.EgressRefused, match="budget"):
+            egress.fetch(
+                "https://start.example",
+                request_fn=_request,
+                resolver=lambda h: ["93.184.216.34"],
+                budget=budget,
+            )
+        assert budget.used == 3
+        assert hops["n"] == 3
+
+    def test_an_unbudgeted_fetch_is_unchanged(self):
+        called = {"n": 0}
+
+        def _request(method, url, **kwargs):
+            called["n"] += 1
+            return 200, {"Content-Type": "application/json"}, b"{}", None
+
+        result = egress.fetch(
+            "https://ok.example",
+            request_fn=_request,
+            resolver=lambda h: ["93.184.216.34"],
+        )
+        assert result.status == 200
+        assert called["n"] == 1
