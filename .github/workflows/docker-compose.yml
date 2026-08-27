@@ -24,6 +24,9 @@ on:
       - 'packages/**'
       - 'datasets/**'
       - 'docs/examples/**'
+      # The schemas the test suite validates those examples against:
+      # a schema edit can break the corpus without touching the corpus.
+      - 'docs/schemas/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -45,6 +48,9 @@ on:
       - 'packages/**'
       - 'datasets/**'
       - 'docs/examples/**'
+      # The schemas the test suite validates those examples against:
+      # a schema edit can break the corpus without touching the corpus.
+      - 'docs/schemas/**'
   workflow_dispatch:  # Run manually from the Actions tab or: gh workflow run docker-compose.yml
 
 # Least privilege: the job needs only to read the checked-out code. It must

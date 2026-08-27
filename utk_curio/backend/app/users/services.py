@@ -39,6 +39,7 @@ def _user_out(u: User) -> UserOut:
         llm_api_type=u.llm_api_type,
         llm_base_url=u.llm_base_url,
         llm_model=u.llm_model,
+        has_huggingface_token=bool(u.huggingface_token),
     )
 
 
@@ -151,5 +152,7 @@ def patch_me(user: User, data: UserPatchIn) -> UserOut:
             user.llm_base_url = data.llm_base_url if data.llm_base_url else None
         if data.llm_model is not None:
             user.llm_model = data.llm_model if data.llm_model else None
+        if data.huggingface_token is not None:
+            user.huggingface_token = data.huggingface_token or None
     db.session.commit()
     return _user_out(user)

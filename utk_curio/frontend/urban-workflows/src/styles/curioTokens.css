@@ -56,7 +56,13 @@
   --curio-danger-text: #C0392B;
   --curio-danger-bg: #FDF0EE;
   --curio-danger-border: #E8A79E;
-  --curio-success-text: #2F8F4A;
+  --curio-success-text: var(--curio-accent-mint-fg);
+  --curio-success-bg: var(--curio-accent-mint-bg);
+  /* Completes the status triad. A warning is not an error: the agent review
+     card distinguishes a blocking finding (danger) from an advisory one, and
+     collapsing them would erase a severity the UI deliberately shows. */
+  --curio-warning-text: var(--curio-accent-amber-fg);
+  --curio-warning-bg: var(--curio-accent-amber-bg);
 
   /* ── Typography ────────────────────────────────────────────────────── */
   --curio-font-family: Rubik, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -94,6 +100,14 @@
   --curio-accent-sky-fg:   #3567C7;
   --curio-accent-mint-bg:  #DFF2E1;
   --curio-accent-mint-fg:  #2F8F4A;
+  /* Amber, for the advisory tier between success and danger. The values are
+     the Parquet format pair's, deliberately: that tint and that text colour
+     are already proven to clear contrast together in this palette, so this
+     introduces a role rather than an untested colour. Separate names because
+     a format is not a role - Parquet's tint must be free to change without
+     dragging every warning with it. */
+  --curio-accent-amber-bg:  #FFF0DC;
+  --curio-accent-amber-fg:  #996300;
 
   /* ── Dataset format palette ────────────────────────────────────────────
      One colour per dataset format, used by every surface that keys a colour
@@ -184,6 +198,55 @@
   --curio-category-package-bg: #ECEEF2;
   --curio-category-package-on-tint: #5A6B6C;
 
+  /* ── Agent category palette ────────────────────────────────────────────
+     One colour per *agent* category. A separate family from the node
+     categories above because it is a separate taxonomy: an agent's category
+     says what the agent acts on (a node, the canvas, data, a package) or that
+     it judges rather than acts (evaluate). Those five do not map onto
+     data | computation | vis | package without lying about one of them.
+
+     The first version of this catalog folded all five onto the node buckets to
+     avoid minting hues. It worked, and it made the drawer unreadable: `node`
+     and `package` both landed on the neutral grey and `canvas` on the dataflow
+     slate, so 16 of the 21 built-ins rendered grey or near-grey and the tile
+     stopped telling you anything.
+
+     Three of the five still alias an existing colour, because the tie is
+     honest and a colour keeping one meaning matters more than novelty: data is
+     the data blue, evaluate the computation purple, package the package grey.
+     Only `node` and `canvas` are new, and they are new because nothing in the
+     existing palette means "one node" or "the whole canvas" without already
+     meaning something else.
+
+     Deliberately NOT the raw accents: peach, sky, mint and amber are spoken
+     for by the semantic roles below (update, published, installed, warning).
+     Reusing one here would recreate exactly the collision the role split was
+     introduced to end.
+
+     Keys match `AgentCategory` in api/agentsApi.ts. Guarded by
+     src/tests/styles/agentCategoryPalette.test.ts.
+     ───────────────────────────────────────────────────────────────────── */
+  --curio-category-agent-data-fg: var(--curio-category-data-fg);
+  --curio-category-agent-data-bg: var(--curio-category-data-bg);
+  --curio-category-agent-data-on-tint: var(--curio-category-data-on-tint);
+
+  --curio-category-agent-evaluate-fg: var(--curio-category-computation-fg);
+  --curio-category-agent-evaluate-bg: var(--curio-category-computation-bg);
+  --curio-category-agent-evaluate-on-tint: var(--curio-category-computation-on-tint);
+
+  --curio-category-agent-package-fg: var(--curio-category-package-fg);
+  --curio-category-agent-package-bg: var(--curio-category-package-bg);
+  --curio-category-agent-package-on-tint: var(--curio-category-package-on-tint);
+
+  /* The two new hues: indigo for the whole canvas, rose for one node. */
+  --curio-category-agent-canvas-fg: #4A56C4;
+  --curio-category-agent-canvas-bg: #E7E9FB;
+  --curio-category-agent-canvas-on-tint: #333DA0;
+
+  --curio-category-agent-node-fg: #C2417B;
+  --curio-category-agent-node-bg: #FBE4EF;
+  --curio-category-agent-node-on-tint: #94285A;
+
   /* ── Catalog kind palette ──────────────────────────────────────────────
      One colour per *kind* of catalog item, for the places that identify a
      dataflow / package / dataset rather than a category or a format. Dataflows
@@ -203,6 +266,11 @@
   --curio-role-published-bg: var(--curio-accent-sky-bg);
   --curio-role-installed-fg: var(--curio-accent-mint-fg);
   --curio-role-installed-bg: var(--curio-accent-mint-bg);
+  /* Work in flight: an agent solving, a phase in progress. Distinct from
+     'published', which happens to share the raw accent - the two mean
+     different things and must be free to diverge. */
+  --curio-role-running-fg: var(--curio-accent-sky-fg);
+  --curio-role-running-bg: var(--curio-accent-sky-bg);
   --curio-focus-ring: var(--curio-accent-sky-fg);
 
   /* ── Overlay / layering scale ──────────────────────────────────────────
@@ -218,6 +286,7 @@
   --curio-z-modal-base: 500;
   --curio-z-node-drawer: 10040;
   --curio-z-dataset-drawer: 10045;
+  --curio-z-agent-drawer: 10048;
   --curio-z-modal-backdrop: 10054;
   --curio-z-modal: 10055;
   --curio-z-dialog: 10060;

@@ -36,7 +36,7 @@ from .utils import (
     run_node_and_wait,
     save_workflow_test_screenshot,
     set_node_code,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -71,7 +71,7 @@ def test_a_library_imported_upstream_is_usable_downstream(
         username="import_user",
         project_name="Global Imports",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     upstream = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_UP)
     downstream = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_DOWN)
@@ -132,7 +132,7 @@ def test_numpy_and_shapely_work_with_no_import_line_at_all(
         username="import_user_seeded",
         project_name="Seeded Imports",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_UP)
     set_node_code(

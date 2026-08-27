@@ -86,3 +86,22 @@ function _notify(): void {
     }
   }
 }
+
+/**
+ * Apply the backend's lockfile for the current project (memo dev/101).
+ *
+ * The drawer re-reads ``GET /api/packages/projects/<id>`` on every reload
+ * and pushes it here; the palette and the descriptor registry filter by this
+ * set. Returns whether the set actually changed so the caller knows to pulse
+ * ``refreshPackageRegistry`` — a package that arrived server-side (a Package
+ * Builder Apply in another tab, a clobbered-then-healed lockfile) must reach
+ * the palette AND resolve its nodes, not only flip the drawer's pill.
+ */
+export function applyProjectLockfile(packages: Iterable<string>): boolean {
+  const next = new Set(packages);
+  const current = _state.packages;
+  const changed =
+    next.size !== current.size || Array.from(next).some((p) => !current.has(p));
+  if (changed) setCurrentProjectPackages(next);
+  return changed;
+}

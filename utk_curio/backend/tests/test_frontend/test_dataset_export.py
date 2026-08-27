@@ -56,7 +56,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -68,8 +68,11 @@ DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 # as the real card, so every card locator has to exclude it.
 CARD = 'article:not([role="status"])'
 
-# Both committed hub datasets that are exportable as a single file, with the
-# filename the server's Content-Disposition asks for. `_download_name` keeps the
+# Two representative hub datasets, with the filename the server's
+# Content-Disposition asks for. Deliberately a pair rather than every committed
+# dataset: this suite costs a Chromium boot per case, and the filename/extension
+# contract across *all* committed formats is asserted without a browser in
+# test_datasets/test_catalog_download_extensions.py. `_download_name` keeps the
 # manifest `name` verbatim (spaces and casing) and appends the data file's real
 # suffix, so these are the titles as shown in the catalog.
 GEOJSON = (
@@ -137,7 +140,7 @@ def _enter_dataflow(page, app_frontend, current_server, *, username: str):
         project_name="Dataset Export",
         project_spec=_one_node_spec(),
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     # Gate on the canvas before driving the top menu. A node on screen means
     # ProjectLoader finished and UpMenu is mounted; without this the first
     # action is a click on "Data" that fails with a bare 30s locator timeout if

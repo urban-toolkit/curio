@@ -7,13 +7,19 @@ independent module caches keyed on *different* query strings (the drawer asks
 with ``includeHub=true&groupOsm=true``, the palette with ``includeHub=false``).
 Only a real browser has a window to dispatch on and two live caches to invalidate.
 
-No seeding: the three datasets under ``datasets/`` are scanned live on every
-request and surface as ``origin: "hub"``.
+No seeding *of the hub itself*: the datasets under ``datasets/`` are scanned
+live on every request and surface as ``origin: "hub"``. (Separately, the datasets
+the shipped examples declare are copied into a user's own store by
+``app/datasets/seed.py``, which is what makes them render as real rows in the
+palette rather than dirName-titled placeholders; that path is covered without a
+browser in ``test_datasets/test_example_dataset_palette.py``.)
 
 Covered more cheaply elsewhere and not re-asserted here:
 ``test_datasets/test_dataset_catalog_routes.py`` owns the install route, and
 ``src/tests/components/datasetCardActions.test.tsx`` owns which button a card
-shows for a given prop set.
+shows for a given prop set. This file asserts the datasets are *listed*; that
+each one actually loads and feeds a downstream node is
+``test_dataset_catalog_datasets_e2e.py``, parametrized over the same scan.
 
 Run::
 
@@ -32,7 +38,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -95,7 +101,7 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
         project_name=project,
         project_spec=_one_node_spec(),
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     return result
 
 
@@ -135,8 +141,9 @@ def test_drawer_lists_hub_datasets(
 
     drawer = _open_drawer_from_menu(page)
 
-    # All three committed hub datasets render, each exactly once - proving the
-    # live directory scan reached the browser.
+    # The named committed hub datasets render, each exactly once - proving the
+    # live directory scan reached the browser. Asserted by title rather than by
+    # total count, so adding a dataset to the catalog does not break this.
     expect(_card(drawer, DATASET_ID)).to_have_count(1, timeout=15000)
     for title in (DATASET_TITLE, *OTHER_HUB_TITLES):
         expect(

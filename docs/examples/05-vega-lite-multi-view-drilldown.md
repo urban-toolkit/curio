@@ -26,9 +26,16 @@ flowchart LR
 
 ## Data
 
-[11-energy_usage.csv](data/11-energy_usage.csv): the Chicago Energy Usage 2010 dataset.
+This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
+addresses a dataset by id via `curio_dataset_path("<id>")` rather than by a repo-relative path,
+so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
-Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
+| Dataset | Id | Format | Size |
+|---|---|---|---|
+| Chicago Energy Usage 2010 | `data.cityofchicago.energy-usage-2010` | csv | 5,000 rows |
+
+All five `Data Loading` nodes read the same dataset by id; it ships in the committed catalog under
+`datasets/` and is already added to this dataflow. Source: [Chicago Data Portal](https://data.cityofchicago.org/).
 
 ## Step 1: Energy split by building type (`Data Loading` → `Data Transformation` → `Vega-Lite`)
 

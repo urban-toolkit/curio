@@ -729,7 +729,11 @@ def test_published_computed_dataset_stays_installed_in_dataflow_catalog(
 
     from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 
-    _, token = user_and_token
+    from utk_curio.backend.app.datasets.repositories.installed import (
+        InstalledDatasetRepository,
+    )
+
+    user, token = user_and_token
     project_id = create_project(client, token, name="Publish keeps install")
     node_id = "node-pub"
     dataset_id = computed_dataset_id(node_id, project_id)
@@ -744,8 +748,10 @@ def test_published_computed_dataset_stays_installed_in_dataflow_catalog(
     assert not before.get("publishedToHub")
 
     # Simulate explicit install + publish: a dataflow ref with publishedToHub
-    # (the dataset dir is untouched). This mirrors what publishDataset persists,
-    # without writing into the repo's committed catalog root.
+    # (the dataset dir is untouched), persisted through the datasets-domain
+    # section writer — the only writer of ``dataflow.datasets`` since dev/81
+    # (a client-style save's section is inert on update). This mirrors what
+    # publishDataset persists, without writing into the committed catalog root.
     published_ref = {
         "datasetId": dataset_id,
         "dirName": f"{dataset_id}@1",
@@ -753,7 +759,7 @@ def test_published_computed_dataset_stays_installed_in_dataflow_catalog(
         "producerNodeId": node_id,
         "publishedToHub": True,
     }
-    _save_spec(client, token, project_id, datasets=[published_ref], outputs=[])
+    InstalledDatasetRepository(user).replace_refs(project_id, [published_ref])
 
     after = _computed_catalog_item(client, token, project_id, dataset_id)
     assert after is not None, "published computed dataset vanished from the dataflow catalog"

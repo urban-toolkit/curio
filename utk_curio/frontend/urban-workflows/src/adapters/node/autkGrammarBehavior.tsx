@@ -49,7 +49,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         const hasPlot = spec.plot != null;
 
         // Reset container children before each run to release the old WebGPU
-        // context. AutkGrammar has no destroy() - replacing the canvas element
+        // context. AutkGrammar has no destroy() — replacing the canvas element
         // is the only way to prevent context leaks across re-runs.
         const wrapper = wrapperRef.current;
         if (wrapper) {
@@ -162,7 +162,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                             // hint at the real (backend) cause.
                             const fallbackReason = fe?.message ?? String(fe);
                             const combined =
-                                `autk data load failed - backend: ${backendReason}; `
+                                `autk data load failed — backend: ${backendReason}; `
                                 + `in-browser fallback: ${fallbackReason}`;
                             console.error('[autk-grammar]', combined);
                             throw new Error(combined);
@@ -197,7 +197,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     }
                     // coordinateFormat must reflect the coordinates as loaded:
                     // autk-db 2.0.1 projected to EPSG:3395 at load, 2.1.2 keeps
-                    // EPSG:4326 - the layers carry a crs stamp set by the loader,
+                    // EPSG:4326 — the layers carry a crs stamp set by the loader,
                     // which detectCoordinateFormat reads (falling back to the
                     // coordinate-magnitude heuristic).
                     const backendAsSources = layers.map((l) => ({
@@ -214,13 +214,13 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 // against. Two consequences for sparse data (e.g. a PBF area with no
                 // parks, or a join that empties a layer):
                 //   1. an empty geojson source must be dropped before grammar.run,
-                //   2. a map/plot ref to a table that is empty - or that an upstream
-                //      node already dropped, so it never arrives here - dangles and
+                //   2. a map/plot ref to a table that is empty — or that an upstream
+                //      node already dropped, so it never arrives here — dangles and
                 //      fails grammar.run with "Table <name> not found".
                 // Drop empty sources, then keep only refs that point at a table this
                 // node can actually create. Net effect mirrors 2.0.1: layers with
                 // data render; empty/absent ones contribute nothing. Each drop is
-                // logged - a silently stripped layer otherwise reads as a blank map.
+                // logged — a silently stripped layer otherwise reads as a blank map.
                 const emptySources = dataSectionSources.filter(
                     (s: any) => s?.type === 'geojson'
                         && (s?.geojsonObject?.features?.length ?? 0) === 0,
@@ -237,7 +237,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 spec = { ...spec, data: dataSectionSources };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
-                        '[autk-grammar] render node has no data sources left - the '
+                        '[autk-grammar] render node has no data sources left — the '
                         + 'grammar engine will produce no data context and the '
                         + 'map/plot will render blank. Check the upstream nodes.',
                     );
@@ -256,7 +256,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                             console.warn(
                                 '[autk-grammar] dropping map layerRef(s) to unavailable table(s): '
                                 + dangling.map((r: any) => r.dataRef).join(', ')
-                                + ' - available: ' + [...availableNames].join(', '),
+                                + ' — available: ' + [...availableNames].join(', '),
                             );
                             spec.map = {
                                 ...spec.map,
@@ -266,7 +266,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                             };
                         }
                     }
-                    // A plot bound to an unavailable layer has nothing to draw -
+                    // A plot bound to an unavailable layer has nothing to draw —
                     // drop it rather than fail resolving the missing table.
                     if (spec.plot && (
                         (spec.plot.dataRef && !availableNames.has(spec.plot.dataRef))
@@ -275,7 +275,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         console.warn(
                             '[autk-grammar] dropping plot bound to unavailable table: '
                             + (spec.plot.dataRef ?? spec.plot.mapRef)
-                            + ' - available: ' + [...availableNames].join(', '),
+                            + ' — available: ' + [...availableNames].join(', '),
                         );
                         const { plot, ...rest } = spec;
                         spec = rest;
@@ -295,7 +295,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 // Guard against older package versions that pre-date the interactions API.
                 if (grammar.interactions) {
                     // Capture which layer each interaction comes from so a downstream
-                    // Data Pool can target the right layer in a multi-layer wrapper -
+                    // Data Pool can target the right layer in a multi-layer wrapper —
                     // otherwise the pool's legacy path operates on data[0] and a brush
                     // on (say) roads ends up marking surface features. The picked map
                     // layer is the one with isPick:true; the plot's source is its
@@ -337,7 +337,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     const out = backendRef ?? backendLayers;
                     if (data.outputCallback) data.outputCallback(data.nodeId, out);
                 } else {
-                    // Compute-only node: skip the extra AutkDb round-trip - upstream layers
+                    // Compute-only node: skip the extra AutkDb round-trip — upstream layers
                     // (from backend, or the in-browser fallback) are already normalized and
                     // exploded. Re-loading them through DuckDB + the buildings clusterer can
                     // strip custom per-feature properties. Apply WGSL blocks directly so the
@@ -368,7 +368,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     }
                     // Build the pool-compatible wrapper and persist it to the
                     // backend sandbox so downstream nodes see a `{path, dataType}`
-                    // ref - same shape `ia-data` emits, so the Data Pool's normal
+                    // ref — same shape `ia-data` emits, so the Data Pool's normal
                     // fetch path handles it without a special case. Fall back to
                     // inline emit only when no JS interpreter is available or the
                     // persist call fails.
@@ -389,7 +389,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         } catch (err: any) {
             const msg = err?.message ?? String(err);
             // The toast is transient and the node UI has no error tab, so
-            // also log to console - it's the only durable place tooling
+            // also log to console — it's the only durable place tooling
             // (and the e2e browser-log dump) can read the failure from.
             console.error('[autk-grammar] node error:', msg);
             nodeState.setOutput({ code: 'error', content: msg });
@@ -446,17 +446,17 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
     // AutkMap binds only to window.resize (and exposes no per-instance resize API),
-    // so node-handle drags are otherwise silent - but that dispatch is expensive and
+    // so node-handle drags are otherwise silent — but that dispatch is expensive and
     // fragile: each one makes *every* AutkMap on the page rebuild its WebGPU textures
     // and reconfigure its swapchain. Doing that every frame during a drag stalls the
     // canvas, and reconfiguring mid-render races AutkMap's render loop (its
-    // getCurrentTexture() ends up invalidated) - which its render-error latch then
+    // getCurrentTexture() ends up invalidated) — which its render-error latch then
     // swallows, leaving the map blank/white.
     //
     // So: keep the *cheap* CSS sizing on every tick (the width/height:100% canvas
     // stretches to fill the node during the drag), but fire the *expensive*
     // window.resize only once the size has settled, and on a macrotask (setTimeout)
-    // rather than rAF - outside AutkMap's render window - so the GPU rebuild happens
+    // rather than rAF — outside AutkMap's render window — so the GPU rebuild happens
     // exactly once, cleanly, and the canvas snaps crisp.
     useEffect(() => {
         const wrapper = wrapperRef.current;
@@ -523,27 +523,26 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         [nodeState.output],
     );
 
-    // Decided ONCE, on mount. Deriving this from `data.code` is what caused #157:
-    // GrammarEditor's floatCode writes back into `data.code` (useNodeState), which
-    // flipped `hasExistingCode` every render, so `defaultValueOverride` oscillated
-    // between the starter spec and `undefined`. @monaco-editor/react's controlled
-    // -value effect then replaced the whole model on the first real keystroke,
-    // making mid-document edits vanish. `data.defaultCode` — which no editor writes
-    // — is the field to key off, matching useDataSummaryBehavior.
-    const defaultValueOverrideRef = useRef<string | undefined>(undefined);
-    const defaultValueDecidedRef = useRef(false);
-    if (!defaultValueDecidedRef.current) {
-        defaultValueDecidedRef.current = true;
-        const hasExistingCode = !!(data.defaultCode || (data as any).code);
-        defaultValueOverrideRef.current = hasExistingCode
+    // Editor seed, decided ONCE at mount: a node that arrives with no code gets
+    // the default example spec. This must NOT be re-derived per render from
+    // ``data.code`` — that field is written back by the editor one commit late
+    // (useNodeState's post-commit mutation), so a render-time check flip-flops
+    // while the user types, oscillating ``defaultValue`` and resetting the
+    // editor to the default spec (dev/70, the same bug as #157).
+    const seedSpecRef = useRef<string | undefined>(
+        (data.defaultCode || (data as any).code)
             ? undefined
-            : (autkGrammarAdapter.getDefaultSpec?.() as string | undefined);
-    }
+            : (autkGrammarAdapter.getDefaultSpec?.() as string | undefined),
+    );
 
     return {
         applyGrammar,
         contentComponent,
-        defaultValueOverride: defaultValueOverrideRef.current,
+        // Yield to a real external update: dataset drop / LLM apply write
+        // ``data.defaultCode`` via updateDefaultCode, and that must win over
+        // the mount-time seed. (``data.defaultCode`` only changes through
+        // setNodes, never mid-keystroke, so this stays stable while typing.)
+        defaultValueOverride: data.defaultCode ? undefined : seedSpecRef.current,
     };
 };
 
@@ -556,7 +555,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
 const ZOOM_FIX_CORRECTED = '__curioMapZoomCorrected';
 
 // PointerEvent isn't constructable in every test DOM; fall back to MouseEvent
-// (autk-map reads only MouseEvent-level fields - clientX/Y, buttons, target - off
+// (autk-map reads only MouseEvent-level fields — clientX/Y, buttons, target — off
 // the pointer events it handles).
 const PointerEventCtor: typeof MouseEvent =
     typeof PointerEvent !== 'undefined' ? (PointerEvent as unknown as typeof MouseEvent) : MouseEvent;
@@ -565,18 +564,18 @@ const PointerEventCtor: typeof MouseEvent =
 //
 // Each node renders inside React Flow's viewport, which is CSS-scaled by the
 // current zoom (`transform: scale(zoom)`). autk-map reads pointer positions from
-// getBoundingClientRect() - which is *post*-scale - but feeds them to camera /
+// getBoundingClientRect() — which is *post*-scale — but feeds them to camera /
 // picking math sized from the canvas's *unscaled* offsetWidth/offsetHeight (its
 // renderer resizes from offsetWidth). At any zoom != 1 the two disagree by the
 // zoom factor, so:
 //   • picking (double-click) lands toward the canvas's top-left corner,
 //   • wheel-zoom recenters on the wrong point,
-//   • drag-pan moves the map too slowly - all by the zoom factor.
+//   • drag-pan moves the map too slowly — all by the zoom factor.
 //
 // Curio owns this canvas element, so intercept the relevant events in the capture
 // phase on `window` (above autk-map's document/canvas listeners), suppress the
 // mis-scaled native event, and re-dispatch an equivalent one *on the canvas* whose
-// client coordinates are mapped back into the canvas's unscaled CSS space - exactly
+// client coordinates are mapped back into the canvas's unscaled CSS space — exactly
 // what autk-map's math assumes (the conversion is the same for all three: each
 // divides a screen-space delta by the unscaled cssWidth, so each needs the delta
 // un-scaled first). `scale` is read straight off the DOM (rect.width / offsetWidth),
@@ -584,7 +583,7 @@ const PointerEventCtor: typeof MouseEvent =
 // (The real fix belongs upstream in autk-map's coordinate conversion; this is the
 // in-Curio compensation until then.)
 //
-// Returns a disposer that removes the window listeners - they outlive the canvas,
+// Returns a disposer that removes the window listeners — they outlive the canvas,
 // so the caller must call it before replacing the canvas and on unmount.
 export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => void {
     // Mirrors autk-map's drag state so pointermove/up that wander off the canvas
@@ -719,7 +718,7 @@ function compileDataSpecToAutkDbJs(dataSources: any[]): string {
 // version still exports AutkSpatialDb. Accept either so the backend sandbox
 // (which may be on the older shape) does not throw "AutkDb is not a constructor".
 const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;
-// Old AutkSpatialDb does NOT export DEFAULT_WORKSPACE_COORDINATE_FORMAT - fall
+// Old AutkSpatialDb does NOT export DEFAULT_WORKSPACE_COORDINATE_FORMAT — fall
 // back to the hardcoded workspace CRS so the coordinateFormat injection below
 // still gets a real value when the destructure resolves to undefined.
 const DEFAULT_WORKSPACE_COORDINATE_FORMAT = __autkDbMod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
@@ -730,7 +729,7 @@ await db.init();
 for (const source of __sources) {
   const { type, ...rest } = source ?? {};
   // Old AutkSpatialDb (root-level v2.0.1 install) dereferences
-  // \`autoLoadLayers.coordinateFormat\` unconditionally - the spec must carry it
+  // \`autoLoadLayers.coordinateFormat\` unconditionally — the spec must carry it
   // or loadOsm fails silently inside our try/catch and getLayerTables()
   // returns an empty list. Inject the workspace default when the spec omits it
   // so both export-name shapes work.
@@ -785,7 +784,7 @@ const __buildingHeight = (props) => {
   const num = (v) => { const n = parseFloat(String(v)); return Number.isFinite(n) && n > 0 ? n : 0; };
   const L = 3.4; // metres per level (matches autk-map's building renderer)
   const p = props || {};
-  // autk-map culls a part when its top height <= its base (min_height) - which also
+  // autk-map culls a part when its top height <= its base (min_height) — which also
   // covers the no-height case (0 <= 0). Mirror its height computation and, only when
   // the part would be culled, return a height that clears the base by a visible
   // amount; otherwise return null to leave the real tags untouched.
@@ -806,7 +805,7 @@ for (const t of (db.getLayerTables ? db.getLayerTables() : [])) {
     // grouped GeometryCollection. Explode each building back into one footprint
     // feature per part (carrying that part's height) so the downstream
     // loadGeojson('buildings') re-clusters them by building_id and getLayer re-emits
-    // proper per-part GeometryCollections - letting autk-map extrude each part by its
+    // proper per-part GeometryCollections — letting autk-map extrude each part by its
     // own height instead of collapsing the whole building into a single box.
     const __exploded = [];
     for (const f of geojson.features) {
@@ -848,8 +847,8 @@ function runDataInBackendOnce(
     return new Promise((resolve, reject) => {
         jsInterpreter.interpretCode(
             code,            // unresolvedUserCode (provenance only)
-            code,            // userCode - runs in the sandbox
-            '',              // input - empty: spec is inlined, no DuckDB input
+            code,            // userCode — runs in the sandbox
+            '',              // input — empty: spec is inlined, no DuckDB input
             [],              // inputTypes
             (json: any) => { // callback
                 if (!json || !json.output || !json.output.path) {
@@ -861,14 +860,14 @@ function runDataInBackendOnce(
             NodeType.AUTK_GRAMMAR,
             nodeId,
             '',              // workflow_name (best-effort)
-            () => {},        // nodeExecProv - no provenance hook here
+            () => {},        // nodeExecProv — no provenance hook here
         );
     });
 }
 
 // The authored OSM/PBF (and other file) sources are local and deterministic, so
-// a failed attempt is a transient hiccup - sandbox cold-start, a dropped /file/
-// range fetch under thread contention, a momentary connection reset - not a
+// a failed attempt is a transient hiccup — sandbox cold-start, a dropped /file/
+// range fetch under thread contention, a momentary connection reset — not a
 // real data error. Retry once before giving up: the caller only falls back to
 // the in-browser loader (markedly less reliable in a headless browser, where a
 // failed PBF fetch crashes autk-db rather than degrading), so absorbing a
@@ -927,7 +926,7 @@ function flattenToMultiPolygon(geom: any): any | null {
 
 // Guarantee a footprint extrudes instead of being culled as "no valid height
 // metadata". autk-map culls a building part when its top height <= its base
-// (`min_height`) - which also covers the no-height case (0 <= 0). Mirror that
+// (`min_height`) — which also covers the no-height case (0 <= 0). Mirror that
 // computation and, only when the part would be culled, return a height that clears
 // the base by a visible amount; otherwise return null to leave the real tags
 // untouched. `parts` lifting covers a feature whose height lived only per-part.
@@ -943,9 +942,9 @@ function deriveBuildingHeight(props: any): number | null {
 }
 
 // Explode autk-db's grouped building features into one footprint feature per part.
-// autk-db's 3D building model - per-part polygons keyed by `building_id`, each with
+// autk-db's 3D building model — per-part polygons keyed by `building_id`, each with
 // its own height, which `getLayer` exports as a GeometryCollection with a parallel
-// `properties.parts` metadata array - is a `loadOsm` construct that `loadGeojson`
+// `properties.parts` metadata array — is a `loadOsm` construct that `loadGeojson`
 // cannot rebuild from the grouped GeometryCollection. Splitting each building back
 // into its individual part footprints (each carrying that part's height) lets the
 // downstream `loadGeojson('buildings')` re-cluster them by `building_id` and have
@@ -978,8 +977,8 @@ function explodeBuildingParts(features: any[]): any[] {
 
 // Load a data-only grammar spec's sources directly with AutkDb and return the
 // resulting layers, so a grammar node can export its parsed data downstream.
-// (The grammar engine itself never exposes the loaded DB - createEngine returns
-// no `context` - so we drive the same AutkDb the grammar uses internally.)
+// (The grammar engine itself never exposes the loaded DB — createEngine returns
+// no `context` — so we drive the same AutkDb the grammar uses internally.)
 async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
     const mod: any = await import('@urban-toolkit/autk-db');
     // Accept both the v2.0 frontend export (AutkDb) and the older root-level
@@ -993,13 +992,13 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     const db: any = new AutkDbCtor();
     await db.init();
     // Reasons individual sources / reads failed, surfaced below when the load
-    // produced no usable layer at all - so a total failure reports WHY instead
+    // produced no usable layer at all — so a total failure reports WHY instead
     // of crashing later with an opaque "Cannot read properties of null".
     const loadErrors: string[] = [];
     for (const source of (spec?.data ?? [])) {
         const { type, ...rest } = source ?? {};
         // Old AutkSpatialDb.loadOsm dereferences autoLoadLayers.coordinateFormat
-        // unconditionally - inject the default when the spec omits it.
+        // unconditionally — inject the default when the spec omits it.
         if (type === 'osm' && rest.autoLoadLayers && !rest.autoLoadLayers.coordinateFormat) {
             rest.autoLoadLayers = { ...rest.autoLoadLayers, coordinateFormat: DEFAULT_WORKSPACE_COORDINATE_FORMAT };
         }
@@ -1012,7 +1011,7 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
             // run in spec order, so the join must come after the tables it
             // references). Mirrors the sandbox emit in compileDataSpecToAutkDbJs.
             else if (type === 'join' && typeof db.spatialQuery === 'function') await db.spatialQuery(rest);
-            else console.warn(`[autk-grammar] unsupported data source type "${type}" - skipped`);
+            else console.warn(`[autk-grammar] unsupported data source type "${type}" — skipped`);
         } catch (e) {
             // Record + skip a source that fails to load; others may still
             // produce layers. The recorded reason is surfaced below if the load
@@ -1026,7 +1025,7 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     // autk-db 2.0.1's getLayer() returned geometry projected to the workspace
     // CRS (EPSG:3395 meters); 2.1.2 keeps it in EPSG:4326 degrees. Assuming
     // the workspace CRS (the old behavior here) makes the renderer read
-    // degree values as meters near the origin - a silently blank map - so
+    // degree values as meters near the origin — a silently blank map — so
     // detect by coordinate magnitude. Strip any pre-existing crs field first:
     // detectCoordinateFormat trusts it over the heuristic.
     let tables: Array<{ name: string; type?: string }> = [];
@@ -1072,7 +1071,7 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
         (l): l is { name: string; type: string; geojson: FeatureCollection } => l != null,
     );
     // A load that asked for sources but produced no usable layer AND hit errors
-    // is a real failure (e.g. every PBF range fetch 404'd) - throw an ATTRIBUTED
+    // is a real failure (e.g. every PBF range fetch 404'd) — throw an ATTRIBUTED
     // error so the node reports the reason, instead of crashing later with an
     // opaque "Cannot read properties of null (reading 'length')" or silently
     // emitting an empty layer set. A genuinely empty area (no errors) returns [].
@@ -1088,7 +1087,7 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
 
 // Persist a pool-compatible wrapper (output of `layersToPoolWrapper`) to the
 // backend sandbox so a downstream Data Pool can ingest it via its normal
-// `{path, dataType}` fetch path - the same convention `ia-data` uses. The
+// `{path, dataType}` fetch path — the same convention `ia-data` uses. The
 // augmented FC was computed in the browser (WGSL needs a GPU); this just
 // ships the result to the backend for persistence, so every downstream node
 // sees a DuckDB artifact reference instead of an inline payload.
@@ -1118,7 +1117,7 @@ function persistLayersToBackend(
 
 // Convert an autk-db-style layer array into a Curio Data Pool-compatible wrapper.
 // The pool's `processDataAsync` recognizes `dataType: 'geodataframe'` (single layer)
-// and `dataType: 'outputs'` (multi-layer envelope) - but not bare layer arrays. So
+// and `dataType: 'outputs'` (multi-layer envelope) — but not bare layer arrays. So
 // when a compute-only or data-only autk-grammar node feeds a Data Pool, we wrap
 // the output in a shape the pool can ingest, carrying `layerName`/`layerType`
 // metadata at the wrapper level so downstream `resolveUpstreamLayers` can restore
@@ -1149,7 +1148,7 @@ function layersToPoolWrapper(
 // Normalize an attribute path used by `compute.attributes` into a dot-path
 // `ComputeGpgpu` can resolve via `valueAtPath(feature, path)`. The grammar
 // engine accepts bare property names like `"height"` and auto-prefixes them;
-// `ComputeGpgpu` does not - it reads paths directly off the raw Feature,
+// `ComputeGpgpu` does not — it reads paths directly off the raw Feature,
 // where `height` would be undefined but `properties.height` resolves. So
 // prepend `properties.` for everything except paths the engine already
 // understands as feature-root (`geometry.*` and explicit `properties.*`).
@@ -1160,7 +1159,7 @@ function normalizeAttrPath(p: string): string {
     return `properties.${p}`;
 }
 
-// Read a value out of a feature using a dot-path - same semantics autk-compute
+// Read a value out of a feature using a dot-path — same semantics autk-compute
 // uses for its `variableMapping` attributes. Kept local rather than re-imported
 // from autk-core because the grammar runtime here has no other dependency on it.
 function valueAtPath(item: any, path: string): any {
@@ -1267,7 +1266,7 @@ function buildBatchedUniforms(
 
     // Drop source features whose required batched paths can't resolve. A path
     // is required when any of its batched `fromFeature` directives carries
-    // `required: true` - in 07 the building height is required, so OSM
+    // `required: true` — in 07 the building height is required, so OSM
     // buildings without a `properties.height` tag don't get a fake default
     // height that would over-extrude their shadow. The filter runs once,
     // upfront, so every batched entry sees the same surviving feature list.
@@ -1345,7 +1344,7 @@ function buildBatchedUniforms(
                     }
                 }
                 if (!Number.isFinite(xmin)) {
-                    // Degenerate feature - emit a zero-area AABB at (0,0) so the
+                    // Degenerate feature — emit a zero-area AABB at (0,0) so the
                     // shader's loop still runs but contributes nothing.
                     xmin = 0; ymin = 0; xmax = 0; ymax = 0;
                 }
@@ -1388,7 +1387,7 @@ async function applyComputeBlocks(
         }
         // Accept the wglsFunction as either a single string (existing form) or
         // an array of lines. The array form keeps the WGSL readable inside the
-        // JSON file - JSON has no multi-line strings, but an array of one-line
+        // JSON file — JSON has no multi-line strings, but an array of one-line
         // strings is just as valid and far easier to author / review than one
         // long `\n`-escaped blob.
         const wgslBody: string = Array.isArray(block.wglsFunction)
@@ -1407,7 +1406,7 @@ async function applyComputeBlocks(
         const outCols: string[] = block.outputColumns ?? (block.outputColumnName ? [block.outputColumnName] : []);
         try {
             const gpgpu = new ComputeGpgpu();
-            // Compute spec iteration modes - see `findIterateSource` for the full
+            // Compute spec iteration modes — see `findIterateSource` for the full
             // semantics:
             //   - 'batched' → single dispatch; flat per-feature arrays exposed
             //                 as uniformArrays; WGSL loops over features.
@@ -1509,7 +1508,7 @@ async function resolveUpstreamLayers(raw: any): Promise<Array<{ name: string; fc
     // wrapper persisted via `persistLayersToBackend` arrives as
     //   { dataType:'dict', data:{ dataType:'outputs', data:[…] } }
     // and the previous single-step unwrap would skip the outputs check and
-    // fall through to the asFc fallback - which would silently collapse the
+    // fall through to the asFc fallback — which would silently collapse the
     // whole multi-layer wrapper to its FIRST layer (renamed 'upstream'),
     // losing every other layer (including the one a downstream compute block
     // had targeted).
@@ -1649,7 +1648,7 @@ function firstCoordinate(coords: any): [number, number] | null {
 }
 
 // Resolve relative URLs in data source specs to the Curio backend's /file/
-// route, which serves files by their path *relative to CURIO_LAUNCH_CWD* - the
+// route, which serves files by their path *relative to CURIO_LAUNCH_CWD* — the
 // same root and relative-path convention the Python sandbox uses. So users can
 // write the CURIO_LAUNCH_CWD-relative path 'docs/examples/data/file.pbf' (no
 // host/port, no route prefix) exactly as a Python node would read it.
@@ -1660,7 +1659,7 @@ function resolveDataSourceUrls(spec: any, forBackend = false): any {
 
     let backendUrl = (process.env.BACKEND_URL || 'http://localhost:5002').replace(/\/$/, '');
     // When the URL will be fetched by the sandbox's Node.js subprocess (the data
-    // section runs there), force the loopback host to 127.0.0.1 - node's fetch
+    // section runs there), force the loopback host to 127.0.0.1 — node's fetch
     // can stall on `localhost` resolving to IPv6 ::1. The /file/ route is
     // unauthenticated, so the node fetch needs no token.
     if (forBackend) {
@@ -1669,7 +1668,7 @@ function resolveDataSourceUrls(spec: any, forBackend = false): any {
         // it reaches it on the backend's fixed *internal* port (5002). Any host
         // port remapping (e.g. CI on a shared host publishes 5002 as 5022 to
         // avoid colliding with another stack) does NOT apply inside the
-        // container - fetching the host-mapped port from in-container yields
+        // container — fetching the host-mapped port from in-container yields
         // "fetch failed" and the OSM/PBF data load comes back empty. Force the
         // internal port for a loopback backend; a public BACKEND_URL (prod) has
         // no 127.0.0.1 host and is left unchanged.

@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+from utk_curio.backend.app.packages.locks import package_seed_lock
 from utk_curio.backend.app.packages.manifest import ManifestError, load_packageage_manifest
 from utk_curio.backend.app.packages.storage import list_user_packageages, package_asset_path
 
@@ -36,7 +37,16 @@ def generate_packageage_starters(user_key: str) -> list[dict]:
     """Return ``Starter`` objects for every installed package of *user_key*.
 
     At most one starter per template: the template's optional ``source`` file.
+
+    The whole read — enumeration, manifests, source files — is one snapshot
+    under the per-user seed lock (memo dev/99): the returned starters carry
+    the code as text, so nothing here outlives the lock as a live path.
     """
+    with package_seed_lock(user_key):
+        return _generate_unlocked(user_key)
+
+
+def _generate_unlocked(user_key: str) -> list[dict]:
     out: list[dict] = []
     for package_path in list_user_packageages(user_key):
         try:

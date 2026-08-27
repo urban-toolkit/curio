@@ -5,13 +5,13 @@
   },
   "createdAt": "2026-05-19T09:00:00Z",
   "dataFile": "data/acs-neighborhood-profile.csv",
-  "description": "Tabular demographic indicators prepared for urban analysis.",
+  "description": "Tabular demographic indicators prepared for urban analysis. Sample extract: 3 of the full dataset's rows.",
   "format": "csv",
   "id": "data.urbanlab.acs-neighborhood-profile",
   "license": "Public domain",
   "name": "ACS Neighborhood Profile",
   "publisher": "Data Catalog",
-  "rowCount": 2408,
+  "rowCount": 3,
   "schema": {
     "fields": [
       {

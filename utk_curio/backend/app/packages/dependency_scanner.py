@@ -145,6 +145,7 @@ def scan_imports_for_filename(filename: str, source: str) -> tuple[list[str], li
     lower = filename.lower()
     if lower.endswith(".py"):
         return scan_python_imports(source), []
-    if lower.endswith(".js") or lower.endswith(".mjs") or lower.endswith(".cjs") or lower.endswith(".ts"):
+    if lower.endswith((".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx")):
+        # .tsx/.jsx: behavior-hook sources (dev/89) use the same import forms.
         return [], scan_js_imports(source)
     return [], []

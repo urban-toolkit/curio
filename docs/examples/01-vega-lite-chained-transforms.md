@@ -13,18 +13,27 @@ flowchart LR
 
 ## Data
 
-[04-labels.json.zip](data/04-labels.json.zip): Project Sidewalk's labelled accessibility features export (originally from [the Project Sidewalk API](https://sidewalk-chicago.cs.washington.edu/api)).
+This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
+addresses a dataset by id via `curio_dataset_path("<id>")` rather than by a repo-relative path,
+so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
-Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
+| Dataset | Id | Format | Size |
+|---|---|---|---|
+| Project Sidewalk Chicago Labels | `data.projectsidewalk.chicago-labels` | parquet | 145,880 features |
 
-## Step 1: Load the accessibility GeoJSON (`Data Loading`)
+The catalog dataset is a Parquet conversion of the original zipped export, so it loads faster
+and takes less space in the repo while keeping every row. It ships in the committed catalog under
+`datasets/` and is already added to this dataflow. Original source: [the Project Sidewalk API](https://sidewalk-chicago.cs.washington.edu/api).
 
-Read the zipped GeoJSON straight into a `GeoDataFrame`. The `metadata.name` keeps the table name stable downstream.
+## Step 1: Load the accessibility labels (`Data Loading`)
+
+Read the GeoParquet straight into a `GeoDataFrame`. The `metadata.name` keeps the table name stable downstream.
 
 ```python
 import geopandas as gpd
 
-gdf = gpd.read_file('zip://docs/examples/data/04-labels.json.zip!04-labels.json')
+dataset_path = curio_dataset_path("data.projectsidewalk.chicago-labels")
+gdf = gpd.read_parquet(dataset_path)
 
 gdf.metadata = {
     'name': 'accessibility_features'

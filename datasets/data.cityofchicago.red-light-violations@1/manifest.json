@@ -1,0 +1,34 @@
+{
+  "id": "data.cityofchicago.red-light-violations",
+  "name": "Chicago Red-Light Violations",
+  "version": "1.0.0",
+  "format": "parquet",
+  "description": "Daily red-light camera violation counts per intersection, with camera location. Converted to Parquet from the original zipped CSV export; date columns are kept as the source strings so consumers keep parsing them explicitly.",
+  "publisher": "City of Chicago",
+  "license": "Open Data",
+  "tags": [
+    "violations",
+    "red-light",
+    "chicago",
+    "temporal",
+    "parquet"
+  ],
+  "dataFile": "data/red-light-violations.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Chicago Data Portal",
+  "rowCount": 354418,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-08-27T00:00:00Z",
+  "updatedAt": "2026-08-27T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null
+}

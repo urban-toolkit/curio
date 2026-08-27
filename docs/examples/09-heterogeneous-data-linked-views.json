@@ -6,7 +6,7 @@
         "type": "curio.builtin/data-loading",
         "x": 44.225950241077555,
         "y": -88.23554143885666,
-        "content": "import rasterio\nsrc = rasterio.open('docs/examples/data/09-milan_mrt.tif')\n\nreturn src",
+        "content": "import rasterio\ndataset_path = curio_dataset_path(\"data.urbanlab.milan-mrt\")\nsrc = rasterio.open(dataset_path)\n\nreturn src",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -19,7 +19,7 @@
         "type": "curio.builtin/data-loading",
         "x": 33.682664855133396,
         "y": 377.73963760742413,
-        "content": "import pandas as pd\nsensor = pd.read_csv('docs/examples/data/09-milan_weather.csv', delimiter=';')\nreturn sensor",
+        "content": "import pandas as pd\ndataset_path = curio_dataset_path(\"data.urbanlab.milan-era5-weather\")\nsensor = pd.read_csv(dataset_path)\nreturn sensor",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -58,7 +58,7 @@
         "type": "curio.builtin/data-loading",
         "x": 1024.2279540383229,
         "y": -363.35132428093857,
-        "content": "import geopandas as gpd\ngdf = gpd.read_file('docs/examples/data/09-milan_census.geojson')\nreturn gdf",
+        "content": "import geopandas as gpd\ndataset_path = curio_dataset_path(\"data.urbanlab.milan-census-gt65\")\ngdf = gpd.read_file(dataset_path)\nreturn gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -257,6 +257,32 @@
     "provenance_id": "Heterogeneous data + linked views",
     "packages": [
       "curio.weather@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.urbanlab.milan-mrt",
+        "dirName": "data.urbanlab.milan-mrt@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-08-27T00:00:00Z"
+      },
+      {
+        "datasetId": "data.urbanlab.milan-era5-weather",
+        "dirName": "data.urbanlab.milan-era5-weather@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-08-27T00:00:00Z"
+      },
+      {
+        "datasetId": "data.urbanlab.milan-census-gt65",
+        "dirName": "data.urbanlab.milan-census-gt65@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-08-27T00:00:00Z"
+      }
     ]
   }
 }

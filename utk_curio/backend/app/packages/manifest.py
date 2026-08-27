@@ -14,12 +14,103 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from utk_curio.backend.app.packages import backend_contract
 from utk_curio.backend.app.packages.package_channel import normalize_distribution_channel
 from utk_curio.backend.app.packages.storage import TEMPLATE_ID_RE, PACKAGE_DIR_RE, PackageId
 
 
 class ManifestError(ValueError):
     """Raised when a package manifest is malformed or violates the supported schema."""
+
+
+@dataclass(frozen=True)
+class BackendHandlerManifest:
+    """One declared server-side handler (memo dev/91): a named entry point
+    the sandbox may invoke, with its worker-limit tier."""
+
+    name: str
+    timeout_class: str = backend_contract.DEFAULT_TIMEOUT_CLASS
+
+
+@dataclass(frozen=True)
+class BackendManifest:
+    """The package's optional server-side surface (memo dev/91 §2): one
+    entry file under ``backend/`` exposing ``def handle(payload)``, plus the
+    explicit list of handler names the sandbox will accept. Undeclared
+    handlers are unroutable by construction."""
+
+    entry: str
+    handlers: list[BackendHandlerManifest] = field(default_factory=list)
+
+    @property
+    def handler_names(self) -> list[str]:
+        return [h.name for h in self.handlers]
+
+    def timeout_class_for(self, handler: str) -> str | None:
+        for h in self.handlers:
+            if h.name == handler:
+                return h.timeout_class
+        return None
+
+
+def _parse_backend(raw: object, *, where: str, permissions: list[str]) -> BackendManifest | None:
+    """Parse the optional ``backend`` object. Every refusal names the fix
+    (the dev/90 A4/A5 lesson)."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ManifestError(f"{where}.backend must be an object")
+    entry = raw.get("entry")
+    if not isinstance(entry, str) or not entry.strip():
+        raise ManifestError(
+            f"{where}.backend.entry must be a package-relative path like 'backend/handler.py'"
+        )
+    entry = entry.strip()
+    parts = entry.split("/")
+    if (
+        parts[0] != "backend"
+        or len(parts) < 2
+        or not entry.endswith(".py")
+        or any(p in ("", ".", "..") for p in parts)
+    ):
+        raise ManifestError(
+            f"{where}.backend.entry must be a '.py' file under 'backend/' "
+            f"(e.g. 'backend/handler.py'), got {entry!r}"
+        )
+    handlers_raw = raw.get("handlers")
+    if not isinstance(handlers_raw, list) or not handlers_raw:
+        raise ManifestError(
+            f"{where}.backend.handlers must be a non-empty list of "
+            "{{\"name\": ..., \"timeoutClass\"?: ...}} objects"
+        )
+    handlers: list[BackendHandlerManifest] = []
+    seen: set[str] = set()
+    for i, h in enumerate(handlers_raw):
+        h_where = f"{where}.backend.handlers[{i}]"
+        if not isinstance(h, dict):
+            raise ManifestError(f"{h_where} must be an object")
+        name = h.get("name")
+        if not isinstance(name, str) or not backend_contract.HANDLER_NAME_RE.match(name):
+            raise ManifestError(
+                f"{h_where}.name must match {backend_contract.HANDLER_NAME_RE.pattern}"
+            )
+        if name in seen:
+            raise ManifestError(f"{h_where}.name {name!r} is declared twice")
+        seen.add(name)
+        timeout_class = h.get("timeoutClass", backend_contract.DEFAULT_TIMEOUT_CLASS)
+        if timeout_class not in backend_contract.TIMEOUT_CLASSES:
+            raise ManifestError(
+                f"{h_where}.timeoutClass must be one of "
+                f"{backend_contract.TIMEOUT_CLASSES}, got {timeout_class!r}"
+            )
+        handlers.append(BackendHandlerManifest(name=name, timeout_class=timeout_class))
+    if backend_contract.PERMISSION_SERVER_CODE not in permissions:
+        raise ManifestError(
+            f"{where}: a package declaring 'backend' must list the "
+            f"{backend_contract.PERMISSION_SERVER_CODE!r} permission — the install "
+            "review surfaces server-side code to the user before Apply (memo dev/91 §5)"
+        )
+    return BackendManifest(entry=entry, handlers=handlers)
 
 
 def _parse_created_at_from_manifest(raw: object, *, where: str) -> tuple[str | None, int]:
@@ -128,6 +219,28 @@ def _parse_lineage(
     return PackageLineage(forked_from=forked_from, root=root)
 
 
+def parse_cardinality(cardinality: str) -> tuple[int, int | None]:
+    """``(min, max)`` for a schema cardinality string (dev/67-3, DEC-051).
+
+    ``"1"`` → (1, 1); ``"2"`` → (2, 2); ``"n"`` → (0, None);
+    ``"[1,n]"`` → (1, None); ``"[0,2]"`` → (0, 2). ``max is None`` means
+    unbounded. Unparseable strings fail OPEN to (0, None) — the schema owns
+    the grammar; this parser never refuses a manifest.
+    """
+    text = (cardinality or "").strip()
+    if text == "n":
+        return 0, None
+    if text.isdigit():
+        n = int(text)
+        return n, n
+    if text.startswith("[") and text.endswith("]") and "," in text:
+        lo_raw, hi_raw = text[1:-1].split(",", 1)
+        lo_raw, hi_raw = lo_raw.strip(), hi_raw.strip()
+        if lo_raw.isdigit() and (hi_raw == "n" or hi_raw.isdigit()):
+            return int(lo_raw), (None if hi_raw == "n" else int(hi_raw))
+    return 0, None
+
+
 @dataclass(frozen=True)
 class PortDef:
     types: list[str]
@@ -172,6 +285,10 @@ class TemplateManifest:
     tutorial_id: str | None  # anchor id for the in-app tutorial system
     grammar_dir: str | None
     widget_dir: str | None
+    # memo dev/91: name of a declared backend handler this template's Run
+    # invokes through the package backend sandbox (validated against the
+    # package's ``backend.handlers`` in ``load_packageage_manifest``).
+    backend_handler: str | None = None
 
     @classmethod
     def from_json(cls, raw: object, *, where: str) -> "TemplateManifest":
@@ -204,6 +321,15 @@ class TemplateManifest:
         has_provenance_raw = raw.get("hasProvenance")
         if has_provenance_raw is not None and not isinstance(has_provenance_raw, bool):
             raise ManifestError(f"{where}.hasProvenance must be a boolean when present")
+        backend_handler_raw = raw.get("backendHandler")
+        if backend_handler_raw is not None and not (
+            isinstance(backend_handler_raw, str)
+            and backend_contract.HANDLER_NAME_RE.match(backend_handler_raw)
+        ):
+            raise ManifestError(
+                f"{where}.backendHandler must match "
+                f"{backend_contract.HANDLER_NAME_RE.pattern} when present"
+            )
         return cls(
             template_id=template_id,
             label=str(raw.get("label", template_id)),
@@ -231,6 +357,7 @@ class TemplateManifest:
             tutorial_id=raw.get("tutorialId") if isinstance(raw.get("tutorialId"), str) else None,
             grammar_dir=raw.get("grammarDir") if isinstance(raw.get("grammarDir"), str) else None,
             widget_dir=raw.get("widgetDir") if isinstance(raw.get("widgetDir"), str) else None,
+            backend_handler=backend_handler_raw,
         )
 
 
@@ -259,6 +386,10 @@ class PackageManifest:
     # before building descriptors. See docs/EXTENDING.md §5 for the
     # contract package authors follow.
     behavior_script: str | None = None
+    # memo dev/91: the optional server-side surface — one entry file under
+    # backend/ plus declared handlers, executed ONLY by the package backend
+    # sandbox (never imported into the host process).
+    backend: BackendManifest | None = None
 
     @property
     def dir_name(self) -> str:
@@ -360,6 +491,27 @@ def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
         behavior_script_raw.strip() if isinstance(behavior_script_raw, str) else None
     ) or None
 
+    backend = _parse_backend(
+        raw.get("backend"), where=str(manifest_path), permissions=list(perms)
+    )
+    # Cross-check (memo dev/91): a template's backendHandler must name a
+    # declared handler — the mismatch cannot survive load, let alone build.
+    declared_handlers = set(backend.handler_names) if backend else set()
+    for t in templates:
+        if t.backend_handler is None:
+            continue
+        if backend is None:
+            raise ManifestError(
+                f"{manifest_path}.templates[{t.template_id!r}].backendHandler "
+                f"requires a top-level 'backend' declaration"
+            )
+        if t.backend_handler not in declared_handlers:
+            raise ManifestError(
+                f"{manifest_path}.templates[{t.template_id!r}].backendHandler "
+                f"{t.backend_handler!r} is not declared in backend.handlers "
+                f"({sorted(declared_handlers)})"
+            )
+
     return PackageManifest(
         package_id=package_id,
         major=major,
@@ -379,6 +531,7 @@ def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
         created_at_iso=created_at_iso,
         created_at_ms=created_at_ms,
         behavior_script=behavior_script,
+        backend=backend,
     )
 
 

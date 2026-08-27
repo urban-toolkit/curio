@@ -69,6 +69,8 @@ def start_inference(
     model_type: str,
     classes: List[str],
     api_key: Optional[str] = None,
+    hf_token: Optional[str] = None,
+    user_key: str = "guest",
 ) -> None:
     """Spawn a daemon worker thread that runs inference and updates the job store.
 
@@ -79,6 +81,11 @@ def start_inference(
             the Street View service first. Local paths are used as-is.
         model_id, model_type, classes: forwarded to ``services.inference.run_batch``.
         api_key: Google Maps key needed only when fetching Street View URLs.
+        hf_token: the caller's HuggingFace token, resolved in the request and
+            handed over because this worker has no request context.
+        user_key: whose ``.curio/users/<key>/streetvision/`` caches the
+            downloaded panoramas, overlays and model weights. Resolved in the
+            request for the same reason.
     """
 
     def _worker():
@@ -98,7 +105,7 @@ def start_inference(
         # First pass: materialize every image to a local path. For Street View
         # URLs we need to download; for already-local paths we trust the caller.
         prepared: List[dict] = []
-        download_dir = cache_svc.images_dir()
+        download_dir = cache_svc.images_dir(user_key)
         for img in images:
             url_or_path = img.get("image_url") or ""
             local_path: Optional[str] = img.get("local_path")
@@ -167,6 +174,7 @@ def start_inference(
         try:
             for result in inference_svc.run_batch(
                 prepared, model_id, model_type, classes, progress_cb=_progress,
+                hf_token=hf_token, user_key=user_key,
             ):
                 _update_results_append(job_id, result)
             _update(job_id, status="completed", stage_message=None)

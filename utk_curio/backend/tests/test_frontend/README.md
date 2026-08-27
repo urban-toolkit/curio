@@ -11,7 +11,7 @@ Playwright-based end-to-end tests that upload workflow JSON files into the Curio
 # full suite
 pytest utk_curio/backend/tests/test_frontend/
 
-# headed (watch the browser; required for AUTK fixtures to actually render — see below)
+# headed (watch the browser; required for AUTK fixtures to actually render, see below)
 pytest utk_curio/backend/tests/test_frontend/ --headed
 
 # use already-running servers (e.g. docker compose); the caller is responsible for
@@ -23,7 +23,7 @@ CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 
 Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes a minimal flag set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.
 
-There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU — which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
+There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU - which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
 
 `AUTK_GRAMMAR` is a `"grammar"` node (grammar/JSON editor + output tab) and exercises the full matrix: `test_node_type_and_content` checks the grammar editor; `test_node_execution` verifies each node reaches **Done**. Its grammar content (and any JavaScript/WGSL compute blocks) is excluded from the Python random-seed injection used by Python `CODE_TYPES` nodes.
 
@@ -38,7 +38,7 @@ These tests boot the **real** backend through `curio.py start`, so they must nev
   3. **wipes** any pre-existing `urban_workflow_test.db` and re-creates the schema via `flask db upgrade`.
 - A function-scoped autouse `e2e_clean_db` fixture truncates the mutable tables (`user`, `user_session`, `auth_attempt`, `project`, `exec_cache_entry`) between tests so hardcoded usernames like `e2etestuser`, `ownera`, `ownerb`, `prjtester` can be re-created fresh in every test.
 
-In other words: **every pytest invocation starts against an empty database**, and tests are independent of each other — the same isolation Django's test runner aims to provide.
+In other words: **every pytest invocation starts against an empty database**, and tests are independent of each other - the same isolation Django's test runner aims to provide.
 
 | Variable | Purpose |
 |---|---|
@@ -50,7 +50,7 @@ In other words: **every pytest invocation starts against an empty database**, an
 
 The SPA wraps `/projects` and `/workflow/:id?` in `RequireAuth`, so every E2E test needs an authenticated browser session before it can interact with those pages. Two reusable strategies live in [`utils.py`](utils.py); pick based on what the test is actually asserting.
 
-### Strategy A — drive the signup form (UI coverage)
+### Strategy A - drive the signup form (UI coverage)
 
 Use when the test's purpose is to exercise the real `/auth/signup` / `/auth/signin` pages, or when a test must hit the exact same code path a first-time user would. Helpers:
 
@@ -62,22 +62,22 @@ Use when the test's purpose is to exercise the real `/auth/signup` / `/auth/sign
 
 Used by `test_auth_flow.py`, `test_project_save_load.py`, `test_project_dirty_guard.py`, `test_project_ownership.py`.
 
-### Strategy B — DB stub (fast path)
+### Strategy B - DB stub (fast path)
 
 Use when auth is incidental setup rather than the subject of the test (e.g. `test_workflows.py`'s parametrized canvas checks, one signup per workflow class ≈ seconds saved). The browser session is prepared through test-only backend endpoints instead of the signup UI:
 
-1. `POST /api/testing/stub-login` → create-or-find a user, store the password hash, return `{user, token, created}`.
+1. `POST /api/testing/stub-login` → create-or-find a user, return `{user, token, created}`. The password is stored only when the account is created; an existing account keeps the hash it had.
 2. `POST /api/testing/stub-project` → seed an empty `Project` owned by that user and return `{id, name, slug, …}`.
 
-The blueprint lives in [`utk_curio/backend/app/testing/routes.py`](../../app/testing/routes.py) and is **only registered by `create_app` when `CURIO_TESTING=1`**; each handler also re-guards at request time with `abort(404)`. Helpers:
+The blueprint lives in [`utk_curio/backend/app/testing/routes.py`](../../app/testing/routes.py). `create_app` registers it whenever `_is_dev()` (`CURIO_ENV != 'prod'`), and a blueprint-level `before_request` then refuses with 404 unless **both** `_is_dev()` and `CURIO_TESTING` hold. `CURIO_ENV` defaults to `dev`, so the second factor is what keeps `stub-login` off an ordinary deployment. Helpers:
 
 | Helper | What it does |
 |---|---|
 | `stub_db_login(page, frontend_url, backend_url, *, username, name, password=…, project_name=None, project_spec=None)` | POSTs to `/api/testing/stub-login`, installs the returned token as the `session_token` cookie on `page.context`, and optionally seeds a project via `/api/testing/stub-project`. |
 | `install_session_cookie(page, frontend_url, token)` | Low-level: matches `js-cookie`'s defaults (path=`/`, host-only) so the SPA's `Cookies.get("session_token")` finds the same value. |
-| `stub_login_and_enter_workflow(page, frontend_url, backend_url, *, username, name, password=…, project_name="StubbedWorkflow", project_spec=None)` | Stubs user + empty project, installs the cookie, and navigates **directly** to `/workflow/<project_id>` — no `/auth/signup`, no `+ New Workflow` click. Used by the class-scoped `loaded_workflow` fixture. |
+| `stub_login_and_enter_workflow(page, frontend_url, backend_url, *, username, name, password=…, project_name="StubbedWorkflow", project_spec=None)` | Stubs user + empty project, installs the cookie, and navigates **directly** to `/workflow/<project_id>` - no `/auth/signup`, no `+ New Workflow` click. Used by the class-scoped `loaded_workflow` fixture. |
 
-The DB stub is strictly additive — Strategy A still works against the same test DB. Keep project-ownership / signup UI tests on Strategy A so regressions in the real auth flow still fail those tests.
+The DB stub is strictly additive - Strategy A still works against the same test DB. Keep project-ownership / signup UI tests on Strategy A so regressions in the real auth flow still fail those tests.
 
 **One footgun in the stub spec.** `_empty_spec()` sets a top-level `name` but no
 `dataflow.name`, so `loadParsedTrill` calls `setWorkflowName(undefined)` and the
@@ -96,7 +96,7 @@ menu.
 | Helper | What it does |
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
-| `skip_if_shared_view(page, *, timeout=4000)` | Skips when the dataflow opened read-only as the shared guest. In a no-auth environment the browser cannot see another user's installed packages or datasets and every catalog fetch comes back empty, so the test is not meaningful - better a clear skip than a confusing failure deep inside a drawer assertion. |
+| `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. This used to skip, which hid the problem: `scripts/test.sh` booted its shared stack without `--auth` and 43 tests across 22 files quietly skipped while the run reported green. The environment being wrong is a setup bug, so it is loud. Boot with `--auth`. |
 | `open_tools_palette(page, kind)` | Opens the left-rail `"packages"` or `"datasets"` palette and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs both palettes can come back to the first one. They are still mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. |
 
 ### Canvas authoring helpers
@@ -195,6 +195,8 @@ Two families of baseline live in that folder:
   workflow path: `canvas-authoring`, `package-roundtrip`,
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
   `library-manager`, `node-catalog-drawer`, `data-catalog-drawer`,
+  `agent-catalog-drawer`, `agent-run` (one per built-in agent, plus a
+  `_chat` companion for the four that mutate), `agent-review-card`,
   `dataset-export`, `dataset-lineage`, `autark-grammar-edit`,
   `merge-flow-authoring`, `canvas-delete-key`, `projects-page-scroll`,
   `global-imports`, `uhvi-install`, `data-pool-scroll`,
@@ -275,7 +277,7 @@ test_frontend/
   utils.py                    # FrontendPage, upload_workflow, signup helpers, stub_* helpers
   test_alive.py               # smoke tests: backend, sandbox, frontend are live
   test_auth_flow.py           # signup → projects → signout → signin (UI path)
-  test_workflows.py           # TestWorkflowCanvas — DB-stubbed auth via loaded_workflow
+  test_workflows.py           # TestWorkflowCanvas - DB-stubbed auth via loaded_workflow
   test_project_save_load.py   # + New Workflow → save → reload (UI auth)
   test_project_dirty_guard.py # beforeunload guard on dirty canvas (UI auth)
   test_project_ownership.py   # two-user isolation via /api/projects (UI auth)
@@ -288,6 +290,9 @@ test_frontend/
   test_dataset_palette.py     # computed dataset shows in the dataset palette and persists
   test_node_catalog.py        # Node Catalog drawer: list, search, add/remove -> palette
   test_data_catalog.py        # Data Catalog drawer: hub datasets, search, add/remove, import
+  test_agent_catalog.py       # Agent Catalog drawer: list, search, add -> palette, requiresAgents closure
+  test_agent_runs_e2e.py      # EVERY built-in agent: install -> attach -> run a scripted turn (NO browser)
+  test_agent_chat_e2e.py      # one chat-panel baseline screenshot per agent + the review-card Apply
   test_dataset_export.py      # Data Catalog detail panel -> Export: the downloaded name and bytes
   test_dataset_lineage_e2e.py # one edge -> the dataset's lineage grows (panel, card badge, server)
   test_computed_json_output_e2e.py # dict/scalar node output installs as json, no warning (#180)
@@ -311,7 +316,7 @@ test_frontend/
   test_feature_tour_video.py  # records the feature-tour screencast (CURIO_TOUR=1; not a test)
 ```
 
-Three of these deliberately do not drive a browser. `test_examples.py` is a
+Four of these deliberately do not drive a browser. `test_examples.py` is a
 structural check on the bundled dataflow JSON, and `test_example_docs_parity.py`
 is its documentation counterpart - it holds each example's walkthrough and its
 `docs/README.md` row to what the JSON actually contains, comparing parsed
@@ -320,6 +325,8 @@ structures rather than text so the prose can stay hand-condensed.
 only to reuse `curio_servers` / `current_server` / `sandbox_server`, and isolates
 the backend-to-sandbox process boundary from every UI concern, so a failure says
 immediately which half broke.
+`test_agent_runs_e2e.py` requests no `page` fixture for the same reason, and is
+described under **Agent runs** below.
 
 ## CURIO_NO_PROJECT-mode tests
 
@@ -340,10 +347,11 @@ CURIO_NO_PROJECT=1 pytest \
 
 ## Catalog surfaces
 
-**No seeding is needed.** Both catalogs are live directory scans of committed
+**No seeding is needed.** All three catalogs are live scans of committed
 content: the Node Catalog reads `<repo_root>/packages/`, the Data Catalog reads
-`<repo_root>/datasets/` (surfacing as `origin: "hub"`). A fresh test user already
-sees five packages and three datasets.
+`<repo_root>/datasets/` (surfacing as `origin: "hub"`), and the Agent Catalog
+reads the built-in roster in `app/agents/builtin.py`. A fresh test user already
+sees five packages, three datasets and twenty-one agents.
 
 **Only `curio.example-ui@1` may be installed in a test.** It declares no python
 dependencies, so nothing shells out to pip. `curio.weather@1`,
@@ -370,8 +378,22 @@ Other things that surprise people here:
 - The **"In dataflow" tab renders `MyPackagesList`, not `PackageCard`**, so the
   `data-pkg-dir` attribute is absent there; key on the row's `Remove {name}`
   aria-label.
-- Card roots carry `data-pkg-dir` / `data-dataset-id`. Prefer them over display
-  copy, which has been renamed repeatedly.
+- Card roots carry `data-pkg-dir` / `data-dataset-id` / `data-agent-coord`.
+  Prefer them over display copy, which has been renamed repeatedly.
+- **Adding an agent needs no permissions dialog.** It is a lockfile write with
+  no pip involved, so watch the install POST itself rather than a confirm step.
+  Removing one *does* confirm, and Playwright's default for a dialog is
+  **dismiss** - without `page.once("dialog", lambda d: d.accept())` the click
+  silently does nothing and later assertions fail for the wrong reason.
+- **The agent palette's footer used to sit below the fold at 1280x720.** Its
+  panel hung down from its own trigger, which is the third and lowest in the
+  rail, so `Browse Agent Catalog +` (how the Node suite enters) was off screen.
+  That was a missed conversion rather than a viewport limit: the Datasets and
+  Packages panels became `position: absolute; top: 0; left: 100%` when the
+  palettes moved into the rail, and the Agent Catalog arrived later without the
+  matching CSS. `paletteShell.module.css` now positions it the same way, so the
+  footer is reachable and either entry point works. Reaching the drawer from the
+  **Data** menu is still fine, and is what the tour does.
 - **`packagesApi` percent-encodes the dirName**, so the `@` in
   `curio.canvas.draft.<slug>@1` reaches the wire as `%40`. An
   `expect_response` predicate built from the raw dirName never fires; match on
@@ -380,11 +402,12 @@ Other things that surprise people here:
   `#pkg-meta-runtime` (`compatibility.curioRuntime`) is not carried on
   `PackagePayload`, so `PackageMetadataModal` opens it blank every time and a
   reopened modal can never show what was saved. The Node settings modal's
-  `Provenance tab` / `Explanation tab` checkboxes are canvas-local:
-  `applyCanvasTemplateConfigToTemplateDraft` does not copy `hasProvenance` /
-  `hasExplanation` into the template draft and `toApiPayload` emits no such
-  manifest field. Asserting either through an archive fails for reasons that
-  have nothing to do with the archive.
+  `Provenance tab` checkbox is canvas-local:
+  `applyCanvasTemplateConfigToTemplateDraft` does not copy `hasProvenance` into
+  the template draft and `toApiPayload` emits no such manifest field. Asserting
+  it through an archive fails for reasons that have nothing to do with the
+  archive. (The Explanation tab it used to sit beside is gone;
+  `agent.node-explainer` replaced it.)
 - **Node settings port rows have no label, id or test id**, and their class
   names are hashed CSS modules. Locate the section by its heading text and step
   up one level (`get_by_text("Input ports", exact=True).locator("xpath=..")`),
@@ -407,6 +430,101 @@ Other things that surprise people here:
   (`idle` / `running` / `done` / `error`) and `data-curio-node-output` on the
   inline output box. The last one matters: `.nowheel.nodrag` is on the editor
   wrapper too, so a `.first` match there returns Monaco's rendered code.
+
+## Agent runs
+
+`test_agent_catalog.py` covers the drawer and the palette but never runs a turn.
+These two modules run one, for **every** built-in agent, and both parametrize
+over `app/agents/builtin.py::BUILTIN_AGENTS` directly - add a roster entry and it
+is covered on the next run, or it fails. `test_agent_runs_e2e.py` also asserts
+that the parametrized set equals what `GET /api/agents/catalog` serves, so an
+agent arriving by some other path cannot slip past.
+
+| Module | Browser | What it is for |
+|---|---|---|
+| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. |
+| `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent additionally **applies its proposal and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
+
+**What gets captured, and why it differs by agent.** Only 4 of the 21 built-ins
+can mutate anything - the rest are `report-only` by contract - so there are two
+kinds of evidence and two capture shapes.
+
+| Agent kind | Baselines under `agent-run` | The assertion behind it |
+|---|---|---|
+| report-only (17) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
+| mutate-capable (4) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the proposal was applied and the node was really created or rewritten, on the server *and* on the canvas |
+
+Three things about those captures are deliberate:
+
+- **The report-only baseline is clipped to the panel** (`clip_selector` on
+  `save_workflow_test_screenshot`). A full-page capture was more than half
+  canvas and left rail - nothing about the agent - and worse, it diluted the
+  comparison: a regression inside the panel had to move 20 % of a frame it only
+  partly occupies before the diff would notice.
+- **The mutate baseline closes the chat panel first.** `fitView` spreads nodes
+  across the whole viewport while the panel covers its right ~44 %, so the node
+  the agent just created sits behind it - the canvas is the evidence, and it has
+  to be in frame to be evidence.
+- **A screenshot is never the only check.** A missing baseline is written and
+  passed, so an error banner or an empty transcript would become "expected
+  output" as quietly as a good capture. Every parameter asserts the outcome
+  first, and the PNGs still want reviewing by eye before they are committed.
+
+**No LLM, no key, no network.** `api_type == "testing"` dispatches to the
+scripted provider in [`app/agents/testing_provider.py`](../../app/agents/testing_provider.py),
+which pops replies off an in-process FIFO and records every message list it was
+handed. Three things make that usable from a test:
+
+| Step | How |
+|---|---|
+| Point the user at it | `use_scripted_llm(backend, token)` - a real `PATCH /api/auth/me` writing `llm_api_type: "testing"`, so the production `resolve_provider_config` path is the one under test |
+| Script the replies | `script_agent_replies(backend, *replies)` -> `POST /api/testing/agent-script`. One entry **per provider call**: a reply carrying a `toolRequest` tail is answered by the runtime and the model is prompted again, so script the follow-up too |
+| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script` |
+
+The `agent-script` routes 404 unless `CURIO_TESTING` is set, on top of the
+production guard every route in that blueprint carries - unlike `stub-login`,
+they read prompt text back out of the process.
+
+Things worth knowing before adding to these:
+
+- **The scripted reply proves nothing about *which* agent ran** - it is the same
+  string for every parameter. The per-agent claim is on the captured system
+  prompt, which the run composes from that agent's own preamble + instruction
+  bytes. Keep that assertion or the parametrization becomes decoration.
+- **Never script `web.search` / `web.fetch`.** `agent.node-researcher` and
+  `agent.researcher` declare them and `app/agents/egress.py` really opens
+  sockets. Both also declare a local read tool, which is what the suite uses.
+- **Only three mutate tools are minted here**, and `MINTABLE_TOOLS` is ordered
+  most-specific-first because an agent that declares several gets the first
+  match: `dataflow.plan.write` (so the Dataflow Builder plans rather than
+  creating one node), then `node.create` (applying it puts a NEW node on the
+  canvas - the most visible proof an agent did something), then
+  `node.content.write`. That spread is intentional: one plan, two node
+  creations, one content replacement. The remaining mutate contracts
+  (`dataset.install`, `package.install`, `package.draft.apply`,
+  `node.template.create`) each need a real catalog row, or a run of the isolated
+  build service; their mints are covered in-process by
+  `test_agents/test_routes.py`, and an agent declaring only those falls through
+  to the read-tool leg.
+- **A plan is applied per node**, through the planned row's own
+  `Create node <title>` button and the `apply-node` route - not the card's
+  single `Apply`.
+- **The transcript's vocabulary is `{"role": "user"|"agent", "text": ...}`.**
+  `assistant` exists only in the provider-context mapping in `sessions.py`.
+- **`TestAgentChatGallery` is in `fixtures.py::_SHARED_SESSION_CLASSES`**, so the
+  DB is not truncated between its parameters - it logs in once and each
+  parameter stubs its own *project*. A reset would invalidate the stub user's
+  token while the browser still holds the cookie.
+- Two things inside a capture vary run to run and the 20 % budget absorbs both:
+  the run-status line's wall-clock duration, and the session id in the panel
+  header. Token counts do not vary (`DEFAULT_USAGE` is fixed), so
+  `2 calls x 46 = 92 tokens` is stable for a one-tool-round turn.
+
+**One run at a time.** Two concurrent E2E runs share ports 5002/2000/8080 *and*
+`.curio/test/urban_workflow_test.db`, so the second one's autouse
+`e2e_clean_db` truncates `user_session` out from under the first, which then
+fails with a 401 wherever it happens to be. It looks exactly like a flaky test
+and is not one.
 
 ## Libraries
 
@@ -463,13 +581,35 @@ CURIO_TOUR=1 CURIO_TOUR_SCENES=linkedviews,dashboard CURIO_TOUR_SPEED=0.8 \
 ```
 
 The take is one continuous Playwright recording of a single page, so the whole
-tour runs in one browser session: signup, the projects page, authoring a
-dataflow from a catalog dataset, dataset lineage, the Node Catalog, Vega-Lite
-views, dashboard mode, provenance, linked interactions, an Autark/WebGPU map,
-and the catalog pages. Captions, a synthetic cursor and the spotlight ring come
+tour runs in one browser session: signup, the projects page, configuring the AI
+provider, authoring a dataflow from a catalog dataset, dataset lineage, the Node
+Catalog, the Agent Catalog, attaching and running an agent, Vega-Lite views,
+dashboard mode, provenance, linked interactions, an Autark/WebGPU map, and the
+catalog pages. Captions, a synthetic cursor and the spotlight ring come
 from [`tour.py`](tour.py), which paints them into the page above the app -
 Playwright records the page and nothing else, so a real pointer would be
 invisible and a click would look unmotivated.
+
+### The agent scenes need a provider
+
+`aisettings` types a base URL, an API key and a model into AI Settings on
+camera, and `agentrun` then asks that endpoint a real question. Curio ships no
+provider of its own and the tour's account starts with none, so this is
+load-bearing rather than decorative.
+
+The endpoint and model default to the `LLM_*` constants at the top of the
+module. **The key is not a constant** — put it in `.curio/tour-provider.json`
+(`.curio/` is gitignored) or in `CURIO_TOUR_LLM_API_KEY`:
+
+```json
+{ "baseUrl": "https://…/", "model": "…", "apiKey": "sk-…" }
+```
+
+Without a key both scenes still record: they show the panel and the chat, say so
+in a caption, and skip the call. Filming an agent that visibly errors is worse
+than filming one that admits it is unconfigured. `agentrun` is the only scene
+that leaves the machine, which makes it the one most likely to be the scene that
+failed.
 
 | Variable | Purpose |
 |---|---|

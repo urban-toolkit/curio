@@ -102,3 +102,45 @@ def test_sandbox_cap_matches_the_backend_cap():
         f"sandbox truncates at {match.group(1)} but the backend cap is "
         f"{MAX_EXEC_DATASET_IDS}"
     )
+
+
+def test_the_scanner_finds_every_id_the_curated_examples_reference():
+    """Third copy of the grammar, third chance to drift.
+
+    The example specs are hand-edited JSON, not generator output, so nothing
+    otherwise guarantees the ids they carry are ones ``_DATASET_PATH_CALL_RE``
+    will actually find. An id the scanner misses is simply absent from
+    ``dataset_paths``, and surfaces as the sandbox's runtime "not available in
+    this environment" rather than as a test failure.
+    """
+    import json
+
+    examples = sorted((REPO_ROOT / "docs" / "examples").glob("[0-9][0-9]-*.json"))
+    assert examples, "no curated examples found; this test would be vacuous"
+
+    checked = 0
+    for path in examples:
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        for node in spec["dataflow"]["nodes"]:
+            content = node.get("content") or ""
+            if "curio_dataset_path" not in content:
+                continue
+            found = _DATASET_PATH_CALL_RE.findall(content)
+            assert found, (
+                f"{path.name} node {node['id']} calls curio_dataset_path but "
+                f"the backend scanner finds no id in it; check the quoting and "
+                f"that the id matches {ID_BODY}"
+            )
+            for _quote, dataset_id in found:
+                assert _SAFE_DATASET_ID_RE.match(dataset_id), dataset_id
+                # The call takes the bare manifest id. An ``@major`` suffix
+                # passes the grammar but misses the by-id lookup in
+                # ``resolve_execution_paths``, and the miss is swallowed.
+                assert "@" not in dataset_id, (
+                    f"{path.name} node {node['id']}: {dataset_id!r} carries a "
+                    f"major version; curio_dataset_path takes the bare id "
+                    f"(the '@<major>' form is the dirName, used by "
+                    f"dataflow.datasets refs)"
+                )
+                checked += 1
+    assert checked, "no example resolves a dataset by id; expected several"

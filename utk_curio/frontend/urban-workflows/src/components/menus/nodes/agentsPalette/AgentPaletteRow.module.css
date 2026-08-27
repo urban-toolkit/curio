@@ -1,0 +1,41 @@
+/* Agent-row specifics layered over the shared packageKind* row structure
+   (ToolsMenuPackagePalette.module.css): a category-tinted avatar, a monospace
+   coordinate subtitle, and category-colored chips. Colors match the approved
+   concept and reuse the dataset chip palette where the hue is the same. */
+
+.avatarIcon {
+  /* Inherit the avatar container's category color (do not reuse
+     packageKindDragIcon, which pins a fixed light color). */
+  font-size: 1.4em;
+  color: inherit;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.coord {
+  font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 9px;
+  color: rgba(251, 252, 246, 0.55);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* ── category-tinted avatars (the drag handle box) ───────────────────────── */
+.avatar_node     { color: color-mix(in srgb, var(--curio-category-agent-node-fg) 55%, white); background: color-mix(in srgb, var(--curio-category-agent-node-fg) 16%, transparent); border-color: color-mix(in srgb, var(--curio-category-agent-node-fg) 40%, transparent); }
+.avatar_canvas   { color: color-mix(in srgb, var(--curio-category-agent-canvas-fg) 55%, white); background: color-mix(in srgb, var(--curio-category-agent-canvas-fg) 16%, transparent); border-color: color-mix(in srgb, var(--curio-category-agent-canvas-fg) 40%, transparent); }
+.avatar_data     { color: color-mix(in srgb, var(--curio-category-agent-data-fg) 55%, white); background: color-mix(in srgb, var(--curio-category-agent-data-fg) 16%, transparent); border-color: color-mix(in srgb, var(--curio-category-agent-data-fg) 40%, transparent); }
+.avatar_evaluate { color: color-mix(in srgb, var(--curio-category-agent-evaluate-fg) 55%, white); background: color-mix(in srgb, var(--curio-category-agent-evaluate-fg) 16%, transparent); border-color: color-mix(in srgb, var(--curio-category-agent-evaluate-fg) 40%, transparent); }
+.avatar_package  { color: color-mix(in srgb, var(--curio-category-agent-package-fg) 55%, white); background: color-mix(in srgb, var(--curio-category-agent-package-fg) 16%, transparent); border-color: color-mix(in srgb, var(--curio-category-agent-package-fg) 40%, transparent); }
+
+.chip_node     { background: color-mix(in srgb, var(--curio-category-agent-node-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-category-agent-node-fg) 55%, white); }
+.chip_canvas   { background: color-mix(in srgb, var(--curio-category-agent-canvas-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-category-agent-canvas-fg) 55%, white); }
+.chip_data     { background: color-mix(in srgb, var(--curio-category-agent-data-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-category-agent-data-fg) 55%, white); }
+.chip_evaluate { background: color-mix(in srgb, var(--curio-category-agent-evaluate-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-category-agent-evaluate-fg) 55%, white); }
+.chip_package  { background: color-mix(in srgb, var(--curio-category-agent-package-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-category-agent-package-fg) 55%, white); }

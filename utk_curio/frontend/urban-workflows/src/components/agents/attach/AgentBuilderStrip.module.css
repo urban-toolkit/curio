@@ -1,0 +1,131 @@
+/* dev/52 DR-5 — the phase-aware builder strip inside the chat drawer. */
+
+.strip {
+  border-bottom: 1px solid var(--curio-border);
+  padding: 10px 16px;
+  background: var(--curio-surface-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phases {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.phaseChip {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--curio-text-meta);
+  border: 1px solid var(--curio-border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: var(--curio-card-bg);
+}
+
+.phaseActive {
+  color: var(--curio-role-running-fg);
+  border-color: var(--curio-role-running-bg);
+  background: var(--curio-role-running-bg);
+}
+
+.templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.templateChip {
+  font-size: 0.74rem;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--curio-card-bg);
+  cursor: pointer;
+}
+
+.templateChip:hover {
+  background: var(--curio-role-running-bg);
+}
+
+.nodeRuns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.nodeRun {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  border: 1px solid var(--curio-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: var(--curio-card-bg);
+}
+
+.nodeId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--curio-text-secondary);
+}
+
+.status_pending { color: var(--curio-text-secondary); }
+.status_solving { color: var(--curio-role-running-fg); }
+.status_solved { color: var(--curio-success-text); }
+.status_failed { color: var(--curio-danger-text); }
+.status_skipped { color: var(--curio-warning-text); }
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.solve,
+.run {
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 5px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.solve {
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+}
+
+.run {
+  background: var(--curio-card-bg);
+  color: var(--curio-success-text);
+  border-color: var(--curio-success-bg);
+}
+
+.solve:disabled,
+.run:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hint,
+.error {
+  font-size: 0.72rem;
+}
+
+.hint { color: var(--curio-text-meta); }
+.error { color: var(--curio-danger-text); }
+
+.reviewSummary {
+  font-size: 0.74rem;
+  color: var(--curio-text-secondary);
+  align-self: center;
+  margin-right: 4px;
+}

@@ -254,9 +254,9 @@ export function NodeSaveAsModal({
   if (!show) return null;
 
   return (
-    <ModalShell preservePackagePaletteOpen onClose={busy ? () => {} : onClose}>
+    <ModalShell preservePackagePaletteOpen onClose={busy ? () => {} : onClose} titleId="save-as-package-title">
       <div className={styles.content}>
-        <h2 className={styles.title}>Save as package node</h2>
+        <h2 id="save-as-package-title" className={styles.title}>Save as package node</h2>
         <p className={styles.subtitle}>
           Save <strong>{nodeLabel}</strong> into an installed package or create a new one.
         </p>

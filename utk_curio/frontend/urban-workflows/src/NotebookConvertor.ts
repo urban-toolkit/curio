@@ -1,5 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { NodeType } from "./constants";
+import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
 
 // ── Trill types ──────────────────────────────────────────────────────────────
 
@@ -230,8 +231,10 @@ function sanitizeId(id: string): string {
 
 function outputVarName(node: TrillNode): string {
   const safe = sanitizeId(node.id);
-  if (node.type === NodeType.DATA_LOADING) return `data_${safe}`;
-  if (node.type === NodeType.VIS_VEGA) return `vega_${safe}`;
+  // Specs saved since the curio.builtin@1 pack carry versioned ids (dev/64).
+  const nodeType = unversionedNodeType(node.type);
+  if (nodeType === NodeType.DATA_LOADING) return `data_${safe}`;
+  if (nodeType === NodeType.VIS_VEGA) return `vega_${safe}`;
   return `result_${safe}`;
 }
 
@@ -280,7 +283,9 @@ function generateCell(
     .map((n) => `# input: ${outputVarName(n)}`)
     .join("\n");
 
-  if (node.type === NodeType.DATA_LOADING) {
+  const nodeType = unversionedNodeType(node.type);
+
+  if (nodeType === NodeType.DATA_LOADING) {
     return {
       cell_type: "code",
       source: content,
@@ -290,7 +295,7 @@ function generateCell(
     };
   }
 
-  if (node.type === NodeType.COMPUTATION_ANALYSIS) {
+  if (nodeType === NodeType.COMPUTATION_ANALYSIS) {
     const source = inputComments ? `${inputComments}\n${content}` : content;
     return {
       cell_type: "code",
@@ -301,7 +306,7 @@ function generateCell(
     };
   }
 
-  if (node.type === NodeType.VIS_VEGA) {
+  if (nodeType === NodeType.VIS_VEGA) {
     let specJson = "{}";
     try {
       specJson = JSON.stringify(JSON.parse(content));

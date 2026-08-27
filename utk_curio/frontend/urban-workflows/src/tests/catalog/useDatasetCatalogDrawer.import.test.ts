@@ -242,7 +242,9 @@ describe("useDatasetCatalogDrawer refresh flow (#178)", () => {
     // bust-cache reload — no direct reload from the handler.
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     expect(mockCatalogReload).toHaveBeenCalledTimes(1);
-    expect(mockCatalogReload).toHaveBeenCalledWith({ bustCache: true });
+    // Called with nothing: wholesale invalidation happens in
+    // notifyDatasetCatalogRefresh, so the reload has no key left to bust.
+    expect(mockCatalogReload).toHaveBeenCalledWith();
 
     window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
     installSpy.mockRestore();
@@ -287,7 +289,9 @@ describe("useDatasetCatalogDrawer refresh flow (#178)", () => {
     expect(apiSpy).toHaveBeenCalled();
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     expect(mockCatalogReload).toHaveBeenCalledTimes(1);
-    expect(mockCatalogReload).toHaveBeenCalledWith({ bustCache: true });
+    // Called with nothing: wholesale invalidation happens in
+    // notifyDatasetCatalogRefresh, so the reload has no key left to bust.
+    expect(mockCatalogReload).toHaveBeenCalledWith();
 
     window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
     confirmSpy.mockRestore();
@@ -425,7 +429,9 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
       await result.current.onDelete(dataset as never);
     });
 
-    expect(mockCatalogReload).toHaveBeenCalledWith({ bustCache: true });
+    // Called with nothing: wholesale invalidation happens in
+    // notifyDatasetCatalogRefresh, so the reload has no key left to bust.
+    expect(mockCatalogReload).toHaveBeenCalledWith();
 
     confirmSpy.mockRestore();
     usageSpy.mockRestore();

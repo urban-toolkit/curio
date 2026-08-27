@@ -124,8 +124,13 @@ class _FakeProc:
         self.stdout = iter(lines)
         self._rc = returncode
 
-    def wait(self):
+    def wait(self, timeout=None):
+        # Mirrors ``Popen.wait``: the streaming branch bounds pip with
+        # ``timeout=_PIP_TIMEOUT_SECONDS`` rather than waiting forever.
         return self._rc
+
+    def kill(self):  # pragma: no cover - only on the timeout path
+        pass
 
 
 def test_streaming_path_reports_each_line_and_returns_installed():
@@ -141,9 +146,9 @@ def test_streaming_path_reports_each_line_and_returns_installed():
     assert seen == ["Collecting inflection", "Successfully installed"]
     assert report.installed == ["inflection"]
     assert report.skipped == []
-    # Streaming means no timeout is passed - Popen + readline has no deadline.
-    # Asserted so the omission stays a deliberate, visible choice: the launcher
-    # blocks on this call, so a wedged pip hangs `curio start` indefinitely.
+    # Popen itself takes no timeout; the deadline is applied at `proc.wait()`,
+    # which is what bounds the branch. It previously called a bare `wait()` and
+    # a wedged mirror hung the caller forever.
     assert "timeout" not in popen.call_args.kwargs
 
 
@@ -194,3 +199,41 @@ def test_streaming_path_skips_pip_entirely_when_satisfied():
     assert report.installed == []
     assert report.skipped == ["inflection"]
 
+
+
+def test_streaming_path_kills_pip_when_it_overruns(monkeypatch):
+    """The streaming branch is bounded, like the buffered one.
+
+    It used to call a bare ``proc.wait()``. A mirror that accepts the
+    connection and then never sends EOF pinned the calling thread forever, and
+    this branch is reachable over HTTP: ``build_overlay`` streams, and it sits
+    on the promotion and catalog-install paths.
+    """
+    import subprocess
+
+    from utk_curio.backend.app.packages import pip_runner
+
+    killed = {"count": 0}
+
+    class _HangingProc:
+        def __init__(self):
+            self.stdout = iter(["Collecting slowpkg"])
+
+        def wait(self, timeout=None):
+            if timeout is not None:
+                raise subprocess.TimeoutExpired(cmd="pip", timeout=timeout)
+            return 0
+
+        def kill(self):
+            killed["count"] += 1
+
+    monkeypatch.setattr(pip_runner, "_is_satisfied", lambda name, spec: False)
+    monkeypatch.setattr(pip_runner.subprocess, "Popen", lambda *a, **k: _HangingProc())
+
+    # The module-level import, not ``pip_runner.install_python_deps``: the
+    # package conftest's autouse fixture replaces that attribute with a stub
+    # that takes no ``on_line``. The other streaming tests bind it the same way.
+    with pytest.raises(PipInstallError, match="timed out"):
+        install_python_deps({"slowpkg": ""}, on_line=lambda line: None)
+
+    assert killed["count"] == 1, "a pip that overruns must be killed, not leaked"

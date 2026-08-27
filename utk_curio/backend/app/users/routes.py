@@ -144,6 +144,7 @@ def me_patch_route():
         llm_base_url=body.get("llm_base_url"),
         llm_api_key=body.get("llm_api_key"),
         llm_model=body.get("llm_model"),
+        huggingface_token=body.get("huggingface_token"),
     )
     try:
         user_out = patch_me(g.user, data)

@@ -1,5 +1,6 @@
 import pandas as pd
 
-sensor = pd.read_csv('docs/examples/data/09-milan_weather.csv', delimiter=';')
+dataset_path = curio_dataset_path("data.urbanlab.milan-era5-weather")
+sensor = pd.read_csv(dataset_path)
 
 return sensor

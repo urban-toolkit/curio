@@ -8,7 +8,7 @@ import textwrap
 from pathlib import Path
 from io import BytesIO
 from urllib.request import urlopen, Request
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 import allure
 import pytest
@@ -111,8 +111,14 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
             f"sandbox /get fileName={artifact_id} -> {resp.status_code}\n"
             f"{resp.text[:2000]}"
         )
-    parsed = resp.json()
-    result = json.loads(json.dumps(parsed, default=str))
+    result = resp.json()
+    # No `json.loads(json.dumps(result, default=str))` round-trip here. It was
+    # a no-op that cost two extra copies of the whole artifact: `resp.json()`
+    # has already parsed the body, so every value is JSON-native and `default`
+    # can never fire. The largest example dataflow
+    # (09-heterogeneous-data-linked-views) died with MemoryError *inside* that
+    # round-trip - it holds the parsed object, the serialized string and the
+    # re-parsed copy at once, on top of the programmatic run's expected map.
     result.pop('filename', None)  # artifact ID varies per execution run
     return result
 
@@ -545,6 +551,49 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     return expected
 """
 
+def _catalog_dataset_paths(code: str) -> dict[str, str]:
+    """Map every ``curio_dataset_path("<id>")`` in *code* to its committed file.
+
+    The browser path gets this mapping from the backend
+    (``_resolve_exec_dataset_paths`` in ``backend/app/api/routes.py``), which
+    posts it to the sandbox as ``dataset_paths``. This helper talks to the
+    sandbox directly -- deliberately, so DuckDB keeps a single writer -- so it
+    has to build the equivalent itself. Without it every example whose loader
+    resolves a dataset by id fails with the sandbox's "not available in this
+    environment", because ``worker.py``'s injected resolver raises on any
+    unmapped id.
+
+    Only *hub* datasets, the ones committed under ``datasets/``, are resolvable
+    here, which is exactly the set the curated examples use. The backend's own
+    scan regex is imported rather than copied so the two cannot drift.
+    """
+    if "curio_dataset_path" not in code:
+        return {}
+
+    from utk_curio.backend.app.api.routes import _DATASET_PATH_CALL_RE
+    from utk_curio.backend.tests.dataset_catalog_coverage import catalog_datasets
+
+    by_id = {d.dataset_id: d.data_file for d in catalog_datasets()}
+    resolved: dict[str, str] = {}
+    missing: list[str] = []
+    for _quote, dataset_id in _DATASET_PATH_CALL_RE.findall(code):
+        data_file = by_id.get(dataset_id)
+        if data_file is None:
+            missing.append(dataset_id)
+        else:
+            resolved[dataset_id] = data_file.resolve().as_posix()
+
+    # Fail loudly rather than letting the sandbox report a generic runtime
+    # error: a typo'd id, or one carrying an ``@major`` the catalog lookup does
+    # not use, is a test-authoring bug and should name itself.
+    assert not missing, (
+        f"curio_dataset_path() references {missing}, which are not in the "
+        f"committed catalog (known: {sorted(by_id)}). Note the call takes the "
+        f"bare manifest id with no '@major'."
+    )
+    return resolved
+
+
 def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     """Execute every code node via the sandbox HTTP API and return {node_id: artifact_id}.
 
@@ -613,6 +662,9 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
                 # enable IO validation that the browser path silently skips.
                 "nodeType": node.raw_type,
                 "dataType": data_type,
+                # The backend resolves these for the browser path; this runner
+                # bypasses the backend, so it resolves them itself.
+                "dataset_paths": _catalog_dataset_paths(indented_code),
             },
             headers=sandbox_auth_header(),
             timeout=120,
@@ -714,6 +766,23 @@ def _capture_full_page(page: Page):
 
     page.evaluate("window.scrollTo(0, 0)")
     raw = page.screenshot(full_page=True)
+    return Image.open(BytesIO(raw)).convert("RGB")
+
+
+def _capture_element(page: Page, selector: str):
+    """Return a Pillow RGB image of one element, or raise if it is not there.
+
+    For a baseline whose subject is a panel rather than a page. A full-page
+    capture of, say, an agent chat turn is more than half static canvas and
+    chrome, which does not just waste the image - it dilutes the comparison,
+    since a regression inside the panel is a small fraction of the frame
+    against a 20% budget.
+    """
+    from PIL import Image
+
+    locator = page.locator(selector)
+    locator.wait_for(state="visible", timeout=15000)
+    raw = locator.screenshot()
     return Image.open(BytesIO(raw)).convert("RGB")
 
 
@@ -852,6 +921,7 @@ def save_workflow_test_screenshot(
     pixel_threshold: int = 30,
     max_diff_ratio: float = 0.20,
     fit_reactflow: bool = True,
+    clip_selector: str | None = None,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 
@@ -877,6 +947,11 @@ def save_workflow_test_screenshot(
     on ``.react-flow__node`` and would otherwise spend its whole timeout waiting
     for a node that is never going to exist.
 
+    Pass *clip_selector* when the subject of the baseline is one element rather
+    than the page. The capture is then that element's box, so every pixel is
+    about the thing under test and the diff budget is spent on it instead of on
+    surrounding chrome.
+
     Returns the path to the expected screenshot file.
     """
     from PIL import Image, ImageChops, ImageEnhance
@@ -893,11 +968,16 @@ def save_workflow_test_screenshot(
     if fit_reactflow:
         _wait_for_reactflow_ready(page)
 
+    def _capture():
+        if clip_selector is not None:
+            return _capture_element(page, clip_selector)
+        return _capture_full_page(page)
+
     if not os.path.isfile(expected_path):
-        _capture_full_page(page).save(expected_path)
+        _capture().save(expected_path)
 
     expected_img = Image.open(expected_path).convert("RGB")
-    actual_img = _capture_full_page(page)
+    actual_img = _capture()
 
     target_w = max(actual_img.width, expected_img.width)
     target_h = max(actual_img.height, expected_img.height)
@@ -1144,22 +1224,39 @@ def signup_and_enter_new_workflow(
 SESSION_COOKIE_NAME = "session_token"
 
 
-def _post_json(url: str, payload: dict, timeout: float = 10.0) -> dict:
-    """POST *payload* as JSON to *url* and return the parsed JSON body.
+def _request_json(
+    url: str,
+    *,
+    method: str = "GET",
+    payload: dict | None = None,
+    timeout: float = 10.0,
+) -> dict:
+    """Unauthenticated JSON request, returning the parsed body.
 
     Uses ``urllib`` (stdlib only) to match the rest of this module instead
-    of introducing a ``requests`` dependency.
+    of introducing a ``requests`` dependency. For routes behind ``require_auth``
+    use :func:`api_json`, which carries the bearer token.
     """
-    data = json.dumps(payload).encode("utf-8")
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
+        headers={"Content-Type": "application/json"} if data is not None else {},
+        method=method,
     )
     with urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
         body = resp.read().decode("utf-8") or "{}"
         return json.loads(body)
+
+
+def _post_json(url: str, payload: dict, timeout: float = 10.0) -> dict:
+    """POST *payload* as JSON to *url* and return the parsed JSON body."""
+    return _request_json(url, method="POST", payload=payload, timeout=timeout)
+
+
+def _get_json(url: str, timeout: float = 10.0) -> dict:
+    """GET *url* and return the parsed JSON body."""
+    return _request_json(url, method="GET", timeout=timeout)
 
 
 def api_json(
@@ -1198,30 +1295,40 @@ def api_json(
         return body if raw else json.loads(body.decode("utf-8") or "{}")
 
 
-def skip_if_shared_view(page, *, timeout: float = 4000) -> None:
-    """Skip when the dataflow opened read-only as the shared guest.
+def require_owner_view(page, *, timeout: float = 4000) -> None:
+    """Fail when the dataflow opened read-only as the shared guest.
 
-    In a no-auth environment (e.g. ``CURIO_E2E_USE_EXISTING=1`` against a dev
-    server that ignores the injected stub session) the browser is the read-only
-    shared guest: it can't see another user's installed packages or datasets, and
-    catalog fetches come back empty. Skip with a clear reason rather than fail
-    confusingly deep inside a palette or drawer assertion.
+    This used to ``pytest.skip`` here, and that was the wrong call. A dataflow's
+    packages, datasets and agents are visible only to the user who installed
+    them, so a browser that lands as the shared guest sees empty catalogs -
+    which means every test guarded by this is testing nothing. Skipping made
+    that invisible: ``scripts/test.sh`` booted its shared stack without
+    ``--auth``, and 43 tests across 22 files - the whole agent-catalog suite
+    among them - quietly skipped while the run reported green.
+
+    The environment being wrong is a setup bug, and a setup bug should be loud.
+    Detection is unchanged; only the consequence is. The fix when this fires is
+    to boot with ``--auth`` (which ``scripts/test.sh`` and the
+    ``curio_servers`` fixture both now do), never to tolerate the state.
     """
     banner = page.get_by_test_id("shared-view-banner")
     try:
         banner.wait_for(state="visible", timeout=timeout)
     except PlaywrightTimeoutError:
         return  # no banner → authenticated owner, proceed
-    pytest.skip(
-        "Dataflow opened read-only as the shared guest - owner auth is "
-        "unavailable in this e2e environment. Run with CURIO_TESTING=1 "
-        "(without CURIO_E2E_USE_EXISTING) against an auth-enabled server."
+    raise AssertionError(
+        "Dataflow opened read-only as the shared guest, so this test would "
+        "assert against empty catalogs. The stack is running without user "
+        "auth: boot it with `--auth` (scripts/test.sh does, and so does the "
+        "curio_servers fixture), or unset CURIO_NO_AUTH in the pytest "
+        "environment so the fixture passes --auth for you."
     )
 
 
 _TOOLS_PALETTES = {
     "packages": ("#packages-palette", "Open node package palette", "Package templates"),
     "datasets": ("#datasets-palette", "Open dataset palette", "Dataset palette"),
+    "agents": ("#agents-palette", "Open agent palette", "Agent palette"),
 }
 
 
@@ -1255,6 +1362,34 @@ def open_tools_palette(page, kind: str):
     return panel
 
 
+def close_tools_palette(page, kind: str) -> None:
+    """Close a left-rail tool palette, if it is open.
+
+    The open panel is ~545px wide and floats *over* the canvas, so it covers the
+    left third of the drop area. That is invisible to ``drag_to_canvas`` (which
+    dispatches its drop on the pane directly, without hit-testing) but not to
+    ``connect_nodes``, which fails when another element is topmost at a handle's
+    centre. A test that drops a dataset row and then wires the graph therefore
+    has to give the canvas back once the row has been dragged.
+
+    Idempotent and safe to call when nothing is open, mirroring
+    ``open_tools_palette``.
+    """
+    try:
+        root_sel, trigger_title, panel_name = _TOOLS_PALETTES[kind]
+    except KeyError:
+        raise ValueError(
+            f"kind must be one of {sorted(_TOOLS_PALETTES)}, got {kind!r}"
+        ) from None
+    panel = page.locator(root_sel).get_by_role("region", name=panel_name)
+    if panel.count() == 0 or not panel.first.is_visible():
+        return
+    close_title = trigger_title.replace("Open ", "Close ", 1)
+    # ``force=True`` because the ReactFlow pane overlaps the rail.
+    page.locator(f'{root_sel} button[title="{close_title}"]').click(force=True)
+    panel.first.wait_for(state="hidden", timeout=10000)
+
+
 def install_session_cookie(page, frontend_url: str, token: str) -> None:
     """Install *token* as the ``session_token`` cookie on *page*'s context.
 
@@ -1272,6 +1407,77 @@ def install_session_cookie(page, frontend_url: str, token: str) -> None:
             }
         ]
     )
+
+
+def _await_session(backend_url: str, token: str, *, timeout: float = 10.0) -> None:
+    """Block until *token* authenticates, or fail saying it never did.
+
+    Not defensive padding - it closes a real race in this harness. The autouse
+    ``e2e_clean_db`` truncates ``user`` / ``user_session`` straight out of the
+    sqlite file from the pytest process, before and after every test, while the
+    backend serves threaded off a pooled connection. A pooled reader can hold a
+    snapshot taken before the row this call just created, and the next
+    ``require_auth`` request then answers 401.
+
+    A browser test never notices: a page load stands between the stub-login and
+    the first authenticated request. A test that drives the API directly fires
+    the next request microseconds later, which is where the race became visible
+    (an intermittent 401 on one parameter of ``test_agent_runs_e2e.py``). Wait
+    for the state we just asked for instead of assuming it landed.
+    """
+    deadline = time.time() + timeout
+    last = ""
+    while time.time() < deadline:
+        try:
+            api_json(f"{backend_url}/api/auth/me", token)
+            return
+        except HTTPError as exc:  # noqa: PERF203 - the retry IS the point
+            if exc.code != 401:
+                raise
+            last = f"HTTP {exc.code}"
+        except URLError as exc:
+            last = str(exc)
+        time.sleep(0.05)
+    raise AssertionError(
+        f"a freshly stubbed session never authenticated within {timeout}s "
+        f"(last: {last or 'unknown'}) - the backend may not be up, or the DB "
+        f"was truncated after the token was issued"
+    )
+
+
+def stub_db_user(
+    backend_url: str,
+    *,
+    username: str,
+    name: str,
+    password: str = DEFAULT_TEST_PASSWORD,
+    email: str | None = None,
+    project_name: str | None = None,
+    project_spec: dict | None = None,
+) -> dict:
+    """Seed a user (and optionally a project) over HTTP. No browser involved.
+
+    The half of :func:`stub_db_login` that does not touch Playwright, split out
+    for tests that live in this suite to reuse ``curio_servers`` but drive the
+    backend directly - ``test_agent_runs_e2e.py``, like
+    ``test_library_install_integration.py`` before it, requests no ``page``.
+
+    Returns ``{user, token, created}``, plus ``project`` when one was stubbed.
+    """
+    payload = {"username": username, "name": name, "password": password}
+    if email is not None:
+        payload["email"] = email
+    login = _post_json(f"{backend_url}/api/testing/stub-login", payload)
+    _await_session(backend_url, login["token"])
+
+    if project_name is not None:
+        project_payload: dict = {"username": username, "name": project_name}
+        if project_spec is not None:
+            project_payload["spec"] = project_spec
+        login["project"] = _post_json(
+            f"{backend_url}/api/testing/stub-project", project_payload,
+        )
+    return login
 
 
 def stub_db_login(
@@ -1296,21 +1502,20 @@ def stub_db_login(
 
     Returns the parsed ``stub-login`` JSON (``{user, token, created}``),
     augmented with ``project`` when one was stubbed.
-    """
-    payload = {"username": username, "name": name, "password": password}
-    if email is not None:
-        payload["email"] = email
-    login = _post_json(f"{backend_url}/api/testing/stub-login", payload)
-    install_session_cookie(page, frontend_url, login["token"])
 
-    if project_name is not None:
-        project_payload: dict = {"username": username, "name": project_name}
-        if project_spec is not None:
-            project_payload["spec"] = project_spec
-        project = _post_json(
-            f"{backend_url}/api/testing/stub-project", project_payload,
-        )
-        login["project"] = project
+    The HTTP half is :func:`stub_db_user`; this adds the browser cookie. A test
+    with no browser calls that one directly.
+    """
+    login = stub_db_user(
+        backend_url,
+        username=username,
+        name=name,
+        password=password,
+        email=email,
+        project_name=project_name,
+        project_spec=project_spec,
+    )
+    install_session_cookie(page, frontend_url, login["token"])
     return login
 
 
@@ -2000,6 +2205,111 @@ def run_node_and_wait(page, node_id: str, *, node_type: str = "",
     return read_node_output_text(page, node_id)
 
 
+# Shared by the wait_for_function poll and the final evaluate in
+# ``assert_vega_canvas_rendered``; returns {width, height, nonBlank} or null.
+VEGA_CANVAS_PROBE_JS = """(containerId) => {
+    const el = document.getElementById(containerId);
+    if (!el) return null;
+    const canvas = el.querySelector('canvas');
+    if (!canvas) return null;
+    const w = canvas.width, h = canvas.height;
+    if (!w || !h) return { width: w, height: h, nonBlank: false };
+    let nonBlank = false;
+    try {
+        const ctx = canvas.getContext('2d');
+        const { data } = ctx.getImageData(0, 0, w, h);
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1],
+                  b = data[i + 2], a = data[i + 3];
+            // any opaque, non-white pixel means a mark was drawn
+            if (a !== 0 && !(r === 255 && g === 255 && b === 255)) {
+                nonBlank = true;
+                break;
+            }
+        }
+    } catch (e) {
+        // getImageData throws on a tainted canvas —
+        // treat as drawn rather than failing.
+        nonBlank = true;
+    }
+    return { width: w, height: h, nonBlank };
+}"""
+
+
+def assert_vega_canvas_rendered(page, node_id: str, *, timeout: float = 30000) -> None:
+    """Assert a VIS_VEGA node actually drew marks from its upstream data.
+
+    Vega-Lite renders to a ``<canvas>`` (the renderer switched from SVG in
+    3a2a14a), so there is no DOM structure to diff - what can be checked is that
+    the canvas exists, has a non-zero backing size, and is not blank. The
+    container id is ``"vega" + nodeId``, a convention owned by ``useVega.ts``.
+
+    Vega paints asynchronously after the canvas becomes visible, so on a slow
+    runner the element can be attached and sized before any mark is drawn; a
+    single pixel sample would race the paint. Poll until the probe reports drawn
+    content, then take one final sample so a timeout still produces the detailed
+    assertion message below rather than a bare Playwright timeout.
+    """
+    container_id = f"vega{node_id}"
+    node_el = node_locator(page, node_id)
+    canvas = node_el.locator(f"#{container_id} canvas")
+    canvas.first.wait_for(state="visible", timeout=15000)
+    assert canvas.count() >= 1, (
+        f"Vega node {node_id} is missing its rendered canvas inside "
+        f"#{container_id}"
+    )
+
+    try:
+        page.wait_for_function(
+            "(containerId) => {"
+            f" const probe = {VEGA_CANVAS_PROBE_JS};"
+            "  const info = probe(containerId);"
+            "  return !!(info && info.width > 0"
+            "        && info.height > 0 && info.nonBlank);"
+            "}",
+            arg=container_id,
+            timeout=timeout,
+            polling=500,
+        )
+    except PlaywrightTimeoutError:
+        pass
+
+    info = page.evaluate(VEGA_CANVAS_PROBE_JS, container_id)
+    assert info is not None, (
+        f"Vega node {node_id}: could not find a canvas inside #{container_id}"
+    )
+    assert info["width"] > 0 and info["height"] > 0, (
+        f"Vega node {node_id}: canvas has zero backing size "
+        f"({info['width']}x{info['height']})"
+    )
+    assert info["nonBlank"], (
+        f"Vega node {node_id}: canvas rendered blank — no chart marks drawn "
+        f"from the upstream data"
+    )
+
+
+def set_canvas_zoom(page, zoom: float, *, timeout: float = 15000) -> None:
+    """Pin the ReactFlow viewport so several nodes fit before dropping them.
+
+    A node is 525x350 flow units, so at zoom 1 a 1280x720 viewport has room for
+    two side by side and no more (see ``drag_to_canvas``). Zooming out first is
+    what makes a three-node chain authorable by drag: the drop coordinates stay
+    viewport-relative, but each node paints ``525 * zoom`` px wide, so the
+    spacing needed to keep facing handles exposed shrinks with it.
+
+    Purely a camera change - node positions in flow space are unaffected, and
+    ``save_workflow_test_screenshot`` re-pins its own fitView before capturing,
+    so this does not influence a baseline.
+    """
+    page.wait_for_function(
+        "() => !!window.__curio_reactFlow", timeout=timeout
+    )
+    page.evaluate(
+        "(zoom) => window.__curio_reactFlow.setViewport({ x: 0, y: 0, zoom })",
+        zoom,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Playwright page wrapper
 # ---------------------------------------------------------------------------
@@ -2078,3 +2388,84 @@ class FrontendPage(Page):
 
     def expect_page_title(self, search_title: str):
         expect(self.page).to_have_title(re.compile(search_title))
+
+
+# ── scripted agent turns ─────────────────────────────────────────────────────
+#
+# An agent turn is downstream of one LLM call. These helpers point the caller's
+# own user at the scripted provider and drive its queue over HTTP, so a test can
+# run a real turn - tools, ledger, content parser, session persistence - against
+# the live backend with no key and no network. Contract:
+# ``app/agents/testing_provider.py``.
+
+#: What ``use_scripted_llm`` writes as the user's model name. Never dispatched
+#: anywhere; it exists because ``resolve_provider_config`` treats an empty
+#: ``llm_model`` as "unconfigured" and falls back to the deployment default.
+SCRIPTED_MODEL = "scripted"
+
+
+def use_scripted_llm(backend_url: str, token: str) -> dict:
+    """Point this user's LLM provider at the scripted one.
+
+    Goes through the real settings route (``PATCH /api/auth/me``) rather than a
+    test-only shortcut, so the resolution path under test is the production one:
+    ``resolve_provider_config`` reads these exact columns.
+    """
+    return api_json(
+        f"{backend_url}/api/auth/me",
+        token,
+        method="PATCH",
+        payload={
+            "llm_api_type": "testing",
+            "llm_base_url": "",
+            "llm_api_key": "",
+            "llm_model": SCRIPTED_MODEL,
+        },
+    )
+
+
+def script_agent_replies(backend_url: str, *replies: str, reset: bool = True) -> int:
+    """Queue *replies* for the next agent turns, one per provider call.
+
+    A multi-round run needs one entry per round: a reply carrying a
+    ``toolRequest`` tail is answered by the runtime and the model is prompted
+    again, so script the follow-up too. Returns how many are pending.
+
+    Resets by default. A reply left over from a previous test would be consumed
+    by this one, and the failure would point anywhere but at the cause.
+    """
+    body = _post_json(
+        f"{backend_url}/api/testing/agent-script",
+        {"replies": list(replies), "reset": reset},
+    )
+    return body["pending"]
+
+
+def captured_agent_prompts(backend_url: str) -> list:
+    """Every message list the scripted provider was handed, oldest first.
+
+    Each entry is the OpenAI-style ``[{"role", "content"}, ...]`` the run
+    composed. This is how a per-agent test proves *which* agent ran: the reply
+    is scripted and therefore says nothing, but the system turn carries that
+    agent's own preamble and instruction bytes.
+    """
+    return _get_json(f"{backend_url}/api/testing/agent-script")["captured"]
+
+
+def captured_system_prompt(backend_url: str, *, call: int = 0) -> str:
+    """The system content of one captured call (the first, by default)."""
+    captured = captured_agent_prompts(backend_url)
+    assert captured, "the scripted provider was never called"
+    assert call < len(captured), (
+        f"asked for call {call} but only {len(captured)} were made"
+    )
+    return "\n".join(
+        m.get("content") or ""
+        for m in captured[call]
+        if m.get("role") == "system"
+    )
+
+
+def reset_agent_script(backend_url: str) -> None:
+    """Drop the scripted queue and the capture log."""
+    _request_json(f"{backend_url}/api/testing/agent-script", method="DELETE")

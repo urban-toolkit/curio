@@ -26,6 +26,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [Sandbox Isolation](#sandbox-isolation)
 * [Interactions and Propagation](#interactions-and-propagation)
 * [Provenance Tracking](#provenance-tracking)
+* [The Trill Dataflow Format](#the-trill-dataflow-format)
 * [Python Dependencies](#python-dependencies)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
@@ -84,17 +85,51 @@ The frontend is a React/TypeScript application built on [React Flow](https://rea
 
 ### Provider Hierarchy
 
-State is managed through a nested context-provider tree rather than a global store. From outermost to innermost (as assembled in `src/index.tsx`):
+State is managed through a nested context-provider tree rather than a global
+store. Every provider wraps exactly one child, so the tree is really a single
+chain: the lists below run from outermost to innermost, each entry containing
+the one after it.
 
-```
-ReactFlowProvider
-  LLMProvider          LLM chat
-  ProvenanceProvider   Provenance tracking
-  UserProvider         Auth / user profile
-  DialogProvider       Modal dialogs
-  FlowProvider         Nodes, edges, outputs, interactions  ← primary state
-    StarterProvider    Per-template starter source snippets (formerly TemplateProvider)
-```
+The chain comes in two parts, and the split matters. Only the first is app-wide;
+the rest exists on the dataflow route alone, which is why a component rendered
+on `/projects` or `/catalog/*` can call `useUserContext` but not
+`useFlowContext`.
+
+App-wide, in `src/index.tsx`:
+
+1. `BrowserRouter`
+2. `BackendHealthBanner`: offline / unreachable-backend notice
+3. `ToastProvider`: app-wide toasts
+4. `ReactFlowProvider`
+5. `ProvenanceProvider`: provenance tracking
+6. `UserProvider`: auth / user profile
+7. `Routes`: every route lives below this point
+
+Per dataflow route, inside `MainCanvasRoute` in the same file:
+
+1. `DialogProvider`: modal dialogs
+2. `CollaborationProvider`: presence, locks, proposals
+3. `FlowProvider`: nodes, edges, outputs, interactions. The primary state
+4. `NodeCatalogDrawerProvider`
+5. `DatasetCatalogDrawerProvider`
+6. `AgentCatalogDrawerProvider`
+7. `StarterProvider`: per-template starter source snippets
+8. `ProjectLoader`
+9. `PackagePaletteProvider`
+10. `DatasetPaletteProvider`
+11. `MainCanvas`
+12. `AgentAttachmentsProvider`: the attached agents, mounted in `MainCanvas.tsx`
+    rather than `index.tsx` because it needs React Flow's instance and only
+    applies where there is a dataflow to attach agents to
+
+Two of these orderings are load-bearing rather than incidental:
+
+- `CollaborationProvider` must wrap `FlowProvider`. Outside it, FlowProvider's
+  mutation paths get the no-op default context and silently drop every peer
+  edit.
+- The three catalog drawer providers must sit inside `FlowProvider`, because a
+  drawer's Install writes to the open dataflow. Outside it, `useFlowContext`
+  returns no-op defaults and Install appears to succeed while doing nothing.
 
 Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProvenance()`). Components call these hooks rather than reaching into global variables.
 
@@ -118,7 +153,7 @@ When a node produces output, it calls `outputCallback(nodeId, output)`, which up
 
 ### Node Packages and Manifests
 
-Node types are no longer hardcoded into a TypeScript enum. They live in **node packages** under [`packages/<packageId>@<major>/`](../packages/). Each directory ships a `manifest.json` that declares one or more **templates**, the manifest's name for what becomes a `NodeDescriptor` at runtime.
+Node types live in **node packages** under [`packages/<packageId>@<major>/`](../packages/). Each directory ships a `manifest.json` that declares one or more **templates**, the manifest's name for what becomes a `NodeDescriptor` at runtime.
 
 ```
 packages/
@@ -146,7 +181,7 @@ A manifest's `templates[*]` entry maps cleanly to a `NodeDescriptor`:
 }
 ```
 
-[`packagesClient.ts::buildDescriptor`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads each installed manifest and constructs the corresponding `NodeDescriptor` at boot; there is no longer a static enum or a hand-written descriptors file. The frontend `nodeRegistry` is populated entirely from these manifests.
+[`packagesClient.ts::buildDescriptor`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads each installed manifest and constructs the corresponding `NodeDescriptor` at boot. The frontend `nodeRegistry` is populated entirely from these manifests.
 
 Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 
@@ -537,6 +572,13 @@ Data Catalog loader snippets do not embed absolute paths. They emit
 stays valid when it is shared, moved, or opened by another user on the same
 install.
 
+The curated examples in `docs/examples/` are the reference consumers of this
+mechanism: every one of their loader nodes resolves a committed catalog dataset
+by id. Note the argument is the bare manifest `id`, never the `<id>@<major>`
+`dirName` that `dataflow.datasets` refs carry - `SAFE_DATASET_ID_RE` permits `@`,
+so an id with the major appended passes validation, misses the by-id lookup, and
+fails open into a runtime error from the sandbox.
+
 1. `backend/app/api/routes.py` scans the outgoing code for literal
    `curio_dataset_path("<id>")` calls (single or double quoted), dedupes the
    ids, and caps them at `MAX_EXEC_DATASET_IDS` (32).
@@ -590,6 +632,16 @@ Curio records a per-node execution history (start/end time, source code, input/o
 
 ---
 
+## The Trill Dataflow Format
+
+A saved dataflow is one JSON document, a **trill**, written to `.curio/users/<userKey>/projects/<projectId>/spec.trill.json`. It holds the graph (`dataflow.nodes`, `dataflow.edges`), the dependency lockfiles (`dataflow.packages`, `dataflow.datasets`, `dataflow.agents`), and the two provenance sections described above.
+
+Every trill is validated against [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) (JSON Schema Draft 2020-12). The schema is the source of truth for what fields a dataflow can carry. Note what it deliberately does *not* decide: a node's `type` is a coordinate into a package manifest's `templates[].id`, so which templates exist, which handles are legal, and whether a node has code at all are manifest questions that depend on the installed packages. [`projects/storage.py`](../utk_curio/backend/app/projects/storage.py) performs no validation of its own - it reads and writes the spec as opaque JSON - so the schema and the tests around it are the only enforcement.
+
+Full field reference, ownership rules, and the CLI for checking your own projects: [`docs/TRILL-SPEC.md`](TRILL-SPEC.md).
+
+---
+
 ## Python Dependencies
 
 Curio's Python deps live in two places:
@@ -637,7 +689,7 @@ Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING
 
 ## Backend API Reference
 
-The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the LLM and spatial-join handlers in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
+The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, agents in `backend/app/agents/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
 
 ### Core Routes
 
@@ -651,9 +703,6 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
 | `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
-| `/llm/chat` | POST | Proxy a chat completion using the user's stored LLM config |
-| `/llm/check` | POST | Token-budget probe for the LLM chat surface |
-| `/llm/clean` | GET | Reset a chat's server-side history |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
 
 File ingestion is **not** here - it lives in the datasets blueprint as `POST /api/datasets/import`.
@@ -722,6 +771,72 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `/api/dataflows/<dataflowId>/datasets/install` | POST | Attach a dataset to one dataflow (`datasetId`, optional `sourceItem`, `nodeTitle`) |
 | `/api/dataflows/<dataflowId>/datasets/<id>` | DELETE | Detach a dataset from one dataflow (keeps the account asset) |
 
+### Agent Routes
+
+Defined in `backend/app/agents/routes.py` over `backend/app/agents/services.py`; all
+require authentication, and every project endpoint checks ownership (404 when the
+project is not the caller's). See [AGENT-CATALOG.md](AGENT-CATALOG.md) for the
+user-facing model, the manifest contract, and the storage layers.
+
+Catalog and account scope:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/catalog` | GET | List the agent definitions available to add (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
+| `/api/agents/provider-default` | GET | The deployment's default provider, base URL and model, so AI Settings can show what a user inherits. The API key is reported as a boolean only |
+| `/api/agents/provider-models` | POST | The models an OpenAI-compatible endpoint reports it serves, so AI Settings can offer a dropdown instead of a free-text box. POST because the panel asks *before* the user saves, carrying the base URL and key on screen; anything omitted falls back to the account's resolved provider. Non-OpenAI providers answer `{models: [], listable: false}` |
+| `/api/agents/imports` | GET | List the account's imported definitions, as cards |
+| `/api/agents/imports` | POST | Record `<id>@<version>` in My imports. Never adds to a dataflow |
+| `/api/agents/imports/upload` | POST | Upload a user-authored definition (`manifest` + `prompts` as JSON, no archives). Trust forced to `imported`, digests stamped from the bytes, **409** on an existing coordinate |
+| `/api/agents/imports/<coord>` | DELETE | Drop it from My imports. The definition stays on disk |
+| `/api/agents/publications` | POST | Publish an owned, imported, store-backed definition to the shared catalog |
+| `/api/agents/publications/<coord>` | DELETE | Unpublish it. Owner only |
+
+Per-dataflow scope:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/projects/<projectId>` | GET | The dataflow's added agents, from its `dataflow.agents` lockfile |
+| `/api/agents/projects/<projectId>/install` | POST | Add `{coord}` **and its `requiresAgents` closure** in one spec write. Resolves the closure before writing: **409** naming the missing ids, nothing written |
+| `/api/agents/projects/<projectId>/<coord>` | DELETE | Remove it and its defaults record. **409** naming the dependents while another added agent requires it |
+
+Attachments and runs:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/projects/<projectId>/attachments` | GET, POST | List, or bind an added agent to a `{kind: node\|canvas\|connection, targetId?}`. Never auto-adds |
+| `/api/agents/projects/<projectId>/attachments/<id>` | DELETE, PATCH | Detach (also deletes the transcript), or set the editable initial intent |
+| `/api/agents/projects/<projectId>/attachments/<id>/session` | GET, DELETE | The persisted chat transcript, or clear it (the attachment survives) |
+| `/api/agents/projects/<projectId>/attachments/<id>/run` | POST | Run one turn. Returns `{reply, executionId, usage, content}`; persists both turns |
+| `/api/agents/projects/<projectId>/attachments/<id>/run/stream` | POST | The same turn as Server-Sent Events: `execution` then `delta` chunks, tool rounds, `review_required`, `content`, `done` |
+| `/api/agents/projects/<projectId>/attachments/<id>/proposals/<proposalId>` | POST `/apply`, DELETE | Apply a pending review proposal (the only mutation path; re-checks the pinned digest, **409** on drift) or dismiss it |
+
+Solve and planning. The Dataflow Builder drives a batch that plans, generates,
+executes and self-corrects; each stage is a reviewed proposal the user applies,
+never an automatic write:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/projects/<projectId>/attachments/<id>/solve` | POST | Run the Solve batch over a plan's nodes |
+| `/api/agents/projects/<projectId>/attachments/<id>/solve/stream` | POST | The same batch as Server-Sent Events |
+| `/api/agents/projects/<projectId>/attachments/<id>/solve/cancel` | POST | Stop dispatching new children; undispatched targets revert to pending. **409** when nothing is running |
+| `/api/agents/projects/<projectId>/attachments/<id>/simulate` | POST | Simulation Mode, as Server-Sent Events |
+| `/api/agents/projects/<projectId>/attachments/<id>/simulate/cancel` | POST | Stop at the next action boundary; what is done stays done |
+| `/api/agents/projects/<projectId>/attachments/<id>/run-node` | POST | Execute the dataflow *through* one node, using its saved content, as Server-Sent Events |
+| `/api/agents/projects/<projectId>/attachments/<id>/validate-node` | POST | Generate, execute-through, validate, self-correct, then propose, for one node, as Server-Sent Events |
+| `/api/agents/.../proposals/<proposalId>/apply-node` | POST | Apply one planned node from a pending dataflow-plan proposal |
+| `/api/agents/.../proposals/<proposalId>/apply-edges` | POST | Apply the plan's edges: the connection review stage |
+| `/api/agents/.../proposals/<proposalId>/plan-goals` | PATCH | Edit one planned node's goal before it is created |
+
+Every run appends to a per-day ledger under a file lock
+(`.curio/users/<key>/agents/ledger/`), written from the token counts each
+provider returns on the completion itself. It is a record, not a gate: no run is
+refused for usage, no USD is computed, and no endpoint exposes it. There were
+three policy scopes here (account, per-dataflow, per-attachment) with
+tighten-only writes and optimistic revisions; all six endpoints are gone with
+the limits interface they served, and `maxOutputTokens` is now the deployment
+constant `services.DEPLOYMENT_MAX_OUTPUT_TOKENS`.
+
 ### Starter Routes
 
 | Endpoint | Method | Purpose |
@@ -769,6 +884,9 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/ConnectionValidator.ts` | Edge validation logic |
 | `src/api/` | API client wrappers (`packagesApi`, `projectsApi`); `authApi` lives at `src/utils/authApi.ts` |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |
+| `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
+| `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
+| `src/components/AiSettingsModal.tsx` | AI Settings: the account-level provider, model and credentials every AI surface reads |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend
@@ -794,6 +912,18 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/models.py` | `DatasetIndexEntry`, the index's SQLAlchemy table |
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
+| `backend/app/agents/routes.py` | `/api/agents/*` endpoints (catalog, imports, publications, per-dataflow, attachments, runs) |
+| `backend/app/agents/services.py` | The facade every agent route calls; owns the `requiresAgents` closure on add and the dependent check on remove |
+| `backend/app/agents/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES` |
+| `backend/app/agents/builtin.py` | The 21 built-in agents, as a data-driven roster |
+| `backend/app/agents/storage.py` | Definition store under `.curio/users/<u>/agents/<coord>/` |
+| `backend/app/agents/imports.py` | My imports registry (`imported-agents.json`) |
+| `backend/app/agents/project_agents.py` | The per-dataflow lockfile in `spec.dataflow.agents` |
+| `backend/app/agents/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
+| `backend/app/agents/provider_config.py` | The single provider resolver: guest env, then per-user `llm_*`, then the deployment default |
+| `backend/app/agents/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported |
+| `backend/app/agents/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives |
+| `backend/app/agents/ledger.py` | Append-only per-day record of runs and tokens; flock-guarded. A record, not a gate |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |
 | `backend/extensions.py` | SQLAlchemy and Flask-Migrate initialization |
 

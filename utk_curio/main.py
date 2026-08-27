@@ -96,7 +96,7 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, allow_runtime_install=None, isolation=None, exec_user=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, allow_runtime_install=None, isolation=None, exec_user=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -166,6 +166,29 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
                 "generic gateway timeout instead of a clear per-node message."
             )
         os.environ["CURIO_EXEC_TIMEOUT"] = str(exec_timeout)
+
+    # AI provider. Curio ships no endpoint of its own (see backend/config.py):
+    # an instance whose operator configures nothing resolves no provider, and
+    # the agent surfaces say so rather than reaching a third party nobody chose.
+    if llm_provider:
+        os.environ["CURIO_DEFAULT_LLM_API_TYPE"] = str(llm_provider)
+    if llm_base_url:
+        os.environ["CURIO_DEFAULT_LLM_BASE_URL"] = str(llm_base_url)
+    if llm_model:
+        os.environ["CURIO_DEFAULT_LLM_MODEL"] = str(llm_model)
+    if guest_llm_api_key:
+        os.environ["GUEST_LLM_API_KEY"] = str(guest_llm_api_key)
+
+    # The agents' web-search tool. Unset, the tool is unavailable: an agent
+    # never reaches an endpoint the operator did not name.
+    if agent_search_url:
+        os.environ["CURIO_SEARCH_URL"] = str(agent_search_url)
+
+    # HuggingFace, for the Street Vision node's gated models. A user's own
+    # token in AI Settings wins over this; it is the fallback for everyone who
+    # has not set one.
+    if huggingface_token:
+        os.environ["CURIO_DEFAULT_HUGGINGFACE_TOKEN"] = str(huggingface_token)
 
     os.environ["ENABLE_COLLAB"] = "1" if collab else "0"
 
@@ -1111,6 +1134,58 @@ def main():
         ),
     )
     parser.add_argument(
+        "--llm-provider", default=None, choices=["openai_compatible", "anthropic", "gemini"],
+        help=(
+            "Default AI provider for agents, node authoring and chat when a "
+            "user has not configured their own (sets "
+            "CURIO_DEFAULT_LLM_API_TYPE, default openai_compatible)."
+        ),
+    )
+    parser.add_argument(
+        "--llm-base-url", default=None, metavar="URL",
+        help=(
+            "Base URL of the default OpenAI-compatible endpoint (sets "
+            "CURIO_DEFAULT_LLM_BASE_URL). Curio ships NO default endpoint: "
+            "without this, an unconfigured instance resolves no provider and "
+            "says so, rather than sending prompts somewhere nobody chose."
+        ),
+    )
+    parser.add_argument(
+        "--llm-model", default=None, metavar="NAME",
+        help="Default model name (sets CURIO_DEFAULT_LLM_MODEL). No default.",
+    )
+    # There is deliberately no --llm-api-key. A key passed as an argument is
+    # visible in the process list to every user on the host; set
+    # CURIO_DEFAULT_LLM_API_KEY (or AICONN_API_KEY) in the environment instead.
+    parser.add_argument(
+        "--guest-llm-api-key", default=None, metavar="KEY",
+        help=(
+            "API key that enables AI features for guest users (sets "
+            "GUEST_LLM_API_KEY). Without one, guests are refused. Guests "
+            "otherwise inherit the default provider; GUEST_LLM_API_TYPE / "
+            "_BASE_URL / _MODEL remain env-only overrides for the rare "
+            "deployment that wants guests on a different model."
+        ),
+    )
+    parser.add_argument(
+        "--agent-search-url", default=None, metavar="TEMPLATE",
+        help=(
+            "URL template for the agents' web-search tool, with {q} for the "
+            "query (sets CURIO_SEARCH_URL). Defaults to DuckDuckGo's "
+            "keyless Instant Answer API. Point it at a local SearXNG, "
+            "SerpAPI, or Google Programmable Search for ranked web results."
+        ),
+    )
+    parser.add_argument(
+        "--huggingface-token", default=None, metavar="TOKEN",
+        help=(
+            "Deployment-wide HuggingFace token for the Street Vision node's "
+            "gated models (sets CURIO_DEFAULT_HUGGINGFACE_TOKEN). Each user "
+            "can set their own in AI Settings, which wins over this; gated "
+            "access is a per-account entitlement. Public models need no token."
+        ),
+    )
+    parser.add_argument(
         "--collab", action="store_true", default=False,
         help=(
             "Enable real-time collaborative editing (sets ENABLE_COLLAB=1). "
@@ -1157,6 +1232,12 @@ def main():
         exec_memory_mb=args.exec_memory_mb,
         exec_timeout=args.exec_timeout,
         exec_parallelism=args.exec_parallelism,
+        llm_provider=args.llm_provider,
+        llm_base_url=args.llm_base_url,
+        llm_model=args.llm_model,
+        guest_llm_api_key=args.guest_llm_api_key,
+        agent_search_url=args.agent_search_url,
+        huggingface_token=args.huggingface_token,
     )
 
     # if os.getenv("CURIO_DEV") != "1":

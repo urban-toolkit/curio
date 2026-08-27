@@ -28,7 +28,7 @@ from .utils import (
     require_user_auth,
     save_workflow_test_screenshot,
     set_node_code,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -80,7 +80,7 @@ def test_delete_and_backspace_both_remove_the_selected_node(
         username="delete_key",
         project_name="Delete Key",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     first = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
     second = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_SECOND)
@@ -125,7 +125,7 @@ def test_delete_inside_a_code_editor_edits_text_and_keeps_the_node(
         username="delete_key_editor",
         project_name="Delete Key In Editor",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
     set_node_code(page, node_id, "AB\n")

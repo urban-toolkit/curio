@@ -76,10 +76,6 @@ jest.mock('../../components/editing/WidgetsEditor', () => {
   };
 });
 
-jest.mock('../../components/editing/NodeExplanation', () => ({
-  __esModule: true,
-  default: () => null,
-}));
 jest.mock('../../components/editing/NodeProvenance', () => ({
   __esModule: true,
   default: () => null,

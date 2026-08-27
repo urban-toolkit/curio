@@ -25,6 +25,7 @@ import {
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
+import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
@@ -71,7 +72,11 @@ export function useDatasetCatalogDrawer(presented: boolean) {
 
   useEffect(() => {
     if (!presented) return;
-    const onRefresh = () => void catalog.reload({ bustCache: true });
+    // No per-key bustCache: notifyDatasetCatalogRefresh invalidates the whole
+    // cache before it dispatches, so every key is already gone by the time
+    // this listener runs. The old argument busted one key and left the
+    // palette's differently-keyed entry stale.
+    const onRefresh = () => void catalog.reload();
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
   }, [catalog.reload, presented]);
@@ -346,7 +351,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         }
       }
       const confirmed = window.confirm(
-        `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just removed from this dataflow.${usageNote}`,
+        `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just removed from this dataflow. ${permanentDeletionNotice()}${usageNote}`,
       );
       if (!confirmed) return;
       setBusyId(dataset.id);

@@ -41,7 +41,9 @@ themselves are ``test_canvas_authoring_e2e.py``.
 Not covered: a consumer that has actually *run*. Its pill would read Active, but
 getting there means driving the sandbox, and the Jest panel test already asserts
 that rendering from a fixture. The pill this test sees is Stale, which is the
-correct and deterministic outcome of the gesture it makes - see step 5.
+correct and deterministic outcome of the gesture it makes - see step 5. The
+run itself - loader executes, data crosses the edge, consumer asserts on it -
+is ``test_dataset_catalog_datasets_e2e.py``, for every catalog dataset.
 
 Run::
 
@@ -64,7 +66,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -260,7 +262,7 @@ def test_wiring_a_consumer_grows_dataset_lineage(
         username="lineage_wiring",
         project_name="Dataset Lineage",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
     token = session["token"]
     project_id = session["project"]["id"]
 

@@ -1,6 +1,6 @@
 # Example: Multiple dataflows joined into one Vega-Lite dashboard
 
-This example shows how several independent dataflows, each loading from the same source CSV and reducing it differently, can be joined back together via `Merge Flow` and `Python Computation` to drive coordinated Vega-Lite views. The use case is Chicago's [red-light-violation dataset](data/08-red_light_violations.zip): six dataflow branches answer six analytical questions (seasonal trend, monthly heatmap, stacked area by season, top intersections, camera-count distribution, and spatial map), all reading from a single root `Data Loading` node.
+This example shows how several independent dataflows, each loading from the same source table and reducing it differently, can be joined back together via `Merge Flow` and `Python Computation` to drive coordinated Vega-Lite views. The use case is Chicago's red-light-violation dataset: six dataflow branches answer six analytical questions (seasonal trend, monthly heatmap, stacked area by season, top intersections, camera-count distribution, and spatial map), all reading from a single root `Data Loading` node.
 
 This example is intentionally large; the markdown shows the *shape* of each branch and one representative Vega-Lite spec per branch. The full set of 24 nodes is in [04-vega-lite-multi-flow-dashboard.json](04-vega-lite-multi-flow-dashboard.json).
 
@@ -33,18 +33,27 @@ flowchart LR
 
 ## Data
 
-[08-red_light_violations.zip](data/08-red_light_violations.zip): Chicago's open-data export of red-light camera violations.
+This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
+addresses a dataset by id via `curio_dataset_path("<id>")` rather than by a repo-relative path,
+so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
-Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
+| Dataset | Id | Format | Size |
+|---|---|---|---|
+| Chicago Red-Light Violations | `data.cityofchicago.red-light-violations` | parquet | 354,418 rows |
 
-## Step 1: Load the violations CSV (`Data Loading`)
+The catalog dataset is a Parquet conversion of the original zipped export, so it loads faster
+and takes less space in the repo while keeping every row. It ships in the committed catalog under
+`datasets/` and is already added to this dataflow. Source: [Chicago Data Portal](https://data.cityofchicago.org/).
+
+## Step 1: Load the violations table (`Data Loading`)
 
 Every branch starts here. The same loaded DataFrame is fed into every downstream transformation; Curio reuses the result rather than re-reading the file once per branch.
 
 ```python
 import pandas as pd
 
-df = pd.read_csv("docs/examples/data/08-red_light_violations.zip")
+dataset_path = curio_dataset_path("data.cityofchicago.red-light-violations")
+df = pd.read_parquet(dataset_path)
 return df
 ```
 

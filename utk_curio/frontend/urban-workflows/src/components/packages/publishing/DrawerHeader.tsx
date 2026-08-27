@@ -15,6 +15,9 @@ export interface DrawerHeaderProps {
   titleId?: string;
   subtitle?: string;
   closeAriaLabel?: string;
+  /** Extra controls between the title and the close button. Rendered only
+   *  when given, so the Node and Data drawers are unchanged. */
+  actions?: React.ReactNode;
 }
 
 /**
@@ -31,6 +34,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
   titleId = "node-catalog-drawer-title",
   subtitle = "Node packages available to this dataflow.",
   closeAriaLabel = "Close Node Catalog drawer",
+  actions,
 }) => (
   <>
     <header className={styles.topBar}>
@@ -51,6 +55,8 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
           {title}
         </h2>
       </div>
+
+      {actions}
 
       <button
         type="button"

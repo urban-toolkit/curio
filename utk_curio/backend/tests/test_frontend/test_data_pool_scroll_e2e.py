@@ -33,7 +33,7 @@ from .utils import (
     run_node_and_wait,
     save_workflow_test_screenshot,
     set_node_code,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -79,7 +79,7 @@ def test_the_data_pool_scrolls_its_rows_without_resizing_the_node(
         username="pool_scroll",
         project_name="Data Pool Scroll",
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=POS_UP)
     pool = drag_to_canvas(page, page.locator(POOL_TILE), at=POS_DOWN)

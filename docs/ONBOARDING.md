@@ -31,7 +31,7 @@ This document is meant for **undergraduate students** involved in the Curio proj
 
 In-browser map rendering and GPU compute are provided by the **Autark** grammar (`@urban-toolkit/autk-grammar`). It is exposed in dataflows through a single `Autark` node whose "UrbanSpec" declaratively combines data loading (OSM/PBF), GPU `compute` (WGSL), and `map` / `plot` rendering. How a spec references data arriving from upstream nodes, using either the `upstream` keyword or named layer references, is covered in [ARCHITECTURE.md](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
-**Urbanite** is a separate research project that has been integrated into Curio, adding LLM-powered assistance for dataflow authoring. See [urbantk.org/urbanite](https://urbantk.org/urbanite) for the paper.
+The **Agent Catalog** adds model-backed help for dataflow authoring: attach an agent to a node, a connection, or the canvas, and chat with it from the dock. Which model answers is configured in **AI Settings**.
 
 If you would like to learn more about the design and research behind Curio, please see the research papers linked in the repository.
 

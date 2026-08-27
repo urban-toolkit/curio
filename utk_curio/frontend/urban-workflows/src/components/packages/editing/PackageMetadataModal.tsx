@@ -99,9 +99,9 @@ export function PackageMetadataModal({ dirName, onClose, onSaved }: PackageMetad
 
     if (loadError) {
         return (
-            <ModalShell preservePackagePaletteOpen onClose={onClose}>
+            <ModalShell preservePackagePaletteOpen onClose={onClose} titleId="package-metadata-title">
                 <div className={styles.content}>
-                    <h2 className={styles.title}>Edit package metadata</h2>
+                    <h2 id="package-metadata-title" className={styles.title}>Edit package metadata</h2>
                     <p className={styles.error} role="alert">{loadError}</p>
                     <div className={styles.footer}>
                         <button type="button" className={styles.ghostBtn} onClick={onClose}>Close</button>
@@ -113,9 +113,9 @@ export function PackageMetadataModal({ dirName, onClose, onSaved }: PackageMetad
 
     if (!pkg) {
         return (
-            <ModalShell preservePackagePaletteOpen onClose={onClose}>
+            <ModalShell preservePackagePaletteOpen onClose={onClose} titleId="package-metadata-title">
                 <div className={styles.content}>
-                    <h2 className={styles.title}>Edit package metadata</h2>
+                    <h2 id="package-metadata-title" className={styles.title}>Edit package metadata</h2>
                     <p className={styles.subtitle}>Loading…</p>
                 </div>
             </ModalShell>
@@ -128,9 +128,9 @@ export function PackageMetadataModal({ dirName, onClose, onSaved }: PackageMetad
     const jsEntries = Object.entries(jsDeps);
 
     return (
-        <ModalShell preservePackagePaletteOpen onClose={busy ? () => {} : onClose}>
+        <ModalShell preservePackagePaletteOpen onClose={busy ? () => {} : onClose} titleId="package-metadata-title">
             <div className={styles.content}>
-                <h2 className={styles.title}>Edit package metadata</h2>
+                <h2 id="package-metadata-title" className={styles.title}>Edit package metadata</h2>
                 <p className={styles.subtitle}>
                     {pkg.packageId}@{pkg.major} · v{pkg.version}
                 </p>

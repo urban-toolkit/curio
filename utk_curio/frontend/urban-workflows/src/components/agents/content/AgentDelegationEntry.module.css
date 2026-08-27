@@ -1,0 +1,96 @@
+/* Delegation entry (memo dev/72): a compact one-task card on the parent's
+ * turn. The delegated agent's icon renders as a small circular badge notched
+ * into the entry's top-left corner (the approved concept style) — it IS the
+ * link to that agent's chat. */
+
+.entry {
+  position: relative;
+  margin: 8px 0 4px 8px;
+  padding: 7px 10px 7px 18px;
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  background: var(--curio-surface-muted);
+  font-size: 12px;
+}
+
+.failed {
+  border-color: var(--curio-danger-border);
+  background: var(--curio-danger-bg);
+}
+
+/* The icon notch: overlapping the top-left corner, category-tinted. */
+.badge {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--curio-card-bg);
+  border: 1.5px solid currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  padding: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+button.badge {
+  cursor: pointer;
+}
+
+button.badge:hover,
+button.badge:focus-visible {
+  transform: scale(1.12);
+  outline: none;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title {
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.name {
+  color: var(--curio-text-secondary);
+}
+
+.status {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.statusOk {
+  color: var(--curio-success-text);
+  background: var(--curio-success-bg);
+}
+
+.statusFailed {
+  color: var(--curio-danger-text);
+  background: var(--curio-danger-bg);
+}
+
+.summary {
+  margin-top: 3px;
+  color: var(--curio-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Category tints (the palette contract — same values as the chat header). */
+.tint_node     { color: var(--curio-category-agent-node-fg); }
+.tint_canvas   { color: var(--curio-category-agent-canvas-fg); }
+.tint_data     { color: var(--curio-category-agent-data-fg); }
+.tint_evaluate { color: var(--curio-category-agent-evaluate-fg); }
+.tint_package  { color: var(--curio-category-agent-package-fg); }

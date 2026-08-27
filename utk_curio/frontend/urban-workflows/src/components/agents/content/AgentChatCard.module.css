@@ -1,0 +1,54 @@
+/* Chat feedback visual contract (docs/03 §"Chat feedback visual system"):
+   one subtle grouped surface, hairline border, 12px radius, a small leading
+   accent dot for identity (never a colored bar), and a white raised inner
+   panel for dense content. */
+
+.card {
+  background: var(--curio-surface-muted);
+  border: 1px solid var(--curio-border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.accentDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.kind {
+  font-weight: 400;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--curio-text-meta);
+}
+
+.inner {
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
+}
+
+.line {
+  font-size: 0.85rem;
+  color: var(--curio-text-secondary);
+  margin: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

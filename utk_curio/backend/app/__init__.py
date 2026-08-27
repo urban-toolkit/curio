@@ -39,6 +39,11 @@ def create_app(config_class=config_class):
     db.init_app(app)
     migrate.init_app(app, db)
 
+    # Settings whose meaning changed in this release. Warns and continues:
+    # each of these leaves a working boot and a quietly broken feature.
+    from utk_curio.backend.app.upgrade_notices import check_upgrade_notices
+    check_upgrade_notices()
+
     from utk_curio.backend.app.api import bp as api_bp
     app.register_blueprint(api_bp, url_prefix='')
 
@@ -60,6 +65,9 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.datasets import datasets_bp
     app.register_blueprint(datasets_bp)
+
+    from utk_curio.backend.app.agents.routes import agents_bp
+    app.register_blueprint(agents_bp)
 
     from utk_curio.backend.app.streetvision import bp as streetvision_bp
     app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")

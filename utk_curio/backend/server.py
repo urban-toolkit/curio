@@ -50,7 +50,10 @@ DEFAULT_RELOADER_TYPE = os.getenv('FLASK_RELOADER_TYPE', 'stat')
 with app.app_context():
     try:
         from utk_curio.backend.app.users.services import _shared_guest_user
-        from utk_curio.backend.app.projects.services import reconcile_guest_projects
+        from utk_curio.backend.app.projects.services import (
+            _user_dir_key,
+            reconcile_guest_projects,
+        )
         guest = _shared_guest_user()
         n = reconcile_guest_projects(guest)
         if n:
@@ -59,6 +62,18 @@ with app.app_context():
             from utk_curio.backend.app.projects.seed import seed_example_projects
             s = seed_example_projects(guest)
             app.logger.info("Seeded %d example project(s)", s)
+            # After the projects exist, provision the datasets their
+            # ``dataflow.datasets`` refs declare - the dataset counterpart to
+            # the node-package seeding in ``app/__init__.py``. Without the
+            # store copy the refs still resolve for execution (the hub row wins
+            # the catalog dedupe) but the Data palette has no title, format or
+            # count to show.
+            from utk_curio.backend.app.datasets.seed import seed_example_datasets
+            d = seed_example_datasets(_user_dir_key(guest))
+            if d:
+                app.logger.info(
+                    "Provisioned %d example dataset(s): %s", len(d), ", ".join(d)
+                )
     except Exception:
         app.logger.warning("Could not ensure guest user on startup", exc_info=True)
 

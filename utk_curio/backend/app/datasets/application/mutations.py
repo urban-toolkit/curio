@@ -340,38 +340,41 @@ class CatalogMutations:
         # ``imported`` / ``computed`` provenance (``publishedToHub`` for the badge).
         if dataflow_id:
             try:
-                refs = self.installed.list_refs(dataflow_id)
-                changed = False
-                for ref in refs:
-                    ref_id = ref.get("datasetId") or ref.get("id")
-                    # Match by id, or (computed) any ref for the same producer node so
-                    # project refs keyed as ``computed.<node>`` update when publish is
-                    # invoked with the hub / remapped catalog id from the Data Catalog page.
-                    matches_producer = bool(
-                        publish_is_computed
-                        and prior_producer_node_id
-                        and ref.get("producerNodeId") == prior_producer_node_id,
-                    )
-                    if ref_id in (dataset_id, catalog_id) or matches_producer:
-                        ref["datasetId"] = catalog_id
-                        ref["dirName"] = dir_name
-                        # Computed datasets keep origin="computed" always; track publish
-                        # state with a separate publishedToHub flag so the frontend can
-                        # show the correct Published badge without changing the origin.
-                        if ref.get("origin") == "computed" or ref.get("producerNodeId"):
-                            ref["publishedToHub"] = True
-                            # Ensure origin is "computed" (not "hub") for computed datasets
-                            ref.setdefault("origin", "computed")
-                        else:
-                            ref["publishedToHub"] = True
-                            # Keep provenance: published copies in the user store stay imported.
-                            if ref.get("origin") == "source_node":
-                                pass
+                # The stamp runs inside the section writer's lock (dev/82);
+                # returning ``None`` when no ref matched skips the write.
+                def _stamp_published(refs: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+                    changed = False
+                    for ref in refs:
+                        ref_id = ref.get("datasetId") or ref.get("id")
+                        # Match by id, or (computed) any ref for the same producer node so
+                        # project refs keyed as ``computed.<node>`` update when publish is
+                        # invoked with the hub / remapped catalog id from the Data Catalog page.
+                        matches_producer = bool(
+                            publish_is_computed
+                            and prior_producer_node_id
+                            and ref.get("producerNodeId") == prior_producer_node_id,
+                        )
+                        if ref_id in (dataset_id, catalog_id) or matches_producer:
+                            ref["datasetId"] = catalog_id
+                            ref["dirName"] = dir_name
+                            # Computed datasets keep origin="computed" always; track publish
+                            # state with a separate publishedToHub flag so the frontend can
+                            # show the correct Published badge without changing the origin.
+                            if ref.get("origin") == "computed" or ref.get("producerNodeId"):
+                                ref["publishedToHub"] = True
+                                # Ensure origin is "computed" (not "hub") for computed datasets
+                                ref.setdefault("origin", "computed")
                             else:
-                                ref["origin"] = "imported"
-                        changed = True
-                if changed:
-                    self.installed.replace_refs(dataflow_id, refs)
+                                ref["publishedToHub"] = True
+                                # Keep provenance: published copies in the user store stay imported.
+                                if ref.get("origin") == "source_node":
+                                    pass
+                                else:
+                                    ref["origin"] = "imported"
+                            changed = True
+                    return refs if changed else None
+
+                self.installed.mutate_refs(dataflow_id, _stamp_published)
             except Exception:  # noqa: BLE001 – never block publish on a ref update failure
                 pass
 
@@ -575,14 +578,20 @@ class CatalogMutations:
             item["producerNodeId"] = producer["nodeId"] if producer else node_seg
             item["origin"] = "computed"
 
-        refs = self.installed.list_refs(dataflow_id)
-        existing = next((ref for ref in refs if ref.get("datasetId") == item["id"]), None)
         ref = self._ref_from_item(item)
-        if existing:
-            existing.update(ref)
-        else:
-            refs.append(ref)
-        self.installed.replace_refs(dataflow_id, refs)
+        # An install fully REPLACES any existing ref for this dataset id (dev/81
+        # Fix 3) — never a dict-merge. Fields only the old ref carried are
+        # dropped by design: legacy fat-ref metadata (title/path/format/…)
+        # converges to the lean form with the manifest as the metadata
+        # authority, and ``publishedToHub`` is re-derived from the hub registry
+        # row at listing time (dedup merge), so a reinstall can never resurrect
+        # stale state. ``installedAt`` is always the new install's timestamp.
+        # The transform runs inside the section writer's lock (dev/82) so a
+        # concurrent mutation of another dataset can't be lost.
+        self.installed.mutate_refs(
+            dataflow_id,
+            lambda refs: [r for r in refs if r.get("datasetId") != item["id"]] + [ref],
+        )
         installed_item = deepcopy(item)
         installed_item["origin"] = ref["origin"]
         installed_item["installed"] = True
@@ -620,21 +629,30 @@ class CatalogMutations:
             if not removed:
                 raise DatasetCatalogError("Dataset is not installed in this dataflow", 404)
             return {"id": dataset_id, "installed": False}
-        refs = self.installed.list_refs(dataflow_id)
-        removed_ref = next(
-            (ref for ref in refs if ref.get("datasetId") == dataset_id or ref.get("id") == dataset_id),
-            None,
-        )
-        next_refs = [ref for ref in refs if ref.get("datasetId") != dataset_id and ref.get("id") != dataset_id]
-        if len(next_refs) == len(refs):
-            raise DatasetCatalogError("Dataset is not installed in this dataflow", 404)
-
         # For computed datasets, uninstall removes ONLY this dataflow's ref — the
         # account-store folder is retained. A computed dataset is an account-level
         # Data Catalog asset; uninstalling it from a project must leave it
         # installable again later. Permanently removing the account asset is a
-        # separate explicit action (``delete_dataset``).
-        self.installed.replace_refs(dataflow_id, next_refs)
+        # separate explicit action (``delete_dataset``). The removed ref is
+        # captured inside the section writer's lock (dev/82); a miss returns
+        # ``None`` so nothing is written (and no timestamp bumps) before the 404.
+        removed: list[dict[str, Any]] = []
+
+        def _drop(refs: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+            match = next(
+                (ref for ref in refs if ref.get("datasetId") == dataset_id or ref.get("id") == dataset_id),
+                None,
+            )
+            if match is None:
+                return None
+            removed.append(match)
+            return [ref for ref in refs if ref.get("datasetId") != dataset_id and ref.get("id") != dataset_id]
+
+        spec = self.installed.mutate_refs(dataflow_id, _drop)
+        removed_ref = removed[0] if removed else None
+        if removed_ref is None:
+            raise DatasetCatalogError("Dataset is not installed in this dataflow", 404)
+        next_refs = (spec.get("dataflow") or {}).get("datasets") or []
 
         # For imported datasets, uninstalling must remove *all traces* — the
         # account-level store folder (manifest, data file, and counts sidecar all
@@ -768,26 +786,29 @@ class CatalogMutations:
         # therefore the title) is still readable from the user's local copy.
         if dataflow_id:
             try:
-                refs = self.installed.list_refs(dataflow_id)
-                changed = False
-                for ref in refs:
-                    ref_id = ref.get("datasetId") or ref.get("id")
-                    # ``dirName`` can be a present-but-null legacy field; ``or ""``
-                    # guards ``None.split`` so one bad ref doesn't abort the whole
-                    # spec reconciliation.
-                    if ref_id == dataset_id or (ref.get("dirName") or "").split("@")[0] == dataset_id:
-                        # Computed datasets keep origin="computed"; only clear the publishedToHub flag.
-                        # Non-computed datasets revert to "imported".
-                        if ref.get("origin") == "computed" or ref.get("producerNodeId"):
-                            ref["publishedToHub"] = False
-                            ref.setdefault("origin", "computed")
-                        else:
-                            ref["origin"] = "imported"
-                            ref["publishedToHub"] = False
-                        # Keep dirName – it now points to the user's store copy.
-                        changed = True
-                if changed:
-                    self.installed.replace_refs(dataflow_id, refs)
+                # Runs inside the section writer's lock (dev/82); ``None`` when
+                # no ref matched skips the write.
+                def _clear_published(refs: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+                    changed = False
+                    for ref in refs:
+                        ref_id = ref.get("datasetId") or ref.get("id")
+                        # ``dirName`` can be a present-but-null legacy field; ``or ""``
+                        # guards ``None.split`` so one bad ref doesn't abort the whole
+                        # spec reconciliation.
+                        if ref_id == dataset_id or (ref.get("dirName") or "").split("@")[0] == dataset_id:
+                            # Computed datasets keep origin="computed"; only clear the publishedToHub flag.
+                            # Non-computed datasets revert to "imported".
+                            if ref.get("origin") == "computed" or ref.get("producerNodeId"):
+                                ref["publishedToHub"] = False
+                                ref.setdefault("origin", "computed")
+                            else:
+                                ref["origin"] = "imported"
+                                ref["publishedToHub"] = False
+                            # Keep dirName – it now points to the user's store copy.
+                            changed = True
+                    return refs if changed else None
+
+                self.installed.mutate_refs(dataflow_id, _clear_published)
             except Exception:  # noqa: BLE001
                 pass
 

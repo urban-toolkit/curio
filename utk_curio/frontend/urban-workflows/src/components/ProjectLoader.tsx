@@ -38,6 +38,7 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
     loadProject,
     loadSharedProject,
     setOutputs,
+    hydrateRestoredOutputs,
     loadParsedTrill,
     projectId,
   } = useFlowContext();
@@ -116,6 +117,10 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
           }
           return merged;
         });
+        // Refill downstream data.input (incl. merge slots) from the restored
+        // outputs — otherwise every reload requires rerunning each upstream
+        // node before merges/pools receive anything (dev/64).
+        hydrateRestoredOutputs(newOutputs);
       }
     };
 

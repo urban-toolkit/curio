@@ -63,20 +63,39 @@ Curio supports two patterns for third-party API keys; pick by who the key belong
 
 - **Per-user secrets** (Google Maps, Mapbox, OpenAI personal keys, …) → make it a **text input on the node itself**, held in React state for the session. The behavior hook passes it to the backend as a request-body field. Never persist to the dataflow spec (it would leak when shared) or to `localStorage` (it would survive logout). The Street View Fetcher node is the worked example; see [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx) and the `api_key` body field in [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py).
 
-- **Operator-wide secrets** that every user of a deployment shares (an internal data-source token, a back-of-house HuggingFace token) → keep using `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. The Street Vision blueprint still does this for `HUGGINGFACE_TOKEN` because gated-model access is the operator's concern, not the user's.
+- **Per-account credentials that outlive a session** (a HuggingFace token, an LLM provider key) -> store them on the user row and edit them in **AI Settings**, with a deployment-wide fallback from a `curio.py start` flag. The HuggingFace token is the worked example: gated models are unlocked per HuggingFace account by accepting a licence, so a single operator token could not represent what each user is entitled to download. It resolves as *the caller's own token, else the deployment default* in [`streetvision/services/huggingface.py`](../utk_curio/backend/app/streetvision/services/huggingface.py)::`resolve_hf_token`.
 
-For the operator pattern, surface presence in `/health` so the frontend can warn the user before they trigger an action that needs the key:
+- **Genuinely operator-wide secrets** that no user should override (an internal data-source token) -> `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. Prefer a documented `curio.py start` flag that names the variable, so the knob is discoverable.
+
+Two things the per-account pattern has to get right, and both bit us:
+
+**Resolve in the request, use it downstream.** Street Vision runs inference on a
+detached worker thread, where `g` is gone. The route resolves the token and
+passes it into the job; resolving it inside the worker would silently fall back
+to the deployment value.
+
+**Put the credential in any cache key it affects.** The model cache was keyed on
+`model_id` alone. The first user to download a gated model would seed an entry
+every later caller hit for free, including one whose account had never accepted
+that licence. The key is now `(model_id, token fingerprint)`, hashed rather than
+raw so the token is not sitting where a traceback could print it.
+
+Surface presence, never the value, in `/health` so the frontend can warn before
+an action that needs the credential:
 
 ```python
 @bp.get("/health")
 def health():
-    return jsonify({
-        "status": "healthy",
-        "has_huggingface_token": bool(os.environ.get("HUGGINGFACE_TOKEN")),
-    })
+    from .services import huggingface as hf_svc
+
+    # True when a token resolves for THIS caller: their own, or the fallback.
+    return jsonify({"status": "healthy", "has_huggingface_token": bool(hf_svc.resolve_hf_token())})
 ```
 
-Document the env var in the package's `README.md` and in the user-facing example doc. Never check secrets into git.
+A package whose backend needs to know *who* is calling must send the bearer
+token: read `window.curio.getAuthToken()` (a getter, because a package bundle
+evaluates once at boot, before sign-in) and pass it as an `Authorization`
+header. Never check secrets into git.
 
 ### 3.3 Public APIs without auth
 
@@ -137,11 +156,11 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs. That is f
 
 ### 3.6 Caching expensive responses
 
-[`streetvision/services/cache.py`](../utk_curio/backend/app/streetvision/services/cache.py) stores fetched Street View images under `instance/streetvision_cache/` so re-running with the same bbox doesn't re-hit Google (and re-bill the user). Pattern:
+[`streetvision/services/cache.py`](../utk_curio/backend/app/streetvision/services/cache.py) stores fetched Street View images under `.curio/users/<user-key>/streetvision/images/` (overlays alongside, under `overlays/`) so re-running with the same bbox doesn't re-hit Google (and re-bill the user). Pattern:
 
 - Cache key = hash of the request inputs (e.g., `pano_id + size`).
 - TTL: forever for immutable content (an image at a coordinate); a few hours for content that changes (model lists).
-- Store under `instance/<package-name>_cache/` so it lives alongside Curio's other ephemeral state (gitignored).
+- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. A deployment-wide cache is a cross-user read wherever the serving route is unauthenticated: Street Vision's overlay route has no `@require_auth`, so a shared directory let anyone who could guess an image id fetch somebody else's imagery. That is why this cache moved, and why the previous `STREETVISION_CACHE_DIR` override no longer exists.
 
 ### 3.7 The error contract back to the frontend
 
@@ -524,3 +543,82 @@ Skip any group that doesn't apply. A Python code-node needs only the first
 group, because it reuses the built-in `code` behavior and ships no JavaScript at all.
 The two behavior-hook groups are alternatives, not steps: pick the in-package
 one unless you are adding a behavior to Curio itself.
+
+## 8. Agent-authored packages
+
+Everything above describes hand-authoring. Packages can also be **authored by
+agents**: the **Package Builder** (`agent.package-builder`) turns a described need into one
+reviewed draft through the `package.draft.apply` contract, and an **isolated build service**
+does what `npm run build:packages` does for first-party packages - without ever touching this
+repo's build list:
+
+1. The typed draft (manifest, sources, behavior entries, dependencies, requested nodes) is
+   validated under the same rules as §6 - installer path safety, `node-package.v4`, the works.
+   `scripts/` is builder-owned: agents ship behavior **source**; the service compiles it.
+2. JS dependencies resolve against the operator's approved registry only (pinned versions,
+   SRI-verified, SBOM'd); the deployment-pinned compiler (`CURIO_BUILD_ESBUILD`) bundles them
+   offline and externalizes React/ReactDOM/ReactFlow to the §5 host globals - the same
+   externals contract as the webpack config, enforced rather than configured.
+3. The bundle renders in a sandboxed preview (`CURIO_BUILD_PREVIEW_RUNNER`) across five contract
+   states - empty, loading, success, malformed-input, error - and a failed preview blocks Apply.
+   **Curio ships a reference runner** (Playwright driving headless Chromium, real
+   measured dimensions and real screenshots, the host React globals injected exactly as the
+   live runtime provides them): generate its pinned wrapper with
+   `python -m utk_curio.tools.install_preview_runner` and export the printed
+   `CURIO_BUILD_PREVIEW_RUNNER=…` line (prerequisites are named loudly at generation:
+   `python -m playwright install chromium` and the frontend's `node_modules`).
+   `CURIO_BUILD_PREVIEW_POLICY=skip` remains the fallback it was meant to be -
+   for deployments that genuinely cannot run a browser, the draft reaches review unpreviewed
+   with the skip recorded in its provenance and stated verbatim on the review card. Drop the
+   stale skip once a runner is configured. (Caveat, recorded not hidden: on Linux the worker's
+   1 GiB `RLIMIT_AS` can kill Chromium - macOS ignores AS; raising the preview limits tier is
+   its own decision.)
+4. The user reviews the diff, dependencies, and preview; Apply promotes the **exact reviewed
+   artifact digest** through the normal installer (backup held, journaled, rollback honest).
+
+**Looks are prompt-driven, never repo fixtures**: the Package Builder's instruction
+carries one generic authoring contract (register exactly the manifest's behavior keys; hook
+`(data, nodeState) => { contentComponent }`; React elements only - never raw HTML; per-instance
+color via `data.appearance.backgroundColor` with derived ink; self-contained, no network). The
+scenario - e.g. the Researcher's post-it notes - lives in the CALLING agent's instruction as
+requirements, and two runs may legitimately generate different code for the same look.
+
+**Generated backend code runs in the package backend sandbox**: a package may declare `backend: { entry: "backend/<file>.py", handlers:
+[{ name, timeoutClass }] }` plus the `server-code` permission (`server-network` too when its
+code reaches the network - both are shown to the user at review), and link a template's Run
+to a handler via `backendHandler`. The entry exposes `def handle(payload)` (or a `HANDLERS`
+dict); a node run delivers `{"content": <editor text>, "input": <upstream JSON or null>}`
+through `POST /api/packages/<dir>/backend/<handler>` - the ONLY caller surface. The code
+never runs inside Curio's host process: each invocation spawns a short-lived worker with a
+scrubbed from-scratch env (no secrets exist to steal), rlimits, wall-clock kill, and capped
+I/O, speaking the versioned `curio.pkgbackend.v1` envelope; a capped persistent directory
+rides `CURIO_PKG_DATA_DIR`. At build time a policy scan blocks the escape-hatch families
+(subprocess/ctypes/dynamic code/resident frameworks; undeclared network) and a **probing
+phase** loads every declared handler in a real sandbox worker - a failed probe blocks Apply
+exactly as a failed preview. Both install authorities pin the entry's digest; invocation
+verify-on-read refuses drift with reinstall guidance. Every invocation appends an audit row
+(sizes and outcomes, never payloads) under `package-backend-ledger/`, archived by the
+operator pruning it; nothing expires it automatically.
+Operator seams: `CURIO_BACKEND_SANDBOX_PYTHON` pins the worker interpreter, and
+`CURIO_BACKEND_OVERLAY_MAX_MB` (default 512) caps the per-package dependency overlay.
+**Handler dependencies are isolated**: a backend-bearing package's declared python
+deps install at Apply into `.curio/users/<key>/package-backend-overlays/<pkg>/` via
+`pip --target` - the shared interpreter is touched only when the manifest also carries
+warm-sandbox python templates, so a handler's dependencies cannot disturb the shared
+interpreter, and the restart notice fires only for the shared-interpreter portion. Workers
+receive the overlay on `PYTHONPATH` automatically; a post-Apply probe with the real overlay
+gates activation (rollback on failure). Handlers therefore import declared dependencies
+LAZILY inside `handle()` - they do not exist at build time, and the probe's refusal names
+exactly that fix when an author forgets. Uninstall sweeps the overlay, data dir, and entry
+pin; the invocation ledger survives for retention.
+
+**Activation lifecycle**: invocations and
+promotes serialize on one per-target lock, so an Apply and a node Run never interleave
+observably; an install whose pip step *actually changed* shared Python libraries says
+"Restart Curio to pick up <libs>" on its success surfaces (running nodes keep the previously
+loaded versions until then - nothing is inferred, pip's own report is the truth); and a
+handler whose sandbox workers fail three times in a row at the infrastructure level is
+quarantined for 120s with an honest 503 (handler-level errors never count; a reinstall clears
+it immediately). **Resident services, background jobs, and secret mediation remain out of
+scope** - and a draft
+needing them is refused with a finding naming exactly that.

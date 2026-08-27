@@ -1,13 +1,13 @@
 {
   "sha256": {
-    "README.md": "9a8c42f7b25709a6d97189c6eed882c29c153cf73201d8dd7a11446bc6b6bc09",
-    "manifest.json": "4312a4a500687b68621c8f1a731420cf9fff474eb805e78cbad2a338c281dfb5",
-    "sources/census-load.py": "717c18b81d433b896c7d5488bc5ac2cab6921e282789007adc055d577d48f5ed",
-    "sources/census-reproject.py": "49eac77a6a3b408487308998bb4c7959e1cf1ad63ab0df21768f60db7508ec91",
-    "sources/gt65-projection.py": "6761c9dad8b10ab56980a9988a10055d34b71f80e8e025b003f2e2da53a3f2c5",
-    "sources/mrt-load.py": "2305937e3909c731c85b67f491299a6aa1517a6e2e12adc8ddaf77116fdd8d1a",
-    "sources/utci-compute.py": "ec4951b3a1a19db50848cc610d4a450d8d9fd4bf18606eef4148f6610aff0c33",
-    "sources/utci-zonal.py": "9697255e5a4d374620d5c549dde88cdb46a1f8e5541d84d97d392043e468e57e",
-    "sources/weather-load.py": "25d0b734e36fed590885db502adc7afa878c54cabb809a61f0729c3b8c89e371"
+    "README.md": "e15dd198e084d010481b6348570b728dc05844562bb4ce1cdf6293218c304a78",
+    "manifest.json": "1cad6a87784d26e8618b65968dfc7e0a209892cd5e5c192fa8017e99b2a75269",
+    "sources/census-load.py": "0422a4520d97b88b5f709990cb567a779187fa53619686b2ee38a3ebf60aa5ae",
+    "sources/census-reproject.py": "64aed6794b29303e4d65fcd2f20518f14f1318522b6ece62d3dbc067d95b0fea",
+    "sources/gt65-projection.py": "447f2163209338169a0e52b814b2e26154476c2e748751e6c1b5eb063ef0aef9",
+    "sources/mrt-load.py": "b83a5a5b9d2486b03f883a2de1c4d3170946d1b11661f828885d31585c3f9625",
+    "sources/utci-compute.py": "fd5e5ebf0c9862b87ec4ac7c3c0068c314108b41c723c4f236ef02b1d2afd4ec",
+    "sources/utci-zonal.py": "dbe40afe3c6ba3aa76060c170889beab98eaa827bd02c59bb0465a56e1d8e55e",
+    "sources/weather-load.py": "037298a9f635f9e7a6bac185033b94e67d4b02409ea58d74e6386e316fd4789c"
   }
 }

@@ -28,6 +28,9 @@ export function AppSectionTabs() {
       <NavLink to="/catalog/data" className={tabClassName}>
         Data Catalog
       </NavLink>
+      <NavLink to="/catalog/agents" className={tabClassName} end>
+        Agent Catalog
+      </NavLink>
     </nav>
   );
 }

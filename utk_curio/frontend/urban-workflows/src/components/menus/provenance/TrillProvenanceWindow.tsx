@@ -179,7 +179,7 @@ export default function TrillProvenanceWindow({
     if (!open) return null;
 
     return (
-        <ModalShell onClose={closeModal} size="large">
+        <ModalShell onClose={closeModal} size="large" label={`Provenance for ${workflowName}`}>
             <p className={styles.title}>Provenance for {workflowName}</p>
             <div className={styles.graphDiv}>
                 <ReactFlowProvider>

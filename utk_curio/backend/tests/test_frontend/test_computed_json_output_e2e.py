@@ -63,7 +63,7 @@ from .utils import (
     run_node_and_wait,
     save_workflow_test_screenshot,
     set_node_code,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -325,7 +325,7 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
     )
     # A shared-guest session can never see the owner's computed datasets, so the
     # catalog half of this test would be meaningless there.
-    skip_if_shared_view(page)
+    require_owner_view(page)
     token = session["token"]
     project_id = session["project"]["id"]
 

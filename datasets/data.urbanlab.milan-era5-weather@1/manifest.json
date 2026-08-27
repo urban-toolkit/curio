@@ -1,0 +1,33 @@
+{
+  "id": "data.urbanlab.milan-era5-weather",
+  "name": "Milan ERA5 Hourly Weather",
+  "version": "1.0.0",
+  "format": "csv",
+  "description": "Hourly ERA5 reanalysis weather for Milan on 2022-07-22: dew point, wind speed and relative humidity, the meteorological inputs to a UTCI calculation. Re-saved comma-delimited from the original semicolon-delimited export.",
+  "publisher": "Urban Analytics Lab",
+  "license": "Copernicus licence",
+  "tags": [
+    "weather",
+    "era5",
+    "milan",
+    "csv"
+  ],
+  "dataFile": "data/milan-era5-weather.csv",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "ERA5 (Copernicus)",
+  "rowCount": 24,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-08-27T00:00:00Z",
+  "updatedAt": "2026-08-27T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null
+}

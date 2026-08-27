@@ -42,6 +42,7 @@ interface UserProviderProps {
     baseUrl?: string;
     apiKey?: string;
     model?: string;
+    huggingfaceToken?: string;
   }) => Promise<void>;
   saveUserType: (newType: "programmer" | "expert") => Promise<void>;
   logout: () => void;
@@ -121,7 +122,6 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         setSkipProjectPage(projectPageSkipped);
         setAllowGuest(Boolean(authEnabled && cfg?.allow_guest_login));
         setSharedGuestUsername(sharedGuestUsername);
-
         const token = getToken();
 
         if (!authEnabled) {
@@ -264,12 +264,14 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
       baseUrl?: string;
       apiKey?: string;
       model?: string;
+      huggingfaceToken?: string;
     }) => {
       const updated = await authApi.patchMe({
         llm_api_type: config.apiType,
         llm_base_url: config.baseUrl,
         llm_api_key: config.apiKey,
         llm_model: config.model,
+        huggingface_token: config.huggingfaceToken,
       });
       setUser(updated);
     },

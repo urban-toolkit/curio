@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CSS from "csstype";
 import { useNavigate } from "react-router-dom";
+import { permanentDeletionNotice } from "../../services/retentionCopy";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
 import { notebookToTrill } from "../../NotebookConvertor";
 import DataflowThumbnail from "../../components/DataflowThumbnail";
@@ -77,7 +78,11 @@ const ProjectsList: React.FC = () => {
   const [sort, setSort] = useState<ProjectSort>("last_opened");
   const [filter, setFilter] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Tri-state, like the three catalog browse pages: `undefined` is "nothing
+  // chosen yet, fall back to the first card", `null` is "the user closed the
+  // drawer". Collapsing those into one value is what let a dismissed drawer
+  // come back - see the effect below.
+  const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectSummary } | null>(null);
   const importNotebookRef = useRef<HTMLInputElement>(null);
@@ -113,17 +118,28 @@ const ProjectsList: React.FC = () => {
 
   // Mirrors the catalog browse pages: the first item is selected so the detail
   // drawer arrives populated instead of empty.
+  //
+  // `null` is honoured as a decision, not treated as "unset". Before, Close set
+  // `null` and this effect read it as falsy and re-selected `filtered[0]`; only
+  // the dependency array delayed it, so the drawer stayed shut until the next
+  // search keystroke, filter click, sort change or post-mutation refetch - and
+  // after a rename or archive it came back on a *different* project than the
+  // one the user had been reading.
   useEffect(() => {
     if (filtered.length === 0) {
-      setSelectedId(null);
+      setSelectedId(undefined);
       return;
     }
-    setSelectedId((prev) =>
-      prev && filtered.some((p) => p.id === prev) ? prev : filtered[0].id
-    );
-  }, [filtered]);
+    if (selectedId === null) return;
+    if (selectedId != null && filtered.some((p) => p.id === selectedId)) return;
+    setSelectedId(undefined);
+  }, [filtered, selectedId]);
 
-  const selected = filtered.find((p) => p.id === selectedId) ?? null;
+  const selected = useMemo(() => {
+    if (selectedId === null) return null;
+    if (selectedId != null) return filtered.find((p) => p.id === selectedId) ?? null;
+    return filtered[0] ?? null;
+  }, [filtered, selectedId]);
 
   const openProject = (id: string) => navigate("/dataflow/" + id);
 
@@ -157,7 +173,14 @@ const ProjectsList: React.FC = () => {
   };
 
   const handleDeleteForever = async (project: ProjectSummary) => {
-    if (!window.confirm('Permanently delete "' + project.name + '"?')) return;
+    // DEC-057 3.4b: state the live-store scope + the operator's declared
+    // backup posture - never claim irreversibility the platform can't control.
+    if (
+      !window.confirm(
+        `Permanently delete "${project.name}"?\n\n${permanentDeletionNotice()}`,
+      )
+    )
+      return;
     try {
       await projectsApi.delete(project.id, { purge: true });
       loadProjects();
@@ -313,12 +336,12 @@ const ProjectsList: React.FC = () => {
                     className={joined(
                       styles.card,
                       viewMode === "list" && styles.cardRow,
-                      p.id === selectedId && styles.cardActive
+                      p.id === selected?.id && styles.cardActive
                     )}
                     data-project-id={p.id}
                     role="button"
                     tabIndex={0}
-                    aria-pressed={p.id === selectedId}
+                    aria-pressed={p.id === selected?.id}
                     onClick={() => setSelectedId(p.id)}
                     onDoubleClick={() => openProject(p.id)}
                     onKeyDown={(e) => {

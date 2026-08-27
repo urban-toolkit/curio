@@ -29,15 +29,12 @@ import { buttonStyle } from "./styles";
 import { ToolsMenu, UpMenu } from "components/menus";
 import UniDirectionalEdge from "./edges/UniDirectionalEdge";
 import "./MainCanvas.css";
-import LLMChat from "./LLMChat";
-import { useLLMContext } from "../providers/LLMProvider";
 import { TrillGenerator } from "../TrillGenerator";
 import VersionBadge from "./VersionBadge";
 
 import html2canvas from "html2canvas";
 
 import FloatingPanel from "./FloatingPanel";
-import WorkflowGoal from "./menus/top/WorkflowGoal";
 import { DashboardPanel } from "./DashboardPanel";
 import { CollaborationSidePanel } from "./collab/CollaborationSidePanel";
 import {
@@ -45,8 +42,24 @@ import {
     hasDatasetDrag,
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
+import { agentsApi } from "../api/agentsApi";
+import { readAgentDragCoord, notifyAgentDockRefresh, pickNodeAtPoint, pickEdgeAtPoint, hasAgentDrag, type AgentDropTarget } from "../utils/agentCatalogEvents";
+import { attachAgentOnDrop } from "../utils/agentDropAttach";
+import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
+import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";
 
-const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
+/**
+ * How far the viewport may pan, in flow coordinates.
+ *
+ * Without a clamp, `minZoom` 0.05 lets a stray trackpad gesture carry the
+ * dataflow far enough off-screen that there is no way back to it short of
+ * reloading. The bound is generous rather than tight: it exists to keep the
+ * work findable, not to constrain where nodes may sit.
+ */
+const CANVAS_EXTENT: [[number, number], [number, number]] = [
+    [-2000, -2000],
+    [6000, 6000],
+];
 
 export function MainCanvas() {
     const { showToast } = useToastContext();
@@ -55,6 +68,7 @@ export function MainCanvas() {
         nodes,
         edges,
         loading,
+        projectId,
         onNodesChange,
         onEdgesChange,
         onConnect,
@@ -62,6 +76,7 @@ export function MainCanvas() {
         onEdgesDelete,
         onNodesDelete,
         markDirty,
+        saveCurrentProject,
     } = useFlowContext();
     const collab = useCollab();
     const collabRef = useRef(collab);
@@ -106,7 +121,6 @@ export function MainCanvas() {
     }, []);
 
     const { createCodeNode } = useCode();
-    const { llmRequest, AIModeRef, setAIMode } = useLLMContext();
 
     // One stable RF type avoids remounting editors when ``loadInstalledPackages`` re-registers manifests.
     const nodeTypes = useMemo(
@@ -205,67 +219,6 @@ export function MainCanvas() {
         });
     }
 
-    const generateExplanation = async (_: React.MouseEvent<HTMLButtonElement>) => {
-
-        // Take a screenshot for the explanation
-        let image_url = await captureScreenshot();
-
-        let trill_spec = TrillGenerator.generateTrill(selectedComponents.nodes, selectedComponents.edges, workflowNameRef.current, workflowGoal);
-
-        let text = JSON.stringify(trill_spec)
-
-        llmRequest("default_preamble", "explanation_prompt", text).then((response: any) => {
-            console.log("Response:", response);
-
-            setFloatingPanels((prev: any) => {
-                let uniqueId = crypto.randomUUID()+"";
-                
-                return {
-                    ...prev,
-                    [uniqueId]: {
-                        title: "Explanation from "+workflowNameRef.current,
-                        imageUrl: image_url,
-                        markdownText: response.result
-                    }
-                }
-            });
-        })
-        .catch((error: any) => {
-            console.error("Error:", error);
-        });
-    }
-
-    const generateDebug = async (_: React.MouseEvent<HTMLButtonElement>) => {
-        // Take a screenshot for the debugging
-        let image_url = await captureScreenshot();
-
-        let trill_spec = TrillGenerator.generateTrill(selectedComponents.nodes, selectedComponents.edges, workflowNameRef.current, workflowGoal);
-
-        let text = JSON.stringify(trill_spec) + "\n\n" + ""
-
-        llmRequest("default_preamble", "debug_prompt", text).then((response: any) => {
-            console.log("Response:", response);
-
-            setFloatingPanels((prev: any) => {
-                let uniqueId = crypto.randomUUID()+"";
-                
-                return {
-                    ...prev,
-                    [uniqueId]: {
-                        title: "Debugging "+workflowNameRef.current,
-                        imageUrl: image_url,
-                        markdownText: response.result
-                    }
-                }
-            });
-        })
-        .catch((error: any) => {
-            console.error("Error:", error);
-        });
-
-    }
-
-    // Delete a floating box from the list based on the id
     const deleteFloatingPanel = (id: string) => {
         setFloatingPanels((prev: any) => {
             const next = { ...prev };
@@ -282,8 +235,13 @@ export function MainCanvas() {
 
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
-        // Dataset drags use effectAllowed="copy"; "move" blocks the drop in browsers.
-        event.dataTransfer.dropEffect = hasDatasetDrag(event.dataTransfer) ? "copy" : "move";
+        // Dataset AND agent drags use effectAllowed="copy"; a "move" dropEffect is
+        // an incompatible pair, so the browser cancels the drop (handleDrop never
+        // fires and the agent silently fails to attach). Node-creation drags keep
+        // "move".
+        const wantsCopy =
+            hasDatasetDrag(event.dataTransfer) || hasAgentDrag(event.dataTransfer);
+        event.dataTransfer.dropEffect = wantsCopy ? "copy" : "move";
     }, []);
 
     const handleCanvasDrop = useCallback((event: React.DragEvent) => {
@@ -303,13 +261,55 @@ export function MainCanvas() {
             handleCanvasDrop(event);
             return;
         }
+        const agentCoord = readAgentDragCoord(event.dataTransfer);
+        if (agentCoord) {
+            event.preventDefault();
+            // Hit-test the drop point against node geometry (reliable regardless
+            // of which DOM layer received the drop). A hit → attach to that node;
+            // empty canvas → attach to the canvas.
+            const dropPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+            const hitNodeId = pickNodeAtPoint(reactFlow.getNodes(), dropPos);
+            // Node first, then edge, then canvas: an edge routed underneath a
+            // node should resolve to the node the pointer is actually over.
+            const hitEdgeId = hitNodeId
+                ? null
+                : pickEdgeAtPoint(event.clientX, event.clientY);
+            const target: AgentDropTarget = hitNodeId
+                ? { kind: "node", targetId: hitNodeId }
+                : hitEdgeId
+                    ? { kind: "connection", targetId: hitEdgeId }
+                    : { kind: "canvas" };
+            const where =
+                target.kind === "node"
+                    ? "the node"
+                    : target.kind === "connection"
+                        ? "the connection"
+                        : "the canvas";
+            // For a node target, persist the graph first so the (possibly
+            // freshly-added) node is in the saved spec the backend validates
+            // against — otherwise the attach 400s. See attachAgentOnDrop.
+            attachAgentOnDrop({
+                projectId,
+                target,
+                agentCoord,
+                saveProject: saveCurrentProject,
+                attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
+            })
+                .then(() => {
+                    notifyAgentDockRefresh();
+                    markDirty();
+                    showToast(`Agent attached to ${where}.`, "success");
+                })
+                .catch((e: any) => showToast(e?.message || "Attach failed.", "error"));
+            return;
+        }
         event.preventDefault();
         const type = event.dataTransfer.getData("application/reactflow") as NodeType;
         if (!type) return;
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         createCodeNode(type, { position });
         markDirty();
-    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop]);
+    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
 
     const handleNodesChange = useCallback((changes: NodeChange[]) => {
         const allowedChanges: NodeChange[] = [];
@@ -470,6 +470,7 @@ export function MainCanvas() {
     }
 
     return (
+        <AgentAttachmentsProvider enabled={!isSharedView}>
         <>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: dashboardOn ? "#ffffff" : "#f0f0f0" }}
@@ -489,7 +490,6 @@ export function MainCanvas() {
                 setDashBoardMode={(value) => handleDashboardToggle(value)}
                 setDashboardOn={handleDashboardToggle}
                 dashboardOn={dashboardOn}
-                setAIMode={setAIMode}
             />}
             {!dashboardOn && <CollaborationSidePanel />}
 
@@ -516,7 +516,6 @@ export function MainCanvas() {
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
-
                 translateExtent={CANVAS_EXTENT}
                 panOnDrag={!dashboardOn || !dashboardLocked}
                 zoomOnScroll={!dashboardOn || !dashboardLocked}
@@ -534,54 +533,14 @@ export function MainCanvas() {
             >
                 {!dashboardOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}
                 {!dashboardOn && <Controls />}
-                {AIModeRef.current ? <WorkflowGoal /> : null}
-                {AIModeRef.current ? <LLMChat /> : null}
             </ReactFlow>
+            {!isSharedView ? <AgentDockOverlay /> : null}
             </div>
-            {/*{isComponentsSelected ? (
-                <button
-                    id={"explainButton"}
-                    style={{
-                        bottom: "50px",
-                        left: "30%",
-                        position: "fixed",
-                        zIndex: 10,
-                        padding: "8px 16px",
-                        backgroundColor: "#007bff",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                    }}
-                    onClick={generateExplanation}
-                >
-                    Explain
-                </button>
-            ) : null}
-            {isComponentsSelected ? (
-                <button
-                    style={{
-                        bottom: "50px",
-                        left: "40%",
-                        position: "fixed",
-                        zIndex: 10,
-                        padding: "8px 16px",
-                        backgroundColor: "#007bff",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                    }}
-                    onClick={generateDebug}
-                >
-                    Debug
-                </button>
-            ) : null}*/}
             <input hidden type="file" name="file" id="file" />
 
         </div> : loadingAnimation() }
         <VersionBadge />
         </>
-
+        </AgentAttachmentsProvider>
     );
 }

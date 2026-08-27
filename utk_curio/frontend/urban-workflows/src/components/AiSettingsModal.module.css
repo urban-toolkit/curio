@@ -1,0 +1,129 @@
+/* AI Settings — only what is specific to this modal.
+ *
+ * The container, field, footer and button vocabulary is the shared
+ * ./modal-content.module.css. This file used to restate all of it under
+ * different class names (.saveBtn / .cancelBtn rather than .primaryBtn /
+ * .ghostBtn) and with drifted values, including a primary button that flipped
+ * to orange on hover where every other modal darkens.
+ */
+
+.optional {
+  font-weight: 400;
+  text-transform: none;
+  color: var(--curio-text-muted);
+  letter-spacing: 0;
+}
+
+/* Provider picker. A segmented row of choices, not a form field. */
+.modeTabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.modeTab {
+  padding: 6px 14px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-secondary);
+  font: inherit;
+  font-size: var(--curio-font-size-md);
+  cursor: pointer;
+}
+
+.modeTab:hover:not(.modeTabActive) {
+  background: var(--curio-page-bg);
+}
+
+.modeTabActive {
+  border-color: var(--curio-top-bar-bg);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  font-weight: 600;
+}
+
+.keyLink {
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-role-published-fg);
+  text-decoration: none;
+  margin-top: 2px;
+}
+
+/* Revoke a stored secret. Deliberately quiet: it is a rare, destructive
+   action that should be findable without competing with Save. */
+.removeSecretBtn {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.removeSecretBtn:hover:not(:disabled) {
+  color: var(--curio-text-primary);
+}
+
+.removeSecretBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.guestNotice {
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-lg);
+  margin-bottom: 8px;
+}
+
+/* One line naming what this provider is actually for. */
+.providerNote {
+    margin: 0 0 16px;
+    color: var(--curio-text-secondary);
+    font-family: var(--curio-font-family);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+}
+
+/* Asking the endpoint what it serves, and reporting when it will not say.
+   Sits directly under the Model control, above that field's hint. */
+.modelFetchRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.fetchModelsBtn {
+  background: none;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-sm);
+  padding: 3px 10px;
+  color: var(--curio-text-secondary);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  cursor: pointer;
+}
+
+.fetchModelsBtn:hover:not(:disabled) {
+  color: var(--curio-text-primary);
+  border-color: var(--curio-text-secondary);
+}
+
+.fetchModelsBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Not an error state for the whole panel: the model list is a convenience, and
+   the field it decorates still accepts a typed name. */
+.modelsError {
+  color: var(--curio-text-secondary);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  line-height: 1.4;
+}

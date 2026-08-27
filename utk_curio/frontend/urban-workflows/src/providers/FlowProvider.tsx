@@ -23,7 +23,6 @@ import {
     NodeRemoveChange,
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
-import type { InstalledDatasetPayload } from "../services/datasetCatalog/datasetCatalogApi";
 import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import { NodeType, EdgeType } from "../constants";
 import { getUnversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
@@ -105,6 +104,7 @@ interface FlowContextProps {
     updatePositionWorkflow: (nodeId: string, position: any) => void;
     updatePositionDashboard: (nodeId: string, position: any) => void;
     applyNewOutput: (output: IOutput) => void;
+    hydrateRestoredOutputs: (outputs: IOutput[]) => void;
 
     // NEW CODE
     dashboardPins: { [key: string]: boolean };
@@ -123,6 +123,9 @@ interface FlowContextProps {
     loading: boolean;
 
     applyRemoveChanges: (changes: NodeRemoveChange[]) => void;
+    // Reviewed plan removals (dev/62): victims + their edge cascade leave in
+    // one operation, without the manual "remove the edges first" guard.
+    applyReviewedRemovals: (nodeIds: string[], edgeIds: string[]) => void;
     loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[]) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
@@ -136,6 +139,11 @@ interface FlowContextProps {
     updateDataNode: (nodeId: string, newData: any) => void;
     updateWarnings: (trill_spec: any) => void;
     updateDefaultCode: (nodeId: string, content: string) => void;
+    /** Set one node's content for BOTH the editor (``defaultCode``) and the
+     * serializer (``code``) through provider state — the agent apply→canvas
+     * bridge's content path (dev/51; RF-store writes get clobbered by the
+     * controlled re-sync). Merges into ``data``, never replaces it. */
+    applyNodeContent: (nodeId: string, content: string) => void;
     updateSubtasks: (trill: any) => void;
     cleanCanvas: () => void;
     flagBasedOnKeyword: (keywordIndex?: number) => void;
@@ -155,7 +163,6 @@ interface FlowContextProps {
     saveCurrentProject: (nameOverride?: string) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
-    persistInstalledDataset: (inst: InstalledDatasetPayload | null | undefined) => Promise<void>;
     persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<void>;
     loadProject: (id: string) => Promise<any>;
     loadSharedProject: (id: string) => Promise<any>;
@@ -227,6 +234,7 @@ export const FlowContext = createContext<FlowContextProps>({
     updatePositionWorkflow: () => { },
     updatePositionDashboard: () => { },
     applyNewOutput: () => { },
+    hydrateRestoredOutputs: () => { },
 
     // NEW CODE
     dashboardPins: {},
@@ -242,6 +250,7 @@ export const FlowContext = createContext<FlowContextProps>({
     setWorkflowGoal: () => {},
 
     applyRemoveChanges: () => { },
+    applyReviewedRemovals: () => { },
     setWorkflowName: () => { },
     setAllMinimized: () => { },
     setExpandStatus: () => { },
@@ -251,6 +260,7 @@ export const FlowContext = createContext<FlowContextProps>({
     updateSubtasks: () => {},
     updateKeywords: () => {},
     updateDefaultCode: () => {},
+    applyNodeContent: () => {},
     updateWarnings: () => {},
     cleanCanvas: () => {},
     acceptSuggestion: () => {},
@@ -275,7 +285,6 @@ export const FlowContext = createContext<FlowContextProps>({
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
-    persistInstalledDataset: async () => {},
     persistDataflowForInstall: async () => {},
     loadProject: async () => {},
     loadSharedProject: async () => {},
@@ -513,6 +522,22 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         );
     }, [setDashboardPins, setNodes]);
 
+    // The bridge's content path (dev/51): both fields, one provider-state
+    // update — ``defaultCode`` drives the Monaco editor's value and ``code``
+    // is what TrillGenerator serializes on save.
+    const applyNodeContent = useCallback(
+        (nodeId: string, content: string) => {
+            setNodes((nds: Node[]) =>
+                nds.map((n) =>
+                    n.id === nodeId
+                        ? { ...n, data: { ...n.data, code: content, defaultCode: content } }
+                        : n,
+                ),
+            );
+        },
+        [setNodes],
+    );
+
     const addNode = useCallback(
         (node: Node, customWorkflowName?: string, provenance?: boolean) => {
             console.log("add node");
@@ -734,7 +759,11 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             markDirtyRef.current();
 
             const nodes = custom_nodes ? custom_nodes : reactFlow.getNodes();
-            const edges = custom_edges ? custom_edges : reactFlow.getEdges();
+            // `!== undefined`, not truthiness: loadParsedTrill passes an
+            // accumulating array that legitimately starts empty, and `[]` is
+            // truthy anyway — the old `custom_edges ? …` made every load-time
+            // merge-handle resolution see an empty graph (dev/64).
+            const edges = custom_edges !== undefined ? custom_edges : reactFlow.getEdges();
             const target = nodes.find(
                 (node: any) => node.id === connection.target
             ) as Node;
@@ -790,6 +819,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
                 for (const elem of nodes) {
                     if (elem.id == connection.source) {
+                        // Unversioned so NodeType enum comparisons (and the
+                        // descriptor-proxy validator, which accepts both forms)
+                        // work for `curio.builtin/...@1` dispatcher ids (dev/64).
                         outNodeType = getUnversionedFlowNodeType(elem) as NodeType;
                     }
 
@@ -859,6 +891,41 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     }
                 }
 
+
+                // dev/67-3 (DEC-051): one edge per rendered input handle —
+                // the merge slot machinery above is the ONLY multi-edge
+                // surface. Before this guard, a second edge into an occupied
+                // handle silently overwrote `data.input` (last writer wins),
+                // and deleting either edge blanked the input for both. The
+                // load path only warns: persisted edges are surfaced, never
+                // dropped.
+                if (
+                    allowConnection &&
+                    inNodeType !== NodeType.MERGE_FLOW &&
+                    isInHandle(connection.targetHandle)
+                ) {
+                    const handleOccupied = edges.some(
+                        (edge: Edge) =>
+                            edge.target === connection.target &&
+                            (edge.targetHandle ?? "in") === (connection.targetHandle ?? "in"),
+                    );
+                    if (handleOccupied) {
+                        if (skipValidation) {
+                            console.warn(
+                                `[FlowProvider] persisted multi-input edge into ` +
+                                `${connection.target} (${connection.targetHandle}) — ` +
+                                `only one input is honored at runtime; route flows ` +
+                                `through a Merge node`,
+                            );
+                        } else {
+                            showToast(
+                                "This input already has a connection — route multiple flows through a Merge node.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        }
+                    }
+                }
 
                 // Checking cycles
                 if (target.id === connection.source) {
@@ -1110,6 +1177,22 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         // producer nodes inside the handler) without a manual save.
         scheduleInstallSyncRef.current(newOutput.nodeId);
         signalNodeExecDone(newOutput.nodeId);
+    };
+
+    // Refill downstream `data.input` (incl. merge `in_N` slots) from the outputs
+    // restored by a project load. Live propagation only happens on execution and
+    // on new connections, so without this every reload leaves inputs empty until
+    // the user manually reruns each upstream node (dev/64). Deferred one tick so
+    // loadTrill's nodes/edges are committed to the React Flow store first. No
+    // exec bookkeeping (signalNodeExecDone / install sync) — nothing executed.
+    const hydrateRestoredOutputs = (restored: IOutput[]) => {
+        setTimeout(() => {
+            for (const o of restored) {
+                if (o?.nodeId && o.output != null && o.output !== "") {
+                    propagateDownstreamInputs(o.nodeId, o.output);
+                }
+            }
+        }, 0);
     };
 
     // responsible for flow of already connected nodes
@@ -1543,6 +1626,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 updatePositionWorkflow,
                 updatePositionDashboard,
                 applyNewOutput,
+                hydrateRestoredOutputs,
                 playAllNodes,
                 playNodesUpTo,
                 signalNodeExecDone,
@@ -1560,6 +1644,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 loading,
 
                 ...workflowOps,
+                applyNodeContent,
                 defaultSaveOutputDataset,
                 setDefaultSaveOutputDataset,
 

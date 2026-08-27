@@ -123,8 +123,17 @@ def test_import_osm_pbf_creates_one_dataset_per_layer(
     if not _osm_geo_available():
         pytest.skip("geopandas/pyogrio with the GDAL OSM driver is not available")
     pbf = _sample_pbf()
-    if not pbf.is_file():
-        pytest.skip(f"sample PBF not found at {pbf}")
+    # An assertion, not a skip: the OSM extract is committed on purpose and
+    # stays under docs/examples/data even though the tabular, vector and raster
+    # example inputs moved into the Data Catalog (a .pbf is not a catalog
+    # format, and the browser fetches it from the unauthenticated /file/
+    # route). If someone tidying that directory deletes it, a skip here would
+    # lose all OSM-import coverage in silence. The _osm_geo_available() guard
+    # above stays a skip -- that one is a genuine optional-dependency gate.
+    assert pbf.is_file(), (
+        f"the OSM import fixture is missing at {pbf}; it is committed "
+        f"deliberately and this suite is the only coverage of PBF import"
+    )
 
     _, token = user_and_token
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
@@ -173,8 +182,17 @@ def test_osm_group_card_detail_and_install_all(
     if not _osm_geo_available():
         pytest.skip("geopandas/pyogrio with the GDAL OSM driver is not available")
     pbf = _sample_pbf()
-    if not pbf.is_file():
-        pytest.skip(f"sample PBF not found at {pbf}")
+    # An assertion, not a skip: the OSM extract is committed on purpose and
+    # stays under docs/examples/data even though the tabular, vector and raster
+    # example inputs moved into the Data Catalog (a .pbf is not a catalog
+    # format, and the browser fetches it from the unauthenticated /file/
+    # route). If someone tidying that directory deletes it, a skip here would
+    # lose all OSM-import coverage in silence. The _osm_geo_available() guard
+    # above stays a skip -- that one is a genuine optional-dependency gate.
+    assert pbf.is_file(), (
+        f"the OSM import fixture is missing at {pbf}; it is committed "
+        f"deliberately and this suite is the only coverage of PBF import"
+    )
 
     _, token = user_and_token
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))

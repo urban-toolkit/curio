@@ -35,6 +35,7 @@ describe("overlay / layering scale (curioTokens.css)", () => {
         "modal-base",
         "modal-base-backdrop",
         // High band: anything that can stack over the canvas.
+        "agent-drawer",
         "dataset-drawer",
         "dialog",
         "modal",

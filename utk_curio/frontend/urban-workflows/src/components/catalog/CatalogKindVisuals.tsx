@@ -1,10 +1,15 @@
 import React from "react";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCube, faDatabase, faDiagramProject } from "@fortawesome/free-solid-svg-icons";
+import {
+  faCube,
+  faDatabase,
+  faDiagramProject,
+  faRobot,
+} from "@fortawesome/free-solid-svg-icons";
 import styles from "./CatalogKindVisuals.module.css";
 
-export type CatalogItemKind = "dataset" | "package" | "dataflow";
+export type CatalogItemKind = "dataset" | "package" | "dataflow" | "agent";
 
 export interface CatalogKindMeta {
   icon: IconDefinition;
@@ -27,6 +32,11 @@ export const CATALOG_KIND_META: Record<CatalogItemKind, CatalogKindMeta> = {
     icon: faDiagramProject,
     label: "Dataflow",
     shortLabel: "Flow",
+  },
+  agent: {
+    icon: faRobot,
+    label: "Agent",
+    shortLabel: "Agent",
   },
 };
 

@@ -115,7 +115,7 @@ Curio no longer ships the multi-step Node Factory wizard. The single supported f
 4. Choose **New package…** (creates a fresh package containing this kind) or an installed package as the target. Read-only packages, including `curio.builtin@1`, are filtered out of the picker; the only way to "modify" a read-only package is to fork into a new one.
 5. After save, the canvas node is rebound automatically to the new package's kind, so re-opening **Node settings** resolves to the new descriptor.
 
-When you save **into an existing package**, the backend preserves the unedited templates' on-disk source, so your other templates are not clobbered. This is a recent fix; older releases would silently overwrite them with starter-code placeholders.
+When you save **into an existing package**, the backend preserves the unedited templates' on-disk source, so your other templates are not clobbered.
 
 > [!IMPORTANT]
 > **Save as package node cannot produce a custom-UI node.** The archive it
@@ -162,7 +162,7 @@ When you save (or upload) a package, it lands in your per-user store:
   manifest.json
   sources/
     <template-id>.{py,js,...}
-  starters/<template-id>/        ← optional starter snippets (legacy: templates/)
+  starters/<template-id>/        ← optional starter snippets
   integrity.json                 ← SHA-256 of every shipped file
 ```
 
@@ -215,6 +215,10 @@ The built-in `curio.builtin@1` ships with `readOnly: true`. The same flag is ava
 ### Caveats
 
 - There is no hosted package registry yet. Sharing is file-based: archives by email, Slack, S3, whatever fits. The committed catalog at `<repo_root>/packages/` is a per-deployment alternative for first-party content.
+- To find which of your saved projects are affected, run `python scripts/validate_trill.py --all --resolve`;
+  it reports every dataflow that no longer matches [`docs/schemas/trill.v1.json`](schemas/trill.v1.json),
+  and `--resolve` additionally flags node types with no installed template. See
+  [`docs/TRILL-SPEC.md`](TRILL-SPEC.md).
 - The legacy `NodeType` enum strings (`"DATA_LOADING"`, `"VIS_VEGA"`, etc.) used by Curio before the package refactor are no longer recognized. Trill files saved with those strings won't render correctly until the type fields are rewritten to canonical refs (`"curio.builtin/data-loading"`, `"curio.builtin/vis-vega"`, etc.). The example trills in `docs/examples/` are already migrated; legacy user projects need a one-time JSON rewrite.
 
 ---
@@ -273,4 +277,7 @@ Same pattern, [`src/registry/grammarAdapter.ts`](../utk_curio/frontend/urban-wor
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): the Data Catalog, which applies the same install and publish model to datasets.
 - [`docs/USAGE.md`](USAGE.md): installation and operating Curio.
 - [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json): the manifest JSON Schema.
+- [`docs/schemas/trill.v1.json`](schemas/trill.v1.json): the dataflow JSON Schema. A node's `type` is a
+  coordinate into a manifest's `templates[].id`; that schema validates the coordinate's shape, this one
+  defines what it points at.
 - [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json): the built-in package, used as the canonical example throughout this guide.

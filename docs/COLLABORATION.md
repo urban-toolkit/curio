@@ -18,7 +18,7 @@ This feature is based on the design originally proposed by [@kirtanpatel2003](ht
 
 When two or more users open the same project (`/dataflow/<UUID>`) on a host that was started with `--collab`, they see:
 
-- **Presence.** Open the side panel from the 👥 button in the top bar (next to the Urbanite robot). It lists everyone currently in the project room, with a connection indicator.
+- **Presence.** Open the side panel from the 👥 button in the top bar. It lists everyone currently in the project room, with a connection indicator.
 - **Live graph sync.** Adding, removing, or dragging a node propagates to every peer's canvas in real time. Same for edges: connecting two nodes or deleting an edge applies on every other client immediately.
 - **Per-node soft locks.** Focusing a node's editor records a lock for that user; peers see an avatar chip in the node's corner and the editor becomes read-only on their side.
 - **Code-change proposals.** When a user blurs a Monaco editor (Python code or Vega grammar) and the contents differ from the loaded baseline, a proposal is broadcast. Peers see Approve / Reject buttons; once every peer approves, the change is applied to all editors at once.
@@ -73,7 +73,7 @@ Useful environment variables:
 | [components/editing/CodeEditor.tsx](../utk_curio/frontend/urban-workflows/src/components/editing/CodeEditor.tsx) | Proposal-on-blur for Python code, banner UI, apply-on-receive. |
 | [components/editing/GrammarEditor.tsx](../utk_curio/frontend/urban-workflows/src/components/editing/GrammarEditor.tsx) | Same for grammar specs. |
 | [components/collab/CollaborationSidePanel.tsx](../utk_curio/frontend/urban-workflows/src/components/collab/CollaborationSidePanel.tsx) | Right-docked Users / Proposals / Activity panel. |
-| [components/menus/top/UpMenu.tsx](../utk_curio/frontend/urban-workflows/src/components/menus/top/UpMenu.tsx) | 👥 trigger button (next to Urbanite) that toggles the side panel; only rendered when `collab.enabled`. |
+| [components/menus/top/UpMenu.tsx](../utk_curio/frontend/urban-workflows/src/components/menus/top/UpMenu.tsx) | 👥 trigger button that toggles the side panel; only rendered when `collab.enabled`. |
 
 ## Security model
 

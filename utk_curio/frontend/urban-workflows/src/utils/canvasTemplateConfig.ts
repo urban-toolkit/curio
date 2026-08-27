@@ -15,7 +15,6 @@ export interface CanvasTemplateConfig {
   hasWidgets: boolean;
   hasGrammar: boolean;
   hasProvenance: boolean;
-  hasExplanation: boolean;
   inputPorts: PortDraft[];
   outputPorts: PortDraft[];
   sourceFilename: string;
@@ -63,7 +62,6 @@ export function canvasTemplateConfigFromDescriptor(
     hasWidgets: desc.hasWidgets,
     hasGrammar,
     hasProvenance: desc.hasProvenance ?? true,
-    hasExplanation: hasCode || hasGrammar,
     inputPorts: portDefToDraft(desc.inputPorts),
     outputPorts:
       desc.outputPorts.length > 0
@@ -126,7 +124,6 @@ export function resolveEditorTabFlags(
   grammar: boolean;
   widgets: boolean;
   provenance: boolean;
-  explanation: boolean;
 } {
   const code = config?.hasCode ?? desc.hasCode;
   const grammar = config?.hasGrammar ?? desc.hasGrammar;
@@ -136,7 +133,6 @@ export function resolveEditorTabFlags(
     grammar,
     widgets,
     provenance: config?.hasProvenance ?? desc.hasProvenance ?? true,
-    explanation: config?.hasExplanation ?? (code || grammar),
   };
 }
 

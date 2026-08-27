@@ -72,7 +72,6 @@ export function NodeTemplateConfigModal({
         next.hasWidgets = false;
         next.hasGrammar = false;
       }
-      if (!next.hasCode && !next.hasGrammar) next.hasExplanation = false;
       return next;
     });
   }, []);
@@ -82,10 +81,10 @@ export function NodeTemplateConfigModal({
   const isReadOnly = desc.package?.readOnly === true;
 
   return (
-    <ModalShell preservePackagePaletteOpen onClose={onClose} size="large" layer="overlay">
+    <ModalShell preservePackagePaletteOpen onClose={onClose} size="large" layer="overlay" titleId="node-settings-title">
       <div className={styles.content}>
         <div className={styles.titleRow}>
-          <h2 className={styles.title}>Node settings</h2>
+          <h2 id="node-settings-title" className={styles.title}>Node settings</h2>
           {isReadOnly && <span className={styles.readOnlyBadge}>Read-only</span>}
         </div>
         <p className={styles.subtitle}>
@@ -191,15 +190,6 @@ export function NodeTemplateConfigModal({
               onChange={(e) => patch({ hasProvenance: e.target.checked })}
             />
             Provenance tab
-          </label>
-          <label className={styles.checkRow}>
-            <input
-              type="checkbox"
-              checked={config.hasExplanation}
-              disabled={!config.hasCode && !config.hasGrammar}
-              onChange={(e) => patch({ hasExplanation: e.target.checked })}
-            />
-            Explanation tab
           </label>
         </div>
 

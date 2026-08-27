@@ -67,6 +67,7 @@ import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
 import { NodeCatalogDrawerProvider } from "./providers/NodeCatalogDrawerProvider";
+import { AgentCatalogDrawerProvider } from "./providers/AgentCatalogDrawerProvider";
 import { DatasetCatalogDrawerProvider } from "./providers/datasetCatalog";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
@@ -74,7 +75,6 @@ import { PackagePaletteProvider } from "./providers/PackagePaletteContext";
 import { DatasetPaletteProvider } from "./providers/DatasetPaletteContext";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
-import LLMProvider from "./providers/LLMProvider";
 import { RequireAuth } from "./components/RequireAuth";
 
 import SignIn from "./pages/auth/SignIn";
@@ -84,6 +84,7 @@ import CatalogMasterPage from "./pages/catalog/CatalogMasterPage";
 import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
 import DataCatalogBrowse from "./pages/dataHub/DataCatalogBrowse";
 import DataCatalogDetail from "./pages/dataHub/DataCatalogDetail";
+import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
 import DataHubPage from "./pages/dataHub/DataHubPage";
 import { ProjectLoader } from "./components/ProjectLoader";
 
@@ -105,15 +106,17 @@ const MainCanvasRoute: React.FC = () => (
             doesn't reduce reach. */}
         <NodeCatalogDrawerProvider>
           <DatasetCatalogDrawerProvider>
-            <StarterProvider>
-              <ProjectLoader>
-                <PackagePaletteProvider>
-                  <DatasetPaletteProvider>
-                    <MainCanvas />
-                  </DatasetPaletteProvider>
-                </PackagePaletteProvider>
-              </ProjectLoader>
-            </StarterProvider>
+            <AgentCatalogDrawerProvider>
+              <StarterProvider>
+                <ProjectLoader>
+                  <PackagePaletteProvider>
+                    <DatasetPaletteProvider>
+                      <MainCanvas />
+                    </DatasetPaletteProvider>
+                  </PackagePaletteProvider>
+                </ProjectLoader>
+              </StarterProvider>
+            </AgentCatalogDrawerProvider>
           </DatasetCatalogDrawerProvider>
         </NodeCatalogDrawerProvider>
       </FlowProvider>
@@ -147,7 +150,6 @@ const App: React.FC = () => {
       <BackendHealthBanner>
         <ToastProvider>
             <ReactFlowProvider>
-              <LLMProvider>
                 <ProvenanceProvider>
                   <UserProvider>
                     <Routes>
@@ -181,6 +183,7 @@ const App: React.FC = () => {
                       <Route path="nodes" element={<NodeCatalogBrowse />} />
                       <Route path="data" element={<DataCatalogBrowse />} />
                       <Route path="data/:datasetId" element={<DataCatalogDetail />} />
+                      <Route path="agents" element={<AgentCatalogBrowse />} />
                     </Route>
                     <Route
                       path="/data-hub/:datasetId?"
@@ -205,7 +208,6 @@ const App: React.FC = () => {
                     </Routes>
                   </UserProvider>
                 </ProvenanceProvider>
-              </LLMProvider>
             </ReactFlowProvider>
         </ToastProvider>
       </BackendHealthBanner>

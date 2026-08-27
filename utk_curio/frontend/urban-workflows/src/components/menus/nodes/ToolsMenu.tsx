@@ -16,6 +16,7 @@ import {
     type ToolsMenuTooltipSide,
 } from "./toolsMenuPackagePalette";
 import { DatasetsPaletteDropdown } from "./datasetPalette";
+import { AgentsPaletteDropdown } from "./agentsPalette";
 import styles from "./ToolsMenu.module.css";
 
 const DraggableTool = memo(function DraggableTool({
@@ -117,16 +118,22 @@ const ToolsMenu = memo(function ToolsMenu() {
     const packageGroups = groupPalettePackages(packageTypes);
     const { playAllNodes } = useFlowContext();
 
-    // Both catalog triggers live in the left rail and their panels open into the
-    // same strip to the right of it, so only one may be open at a time. A palette
-    // closes ONLY when its own trigger is clicked again (or the other trigger
-    // takes the strip) - outside clicks and Escape deliberately leave it open.
-    const [activePalette, setActivePalette] = useState<"datasets" | "packages" | null>(null);
+    // Every catalog trigger lives in the left rail and their panels open into
+    // the same strip to the right of it, so only one may be open at a time. A
+    // palette closes ONLY when its own trigger is clicked again (or another
+    // trigger takes the strip) - outside clicks and Escape deliberately leave
+    // it open.
+    const [activePalette, setActivePalette] = useState<
+        "datasets" | "packages" | "agents" | null
+    >(null);
     const setDatasetsOpen = useCallback((value: boolean) => {
         setActivePalette((prev) => (value ? "datasets" : prev === "datasets" ? null : prev));
     }, []);
     const setPackagesOpen = useCallback((value: boolean) => {
         setActivePalette((prev) => (value ? "packages" : prev === "packages" ? null : prev));
+    }, []);
+    const setAgentsOpen = useCallback((value: boolean) => {
+        setActivePalette((prev) => (value ? "agents" : prev === "agents" ? null : prev));
     }, []);
 
     return (
@@ -147,6 +154,7 @@ const ToolsMenu = memo(function ToolsMenu() {
                     setOpen={setPackagesOpen}
                 />
                 <DatasetsPaletteDropdown open={activePalette === "datasets"} setOpen={setDatasetsOpen} />
+                <AgentsPaletteDropdown open={activePalette === "agents"} setOpen={setAgentsOpen} />
                 <div className={styles.playAllRow}>
                     <button
                         type="button"

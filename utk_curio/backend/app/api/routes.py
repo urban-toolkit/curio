@@ -105,67 +105,7 @@ import os
 import time
 from utk_curio.backend.config import (
     CURIO_DEFAULT_SAVE_NODE_OUTPUT,
-    GUEST_LLM_API_TYPE,
-    GUEST_LLM_BASE_URL,
-    GUEST_LLM_API_KEY,
-    GUEST_LLM_MODEL,
 )
-
-
-def _resolve_llm_config():
-    """Return (api_key, api_type, base_url, model) for the current authenticated user."""
-    user = g.user
-    if user.is_guest:
-        if not GUEST_LLM_API_KEY:
-            abort(400, description="LLM is not available for guest users at this time.")
-        return GUEST_LLM_API_KEY, GUEST_LLM_API_TYPE, GUEST_LLM_BASE_URL, GUEST_LLM_MODEL
-    if not user.llm_model:
-        abort(400, description="No LLM configured. Set your provider and model in the Projects page.")
-    return (
-        user.llm_api_key or "",
-        user.llm_api_type or "openai_compatible",
-        user.llm_base_url or "",
-        user.llm_model,
-    )
-
-
-def _call_llm(api_key: str, api_type: str, base_url: str, model: str, messages: list) -> str:
-    """Dispatch an LLM chat completion to the configured provider."""
-    if api_type == "anthropic":
-        import anthropic
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model=model,
-            system="\n".join(system_parts) if system_parts else anthropic.NOT_GIVEN,
-            messages=chat_messages,
-            max_tokens=4096,
-        )
-        return resp.content[0].text
-    elif api_type == "gemini":
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
-        history = []
-        for m in chat_messages[:-1]:
-            role = "user" if m["role"] == "user" else "model"
-            history.append({"role": role, "parts": [m["content"]]})
-        last_user_msg = chat_messages[-1]["content"] if chat_messages else ""
-        system_instruction = "\n".join(system_parts) if system_parts else None
-        gen_model = genai.GenerativeModel(model, system_instruction=system_instruction)
-        chat = gen_model.start_chat(history=history)
-        response = chat.send_message(last_user_msg)
-        return response.text
-    else:  # openai_compatible (default)
-        from openai import OpenAI
-        kwargs = {"api_key": api_key or "no-key"}
-        if base_url:
-            kwargs["base_url"] = base_url
-        client = OpenAI(**kwargs)
-        completion = client.chat.completions.create(model=model, messages=messages)
-        return completion.choices[0].message.content
 
 # The Flask app
 from utk_curio.backend.app.api import bp
@@ -174,11 +114,6 @@ from utk_curio.backend.app.api import bp
 # Sandbox address
 api_address='http://'+os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1')
 api_port=int(os.getenv('FLASK_SANDBOX_PORT', 2000))
-
-conversation = {}
-
-tokens_left = 200000 # Tokens allowed per minute
-last_refresh = time.time() # Last time that 60 minutes elapsed
 
 
 def _parse_input_ref(req_input: dict | None) -> dict:
@@ -236,8 +171,15 @@ def serve_launch_cwd_file(filename: str):
     nodes (e.g. autk-grammar) can fetch binary assets (PBF, GeoTIFF, …) the
     same way Python sandbox nodes read them from disk - one shared root, one
     relative-path convention:
-      Python node:   rasterio.open('docs/examples/data/file.tif')
+      Python node:   rasterio.open('my-data/file.tif')
       Grammar spec:  pbfFileUrl: 'docs/examples/data/file.pbf'
+
+    The grammar example is the live one: the Autark examples (06/07/08/11) fetch
+    their committed ``.osm.pbf`` extracts this way, because ``.pbf`` is not a
+    Data Catalog format and every ``/api/datasets/*`` route requires auth while
+    this one does not. Shipped *Python* nodes no longer read relative paths at
+    all - they resolve ``curio_dataset_path("<id>")`` against the catalog - but
+    a user's own node still can, which is why the root convention stands.
 
     The frontend prepends ``BACKEND_URL`` + ``/file/`` to the relative path at
     run time (see resolveDataSourceUrls in autkGrammarBehavior.tsx).
@@ -500,6 +442,13 @@ def process_python_code():
                 flush=True,
             )
 
+    _record_runtime_outcome(
+        node_id=node_id,
+        dataflow_id=request.json.get("dataflowId") or None,
+        code=code, stdout=stdout, stderr=stderr, output=output,
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
+
     return {
         'stdout': stdout,
         'stderr': stderr,
@@ -508,6 +457,31 @@ def process_python_code():
         'installedDataset': installed_dataset,
         'datasetDiagnostic': dataset_diagnostic,
     }
+
+
+def _record_runtime_outcome(*, node_id, dataflow_id, code, stdout, stderr, output, duration_ms):
+    """Per-node runtime journal write (memo dev/67-2, DEC-052).
+
+    Best-effort and observational: agents read this to answer "what ran, what
+    failed, and why" — an execution response is never delayed or failed over
+    it. Skipped when the run has no node/project identity (unsaved canvas)."""
+    import time as _time
+
+    from utk_curio.backend.app.execution import runtime_journal
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user = getattr(g, "user", None)
+    if not node_id or not dataflow_id or user is None:
+        return
+    try:
+        runtime_journal.record_execution(
+            _user_dir_key(user), dataflow_id, node_id,
+            code=code, stdout=stdout, stderr=stderr, output=output,
+            started_at=_time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+            duration_ms=duration_ms,
+        )
+    except Exception:
+        pass
 
 
 @bp.route('/processJavaScriptCode', methods=['POST'])
@@ -600,6 +574,13 @@ def process_javascript_code():
                 flush=True,
             )
 
+    _record_runtime_outcome(
+        node_id=node_id,
+        dataflow_id=request.json.get("dataflowId") or None,
+        code=code, stdout=stdout, stderr=stderr, output=output,
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
+
     return {
         'stdout': stdout,
         'stderr': stderr,
@@ -673,97 +654,6 @@ def get_loaded_files_metadata(folder_path):
         metadata += f"File name: {file}\nColumns: {', '.join(columns)}\nGeometry type: {geometry_type}\n\n"
 
     return metadata
-
-@bp.route('/llm/chat', methods=['POST'])
-@require_auth
-def llm_chat():
-    global conversation
-
-    data = request.get_json()
-
-    preamble_file = data.get("preamble", None)
-    prompt_file = data.get("prompt", None)
-    text = data.get("text", None)
-    chatId = data.get("chatId", None)
-
-    past_conversation = []
-
-    if chatId is not None and chatId in conversation:
-        past_conversation = conversation[chatId]
-
-    prompt_preamble_file = open("./llm-prompts/"+preamble_file+".txt")
-    prompt_preamble = prompt_preamble_file.read()
-
-    prompt_preamble += "In case you need. This is the list of files and metadata currently loaded into the system"
-
-    metadata = get_loaded_files_metadata("./")
-
-    prompt_preamble += "\n" + metadata
-
-    prompt_file_obj = open("./llm-prompts/"+prompt_file+".txt")
-    prompt_text = prompt_file_obj.read()
-
-    if len(past_conversation) == 0:
-        past_conversation.append({"role": "system", "content": prompt_preamble + "\n" + prompt_text})
-
-    past_conversation.append({"role": "user", "content": text})
-
-    api_key, api_type, base_url, model = _resolve_llm_config()
-    assistant_reply = _call_llm(api_key, api_type, base_url, model, past_conversation)
-
-    past_conversation.append({"role": "assistant", "content": assistant_reply})
-
-    if chatId is not None:
-        conversation[chatId] = past_conversation
-
-    return jsonify({"result": assistant_reply})
-
-@bp.route('/llm/check', methods=['POST'])
-@require_auth
-def llm_check():
-    global tokens_left
-    global last_refresh
-
-    # Non-openai_compatible providers don't have a per-minute token budget.
-    user = g.user
-    api_type = (user.llm_api_type if not user.is_guest else GUEST_LLM_API_TYPE) or "openai_compatible"
-    if api_type != "openai_compatible":
-        return jsonify({"result": "yes"})
-
-    data = request.get_json()
-    chatId = data.get("chatId", None)
-    text = data.get("text", None)
-
-    past_conversation = list(conversation.get(chatId, []))
-    past_conversation.append({"role": "user", "content": text or ""})
-
-    total_tokens = sum(len(m["content"].split()) * 1.5 for m in past_conversation)
-
-    now_time = time.time()
-
-    if (now_time - last_refresh) >= 60:
-        tokens_left = 200000
-
-    if tokens_left > total_tokens:
-        tokens_left -= total_tokens
-        return jsonify({"result": "yes"})
-
-    return jsonify({"result": (60 - (now_time - last_refresh))})
-
-@bp.route('/llm/clean', methods=['GET'])
-@require_auth
-def llm_clean():
-    global conversation
-
-    chatId = request.args.get('chatId', None)
-
-    if chatId is None:
-        return jsonify({"message": "You need to specify which chatId is being cleaned"}), 400
-
-    conversation[chatId] = []
-
-    return jsonify({"message": "Success"}), 200
-
 
 @bp.route('/spatial_join', methods=['POST'])
 def spatial_join():

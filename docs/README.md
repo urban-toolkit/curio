@@ -7,6 +7,7 @@
 - [Authoring nodes](AUTHORING-NODES.md): build your own node, from a clone to a shareable package
 - [Node catalog](NODE-CATALOG.md)
 - [Data catalog](DATA-CATALOG.md)
+- [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
 - [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
 
@@ -15,6 +16,7 @@
 - [Contributing to Curio](CONTRIBUTING.md)
 - [Onboarding for undergraduate students](ONBOARDING.md)
 - [System architecture](ARCHITECTURE.md)
+- [Trill dataflow specification](TRILL-SPEC.md): the JSON format a saved dataflow is stored in
 - [Extending Curio with new node packages](EXTENDING.md)
 
 ## Examples
@@ -22,6 +24,8 @@
 Each example below has a JSON dataflow you can import into Curio plus a step-by-step markdown walkthrough. Pipeline overviews in the walkthroughs are drawn with [Mermaid](https://mermaid.js.org/) `flowchart` blocks, which GitHub renders inline.
 
 The same examples are also seeded into the public deployments at [**curio.urbantk.org**](https://curio.urbantk.org) (stable) and [**curio-dev.urbantk.org**](https://curio-dev.urbantk.org) (latest `main`). Sign in to fork them into your own projects, or browse them read-only as a guest.
+
+Every example reads its inputs from the [Data Catalog](DATA-CATALOG.md): the datasets ship in `<repo_root>/datasets/` and each dataflow declares the ones it needs, so the loader nodes address them by id with `curio_dataset_path("<id>")` rather than by a path into this repo. The four Autark examples (06, 07, 08, 11) are the exception, still reading a committed `.osm.pbf` by relative path, because the browser fetches those bytes directly and `.pbf` is not a catalog format.
 
 Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediate, 🔴 Advanced.
 

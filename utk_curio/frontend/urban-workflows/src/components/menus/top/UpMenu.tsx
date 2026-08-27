@@ -40,6 +40,7 @@ import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
+import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDrawerProvider";
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
@@ -48,12 +49,10 @@ export default function UpMenu({
     setDashBoardMode,
     setDashboardOn,
     dashboardOn,
-    setAIMode,
 }: {
     setDashBoardMode: (mode: boolean) => void;
     setDashboardOn: (mode: boolean) => void;
     dashboardOn: boolean;
-    setAIMode: (value: boolean) => void;
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
@@ -61,7 +60,6 @@ export default function UpMenu({
     const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
-    const [aiModeOn, setAiModeOn] = useState(false);
 
     const menuBarRef = useRef<HTMLDivElement>(null);
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
@@ -101,6 +99,7 @@ export default function UpMenu({
     const { showToast } = useToastContext();
     const ensureWorkflowDeps = useEnsureWorkflowDeps();
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
+    const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
     const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
@@ -144,12 +143,6 @@ export default function UpMenu({
             setAllMinimized(0);
         }
         setActiveMenu(null);
-    };
-
-    const toggleAI = () => {
-        const next = !aiModeOn;
-        setAiModeOn(next);
-        setAIMode(next);
     };
 
     const handleNewWorkflow = () => {
@@ -507,6 +500,16 @@ export default function UpMenu({
                             </div>
                             <div
                                 className={styles.dropDownRow}
+                                onClick={() => {
+                                    openAgentCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faRobot} />
+                                <button className={styles.noStyleButton}>Agent Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
                                 onMouseEnter={() => {
                                     if (projectId) {
                                         prefetchDatasetCatalog({
@@ -571,14 +574,6 @@ export default function UpMenu({
                     )}
                 </div>
 
-                {/* Urbanite AI toggle */}
-                <button
-                    className={clsx(styles.button, aiModeOn && styles.aiIconActive)}
-                    onClick={toggleAI}
-                    title="Urbanite AI"
-                >
-                    <FontAwesomeIcon icon={faRobot} />
-                </button>
 
                 {/* Real-time collaboration side panel toggle. Only rendered
                     when --collab is on; the badge surfaces the live peer

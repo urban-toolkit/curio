@@ -1,0 +1,34 @@
+{
+  "id": "data.urbanlab.milan-mrt",
+  "name": "Milan Mean Radiant Temperature",
+  "version": "1.0.0",
+  "format": "geotiff",
+  "description": "Mean radiant temperature raster for Milan on 2022-07-22 at noon, the thermal input to a UTCI heat-exposure calculation. Pre-downsampled by a factor of 4 per dimension and float16-quantized so the file fits in the repo; UTCI precision (about 0.06 C in this range) is unaffected.",
+  "publisher": "Urban Analytics Lab",
+  "license": "Research use",
+  "tags": [
+    "raster",
+    "milan",
+    "thermal",
+    "mrt",
+    "geotiff"
+  ],
+  "dataFile": "data/milan-mrt.tif",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Curio tutorial data",
+  "rowCount": null,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-08-27T00:00:00Z",
+  "updatedAt": "2026-08-27T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null
+}

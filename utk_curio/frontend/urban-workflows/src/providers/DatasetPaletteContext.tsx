@@ -51,7 +51,7 @@ export function DatasetPaletteProvider({ children }: { children: React.ReactNode
 
   // Auto-install / save fires this event; refetch so producer chips update live.
   useEffect(() => {
-    const onRefresh = () => void catalog.reload({ bustCache: true });
+    const onRefresh = () => void catalog.reload();
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
   }, [catalog.reload]);

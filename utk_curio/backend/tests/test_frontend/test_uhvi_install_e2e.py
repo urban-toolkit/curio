@@ -20,6 +20,7 @@ Run::
 """
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
@@ -29,7 +30,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
-    skip_if_shared_view,
+    require_owner_view,
     stub_login_and_enter_workflow,
 )
 
@@ -95,7 +96,7 @@ def test_the_uhvi_package_installs_without_a_geopandas_conflict(
         project_name="UHVI Install",
         project_spec=_one_node_spec(),
     )
-    skip_if_shared_view(page)
+    require_owner_view(page)
 
     page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
@@ -109,10 +110,13 @@ def test_the_uhvi_package_installs_without_a_geopandas_conflict(
     # made the conflict unavoidable.
     card.get_by_role("button", name="Add to dataflow", exact=True).click()
 
-    # The install dialog: no accessible name of its own, so it is picked out as
-    # the dialog that is NOT the catalog.
+    # The install dialog, picked out by its own heading. It used to be selected
+    # by negation - "the dialog that is NOT the catalog" - which held only while
+    # exactly two dialogs existed. Modals are announced as dialogs too now, so a
+    # third one on screen would have made that filter match two elements and
+    # fail on strict mode, blaming the install flow for an unrelated panel.
     install_dialog = page.get_by_role("dialog").filter(
-        has_not=page.get_by_role("heading", name="Node Catalog", exact=True)
+        has=page.get_by_role("heading", name=re.compile(r'^Add "'))
     )
     expect(install_dialog).to_be_visible(timeout=15000)
 

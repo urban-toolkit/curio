@@ -1,6 +1,6 @@
 # Example: Spatial density + zip-code aggregation in Vega-Lite
 
-This example shows how to fan out a single spatially-joined dataset to multiple Vega-Lite views via a `Data Pool`. The data is Chicago's [green-roofs inventory](data/10-green_roofs.csv): we load the raw CSV, join each rooftop point with the city's neighborhood polygons, then read the same joined table from a histogram (size distribution), a dot density map, and a top-N bar chart.
+This example shows how to fan out a single spatially-joined dataset to multiple Vega-Lite views via a `Data Pool`. The data is Chicago's green-roofs inventory: we load the raw CSV from the Data Catalog, join each rooftop point with the city's neighborhood polygons, then read the same joined table from a histogram (size distribution), a dot density map, and a top-N bar chart.
 
 ## Pipeline overview
 
@@ -15,16 +15,25 @@ flowchart LR
 
 ## Data
 
-[10-green_roofs.csv](data/10-green_roofs.csv) (rooftop inventory) and [chicago.geojson](data/chicago.geojson) (zip-coded neighborhood polygons).
+This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
+addresses a dataset by id via `curio_dataset_path("<id>")` rather than by a repo-relative path,
+so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
-Paths in the code below are relative to the directory you launched Curio from, so run `curio start` from the repo root.
+| Dataset | Id | Format | Size |
+|---|---|---|---|
+| Chicago Green Roofs (rooftop inventory) | `data.cityofchicago.green-roofs` | csv | 359 rows |
+| Chicago Boundary (zip-coded neighborhood polygons) | `data.urbanlab.chicago-boundary` | geojson | 61 features |
+
+Both ship in the committed catalog under `datasets/` and are already added to this dataflow, so they
+appear in the left rail's **Data Catalog** palette when you open it. Source: [Chicago Data Portal](https://data.cityofchicago.org/).
 
 ## Step 1: Load the green-roofs CSV (`Data Loading`)
 
 ```python
 import pandas as pd
 
-df = pd.read_csv("docs/examples/data/10-green_roofs.csv")
+dataset_path = curio_dataset_path("data.cityofchicago.green-roofs")
+df = pd.read_csv(dataset_path)
 return df
 ```
 
@@ -91,11 +100,13 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
-green_roofs_df = pd.read_csv('docs/examples/data/10-green_roofs.csv')
+green_roofs_path = curio_dataset_path("data.cityofchicago.green-roofs")
+green_roofs_df = pd.read_csv(green_roofs_path)
 geometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]
 green_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)
 
-chicago = gpd.read_file('docs/examples/data/chicago.geojson')
+chicago_path = curio_dataset_path("data.urbanlab.chicago-boundary")
+chicago = gpd.read_file(chicago_path)
 joined = gpd.sjoin(green_roofs_df, chicago, predicate='within')
 
 return pd.DataFrame(joined[['LONGITUDE', 'LATITUDE', 'VEGETATED_SQFT', 'TOTAL_ROOF_SQFT', 'zip']])
