@@ -27,9 +27,13 @@ REPO_ROOT = os.path.abspath(
 #: never leaves the repo dirty. Override with ``CURIO_TOUR_OUT``.
 DEFAULT_OUT_DIR = os.path.join(REPO_ROOT, ".curio", "tour")
 
-#: Recording geometry. Matches the e2e suite's viewport so the app lays out the
-#: way its baselines expect, and is a clean 720p frame.
-VIDEO_SIZE = {"width": 1280, "height": 720}
+#: Recording geometry. 1280 wide matches the e2e suite's viewport, so the canvas
+#: drop offsets the authoring scenes use (a node is 525x350 at zoom 1) still
+#: hold. The height is 800 rather than 720 because the left tool rail does not
+#: fit in 720: the built-in tile block plus the Node, Data and Agent Catalog
+#: dropdowns push the "Run all nodes" button past the fold, where Playwright
+#: cannot click it and a viewer cannot see it.
+VIDEO_SIZE = {"width": 1280, "height": 800}
 
 
 def out_dir() -> str:

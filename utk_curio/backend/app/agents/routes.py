@@ -119,6 +119,71 @@ def get_provider_default():
     }), 200
 
 
+@agents_bp.route("/provider-models", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def list_provider_models():
+    """The models an OpenAI-compatible endpoint says it serves.
+
+    POST rather than GET because AI Settings needs this *before* the user saves:
+    they type a base URL and a key, then want to pick a model from what that
+    endpoint actually has. A GET reading the stored config could only ever list
+    models for the previous configuration.
+
+    The request body is optional; each field falls back to what the account has
+    already resolved, so an already-configured user can refresh the list without
+    retyping a secret. A blank ``apiKey`` in particular means "use the saved
+    one", matching the panel's own "blank means keep" rule.
+
+    Only ``openai_compatible`` is listable: Anthropic and Gemini have no
+    equivalent ``/models`` in the shape the OpenAI SDK speaks, so they return an
+    empty list and the panel keeps its free-text box rather than pretending.
+    """
+    from utk_curio.backend.app.agents.provider_config import (
+        resolve_provider_config,
+    )
+
+    data = request.get_json(silent=True) or {}
+    api_type = (data.get("apiType") or "").strip()
+    base_url = (data.get("baseUrl") or "").strip()
+    api_key = (data.get("apiKey") or "").strip()
+
+    # Fall back to the account's resolved provider for whatever the caller left
+    # blank. Tolerate the resolve failing: it raises when no model is set, and
+    # "no model yet" is the normal state of someone about to choose one here.
+    if not (api_type and base_url and api_key):
+        try:
+            resolved = resolve_provider_config(g.user)
+        except Exception:  # noqa: BLE001 - an unconfigured account is expected
+            resolved = None
+        if resolved is not None:
+            api_type = api_type or (resolved.api_type or "")
+            base_url = base_url or (resolved.base_url or "")
+            api_key = api_key or (resolved.api_key or "")
+
+    api_type = api_type or "openai_compatible"
+    if api_type != "openai_compatible":
+        return jsonify({"models": [], "listable": False}), 200
+
+    from openai import OpenAI
+
+    kwargs = {"api_key": api_key or "no-key", "timeout": 20.0}
+    if base_url:
+        kwargs["base_url"] = base_url
+    try:
+        listing = OpenAI(**kwargs).models.list()
+    except Exception as exc:  # noqa: BLE001 - every SDK failure is the same answer here
+        # A rejected key, an unreachable host and an endpoint without /models
+        # all mean "cannot offer a choice". Report it as a 400 the panel can
+        # show verbatim rather than a 500: the user is mid-edit and the message
+        # is the thing that tells them which field is wrong.
+        return _error(f"Could not list models: {exc}", 400)
+    models = sorted(
+        {m.id for m in listing.data if getattr(m, "id", None)}
+    )
+    return jsonify({"models": models, "listable": True}), 200
+
+
 @agents_bp.route("/imports", methods=["GET"])
 @require_auth
 def list_imports():

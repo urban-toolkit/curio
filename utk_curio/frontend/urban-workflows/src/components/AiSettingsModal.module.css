@@ -87,3 +87,43 @@
     font-size: var(--curio-font-size-sm);
     line-height: 1.5;
 }
+
+/* Asking the endpoint what it serves, and reporting when it will not say.
+   Sits directly under the Model control, above that field's hint. */
+.modelFetchRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.fetchModelsBtn {
+  background: none;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-sm);
+  padding: 3px 10px;
+  color: var(--curio-text-secondary);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  cursor: pointer;
+}
+
+.fetchModelsBtn:hover:not(:disabled) {
+  color: var(--curio-text-primary);
+  border-color: var(--curio-text-secondary);
+}
+
+.fetchModelsBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Not an error state for the whole panel: the model list is a convenience, and
+   the field it decorates still accepts a typed name. */
+.modelsError {
+  color: var(--curio-text-secondary);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  line-height: 1.4;
+}

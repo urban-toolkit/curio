@@ -69,6 +69,12 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // What the configured endpoint says it serves. Empty means "we have not
+  // asked, or it could not tell us", and the Model field stays free text -
+  // an endpoint that cannot list must not become an endpoint you cannot use.
+  const [models, setModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   // What this deployment configured with --llm-provider / --llm-base-url /
   // --llm-model. Those flags and this panel write the same account-wide
   // setting, so the flags' values belong here as the inherited value rather
@@ -97,8 +103,40 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setHfToken("");
       setError(null);
       setSuccess(false);
+      setModels([]);
+      setModelsError(null);
     }
   }, [isOpen, user]);
+
+  const loadModels = async () => {
+    setLoadingModels(true);
+    setModelsError(null);
+    try {
+      const apiType =
+        uiMode === "anthropic" ? "anthropic"
+        : uiMode === "gemini" ? "gemini"
+        : "openai_compatible";
+      // Send what is on screen, not what is saved: the whole point is to pick a
+      // model for the endpoint being configured right now. A blank key means
+      // "use the saved one", which the server resolves.
+      const res = await agentsApi.providerModels({
+        apiType,
+        baseUrl: uiMode === "custom" ? baseUrl : "",
+        apiKey,
+      });
+      setModels(res.models || []);
+      if (!res.listable) {
+        setModelsError("This provider does not publish a model list.");
+      } else if (!res.models?.length) {
+        setModelsError("The endpoint returned no models.");
+      }
+    } catch (e: any) {
+      setModels([]);
+      setModelsError(e?.message || "Could not reach the endpoint.");
+    } finally {
+      setLoadingModels(false);
+    }
+  };
 
   const handleModeChange = (newMode: UiMode) => {
     setUiMode(newMode);
@@ -107,6 +145,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
     // into the value would save it as an explicit override the user never
     // chose, and quietly detach them from the deployment default.
     setModel("");
+    // A list fetched from one provider must not be offered for another.
+    setModels([]);
+    setModelsError(null);
     if (newMode !== "custom") {
       setBaseUrl("");
     }
@@ -236,8 +277,11 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
             {info.showBaseUrl && (
               <div className={modal.field}>
-                <label className={modal.label}>Base URL</label>
+                <label className={modal.label} htmlFor="ai-settings-base-url">
+                  Base URL
+                </label>
                 <input
+                  id="ai-settings-base-url"
                   className={modal.input}
                   type="text"
                   value={baseUrl}
@@ -249,7 +293,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
             )}
 
             <div className={modal.field}>
-              <label className={modal.label}>
+              <label className={modal.label} htmlFor="ai-settings-api-key">
                 API Key{" "}
                 <span className={styles.optional}>
                   {user?.has_llm_api_key
@@ -262,6 +306,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 </span>
               </label>
               <input
+                id="ai-settings-api-key"
                 className={modal.input}
                 type="password"
                 value={apiKey}
@@ -287,22 +332,73 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
 
             <div className={modal.field}>
-              <label className={modal.label}>Model</label>
-              <input
-                className={modal.input}
-                type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder={
-                  deployed?.model
-                    ? `${deployed.model} (from this deployment)`
-                    : info.model || "e.g. llama3.2"
-                }
-              />
+              <label className={modal.label} htmlFor="ai-settings-model">
+                Model
+              </label>
+              {models.length > 0 ? (
+                <select
+                  id="ai-settings-model"
+                  className={modal.input}
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                >
+                  {/* Blank stays reachable: it is what "inherit the
+                      deployment's model" means, and losing it would strand a
+                      user who had chosen inheritance. */}
+                  <option value="">
+                    {deployed?.model
+                      ? `${deployed.model} (from this deployment)`
+                      : "Select a model…"}
+                  </option>
+                  {models.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                  {/* A model saved earlier that the endpoint no longer lists
+                      would otherwise vanish from the box that claims to show
+                      it. */}
+                  {model && !models.includes(model) && (
+                    <option value={model}>{model} (not listed)</option>
+                  )}
+                </select>
+              ) : (
+                <input
+                  id="ai-settings-model"
+                  className={modal.input}
+                  type="text"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={
+                    deployed?.model
+                      ? `${deployed.model} (from this deployment)`
+                      : info.model || "e.g. llama3.2"
+                  }
+                />
+              )}
+              <div className={styles.modelFetchRow}>
+                <button
+                  type="button"
+                  className={styles.fetchModelsBtn}
+                  onClick={() => void loadModels()}
+                  disabled={loadingModels}
+                >
+                  {loadingModels
+                    ? "Fetching models…"
+                    : models.length > 0
+                      ? "Refresh models"
+                      : "Fetch models"}
+                </button>
+                {modelsError && (
+                  <span className={styles.modelsError}>{modelsError}</span>
+                )}
+              </div>
+              <span className={modal.hint}>
+                Asks the endpoint above what it serves. Leave blank to inherit
+                the deployment's model.
+              </span>
             </div>
 
             <div className={modal.field}>
-              <label className={modal.label}>
+              <label className={modal.label} htmlFor="ai-settings-hf-token">
                 HuggingFace token{" "}
                 <span className={styles.optional}>
                   {user?.has_huggingface_token
@@ -311,6 +407,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 </span>
               </label>
               <input
+                id="ai-settings-hf-token"
                 className={modal.input}
                 type="password"
                 value={hfToken}

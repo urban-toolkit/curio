@@ -6,7 +6,7 @@ import { useFlowContext } from "../../../../providers/FlowProvider";
 import { useAgentCatalogDrawerControls } from "../../../../providers/AgentCatalogDrawerProvider";
 import { AGENT_CATALOG_REFRESH_EVENT } from "../../../../utils/agentCatalogEvents";
 import { PaletteAccordion } from "../paletteAccordion";
-import { TOOLS_PALETTE_DROPDOWN_ATTR } from "../toolsPaletteDismiss";
+import { TOOLS_PALETTE_DROPDOWN_ATTR, TOOLS_PALETTE_PANEL_ATTR } from "../toolsPaletteDismiss";
 import { AgentPaletteRow } from "./AgentPaletteRow";
 import styles from "./AgentsPalette.module.css";
 
@@ -104,7 +104,20 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
         </button>
       </div>
       {open ? (
-        <div className={styles.panel} role="region" aria-label="Agent palette">
+        /* TOOLS_PALETTE_PANEL_ATTR marks this panel as occluding the canvas,
+           exactly as the Datasets and Packages panels do. fitViewWithMenuOffset
+           measures the dock's reach by taking the rightmost edge across the rail
+           and any element carrying it, because an open panel is absolutely
+           positioned and so is not inside the dock's own rect. Without it Fit
+           View sized the graph against the full pane and parked part of it under
+           this palette - the one way this palette did not behave like the two it
+           sits beside. */
+        <div
+          className={styles.panel}
+          role="region"
+          aria-label="Agent palette"
+          {...{ [TOOLS_PALETTE_PANEL_ATTR]: "true" }}
+        >
           <div className={styles.panelHeader}>
             <div className={styles.title}>Agents</div>
           </div>

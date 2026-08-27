@@ -7480,3 +7480,123 @@ class TestProviderDefault:
     def test_requires_auth(self, client):
         assert client.get(self.URL).status_code == 401
 
+
+class TestProviderModels:
+    """The model list AI Settings offers instead of a free-text box.
+
+    Typing a model name from memory is how a wrong one gets saved, and a wrong
+    model only shows up much later as a failed agent run. So the panel asks the
+    endpoint what it serves - and it has to be able to ask *before* the user
+    saves, which is why this is a POST carrying the credentials on screen.
+    """
+
+    URL = "/api/agents/provider-models"
+
+    @staticmethod
+    def _fake_openai(monkeypatch, *, models=(), raises=None):
+        """Stand in for the OpenAI SDK, recording how it was constructed."""
+        seen = {}
+
+        class _Listing:
+            def __init__(self, ids):
+                self.data = [type("M", (), {"id": i})() for i in ids]
+
+        class _Models:
+            def __init__(self, ids):
+                self._ids = ids
+
+            def list(self):
+                if raises is not None:
+                    raise raises
+                return _Listing(self._ids)
+
+        class _Client:
+            def __init__(self, **kwargs):
+                seen.update(kwargs)
+                self.models = _Models(list(models))
+
+        import openai
+
+        monkeypatch.setattr(openai, "OpenAI", _Client)
+        return seen
+
+    def test_lists_what_the_endpoint_serves(self, client, user_and_token, monkeypatch):
+        self._fake_openai(monkeypatch, models=["llama4-nim", "gemma4"])
+        _, token = user_and_token
+        body = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={
+                "apiType": "openai_compatible",
+                "baseUrl": "https://llm.example.test/",
+                "apiKey": "sk-typed",
+            },
+        ).get_json()
+        # Sorted, so the menu order does not depend on the server's.
+        assert body == {"models": ["gemma4", "llama4-nim"], "listable": True}
+
+    def test_uses_the_credentials_in_the_request(self, client, user_and_token, monkeypatch):
+        # The panel calls this mid-edit, before Save. Listing against the saved
+        # config instead would answer for the previous endpoint.
+        seen = self._fake_openai(monkeypatch, models=["m"])
+        _, token = user_and_token
+        client.post(
+            self.URL,
+            headers=_auth(token),
+            json={
+                "apiType": "openai_compatible",
+                "baseUrl": "https://typed.example.test/",
+                "apiKey": "sk-typed",
+            },
+        )
+        assert seen["base_url"] == "https://typed.example.test/"
+        assert seen["api_key"] == "sk-typed"
+
+    def test_a_provider_without_a_listing_is_not_an_error(
+        self, client, user_and_token, monkeypatch
+    ):
+        # Anthropic and Gemini have no OpenAI-shaped /models. Saying so lets the
+        # panel keep its free-text box rather than show an empty menu.
+        self._fake_openai(monkeypatch, models=["unused"])
+        _, token = user_and_token
+        res = client.post(
+            self.URL, headers=_auth(token), json={"apiType": "anthropic"},
+        )
+        assert res.status_code == 200
+        assert res.get_json() == {"models": [], "listable": False}
+
+    def test_a_rejected_key_is_a_400_that_says_why(
+        self, client, user_and_token, monkeypatch
+    ):
+        # The user is mid-edit and the message is what tells them which field is
+        # wrong, so it has to reach them rather than becoming a bare 500.
+        self._fake_openai(
+            monkeypatch, raises=RuntimeError("401 invalid proxy server token"),
+        )
+        _, token = user_and_token
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "openai_compatible", "baseUrl": "https://x.test/"},
+        )
+        assert res.status_code == 400
+        assert "invalid proxy server token" in res.get_json()["error"]
+
+    def test_an_unconfigured_account_can_still_ask(
+        self, client, user_and_token, monkeypatch
+    ):
+        # resolve_provider_config raises when no model is set, and "no model
+        # yet" is the normal state of someone about to choose one here.
+        self._fake_openai(monkeypatch, models=["gemma4"])
+        _, token = user_and_token
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"baseUrl": "https://x.test/", "apiKey": "sk-typed"},
+        )
+        assert res.status_code == 200
+        assert res.get_json()["models"] == ["gemma4"]
+
+    def test_requires_auth(self, client):
+        assert client.post(self.URL, json={}).status_code == 401
+

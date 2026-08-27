@@ -41,10 +41,21 @@ let mockDefault: unknown = {
 };
 let mockDefaultRejects = false;
 
+let mockModels: { models: string[]; listable: boolean } = {
+  models: [],
+  listable: true,
+};
+let mockModelsRejects: string | null = null;
+
 jest.mock("../../api/agentsApi", () => ({
   agentsApi: {
     providerDefault: jest.fn(() =>
       mockDefaultRejects ? Promise.reject(new Error("nope")) : Promise.resolve(mockDefault),
+    ),
+    providerModels: jest.fn(() =>
+      mockModelsRejects
+        ? Promise.reject(new Error(mockModelsRejects))
+        : Promise.resolve(mockModels),
     ),
   },
 }));
@@ -58,6 +69,8 @@ beforeEach(() => {
   mockUser = { ...SIGNED_IN };
   mockDefault = { apiType: null, baseUrl: null, model: null, hasApiKey: false };
   mockDefaultRejects = false;
+  mockModels = { models: [], listable: true };
+  mockModelsRejects = null;
   jest.clearAllMocks();
 });
 
@@ -245,5 +258,92 @@ describe("AI Settings: clearing what was saved", () => {
     mockUser = { ...SIGNED_IN };
     open();
     expect(screen.queryByRole("button", { name: /remove saved/i })).toBeNull();
+  });
+});
+
+/**
+ * The Model field asks the endpoint what it serves.
+ *
+ * Typing a model name from memory is how you end up saving one the endpoint
+ * does not have, which surfaces much later as a failed agent run rather than as
+ * a wrong value in this box. The list has to come from the endpoint being
+ * configured *right now*, which is why the fetch sends what is on screen rather
+ * than what was last saved.
+ */
+describe("AI Settings: choosing a model from the endpoint", () => {
+  const fetchModels = async () => {
+    fireEvent.click(screen.getByRole("button", { name: /Fetch models/i }));
+    await waitFor(() =>
+      expect(agentsApi.providerModels).toHaveBeenCalled(),
+    );
+  };
+
+  it("is a free-text box until the models are known", () => {
+    open();
+    expect(screen.getByLabelText("Model")).toHaveProperty("tagName", "INPUT");
+    expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  it("becomes a dropdown of what the endpoint serves", async () => {
+    mockModels = { models: ["gemma4", "llama4-nim"], listable: true };
+    open();
+    await fetchModels();
+
+    const select = await screen.findByLabelText("Model");
+    expect(select.tagName).toBe("SELECT");
+    expect(
+      Array.from(select.querySelectorAll("option")).map((o) => o.textContent),
+    ).toEqual(expect.arrayContaining(["gemma4", "llama4-nim"]));
+
+    fireEvent.change(select, { target: { value: "gemma4" } });
+    expect((select as HTMLSelectElement).value).toBe("gemma4");
+  });
+
+  it("sends the credentials on screen, not the ones last saved", async () => {
+    mockModels = { models: ["gemma4"], listable: true };
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
+    fireEvent.change(screen.getByLabelText("Base URL"), {
+      target: { value: "https://example.invalid/" },
+    });
+    await fetchModels();
+
+    expect(agentsApi.providerModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiType: "openai_compatible",
+        baseUrl: "https://example.invalid/",
+      }),
+    );
+  });
+
+  it("keeps a saved model selectable when the endpoint no longer lists it", async () => {
+    mockUser = { ...SIGNED_IN, llm_model: "retired-model" };
+    mockModels = { models: ["gemma4"], listable: true };
+    open();
+    await fetchModels();
+
+    const select = (await screen.findByLabelText("Model")) as HTMLSelectElement;
+    expect(select.value).toBe("retired-model");
+    expect(screen.getByText("retired-model (not listed)")).toBeInTheDocument();
+  });
+
+  it("stays typeable when the endpoint cannot be listed", async () => {
+    mockModelsRejects = "Could not list models: 401 invalid key";
+    open();
+    await fetchModels();
+
+    await screen.findByText(/Could not list models/);
+    // The point: a listing failure must not cost you the ability to configure.
+    expect(screen.getByLabelText("Model")).toHaveProperty("tagName", "INPUT");
+  });
+
+  it("does not offer one provider's models for another", async () => {
+    mockModels = { models: ["gemma4"], listable: true };
+    open();
+    await fetchModels();
+    expect((await screen.findByLabelText("Model")).tagName).toBe("SELECT");
+
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    expect(screen.getByLabelText("Model")).toHaveProperty("tagName", "INPUT");
   });
 });

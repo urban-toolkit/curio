@@ -47,16 +47,30 @@ export type AgentDropTarget =
  * Hit-tested through the DOM rather than by re-deriving bezier geometry:
  * React Flow renders every edge with a wide invisible
  * `.react-flow__edge-interaction` path precisely so a pointer can land on a
- * curve, and the group carries the edge id in `data-id`. Reimplementing the
- * curve maths here would be a second, worse source of truth for where an edge
- * *is*.
+ * curve. Reimplementing the curve maths here would be a second, worse source of
+ * truth for where an edge *is*.
+ *
+ * Reading the id needs both attributes. In React Flow 11 only *nodes* get
+ * `data-id`; the edge group is rendered with `data-testid="rf__edge-<id>"` and
+ * no `data-id` at all (`@reactflow/core`, EdgeWrapper). Reading `data-id` alone
+ * therefore returned null for every real edge, so an agent dropped on a
+ * connection fell through to the canvas branch of `handleDrop` — and a
+ * connection-only agent was then refused by the backend with "this agent
+ * attaches to connection, node, not canvas". `data-id` is still preferred so
+ * this keeps working if a later React Flow starts setting it.
  */
 export function pickEdgeAtPoint(clientX: number, clientY: number): string | null {
   if (typeof document === "undefined" || !document.elementFromPoint) return null;
   const el = document.elementFromPoint(clientX, clientY);
   const edge = el?.closest?.(".react-flow__edge");
-  const id = edge?.getAttribute?.("data-id");
-  return id || null;
+  if (!edge) return null;
+  const direct = edge.getAttribute?.("data-id");
+  if (direct) return direct;
+  const testId = edge.getAttribute?.("data-testid");
+  const fromTestId = testId?.startsWith("rf__edge-")
+    ? testId.slice("rf__edge-".length)
+    : null;
+  return fromTestId || null;
 }
 
 export interface XYPoint {

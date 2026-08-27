@@ -577,13 +577,24 @@ CURIO_TOUR=1 CURIO_TOUR_SCENES=linkedviews,dashboard CURIO_TOUR_SPEED=0.8 \
 ```
 
 The take is one continuous Playwright recording of a single page, so the whole
-tour runs in one browser session: signup, the projects page, authoring a
-dataflow from a catalog dataset, dataset lineage, the Node Catalog, Vega-Lite
-views, dashboard mode, provenance, linked interactions, an Autark/WebGPU map,
-and the catalog pages. Captions, a synthetic cursor and the spotlight ring come
+tour runs in one browser session: signup, the projects page, configuring the AI
+provider, authoring a dataflow from a catalog dataset, dataset lineage, the Node
+Catalog, the Agent Catalog, attaching and running an agent, Vega-Lite views,
+dashboard mode, provenance, linked interactions, an Autark/WebGPU map, and the
+catalog pages. Captions, a synthetic cursor and the spotlight ring come
 from [`tour.py`](tour.py), which paints them into the page above the app -
 Playwright records the page and nothing else, so a real pointer would be
 invisible and a click would look unmotivated.
+
+### The agent scenes need a provider
+
+`aisettings` types a base URL, an API key and a model into AI Settings on
+camera, from the `LLM_*` constants at the top of the module, and `agentrun` then
+asks that endpoint a real question. Curio ships no provider of its own and the
+tour's account starts with none, so those constants are load-bearing rather than
+decorative: point them somewhere else to record against a different endpoint.
+`agentrun` is the only scene that leaves the machine, which makes it the one
+most likely to be the scene that failed.
 
 | Variable | Purpose |
 |---|---|

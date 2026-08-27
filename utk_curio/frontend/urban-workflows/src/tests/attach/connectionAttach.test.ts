@@ -24,17 +24,37 @@ describe("pickEdgeAtPoint", () => {
     delete (document as any).elementFromPoint;
   });
 
-  it("reads the edge id off the React Flow edge group", () => {
+  it("reads the edge id off a real React Flow 11 edge group", () => {
     // Hit-tested through the DOM because React Flow renders a wide invisible
     // interaction path over each curve; re-deriving bezier geometry here would
     // be a second, worse source of truth for where an edge is.
+    //
+    // The markup here is what @reactflow/core@11 actually renders: the edge
+    // group gets `data-testid="rf__edge-<id>"` and NO `data-id` - only nodes
+    // get that. An earlier version of this test hand-set `data-id` on the
+    // group, which asserted the implementation's assumption rather than React
+    // Flow's output, so it stayed green while dropping an agent on a connection
+    // could never work in a browser.
     const group = document.createElement("div");
     group.className = "react-flow__edge";
-    group.setAttribute("data-id", "edge-42");
+    group.setAttribute("data-testid", "rf__edge-edge-42");
     const path = document.createElement("div");
+    path.className = "react-flow__edge-interaction";
     group.appendChild(path);
     document.body.appendChild(group);
     atPoint(path);
+
+    expect(pickEdgeAtPoint(10, 10)).toBe("edge-42");
+    document.body.removeChild(group);
+  });
+
+  it("prefers data-id when a future React Flow provides one", () => {
+    const group = document.createElement("div");
+    group.className = "react-flow__edge";
+    group.setAttribute("data-id", "edge-42");
+    group.setAttribute("data-testid", "rf__edge-stale");
+    document.body.appendChild(group);
+    atPoint(group);
 
     expect(pickEdgeAtPoint(10, 10)).toBe("edge-42");
     document.body.removeChild(group);

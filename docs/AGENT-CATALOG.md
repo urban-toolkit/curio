@@ -290,8 +290,23 @@ account-level setting, edited in **AI Settings** from the header.
 | Provider | OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint. |
 | Base URL | Only for a custom endpoint: Ollama, LM Studio, vLLM, Groq, Azure. |
 | API key | Stored per account. Leave blank to keep the saved one. |
-| Model | The model name. Leave blank to inherit the deployment's. |
+| Model | Which model answers. **Fetch models** asks the endpoint above what it serves and turns this into a dropdown; endpoints that publish no list keep a free-text box. Leave blank to inherit the deployment's. |
 | HuggingFace token | Not for agents: it unlocks *gated* models in the Street Vision node. It sits here because it is the same kind of setting, a model credential you hold per account. Public models need none. |
+
+### Choosing the model
+
+The **Fetch models** button under the Model field asks the configured endpoint
+what it serves (`POST /api/agents/provider-models`, which the panel calls with
+the base URL and key currently *on screen* rather than the saved ones — you are
+usually choosing a model for an endpoint you have not saved yet). What comes
+back becomes a dropdown.
+
+It is a convenience, not a gate. Only OpenAI-compatible endpoints have a
+listing in the shape the OpenAI SDK speaks, so Anthropic and Gemini report
+`listable: false` and the field stays typeable; so does an endpoint that refuses
+the request, with the reason shown beside the button. A model you saved earlier
+stays selected and is marked *(not listed)* if the endpoint stops offering it,
+rather than disappearing from the control that claims to show it.
 
 Whoever runs the Curio install can set a default for all four with
 `curio.py start` flags (see [Operator notes](#operator-notes)). Those flags and

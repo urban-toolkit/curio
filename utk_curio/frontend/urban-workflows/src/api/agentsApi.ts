@@ -625,6 +625,28 @@ export const agentsApi = {
     return apiFetch("/api/agents/provider-default");
   },
 
+  /** The models an OpenAI-compatible endpoint reports it serves.
+   *
+   * POSTed rather than GET because AI Settings calls it mid-edit: the user has
+   * typed a base URL and a key but not saved them yet, and a GET could only
+   * list models for the previous configuration. Anything omitted falls back to
+   * the account's saved provider server-side, so an already-configured user can
+   * refresh without retyping their key.
+   *
+   * `listable` is false for Anthropic and Gemini, which have no equivalent
+   * listing in the shape the OpenAI SDK speaks; the panel keeps its free-text
+   * box in that case rather than offering an empty menu. */
+  providerModels(input?: {
+    apiType?: string;
+    baseUrl?: string;
+    apiKey?: string;
+  }): Promise<{ models: string[]; listable: boolean }> {
+    return apiFetch("/api/agents/provider-models", {
+      method: "POST",
+      body: JSON.stringify(input || {}),
+    });
+  },
+
   /** Account "My imports". Pass a projectId to mark which are in the dataflow
    * that project (memo dev/47 — the lockfile is the one source of truth). */
   listImports(projectId?: string): Promise<AgentListResponse> {
