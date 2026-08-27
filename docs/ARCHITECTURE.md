@@ -731,6 +731,7 @@ Catalog and account scope:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/agents/catalog` | GET | List the agent definitions available to add (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
+| `/api/agents/provider-default` | GET | The deployment's default provider, base URL and model, so AI Settings can show what a user inherits. The API key is reported as a boolean only |
 | `/api/agents/imports` | GET | List the account's imported definitions, as cards |
 | `/api/agents/imports` | POST | Record `<id>@<version>` in My imports. Never adds to a dataflow |
 | `/api/agents/imports/upload` | POST | Upload a user-authored definition (`manifest` + `prompts` as JSON, no archives). Trust forced to `imported`, digests stamped from the bytes, **409** on an existing coordinate |
@@ -756,6 +757,23 @@ Attachments and runs:
 | `/api/agents/projects/<projectId>/attachments/<id>/run` | POST | Run one turn. Returns `{reply, executionId, usage, content}`; persists both turns |
 | `/api/agents/projects/<projectId>/attachments/<id>/run/stream` | POST | The same turn as Server-Sent Events: `execution` then `delta` chunks, tool rounds, `review_required`, `content`, `done` |
 | `/api/agents/projects/<projectId>/attachments/<id>/proposals/<proposalId>` | POST `/apply`, DELETE | Apply a pending review proposal (the only mutation path; re-checks the pinned digest, **409** on drift) or dismiss it |
+
+Solve and planning. The Dataflow Builder drives a batch that plans, generates,
+executes and self-corrects; each stage is a reviewed proposal the user applies,
+never an automatic write:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/projects/<projectId>/attachments/<id>/solve` | POST | Run the Solve batch over a plan's nodes |
+| `/api/agents/projects/<projectId>/attachments/<id>/solve/stream` | POST | The same batch as Server-Sent Events |
+| `/api/agents/projects/<projectId>/attachments/<id>/solve/cancel` | POST | Stop dispatching new children; undispatched targets revert to pending. **409** when nothing is running |
+| `/api/agents/projects/<projectId>/attachments/<id>/simulate` | POST | Simulation Mode, as Server-Sent Events |
+| `/api/agents/projects/<projectId>/attachments/<id>/simulate/cancel` | POST | Stop at the next action boundary; what is done stays done |
+| `/api/agents/projects/<projectId>/attachments/<id>/run-node` | POST | Execute the dataflow *through* one node, using its saved content |
+| `/api/agents/projects/<projectId>/attachments/<id>/validate-node` | POST | Generate, execute-through, validate, self-correct, then propose, for one node |
+| `/api/agents/.../proposals/<proposalId>/apply-node` | POST | Apply one planned node from a pending dataflow-plan proposal |
+| `/api/agents/.../proposals/<proposalId>/apply-edges` | POST | Apply the plan's edges: the connection review stage |
+| `/api/agents/.../proposals/<proposalId>/plan-goals` | POST | Edit one planned node's goal before it is created |
 
 Every run appends to a per-day ledger under a file lock
 (`.curio/users/<key>/agents/ledger/`), written from the token counts each
