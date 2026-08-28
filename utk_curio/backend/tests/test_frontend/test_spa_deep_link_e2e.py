@@ -49,14 +49,24 @@ DEEP_LINKS = [
 def spa_server():
     """The production static server, on the real built bundle.
 
-    Skips rather than builds: ``npm run build`` takes minutes, and the e2e
-    suite deliberately runs the dev server, so a dist tree is not guaranteed to
-    exist. CI builds one for the container image.
+    A missing ``dist/`` is a **failure**, not a skip. This is the only test
+    covering the server a deployed Curio actually runs, and the bug it guards
+    shipped in exactly that server: quietly skipping would restore the silence
+    that let it ship. The same argument the suite already makes for
+    ``require_owner_view`` - the environment being wrong is a setup bug, so it
+    is loud - applies with more force here, because a skip on the deep-link test
+    reads as "deep links are fine".
     """
-    if not os.path.isfile(os.path.join(DIST, "index.html")):
-        pytest.skip(
-            "no built frontend at utk_curio/frontend/urban-workflows/dist — "
-            "run `npm run build` there to exercise the production SPA server"
+    index = os.path.join(DIST, "index.html")
+    if not os.path.isfile(index):
+        pytest.fail(
+            "no built frontend at utk_curio/frontend/urban-workflows/dist." + chr(10)
+            + "This test covers the production static server - the one the "
+            "shipped container runs (CURIO_DEV=0) - so without a build there "
+            "is nothing to serve and the deep-link regression would go "
+            "unnoticed." + chr(10)
+            + "Build it once with:" + chr(10)
+            + "    cd utk_curio/frontend/urban-workflows && npm run build"
         )
 
     from utk_curio.main import run_spa_static_server

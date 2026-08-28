@@ -308,6 +308,7 @@ test_frontend/
   test_uhvi_install_e2e.py         # the UHVI package installs next to curio.builtin (#154)
   test_example_docs_parity.py      # examples vs their walkthroughs and README (#148) - no browser
   test_spa_deep_link_e2e.py   # a dotted deep link boots the app on the PRODUCTION static server
+                              # (needs a built dist/; FAILS rather than skips without one)
   test_library_manager_e2e.py      # Installed-libraries modal -> a node imports the lib
   test_package_roundtrip_e2e.py    # canvas node -> package -> archive -> import -> run it
   test_package_metadata_roundtrip_e2e.py  # Node settings + package metadata survive the archive
