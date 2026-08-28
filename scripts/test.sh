@@ -50,6 +50,18 @@ done
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CURIO_PID=""
 
+# This script NEVER lets pytest own the server lifecycle. It either attaches to
+# a stack someone else booted (--use-existing) or boots one itself below and
+# still runs the E2E suite with CURIO_E2E_USE_EXISTING=1. Export it for the
+# WHOLE run rather than only the E2E step, because backend/tests/conftest.py
+# reads it to decide whether this process owns the test DB: without it the
+# backend unit run deletes .curio/test/urban_workflow_test.db at import and
+# rmtrees .curio/test at session end -- out from under the live backend that is
+# serving from exactly those paths (CI sets CURIO_TESTING=1 on the container,
+# see docker-compose.ci.yml). Every backend unit package uses the in-memory
+# sqlite:// from tests/_unit_fixtures.py, so nothing here needs that file.
+export CURIO_E2E_USE_EXISTING=1
+
 # Derived run flags
 RUN_BACKEND=0; RUN_SANDBOX=0; RUN_JEST=0; RUN_E2E=0
 case "$SUITE" in
@@ -215,8 +227,18 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # them - skipped instead of running, so a green run proved far less than it
   # appeared to. The curio_servers fixture already passes --auth when it boots
   # its own stack; this is the CURIO_E2E_USE_EXISTING=1 path catching up.
+  # CURIO_TESTING is REQUIRED here for the same reason --auth is. The E2E
+  # suite seeds users and projects through /api/testing/* and resets the DB
+  # between tests through /api/testing/reset-db, and that blueprint refuses
+  # with 404 unless the server is BOTH a dev env and a declared test rig
+  # (backend/app/testing/routes.py). backend/tests/conftest.py sets the flag
+  # for the pytest process, but this server is a child of THIS script, so
+  # without it every E2E test errors in its autouse fixture on a bare 404.
+  # It also puts the server on the test DB under .curio/test/, which is
+  # where the suite already looks.
   set -m
-  CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_LAUNCH_CWD="$REPO_ROOT" \
+  CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_TESTING=1 \
+  CURIO_LAUNCH_CWD="$REPO_ROOT" \
     python "$REPO_ROOT/curio.py" start --auth --with-examples &
   CURIO_PID=$!
   set +m

@@ -40,6 +40,11 @@ services:
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+      # Same as docker-compose.ci.yml: the /api/testing/* stubs the e2e
+      # fixtures depend on are gated on CURIO_TESTING as well as a dev env,
+      # and a compose-owned stack has nothing to set it for them.
+      - CURIO_TESTING=1
+      - CURIO_LAUNCH_CWD=/app
     ports:
       - "127.0.0.1:${CURIO_PORT_2000:-2030}:2000"
     command:

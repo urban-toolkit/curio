@@ -57,6 +57,20 @@ services:
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+      # The host-side e2e suite drives this stack through /api/testing/*
+      # (stub-login, stub-project, reset-db) and through the scripted LLM
+      # provider. Both are gated on CURIO_TESTING as well as a dev env
+      # (backend/app/testing/routes.py, agents/testing_provider.py), and a
+      # container started without it answers 404 -- which surfaces as every
+      # e2e test erroring in the autouse e2e_clean_db fixture, not as one
+      # legible failure. pytest-owned stacks get the flag from
+      # backend/tests/conftest.py; a compose-owned stack has to be told.
+      - CURIO_TESTING=1
+      # Pin what CURIO_TESTING resolves against rather than leaning on the
+      # child process's cwd: the test DB then lands at /app/.curio/test/,
+      # which is the bind-mounted workspace the host-side suite already
+      # resolves for itself (test_db_paths).
+      - CURIO_LAUNCH_CWD=/app
     ports:
       - "127.0.0.1:${CURIO_PORT_2000:-2000}:2000"
     command:

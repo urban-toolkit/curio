@@ -19,6 +19,8 @@ on:
       - 'scripts/**'
       # Baked into the image (see Dockerfile runtime_base COPYs):
       - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'MANIFEST.in'
       - 'package.json'
       - 'package-lock.json'
       - 'packages/**'
@@ -43,6 +45,8 @@ on:
       - 'scripts/**'
       # Baked into the image (see Dockerfile runtime_base COPYs):
       - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'MANIFEST.in'
       - 'package.json'
       - 'package-lock.json'
       - 'packages/**'
@@ -216,6 +220,27 @@ jobs:
               sleep 2
             done
           '
+
+      # The e2e suite drives this stack through /api/testing/* -- stub-login and
+      # stub-project to skip the signup UI, reset-db between every test. That
+      # blueprint refuses with 404 unless the server is BOTH a dev env and a
+      # declared test rig (backend/app/testing/routes.py), and a compose-owned
+      # stack only gets the second factor from the overlay's CURIO_TESTING=1.
+      # Drop it and the stack still comes up healthy while all ~207 e2e tests
+      # error inside an autouse fixture on a bare 404 -- 12k log lines that say
+      # nothing about the cause. Ask once, here, and name it.
+      - name: 🔒 Assert the test stubs are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' -d '{}' \
+            "http://localhost:${CURIO_E2E_BACKEND_PORT}/api/testing/reset-db")
+          if [ "$code" != "200" ]; then
+            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (CURIO_TESTING)" >&2
+            exit 1
+          fi
+          echo "OK: the testing stubs are mounted."
 
       - name: 🧪 Run backend unit tests
         run: |
@@ -427,6 +452,27 @@ jobs:
         run: |
           docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c \
             || mkdir -p .curio/playwright/expected
+
+      # The e2e suite drives this stack through /api/testing/* -- stub-login and
+      # stub-project to skip the signup UI, reset-db between every test. That
+      # blueprint refuses with 404 unless the server is BOTH a dev env and a
+      # declared test rig (backend/app/testing/routes.py), and a compose-owned
+      # stack only gets the second factor from the overlay's CURIO_TESTING=1.
+      # Drop it and the stack still comes up healthy while all ~207 e2e tests
+      # error inside an autouse fixture on a bare 404 -- 12k log lines that say
+      # nothing about the cause. Ask once, here, and name it.
+      - name: 🔒 Assert the test stubs are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' -d '{}' \
+            "http://localhost:${CURIO_E2E_BACKEND_PORT}/api/testing/reset-db")
+          if [ "$code" != "200" ]; then
+            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (CURIO_TESTING)" >&2
+            exit 1
+          fi
+          echo "OK: the testing stubs are mounted."
 
       - name: 🎭 Run the Python-node workflows against the isolated stack
         run: |

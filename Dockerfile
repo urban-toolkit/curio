@@ -21,6 +21,12 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 COPY requirements.txt curio.py ./
+# pyproject.toml / MANIFEST.in are what carry utk_curio/llm-prompts (not an
+# importable package -- the hyphen makes packages.find blind to it) into an
+# sdist and a wheel. tests/test_agents/test_prompt_assets.py asserts against
+# both files, and CI runs the backend suite INSIDE this image, so without
+# them here the packaging assertion cannot run where it matters.
+COPY pyproject.toml MANIFEST.in ./
 COPY scripts/ scripts/
 COPY packages/ packages/
 COPY datasets/ datasets/

@@ -15,6 +15,7 @@ from unittest import mock
 
 import pytest
 
+from utk_curio.backend.app.packages import build_workspace
 from utk_curio.backend.app.packages.build_workspace import (
     WorkerLimits,
     WorkspaceError,
@@ -28,12 +29,71 @@ from utk_curio.backend.app.packages.build_workspace import (
 
 _PY = sys.executable
 
+#: Created by the Dockerfile; only exists inside the image. Same account the
+#: sandbox's own drop fixture uses (sandbox/tests/test_isolation_linux.py).
+EXEC_USER = "curio-exec"
+
 
 @pytest.fixture()
 def workspace():
     ws = create_workspace("deadbeefdeadbeef")
     yield ws
     destroy_workspace(ws)
+
+
+@pytest.fixture()
+def unprivileged_worker(workspace, monkeypatch):
+    """Make ``run_worker``'s child run as an unprivileged user.
+
+    A no-op when this process is already unprivileged — mode bits bite on
+    their own there, which is the ordinary developer case. Inside the CI
+    container pytest runs as root, and root reads and writes through any mode
+    bit, so the read-only-input assertion below cannot hold: it observed
+    ``status == "ok"`` and failed the whole backend suite. Skipping it there
+    would leave the guarantee unexercised in the one environment that runs it
+    on every push, so drop privileges instead.
+
+    Wraps the ``preexec_fn`` ``run_worker`` already installs rather than
+    adding a run-as parameter to ``build_workspace`` that no production caller
+    would pass. Same account and the same 0711 traversal as ``isolated_dropped``
+    in ``utk_curio/sandbox/tests/test_isolation_linux.py``.
+    """
+    if os.name != "posix" or os.geteuid() != 0:
+        return  # already unprivileged; the chmod is the whole boundary
+
+    import pwd
+
+    try:
+        account = pwd.getpwnam(EXEC_USER)
+    except KeyError:
+        pytest.skip(f"the {EXEC_USER} account does not exist on this host")
+
+    # mkdtemp gives the root 0700 root-owned, so a dropped child could not
+    # traverse into its own cwd/HOME/TMPDIR (_minimal_env points all three at
+    # work/). 0711: reachable, still not listable. Only this one directory --
+    # everything above it is the system temp tree, which is world-traversable
+    # by construction (/tmp is 1777), and widening it here would strip that
+    # sticky bit for every other process in the container. input/ is
+    # deliberately left alone: populate_inputs leaves it 0555/0444 and that is
+    # exactly the boundary under test.
+    os.chmod(workspace.root, 0o711)
+    for d in (workspace.work_dir, workspace.cache_dir, workspace.output_dir):
+        os.chmod(d, 0o777)
+
+    original = build_workspace._apply_rlimits
+
+    def _dropping(limits):
+        applied, preexec = original(limits)
+
+        def _child() -> None:  # runs in the child, pre-exec
+            preexec()  # rlimits first: after setuid they can only be lowered
+            os.setgroups([])
+            os.setgid(account.pw_gid)
+            os.setuid(account.pw_uid)  # last — nothing can be dropped after
+
+        return applied, _child
+
+    monkeypatch.setattr(build_workspace, "_apply_rlimits", _dropping)
 
 
 def _run(ws, code: str, **kwargs) -> "WorkerResult":
@@ -49,7 +109,7 @@ class TestLayoutAndInputs:
         # In the system temp tree, never under the launch dir or repo.
         assert ".curio" not in str(workspace.root)
 
-    def test_inputs_become_read_only(self, workspace):
+    def test_inputs_become_read_only(self, workspace, unprivileged_worker):
         populate_inputs(workspace, {"sources/a.py": b"return arg\n"})
         target = workspace.input_dir / "sources" / "a.py"
         assert target.read_bytes() == b"return arg\n"

@@ -118,6 +118,21 @@ class TestGenerator:
     def test_missing_browser_cache_refuses_naming_the_install(
             self, tmp_path, monkeypatch):
         pytest.importorskip("playwright.sync_api")
+        # generate() resolves the React UMD files BEFORE the browser cache, so
+        # without a node_modules this reaches the wrong refusal and asserts on
+        # a message about npm install. That is not hypothetical: CI runs this
+        # suite inside the container image, which ships the built dist/ and
+        # never node_modules. Stage just enough for the UMD gate to pass --
+        # the UMD branch is test_missing_umd_refuses_naming_the_fix's subject,
+        # not this one's.
+        node_modules = tmp_path / "node_modules"
+        for pkg, umd in (("react", "react.production.min.js"),
+                         ("react-dom", "react-dom.production.min.js")):
+            path = node_modules / pkg / "umd" / umd
+            path.parent.mkdir(parents=True)
+            path.write_text("// stub\n", encoding="utf-8")
+        monkeypatch.setattr(installer, "_node_modules", lambda: node_modules)
+
         monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "empty"))
         with pytest.raises(SystemExit) as exc:
             installer.generate(tmp_path / "w")

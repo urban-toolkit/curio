@@ -42,7 +42,7 @@ In other words: **every pytest invocation starts against an empty database**, an
 
 | Variable | Purpose |
 |---|---|
-| `CURIO_TESTING` | When `1`, backend uses test-only DB paths. Exported by [`../conftest.py`](../conftest.py) at import time, so every pytest run under `tests/` already has it. |
+| `CURIO_TESTING` | When `1`, backend uses test-only DB paths **and** mounts the `/api/testing/*` stubs. Exported by [`../conftest.py`](../conftest.py) at import time, so every pytest run under `tests/` already has it; a server started outside pytest needs it passed in. |
 | `DATABASE_URL_TEST` | Override for the SQLAlchemy test DB URL (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |
 | `CURIO_TEST_WORKSPACE` | Persist the temp workspace at this path instead of `tempfile.mkdtemp` (useful for debugging). |
 
@@ -630,11 +630,11 @@ naming the scenes that broke.
 | Variable | Purpose |
 |---|---|
 | `CURIO_E2E_WORKFLOWS` | Comma-separated workflow basenames to run (default: all) |
-| `CURIO_E2E_USE_EXISTING` | Set to `1` to skip server startup and use running servers (must already be booted with `CURIO_TESTING=1`) |
+| `CURIO_E2E_USE_EXISTING` | Set to `1` to skip server startup and use running servers. Those servers **must** carry `CURIO_TESTING=1` or every `/api/testing/*` call 404s and the autouse `e2e_clean_db` fixture errors on setup; the CI overlays (`docker-compose.ci.yml`, `docker-compose.ci-isolated.yml`) and `scripts/test.sh` set it. `scripts/test.sh` also exports this variable for its whole run, so the backend unit suite does not claim ownership of a DB the running stack is serving from. |
 | `CURIO_E2E_HOST` | Host for existing servers (default: `localhost`) |
 | `CURIO_E2E_BACKEND_PORT` | Backend port for existing servers (default: `5002`) |
 | `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`) |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
-| `CURIO_TESTING` | Switches backend to test-only DB paths under `.curio/test/`. Exported by `../conftest.py`; only externally-booted servers need it passed in explicitly. |
+| `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |
 | `DATABASE_URL_TEST` | SQLAlchemy URL for the test DB (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |
 | `CURIO_TEST_WORKSPACE` | Persist the per-session test workspace here instead of a temp dir (debugging). |

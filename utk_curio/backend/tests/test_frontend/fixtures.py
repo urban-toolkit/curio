@@ -626,8 +626,10 @@ def loaded_workflow(
 
     # DB-stub login + DB-stubbed empty project, then navigate *directly* to
     # /workflow/<project_id> — no signup form, no "+ New Workflow" click on
-    # /projects. The stub endpoints are available in any non-production
-    # environment (CURIO_ENV != 'prod'); see backend/app/testing/routes.py.
+    # /projects. The stub endpoints need TWO factors: a non-production
+    # environment (CURIO_ENV != 'prod') AND CURIO_TESTING; see
+    # backend/app/testing/routes.py. A stack booted without the second one
+    # answers 404 here, which is why the CI overlays set it explicitly.
     # upload_workflow then imports the seeded JSON onto that canvas.
     # test_project_* tests still exercise the real /auth/signup UI via
     # utils.signup_and_enter_new_workflow.
