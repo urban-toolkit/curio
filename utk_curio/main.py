@@ -244,10 +244,18 @@ def run_spa_static_server(directory: str, port: int) -> None:
             request_path = self.path.split("?", 1)[0].split("#", 1)[0]
             candidate = request_path.lstrip("/")
             fs_path = os.path.join(dist_dir, candidate)
+            # Fall back on what the client asked for, not on whether the path
+            # looks like it has a file extension. ``splitext`` reads a dotted
+            # dataset id - ``data.urbanlab.acs-neighborhood-profile`` - as the
+            # extension ``.acs-neighborhood-profile``, so an extension test
+            # refuses exactly the deep links this fallback exists to serve. A
+            # browser navigation sends ``Accept: text/html``; a missing bundle
+            # fetched with ``Accept: */*`` still gets its 404.
+            accepts_html = "text/html" in (self.headers.get("Accept") or "")
             if (
                 request_path not in ("", "/")
                 and not os.path.exists(fs_path)
-                and not os.path.splitext(candidate)[1]
+                and accepts_html
             ):
                 self.path = "/index.html"
             return super().do_GET()
