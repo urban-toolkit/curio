@@ -820,20 +820,27 @@ class TestSessionFirstHour:
                 )
 
         with s.step("Does the downstream chart know it is stale?",
-                    "The loader is broken; running the chart should not succeed.",
-                    expect="either", quiet_console=True):
+                    "The loader is broken; running the chart must not succeed.",
+                    quiet_console=True):
+            # An assertion, not an observation. The loader produced a valid
+            # artifact before the edit, so a naive "did it ever succeed" check
+            # skips it and the chart reports Done off source that can no longer
+            # produce it. playNodesUpTo now compares each ancestor's code against
+            # the code that produced its output, so the broken loader is re-run
+            # and takes the chart down with it.
             play_node(page, vega_id)
             status = wait_for_node_settled(
                 page, vega_id, node_type="curio.builtin/vis-vega",
-                timeout_ms=60000,
+                timeout_ms=120000,
             )
-            s.note(
-                "with a broken upstream, the chart settled as "
-                f"{status!r}. Note the loader had already produced a valid "
-                "artifact before the edit, so this is the cached-artifact "
-                "question rather than a plain miss: "
-                f"{node_failure_detail(page, vega_id)[:300]!r}"
+            detail = node_failure_detail(page, vega_id)
+            assert status == "error", (
+                "the chart reported "
+                f"{status!r} with a broken upstream, which means it reused the "
+                "artifact the pre-edit loader produced.\n"
+                f"the app said: {detail[:400]!r}"
             )
+            s.note(f"the stale chain failed as it should: {detail[:200]!r}")
             dismiss_toasts(page)
 
         with s.step("Fix the typo and re-run", "Back to a working graph."):
