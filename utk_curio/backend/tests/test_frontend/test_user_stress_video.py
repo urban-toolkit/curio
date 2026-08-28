@@ -1629,41 +1629,24 @@ class TestSessionExtending:
             )
 
         with s.step("Press Escape to back out of the modal",
-                    "The reflex every user has. Does it close?",
-                    expect="either"):
+                    "The reflex every user has. It must close."):
+            # ModalShell used to claim role="dialog" aria-modal="true" with no
+            # keydown handler, so Escape did nothing - and since its backdrop
+            # covers the viewport and takes pointer events, the next click went
+            # to the backdrop and the app read as frozen. This session could not
+            # open the Agent Catalog at all until the modal was closed properly.
             page.keyboard.press("Escape")
             s.tour.beat(1200)
-            if modal.count() and modal.first.is_visible():
-                s.record(
-                    "a11y",
-                    "Escape does not dismiss a modal dialog, and its backdrop "
-                    "then blocks the whole application",
-                    severity="bug",
-                    detail_full=(
-                        "ModalShell.tsx renders every Curio modal with "
-                        'role="dialog" aria-modal="true" and a '
-                        "position:fixed; inset:0 backdrop, but registers no "
-                        "keydown/Escape handler - the only ways out are the "
-                        "close X, Cancel, or a backdrop click.\n\n"
-                        "Because the backdrop covers the viewport and is "
-                        "pointer-interactive, a user who presses Escape and then "
-                        "reaches for a menu gets nothing: the click lands on the "
-                        "backdrop. In this session that made the top menu bar "
-                        "look broken, and the Agent Catalog could not be opened "
-                        "at all until the modal was closed properly.\n\n"
-                        "WAI-ARIA APG for the dialog pattern requires Escape to "
-                        "close a dialog, and aria-modal=\"true\" is an explicit "
-                        "claim to that contract. This affects every modal in the "
-                        "app, since they all go through ModalShell: Save as "
-                        "package node, Node settings, AI Settings, the library "
-                        "manager and the provenance window."
-                    ),
-                )
-                # Leave the app usable for the rest of the session.
+            still_open = modal.count() and modal.first.is_visible()
+            if still_open:
+                # Leave the app usable so the rest of the session still runs.
                 page.get_by_role("button", name="Close").first.click()
                 modal.first.wait_for(state="hidden", timeout=10000)
-            else:
-                s.note("Escape closed the modal")
+            assert not still_open, (
+                "Escape did not dismiss the modal; its backdrop now blocks "
+                "every click behind it"
+            )
+            s.note("Escape closed the modal")
             s.tour.beat(700)
             clear_canvas_overlays(page)
 

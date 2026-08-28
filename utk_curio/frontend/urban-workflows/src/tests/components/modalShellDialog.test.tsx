@@ -1,6 +1,6 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import ModalShell from "../../components/ModalShell";
+import { render, screen, fireEvent } from "@testing-library/react";
+import ModalShell, { modalStackDepth } from "../../components/ModalShell";
 
 /**
  * Modals are dialogs.
@@ -70,5 +70,90 @@ describe("ModalShell is announced as a dialog", () => {
       </ModalShell>,
     );
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  });
+});
+
+/**
+ * Escape closes a dialog.
+ *
+ * ModalShell claimed `aria-modal="true"` while registering no keydown handler,
+ * so Escape did nothing — and because the backdrop covers the viewport and takes
+ * pointer events, the next click went to the backdrop and the application read
+ * as frozen. A user test hit this by reflexively pressing Escape and then could
+ * not open a menu at all.
+ */
+describe("ModalShell responds to Escape", () => {
+  const press = () => fireEvent.keyDown(window, { key: "Escape" });
+
+  it("closes on Escape", () => {
+    const onClose = jest.fn();
+    render(
+      <ModalShell onClose={onClose} label="Example">
+        <p>body</p>
+      </ModalShell>,
+    );
+    press();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops listening once unmounted", () => {
+    const onClose = jest.fn();
+    const view = render(
+      <ModalShell onClose={onClose} label="Example">
+        <p>body</p>
+      </ModalShell>,
+    );
+    view.unmount();
+    press();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes exactly one dialog when two are open", () => {
+    // Escape must not cascade. "On top" is read from document order, because
+    // every shell portals into document.body and the last node there is the one
+    // painted above the rest.
+    const first = jest.fn();
+    const second = jest.fn();
+    render(
+      <>
+        <ModalShell onClose={first} label="First">
+          <p>a</p>
+        </ModalShell>
+        <ModalShell onClose={second} label="Second">
+          <p>b</p>
+        </ModalShell>
+      </>,
+    );
+    press();
+    expect(first.mock.calls.length + second.mock.calls.length).toBe(1);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports its depth so the catalog drawers can stand down", () => {
+    // The Agent Catalog drawer renders AI Settings and agent import inside
+    // itself and listens for Escape on window. It mounted first, so the modal
+    // cannot stop its handler — the drawer checks this instead.
+    expect(modalStackDepth()).toBe(0);
+    const view = render(
+      <ModalShell onClose={jest.fn()} label="Example">
+        <p>body</p>
+      </ModalShell>,
+    );
+    expect(modalStackDepth()).toBe(1);
+    view.unmount();
+    expect(modalStackDepth()).toBe(0);
+  });
+
+  it("leaves a busy dialog alone", () => {
+    // NodeSaveAsModal and PackageMetadataModal pass `busy ? () => {} : onClose`.
+    // Routing Escape through onClose is what makes that work untouched.
+    const onClose = jest.fn();
+    render(
+      <ModalShell onClose={() => {}} label="Busy">
+        <p>saving</p>
+      </ModalShell>,
+    );
+    press();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
