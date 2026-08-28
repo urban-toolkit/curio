@@ -173,6 +173,55 @@ def stub_login():
     )
 
 
+@testing_bp.route("/dataset-paths", methods=["POST"])
+def dataset_paths():
+    """Resolve ``curio_dataset_path("<id>")`` calls the way execution does.
+
+    For the e2e ground-truth harness. It computes each workflow's expected
+    output by POSTing node code straight to the sandbox's ``/exec`` (bypassing
+    the backend on purpose, so the comparison is independent and DuckDB keeps a
+    single writer), which means it also has to supply the ``dataset_paths``
+    mapping ``/processPythonCode`` would normally attach.
+
+    It used to build that mapping itself, by scanning the committed
+    ``datasets/`` tree in the *pytest process*. That works only while the
+    sandbox shares a filesystem with the test runner. Under
+    ``CURIO_E2E_USE_EXISTING`` against a compose stack it does not: the harness
+    sent host paths like ``/home/runner/work/curio/curio/datasets/...`` to a
+    sandbox that sees the same files at ``/app/datasets/...``, and every
+    example whose loader resolves a dataset by id died on FileNotFoundError.
+
+    Resolving here fixes that by construction — the answer is computed in the
+    process that shares a filesystem with the sandbox — and it reuses
+    ``_resolve_exec_dataset_paths``, so the harness and the real execution path
+    cannot drift.
+
+    Body (JSON):
+      * ``code`` – node source to scan for literal ``curio_dataset_path`` calls.
+      * ``username`` – optional; resolve as this user, for ids that live in an
+        account store. Omitted means hub datasets only, which is what the
+        curated examples use.
+      * ``dataflow_id`` – optional, forwarded to the catalog listing.
+
+    Response: ``{"paths": {"<id>": "<absolute path>"}}``. Ids that do not
+    resolve are simply absent, matching production's fail-open behaviour.
+    """
+    from flask import g
+
+    from utk_curio.backend.app.api.routes import _resolve_exec_dataset_paths
+
+    body = request.get_json(silent=True) or {}
+    code = body.get("code") or ""
+    if not isinstance(code, str):
+        return jsonify({"error": "code must be a string"}), 400
+
+    username = (body.get("username") or "").strip()
+    g.user = user_repo.user_by_identifier(username) if username else None
+
+    paths = _resolve_exec_dataset_paths(code, body.get("dataflow_id"))
+    return jsonify({"paths": paths}), 200
+
+
 @testing_bp.route("/reset-db", methods=["POST"])
 def reset_db():
     """Truncate mutable tables so the next test starts with a clean slate.

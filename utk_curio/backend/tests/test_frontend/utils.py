@@ -552,44 +552,63 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
 """
 
 def _catalog_dataset_paths(code: str) -> dict[str, str]:
-    """Map every ``curio_dataset_path("<id>")`` in *code* to its committed file.
+    """Map every ``curio_dataset_path("<id>")`` in *code* to its data file.
 
     The browser path gets this mapping from the backend
     (``_resolve_exec_dataset_paths`` in ``backend/app/api/routes.py``), which
     posts it to the sandbox as ``dataset_paths``. This helper talks to the
-    sandbox directly -- deliberately, so DuckDB keeps a single writer -- so it
-    has to build the equivalent itself. Without it every example whose loader
-    resolves a dataset by id fails with the sandbox's "not available in this
-    environment", because ``worker.py``'s injected resolver raises on any
-    unmapped id.
+    sandbox directly -- deliberately, so DuckDB keeps a single writer -- so the
+    mapping has to come from somewhere.
 
-    Only *hub* datasets, the ones committed under ``datasets/``, are resolvable
-    here, which is exactly the set the curated examples use. The backend's own
-    scan regex is imported rather than copied so the two cannot drift.
+    Ask the running backend for it, via ``/api/testing/dataset-paths``, rather
+    than scanning ``datasets/`` in this process. The path has to be valid in
+    the SANDBOX's filesystem, and under ``CURIO_E2E_USE_EXISTING`` against a
+    compose stack that is not this one: resolving here produced host paths like
+    ``/home/runner/work/curio/curio/datasets/...`` for a sandbox that sees the
+    same committed files at ``/app/datasets/...``, and all six curated examples
+    whose loaders resolve a dataset by id failed on FileNotFoundError. Asking
+    the backend also means the harness goes through the real catalog service,
+    so hub, imported and computed datasets all resolve the way they do in the
+    app instead of only the committed tree this used to know about.
+
+    Falls back to nothing rather than raising when the backend cannot answer --
+    the sandbox's injected resolver already raises a clear per-id error, and
+    the assertion below still names an id the catalog does not have.
     """
     if "curio_dataset_path" not in code:
         return {}
 
-    from utk_curio.backend.app.api.routes import _DATASET_PATH_CALL_RE
-    from utk_curio.backend.tests.dataset_catalog_coverage import catalog_datasets
-
-    by_id = {d.dataset_id: d.data_file for d in catalog_datasets()}
-    resolved: dict[str, str] = {}
-    missing: list[str] = []
-    for _quote, dataset_id in _DATASET_PATH_CALL_RE.findall(code):
-        data_file = by_id.get(dataset_id)
-        if data_file is None:
-            missing.append(dataset_id)
-        else:
-            resolved[dataset_id] = data_file.resolve().as_posix()
+    url = f"{_backend_base_url_for_config()}/api/testing/dataset-paths"
+    payload = json.dumps({"code": code}).encode("utf-8")
+    req = Request(
+        url, data=payload,
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urlopen(req, timeout=15) as resp:  # noqa: S310
+            resolved = (json.loads(resp.read().decode("utf-8")) or {}).get(
+                "paths"
+            ) or {}
+    except HTTPError as exc:
+        raise AssertionError(
+            f"POST {url} answered {exc.code}. The stack must expose the testing "
+            "stubs (CURIO_TESTING=1, and CURIO_ENV != 'prod'); the CI overlays "
+            "set it, see docker-compose.ci.yml."
+        ) from exc
 
     # Fail loudly rather than letting the sandbox report a generic runtime
     # error: a typo'd id, or one carrying an ``@major`` the catalog lookup does
     # not use, is a test-authoring bug and should name itself.
+    from utk_curio.backend.app.api.routes import _DATASET_PATH_CALL_RE
+
+    referenced = {
+        dataset_id for _quote, dataset_id in _DATASET_PATH_CALL_RE.findall(code)
+    }
+    missing = sorted(referenced - set(resolved))
     assert not missing, (
-        f"curio_dataset_path() references {missing}, which are not in the "
-        f"committed catalog (known: {sorted(by_id)}). Note the call takes the "
-        f"bare manifest id with no '@major'."
+        f"curio_dataset_path() references {missing}, which the backend's "
+        f"catalog could not resolve (it resolved: {sorted(resolved)}). Note the "
+        f"call takes the bare manifest id with no '@major'."
     )
     return resolved
 
