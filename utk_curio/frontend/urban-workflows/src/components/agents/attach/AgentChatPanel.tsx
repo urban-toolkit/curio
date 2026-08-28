@@ -42,6 +42,7 @@ import {
   type AgentRunStatus,
   type RunStatusDisplay,
 } from "./agentRunStatus";
+import { modalStackDepth } from "../../ModalShell";
 import styles from "./AgentChatPanel.module.css";
 
 /** Heuristic: prompts longer than this get the clamp + expand toggle. */
@@ -309,6 +310,11 @@ export const AgentChatPanel: React.FC<{
   // while renaming, Escape cancels the edit instead (handled on the input).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // An open modal owns Escape. AI Settings and agent import are raised
+      // over this panel, and this listener is on window in the bubble phase,
+      // so the modal cannot stop it firing. It has to stand down itself, or
+      // dismissing the dialog closed the chat behind it as well.
+      if (modalStackDepth() > 0) return;
       if (e.key === "Escape" && !editingTitle) onClose();
     };
     window.addEventListener("keydown", onKey);

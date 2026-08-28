@@ -96,6 +96,20 @@ describe("ModalShell responds to Escape", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("ignores other keys", () => {
+    // The listener sits on window, where every keystroke in the app arrives, so
+    // this is the cheap guard against it closing on Enter from a form inside
+    // the dialog.
+    const onClose = jest.fn();
+    render(
+      <ModalShell onClose={onClose} label="Example">
+        <p>body</p>
+      </ModalShell>,
+    );
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("stops listening once unmounted", () => {
     const onClose = jest.fn();
     const view = render(
@@ -127,6 +141,33 @@ describe("ModalShell responds to Escape", () => {
     press();
     expect(first.mock.calls.length + second.mock.calls.length).toBe(1);
     expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a window listener that checks the depth stand down", () => {
+    // The behavioural half of `escapeDefersToModal.test.ts`. Four surfaces
+    // listen for Escape on window (both catalog drawers, the agent chat panel,
+    // the fork picker) and a peer registered before this one cannot be silenced
+    // by it, so each asks the depth and returns. This is that guard, run for
+    // real: registered first, exactly as a drawer that mounted first would be.
+    const drawerClose = jest.fn();
+    const onKey = () => {
+      if (modalStackDepth() > 0) return;
+      drawerClose();
+    };
+    window.addEventListener("keydown", onKey);
+    try {
+      const onClose = jest.fn();
+      render(
+        <ModalShell onClose={onClose} label="Example">
+          <p>body</p>
+        </ModalShell>,
+      );
+      press();
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(drawerClose).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
   });
 
   it("reports its depth so the catalog drawers can stand down", () => {
