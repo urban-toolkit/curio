@@ -339,17 +339,21 @@ def _slug_label(text: str) -> str:
 def _close_modal(page, *, expect_escape_to_work: bool = False) -> bool:
     """Dismiss a ModalShell dialog and report whether Escape did it.
 
-    ModalShell renders role="dialog" + aria-modal="true" but wires no keydown
-    handler, so Escape does nothing - and because the backdrop swallows pointer
-    events, a modal left open makes every later click in the drawer beneath it
-    time out. The close control is the only reliable route.
+    The count has to be *snapshotted* before the key: a Playwright locator is
+    lazy, so reading ``dialog.count()`` after the press re-queries the live DOM
+    and compares the post-Escape state against itself - which is never smaller,
+    so the helper reported "Escape did nothing" even once ModalShell handled it.
+
+    The drawer underneath is also a ``role="dialog"``, which is what makes the
+    count the right signal: a working Escape closes the modal and leaves the
+    drawer, so the count drops by exactly one rather than to zero.
     """
-    dialog = page.get_by_role("dialog")
-    if not dialog.count():
+    before = page.get_by_role("dialog").count()
+    if not before:
         return True
     page.keyboard.press("Escape")
     page.wait_for_timeout(600)
-    escape_worked = page.get_by_role("dialog").count() < dialog.count()
+    escape_worked = page.get_by_role("dialog").count() < before
     if not escape_worked:
         closer = page.get_by_role("button", name="Close", exact=True)
         if closer.count():
@@ -1635,14 +1639,11 @@ def chapter_data(run: StressRun) -> None:
                          step="Open a dataset's detail panel and walk its tabs")
         if not _close_modal(page):
             run.note(
-                "Escape does not dismiss this modal. ModalShell renders "
-                'role="dialog" aria-modal="true" but wires no keydown handler, '
-                "so every dialog built on it (dataset details, Node settings, "
-                "Save as package node, package metadata, AI Settings, installed "
-                "libraries) ignores Escape - while the agent chat panel, the "
-                "Node Catalog drawer and the fork picker all handle it. Until "
-                "it is closed its backdrop swallows clicks on everything "
-                "underneath.",
+                "Escape did not dismiss this ModalShell dialog. It renders "
+                'role="dialog" aria-modal="true", so the ARIA dialog pattern '
+                "expects Escape to close it - and until it closes, its backdrop "
+                "swallows clicks on everything underneath, which once took the "
+                "next fifteen steps of this chapter down with it.",
                 step="Open a dataset's detail panel and walk its tabs",
                 severity="error",
             )
