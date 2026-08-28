@@ -420,6 +420,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         className={`${shell.overlayRoot} ${styles.overlayRoot} ${
           presented ? shell.overlayRootPresented : ""
         }`}
+        // The drawer stays mounted through its exit slide, and the panel below
+        // carries aria-modal="true" - so without this it advertises a modal
+        // dialog to assistive tech while sliding away. Its two siblings
+        // (DatasetCatalogDrawer, AgentCatalogDrawer) have always had it.
+        aria-hidden={!presented}
         data-curio-node-catalog-drawer="true"
       >
         <button
