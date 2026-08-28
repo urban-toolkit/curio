@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faXmark } from "@fortawesome/free-solid-svg-icons";
@@ -21,6 +21,9 @@ interface ModalShellProps {
   label?: string;
 }
 
+/** Mounted shells, innermost last: only the top one answers Escape. */
+const openShells: symbol[] = [];
+
 export default function ModalShell({
   onClose,
   children,
@@ -33,6 +36,35 @@ export default function ModalShell({
   const packagePaletteActionAttr = preservePackagePaletteOpen
     ? ({ "data-curio-package-palette-node-action": "true" } as const)
     : {};
+
+  // Escape closes the dialog, which is what role="dialog" aria-modal="true"
+  // promises and what every other overlay in the app already does.
+  //
+  // Capture phase, and stopPropagation: the catalog drawers listen for Escape
+  // on `window` in the bubble phase, so a modal opened from inside a drawer
+  // used to let the key through and take the whole drawer down with it. A
+  // capture listener on `document` runs first and stops the event there, so the
+  // modal closes and the drawer behind it stays put.
+  //
+  // Same-node listeners are not stopped by stopPropagation, so stacking order
+  // is tracked explicitly rather than left to registration order: with two
+  // shells open, only the innermost responds.
+  useEffect(() => {
+    const id = Symbol("curio-modal");
+    openShells.push(id);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (openShells[openShells.length - 1] !== id) return;
+      event.stopPropagation();
+      onClose();
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      const at = openShells.lastIndexOf(id);
+      if (at !== -1) openShells.splice(at, 1);
+    };
+  }, [onClose]);
   const shell = (
     <>
       <div

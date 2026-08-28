@@ -244,10 +244,18 @@ def run_spa_static_server(directory: str, port: int) -> None:
             request_path = self.path.split("?", 1)[0].split("#", 1)[0]
             candidate = request_path.lstrip("/")
             fs_path = os.path.join(dist_dir, candidate)
+            # Fall back on what the client asked for, not on whether the path
+            # looks like it has a file extension. ``splitext`` reads a dotted
+            # dataset id - ``data.urbanlab.acs-neighborhood-profile`` - as the
+            # extension ``.acs-neighborhood-profile``, so an extension test
+            # refuses exactly the deep links this fallback exists to serve. A
+            # browser navigation sends ``Accept: text/html``; a missing bundle
+            # fetched with ``Accept: */*`` still gets its 404.
+            accepts_html = "text/html" in (self.headers.get("Accept") or "")
             if (
                 request_path not in ("", "/")
                 and not os.path.exists(fs_path)
-                and not os.path.splitext(candidate)[1]
+                and accepts_html
             ):
                 self.path = "/index.html"
             return super().do_GET()
@@ -788,6 +796,7 @@ def install_manifest_dependencies() -> None:
         install_python_deps,
     )
     from utk_curio.backend.app.packages.seed import example_dep_package_ids
+    from utk_curio.backend.app.packages.backend_runtime import dep_destinations
 
     repo_root = Path(__file__).resolve().parent.parent
     launch_cwd = Path(os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd())
@@ -827,8 +836,21 @@ def install_manifest_dependencies() -> None:
                     per_pkg.append((m.dir_name, dict(m.python_deps)))
 
     # Per-user store walk — every package any user has actually installed.
+    #
+    # Routed, not unioned. ``dep_destinations`` is the one rule deciding where a
+    # package's deps belong (backend_runtime, dev/97): "overlay" means a
+    # backend-bearing package whose handlers read a private overlay and whose
+    # promotion deliberately left the shared interpreter alone. Host-installing
+    # those here at every boot silently undoes that boundary, and a version pin
+    # in one user's manifest can then move a library every other user's nodes
+    # depend on — merge_python_deps only warns, pip has the last word. Only
+    # "host" and "both" name the shared interpreter as a destination.
+    #
+    # The glob is narrowed to the package-store layout for the same reason it is
+    # walked at all: rglob would also match manifests nested inside a package's
+    # own payload, which are not installed packages.
     if users.is_dir():
-        for mf in users.rglob("manifest.json"):
+        for mf in sorted(users.glob("*/packages/*/manifest.json")):
             try:
                 m = load_packageage_manifest(mf.parent)
             except ManifestError:
@@ -836,6 +858,13 @@ def install_manifest_dependencies() -> None:
             if m.dir_name in seen:
                 continue
             seen.add(m.dir_name)
+            destination, why = dep_destinations(m)
+            if destination not in ("host", "both"):
+                log_info(
+                    f"[Setup] Skipping {m.dir_name} deps: {why}",
+                    COLOR_BACKEND, 2,
+                )
+                continue
             if m.python_deps:
                 per_pkg.append((m.dir_name, dict(m.python_deps)))
 

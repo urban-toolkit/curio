@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import ModalShell from "../../components/ModalShell";
 
 /**
@@ -70,5 +70,78 @@ describe("ModalShell is announced as a dialog", () => {
       </ModalShell>,
     );
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  });
+});
+
+/**
+ * Escape dismisses the dialog.
+ *
+ * ModalShell declared `role="dialog" aria-modal="true"` but wired no keydown
+ * handler, so every modal in the app ignored Escape - while the agent chat
+ * panel, the catalog drawers and the fork picker all honoured it. Worse, an
+ * `aria-modal` backdrop swallows pointer events, so a modal a user could not
+ * dismiss also blocked everything underneath: in the stress run one undismissed
+ * dataset panel took the next fifteen steps down with it.
+ *
+ * The listener is capture-phase and stops the event, because the drawers listen
+ * on `window` in the bubble phase - a modal opened from inside a drawer used to
+ * let Escape through and close the drawer too.
+ */
+describe("ModalShell dismisses on Escape", () => {
+  const pressEscape = () =>
+    fireEvent.keyDown(document, { key: "Escape", bubbles: true });
+
+  it("closes when Escape is pressed", () => {
+    const onClose = jest.fn();
+    render(<ModalShell onClose={onClose} label="Settings">body</ModalShell>);
+    pressEscape();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores other keys", () => {
+    const onClose = jest.fn();
+    render(<ModalShell onClose={onClose} label="Settings">body</ModalShell>);
+    fireEvent.keyDown(document, { key: "Enter", bubbles: true });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes only the innermost of two stacked modals", () => {
+    const outer = jest.fn();
+    const inner = jest.fn();
+    render(
+      <>
+        <ModalShell onClose={outer} label="Outer">outer</ModalShell>
+        <ModalShell onClose={inner} label="Inner">inner</ModalShell>
+      </>,
+    );
+    pressEscape();
+    expect(inner).toHaveBeenCalledTimes(1);
+    expect(outer).not.toHaveBeenCalled();
+  });
+
+  it("stops the key reaching a drawer listening on window", () => {
+    // The drawers register `window.addEventListener("keydown", ...)` in the
+    // bubble phase; the modal must not take the drawer down with it.
+    const drawerClose = jest.fn();
+    window.addEventListener("keydown", drawerClose);
+    try {
+      const onClose = jest.fn();
+      render(<ModalShell onClose={onClose} label="Settings">body</ModalShell>);
+      pressEscape();
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(drawerClose).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", drawerClose);
+    }
+  });
+
+  it("stops listening once unmounted", () => {
+    const onClose = jest.fn();
+    const { unmount } = render(
+      <ModalShell onClose={onClose} label="Settings">body</ModalShell>,
+    );
+    unmount();
+    pressEscape();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
