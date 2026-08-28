@@ -232,13 +232,37 @@ def test_a_wired_node_is_refused_and_the_toast_says_how_many_connections(
 
     # Clearing the edge makes the node deletable, which is the path the toast
     # describes. Proves the refusal is a gate, not a dead end.
-    page.evaluate(
+    #
+    # The edge is removed by selecting it and pressing Delete, exactly as the
+    # toast instructs. Not by writing React Flow's store: `useStoreUpdater`
+    # pushes FlowContext's own edge array straight back over it, so the edge
+    # would reappear and the delete stay refused (see utils.drag_to_canvas).
+    edge_point = page.evaluate(
         """() => {
-            const rf = window.__curio_reactFlow;
-            rf.setEdges([]);
+            const path = document.querySelector('.react-flow__edge-interaction');
+            if (!path) return null;
+            const at = path.getPointAtLength(path.getTotalLength() / 2);
+            const svg = path.ownerSVGElement;
+            const point = svg.createSVGPoint();
+            point.x = at.x;
+            point.y = at.y;
+            const screen = point.matrixTransform(path.getScreenCTM());
+            return [screen.x, screen.y];
         }"""
     )
-    page.wait_for_timeout(500)
+    assert edge_point, "no edge interaction path to click"
+    page.mouse.click(edge_point[0], edge_point[1])
+    page.wait_for_function(
+        "() => (window.__curio_reactFlow.getEdges() || [])"
+        ".some((e) => e.selected)",
+        timeout=10000,
+    )
+    page.keyboard.press("Delete")
+    page.wait_for_function(
+        "() => (window.__curio_reactFlow.getEdges() || []).length === 0",
+        timeout=10000,
+    )
+    dismiss_toasts(page)
     _select(page, second)
     page.keyboard.press("Delete")
     page.wait_for_function(
