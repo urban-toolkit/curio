@@ -54,7 +54,6 @@ from .usertest import (
 from .utils import (
     REPO_ROOT,
     activate_header_icon,
-    canvas_node_type,
     canvas_nodes,
     close_tools_palette,
     connect_nodes,
@@ -375,11 +374,17 @@ def clear_canvas_overlays(page) -> None:
                 button.first.click(timeout=4000)
                 page.wait_for_timeout(300)
             except Exception:
+                # Best effort. The button was there a moment ago; it may have
+                # closed itself or slid under an overlay before the click landed,
+                # and this helper only has to leave the canvas usable.
                 pass
     for kind in ("datasets", "packages", "agents"):
         try:
             close_tools_palette(page, kind)
         except Exception:
+            # Each palette is closed blind, without first asking whether it is
+            # open, so "not open" arrives here as an exception rather than a
+            # no-op. That is the common case, not a problem.
             pass
     dismiss_toasts(page)
 
@@ -605,6 +610,9 @@ def run_session(browser, frontend: str, backend: str, *, session_id: str,
             page.close()
             context.close()
         except Exception:
+            # Already closed, or closed by a crashed browser. finalize_video
+            # below still has to run: losing the recording of a session that
+            # died is exactly the outcome this module exists to prevent.
             pass
         written = finalize_video(page, stem=f"curio-usertest-{session_id}")
         if written:
@@ -1333,6 +1341,8 @@ class TestSessionMapsAndInteraction:
                         button.first.click(timeout=2500)
                         break
                     except Exception:
+                        # Try the next spelling of "Close" instead. Failing to
+                        # shut this panel is not what the step is testing.
                         pass
 
         # A map, on WebGPU, in a fresh dataflow.
