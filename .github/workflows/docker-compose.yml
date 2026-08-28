@@ -265,6 +265,30 @@ jobs:
           docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c \
             || mkdir -p .curio/playwright/expected
 
+      - name: 📦 Stage the built bundle for the host-side SPA test
+        shell: bash
+        run: |
+          set -euo pipefail
+          # test_spa_deep_link_e2e.py boots the production static server
+          # (main.run_spa_static_server) on the real built bundle, host-side. That
+          # bundle is baked into the image (Dockerfile: COPY --from=frontend_builder)
+          # and dist/ is gitignored, so a --use-existing run has none on the host
+          # and the test fails by design rather than skipping quietly.
+          #
+          # Take the shipped artifact out of the running container rather than
+          # rebuilding it: that is the exact bundle a deployed Curio serves, which
+          # is what the test exists to cover. Nothing is dirtied, dist/ is ignored.
+          cid="$(docker compose -p curio-ci ps -q curio | head -n1 || true)"
+          if [ -z "$cid" ]; then
+            echo "::error::no running curio container in curio-ci; cannot stage the bundle" >&2
+            exit 1
+          fi
+          # Removed first: copying into an existing directory nests it one deeper.
+          rm -rf utk_curio/frontend/urban-workflows/dist
+          docker cp "$cid:/app/utk_curio/frontend/urban-workflows/dist" \
+            utk_curio/frontend/urban-workflows/dist
+          test -f utk_curio/frontend/urban-workflows/dist/index.html
+
       - name: 🎭 Run e2e tests (full matrix, hardware WebGPU)
         run: |
           bash scripts/test.sh --e2e-only --use-existing \
@@ -473,6 +497,30 @@ jobs:
             exit 1
           fi
           echo "OK: the testing stubs are mounted."
+
+      - name: 📦 Stage the built bundle for the host-side SPA test
+        shell: bash
+        run: |
+          set -euo pipefail
+          # test_spa_deep_link_e2e.py boots the production static server
+          # (main.run_spa_static_server) on the real built bundle, host-side. That
+          # bundle is baked into the image (Dockerfile: COPY --from=frontend_builder)
+          # and dist/ is gitignored, so a --use-existing run has none on the host
+          # and the test fails by design rather than skipping quietly.
+          #
+          # Take the shipped artifact out of the running container rather than
+          # rebuilding it: that is the exact bundle a deployed Curio serves, which
+          # is what the test exists to cover. Nothing is dirtied, dist/ is ignored.
+          cid="$(docker compose -p curio-ci-iso ps -q curio | head -n1 || true)"
+          if [ -z "$cid" ]; then
+            echo "::error::no running curio container in curio-ci-iso; cannot stage the bundle" >&2
+            exit 1
+          fi
+          # Removed first: copying into an existing directory nests it one deeper.
+          rm -rf utk_curio/frontend/urban-workflows/dist
+          docker cp "$cid:/app/utk_curio/frontend/urban-workflows/dist" \
+            utk_curio/frontend/urban-workflows/dist
+          test -f utk_curio/frontend/urban-workflows/dist/index.html
 
       - name: 🎭 Run the Python-node workflows against the isolated stack
         run: |

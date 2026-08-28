@@ -179,6 +179,9 @@ export const NodeContainer = ({
     // spatial-join, etc.) start minimized: they have no body to expand and the
     // 50×180 footprint is their default render.
     const [minimized, setMinimized] = useState(!!noContent);
+    // Hover state for the minimized chip's delete control (noContent nodes have
+    // no header band to put it in).
+    const [chipHovered, setChipHovered] = useState(false);
 
     useEffect(() => {
         if (nodeWidth !== undefined) {
@@ -970,6 +973,8 @@ export const NodeContainer = ({
 
             {minimized ? (
                 <div
+                    onMouseEnter={() => setChipHovered(true)}
+                    onMouseLeave={() => setChipHovered(false)}
                     style={{
                         ...{
                             width: currentNodeWidth + "px",
@@ -980,6 +985,7 @@ export const NodeContainer = ({
                             justifyContent: "center",
                             display: "flex",
                             alignItems: "center",
+                            position: "relative",
                             boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
                         },
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
@@ -1010,6 +1016,36 @@ export const NodeContainer = ({
                             ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
                         }}
                     />
+                    {/* A noContent node (merge-flow, spatial-join) is the one
+                        shape that never renders the header band, and it can
+                        never be expanded to reach one - so without this it has
+                        no on-node control at all, and the only way to remove a
+                        mis-dropped one is the Delete key, which nothing on
+                        screen suggests. Delete alone: an icon-only flow node
+                        renders no output to pin to a dashboard and has no body
+                        to annotate. Revealed on hover so the 50x180 chip reads
+                        the same at rest. */}
+                    {noContent && !dashboardOn ? (
+                        <div
+                            style={{
+                                position: "absolute",
+                                top: "2px",
+                                right: "3px",
+                                // Quiet at rest, legible on hover. This file
+                                // styles inline, so the transition is state
+                                // rather than a :hover rule.
+                                opacity: chipHovered ? 1 : 0.35,
+                                transition: "opacity 120ms ease",
+                            }}
+                        >
+                            <HeaderIconButton
+                                icon={faXmark}
+                                style={{ ...headerIconStyle, fontSize: "10px" }}
+                                title="Delete node"
+                                onActivate={onDelete}
+                            />
+                        </div>
+                    ) : null}
                 </div>
             ) : null}
 

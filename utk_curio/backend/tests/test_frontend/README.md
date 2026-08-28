@@ -149,7 +149,7 @@ canvas, which means a real click at the button's centre lands on the overlay.
 Three things are easy to get wrong against the catalog drawers:
 
 - **Disable motion before navigating.** `page.emulate_media(reduced_motion="reduce")` - both drawer providers read `prefers-reduced-motion` through `useSyncExternalStore`, so this makes presentation synchronous and collapses the 380 ms close timer to zero. Do it *before* `stub_login_and_enter_workflow`; a `page.reload()` afterwards races `ProjectLoader` into the shared-guest fallback.
-- **`to_be_visible()` is not a gate for a drawer.** Both slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. Gate on the dataset drawer's `aria-hidden="false"` (that attribute *is* the presented signal) and let Playwright's bounding-box-stability check ride out the transform. Never `force=True` on drawer internals - `force` skips the very hit-target check that protects against clicking a mid-slide panel.
+- **`to_be_visible()` is not a gate for a drawer.** All three slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. **`aria-hidden="false"` is not a gate either, despite what this file used to say.** It is the presented signal for the Dataset and Agent drawers, but the Node Catalog drawer carried no `aria-hidden` at all until the fix that added it, so waiting for the attribute to flip there waited forever - a whole chapter of the stress run died on that advice. Gate on where the panel actually *is*: `stress.py::wait_for_drawer_presented` polls the dialog's bounding box until its left edge is inside the viewport, which is true of all three regardless of what they advertise. `canvasDrawerParity.test.ts` now keeps the three from diverging again. Never `force=True` on drawer internals - `force` skips the very hit-target check that protects against clicking a mid-slide panel.
 - **Settle the canvas before clicking anything on a node.** ReactFlow's initial `fitView` animates the viewport, and a visible-but-still-moving element makes `click()` time out with no useful message. Call `_wait_for_reactflow_ready(page)` first.
 
 ## Screenshot baselines
@@ -307,6 +307,8 @@ test_frontend/
   test_global_imports_e2e.py       # an upstream import reaches downstream; np/wkt need none (#158)
   test_uhvi_install_e2e.py         # the UHVI package installs next to curio.builtin (#154)
   test_example_docs_parity.py      # examples vs their walkthroughs and README (#148) - no browser
+  test_spa_deep_link_e2e.py   # a dotted deep link boots the app on the PRODUCTION static server
+                              # (needs a built dist/; FAILS rather than skips without one)
   test_library_manager_e2e.py      # Installed-libraries modal -> a node imports the lib
   test_package_roundtrip_e2e.py    # canvas node -> package -> archive -> import -> run it
   test_package_metadata_roundtrip_e2e.py  # Node settings + package metadata survive the archive
@@ -314,6 +316,8 @@ test_frontend/
   test_library_install_integration.py  # library install -> sandbox import (NO browser)
   tour.py                     # screencast toolkit: caption/cursor overlay, pacing, video output
   test_feature_tour_video.py  # records the feature-tour screencast (CURIO_TOUR=1; not a test)
+  stress.py                   # stress harness: issue probe, step wrapper, report writer
+  test_stress_tour_video.py   # records the six-chapter stress screencast (CURIO_STRESS=1)
 ```
 
 Four of these deliberately do not drive a browser. `test_examples.py` is a
@@ -624,6 +628,85 @@ vp8/webm and cannot do it. A scene that raises is reported (with a
 `failed-<scene>.png` next to the video) and the tour continues, so one broken
 step costs a chapter rather than the whole take - the run then fails at the end
 naming the scenes that broke.
+
+## Stress-test screencast
+
+`test_stress_tour_video.py` is the feature tour's adversarial sibling, and like
+it, it is not a test. Where the tour shows each feature's happy path once, this
+walks *everything* - every built-in and catalog node type, every catalog
+dataset, every built-in agent - and deliberately takes the paths that are
+supposed to refuse: an output wired to an output, a cycle, a node whose body
+raises, a re-imported archive. It is skipped unless `CURIO_STRESS=1`.
+
+```bash
+# from utk_curio/backend, with PYTHONPATH=<repo root>
+CURIO_STRESS=1 pytest tests/test_frontend/test_stress_tour_video.py -s -v
+
+# one chapter, at the tour's pace instead of the stress default of 1.6x
+CURIO_STRESS=1 CURIO_STRESS_CHAPTERS=agents CURIO_STRESS_SPEED=1.0   pytest tests/test_frontend/test_stress_tour_video.py -s
+```
+
+Six chapters, six recordings, **one pytest session** - the session-scoped
+`curio_servers` fixture boots the stack once and owns its lifecycle. Run
+`bash scripts/kill-curio.sh` first: an orphaned backend holds the test sqlite
+file and the next run dies at conftest import with `PermissionError: [WinError
+32]`.
+
+| Chapter | What it drives |
+|---|---|
+| `access` | signup validation, real signup, the persona picker, sign out, a wrong password, sign in; the projects page - search, the three status tabs, all three sorts, grid/list, card click / Enter / Space / right-click, Duplicate, Rename, Archive, Delete forever, the detail drawer; Jupyter notebook import |
+| `canvas` | all twelve built-in tiles dropped and identity-checked; header band, resize, comments, pin; every editor tab; Node settings including the port editor; invalid connections and cycles; the guarded delete; Backspace inside Monaco; box select; zoom; minimize/expand all; a node that raises; Play All; Save-as JSON and notebook export |
+| `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.urbanlab.uhvi`, `curio.streetvision` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
+| `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
+| `agents` | AI Settings from both of its entry points, all four provider tabs, Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
+| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; Merge Flow; JS Computation; widgets; dashboard mode with its lock; the provenance window and a node's provenance tab; the in-app intro.js tutorial |
+
+### What it produces
+
+Output goes to `.curio/stress/` (gitignored), overridable with
+`CURIO_STRESS_OUT`:
+
+- `curio-stress-<chapter>.webm`, one per chapter. An `.mp4` lands beside each
+  only when a **system** ffmpeg is on `PATH` - Playwright's bundled build is
+  compiled down to vp8/webm and cannot do it.
+- `<chapter>/` - screenshots, named for the step that took them, plus that
+  chapter's `issues.json`.
+- `ISSUES.md` and a merged `issues.json`, written by a class-scoped fixture once
+  every selected chapter has run.
+
+Every row in `ISSUES.md` is a **lead, not a verified defect**. `stress.Probe`
+reports what the app said - console errors, uncaught page errors, failed
+requests, 4xx/5xx responses, error and warning toasts (caught with a
+MutationObserver, because `showToast` removes each one after 5 s) - plus any
+node that finished red and any step that raised. Each carries the `mm:ss` offset
+into its chapter's recording, so the moment can be watched rather than
+reconstructed. `stress.EXPECTED` filters out what the app is documented to do
+(the re-import 400, the JS-library 501, webpack chatter); those are still
+exercised, still on camera, and logged to stdout so a rule that starts
+swallowing a real regression can be spotted.
+
+`StressRun.step` is the unit: it captions the step on camera, times it, catches
+whatever it raises, screenshots the moment, and attributes the probe's output to
+it. **A broken step never ends the chapter**, and a broken chapter never loses
+the recording - `_record` finalizes the video in a `finally`.
+
+### Two things to know before running it
+
+- **It installs packages and libraries for real.** When pytest owns the stack,
+  `tests/conftest.py` sets `CURIO_LAUNCH_CWD` to the **repo root**, so user
+  package stores land in `<repo>/.curio/users/<id>/` - and `main.py` walks every
+  user store on boot and `sys.exit(1)`s if pip cannot re-resolve one. Budget
+  10-25 minutes for the torch install in `nodes`, and check that
+  `python curio.py start` still boots afterwards.
+- **The agent chapter needs a provider.** It reads
+  `.curio/tour-provider.json` or `CURIO_TOUR_LLM_*`, the same way the feature
+  tour does, so no credential is ever committed. Without a key it records the
+  surfaces, says so on camera, and skips the turns.
+
+The class is listed in `fixtures._SHARED_SESSION_CLASSES`: chapter `access`
+signs one account up through the real form and the other five keep using it, so
+the autouse `e2e_clean_db` must not truncate between them.
+
 
 ## Environment Variables
 

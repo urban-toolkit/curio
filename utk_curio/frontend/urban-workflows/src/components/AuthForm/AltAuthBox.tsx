@@ -1,16 +1,31 @@
-import React from "react";
+import React, { useState } from "react";
 import CSS from "csstype";
 import { GUEST_COMMINGLING_NOTICE } from "../../services/retentionCopy";
 
 interface Props {
   showGuest: boolean;
-  onGuest: () => void;
+  onGuest: () => void | Promise<unknown>;
 }
 
 export const AltAuthBox: React.FC<Props> = ({ showGuest, onGuest }) => {
+  // The provider no longer swaps the whole tree for a spinner while a guest
+  // sign-in is in flight (that unmounted the form and lost what was typed), so
+  // the button reports its own progress.
+  const [entering, setEntering] = useState(false);
+
   if (!showGuest) {
     return null;
   }
+
+  const handleGuest = async () => {
+    if (entering) return;
+    setEntering(true);
+    try {
+      await onGuest();
+    } finally {
+      setEntering(false);
+    }
+  };
 
   return (
     <div style={containerStyle}>
@@ -20,8 +35,13 @@ export const AltAuthBox: React.FC<Props> = ({ showGuest, onGuest }) => {
         <span style={dividerLineStyle} />
       </div>
 
-      <button type="button" style={guestBtnStyle} onClick={onGuest}>
-        Continue as Guest
+      <button
+        type="button"
+        style={entering ? { ...guestBtnStyle, ...guestBtnBusyStyle } : guestBtnStyle}
+        onClick={() => void handleGuest()}
+        disabled={entering}
+      >
+        {entering ? "Signing in..." : "Continue as Guest"}
       </button>
       {/* DEC-057 §3.6: the shared-guest reality, stated where guests enter. */}
       <p style={guestNoticeStyle}>{GUEST_COMMINGLING_NOTICE}</p>
@@ -71,4 +91,9 @@ const guestBtnStyle: CSS.Properties = {
   fontWeight: 500,
   cursor: "pointer",
   color: "#0F0F11",
+};
+
+const guestBtnBusyStyle: CSS.Properties = {
+  cursor: "default",
+  color: "#8a8f98",
 };

@@ -40,7 +40,14 @@ from .workflow_spec import PY_CODE_TYPES, normalize_type
 
 # Test classes that own a class-scoped browser session and must NOT have the DB
 # truncated between their methods (see ``_clean_db``).
-_SHARED_SESSION_CLASSES = ("TestWorkflowCanvas", "TestAgentChatGallery")
+_SHARED_SESSION_CLASSES = (
+    "TestWorkflowCanvas",
+    "TestAgentChatGallery",
+    # The stress tour signs one account up in its first chapter and keeps
+    # using it for the other five; a truncation between chapters would
+    # invalidate the session token the browser is still holding.
+    "TestCurioStressTour",
+)
 
 _SQLA_MUTABLE_TABLES = (
     "exec_cache_entry",
