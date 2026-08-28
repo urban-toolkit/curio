@@ -6,6 +6,7 @@
  */
 
 import { loadInstalledPackages } from './packagesClient';
+import { getToken } from '../utils/authApi';
 import { getCurrentProjectPackages } from './projectPackagesStore';
 
 function notifyTemplatesAfterPackageRefresh(): void {
@@ -26,6 +27,14 @@ function notifyTemplatesAfterPackageRefresh(): void {
  * catalog routes the store is empty and every installed package shows.
  */
 export function refreshPackageRegistry(): Promise<void> {
+  // Nothing to fetch without a session. ``/api/packages`` is ``@require_auth``
+  // and its response is per-user, so an anonymous call could only ever 401 —
+  // and although ``loadInstalledPackages`` suppresses its own warning for that
+  // status, the browser still logs "Failed to load resource: 401" on the
+  // sign-up page, the first screen a new user sees. Callers that matter run
+  // after sign-in anyway: ``UserProvider.applyUser`` refreshes as soon as a
+  // user resolves, and ``ToolsMenu`` refreshes again when ``user.id`` appears.
+  if (!getToken()) return Promise.resolve();
   return loadInstalledPackages(getCurrentProjectPackages()).then(() => {
     notifyTemplatesAfterPackageRefresh();
   });
