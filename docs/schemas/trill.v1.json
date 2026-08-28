@@ -462,7 +462,7 @@
         "id": { "type": "string", "description": "Copy of dataflow.provenance_id. Emitted only when that field exists." },
         "latest": {
           "type": "string",
-          "description": "Key into 'versions' naming the currently loaded snapshot, formatted '<name>_<timestamp>'. Empty string when there is no history. A value beginning 'undefined_' means dataflow.name was missing when the version was cut."
+          "description": "Key into 'versions' naming the currently loaded snapshot, formatted '<name>_<timestamp>' and, when two versions are cut in the same millisecond, '<name>_<timestamp>_<n>' from n=2. Empty string when there is no history. A value beginning 'undefined_' means dataflow.name was missing when the version was cut."
         },
         "graph": { "$ref": "#/$defs/provenanceGraph" },
         "versions": {
@@ -497,7 +497,7 @@
       "required": ["id", "label", "timestamp", "preview"],
       "additionalProperties": true,
       "properties": {
-        "id": { "type": "string", "description": "'<name>_<timestamp>', matching a key in dataflowProvenance.versions." },
+        "id": { "type": "string", "description": "'<name>_<timestamp>', or '<name>_<timestamp>_<n>' when that base was already taken, matching a key in dataflowProvenance.versions. Unique within one graph: ids collided before the suffix existed, so files written by older builds may repeat one." },
         "label": { "type": "string", "description": "'<name> (<timestamp>)', for display in the provenance window." },
         "timestamp": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds, rendered as a date in the provenance window." },
         "preview": { "$ref": "#/$defs/graphPreview" }
@@ -509,7 +509,7 @@
       "required": ["id", "source", "target", "label"],
       "additionalProperties": true,
       "properties": {
-        "id": { "type": "string", "description": "'<sourceVersion>_to_<targetVersion>'." },
+        "id": { "type": "string", "description": "'<sourceVersion>_to_<targetVersion>'. Source and target are always different; older builds could emit a self-loop when two version ids collided." },
         "source": { "type": "string", "description": "Version this change started from." },
         "target": { "type": "string", "description": "Version this change produced." },
         "label": { "type": "string", "description": "Human-readable description of the change, e.g. 'Node added'." }
