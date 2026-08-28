@@ -74,7 +74,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const showLoading = behavior.showLoading ?? false;
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn, markNodeStale } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn } = useFlowContext();
   const collab = useCollab();
   const lastTriggerExecRef = useRef<number>(data.triggerExec ?? 0);
   const outputCodeRef = useRef(output?.code);
@@ -258,7 +258,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             defaultValue={defaultValue}
             readOnly={readOnly || lockedByOther}
             floatCode={nodeState.setCode}
-            markNodeStale={markNodeStale}
             contentComponent={behavior.contentComponent}
           />
         ) : (

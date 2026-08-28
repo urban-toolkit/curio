@@ -15,8 +15,6 @@ type GrammarEditorProps = {
     defaultValue?: any;
     floatCode?: any;
     readOnly: boolean;
-    /** Same freshness signal CodeEditor sends on a keystroke. */
-    markNodeStale?: (nodeId: string) => void;
 };
 
 export default function GrammarEditor({
@@ -30,7 +28,6 @@ export default function GrammarEditor({
     defaultValue,
     floatCode,
     readOnly,
-    markNodeStale,
 }: GrammarEditorProps) {
     const [grammar, _setGrammar] = useState("{}");
     const grammarRef = useRef(grammar);
@@ -154,12 +151,7 @@ export default function GrammarEditor({
     }, [replacedCodeDirty]);
 
     const updateGrammarContent = (value: string, readOnly: boolean) => {
-        if (readOnly) return;
-        setGrammar(value);
-        // Same signal CodeEditor sends on a keystroke. Without it a node whose
-        // grammar was edited kept its "executed" tick, so the freshness badge
-        // and the dataset lineage status disagreed with the editor.
-        markNodeStale?.(nodeId);
+        if (!readOnly) setGrammar(value);
     };
 
     return (

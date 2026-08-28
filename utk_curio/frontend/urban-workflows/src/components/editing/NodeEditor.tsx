@@ -47,7 +47,6 @@ type NodeEditorProps = {
     readOnly: boolean;
     defaultValue: any;
     floatCode?: any;
-    markNodeStale?: (nodeId: string) => void;
     provenance?: boolean;
     customWidgetsCallback?: any;
     contentComponent?: any;
@@ -69,7 +68,6 @@ function NodeEditor({
     readOnly,
     defaultValue,
     floatCode,
-    markNodeStale,
     provenance,
     customWidgetsCallback,
     contentComponent,
@@ -280,7 +278,6 @@ function NodeEditor({
                                         style={{ height: "100%" }}
                                     >
                                         <GrammarEditor
-                                            markNodeStale={markNodeStale}
                                             floatCode={floatCode}
                                             readOnly={readOnly}
                                             defaultValue={defaultCode}
