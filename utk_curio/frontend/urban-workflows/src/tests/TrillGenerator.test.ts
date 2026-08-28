@@ -193,3 +193,84 @@ describe("the dataflow goal", () => {
     expect(spec.dataflow.task).toBe("");
   });
 });
+
+/**
+ * Version ids must be unique.
+ *
+ * A version was keyed `<name>_<timestamp>` at millisecond resolution, so two
+ * versions cut inside one millisecond collapsed onto a single `versions` key,
+ * the graph grew duplicate node ids, and the edge between them became a
+ * self-loop with a duplicate id. React then reported "two children with the
+ * same key" in the provenance window — meaning a version could be silently
+ * dropped or duplicated. Saved projects on disk already contain this shape.
+ */
+describe("TrillGenerator provenance ids are unique", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+    jest.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("gives two versions cut in the same millisecond distinct ids", () => {
+    jest.spyOn(Date, "now").mockReturnValue(1700000000000);
+
+    TrillGenerator.addNewVersionProvenance([], [], "wf", "", "Initial");
+    TrillGenerator.addNewVersionProvenance([], [], "wf", "", "Node added");
+
+    const ids = TrillGenerator.provenanceJSON.nodes.map((n: any) => n.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(Object.keys(TrillGenerator.list_of_trills)).toHaveLength(2);
+  });
+
+  it("never emits a self-loop edge, and keeps edge ids unique", () => {
+    jest.spyOn(Date, "now").mockReturnValue(1700000000000);
+
+    TrillGenerator.addNewVersionProvenance([], [], "wf", "", "Initial");
+    TrillGenerator.addNewVersionProvenance([], [], "wf", "", "Node added");
+    TrillGenerator.addNewVersionProvenance([], [], "wf", "", "Node deleted");
+
+    const edges = TrillGenerator.provenanceJSON.edges;
+    for (const edge of edges) {
+      expect(edge.source).not.toBe(edge.target);
+    }
+    const edgeIds = edges.map((e: any) => e.id);
+    expect(new Set(edgeIds).size).toBe(edgeIds.length);
+  });
+
+  it("keeps every version reachable by the id the graph reports", () => {
+    // TrillProvenanceWindow feeds the React Flow node id straight back into
+    // switchProvenanceTrill, so every graph id must be a versions key.
+    jest.spyOn(Date, "now").mockReturnValue(1700000000000);
+
+    TrillGenerator.addNewVersionProvenance([], [], "wf", "", "Initial");
+    TrillGenerator.addNewVersionProvenance([], [], "wf", "", "Node added");
+
+    for (const node of TrillGenerator.provenanceJSON.nodes) {
+      expect(TrillGenerator.list_of_trills[node.id]).toBeDefined();
+    }
+  });
+
+  it("still loads an old file whose ids carry no suffix", () => {
+    TrillGenerator.loadDataflowProvenance({
+      id: "wf",
+      latest: "wf_123",
+      graph: {
+        id: "wf",
+        nodes: [{ id: "wf_123", label: "wf (123)", timestamp: 123, preview: null }],
+        edges: [],
+      },
+      versions: { wf_123: { dataflow: { nodes: [], edges: [] } } },
+    });
+
+    expect(TrillGenerator.latestTrill).toBe("wf_123");
+    expect(TrillGenerator.list_of_trills["wf_123"]).toBeDefined();
+
+    // And a version cut after the load does not reuse the loaded key.
+    jest.spyOn(Date, "now").mockReturnValue(123);
+    TrillGenerator.addNewVersionProvenance([], [], "wf", "", "Node added");
+    expect(Object.keys(TrillGenerator.list_of_trills)).toHaveLength(2);
+  });
+});

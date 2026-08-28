@@ -25,7 +25,21 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
 
   useEffect(() => { data.code = code; }, [code]);
 
-  useEffect(() => { data.output = output; }, [output]);
+  // Mirrored by direct mutation rather than setNodes, deliberately: a setNodes
+  // per keystroke re-rendered the whole canvas (dev/70). reactFlow.getNodes()
+  // still sees these, which is what lets playNodesUpTo read them.
+  //
+  // `executedCode` records the source that produced the current successful
+  // output, so playNodesUpTo can tell a cached result apart from a stale one.
+  // A comparison rather than a dirty flag on purpose: Curio's Monaco editors are
+  // uncontrolled and useMonacoExternalValue applies external content with
+  // executeEdits, so a project load or an agent write re-enters the change
+  // handler in a real browser - a flag set there would mark every node dirty
+  // straight after a load, while identical content compares equal.
+  useEffect(() => {
+    data.output = output;
+    if (output?.code === 'success') data.executedCode = code;
+  }, [output]);
 
   useEffect(() => {
     if (data.templateId != undefined) {

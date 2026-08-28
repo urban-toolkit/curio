@@ -1623,7 +1623,10 @@ def upload_workflow(
     assert load_spec.is_visible()
 
     with page.expect_file_chooser() as fc_info:
-        page.get_by_text("Load dataflow").click()
+        # The role locator, not get_by_text: the File menu row is a <div>
+        # wrapping a <button> carrying the same label (UpMenu.tsx), so the text
+        # engine matches both and the click dies of a strict-mode violation.
+        load_spec.click()
     fc_info.value.set_files(workflow_file)
 
     # Wait until all expected nodes have rendered on the ReactFlow canvas

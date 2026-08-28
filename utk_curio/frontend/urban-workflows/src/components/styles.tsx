@@ -574,15 +574,17 @@ export const NodeContainer = ({
                 onDragOver={onDatasetDragOver}
                 onDrop={onDatasetDrop}
                 style={{
-                    ...getNodeContainerStyles(data.nodeType),
+                    ...getNodeContainerStyles(data.nodeType, {
+                        dashboardOn,
+                        suggested: data.suggestionType != "none" && data.suggestionType != undefined,
+                        acceptable: data.suggestionAcceptable,
+                    }),
                     ...styles,
                     width: currentNodeWidth + "px",
                     height: currentNodeHeight + "px",
                     ...(minimized ? { display: "none" } : {}),
-                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, borderWidth: "2px", borderStyle: "dashed", pointerEvents: "none"} : {}),
-                    ...(data.suggestionAcceptable ? {borderColor: "#1d3853"} : {}),
+                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, pointerEvents: "none"} : {}),
                     ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),
-                    ...(dashboardOn ? {border: "2px solid #000", boxShadow: "none", borderRadius: "0", resize: "none"} : {})
                 }}
             >
                 {!noContent && !dashboardOn ? (
@@ -1103,17 +1105,62 @@ const nodeTypeBorderColor: Record<string, string> = {
     [NodeType.VIS_SIMPLE]: categoryFg("vis"),
 };
 
-const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({
-    position: "relative",
-    backgroundColor: "#ffffff",
+/** The node container's border and surface, resolved in one place.
+ *
+ * Longhands only, never the `border` shorthand. The two used to be layered: this
+ * function supplied `borderLeft` and the inline style added `border` when
+ * dashboard mode was on, so toggling it changed which of the two was present
+ * between renders and React warned "Removing border borderLeft". The suggestion
+ * state added `borderWidth`/`borderStyle`/`borderColor` on top, colliding with
+ * the same shorthand. Deciding the whole border here removes the layering
+ * instead of reordering it.
+ */
+export const getNodeContainerStyles = (
+    nodeType: string,
+    state: { dashboardOn?: boolean; suggested?: boolean; acceptable?: boolean } = {},
+): CSS.Properties => {
     // `nodeType` arrives versioned for palette-dragged nodes
     // (`curio.builtin/merge-flow@1`) but this map is keyed by the unversioned
     // NodeType enum, so an unnormalized lookup silently falls back to grey (#159).
-    borderLeft: `4px solid ${nodeTypeBorderColor[unversionedNodeType(nodeType)] ?? CATEGORY_FALLBACK_FG}`,
-    borderRadius: "10px",
-    padding: "5px",
-    boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
-});
+    const accent = nodeTypeBorderColor[unversionedNodeType(nodeType)] ?? CATEGORY_FALLBACK_FG;
+    const base: CSS.Properties = {
+        position: "relative",
+        backgroundColor: "#ffffff",
+        borderRadius: "10px",
+        padding: "5px",
+        boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
+    };
+
+    if (state.dashboardOn) {
+        // Dashboard mode frames every node identically, accent included.
+        return {
+            ...base,
+            borderStyle: "solid",
+            borderColor: "#000",
+            borderWidth: "2px",
+            borderRadius: "0",
+            boxShadow: "none",
+            resize: "none",
+        };
+    }
+
+    const suggested = state.suggested === true;
+    return {
+        ...base,
+        borderTopStyle: suggested ? "dashed" : undefined,
+        borderRightStyle: suggested ? "dashed" : undefined,
+        borderBottomStyle: suggested ? "dashed" : undefined,
+        borderLeftStyle: "solid",
+        borderTopWidth: suggested ? "2px" : undefined,
+        borderRightWidth: suggested ? "2px" : undefined,
+        borderBottomWidth: suggested ? "2px" : undefined,
+        borderLeftWidth: "4px",
+        borderTopColor: state.acceptable ? "#1d3853" : undefined,
+        borderRightColor: state.acceptable ? "#1d3853" : undefined,
+        borderBottomColor: state.acceptable ? "#1d3853" : undefined,
+        borderLeftColor: state.acceptable ? "#1d3853" : accent,
+    };
+};
 
 const nodeContentStyle: CSS.Properties = {
     backgroundColor: "white",

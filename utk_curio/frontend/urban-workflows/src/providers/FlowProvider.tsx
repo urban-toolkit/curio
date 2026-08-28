@@ -1109,6 +1109,12 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     }
 
     function playNodesUpTo(targetNodeId: string) {
+        // Same guard playAllNodes has. Without it a second play click - which
+        // the e2e helper issues on its own, retrying up to three times when a
+        // node has not visibly acknowledged - overwrites playAllStateRef and
+        // orphans the level already in flight.
+        if (playAllStateRef.current != null) return;
+
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
 
@@ -1135,11 +1141,53 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         }
         ancestorIds.add(targetNodeId);
 
-        // Skip ancestors that already ran successfully; always keep the target
-        const subgraphNodes = currentNodes.filter(n =>
-            ancestorIds.has(n.id) &&
-            (n.id === targetNodeId || n.data.output?.code !== "success")
+        // Which ancestors actually need to run again.
+        //
+        // "It succeeded once" is not enough: a node whose code has changed since
+        // that run holds an artifact its current source would not produce, and
+        // reusing it made the whole downstream chain report success off stale
+        // data. `executedCode` (mirrored in useNodeState) is the source that
+        // produced the current output, so a mismatch means re-run.
+        //
+        // The last clause is what makes invalidation transitive - a node feeding
+        // off a re-running ancestor must re-run too, or it would pass the old
+        // artifact down while its parent computed a new one.
+        const ancestorNodes = currentNodes.filter(n => ancestorIds.has(n.id));
+        const ancestorEdges = currentEdges.filter(
+            e => ancestorIds.has(e.source) && ancestorIds.has(e.target)
         );
+        const willRun = new Set<string>();
+        const ancestorLevels = computeTopologicalLevels(ancestorNodes, ancestorEdges);
+        // computeTopologicalLevels drops anything inside a cycle. Those nodes
+        // still have to be judged, or a cycle upstream of the target would
+        // silently remove it from the run.
+        const levelled = new Set(ancestorLevels.flat());
+        const decisionOrder = [
+            ...ancestorLevels,
+            ancestorNodes.filter(n => !levelled.has(n.id)).map(n => n.id),
+        ];
+        for (const level of decisionOrder) {
+            for (const nodeId of level) {
+                const node = currentNodes.find(n => n.id === nodeId);
+                if (!node) continue;
+                const neverSucceeded = node.data.output?.code !== "success";
+                const codeChanged =
+                    node.data.executedCode !== undefined &&
+                    node.data.executedCode !== node.data.code;
+                const upstreamRerunning = ancestorEdges.some(
+                    e => e.target === nodeId && willRun.has(e.source)
+                );
+                if (
+                    nodeId === targetNodeId ||
+                    neverSucceeded ||
+                    codeChanged ||
+                    upstreamRerunning
+                ) {
+                    willRun.add(nodeId);
+                }
+            }
+        }
+        const subgraphNodes = currentNodes.filter(n => willRun.has(n.id));
         const subgraphNodeIds = new Set(subgraphNodes.map(n => n.id));
         const subgraphEdges = currentEdges.filter(
             e => subgraphNodeIds.has(e.source) && subgraphNodeIds.has(e.target)

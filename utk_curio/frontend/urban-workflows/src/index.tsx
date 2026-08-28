@@ -56,8 +56,11 @@ export { refreshPackageRegistry };
 // Boot sequence:
 //   Fetch installed packages first — `refreshPackageRegistry()` registers every
 //   package-derived descriptor (including the auto-installed `curio.builtin@1`)
-//   so the palette is populated before anything reads it. Anonymous boots are
-//   no-ops until sign-in calls `refreshPackageRegistry()` explicitly.
+//   so the palette is populated before anything reads it.
+//
+//   An anonymous boot is a genuine no-op: `refreshPackageRegistry` returns
+//   early without a session token, because `/api/packages` requires auth and
+//   would only 401 on the sign-up page. Sign-in refreshes the registry itself.
 void refreshPackageRegistry();
 
 import FlowProvider from "./providers/FlowProvider";

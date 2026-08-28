@@ -45,16 +45,41 @@ export class TrillGenerator {
         return { nodes, edges };
     }
 
+    /** A version key that is not already taken.
+     *
+     * The base is `<name>_<timestamp>`, which is what saved specs contain and
+     * what `provenanceGraphNode.id` documents. That is not unique: the timestamp
+     * has millisecond resolution and a single gesture can record more than one
+     * version inside one millisecond. When it collided, several versions
+     * collapsed onto one `versions` key, the graph grew duplicate node ids and
+     * self-loop edges, and React reported two children with the same key — with
+     * the real consequence that the provenance graph could silently drop or
+     * duplicate a version. Committed projects on disk already contain this.
+     *
+     * A suffix keeps the format a plain string and a usable `versions` key, so
+     * older files (whose ids never carry one) keep loading untouched.
+     */
+    private static _uniqueVersionId(name: string, timestamp: number): string {
+        const base = `${name}_${timestamp}`;
+        if (this.list_of_trills[base] === undefined) return base;
+        let n = 2;
+        while (this.list_of_trills[`${base}_${n}`] !== undefined) n += 1;
+        return `${base}_${n}`;
+    }
+
     static intializeProvenance(trill_spec: any){
         // TODO: look for a provenance JSON for the workflow. If it does not exist initialize it. If it exists load the meta and trill versions to memory (ideally they should be on the database)
         // TODO: for now assuming that the user is never loading a trill or provenanceJSON.
 
-        this.latestTrill = trill_spec.dataflow.name+"_"+trill_spec.dataflow.timestamp;
-        this.list_of_trills[trill_spec.dataflow.name+"_"+trill_spec.dataflow.timestamp] = trill_spec;
+        const versionId = this._uniqueVersionId(
+            trill_spec.dataflow.name, trill_spec.dataflow.timestamp,
+        );
+        this.latestTrill = versionId;
+        this.list_of_trills[versionId] = trill_spec;
 
         this.provenanceJSON.id = trill_spec.dataflow.provenance_id;
         this.provenanceJSON.nodes.push({
-            id: trill_spec.dataflow.name+"_"+trill_spec.dataflow.timestamp,
+            id: versionId,
             label: trill_spec.dataflow.name+" ("+trill_spec.dataflow.timestamp+")",
             timestamp: trill_spec.dataflow.timestamp,
             preview: this._extractGraphPreview(trill_spec)
@@ -71,27 +96,32 @@ export class TrillGenerator {
         
         console.log("new_trill", new_trill);
 
+        const versionId = this._uniqueVersionId(
+            new_trill.dataflow.name, new_trill.dataflow.timestamp,
+        );
+
         this.provenanceJSON.nodes.push({
-            id: new_trill.dataflow.name+"_"+new_trill.dataflow.timestamp,
+            id: versionId,
             label: new_trill.dataflow.name+" ("+new_trill.dataflow.timestamp+")",
             timestamp: new_trill.dataflow.timestamp,
             preview: this._extractGraphPreview(new_trill)
         });
 
-        this.list_of_trills[new_trill.dataflow.name+"_"+new_trill.dataflow.timestamp] = new_trill;
+        this.list_of_trills[versionId] = new_trill;
 
-        console.log("list_of_trills", this.list_of_trills);
-
-        if(this.latestTrill){ // If there is a previous trill from which this one was derived add an edge connecting both
-            this.provenanceJSON.edges.push({        
-                id: this.latestTrill+"_to_"+new_trill.dataflow.name+"_"+new_trill.dataflow.timestamp,
+        // An edge from a version to itself carries no history and duplicates an
+        // existing key, which is how a colliding id showed up as a React
+        // duplicate-key warning in the provenance graph.
+        if(this.latestTrill && this.latestTrill !== versionId){
+            this.provenanceJSON.edges.push({
+                id: this.latestTrill+"_to_"+versionId,
                 source: this.latestTrill,
-                target: new_trill.dataflow.name+"_"+new_trill.dataflow.timestamp,
+                target: versionId,
                 label: change
             })
         }
 
-        this.latestTrill = new_trill.dataflow.name+"_"+new_trill.dataflow.timestamp;
+        this.latestTrill = versionId;
 
     }
 

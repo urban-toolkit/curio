@@ -320,15 +320,22 @@ export function MainCanvas() {
             let allowed = true;
 
             if (change.type === "remove") {
-                for (const edge of currentEdges) {
-                    if (edge.source === change.id || edge.target === change.id) {
-                        showToast(
-                            "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing Delete or Backspace.",
-                            "warning"
-                        );
-                        allowed = false;
-                        break;
-                    }
+                // Removing a wired node is refused on purpose. Say how much is
+                // in the way: the old copy told the user to "remove the edges"
+                // without saying how many there were or which, so on a busy
+                // canvas it read as the key simply not working.
+                const attached = currentEdges.filter(
+                    (edge) => edge.source === change.id || edge.target === change.id,
+                );
+                if (attached.length > 0) {
+                    const count = attached.length;
+                    showToast(
+                        `This node still has ${count} connection${count === 1 ? "" : "s"}. ` +
+                        `Select ${count === 1 ? "it" : "them"} and press Delete or Backspace, ` +
+                        "then remove the node.",
+                        "warning"
+                    );
+                    allowed = false;
                 }
                 if (allowed) dirty = true;
             }

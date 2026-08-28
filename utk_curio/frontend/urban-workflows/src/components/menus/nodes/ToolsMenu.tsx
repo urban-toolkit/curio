@@ -42,6 +42,14 @@ const DraggableTool = memo(function DraggableTool({
         >
             <div
                 id={tutorialID}
+                // The tile is an icon and a drag source: nothing in it was text,
+                // so it had no accessible name at all and the hover tooltip was
+                // its only label. `title` matches how the dataset and agent drag
+                // handles are named (DatasetPaletteRows, AgentPaletteRow); the
+                // explicit aria-label wins the accname computation and keeps the
+                // name stable if the tooltip copy ever diverges.
+                aria-label={tooltip}
+                title={tooltip}
                 className={styles.optionStyle}
                 draggable
                 onDragStart={(event) => {

@@ -26,6 +26,7 @@ import { sortPackages, matchesSearch } from "./packageUtils";
 import { restartNotice } from "../../../services/packageRestartCopy";
 import shell from "./CatalogDrawerShell.module.css";
 import styles from "./NodeCatalogDrawer.module.css";
+import { modalStackDepth } from "../../ModalShell";
 
 
 export interface NodeCatalogDrawerProps {
@@ -160,6 +161,8 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
+      // Defer to any open modal (see ModalShell's stack).
+      if (modalStackDepth() > 0) return;
       if (ev.key === "Escape") onRequestClose();
     };
     window.addEventListener("keydown", onKey);

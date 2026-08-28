@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from .utils import (
     canvas_nodes,
+    connect_nodes,
     dismiss_toasts,
     drag_to_canvas,
     node_locator,
@@ -173,3 +174,100 @@ def test_delete_inside_a_code_editor_edits_text_and_keeps_the_node(
         page, "canvas-delete-key",
         test_name="test_delete_inside_a_code_editor_edits_text_and_keeps_the_node",
     )
+
+
+def test_a_wired_node_is_refused_and_the_toast_says_how_many_connections(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    """Refusing to delete a connected node must explain itself.
+
+    The two tests above never connect their nodes, so neither covers what happens
+    when one is wired - and that is the case a real dataflow is always in. A user
+    test read the silence as "Delete is broken" and only a source bisect showed
+    the refusal was deliberate (``MainCanvas.handleNodesChange``). The behaviour
+    stays; what is pinned here is that the user is told what is in the way.
+    """
+    require_project_page()
+    require_user_auth()
+
+    page.emulate_media(reduced_motion="reduce")
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Delete Key",
+        username="delete_key_wired",
+        project_name="Delete Key Wired",
+    )
+    require_owner_view(page)
+
+    first = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
+    second = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_SECOND)
+    connect_nodes(page, first, second)
+    dismiss_toasts(page)
+
+    _select(page, second)
+    page.keyboard.press("Delete")
+    page.wait_for_timeout(1500)
+
+    # Still there: the refusal is the documented behaviour.
+    assert second in _node_ids(page), (
+        "a node with an edge was removed; deleting a wired node is supposed to "
+        "be refused until its connections are gone"
+    )
+
+    # And the user was told, with the count so they know what to clear.
+    toast = page.locator('[aria-label="Notifications"] .toast').first
+    toast.wait_for(state="visible", timeout=10000)
+    said = " ".join((toast.text_content() or "").split())
+    assert "1 connection" in said, (
+        f"the toast did not name how many connections block the delete: {said!r}"
+    )
+    assert "Delete or Backspace" in said, (
+        f"the toast did not say how to clear them: {said!r}"
+    )
+    dismiss_toasts(page)
+
+    # Clearing the edge makes the node deletable, which is the path the toast
+    # describes. Proves the refusal is a gate, not a dead end.
+    #
+    # The edge is removed by selecting it and pressing Delete, exactly as the
+    # toast instructs. Not by writing React Flow's store: `useStoreUpdater`
+    # pushes FlowContext's own edge array straight back over it, so the edge
+    # would reappear and the delete stay refused (see utils.drag_to_canvas).
+    edge_point = page.evaluate(
+        """() => {
+            const path = document.querySelector('.react-flow__edge-interaction');
+            if (!path) return null;
+            const at = path.getPointAtLength(path.getTotalLength() / 2);
+            const svg = path.ownerSVGElement;
+            const point = svg.createSVGPoint();
+            point.x = at.x;
+            point.y = at.y;
+            const screen = point.matrixTransform(path.getScreenCTM());
+            return [screen.x, screen.y];
+        }"""
+    )
+    assert edge_point, "no edge interaction path to click"
+    page.mouse.click(edge_point[0], edge_point[1])
+    page.wait_for_function(
+        "() => (window.__curio_reactFlow.getEdges() || [])"
+        ".some((e) => e.selected)",
+        timeout=10000,
+    )
+    page.keyboard.press("Delete")
+    page.wait_for_function(
+        "() => (window.__curio_reactFlow.getEdges() || []).length === 0",
+        timeout=10000,
+    )
+    dismiss_toasts(page)
+    _select(page, second)
+    page.keyboard.press("Delete")
+    page.wait_for_function(
+        "id => !document.querySelector(`.react-flow__node[data-id='${id}']`)",
+        arg=second,
+        timeout=10000,
+    )
+    assert second not in _node_ids(page)

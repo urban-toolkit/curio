@@ -273,63 +273,167 @@ function topologicalSort(nodes: TrillNode[], edges: TrillEdge[]): TrillNode[] {
   return result;
 }
 
-function generateCell(
-  node: TrillNode,
-  inputNodes: TrillNode[]
-): NotebookCell | null {
-  const content = node.content ?? "";
+/** Templates whose ``content`` is a Python function body, run as ``userCode(arg)``. */
+const PYTHON_BODY_TYPES = new Set<string>([
+  NodeType.DATA_LOADING,
+  NodeType.DATA_TRANSFORMATION,
+  NodeType.COMPUTATION_ANALYSIS,
+  NodeType.DATA_SUMMARY,
+  NodeType.DATA_EXPORT,
+]);
 
-  const inputComments = inputNodes
-    .map((n) => `# input: ${outputVarName(n)}`)
+/** ``curio.builtin/spatial-join`` has no ``NodeType`` member (the enum predates it). */
+const SPATIAL_JOIN_TYPE = "curio.builtin/spatial-join";
+
+function codeCell(source: string): NotebookCell {
+  return {
+    cell_type: "code",
+    source,
+    metadata: {},
+    outputs: [],
+    execution_count: null,
+  };
+}
+
+function markdownCell(source: string): NotebookCell {
+  return {
+    cell_type: "markdown",
+    source,
+    metadata: {},
+    outputs: [],
+    execution_count: null,
+  };
+}
+
+/** How a node names the value it received, mirroring the sandbox's ``arg``.
+ *
+ * ``worker.py`` hands a merge node a *tuple* of its upstream outputs, so several
+ * inputs become a tuple here too. No inputs means the body is a source and gets
+ * ``None``.
+ */
+function argExpression(inputNodes: TrillNode[]): string {
+  if (inputNodes.length === 0) return "None";
+  if (inputNodes.length === 1) return outputVarName(inputNodes[0]);
+  return `(${inputNodes.map(outputVarName).join(", ")})`;
+}
+
+function indent(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => (line.trim() === "" ? "" : `    ${line}`))
     .join("\n");
+}
 
+/** A heading a reader can use to line the notebook up against the canvas. */
+function nodeHeading(node: TrillNode, inputNodes: TrillNode[]): string {
+  const inputs = inputNodes.length
+    ? ` &larr; ${inputNodes.map(outputVarName).join(", ")}`
+    : "";
+  return `### \`${unversionedNodeType(node.type)}\` &mdash; \`${node.id}\`${inputs}`;
+}
+
+/** Emit the cells for one node.
+ *
+ * Returns a list rather than a single cell (or ``null``) so that a node can
+ * contribute a heading plus a body, and so that a template a Python kernel
+ * cannot run still leaves a record instead of vanishing. The previous version
+ * returned ``null`` for every type except three, and ``trillToNotebook`` then
+ * dropped those nodes without saying so.
+ */
+function generateCells(node: TrillNode, inputNodes: TrillNode[]): NotebookCell[] {
+  const content = node.content ?? "";
+  // Specs saved since the curio.builtin@1 pack carry versioned ids (dev/64),
+  // and third-party package ids never match a NodeType at all - so this
+  // dispatch always ends in a default branch rather than an enumeration.
   const nodeType = unversionedNodeType(node.type);
+  const outVar = outputVarName(node);
+  const heading = markdownCell(nodeHeading(node, inputNodes));
 
-  if (nodeType === NodeType.DATA_LOADING) {
-    return {
-      cell_type: "code",
-      source: content,
-      metadata: {},
-      outputs: [],
-      execution_count: null,
-    };
+  if (PYTHON_BODY_TYPES.has(nodeType)) {
+    // A node's content is the body of `def userCode(arg):` - PythonInterpreter
+    // indents it by four spaces and the sandbox execs it under exactly that
+    // signature. Reproducing the function is the only faithful inversion:
+    // emitting the body flat would leave a top-level `return` (a SyntaxError)
+    // and an unbound `arg`, which is what shipped.
+    const fn = `node_${sanitizeId(node.id)}`;
+    const body = content.trim() === "" ? "    pass" : indent(content);
+    return [
+      heading,
+      codeCell(`def ${fn}(arg):\n${body}\n\n\n${outVar} = ${fn}(${argExpression(inputNodes)})`),
+    ];
   }
 
-  if (nodeType === NodeType.COMPUTATION_ANALYSIS) {
-    const source = inputComments ? `${inputComments}\n${content}` : content;
-    return {
-      cell_type: "code",
-      source,
-      metadata: {},
-      outputs: [],
-      execution_count: null,
-    };
+  if (nodeType === NodeType.DATA_POOL) {
+    // A pool passes its input through untouched.
+    const source = inputNodes.length
+      ? `${outVar} = ${outputVarName(inputNodes[0])}`
+      : `${outVar} = None`;
+    return [heading, codeCell(source)];
+  }
+
+  if (nodeType === NodeType.MERGE_FLOW) {
+    return [heading, codeCell(`${outVar} = ${argExpression(inputNodes)}`)];
   }
 
   if (nodeType === NodeType.VIS_VEGA) {
-    let specJson = "{}";
+    let spec: unknown = {};
+    let parsed = true;
     try {
-      specJson = JSON.stringify(JSON.parse(content));
+      spec = JSON.parse(content);
     } catch {
-      specJson = JSON.stringify(content);
+      parsed = false;
     }
-    const displayCode = [
-      "import json",
+    if (!parsed) {
+      return [
+        heading,
+        markdownCell(
+          "This Vega-Lite node's specification is not valid JSON, so it is " +
+            "recorded here rather than rendered:\n\n```json\n" +
+            content +
+            "\n```"
+        ),
+      ];
+    }
+    // json.loads of a JSON *string* would yield a Python str rather than a
+    // dict, which is not a usable mimebundle - so the spec is embedded as a
+    // literal object instead.
+    const lines = [
       "from IPython.display import display",
-      `_spec = json.loads(${JSON.stringify(specJson)})`,
-      `display({"application/vnd.vegalite.v5+json": _spec, "text/plain": "<VegaLite>"}, raw=True)`,
-    ].join("\n");
-    const source = inputComments ? `${inputComments}\n${displayCode}` : displayCode;
-    return {
-      cell_type: "code",
-      source,
-      metadata: {},
-      outputs: [],
-      execution_count: null,
-    };
+      "",
+      `_spec = ${JSON.stringify(spec, null, 2)}`,
+    ];
+    if (inputNodes.length) {
+      lines.push(
+        "",
+        "# Attach the upstream rows the canvas would have supplied.",
+        `_spec["data"] = {"values": ${outputVarName(inputNodes[0])}.to_dict(orient="records")}`
+      );
+    }
+    lines.push(
+      "",
+      'display({"application/vnd.vegalite.v5+json": _spec, "text/plain": "<VegaLite>"}, raw=True)'
+    );
+    return [heading, codeCell(lines.join("\n"))];
   }
 
-  return null;
+  // Everything a Python kernel cannot run: an Autark grammar document (which
+  // goes through the JS interpreter despite its manifest engine), a JavaScript
+  // computation, and the presentational templates that carry no content.
+  // Recorded, never silently dropped.
+  const why =
+    nodeType === NodeType.AUTK_GRAMMAR
+      ? "An Autark grammar specification. It renders through Curio's WebGPU pipeline, not a Python kernel."
+      : nodeType === NodeType.JS_COMPUTATION
+        ? "A JavaScript computation. Its source is preserved below; it cannot run in this notebook's Python kernel."
+        : nodeType === SPATIAL_JOIN_TYPE
+          ? "A spatial join, configured on the canvas rather than in code."
+          : nodeType === NodeType.VIS_SIMPLE
+            ? "A Simple View node, which displays its input rather than computing anything."
+            : "This node is provided by a package and has no Python equivalent here.";
+  const fenced = content.trim()
+    ? `\n\n\`\`\`\n${content}\n\`\`\``
+    : "";
+  return [markdownCell(`${nodeHeading(node, inputNodes)}\n\n${why}${fenced}`)];
 }
 
 export function trillToNotebook(spec: TrillSpec): Notebook {
@@ -351,8 +455,7 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
     const inputNodes = (inputsOf.get(node.id) ?? [])
       .map((id) => nodeById.get(id))
       .filter((n): n is TrillNode => n !== undefined);
-    const cell = generateCell(node, inputNodes);
-    if (cell) cells.push(cell);
+    cells.push(...generateCells(node, inputNodes));
   }
 
   return {

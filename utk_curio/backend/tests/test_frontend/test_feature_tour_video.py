@@ -281,7 +281,9 @@ def _load_example(ctx: Ctx, path: str, *, expected_nodes: int) -> None:
     load.wait_for(state="visible", timeout=15000)
     tour.focus(load, hold=500)
     with page.expect_file_chooser() as chooser:
-        page.get_by_text("Load dataflow").click()
+        # See utils.upload_workflow: get_by_text matches the menu row and the
+        # button inside it, which is a strict-mode violation.
+        load.click()
     chooser.value.set_files(path)
     page.wait_for_function(
         "(n) => document.querySelectorAll('.react-flow__node').length >= n",
