@@ -63,6 +63,13 @@ def speed() -> float:
 
 _INSTALL_OVERLAY_JS = r"""() => {
     if (window.__curioTour && document.getElementById('curio-tour-root')) return 'ok';
+    // add_init_script runs at document-start, where document.body and even
+    // document.documentElement can still be null. Appending then throws an
+    // uncaught "Cannot read properties of null (reading 'appendChild')" on
+    // every navigation. Nothing was lost - Tour._js() re-evaluates this on the
+    // next call - but the recorder's own issue probe reported the noise as if
+    // the app had raised it. Defer instead.
+    if (!document.body && !document.documentElement) return 'deferred';
 
     const root = document.createElement('div');
     root.id = 'curio-tour-root';
