@@ -193,6 +193,11 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
+  // `loading` belongs to the mount-time bootstrap alone. It gates `children`
+  // below, so setting it here would unmount whatever form is awaiting this
+  // call: on a rejection a *fresh* form remounts with empty fields and no
+  // error, because the catch that set the error ran on the old instance. The
+  // forms track their own submitting state and disable their buttons.
   const signup = useCallback(
     async (data: {
       name: string;
@@ -200,40 +205,27 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
       password: string;
       email?: string;
     }) => {
-      setLoading(true);
-      try {
-        const res = await authApi.signup(data);
-        return handleAuth(res);
-      } finally {
-        setLoading(false);
-      }
+      const res = await authApi.signup(data);
+      return handleAuth(res);
     },
     [handleAuth]
   );
 
   const signin = useCallback(
     async (identifier: string, password: string) => {
-      setLoading(true);
-      try {
-        const res = await authApi.signin({ identifier, password });
-        return handleAuth(res);
-      } finally {
-        setLoading(false);
-      }
+      const res = await authApi.signin({ identifier, password });
+      return handleAuth(res);
     },
     [handleAuth]
   );
 
   const signinGuest = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await authApi.signinGuest();
       return handleAuth(res);
     } catch (e) {
       console.error(e);
       return null;
-    } finally {
-      setLoading(false);
     }
   }, [handleAuth]);
 
