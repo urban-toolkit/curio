@@ -1869,8 +1869,34 @@ class TestSessionExtending:
             assert "cells" in notebook, (
                 f"the export at {path} is not a notebook: keys={list(notebook)}"
             )
+            # Coverage, not merely shape. The first version of this step asserted
+            # only that a "cells" key existed, so a three-node dataflow that
+            # exported one cell passed it.
+            on_canvas = canvas_nodes(page)
+            body = json.dumps(notebook)
+            missing = [n["id"] for n in on_canvas if n["id"] not in body]
+            assert not missing, (
+                f"{len(missing)} of {len(on_canvas)} nodes never reached the "
+                f"notebook: {missing}"
+            )
+            # And every code cell must be runnable: a node body ends in `return`,
+            # which is a SyntaxError at a notebook's top level.
+            for index, cell in enumerate(notebook["cells"]):
+                if cell.get("cell_type") != "code":
+                    continue
+                source = cell["source"]
+                if isinstance(source, list):
+                    source = "".join(source)
+                stray = [
+                    line for line in source.splitlines()
+                    if line.startswith("return ") or line.strip() == "return"
+                ]
+                assert not stray, (
+                    f"cell {index} has a top-level return and cannot run: {stray}"
+                )
             s.note(
                 f"exported a notebook with {len(notebook['cells'])} cell(s) "
+                f"covering all {len(on_canvas)} node(s) "
                 f"to {os.path.basename(saved)}"
             )
 
