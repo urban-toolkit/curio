@@ -14,6 +14,7 @@ import { DatasetInstallingCard } from "./DatasetInstallingCard";
 import { DatasetDetailModal } from "./DatasetDetailModal";
 import { InstalledDatasetsList } from "./InstalledDatasetsList";
 import { TAB_LABEL } from "./datasetCatalogDrawerTypes";
+import { UNSAVED_DATAFLOW_NOTICE } from "../../../constants/catalogCopy";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
 import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
@@ -178,6 +179,14 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           </nav>
 
           <main className={shell.scrollBody}>
+            {/* This drawer has always auto-saved on add - `onInstall` opens with
+                `await ensureProjectId()` - it just never said so. Its two peers
+                did, in the same words. */}
+            {!projectId ? (
+              <div className={shell.noticeBanner} role="status">
+                <span className={shell.noticeBannerText}>{UNSAVED_DATAFLOW_NOTICE}</span>
+              </div>
+            ) : null}
             {catalog.error ? <div className={shell.error}>{catalog.error}</div> : null}
             {catalog.loading && items.length === 0 ? (
               <div className={styles.skeletonList} aria-busy="true" aria-label="Loading datasets">

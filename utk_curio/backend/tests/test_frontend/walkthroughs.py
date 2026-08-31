@@ -535,15 +535,30 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
     # never disabled - so this journey has to leave it. `/dataflow/new` is the
     # route a brand-new dataflow sits on until something persists it, and
     # `projectId` is null for exactly that long.
-    ctx.say("A brand-new dataflow", "Nothing has saved it yet.")
     page.goto(f"{ctx.frontend}/dataflow/new")
     page.wait_for_url("**/dataflow/new", timeout=20000)
     page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    # Narrate after the navigation, not before: captioning "a brand-new
+    # dataflow" over the previous one is a recording that argues with itself.
+    ctx.say("A brand-new dataflow", "Nothing has saved it yet.")
     assert page.url.rstrip("/").endswith("/dataflow/new"), (
         f"expected to be on an unsaved dataflow, but the URL is {page.url} - "
         f"something saved it and this journey would prove nothing"
     )
     ctx.beat(700)
+
+    # The save indicator states what is on disk, so it is most worth reading
+    # exactly here - where the answer is "nothing". It used to be absent on a
+    # never-saved dataflow, which is how this went unnoticed.
+    disk = page.locator("[data-curio-save-state]")
+    disk.wait_for(state="visible", timeout=15000)
+    assert disk.get_attribute("data-curio-save-state") == "unsaved", (
+        f"the save indicator reads "
+        f"{disk.get_attribute('data-curio-save-state')!r} on a dataflow that "
+        f"has never been saved"
+    )
+    ctx.focus(disk, hold=1100)
+    ctx.say("Nothing is on disk yet", "The save indicator is orange.")
 
     dialog = open_agent_drawer(ctx)
 
@@ -575,8 +590,15 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
         f"{page.url})"
     )
     ctx.capture("agent-added")
+
+    # And the indicator agrees: the add wrote the dataflow to disk.
+    page.wait_for_function(
+        "() => document.querySelector('[data-curio-save-state]')"
+        "?.getAttribute('data-curio-save-state') === 'saved'",
+        timeout=20000,
+    )
     ctx.say("Added, and the dataflow saved itself",
-            "The URL now carries a real dataflow id.")
+            "The URL carries a real id now, and the indicator has gone green.")
 
 
 @walkthrough(

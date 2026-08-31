@@ -25,6 +25,7 @@ import { DrawerTab, SortMode } from "./packageTypes";
 import { sortPackages, matchesSearch } from "./packageUtils";
 import { restartNotice } from "../../../services/packageRestartCopy";
 import shell from "./CatalogDrawerShell.module.css";
+import { UNSAVED_DATAFLOW_NOTICE } from "../../../constants/catalogCopy";
 import styles from "./NodeCatalogDrawer.module.css";
 import { modalStackDepth } from "../../ModalShell";
 
@@ -410,10 +411,8 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   };
 
   const unsavedBanner = !projectId ? (
-    <div className={shell.errorBanner} role="status">
-      <span className={shell.errorBannerText}>
-        This dataflow isn't saved yet; adding will save it first.
-      </span>
+    <div className={shell.noticeBanner} role="status">
+      <span className={shell.noticeBannerText}>{UNSAVED_DATAFLOW_NOTICE}</span>
     </div>
   ) : null;
 
