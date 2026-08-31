@@ -13,6 +13,7 @@
 #                        stack was started with, or the two e2e tests
 #                        calling the sandbox directly will get 401s)
 #   --headed            Open a visible browser window during E2E tests
+#   --videos            Also record the per-issue fix screencasts (slow)
 #   --workflows A,B     Run only the named workflow files (e.g. Vega.json,Regression.json)
 #   --backend-only      Run only backend unit tests
 #   --sandbox-only      Run only sandbox unit tests
@@ -25,6 +26,7 @@ set -uo pipefail
 
 USE_EXISTING=0
 HEADED=0
+VIDEOS=0
 E2E_WORKFLOWS=""
 ALLURE_DIR=""
 SUITE="all"   # all | backend | sandbox | jest | e2e | unit
@@ -33,6 +35,7 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --use-existing)  USE_EXISTING=1;       shift ;;
     --headed)        HEADED=1;             shift ;;
+    --videos)        VIDEOS=1;             shift ;;
     --workflows)     E2E_WORKFLOWS="$2";   shift 2 ;;
     --backend-only)  SUITE="backend";      shift ;;
     --sandbox-only)  SUITE="sandbox";      shift ;;
@@ -301,6 +304,7 @@ if [[ $RUN_E2E -eq 1 ]]; then
 
   PYTEST_ARGS="-v"
   [[ $HEADED -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --headed"
+  [[ $VIDEOS -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --videos"
   [[ -n "$ALLURE_DIR" ]] && PYTEST_ARGS="$PYTEST_ARGS --alluredir=$ALLURE_DIR"
 
   E2E_ENV="PYTHONUNBUFFERED=1 CURIO_E2E_USE_EXISTING=1 PYTHONPATH=$REPO_ROOT"
