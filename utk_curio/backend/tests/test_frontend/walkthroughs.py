@@ -112,6 +112,19 @@ class Ctx:
     backend: str
     narrator: Narrator
     recording: bool
+    #: Pins an intermediate state as its own screenshot baseline. Supplied by
+    #: the baseline suite; a no-op while recording, where the video already
+    #: carries the whole journey.
+    snapshot: Callable[[str], None] = lambda label: None
+
+    def capture(self, label: str) -> None:
+        """Pin the current screen as a baseline called *label*.
+
+        For a journey whose point is a sequence -- reverting through a version
+        history, stepping through a wizard -- the final frame is not the claim.
+        Each step is, so each step gets its own committed PNG.
+        """
+        self.snapshot(label)
 
     # Convenience passthroughs so a walkthrough reads as prose.
     def say(self, title: str, sub: str = "", hold: float | None = None) -> None:
@@ -195,6 +208,61 @@ def open_provenance(ctx: Ctx):
     page.wait_for_selector(".react-flow__node", timeout=20000)
     ctx.beat(900)
     return dialog
+
+
+# The provenance modal renders its own React Flow inside a portal on
+# document.body, so a bare `.react-flow__node` count would mix the version graph
+# in with the dataflow behind it. Everything below counts only what is OUTSIDE
+# the modal - i.e. the canvas the user is reverting.
+_CANVAS_COUNT_JS = """
+(sel) => Array.from(document.querySelectorAll(sel))
+    .filter((el) => !el.closest('[data-curio-modal-shell="true"]')).length
+"""
+
+_CANVAS_SETTLED_JS = """
+([sel, want]) => Array.from(document.querySelectorAll(sel))
+    .filter((el) => !el.closest('[data-curio-modal-shell="true"]')).length === want
+"""
+
+
+def canvas_graph(page) -> dict:
+    """``{nodes, edges}`` currently on the dataflow canvas."""
+    return {
+        "nodes": page.evaluate(_CANVAS_COUNT_JS, ".react-flow__node"),
+        "edges": page.evaluate(_CANVAS_COUNT_JS, ".react-flow__edge"),
+    }
+
+
+def await_canvas_nodes(page, want: int, *, timeout: float = 15000) -> None:
+    """Wait for the canvas to hold *want* nodes.
+
+    Reverting rebuilds the canvas through React state, so the count lands a tick
+    or two after the click. Swallowing the timeout is deliberate: the assertion
+    that follows reports the actual counts, which says far more than
+    ``TimeoutError`` would.
+    """
+    try:
+        page.wait_for_function(
+            _CANVAS_SETTLED_JS, arg=[".react-flow__node", want], timeout=timeout,
+        )
+    except Exception:
+        pass
+
+
+def version_graph(version) -> dict:
+    """``{nodes, edges}`` a version's thumbnail says it holds.
+
+    DataflowThumbnail draws a background rect, two rects per node, and one line
+    per edge whose endpoints it can resolve - so the drawing is a faithful
+    read-out of the snapshot, which is what makes it usable as the expectation
+    for what reverting to that version should put on the canvas.
+    """
+    marks = version.evaluate(
+        "el => { const svg = el.querySelector('svg');"
+        " return svg ? { lines: svg.querySelectorAll('line').length,"
+        " rects: svg.querySelectorAll('rect').length } : null; }"
+    ) or {"lines": 0, "rects": 0}
+    return {"nodes": max(0, (marks["rects"] - 1) // 2), "edges": marks["lines"]}
 
 
 WALKTHROUGHS: list[Walkthrough] = []
@@ -321,43 +389,83 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
 
 
 @walkthrough(
-    slug="provenance-version-switching",
+    slug="provenance-reverting-to-a-previous-version",
     refs=[195],
-    title="Switching between provenance versions",
-    premise="Select every version in turn and return to the canvas.",
+    title="Reverting a dataflow to an earlier version",
+    premise="Step back through the version graph and watch the canvas follow.",
     note="onConnect resolved its target with `nodes.find(...) as Node` and never "
-        "checked it. An edge with an endpoint that is not on the canvas is now "
-        "dropped instead of dereferenced.",
+         "checked it, so reverting to a version whose edges named nodes it does "
+         "not hold tore the canvas down. Such an edge is now dropped instead.",
     tests=["src/tests/providers/onConnectMissingEndpoint.test.tsx",
            "test_frontend/test_walkthrough_baselines.py"],
 )
-def provenance_version_switching(ctx: Ctx) -> None:
+def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
     page = ctx.page
     errors: list[str] = []
     page.on("pageerror", lambda e: errors.append(str(e)))
 
+    saved = canvas_graph(page)
+    ctx.say("The dataflow as saved",
+            f"{saved['nodes']} nodes, {saved['edges']} connections.")
+
     dialog = open_provenance(ctx)
     versions = dialog.locator(".react-flow__node")
     count = versions.count()
-    assert count > 0, "the provenance graph rendered no versions to click"
+    assert count > 1, f"the provenance graph offers {count} versions to revert to"
 
-    ctx.say("Select each version in turn", f"{count} of them.")
-    for index in range(count):
-        ctx.click(versions.nth(index), hold=420)
+    # Newest-first, skipping the one already on the canvas, so the dataflow
+    # visibly unwinds. Four is the floor: a single hop would not show that the
+    # history is walkable, only that one click works.
+    targets = list(range(count - 2, -1, -1))
+    assert len(targets) >= 4, (
+        f"only {len(targets)} earlier versions available; this walkthrough steps "
+        f"back through at least four"
+    )
 
-    assert not errors, (
-        f"selecting a version threw, and with no error boundary in the app React "
-        f"tears down the whole canvas: {errors[0].splitlines()[0] if errors else ''}"
+    ctx.say("Revert by clicking a version",
+            "The canvas becomes exactly what that version holds.")
+
+    for index in targets:
+        version = versions.nth(index)
+        expected = version_graph(version)
+        ctx.click(version, hold=520)
+        await_canvas_nodes(page, expected["nodes"])
+        actual = canvas_graph(page)
+
+        assert not errors, (
+            f"reverting to version {index + 1} threw, and with no error boundary "
+            f"in the app React tears down the whole canvas: "
+            f"{errors[0].splitlines()[0]}"
+        )
+        assert actual == expected, (
+            f"reverting to version {index + 1} of {count} left {actual['nodes']} "
+            f"nodes and {actual['edges']} connections on the canvas, but that "
+            f"version holds {expected['nodes']} and {expected['edges']}"
+        )
+        ctx.capture(f"reverted-to-v{index + 1:02d}")
+
+    ctx.say(f"Stepped back through {len(targets)} versions",
+            "Each one put its own graph on the canvas.")
+
+    # Forward to the newest, so the canvas ends where it started.
+    ctx.click(versions.nth(count - 1), hold=520)
+    await_canvas_nodes(page, saved["nodes"])
+    restored = canvas_graph(page)
+    assert restored == saved, (
+        f"returning to the newest version left {restored} on the canvas, not the "
+        f"saved dataflow's {saved}"
     )
     assert page.locator("#webpack-dev-server-client-overlay").count() == 0, (
         "the dev-server error overlay has taken the whole screen"
     )
 
+    ctx.capture("returned-to-newest")
+
     ctx.click(page.get_by_role("button", name="Close").last)
     page.wait_for_selector(".react-flow__node", timeout=20000)
     ctx.beat(800)
-    ctx.say("The canvas survived",
-            "Every version selected, no runtime error, dataflow still there.")
+    ctx.say("And forward again",
+            "Back to the saved dataflow, with no runtime error anywhere in the walk.")
 
 
 def _viewport_transform(page) -> str:

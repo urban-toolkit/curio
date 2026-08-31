@@ -52,12 +52,25 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
 
+    def snapshot(label: str) -> None:
+        """One committed PNG per pinned step of the journey."""
+        dismiss_toasts(page)
+        save_workflow_test_screenshot(
+            page,
+            walk.stem,
+            test_name=label,
+            clip_selector=walk.clip_selector,
+            fit_reactflow=walk.fit_reactflow,
+            max_diff_ratio=walk.max_diff_ratio,
+        )
+
     ctx = Ctx(
         page=page,
         frontend=app_frontend.base_url,
         backend=current_server,
         narrator=SilentNarrator(page),
         recording=False,
+        snapshot=snapshot,
     )
     walk.run(ctx)
 
