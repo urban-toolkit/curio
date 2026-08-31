@@ -265,17 +265,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setNodes(() => []);
         }
 
+        // Provenance is recorded below, from these local arrays, NOT by addNode /
+        // onConnect. Those two snapshot `reactFlow.getNodes()`, and React Flow only
+        // syncs `useNodesState` into its zustand store from a useEffect - so inside
+        // this synchronous loop the store still holds the graph as it was before the
+        // load. Every version came out with one node and no edges, which is why a
+        // loaded dataflow's provenance thumbnails were blank and its versions carried
+        // edges whose endpoints were absent (#186, and the crash in #195).
+        const priorNodes: Node[] = merge ? reactFlow.getNodes() : [];
+        const priorEdges: Edge[] = merge ? reactFlow.getEdges() : [];
+        const addedNodes: Node[] = [];
+
         if (merge) {
             // Use reactFlow to get fresh state (avoid stale closure)
-            const currentNodeIds = new Set(reactFlow.getNodes().map((n: Node) => n.id));
+            const currentNodeIds = new Set(priorNodes.map((n: Node) => n.id));
             for (const node of loaded_nodes) {
                 if (!currentNodeIds.has(node.id)) {
-                    addNode(node, workflowName, provenance);
+                    addNode(node, workflowName, false);
+                    addedNodes.push(node);
                 }
             }
         } else {
             for (const node of loaded_nodes) {
-                addNode(node, workflowName, provenance);
+                addNode(node, workflowName, false);
+                addedNodes.push(node);
             }
         }
 
@@ -286,6 +299,41 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // Use reactFlow to get fresh edge ids (avoid stale closure)
         const currentEdgeIds = new Set(reactFlow.getEdges().map((e: Edge) => e.id));
 
+        const addedEdges: any[] = merge
+            ? loaded_edges.filter((e: Edge) => !currentEdgeIds.has(e.id))
+            : [...loaded_edges];
+
+        /** One provenance version per loaded node, then one per loaded edge.
+         *
+         * Built from the arrays this function was handed rather than from the
+         * React Flow store, so each version holds the graph as it stood at that
+         * step: cumulative nodes, then the full node set with cumulative edges.
+         * The invariant that matters is that every version's edges have both
+         * endpoints among its own nodes - `onConnect` dereferences the resolved
+         * target, so a version that breaks it crashes the canvas when a user
+         * clicks it in the provenance graph (#195).
+         */
+        const recordLoadProvenance = () => {
+            const acc: Node[] = [...priorNodes];
+            for (const node of addedNodes) {
+                acc.push(node);
+                TrillGenerator.addNewVersionProvenance(
+                    [...acc], [...priorEdges], workflowName, task || "", "Node added",
+                );
+            }
+            // An edge whose endpoints are not both in `acc` would recreate the very
+            // shape #195 crashes on, so it never enters a version.
+            const present = new Set(acc.map((n: Node) => n.id));
+            const accEdges: any[] = [...priorEdges];
+            for (const edge of addedEdges) {
+                if (!present.has(edge.source) || !present.has(edge.target)) continue;
+                accEdges.push(edge);
+                TrillGenerator.addNewVersionProvenance(
+                    acc, [...accEdges], workflowName, task || "", "Connection added",
+                );
+            }
+        };
+
         console.log("loadParsedTrill second");
         setNodes((prevNodes: any) => {
             // skipValidation=true: these edges come from a saved/imported trill and
@@ -294,7 +342,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             if (merge) {
                 for (const edge of loaded_edges) {
                     if (!currentEdgeIds.has(edge.id)) {
-                        onConnect(edge, prevNodes, undefined, workflowName, provenance, true);
+                        onConnect(edge, prevNodes, undefined, workflowName, false, true);
                     }
                 }
             } else {
@@ -303,7 +351,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 // of this load (in_N occupancy) instead of an empty list.
                 const connectedSoFar: any[] = [];
                 for (const edge of loaded_edges) {
-                    onConnect(edge, prevNodes, connectedSoFar, workflowName, provenance, true);
+                    onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true);
                     connectedSoFar.push(edge);
                 }
             }
@@ -324,6 +372,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setFitViewOnLoad(true);
             return prevNodes;
         });
+
+        // After the updater, not inside it: a state updater must stay pure, and
+        // `addedEdges` never depended on `prevNodes` anyway.
+        if (provenance) {
+            recordLoadProvenance();
+        }
     }
 
     const updateDefaultCode = useCallback((nodeId: string, content: string) => {
