@@ -58,6 +58,13 @@ export function AgentCatalogBrowseCard({
       className={[
         styles.card,
         selected ? styles.cardActive : "",
+        // Both, deliberately. The coloured border comes from the compound
+        // `.cardActive.card_<key>` in THIS module, and CSS modules hash each
+        // class per file - so the shared `cardActive` above cannot satisfy it.
+        // Without the local one the compound never matched and a selected agent
+        // card kept `border: 1.5px solid transparent` (#188). PackageBrowseCard
+        // applies both for the same reason.
+        selected ? cardStyles.cardActive : "",
         cardStyles[`card_${categoryKey}`] ?? "",
       ]
         .filter(Boolean)

@@ -19,6 +19,12 @@
 .strip_evaluate { background: var(--curio-category-agent-evaluate-fg); }
 .strip_package  { background: var(--curio-category-agent-package-fg); }
 
+/* Declared here so `.cardActive.card_<key>` below is a valid compound selector
+   within this module. The shared `.cardActive` in
+   ../catalog/CatalogBrowseLayout.module.css sets the same raised shadow; both
+   classes are applied together and agree, because both read the one token. */
+.cardActive { box-shadow: var(--curio-shadow-browse-card-raised); }
+
 .cardActive.card_node     { border-color: var(--curio-category-agent-node-fg); }
 .cardActive.card_canvas   { border-color: var(--curio-category-agent-canvas-fg); }
 .cardActive.card_data     { border-color: var(--curio-category-agent-data-fg); }
