@@ -159,6 +159,80 @@ describe("AgentCatalogDrawer", () => {
     expect(api.installToProject).not.toHaveBeenCalled();
   });
 
+  it("shows the agent as added straight after the auto-save", async () => {
+    // The refresh that follows an install must be scoped to the dataflow, or
+    // `installedInProject` comes back false for everything and the agent you
+    // just added still offers "Add to dataflow". The prop cannot carry the new
+    // id yet - the save is what created it - so the id has to be threaded
+    // through from the action itself.
+    api.catalog.mockImplementation((projectId?: string) =>
+      Promise.resolve({
+        agents: [card("agent.node-explainer", { installedInProject: Boolean(projectId) })],
+      }) as any,
+    );
+    render(
+      <AgentCatalogDrawer
+        presented
+        projectId={null}
+        onEnsureProject={jest.fn().mockResolvedValue("created-1")}
+        pinned={false}
+        onPinToggle={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument(),
+    );
+    expect(api.catalog).toHaveBeenLastCalledWith("created-1");
+  });
+
+  it("never publishes an unscoped listing over a scoped one", async () => {
+    // The race this closes: a listing requested before the dataflow existed can
+    // answer AFTER the one that knows about it. It cannot know
+    // `installedInProject`, so publishing it silently un-marks every installed
+    // agent - the same wrong screen as the bug above, by a slower route.
+    let releaseUnscoped: (value: unknown) => void = () => {};
+    const unscoped = new Promise((resolve) => {
+      releaseUnscoped = resolve;
+    });
+    api.catalog.mockImplementation(((projectId?: string) => {
+      const agents = [card("agent.node-explainer", { installedInProject: Boolean(projectId) })];
+      // The unscoped call is held open until the scoped one has landed.
+      return projectId ? Promise.resolve({ agents }) : unscoped.then(() => ({ agents }));
+    }) as any);
+
+    render(
+      <AgentCatalogDrawer
+        presented
+        projectId={null}
+        onEnsureProject={jest.fn().mockResolvedValue("created-1")}
+        pinned={false}
+        onPinToggle={jest.fn()}
+      />,
+    );
+    // Let the held listing answer once, so there is a card to click.
+    await act(async () => {
+      releaseUnscoped(null);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument(),
+    );
+
+    // Any further unscoped answer must be dropped, not rendered.
+    await act(async () => {
+      releaseUnscoped(null);
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add to dataflow" })).toBeNull();
+  });
+
   it("uses the open dataflow directly when there is one", async () => {
     const onEnsureProject = jest.fn();
     render(

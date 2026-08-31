@@ -63,24 +63,43 @@ export function useAgentCatalogDrawer(
     installed: 0,
   });
 
+  /** The dataflow this drawer just created, before the prop catches up.
+   *
+   * `projectId` arrives from FlowProvider, so on the render where an install
+   * creates the dataflow it is still null. Refetching against null asks for an
+   * unscoped listing, every card comes back `installedInProject: false`, and the
+   * agent that was just added still offers "Add to dataflow". Reading the id
+   * through this ref closes that window; the prop takes over on the next render.
+   */
+  const createdProjectIdRef = useRef<string | null>(null);
+  const activeProjectId = () => projectId ?? createdProjectIdRef.current;
+
   // A project switch invalidates every scope's cache (installed state is
   // per-project; My imports marks installs against the open project too).
   useEffect(() => {
+    if (projectId) createdProjectIdRef.current = null;
     setCardsByScope({});
   }, [projectId]);
 
   const fetchScope = useCallback(
-    async (s: AgentScope) => {
+    async (s: AgentScope, idOverride?: string) => {
       const seq = ++seqRef.current[s];
+      const id = idOverride ?? activeProjectId();
       let resp: { agents: AgentCard[] };
       if (s === "browse") {
-        resp = await agentsApi.catalog(projectId ?? undefined);
+        resp = await agentsApi.catalog(id ?? undefined);
       } else if (s === "imports") {
-        resp = await agentsApi.listImports(projectId ?? undefined);
+        resp = await agentsApi.listImports(id ?? undefined);
       } else {
-        resp = projectId ? await agentsApi.listProjectAgents(projectId) : { agents: [] };
+        resp = id ? await agentsApi.listProjectAgents(id) : { agents: [] };
       }
       if (seqRef.current[s] !== seq) return; // out-of-order response — dropped
+      // An unscoped listing cannot know `installedInProject`, so publishing one
+      // over a scoped listing silently un-marks every installed agent. That is
+      // what left a just-added agent still offering "Add to dataflow" after the
+      // drawer auto-saved the dataflow: the save re-rendered mid-flight and a
+      // fetch that started before the id existed landed last.
+      if (!id && activeProjectId()) return;
       setCardsByScope((prev) => ({ ...prev, [s]: resp.agents }));
     },
     [projectId],
@@ -102,9 +121,11 @@ export function useAgentCatalogDrawer(
     [fetchScope],
   );
 
-  const refreshAll = useCallback(async () => {
+  const refreshAll = useCallback(async (idOverride?: string) => {
     setError(null);
-    const results = await Promise.allSettled(ALL_SCOPES.map((s) => fetchScope(s)));
+    const results = await Promise.allSettled(
+      ALL_SCOPES.map((s) => fetchScope(s, idOverride)),
+    );
     const failed = results.find(
       (r): r is PromiseRejectedResult => r.status === "rejected",
     );
@@ -123,9 +144,15 @@ export function useAgentCatalogDrawer(
       setBusyCoord(coord);
       setError(null);
       try {
-        await fn();
+        // A per-project action answers with the id of the dataflow it acted on,
+        // which may be one it had to create - the prop will not carry it until
+        // the next render, and the refresh below cannot wait for that. The
+        // account-scope actions answer with their own payloads; only a string
+        // is a dataflow id.
+        const result = await fn();
+        const actedOn = typeof result === "string" ? result : undefined;
         notifyAgentCatalogRefresh(); // keep the AGENTS palette in sync
-        await refreshAll(); // every tab agrees immediately (dev/47)
+        await refreshAll(actedOn); // every tab agrees immediately (dev/47)
       } catch (e) {
         setError(e instanceof Error ? e.message : "Action failed");
       } finally {
@@ -142,9 +169,11 @@ export function useAgentCatalogDrawer(
    * for an add that never happened.
    */
   const resolveProjectId = useCallback(async (): Promise<string> => {
-    if (projectId) return projectId;
+    const known = activeProjectId();
+    if (known) return known;
     const created = onEnsureProject ? await onEnsureProject() : null;
     if (!created) throw new Error("Couldn't save this dataflow, so nothing was added to it.");
+    createdProjectIdRef.current = created;
     return created;
   }, [projectId, onEnsureProject]);
 
@@ -172,11 +201,13 @@ export function useAgentCatalogDrawer(
       run(coord, async () => {
         const id = await resolveProjectId();
         await agentsApi.installToProject(id, coord);
+        return id;
       }),
     uninstall: (coord) =>
       run(coord, async () => {
         const id = await resolveProjectId();
         await agentsApi.uninstallFromProject(id, coord);
+        return id;
       }),
     publish: (coord) => run(coord, () => agentsApi.publish(coord)),
     unpublish: (coord) => run(coord, () => agentsApi.unpublish(coord)),

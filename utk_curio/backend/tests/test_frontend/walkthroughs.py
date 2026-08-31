@@ -474,3 +474,162 @@ def _viewport_transform(page) -> str:
         "'[data-curio-modal-shell=\"true\"] .react-flow__viewport');"
         " return el ? getComputedStyle(el).transform : ''; }"
     )
+
+
+# ---------------------------------------------------------------------------
+# Agent Catalog
+# ---------------------------------------------------------------------------
+
+AGENT_DRAWER_ROOT = '[data-curio-agent-catalog-drawer="true"]'
+
+
+def open_agent_drawer(ctx: Ctx):
+    """Data menu -> Agent Catalog, returning the drawer dialog."""
+    page = ctx.page
+    ctx.click(top_menu(page, "Data"), force=True)
+    # "Agent Catalog" also labels the left-rail palette trigger, whose
+    # accessible name carries a count; exact=True picks the menu row.
+    ctx.click(page.get_by_role("button", name="Agent Catalog", exact=True))
+    page.locator(AGENT_DRAWER_ROOT).wait_for(state="attached", timeout=15000)
+    dialog = page.get_by_role("dialog").filter(
+        has=page.get_by_role("heading", name="Agent Catalog", exact=True)
+    )
+    dialog.wait_for(state="visible", timeout=15000)
+    ctx.beat(600)
+    return dialog
+
+
+def fits_on_one_line(button) -> dict:
+    """Whether a button's label stays inside its box.
+
+    ``scrollHeight`` beyond ``clientHeight`` is the wrap; ``scrollWidth`` beyond
+    ``clientWidth`` is the ellipsis. Reported together so a failure says which.
+    """
+    return button.evaluate(
+        "el => ({ text: el.textContent.trim(),"
+        " clientH: el.clientHeight, scrollH: el.scrollHeight,"
+        " clientW: el.clientWidth, scrollW: el.scrollWidth,"
+        " fontSize: getComputedStyle(el).fontSize })"
+    )
+
+
+@walkthrough(
+    slug="agent-catalog-adding-to-an-unsaved-dataflow",
+    refs=[190, 199],
+    title="Adding an agent to a dataflow you have not saved",
+    premise="Open the Agent Catalog on a fresh dataflow and add an agent to it.",
+    note="The Add button was disabled whenever `projectId` was null, which is "
+         "the ordinary state of a dataflow you just made. It now resolves the "
+         "dataflow at click time through the shared `ensureProjectId`, the way "
+         "the Data and Node catalogs already did.",
+    tests=["src/tests/catalog/AgentCatalogDrawer.test.tsx",
+           "test_frontend/test_walkthrough_baselines.py"],
+    clip_selector=AGENT_DRAWER_ROOT,
+    fit_reactflow=False,
+    max_diff_ratio=0.03,
+)
+def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
+    page = ctx.page
+
+    # The harness seeds a SAVED project, and on one of those the button was
+    # never disabled - so this journey has to leave it. `/dataflow/new` is the
+    # route a brand-new dataflow sits on until something persists it, and
+    # `projectId` is null for exactly that long.
+    ctx.say("A brand-new dataflow", "Nothing has saved it yet.")
+    page.goto(f"{ctx.frontend}/dataflow/new")
+    page.wait_for_url("**/dataflow/new", timeout=20000)
+    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    assert page.url.rstrip("/").endswith("/dataflow/new"), (
+        f"expected to be on an unsaved dataflow, but the URL is {page.url} - "
+        f"something saved it and this journey would prove nothing"
+    )
+    ctx.beat(700)
+
+    dialog = open_agent_drawer(ctx)
+
+    ctx.say("The Agent Catalog", "Open on a dataflow that has never been saved.")
+    banner = dialog.get_by_text("isn't saved yet", exact=False).first
+    assert banner.count(), (
+        "the drawer does not say that adding will save the dataflow first - a "
+        "user meeting a gate here has nothing to go on"
+    )
+
+    add = dialog.get_by_role("button", name="Add to dataflow").first
+    add.wait_for(state="visible", timeout=15000)
+    assert add.is_enabled(), (
+        "Add to dataflow is disabled on an unsaved dataflow - the drawer is "
+        "still gating on a project id instead of creating one on the click"
+    )
+    ctx.capture("add-enabled")
+
+    ctx.say("Add it", "The dataflow is saved first, then the agent goes in.")
+    ctx.click(add)
+
+    installed = dialog.get_by_role("button", name="Remove from dataflow").first
+    installed.wait_for(state="visible", timeout=30000)
+
+    # The save really happened: the route carries a project id now.
+    page.wait_for_url(lambda url: "/dataflow/new" not in url, timeout=20000)
+    assert "/dataflow/new" not in page.url, (
+        f"the agent was added but the dataflow was never saved (still at "
+        f"{page.url})"
+    )
+    ctx.capture("agent-added")
+    ctx.say("Added, and the dataflow saved itself",
+            "The URL now carries a real dataflow id.")
+
+
+@walkthrough(
+    slug="agent-catalog-action-labels-fit",
+    refs=[191],
+    title="Agent card buttons fit their column",
+    premise="Read the actions on an imported agent's card.",
+    note="The action column is pinned at 140px so the card body cannot "
+         "collapse, and the shared secondary button is a fixed 30px single "
+         "line - so \"Remove from my account\" wrapped to two lines inside it "
+         "and spilled out. The label's type size comes down instead.",
+    tests=["src/tests/styles/agentDrawerButtonGeometry.test.ts",
+           "test_frontend/test_walkthrough_baselines.py"],
+    clip_selector=AGENT_DRAWER_ROOT,
+    fit_reactflow=False,
+    max_diff_ratio=0.02,
+)
+def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
+    dialog = open_agent_drawer(ctx)
+
+    # "Remove from my account" only exists on a card in My imports, and a fresh
+    # account has none - so import one first, through the UI rather than the API.
+    ctx.say("Import an agent", "My imports is where the longest label lives.")
+    import_button = dialog.get_by_role("button", name="Import", exact=True).first
+    import_button.wait_for(state="visible", timeout=20000)
+    ctx.click(import_button)
+
+    ctx.click(dialog.get_by_role("button", name="My imports"))
+    remove = dialog.get_by_role("button", name="Remove from my account").first
+    remove.wait_for(state="visible", timeout=20000)
+    ctx.focus(remove, hold=1200)
+
+    box = fits_on_one_line(remove)
+    assert box["scrollH"] <= box["clientH"] + 1, (
+        f"\"{box['text']}\" wraps inside its button at {box['fontSize']}: "
+        f"content is {box['scrollH']}px tall in a {box['clientH']}px box, so it "
+        f"spills past the border"
+    )
+    assert box["scrollW"] <= box["clientW"] + 1, (
+        f"\"{box['text']}\" is clipped at {box['fontSize']}: content is "
+        f"{box['scrollW']}px wide in a {box['clientW']}px box"
+    )
+
+    # Every button in the column, not just the reported one.
+    for name in ("Remove from my account", "Add to dataflow"):
+        button = dialog.get_by_role("button", name=name).first
+        if not button.count():
+            continue
+        metrics = fits_on_one_line(button)
+        assert metrics["scrollH"] <= metrics["clientH"] + 1, (
+            f"\"{metrics['text']}\" overflows its button: {metrics}"
+        )
+
+    ctx.capture("labels-fit")
+    ctx.say("Every label inside its button",
+            "The row height is unchanged; the type came down instead.")
