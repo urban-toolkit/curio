@@ -43,6 +43,12 @@ export interface AgentCatalogDrawerState {
 export function useAgentCatalogDrawer(
   presented: boolean,
   projectId: string | null,
+  /** Creates and saves the dataflow when it has never been persisted, and
+   *  answers with its id. ``FlowProvider.ensureProjectId``; the Data catalog
+   *  drawer takes the same dependency, and the Node catalog does the save by
+   *  hand. Optional so a caller with a project already open (and every existing
+   *  test) needs no change. */
+  onEnsureProject?: () => Promise<string | null>,
 ): AgentCatalogDrawerState {
   const [scope, setScope] = useState<AgentScope>("browse");
   const [cardsByScope, setCardsByScope] = useState<
@@ -129,6 +135,19 @@ export function useAgentCatalogDrawer(
     [refreshAll],
   );
 
+  /** The dataflow to act on, creating it if this one has never been saved.
+   *
+   * Throws rather than returning null so `run`'s catch surfaces it in the
+   * drawer's banner - the previous `Promise.resolve()` no-op reported success
+   * for an add that never happened.
+   */
+  const resolveProjectId = useCallback(async (): Promise<string> => {
+    if (projectId) return projectId;
+    const created = onEnsureProject ? await onEnsureProject() : null;
+    if (!created) throw new Error("Couldn't save this dataflow, so nothing was added to it.");
+    return created;
+  }, [projectId, onEnsureProject]);
+
   const cards = cardsByScope[scope] ?? [];
   // First-ever fetch for this scope only — cached tabs render instantly.
   const loading = cardsByScope[scope] === undefined && fetching;
@@ -143,10 +162,22 @@ export function useAgentCatalogDrawer(
     reload: refreshAll,
     importAgent: (coord) => run(coord, () => agentsApi.import(coord)),
     removeImport: (coord) => run(coord, () => agentsApi.removeImport(coord)),
+    // Resolve the dataflow at click time rather than gating on one that already
+    // exists. A never-saved dataflow is `projectId === null`, which used to
+    // leave the Add button permanently disabled (#190, #199) - and, if it had
+    // been clicked, silently resolve without adding anything. Both peers create
+    // the project on the click instead; this is that, through the shared
+    // `ensureProjectId`.
     install: (coord) =>
-      run(coord, () => (projectId ? agentsApi.installToProject(projectId, coord) : Promise.resolve())),
+      run(coord, async () => {
+        const id = await resolveProjectId();
+        await agentsApi.installToProject(id, coord);
+      }),
     uninstall: (coord) =>
-      run(coord, () => (projectId ? agentsApi.uninstallFromProject(projectId, coord) : Promise.resolve())),
+      run(coord, async () => {
+        const id = await resolveProjectId();
+        await agentsApi.uninstallFromProject(id, coord);
+      }),
     publish: (coord) => run(coord, () => agentsApi.publish(coord)),
     unpublish: (coord) => run(coord, () => agentsApi.unpublish(coord)),
   };

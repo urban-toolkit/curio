@@ -1,0 +1,76 @@
+/* "View details" for an agent. Geometry mirrors the dataset detail modal so the
+   two read as one family; colours come from ../../../styles/curioTokens.css. */
+
+.header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 24px 28px 16px;
+    border-bottom: 1px solid var(--curio-border);
+}
+
+.title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--curio-text-primary);
+}
+
+.subtitle {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: var(--curio-text-secondary);
+}
+
+.body {
+    padding: 20px 28px 28px;
+    overflow-y: auto;
+}
+
+.purpose {
+    margin: 0 0 20px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--curio-text-primary);
+}
+
+.section {
+    margin-bottom: 20px;
+}
+
+.sectionLabel {
+    margin: 0 0 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+    color: var(--curio-text-muted);
+}
+
+.infoGrid {
+    display: grid;
+    grid-template-columns: minmax(120px, max-content) 1fr;
+    gap: 6px 20px;
+    margin: 0;
+    font-size: 13px;
+}
+
+.infoLabel {
+    margin: 0;
+    color: var(--curio-text-secondary);
+}
+
+.infoValue {
+    margin: 0;
+    color: var(--curio-text-primary);
+    /* Identifiers and version strings have no spaces to break at. */
+    overflow-wrap: anywhere;
+}
+
+.list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--curio-text-primary);
+}

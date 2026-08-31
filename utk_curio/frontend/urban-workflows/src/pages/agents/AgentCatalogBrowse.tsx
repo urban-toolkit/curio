@@ -21,9 +21,15 @@ import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { AgentCatalogBrowseCard } from "./AgentCatalogBrowseCard";
 import { AgentCatalogBrowseDrawer } from "./AgentCatalogBrowseDrawer";
 import { useAgentCatalogBrowse } from "./useAgentCatalogBrowse";
+import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
 
 export const AgentCatalogBrowse: React.FC = () => {
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
+  // Separate from `selectedCoord`, which drives the side drawer. Wiring both to
+  // one setter is what made "View details" a no-op: on arrival the drawer is
+  // already open on the first card, so the click had nothing left to change
+  // (#189). The Data Catalog keeps the same two surfaces apart.
+  const [detailCoord, setDetailCoord] = useState<string | null>(null);
   const {
     search,
     setSearch,
@@ -37,6 +43,7 @@ export const AgentCatalogBrowse: React.FC = () => {
     busyCoord,
     actionError,
     dismissActionError,
+    agents,
     filtered,
     categories,
     allCount,
@@ -49,6 +56,11 @@ export const AgentCatalogBrowse: React.FC = () => {
     onRemoveImport,
     onPublish,
   } = useAgentCatalogBrowse();
+
+  // From the unfiltered roster on purpose - the modal outlives a filter change.
+  const detailAgent = detailCoord
+    ? (agents.find((a) => a.dirName === detailCoord) ?? null)
+    : null;
 
   return (
     <div
@@ -192,7 +204,7 @@ export const AgentCatalogBrowse: React.FC = () => {
                 busy={busyCoord === agent.dirName}
                 catalogPublishAllowed
                 onSelect={() => setSelectedCoord(agent.dirName)}
-                onViewDetails={() => setSelectedCoord(agent.dirName)}
+                onViewDetails={() => setDetailCoord(agent.dirName)}
                 onPublish={(a) => void onPublish(a)}
               />
             ))}
@@ -210,6 +222,10 @@ export const AgentCatalogBrowse: React.FC = () => {
         onClose={() => setSelectedCoord(null)}
         onLayoutChange={setDrawerSlotOpen}
       />
+
+      {detailAgent ? (
+        <AgentDetailModal agent={detailAgent} onClose={() => setDetailCoord(null)} />
+      ) : null}
     </div>
   );
 };

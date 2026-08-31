@@ -95,10 +95,88 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
-  it("Add to dataflow disabled without a project", async () => {
+  // ── issue 199 / 190: a never-saved dataflow ────────────────────────────────
+  //
+  // This used to assert the opposite - that Add is DISABLED without a project -
+  // which is the bug both issues report. A dataflow that has not been saved is
+  // `projectId === null`, and that is the ordinary state of one you just
+  // created, so the drawer was unusable until you happened to save. Both peer
+  // catalogs create the dataflow on the click instead: the Data drawer awaits
+  // `ensureProjectId`, the Node drawer saves by hand. This one now does the
+  // same, through the shared helper.
+
+  it("Add to dataflow stays enabled on a dataflow that was never saved", async () => {
     render(<AgentCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeEnabled();
+  });
+
+  it("says the add will save the dataflow first", async () => {
+    render(<AgentCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    // The Node catalog's disclosure, verbatim - a disabled button with no
+    // explanation was the thing being reported.
+    expect(screen.getByText(/isn't saved yet; adding will save it first/i)).toBeInTheDocument();
+  });
+
+  it("saves the dataflow, then installs into the id that comes back", async () => {
+    const onEnsureProject = jest.fn().mockResolvedValue("created-1");
+    render(
+      <AgentCatalogDrawer
+        presented
+        projectId={null}
+        onEnsureProject={onEnsureProject}
+        pinned={false}
+        onPinToggle={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+
+    await waitFor(() => expect(onEnsureProject).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(api.installToProject).toHaveBeenCalledWith("created-1", "agent.node-explainer@1.0.0"),
+    );
+  });
+
+  it("reports a failed save instead of silently adding nothing", async () => {
+    // The old code answered `Promise.resolve()` when there was no project, so
+    // `run` reported success for an add that never happened.
+    const onEnsureProject = jest.fn().mockResolvedValue(null);
+    render(
+      <AgentCatalogDrawer
+        presented
+        projectId={null}
+        onEnsureProject={onEnsureProject}
+        pinned={false}
+        onPinToggle={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/nothing was added/i));
+    expect(api.installToProject).not.toHaveBeenCalled();
+  });
+
+  it("uses the open dataflow directly when there is one", async () => {
+    const onEnsureProject = jest.fn();
+    render(
+      <AgentCatalogDrawer
+        presented
+        projectId="p1"
+        onEnsureProject={onEnsureProject}
+        pinned={false}
+        onPinToggle={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+
+    await waitFor(() =>
+      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
+    );
+    expect(onEnsureProject).not.toHaveBeenCalled();
   });
 
   it("shows Publish only for a publishable My imports card and publishes on click", async () => {

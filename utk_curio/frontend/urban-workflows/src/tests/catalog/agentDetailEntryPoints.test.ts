@@ -2,21 +2,24 @@ import fs from "fs";
 import path from "path";
 
 /**
- * One way into an agent's details, from one page.
+ * The two ways into an agent's details, and the one that is forbidden.
  *
- * The Data Catalog learned this the hard way: it once offered two routes to the
- * same screen, a card's "View details ↗" that navigated and a drawer button
- * that opened a modal, so one screen had two names, two containers and an arrow
- * promising a navigation the other path did not make.
+ * The Data Catalog learned this the hard way: it once offered a card's
+ * "View details ↗" that NAVIGATED alongside a drawer button that opened a
+ * modal, so one screen had two names, two containers, and an arrow promising a
+ * navigation the other path did not make. The conclusion was not "one entry
+ * point" - it was "one screen per surface, and no navigation".
  *
- * `/catalog/agents` is built to that conclusion rather than rediscovering it -
- * the card and the drawer share one selection, the page never navigates, and
- * the label is the same word the other two catalogs use. Asserted here so a
- * later "quick link to a detail page" cannot quietly reintroduce the split.
+ * `/catalog/agents` reads that way now: the card click drives the side drawer,
+ * "View details" opens a modal, and neither leaves the page. Routing both to
+ * the SAME setter (which this file used to assert) made the button a no-op -
+ * the drawer is already open on the first card when the page loads, so there
+ * was nothing left for it to change, and below 1100px the drawer column is
+ * `display: none` and the click did nothing on any card at all (issue 189).
  *
- * Read from disk rather than rendered: these are claims about what the page
- * does *not* do, and a component test can only show what a rendered tree does.
- * Same approach as datasetDetailEntryPoints.test.ts.
+ * Read from disk rather than rendered: the load-bearing claims are about what
+ * the page does *not* do, and a component test can only show what a rendered
+ * tree does. Same approach as datasetDetailEntryPoints.test.ts.
  */
 
 const SRC = path.resolve(__dirname, "../..");
@@ -39,13 +42,23 @@ describe("agent detail entry points", () => {
     expect(browse).not.toContain("/catalog/agents/");
   });
 
-  it("routes the card and its View details to one selection", () => {
-    // Both set the selected coordinate; neither opens a second surface. If a
-    // detail route is ever added, it should stay a deep link the UI does not
-    // walk you into - the way /catalog/data/:datasetId does.
+  it("routes the card and its View details to two different surfaces", () => {
+    // The card click drives the side drawer; View details opens the modal. They
+    // must not share a setter: the drawer is already open on the first card
+    // when the page loads, so a View details wired to `setSelectedCoord` has
+    // nothing to change and reads as a dead control.
     const browse = read(BROWSE);
     expect(browse).toContain("onSelect={() => setSelectedCoord(agent.dirName)}");
-    expect(browse).toContain("onViewDetails={() => setSelectedCoord(agent.dirName)}");
+    expect(browse).toContain("onViewDetails={() => setDetailCoord(agent.dirName)}");
+    expect(browse).not.toContain("onViewDetails={() => setSelectedCoord(agent.dirName)}");
+  });
+
+  it("opens details as a modal, not a route", () => {
+    // The modal is what makes the control work below 1100px, where
+    // CatalogBrowseLayout hides the drawer column outright.
+    const browse = read(BROWSE);
+    expect(browse).toContain("AgentDetailModal");
+    expect(read("components/agents/catalog/AgentDetailModal.tsx")).toContain("ModalShell");
   });
 });
 

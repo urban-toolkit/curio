@@ -33,6 +33,8 @@ export interface AgentCatalogDrawerProps {
    * drawers). The drawer stays mounted while false during the exit slide. */
   presented: boolean;
   projectId: string | null;
+  /** Creates and saves the dataflow on first use; see useAgentCatalogDrawer. */
+  onEnsureProject?: () => Promise<string | null>;
   /** Pinned keeps the drawer open (backdrop/Escape won't dismiss it). */
   pinned: boolean;
   onPinToggle: () => void;
@@ -77,12 +79,13 @@ const SUBTITLE: Record<AgentScope, string> = {
 export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
   presented,
   projectId,
+  onEnsureProject,
   pinned,
   onPinToggle,
   onRequestClose,
   onExitComplete,
 }) => {
-  const c = useAgentCatalogDrawer(presented, projectId);
+  const c = useAgentCatalogDrawer(presented, projectId, onEnsureProject);
   const panelRef = useRef<HTMLElement>(null);
   // The header cog opens AI Settings, which owns the account scope.
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
@@ -192,6 +195,17 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         {c.error ? (
           <div className={shell.error} role="alert">
             {c.error}
+          </div>
+        ) : null}
+
+        {/* The Node catalog's disclosure, verbatim: adding is not blocked on a
+            save, it performs one. Saying so beats a disabled button with no
+            explanation, which is what this drawer used to show (#199). */}
+        {!projectId ? (
+          <div className={shell.errorBanner} role="status">
+            <span className={shell.errorBannerText}>
+              This dataflow isn&apos;t saved yet; adding will save it first.
+            </span>
           </div>
         ) : null}
 
@@ -328,7 +342,7 @@ const AgentRow: React.FC<{
         {scope === "installed" || card.installedInProject ? (
           <button
             type="button"
-            className={cardStyles.btnSecondary}
+            className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
             disabled={busy || !hasProject}
             onClick={() => {
               // Both peers confirm this one (NodeCatalogDrawer.onUninstall,
@@ -345,8 +359,8 @@ const AgentRow: React.FC<{
           <button
             type="button"
             className={`${cardStyles.btnInstall} ${styles.installBtn}`}
-            disabled={busy || !hasProject}
-            title={hasProject ? installTitle(card) : "Open a project to install"}
+            disabled={busy}
+            title={installTitle(card)}
             onClick={() => state.install(card.dirName)}
           >
             {installLabel(card)}
@@ -370,7 +384,7 @@ const AgentRow: React.FC<{
             />
             <button
               type="button"
-              className={cardStyles.btnSecondary}
+              className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
               disabled={busy}
               onClick={() => state.removeImport(card.dirName)}
             >
@@ -386,7 +400,7 @@ const AgentRow: React.FC<{
         {scope === "browse" && !card.imported ? (
           <button
             type="button"
-            className={cardStyles.btnSecondary}
+            className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
             disabled={busy}
             onClick={() => state.importAgent(card.dirName)}
           >
