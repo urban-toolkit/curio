@@ -50,7 +50,16 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
         project_spec=load_example_spec(walk.example) if walk.example else None,
     )
     require_owner_view(page)
-    page.wait_for_selector(".react-flow__node", timeout=45000)
+    # An empty dataflow has no nodes; only wait for one when the scene asked for
+    # a spec that puts them there. The seven catalog/agent scenes deliberately
+    # start on a never-saved dataflow or a catalog page, and waiting on a node
+    # they will never have killed every one of them in setup — 45 s before the
+    # first assertion ran. ``test_walkthrough_videos.py`` already guards this;
+    # this file was the half that was missed.
+    if walk.example:
+        page.wait_for_selector(".react-flow__node", timeout=45000)
+    else:
+        page.wait_for_selector("#tools-menu", timeout=45000)
 
     def snapshot(label: str) -> None:
         """One committed PNG per pinned step of the journey."""
