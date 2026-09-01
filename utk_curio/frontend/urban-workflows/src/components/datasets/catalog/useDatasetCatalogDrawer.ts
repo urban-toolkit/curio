@@ -30,6 +30,17 @@ import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
 
+/** A pending confirmation (#196, #197). The hook cannot render, so it holds the
+ *  question and the drawer component paints it with `ConfirmDialog`. */
+export interface DatasetConfirmAction {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  destructive: boolean;
+  /** Returns the action's promise so callers (and tests) can await it. */
+  run: () => Promise<void>;
+}
+
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInFlightRef = useRef(false);
@@ -43,6 +54,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<DatasetConfirmAction | null>(null);
   const [, startUiTransition] = useTransition();
 
   const liveOutputs = useMemo(() => {
@@ -159,7 +171,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     [catalogItems, detailDatasetId],
   );
 
-  const onInstall = useCallback(
+  const performInstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
       const id = await ensureProjectId();
       if (!id) return;
@@ -213,6 +225,27 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       }
     },
     [ensureProjectId, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall],
+  );
+
+  // #196: the Data catalog confirms an add too, so all three catalogs agree.
+  // The Node catalog's richer InstallPermissionsDialog stays as it is — it has
+  // permissions and dependency conflicts to disclose that a dataset does not.
+  const onInstall = useCallback(
+    (dataset: DatasetCatalogItem) => {
+      const title = datasetDisplayTitle(dataset);
+      const isGroup = isOsmGroupId(dataset.id);
+      const layerCount = isGroup ? (dataset.groupLayerIds ?? []).length : 0;
+      setConfirmAction({
+        title: `Add ${title}?`,
+        body: isGroup
+          ? `Add all ${layerCount} layers from ${title} to this dataflow?`
+          : `Add ${title} to this dataflow?`,
+        confirmLabel: "Add to dataflow",
+        destructive: false,
+        run: () => performInstall(dataset),
+      });
+    },
+    [performInstall],
   );
 
   const onUninstall = useCallback(
@@ -291,13 +324,9 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     [ensureProjectId, liveOutputs, setDataflowDatasets, showToast],
   );
 
-  const onUnpublish = useCallback(
+  const performUnpublish = useCallback(
     async (dataset: DatasetCatalogItem) => {
       const title = datasetDisplayTitle(dataset);
-      const confirmed = window.confirm(
-        `Unpublish ${title} from the Data Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`,
-      );
-      if (!confirmed) return;
       setBusyId(dataset.id);
       try {
         const id = await ensureProjectId();
@@ -325,35 +354,23 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     [ensureProjectId, setDataflowDatasets, showToast],
   );
 
-  const onDelete = useCallback(
+  const onUnpublish = useCallback(
+    (dataset: DatasetCatalogItem) => {
+      const title = datasetDisplayTitle(dataset);
+      setConfirmAction({
+        title: `Unpublish ${title}?`,
+        body: `Unpublish ${title} from the Data Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`,
+        confirmLabel: "Unpublish",
+        destructive: true,
+        run: () => performUnpublish(dataset),
+      });
+    },
+    [performUnpublish],
+  );
+
+  const performDelete = useCallback(
     async (dataset: DatasetCatalogItem) => {
       const title = datasetDisplayTitle(dataset);
-      // Delete strips the dataset's references per DATA FLOW (across all
-      // projects), so warn with the affected-dataflow count fetched up front —
-      // consumerNodeCount both under-warns (installed in 3 projects, wired to
-      // 0 nodes) and over-warns (5 nodes in one project) (#177). Fall back to
-      // the node-count wording only if the usage lookup fails.
-      let usageNote = "";
-      try {
-        const usage = await datasetCatalogApi.datasetUsage(dataset.id);
-        if (usage.length > 0) {
-          const nodeCount = usage.reduce((sum, u) => sum + (u.nodeCount ?? 0), 0);
-          const nodeNote =
-            nodeCount > 0
-              ? ` (consumed by ${nodeCount} node${nodeCount === 1 ? "" : "s"})`
-              : "";
-          usageNote = `\n\nIt is used in ${usage.length} dataflow${usage.length === 1 ? "" : "s"}${nodeNote}; its references there will be removed.`;
-        }
-      } catch {
-        const usageCount = dataset.consumerNodeCount ?? 0;
-        if (usageCount > 0) {
-          usageNote = `\n\nIt is referenced by ${usageCount} node${usageCount === 1 ? "" : "s"} across your projects; those references will be removed.`;
-        }
-      }
-      const confirmed = window.confirm(
-        `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just removed from this dataflow. ${permanentDeletionNotice()}${usageNote}`,
-      );
-      if (!confirmed) return;
       setBusyId(dataset.id);
       try {
         const result = await datasetCatalogApi.deleteDataset(dataset.id);
@@ -387,6 +404,44 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       }
     },
     [setDataflowDatasets, showToast],
+  );
+
+  const onDelete = useCallback(
+    async (dataset: DatasetCatalogItem) => {
+      const title = datasetDisplayTitle(dataset);
+      // Delete strips the dataset's references per DATA FLOW (across all
+      // projects), so warn with the affected-dataflow count fetched up front —
+      // consumerNodeCount both under-warns (installed in 3 projects, wired to
+      // 0 nodes) and over-warns (5 nodes in one project) (#177). Fall back to
+      // the node-count wording only if the usage lookup fails.
+      let usageNote = "";
+      try {
+        const usage = await datasetCatalogApi.datasetUsage(dataset.id);
+        if (usage.length > 0) {
+          const nodeCount = usage.reduce((sum, u) => sum + (u.nodeCount ?? 0), 0);
+          const nodeNote =
+            nodeCount > 0
+              ? ` (consumed by ${nodeCount} node${nodeCount === 1 ? "" : "s"})`
+              : "";
+          usageNote = `\n\nIt is used in ${usage.length} dataflow${usage.length === 1 ? "" : "s"}${nodeNote}; its references there will be removed.`;
+        }
+      } catch {
+        const usageCount = dataset.consumerNodeCount ?? 0;
+        if (usageCount > 0) {
+          usageNote = `\n\nIt is referenced by ${usageCount} node${usageCount === 1 ? "" : "s"} across your projects; those references will be removed.`;
+        }
+      }
+      // The prefetch above runs *before* the dialog opens, so the body is
+      // complete the moment it appears rather than filling in under the user.
+      setConfirmAction({
+        title: `Delete ${title}?`,
+        body: `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just removed from this dataflow. ${permanentDeletionNotice()}${usageNote}`,
+        confirmLabel: "Delete forever",
+        destructive: true,
+        run: () => performDelete(dataset),
+      });
+    },
+    [performDelete],
   );
 
   const onPickImport = useCallback(
@@ -475,5 +530,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     handleDatasetDragEnd,
     openDatasetDetails,
     closeDatasetDetails,
+    confirmAction,
+    dismissConfirm: useCallback(() => setConfirmAction(null), []),
   };
 }

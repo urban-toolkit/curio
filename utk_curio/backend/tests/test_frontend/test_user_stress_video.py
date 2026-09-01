@@ -53,6 +53,7 @@ from .usertest import (
 )
 from .utils import (
     REPO_ROOT,
+    accept_confirm_dialog,
     activate_header_icon,
     canvas_nodes,
     close_tools_palette,
@@ -940,13 +941,15 @@ class TestSessionRealData:
         card = drawer.locator(f'{CARD}[data-dataset-id="{dataset_id}"]')
         expect(card).to_have_count(1, timeout=20000)
         card.scroll_into_view_if_needed()
+        s.tour.click(card.get_by_role("button", name="Add to dataflow", exact=True))
         with page.expect_response(
             lambda r: "/datasets/install" in r.url
             and r.request.method == "POST" and r.ok,
             timeout=90000,
         ):
-            s.tour.click(
-                card.get_by_role("button", name="Add to dataflow", exact=True)
+            # The Data catalog confirms an add now (#196).
+            accept_confirm_dialog(
+                page, title=re.compile(r"^Add "), button="Add to dataflow"
             )
         expect(
             drawer.locator(f'{CARD}[data-dataset-id="{dataset_id}"]').get_by_role(

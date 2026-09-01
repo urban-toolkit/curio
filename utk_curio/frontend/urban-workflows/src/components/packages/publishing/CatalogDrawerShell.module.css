@@ -91,15 +91,6 @@
     background: var(--curio-page-bg);
 }
 
-.sectionLabel {
-    margin: 4px 0 12px;
-    font-size: var(--curio-font-size-xs);
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--curio-text-muted);
-}
-
 .cardList {
     display: flex;
     flex-direction: column;
@@ -127,28 +118,6 @@
 }
 
 /* ── Action error banner ───────────────────────────────────────────────── */
-
-/* Informational, not a failure. The Node drawer used to render the unsaved
-   notice through `.errorBanner`, which paints `--curio-danger-bg` - a red
-   banner for "this will save your work first" reads as something going wrong.
-   Same geometry, neutral surface. */
-.noticeBanner {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 10px 12px;
-    margin: 0 0 16px;
-    background: var(--curio-surface-muted);
-    border-radius: var(--curio-radius-md);
-    color: var(--curio-text-secondary);
-    font-size: var(--curio-font-size-sm);
-}
-
-.noticeBannerText {
-    flex: 1;
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
 
 .errorBanner {
     display: flex;

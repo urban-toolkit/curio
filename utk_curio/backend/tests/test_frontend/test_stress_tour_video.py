@@ -88,6 +88,7 @@ from .stress import (
 )
 from .utils import (
     _wait_for_reactflow_ready,
+    accept_confirm_dialog,
     activate_header_icon,
     api_json,
     assert_vega_canvas_rendered,
@@ -664,12 +665,17 @@ def chapter_access(run: StressRun) -> None:
         page.wait_for_timeout(2500)
 
     with run.step("Rename through the prompt"):
-        run.state["dialog"]["prompt"] = "Stress Alpha (renamed)"
+        # An in-app PromptDialog now (#197), so the name is typed into a real
+        # field rather than answered through the dialog policy.
         page.locator("[data-project-id]").first.click(button="right")
         page.wait_for_timeout(500)
         tour.click(page.get_by_text("Rename", exact=True).first)
+        rename = page.get_by_role("dialog", name="Rename dataflow")
+        expect(rename).to_be_visible(timeout=10000)
+        rename.get_by_label("Name").fill("Stress Alpha (renamed)")
+        page.wait_for_timeout(600)
+        tour.click(rename.get_by_role("button", name="Rename", exact=True))
         page.wait_for_timeout(2200)
-        run.state["dialog"]["prompt"] = None
 
     with run.step("Archive one, then find it under Archived"):
         page.locator("[data-project-id]").last.click(button="right")
@@ -686,6 +692,11 @@ def chapter_access(run: StressRun) -> None:
             archived.first.click(button="right")
             page.wait_for_timeout(500)
             tour.click(page.get_by_text("Delete forever", exact=True).first)
+            # The confirmation is an in-app ConfirmDialog now (#197).
+            confirm = page.get_by_role("dialog", name=re.compile(r"^Permanently delete "))
+            expect(confirm).to_be_visible(timeout=10000)
+            page.wait_for_timeout(800)
+            tour.click(confirm.get_by_role("button", name="Delete forever", exact=True))
             page.wait_for_timeout(2500)
         tour.click(page.get_by_role("button", name="All projects", exact=True).first)
         page.wait_for_timeout(1200)
@@ -1608,6 +1619,10 @@ def chapter_data(run: StressRun) -> None:
             if not add.count():
                 continue
             add.first.click()
+            # The Data catalog confirms an add now (#196).
+            accept_confirm_dialog(
+                page, title=re.compile(r"^Add "), button="Add to dataflow"
+            )
             expect(
                 card.first.get_by_role(
                     "button", name=re.compile("Remove from dataflow")
@@ -1812,6 +1827,9 @@ def chapter_data(run: StressRun) -> None:
         add = card.first.get_by_role("button", name=re.compile("^Add to dataflow"))
         if add.count():
             tour.click(add.first)
+            accept_confirm_dialog(
+                page, title=re.compile(r"^Add "), button="Add to dataflow"
+            )
             expect(
                 card.first.get_by_role(
                     "button", name=re.compile("Remove from dataflow")

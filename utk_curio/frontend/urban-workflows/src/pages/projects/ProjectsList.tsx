@@ -21,6 +21,8 @@ import { CatalogBrowseDrawerBody } from "../catalog/CatalogBrowseDrawerBody";
 import { CatalogBrowseDrawerShell } from "../catalog/CatalogBrowseDrawerShell";
 import shellStyles from "../catalog/CatalogMasterPage.module.css";
 import styles from "./ProjectsBrowseLayout.module.css";
+import ConfirmDialog from "../../components/ConfirmDialog";
+import PromptDialog from "../../components/PromptDialog";
 
 type ViewMode = "grid" | "list";
 type FilterTab = "all" | "recent" | "archived";
@@ -85,6 +87,10 @@ const ProjectsList: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectSummary } | null>(null);
+  // #197: the rename prompt and the delete confirmation are app modals now,
+  // each holding the project it was opened for.
+  const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
   const importNotebookRef = useRef<HTMLInputElement>(null);
 
   const loadProjects = useCallback(async () => {
@@ -143,8 +149,7 @@ const ProjectsList: React.FC = () => {
 
   const openProject = (id: string) => navigate("/dataflow/" + id);
 
-  const handleRename = async (project: ProjectSummary) => {
-    const newName = window.prompt("Rename project:", project.name);
+  const performRename = async (project: ProjectSummary, newName: string) => {
     if (!newName || newName === project.name) return;
     try {
       await projectsApi.update(project.id, { name: newName });
@@ -153,6 +158,8 @@ const ProjectsList: React.FC = () => {
       console.error("Rename failed:", err);
     }
   };
+
+  const handleRename = (project: ProjectSummary) => setRenameTarget(project);
 
   const handleDuplicate = async (project: ProjectSummary) => {
     try {
@@ -172,15 +179,7 @@ const ProjectsList: React.FC = () => {
     }
   };
 
-  const handleDeleteForever = async (project: ProjectSummary) => {
-    // DEC-057 3.4b: state the live-store scope + the operator's declared
-    // backup posture - never claim irreversibility the platform can't control.
-    if (
-      !window.confirm(
-        `Permanently delete "${project.name}"?\n\n${permanentDeletionNotice()}`,
-      )
-    )
-      return;
+  const performDeleteForever = async (project: ProjectSummary) => {
     try {
       await projectsApi.delete(project.id, { purge: true });
       loadProjects();
@@ -188,6 +187,8 @@ const ProjectsList: React.FC = () => {
       console.error("Delete failed:", err);
     }
   };
+
+  const handleDeleteForever = (project: ProjectSummary) => setDeleteTarget(project);
 
   const handleNotebookImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -511,6 +512,39 @@ const ProjectsList: React.FC = () => {
           </div>
         </div>
       )}
+      {renameTarget ? (
+        <PromptDialog
+          title="Rename dataflow"
+          fieldLabel="Name"
+          initialValue={renameTarget.name}
+          confirmLabel="Rename"
+          onCancel={() => setRenameTarget(null)}
+          onConfirm={(name) => {
+            const project = renameTarget;
+            setRenameTarget(null);
+            void performRename(project, name);
+          }}
+        />
+      ) : null}
+
+      {deleteTarget ? (
+        <ConfirmDialog
+          title={`Permanently delete "${deleteTarget.name}"?`}
+          // DEC-057 3.4b: state the live-store scope + the operator's declared
+          // backup posture - never claim irreversibility the platform can't
+          // control.
+          body={permanentDeletionNotice()}
+          confirmLabel="Delete forever"
+          destructive
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            const project = deleteTarget;
+            setDeleteTarget(null);
+            void performDeleteForever(project);
+          }}
+        />
+      ) : null}
+
       <VersionBadge />
     </div>
   );

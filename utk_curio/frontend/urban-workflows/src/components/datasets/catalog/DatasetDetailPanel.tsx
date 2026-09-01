@@ -33,6 +33,7 @@ import styles from "./DatasetDetailPanel.module.css";
 import { DatasetSchemaPanel } from "./DatasetSchemaPanel";
 import { DatasetTablePreview } from "./DatasetTablePreview";
 import { useDatasetResolvedSchema } from "./useDatasetResolvedSchema";
+import ConfirmDialog from "../../ConfirmDialog";
 
 const TABS = ["Overview", "Schema", "Table Preview", "Lineage"] as const;
 
@@ -285,6 +286,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>(initialTab);
   const [exporting, setExporting] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
+  const [unpublishConfirmOpen, setUnpublishConfirmOpen] = useState(false);
   // The standalone catalog page renders without a canvas, so live usage
   // cannot be resolved there and lineage is flagged as partial.
   const lineage = useDatasetLineage(dataset, { dataflowId, canvasAvailable });
@@ -366,12 +368,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     }
   };
 
-  const handleUnpublish = async () => {
-    if (publishBusy) return;
-    const confirmed = window.confirm(
-      `Unpublish ${activeDataset.title} from the Data Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`,
-    );
-    if (!confirmed) return;
+  const performUnpublish = async () => {
     setPublishBusy(true);
     try {
       await datasetCatalogApi.unpublishDataset(activeDataset.id, { dataflowId });
@@ -383,6 +380,11 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     } finally {
       setPublishBusy(false);
     }
+  };
+
+  const handleUnpublish = () => {
+    if (publishBusy) return;
+    setUnpublishConfirmOpen(true);
   };
 
   const showSchemaColumn = activeTab === "Overview";
@@ -589,6 +591,22 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
           </div>
         </aside>
       </div>
+
+      {unpublishConfirmOpen ? (
+        <ConfirmDialog
+          title={`Unpublish ${activeDataset.title}?`}
+          body={`Unpublish ${activeDataset.title} from the Data Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`}
+          confirmLabel="Unpublish"
+          destructive
+          // The detail panel renders inside the catalog drawer/modal.
+          layer="overlay"
+          onCancel={() => setUnpublishConfirmOpen(false)}
+          onConfirm={() => {
+            setUnpublishConfirmOpen(false);
+            void performUnpublish();
+          }}
+        />
+      ) : null}
     </main>
   );
 };

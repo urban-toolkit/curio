@@ -67,6 +67,7 @@ from playwright.sync_api import expect
 
 from .tour import REPO_ROOT, VIDEO_SIZE, Tour, finalize_video, out_dir, speed
 from .utils import (
+    accept_confirm_dialog,
     CANVAS_DROP_TARGET,
     _DRAG_TO_CANVAS_JS,
     activate_header_icon,
@@ -464,13 +465,17 @@ def _add_agent(ctx: Ctx, drawer, coord: str, *, hold: float = 1200):
     card.scroll_into_view_if_needed()
     tour.focus(card, hold=hold)
     add = card.get_by_role("button", name=re.compile(r"^Add to dataflow"))
+    tour.click(add)
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.url.endswith("/install")
         and r.request.method == "POST" and r.ok,
         timeout=60000,
     ):
-        tour.click(add)
+        # Adding confirms first now (#196), listing any required agents.
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to dataflow"
+        )
     expect(
         card.get_by_role("button", name="Remove from dataflow", exact=True)
     ).to_be_visible(timeout=25000)
@@ -982,12 +987,15 @@ def scene_data_catalog(ctx: Ctx) -> None:
     tour.focus(card, hold=1400)
     tour.hush()
     add = card.get_by_role("button", name="Add to dataflow", exact=True)
+    tour.click(add)
     with page.expect_response(
         lambda r: "/datasets/install" in r.url
         and r.request.method == "POST" and r.ok,
         timeout=60000,
     ):
-        tour.click(add)
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to dataflow"
+        )
     expect(
         drawer.locator(f'{CARD}[data-dataset-id="{DATASET_ID}"]').get_by_role(
             "button", name="Remove from dataflow", exact=True

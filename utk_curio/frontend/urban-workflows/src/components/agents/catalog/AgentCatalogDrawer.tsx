@@ -26,7 +26,7 @@ import cardStyles from "../../packages/publishing/PackageCard.module.css";
 import styles from "./AgentCatalogDrawer.module.css";
 import { matchesAgentSearch, sortAgentCards, installLabel, installTitle } from "./agentListUtils";
 import { AgentScope, useAgentCatalogDrawer } from "./useAgentCatalogDrawer";
-import { UNSAVED_DATAFLOW_NOTICE } from "../../../constants/catalogCopy";
+import ConfirmDialog from "../../ConfirmDialog";
 
 export interface AgentCatalogDrawerProps {
   /** When true, the scrim fades in and the panel slides in from the right
@@ -96,6 +96,71 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
   // client-side like the Node Catalog drawer, persisting across scope tabs.
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("new");
+  // Add and Remove both confirm here (#196, #197). AgentRow is a child, so the
+  // pending card lives in the drawer rather than in the row that opened it.
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    body: React.ReactNode;
+    confirmLabel: string;
+    destructive: boolean;
+    run: () => Promise<void>;
+  } | null>(null);
+
+  const requestInstall = useCallback(
+    (card: AgentCard) => {
+      const requires = card.requiresAgents ?? [];
+      setConfirmAction({
+        title: `Add ${card.name}?`,
+        confirmLabel: "Add to dataflow",
+        destructive: false,
+        body: (
+          <>
+            <p>
+              Add {card.name} ({card.dirName}) to this dataflow?
+            </p>
+            {/* dev/106: the same hard dependencies the card lists, restated
+                here so they are disclosed before the click commits. */}
+            {requires.length ? (
+              <>
+                <p>It requires:</p>
+                <ul>
+                  {requires.map((r) => (
+                    <li key={r.id}>
+                      {r.name}
+                      {r.installedInProject
+                        ? " (already in this dataflow)"
+                        : r.visible
+                          ? " (not installed)"
+                          : " (unavailable)"}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </>
+        ),
+        run: () => c.install(card),
+      });
+    },
+    [c],
+  );
+
+  const requestUninstall = useCallback(
+    (card: AgentCard) => {
+      setConfirmAction({
+        title: `Remove ${card.name}?`,
+        confirmLabel: "Remove",
+        destructive: true,
+        // Both peers confirm this one (NodeCatalogDrawer.onUninstall,
+        // useDatasetCatalogDrawer.onUnpublish): it is a lockfile write the
+        // user cannot undo with a second click, and any agent attached from
+        // this dataflow goes with it.
+        body: `Remove ${card.name} (${card.dirName}) from this dataflow?`,
+        run: () => c.uninstall(card),
+      });
+    },
+    [c],
+  );
 
   const visibleCards = useMemo(
     () => sortAgentCards(c.cards.filter((card) => matchesAgentSearch(card, search)), sort),
@@ -199,15 +264,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
           </div>
         ) : null}
 
-        {/* Adding is not blocked on a save, it performs one. Saying so beats a
-            disabled button with no explanation, which is what this drawer used
-            to show. Shared wording - see constants/catalogCopy. */}
-        {!projectId ? (
-          <div className={shell.noticeBanner} role="status">
-            <span className={shell.noticeBannerText}>{UNSAVED_DATAFLOW_NOTICE}</span>
-          </div>
-        ) : null}
-
         {c.loading ? (
           <div className={shell.empty}>Loading agents…</div>
         ) : visibleCards.length === 0 ? (
@@ -227,6 +283,8 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
                 scope={c.scope}
                 state={c}
                 hasProject={!!projectId}
+                onRequestInstall={requestInstall}
+                onRequestUninstall={requestUninstall}
               />
             ))}
           </div>
@@ -269,6 +327,23 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
           <AiSettingsModal isOpen onClose={() => setAccountSettingsOpen(false)} />
         </React.Suspense>
       ) : null}
+      {confirmAction ? (
+        <ConfirmDialog
+          title={confirmAction.title}
+          body={confirmAction.body}
+          confirmLabel={confirmAction.confirmLabel}
+          destructive={confirmAction.destructive}
+          // Opened from inside the drawer, which paints above the default
+          // modal layer - without this the confirm button is under it.
+          layer="overlay"
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => {
+            const { run } = confirmAction;
+            setConfirmAction(null);
+            void run();
+          }}
+        />
+      ) : null}
       </aside>
     </div>
   );
@@ -279,7 +354,9 @@ const AgentRow: React.FC<{
   scope: AgentScope;
   state: ReturnType<typeof useAgentCatalogDrawer>;
   hasProject: boolean;
-}> = ({ card, scope, state, hasProject }) => {
+  onRequestInstall: (card: AgentCard) => void;
+  onRequestUninstall: (card: AgentCard) => void;
+}> = ({ card, scope, state, hasProject, onRequestInstall, onRequestUninstall }) => {
   const busy = state.busyCoord === card.dirName;
   // The shared catalog card grid: 72px avatar | body | action. There is no
   // accent stripe - it was dropped from every catalog card because the
@@ -343,14 +420,7 @@ const AgentRow: React.FC<{
             type="button"
             className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
             disabled={busy || !hasProject}
-            onClick={() => {
-              // Both peers confirm this one (NodeCatalogDrawer.onUninstall,
-              // useDatasetCatalogDrawer.onUnpublish): it is a lockfile write
-              // the user cannot undo with a second click, and any agent
-              // attached from this dataflow goes with it.
-              if (!window.confirm(`Remove ${card.name} (${card.dirName}) from this dataflow?`)) return;
-              state.uninstall(card.dirName);
-            }}
+            onClick={() => onRequestUninstall(card)}
           >
             Remove from dataflow
           </button>
@@ -360,7 +430,7 @@ const AgentRow: React.FC<{
             className={`${cardStyles.btnInstall} ${styles.installBtn}`}
             disabled={busy}
             title={installTitle(card)}
-            onClick={() => state.install(card.dirName)}
+            onClick={() => onRequestInstall(card)}
           >
             {installLabel(card)}
           </button>
