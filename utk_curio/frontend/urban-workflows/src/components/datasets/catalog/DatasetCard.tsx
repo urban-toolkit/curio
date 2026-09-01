@@ -204,7 +204,26 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
         ) : null}
 
         {(showUninstall || showUnpublish || showDelete || showPublishPill) && (
+          // Order is the vocabulary made visible: actions first (dark), then
+          // the destructive ones (light), with Delete last of all so the most
+          // final thing on the card is the furthest from the first thing.
           <div className={styles.cardSecondaryActions}>
+            {showPublishPill ? (
+              <CatalogPublishPill
+                variant="hub"
+                dirName={dataset.id}
+                published={isPublished}
+                allowPublish={publishAllowed}
+                busy={publishingId === dataset.id}
+                onPublish={onPublish ?? (() => {})}
+                // Without these the pill falls back to the PACKAGE copy, so a
+                // dataset offered "Publish this installed package into the
+                // shared catalog (packages/)". The browse page already passes
+                // the dataset wording; the canvas surfaces did not.
+                publishedTitle="Listed in the Data Catalog"
+                publishActionTitle="Publish this dataset into the shared catalog (datasets/)"
+              />
+            ) : null}
             {showUninstall ? (
               <button
                 type="button"
@@ -237,22 +256,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
               >
                 Delete
               </button>
-            ) : null}
-            {showPublishPill ? (
-              <CatalogPublishPill
-                variant="hub"
-                dirName={dataset.id}
-                published={isPublished}
-                allowPublish={publishAllowed}
-                busy={publishingId === dataset.id}
-                onPublish={onPublish ?? (() => {})}
-                // Without these the pill falls back to the PACKAGE copy, so a
-                // dataset offered "Publish this installed package into the
-                // shared catalog (packages/)". The browse page already passes
-                // the dataset wording; the canvas surfaces did not.
-                publishedTitle="Listed in the Data Catalog"
-                publishActionTitle="Publish this dataset into the shared catalog (datasets/)"
-              />
             ) : null}
           </div>
         )}

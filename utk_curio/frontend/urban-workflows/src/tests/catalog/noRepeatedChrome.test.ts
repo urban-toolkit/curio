@@ -222,3 +222,95 @@ describe("the node install note describes the environment it really touches", ()
     expect(src).toMatch(/every dataflow and every user|shares|shared/i);
   });
 });
+
+describe("one button vocabulary across the catalogs", () => {
+  // Black is an action, white with a border is destructive. Publish was
+  // neither: a small blue pill in its own size and colour, which read as a
+  // status chip saying the thing was already published.
+  //
+  // Asserted from source because CSS modules resolve through
+  // `identity-obj-proxy` under jest, so a render cannot see which rule applied.
+  const CARD_STYLES = "components/packages/publishing/PackageCard.module.css";
+  const PILL_STYLES = "components/packages/CatalogPublishPill.module.css";
+
+  /** The body of one CSS rule, by selector. */
+  function rule(css: string, selector: string): string {
+    const at = css.indexOf(`${selector} {`);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  }
+
+  test("the action button is the dark fill", () => {
+    expect(rule(read(CARD_STYLES), ".btnInstall")).toContain(
+      "background: var(--curio-top-bar-bg)",
+    );
+  });
+
+  test("the destructive button is the bordered light fill", () => {
+    const secondary = rule(read(CARD_STYLES), ".btnSecondary");
+    expect(secondary).toContain("background: var(--curio-card-bg)");
+    expect(secondary).toContain("border: 1px solid var(--curio-border-strong)");
+  });
+
+  test("Publish joins the action vocabulary rather than inventing its own", () => {
+    const pill = rule(read(PILL_STYLES), ".pillHub");
+    expect(pill).toContain("background: var(--curio-top-bar-bg)");
+    expect(pill).toContain("color: var(--curio-text-on-dark)");
+    // ...and shares the other card buttons' box, so the column lines up.
+    expect(pill).toContain("min-width: 96px");
+    expect(pill).toContain("height: 30px");
+    expect(pill).toContain("border-radius: var(--curio-radius-md)");
+    // The blue it used to be is gone.
+    expect(pill).not.toContain("--curio-role-published");
+  });
+
+  test("Publish is a plain verb in sentence case", () => {
+    const src = read("components/packages/CatalogPublishPill.tsx");
+    expect(src).toContain('"Publish"');
+    // Uppercase is what made it read as a status chip.
+    expect(rule(read(PILL_STYLES), ".pillHub")).not.toContain("text-transform: uppercase");
+  });
+
+  test("the main-page catalogs use the same two treatments", () => {
+    // The Agent browse drawer used the DARK `.addToPaletteBtn` for both "Add to
+    // my account" and "Remove from my account", so two opposite actions were
+    // the same black button in the same place.
+    const browse = read("pages/catalog/CatalogBrowseLayout.module.css");
+    expect(rule(browse, ".addToPaletteBtn")).toContain(
+      "background: var(--curio-top-bar-bg)",
+    );
+    const destructive = rule(browse, ".destructiveBtn");
+    expect(destructive).toContain("background: var(--curio-card-bg)");
+    expect(destructive).toContain("border: 1px solid var(--curio-border-strong)");
+    // Same box, so swapping one for the other does not reflow the panel.
+    expect(destructive).toContain("height: 42px");
+
+    const drawer = read("pages/agents/AgentCatalogBrowseDrawer.tsx");
+    const at = drawer.indexOf("Remove from my account");
+    expect(at).toBeGreaterThan(-1);
+    expect(drawer.slice(Math.max(0, at - 300), at)).toContain("destructiveBtn");
+  });
+
+  test("Delete comes last on the dataset card", () => {
+    // The most final action sits furthest from the first one.
+    const src = read("components/datasets/catalog/DatasetCard.tsx");
+    const publish = src.indexOf("showPublishPill ?");
+    const del = src.indexOf("showDelete ?");
+    expect(publish).toBeGreaterThan(-1);
+    expect(del).toBeGreaterThan(publish);
+  });
+
+  test("the Published state stays quiet, and is not a button", () => {
+    const badge = rule(read(PILL_STYLES), ".badgeHub");
+    expect(badge).toContain("color: var(--curio-text-muted)");
+    expect(badge).toContain("cursor: default");
+    // Same box as its neighbours so the column does not jump when it swaps in.
+    expect(badge).toContain("min-width: 96px");
+    expect(badge).toContain("height: 30px");
+  });
+
+  test("the dark rail keeps a light treatment, where a black fill would vanish", () => {
+    const dock = rule(read(PILL_STYLES), ".pillDock");
+    expect(dock).not.toContain("background: var(--curio-top-bar-bg)");
+  });
+});

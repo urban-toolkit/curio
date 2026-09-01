@@ -1,12 +1,19 @@
-/* The ACTION and the STATE must not look alike.
+/* One button vocabulary across every catalog surface.
  *
- * They used to be the wrong way round: the action was a filled blue uppercase
- * pill reading "PUBLISH", which is exactly the shape of a status chip, while
- * the state that something HAD been published was a muted grey badge. Users
- * read the loud blue thing as "this is published".
+ * Black is an action (Add to dataflow, Publish...), white with a border is
+ * destructive (Remove from dataflow, Delete, Unpublish). Publish sat outside
+ * that vocabulary entirely: a small blue pill, in its own size, in its own
+ * colour, which read as a status chip saying the thing was already published
+ * rather than as a button that would publish it.
  *
- * So the action is now an outlined button in sentence case with an ellipsis
- * (a dialog follows), and the state keeps the quiet badge plus a tick. */
+ * The `hub` variant below therefore takes `.btnInstall`'s colours and
+ * `.btnSecondary`'s box (PackageCard.module.css), so it stacks with the other
+ * card actions instead of floating beside them. `dock` is the dark left-rail
+ * panel, where a black fill would vanish into the background, so it keeps a
+ * light treatment.
+ *
+ * The "Published" BADGE is a state, not an action, and stays deliberately
+ * quiet in both variants. */
 
 /* Dock palette (dark panel) */
 .pillDock {
@@ -55,22 +62,23 @@
 /* Nodes hub rail (light) */
 .pillHub {
     flex-shrink: 0;
+    min-width: 96px;
+    height: 30px;
+    padding: 0 12px;
     font-family: var(--curio-font-family);
-    font-size: 10px;
+    font-size: var(--curio-font-size-sm);
     font-weight: 600;
-    letter-spacing: 0.02em;
-    color: var(--curio-role-published-fg);
-    background: transparent;
-    border: 1px solid var(--curio-role-published-fg);
-    border-radius: var(--curio-radius-pill);
-    padding: 3px 9px;
+    color: var(--curio-text-on-dark);
+    background: var(--curio-top-bar-bg);
+    border: 1px solid var(--curio-top-bar-bg);
+    border-radius: var(--curio-radius-md);
     cursor: pointer;
     line-height: 1.15;
 }
 
 .pillHub:hover:not(:disabled) {
-    background: rgba(53, 103, 199, 0.25);
-    border-color: var(--curio-role-published-fg);
+    background: var(--curio-top-bar-bg-hover);
+    border-color: var(--curio-top-bar-bg-hover);
 }
 
 .pillHub:disabled {
@@ -80,17 +88,19 @@
 
 .badgeHub {
     flex-shrink: 0;
+    min-width: 96px;
+    height: 30px;
+    padding: 0 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-family: var(--curio-font-family);
-    font-size: 10px;
-    font-weight: 600;
-    text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: var(--curio-font-size-sm);
+    font-weight: 500;
     color: var(--curio-text-muted);
     background: var(--curio-page-bg);
     border: 1px solid var(--curio-border);
-    border-radius: var(--curio-radius-pill);
-    padding: 3px 9px;
+    border-radius: var(--curio-radius-md);
     line-height: 1.15;
     cursor: default;
     user-select: none;

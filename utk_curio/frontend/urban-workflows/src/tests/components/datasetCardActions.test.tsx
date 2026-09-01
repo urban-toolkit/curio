@@ -152,9 +152,8 @@ describe("DatasetCard - publish affordances", () => {
       onPublish: jest.fn(),
       publishAllowed: true,
     });
-    // "Publish…", not "Publish": the ellipsis says a confirmation follows, and
-    // the sentence case keeps the ACTION from reading as a status chip.
-    expect(button("Publish…")).toBeTruthy();
+    // Sentence case, so the ACTION does not read as a status chip.
+    expect(button("Publish")).toBeTruthy();
   });
 
   it("offers Publish for an output the user's own node computed", () => {
@@ -163,14 +162,14 @@ describe("DatasetCard - publish affordances", () => {
       onPublish: jest.fn(),
       publishAllowed: true,
     });
-    expect(button("Publish…")).toBeTruthy();
+    expect(button("Publish")).toBeTruthy();
   });
 
   it("hides Publish for a dataset that came from the shared catalog", () => {
     // The reported confusion: every dataset offered to publish itself back
     // into the catalog it was installed from.
     renderCard({ onPublish: jest.fn(), publishAllowed: true });
-    expect(button("Publish…")).toBeNull();
+    expect(button("Publish")).toBeNull();
   });
 
   it("still hides Publish for a catalog dataset that has been installed", () => {
@@ -181,7 +180,7 @@ describe("DatasetCard - publish affordances", () => {
       onPublish: jest.fn(),
       publishAllowed: true,
     });
-    expect(button("Publish…")).toBeNull();
+    expect(button("Publish")).toBeNull();
   });
 
   it("hides Publish when the server forbids it", () => {
@@ -190,7 +189,7 @@ describe("DatasetCard - publish affordances", () => {
       onPublish: jest.fn(),
       publishAllowed: false,
     });
-    expect(button("Publish…")).toBeNull();
+    expect(button("Publish")).toBeNull();
   });
 
   it("does not offer Publish again once published", () => {
@@ -200,7 +199,7 @@ describe("DatasetCard - publish affordances", () => {
       publishAllowed: true,
       isPublished: true,
     });
-    expect(button("Publish…")).toBeNull();
+    expect(button("Publish")).toBeNull();
   });
 });
 

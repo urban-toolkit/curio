@@ -353,3 +353,57 @@ def test_uploading_a_file_then_deleting_it_warns_about_every_dataflow(
     expect(
         drawer.locator(f'article[data-dataset-id="{dataset_id}"]')
     ).to_have_count(0, timeout=30000)
+
+
+def _button_fill(locator) -> str:
+    return locator.evaluate("el => getComputedStyle(el).backgroundColor")
+
+
+def test_the_catalog_pages_use_one_button_vocabulary(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """Black is an action, white is destructive, on the browse pages too.
+
+    Publish used to be a small blue pill in its own size and colour, on every
+    surface, which read as a status chip rather than as a button. The rule has
+    to hold on `/catalog/*` as well as in the drawers, because those are the
+    same cards with the same actions.
+    """
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend.base_url, current_server, "catalog_button_vocab")
+
+    # Produce something of the user's own, so a Publish action exists to look at.
+    loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=(220, 200))
+    set_node_code(
+        page, loading,
+        "import pandas as pd\ndf = pd.DataFrame({'a': [1, 2]})\nreturn df\n",
+    )
+    run_node_and_wait(page, loading, node_type=LOADING_TYPE)
+
+    page.goto(f"{app_frontend.base_url}/catalog/data")
+    page.wait_for_load_state("domcontentloaded")
+    card = page.locator('article[data-dataset-id^="computed."]').first
+    card.wait_for(state="visible", timeout=60000)
+    card.scroll_into_view_if_needed()
+
+    publish = card.get_by_role("button", name=re.compile(r"^Publish"))
+    expect(publish).to_have_count(1, timeout=30000)
+
+    # The action fill, not a blue pill of its own. `--curio-top-bar-bg` is the
+    # same token `.btnInstall` uses for "Add to dataflow".
+    fill = _button_fill(publish.first)
+    assert fill not in ("rgba(0, 0, 0, 0)", "transparent"), (
+        f"Publish renders unfilled ({fill}); it should carry the action fill"
+    )
+    channels = [int(n) for n in re.findall(r"\d+", fill)[:3]]
+    assert channels and max(channels) < 90, (
+        f"Publish is not the dark action fill: {fill}. Black is an action, "
+        f"white with a border is destructive, and Publish is an action."
+    )
+
+    save_workflow_test_screenshot(
+        page, "catalog-page-button-vocabulary",
+        test_name="test_the_catalog_pages_use_one_button_vocabulary",
+        fit_reactflow=False,
+    )

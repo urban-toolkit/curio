@@ -139,7 +139,7 @@ function AgentCatalogBrowseDrawerContent({
       primaryAction={
         agent.imported ? (
           <button
-            className={styles.addToPaletteBtn}
+            className={styles.destructiveBtn}
             type="button"
             disabled={busy}
             onClick={() => onRemoveImport(agent)}

@@ -91,9 +91,9 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
                     setConfirmOpen(true);
                 }}
             >
-                {/* The ellipsis says a dialog follows, and the label is a verb
-                    in sentence case - the uppercase form read as a status. */}
-                {busy ? "…" : "Publish…"}
+                {/* A verb in sentence case. The uppercase form read as a
+                    status chip saying the thing was already published. */}
+                {busy ? "…" : "Publish"}
             </button>
             {confirmOpen ? (
                 <ConfirmDialog
