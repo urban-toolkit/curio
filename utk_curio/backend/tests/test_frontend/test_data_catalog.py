@@ -464,28 +464,30 @@ def test_quick_filters_cover_every_populated_format(
     page.goto(f"{app_frontend.base_url}/catalog/data")
     page.wait_for_load_state("domcontentloaded")
 
-    bar = page.locator('[class*="filterBar"]').first
+    # Located by data attribute, not by class: CSS Modules hashes every class
+    # name, so a `[class*=...]` selector matches nothing in a real build - a trap
+    # this suite has been caught by before (see test_tools_rail_fits.py).
+    bar = page.locator('[data-curio-catalog-filter-bar="true"]')
     expect(bar).to_be_visible(timeout=20000)
-    # Gate on a derived chip, not a timeout: the row renders from the facets, so
-    # it is empty until the first listing lands.
-    expect(bar.get_by_role("button", name="GeoJSON", exact=True)).to_have_count(
-        1, timeout=20000
-    )
+    chip = lambda fmt: bar.locator(f'[data-curio-format-chip="{fmt}"]')
 
-    for populated in ("GeoJSON", "CSV", "Parquet", "GeoTIFF"):
-        expect(
-            bar.get_by_role("button", name=populated, exact=True)
-        ).to_have_count(1), f"{populated} has datasets but no quick-filter chip"
+    # Gate on a derived chip, not a timeout: the row renders off the facets, so
+    # it is empty until the first listing lands.
+    expect(chip("geojson")).to_have_count(1, timeout=20000)
+
+    # Each of these holds datasets in the shipped catalog, so each must be offered.
+    # Parquet and GeoTIFF are the two the hardcoded list could never show.
+    for populated in ("geojson", "csv", "parquet", "geotiff"):
+        expect(chip(populated)).to_have_count(1)
 
     # The other half of the report: JSON was offered while holding nothing.
-    expect(bar.get_by_role("button", name="JSON", exact=True)).to_have_count(0)
+    expect(chip("json")).to_have_count(0)
 
-    # Every dot must actually be painted. A format-keyed class that has no CSS
-    # rule resolves to "" and renders an invisible 8px dot - jest cannot catch
-    # that at all, because CSS modules are mapped to identity-obj-proxy there.
-    for populated in ("GeoJSON", "CSV", "Parquet", "GeoTIFF"):
-        chip = bar.get_by_role("button", name=populated, exact=True)
-        colour = chip.locator('[class*="chipDot"]').first.evaluate(
+    # Every dot must actually be painted. A format-keyed class with no CSS rule
+    # resolves to "" and renders an invisible 8px dot - jest cannot catch that at
+    # all, because CSS modules are mapped to identity-obj-proxy there.
+    for populated in ("geojson", "csv", "parquet", "geotiff"):
+        colour = chip(populated).locator("[data-curio-format-chip-dot]").evaluate(
             "el => getComputedStyle(el).backgroundColor"
         )
         assert colour not in ("rgba(0, 0, 0, 0)", "transparent"), (
@@ -496,11 +498,8 @@ def test_quick_filters_cover_every_populated_format(
     # Selecting a format must not collapse the row. The facets are computed
     # BEFORE the format filter is applied (listing.py), and this is what pins
     # that ordering: move the facet call below the filter and this fails.
-    bar.get_by_role("button", name="Parquet", exact=True).click()
-    for still_there in ("GeoJSON", "CSV", "GeoTIFF"):
-        expect(
-            bar.get_by_role("button", name=still_there, exact=True)
-        ).to_have_count(1, timeout=10000), (
-            f"selecting Parquet removed the {still_there} chip; the facets are "
-            f"being computed after the format filter"
-        )
+    chip("parquet").click()
+    # If one of these disappears, the facets are being computed AFTER the format
+    # filter instead of before it, and the chip row has become self-erasing.
+    for still_there in ("geojson", "csv", "geotiff"):
+        expect(chip(still_there)).to_have_count(1, timeout=10000)

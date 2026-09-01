@@ -331,7 +331,7 @@ export const DataCatalogBrowse: React.FC = () => {
           </div>
         </section>
 
-        <div className={styles.filterBar}>
+        <div className={styles.filterBar} data-curio-catalog-filter-bar="true">
           <button
             className={`${styles.chip} ${
               format === "" && scope === "" ? styles.chipActive : ""
@@ -357,6 +357,11 @@ export const DataCatalogBrowse: React.FC = () => {
           {quickFormats.map((key) => (
             <button
               key={key}
+              // The chip row is derived now, so a test has to be able to ask what
+              // it actually offers. CSS Modules hashes every class name, so
+              // `[class*="chip"]` matches nothing in a real build - hence the
+              // same `data-curio-*` hook the other e2e-visible surfaces carry.
+              data-curio-format-chip={key}
               className={`${styles.chip} ${format === key ? styles.chipActive : ""}`}
               type="button"
               onClick={() => setFormat((prev) => (prev === key ? "" : key))}
@@ -365,6 +370,7 @@ export const DataCatalogBrowse: React.FC = () => {
                   use: a derived row can carry any format, and a missing rule used to
                   resolve to "" - an invisible dot rather than a wrong-coloured one. */}
               <span
+                data-curio-format-chip-dot=""
                 className={`${styles.chipDot} ${styles[`chipDot_${key}`] ?? styles.chipDotDefault}`}
               />
               {DATASET_FORMAT_LABEL[key]}

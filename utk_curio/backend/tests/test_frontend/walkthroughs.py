@@ -36,6 +36,8 @@ from .utils import (
     REPO_ROOT,
     accept_confirm_dialog,
     api_json,
+    canvas_nodes,
+    drag_to_canvas,
     play_node,
     signup_e2e_user,
     wait_for_projects_page,
@@ -1336,6 +1338,10 @@ def data_pool_scrolls_sideways(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="data-catalog-chips-cover-every-format",
+    # The scene itself needs no dataflow - it navigates straight to /catalog/data -
+    # but the baseline runner waits for `.react-flow__node` before handing over, so
+    # a scene opened on an empty canvas never starts.
+    example=PROVENANCE_EXAMPLE,
     refs=[232],
     title="The quick filters offer every format that has data",
     premise="Open the Data Catalog and compare the chips against the format rail.",
@@ -1350,7 +1356,7 @@ def data_pool_scrolls_sideways(ctx: Ctx) -> None:
            "src/tests/catalog/datasetFormatStyles.test.ts",
            "test_frontend/test_data_catalog.py"],
     fit_reactflow=False,
-    clip_selector='[class*="filterBar"]',
+    clip_selector='[data-curio-catalog-filter-bar="true"]',
     max_diff_ratio=0.02,
 )
 def data_catalog_chips_cover_every_format(ctx: Ctx) -> None:
@@ -1367,22 +1373,24 @@ def data_catalog_chips_cover_every_format(ctx: Ctx) -> None:
     page.goto(f"{ctx.frontend}/catalog/data")
     page.wait_for_load_state("domcontentloaded")
 
-    bar = page.locator('[class*="filterBar"]').first
+    # By data attribute, not class: CSS Modules hashes every class name, so a
+    # `[class*=...]` selector matches nothing in a real build.
+    bar = page.locator('[data-curio-catalog-filter-bar="true"]')
     bar.wait_for(state="visible", timeout=30000)
+    chip = lambda fmt: bar.locator(f'[data-curio-format-chip="{fmt}"]')
     # Gate on a derived chip rather than a sleep: the row renders off the facets,
     # so it is empty until the first listing lands.
-    chip = lambda label: bar.get_by_role("button", name=label, exact=True)
-    chip("GeoJSON").wait_for(state="visible", timeout=30000)
+    chip("geojson").wait_for(state="visible", timeout=30000)
 
-    named = bar.get_by_role("button").evaluate_all(
-        "els => els.map(e => e.textContent.trim())"
+    offered = bar.locator("[data-curio-format-chip]").evaluate_all(
+        "els => els.map(e => e.getAttribute('data-curio-format-chip'))"
     )
-    for populated in ("Parquet", "GeoTIFF"):
-        assert populated in named, (
-            f"{populated} holds datasets but is missing from the chip row: {named}"
+    for populated in ("parquet", "geotiff"):
+        assert populated in offered, (
+            f"{populated} holds datasets but is missing from the chip row: {offered}"
         )
-    assert "JSON" not in named, (
-        f"JSON holds no datasets and must not be offered: {named}"
+    assert "json" not in offered, (
+        f"JSON holds no datasets and must not be offered: {offered}"
     )
 
     ctx.focus(bar, hold=1400)
@@ -1391,12 +1399,12 @@ def data_catalog_chips_cover_every_format(ctx: Ctx) -> None:
     ctx.capture("populated-formats")
 
     ctx.say("Pick one", "The row must not collapse to the format you chose.")
-    ctx.click(chip("Parquet"))
+    ctx.click(chip("parquet"))
     page.wait_for_timeout(700)
-    still = bar.get_by_role("button").evaluate_all(
-        "els => els.map(e => e.textContent.trim())"
+    still = bar.locator("[data-curio-format-chip]").evaluate_all(
+        "els => els.map(e => e.getAttribute('data-curio-format-chip'))"
     )
-    for other in ("GeoJSON", "CSV", "GeoTIFF"):
+    for other in ("geojson", "csv", "geotiff"):
         assert other in still, (
             f"selecting Parquet removed the {other} chip ({still}) - the facets "
             f"are being computed after the format filter instead of before it"
@@ -1539,13 +1547,13 @@ def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
     ctx.focus(disk, hold=1200)
     ctx.capture("loaded")
 
-    ctx.say("Now move something", "A real edit still has to register.")
-    node = page.locator(".react-flow__node").first
-    box = node.bounding_box()
-    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + 10)
-    page.mouse.down()
-    page.mouse.move(box["x"] + box["width"] / 2 + 120, box["y"] + 90, steps=12)
-    page.mouse.up()
+    ctx.say("Now add a node", "A real edit still has to register.")
+    # `drag_to_canvas`, the suite's proven drop path, rather than a raw mouse drag
+    # of an existing node: the drag is what would be flaky here, and adding a node
+    # is just as much a real edit for the purpose of the claim.
+    before = len(canvas_nodes(page))
+    drag_to_canvas(page, page.locator("#step-analysis"), at=(150, 150))
+    assert len(canvas_nodes(page)) == before + 1, "the drop created no node"
 
     page.wait_for_function(
         "() => document.querySelector('[data-curio-save-state]')"

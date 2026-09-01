@@ -3,11 +3,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import json
+import os
+
 from playwright.sync_api import expect
 
 from .utils import (
+    REPO_ROOT,
     _post_json,
+    canvas_nodes,
     dismiss_toasts,
+    drag_to_canvas,
+    require_owner_view,
     require_project_page,
     require_user_auth,
     signup_and_enter_new_workflow,
@@ -38,42 +45,23 @@ def test_dirty_guard_on_navigation(app_frontend: "FrontendPage", page):
     wait_for_projects_page(page, timeout=10000)
 
 
-def _two_node_spec() -> dict:
-    """Two nodes and an EDGE between them.
+#: A curated example rather than a hand-rolled spec: it is a real saved dataflow
+#: with real edges, and the edge is the whole point - #229 was the load replaying
+#: persisted edges through ``onConnect``, so an edgeless dataflow never reproduced
+#: it. The provenance walkthroughs open the same file, so it is known to load.
+EXAMPLE = "01-vega-lite-chained-transforms.json"
 
-    The edge is the whole point: #229 was the load replaying persisted edges
-    through ``onConnect``, which marks dirty. An edgeless dataflow never
-    reproduced it, so a fixture without one would pass against the broken code.
-    """
-    def node(nid, x):
-        return {
-            "id": nid,
-            "type": "curio.builtin/data-loading@1",
-            "x": x,
-            "y": 0,
-            "content": "",
-            "metadata": {},
-        }
+#: A built-in left-rail tile, always present. Dragging one onto the canvas is the
+#: suite's proven way to make a genuine edit (``drag_to_canvas``); a raw mouse
+#: drag of an existing node is far more brittle and tests nothing extra here.
+ANALYSIS_TILE = "#step-analysis"
 
-    return {
-        "dataflow": {
-            "name": "Dirty On Load",
-            "task": "",
-            "timestamp": 1748990000000,
-            "provenance_id": "Dirty On Load",
-            "nodes": [node("dirty-a", 0), node("dirty-b", 400)],
-            "edges": [
-                {
-                    "id": "reactflow__edge-dirty-aout-dirty-bin",
-                    "source": "dirty-a",
-                    "target": "dirty-b",
-                    "sourceHandle": "out",
-                    "targetHandle": "in",
-                    "type": "Unidirectional",
-                }
-            ],
-        }
-    }
+
+def _example_spec() -> dict:
+    with open(
+        os.path.join(REPO_ROOT, "docs", "examples", EXAMPLE), encoding="utf-8"
+    ) as fh:
+        return json.load(fh)
 
 
 def test_a_freshly_loaded_dataflow_is_not_dirty(
@@ -86,8 +74,8 @@ def test_a_freshly_loaded_dataflow_is_not_dirty(
     30s auto-save then rewrote it for nothing, which is what made the indicator
     "turn green after a while".
 
-    Three claims, and the third is the one that matters most: the guard must not
-    have swallowed genuine edits along with the replay.
+    Three claims, and the third matters most: the guard must not have swallowed
+    genuine edits along with the replay.
     """
     require_project_page()
     require_user_auth()
@@ -104,12 +92,13 @@ def test_a_freshly_loaded_dataflow_is_not_dirty(
         {
             "username": "dirtyload_user",
             "name": "Dirty On Load",
-            "spec": _two_node_spec(),
+            "spec": _example_spec(),
         },
     )
 
     page.goto(f"{app_frontend.base_url}/dataflow/{created['id']}")
     page.wait_for_load_state("domcontentloaded")
+    require_owner_view(page)
     # Wait for the EDGE, not just a node: the edge is what the replay processes,
     # so before it renders the bug has not had its chance to happen yet.
     page.locator(".react-flow__edge").first.wait_for(state="visible", timeout=45000)
@@ -127,15 +116,10 @@ def test_a_freshly_loaded_dataflow_is_not_dirty(
     )
 
     # The fix's real risk, asserted last: suppressing dirty across the replay
-    # must not suppress it for the user's next real edit.
-    node = page.locator(".react-flow__node").first
-    box = node.bounding_box()
-    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + 10)
-    page.mouse.down()
-    page.mouse.move(box["x"] + box["width"] / 2 + 120, box["y"] + 90, steps=10)
-    page.mouse.up()
-
-    expect(disk).to_have_attribute("data-curio-save-state", "unsaved", timeout=15000), (
-        "moving a node after the load did not mark the dataflow dirty; the "
-        "hydration guard is swallowing real edits"
-    )
+    # must not suppress it for the user's next real edit. If this is what fails,
+    # the guard is swallowing edits - worse than the phantom flag it replaced,
+    # because the user is then told their work is saved when it is not.
+    before = len(canvas_nodes(page))
+    drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=(150, 150))
+    assert len(canvas_nodes(page)) == before + 1
+    expect(disk).to_have_attribute("data-curio-save-state", "unsaved", timeout=15000)
