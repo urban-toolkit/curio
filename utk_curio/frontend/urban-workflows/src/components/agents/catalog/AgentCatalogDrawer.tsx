@@ -26,7 +26,6 @@ import cardStyles from "../../packages/publishing/PackageCard.module.css";
 import styles from "./AgentCatalogDrawer.module.css";
 import { matchesAgentSearch, sortAgentCards, installLabel, installTitle } from "./agentListUtils";
 import { AgentScope, useAgentCatalogDrawer } from "./useAgentCatalogDrawer";
-import { UNSAVED_DATAFLOW_NOTICE } from "../../../constants/catalogCopy";
 import ConfirmDialog from "../../ConfirmDialog";
 
 export interface AgentCatalogDrawerProps {
@@ -262,15 +261,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         {c.error ? (
           <div className={shell.error} role="alert">
             {c.error}
-          </div>
-        ) : null}
-
-        {/* Adding is not blocked on a save, it performs one. Saying so beats a
-            disabled button with no explanation, which is what this drawer used
-            to show. Shared wording - see constants/catalogCopy. */}
-        {!projectId ? (
-          <div className={shell.noticeBanner} role="status">
-            <span className={shell.noticeBannerText}>{UNSAVED_DATAFLOW_NOTICE}</span>
           </div>
         ) : null}
 

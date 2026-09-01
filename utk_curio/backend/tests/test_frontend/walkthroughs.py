@@ -566,10 +566,13 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
     dialog = open_agent_drawer(ctx)
 
     ctx.say("The Agent Catalog", "Open on a dataflow that has never been saved.")
-    banner = dialog.get_by_text("isn't saved yet", exact=False).first
-    assert banner.count(), (
-        "the drawer does not say that adding will save the dataflow first - a "
-        "user meeting a gate here has nothing to go on"
+    # The unsaved-dataflow banner was removed from all three catalogs: it only
+    # ever appeared on an unsaved dataflow, so it read as a state the other
+    # surfaces did not have, and the add already explains itself twice over -
+    # the confirmation says what it will do, the save indicator shows it done.
+    assert not dialog.get_by_text("isn't saved yet", exact=False).count(), (
+        "the unsaved-dataflow banner is back; it was removed for repeating "
+        "what the confirmation and the save indicator already say"
     )
 
     add = dialog.get_by_role("button", name="Add to dataflow").first

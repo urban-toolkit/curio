@@ -134,12 +134,14 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeEnabled();
   });
 
-  it("says the add will save the dataflow first", async () => {
+  it("shows no unsaved-dataflow banner", async () => {
+    // The banner is gone from all three catalogs. It only ever appeared on an
+    // unsaved dataflow, so it read as a state the other two surfaces did not
+    // have, and the add explains itself: the confirmation says what will
+    // happen and the save indicator shows that it did.
     render(<AgentCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    // The Node catalog's disclosure, verbatim - a disabled button with no
-    // explanation was the thing being reported.
-    expect(screen.getByText(/isn't saved yet; adding will save it first/i)).toBeInTheDocument();
+    expect(screen.queryByText(/isn.{0,6}t saved yet/i)).not.toBeInTheDocument();
   });
 
   it("saves the dataflow, then installs into the id that comes back", async () => {

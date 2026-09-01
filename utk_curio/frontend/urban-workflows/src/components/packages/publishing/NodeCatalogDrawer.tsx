@@ -25,7 +25,6 @@ import { DrawerTab, SortMode } from "./packageTypes";
 import { sortPackages, matchesSearch } from "./packageUtils";
 import { restartNotice } from "../../../services/packageRestartCopy";
 import shell from "./CatalogDrawerShell.module.css";
-import { UNSAVED_DATAFLOW_NOTICE } from "../../../constants/catalogCopy";
 import styles from "./NodeCatalogDrawer.module.css";
 import { modalStackDepth } from "../../ModalShell";
 import ConfirmDialog from "../../ConfirmDialog";
@@ -431,19 +430,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     onReloadFromCatalog: (p: PackagePayload) => void onReloadFromCatalog(p),
   };
 
-  const tabLabel: Record<DrawerTab, string> = {
-    featured: "Browse all",  // legacy: collapsed Featured into Browse all
-    browse: "Browse all",
-    installed: "In dataflow",
-    updates: "In dataflow",  // legacy: Updates badge shows on In dataflow
-  };
-
-  const unsavedBanner = !projectId ? (
-    <div className={shell.noticeBanner} role="status">
-      <span className={shell.noticeBannerText}>{UNSAVED_DATAFLOW_NOTICE}</span>
-    </div>
-  ) : null;
-
   return (
     <>
       <div
@@ -495,7 +481,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           />
 
           <div className={shell.scrollBody}>
-            {unsavedBanner}
             {restartNoticeText ? (
               <div className={styles.noticeBanner} role="status">
                 <span className={styles.errorBannerText}>{restartNoticeText}</span>
@@ -534,8 +519,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
               )
             ) : (
               <>
-                <p className={shell.sectionLabel}>{tabLabel[tab]}</p>
-
                 {filteredCatalog.length === 0 ? (
                   <div className={shell.empty}>No packages match the current filters.</div>
                 ) : (
