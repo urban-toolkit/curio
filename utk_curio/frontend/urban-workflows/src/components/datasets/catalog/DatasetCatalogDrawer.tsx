@@ -299,6 +299,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           body={confirmAction.body}
           confirmLabel={confirmAction.confirmLabel}
           destructive={confirmAction.destructive}
+          layer="overlay"
           onCancel={dismissConfirm}
           onConfirm={() => {
             const { run } = confirmAction;

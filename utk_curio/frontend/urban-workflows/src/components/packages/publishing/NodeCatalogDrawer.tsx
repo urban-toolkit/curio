@@ -617,6 +617,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           body={confirmAction.body}
           confirmLabel={confirmAction.confirmLabel}
           destructive
+          layer="overlay"
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => {
             const { run } = confirmAction;

@@ -598,6 +598,8 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
           body={`Unpublish ${activeDataset.title} from the Data Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`}
           confirmLabel="Unpublish"
           destructive
+          // The detail panel renders inside the catalog drawer/modal.
+          layer="overlay"
           onCancel={() => setUnpublishConfirmOpen(false)}
           onConfirm={() => {
             setUnpublishConfirmOpen(false);

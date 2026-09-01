@@ -10,6 +10,8 @@ export interface PromptDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   busy?: boolean;
+  /** ``"overlay"`` stacks above a catalog drawer; see ConfirmDialog. */
+  layer?: "default" | "overlay";
   /** Called with the trimmed value. Never called with an empty string. */
   onConfirm: (value: string) => void;
   onCancel: () => void;
@@ -28,6 +30,7 @@ export default function PromptDialog({
   confirmLabel = "Save",
   cancelLabel = "Cancel",
   busy = false,
+  layer = "default",
   onConfirm,
   onCancel,
 }: PromptDialogProps) {
@@ -37,7 +40,7 @@ export default function PromptDialog({
   const trimmed = value.trim();
 
   return (
-    <ModalShell onClose={busy ? () => {} : onCancel} titleId={titleId}>
+    <ModalShell onClose={busy ? () => {} : onCancel} titleId={titleId} layer={layer}>
       <form
         className={styles.dialog}
         onSubmit={(e) => {

@@ -17,6 +17,16 @@ export interface ConfirmDialogProps {
    *  focus to Cancel, so a stray Enter cannot delete anything. */
   destructive?: boolean;
   busy?: boolean;
+  /** ``"overlay"`` stacks the dialog above a catalog drawer.
+   *
+   *  The drawers sit at ``--curio-z-agent-drawer`` / ``--curio-z-node-drawer``
+   *  (~10050), well above ModalShell's default ``--curio-z-modal-base`` (500).
+   *  A confirmation opened FROM a drawer therefore rendered underneath it: the
+   *  dialog is centred on the viewport, the drawer covers the right of the
+   *  screen, and the confirm button - the rightmost thing in the footer - was
+   *  painted over and could not be clicked at all. Any call site inside a
+   *  drawer must pass this. */
+  layer?: "default" | "overlay";
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -41,6 +51,7 @@ export default function ConfirmDialog({
   cancelLabel = "Cancel",
   destructive = false,
   busy = false,
+  layer = "default",
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -62,7 +73,7 @@ export default function ConfirmDialog({
   return (
     // Escape and the backdrop both mean "cancel". Held inert while busy so a
     // confirm that kicked off a slow uninstall cannot be dismissed mid-flight.
-    <ModalShell onClose={busy ? () => {} : onCancel} titleId={titleId}>
+    <ModalShell onClose={busy ? () => {} : onCancel} titleId={titleId} layer={layer}>
       <div className={styles.dialog}>
         <h2 id={titleId} className={styles.title}>
           {title}

@@ -343,6 +343,9 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
           body={confirmAction.body}
           confirmLabel={confirmAction.confirmLabel}
           destructive={confirmAction.destructive}
+          // Opened from inside the drawer, which paints above the default
+          // modal layer - without this the confirm button is under it.
+          layer="overlay"
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => {
             const { run } = confirmAction;
