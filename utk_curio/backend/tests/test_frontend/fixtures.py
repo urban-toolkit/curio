@@ -324,6 +324,16 @@ def curio_servers(session_app, request):
             "python", "curio.py", "start",
             "--backend-port", str(backend_port),
             "--sandbox-port", str(sandbox_port),
+            # Passed explicitly, like the other two. Without it ``curio.py
+            # start`` falls back to its own default of 8080 - and
+            # ``start_frontend`` both ``_kill_port``s and binds whatever port it
+            # was given. So a run configured onto a free FRONTEND_PORT still
+            # killed whatever held 8080 and then served there, while the
+            # readiness gate below waited on the port nobody was listening on.
+            # Invisible at the default port, where the two agree; fatal to
+            # running two stacks side by side, which is the only reason to set
+            # FRONTEND_PORT at all.
+            "--frontend-port", str(frontend_port),
             *extra_args,
         ],
         cwd=REPO_ROOT,

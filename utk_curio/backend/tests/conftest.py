@@ -408,11 +408,20 @@ def session_app():
     application.config.update(
         {
             "TESTING": True,
-            "LIVESERVER_PORT": 5002,
-            # Use 5002 so frontend (dotenv .env / default) finds the backend
-            "BACKEND_PORT": 5002,
-            "SANDBOX_PORT": 2000,
-            "FRONTEND_PORT": 8080,
+            "LIVESERVER_PORT": int(os.environ.get("BACKEND_PORT") or 5002),
+            # 5002/2000/8080 by default, so the frontend's dotenv `.env` finds the
+            # backend with no extra configuration.
+            #
+            # Read from the environment rather than pinned, because these three
+            # values are what the e2e stack BINDS and what ``_free_port`` KILLS
+            # before binding. Hardcoded, they made the ports in ``config.py``
+            # decorative: a run pointed at a free port still seized 5002/2000/8080
+            # and killed whatever was serving there - so two clones could not run
+            # their suites at the same time, and the one that lost found its dev
+            # stack silently dead.
+            "BACKEND_PORT": int(os.environ.get("BACKEND_PORT") or 5002),
+            "SANDBOX_PORT": int(os.environ.get("SANDBOX_PORT") or 2000),
+            "FRONTEND_PORT": int(os.environ.get("FRONTEND_PORT") or 8080),
         }
     )
     return application
