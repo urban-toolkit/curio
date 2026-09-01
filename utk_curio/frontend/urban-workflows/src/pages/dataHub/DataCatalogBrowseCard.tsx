@@ -1,16 +1,10 @@
 import React from "react";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
 import {
-  CatalogPublishPill,
-  shouldShowPublishPill,
-} from "../../components/packages/CatalogPublishPill";
-import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetDisplayTitle,
   datasetSubtitle,
-  isDatasetPublishedToCatalog,
-  isUserOwnedDataset,
 } from "../../services/datasetCatalog";
 import { isFresh, metaLeft, relativeTime } from "./dataHubBrowseFormat";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
@@ -20,9 +14,9 @@ export interface DataCatalogBrowseCardProps {
   selected: boolean;
   onSelect: () => void;
   onViewDetails: () => void;
-  publishingId: string | null;
-  onPublish: (dataset: DatasetCatalogItem) => void;
-  catalogPublishAllowed: boolean;
+  /** In the user's "all projects" list. Account-level, so it outranks the
+   *  per-project state below it. */
+  inAllProjects?: boolean;
 }
 
 export function DataCatalogBrowseCard({
@@ -30,22 +24,11 @@ export function DataCatalogBrowseCard({
   selected,
   onSelect,
   onViewDetails,
-  publishingId,
-  onPublish,
-  catalogPublishAllowed,
+  inAllProjects = false,
 }: DataCatalogBrowseCardProps) {
   const fresh = isFresh(dataset.updatedAt);
   const left = metaLeft(dataset);
   const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 3) : [dataset.format];
-  const published = isDatasetPublishedToCatalog(dataset);
-  const showPublishPill = shouldShowPublishPill({
-    isPublished: published,
-    allowPublish: catalogPublishAllowed,
-    // Only the user's own — see `isUserOwnedDataset`. This said `true`, so
-    // every dataset on the browse page offered to publish itself back into the
-    // catalog it came from.
-    canPublish: isUserOwnedDataset(dataset),
-  });
 
   return (
     <article
@@ -73,8 +56,14 @@ export function DataCatalogBrowseCard({
             <span className={styles.cardFormatBadge}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
           }
           trailing={
-            dataset.installed ? (
-              <span className={styles.stripBadgePopular}>✓ In dataflow</span>
+            /* Two different scopes, and the wider one wins: a dataset in every
+               project is also in this one, so showing both would be a tautology
+               plus a narrowing. Matches the Node card, which shows only
+               "In all projects". */
+            inAllProjects ? (
+              <span className={styles.stripBadgePopular}>✓ In all projects</span>
+            ) : dataset.installed ? (
+              <span className={styles.stripBadgePopular}>✓ In project</span>
             ) : null
           }
         />
@@ -114,22 +103,12 @@ export function DataCatalogBrowseCard({
       </div>
 
       <div className={styles.cardActions}>
-        <div className={styles.cardActionsLeft}>
-          {showPublishPill ? (
-            <CatalogPublishPill
-              variant="hub"
-              dirName={dataset.dirName || dataset.id}
-              published={published}
-              allowPublish={catalogPublishAllowed}
-              busy={publishingId === dataset.id}
-              onPublish={() => {
-                void onPublish(dataset);
-              }}
-              publishedTitle="Listed in the Data Catalog"
-              publishActionTitle="Publish this dataset into the shared catalog (datasets/)"
-            />
-          ) : null}
-        </div>
+        {/* A card states what a thing IS and offers the one way in. Publishing
+            is an account-level decision about a specific item, so it lives in
+            the detail drawer with the other decisions - not on every tile in a
+            grid, where it competed with the card's own identity and put a
+            deployment-wide write one stray click from a browse gesture. */}
+        <div className={styles.cardActionsLeft} />
         <div className={styles.cardActionsRight}>
           <button
             className={styles.linkButton}

@@ -1,10 +1,6 @@
 import React from "react";
 
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
-import {
-  CatalogPublishPill,
-  shouldShowPublishPill,
-} from "../../components/packages/CatalogPublishPill";
 import type { AgentCard } from "../../api/agentsApi";
 import { agentCategoryKey } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
@@ -13,11 +9,8 @@ import cardStyles from "./AgentCatalogBrowseCard.module.css";
 export interface AgentCatalogBrowseCardProps {
   agent: AgentCard;
   selected: boolean;
-  busy: boolean;
   onSelect: () => void;
   onViewDetails: () => void;
-  onPublish: (agent: AgentCard) => void;
-  catalogPublishAllowed: boolean;
 }
 
 /**
@@ -35,22 +28,14 @@ export interface AgentCatalogBrowseCardProps {
 export function AgentCatalogBrowseCard({
   agent,
   selected,
-  busy,
   onSelect,
   onViewDetails,
-  onPublish,
-  catalogPublishAllowed,
 }: AgentCatalogBrowseCardProps) {
   const categoryKey = agentCategoryKey(agent.category);
   // Tags read as the agent's shape: what it does, then what it attaches to.
   const tags = [agent.category, ...agent.hooks.map((h) => `hook: ${h}`)]
     .filter(Boolean)
     .slice(0, 3) as string[];
-  const showPublishPill = shouldShowPublishPill({
-    isPublished: agent.published,
-    allowPublish: catalogPublishAllowed,
-    canPublish: agent.publishable,
-  });
 
   return (
     <article
@@ -81,7 +66,7 @@ export function AgentCatalogBrowseCard({
           kind="agent"
           badge={<span className={styles.cardFormatBadge}>{agent.category}</span>}
           trailing={
-            agent.imported ? <span className={styles.stripBadgePopular}>✓ In your account</span> : null
+            agent.imported ? <span className={styles.stripBadgePopular}>✓ In all projects</span> : null
           }
         />
       </div>
@@ -111,20 +96,10 @@ export function AgentCatalogBrowseCard({
       </div>
 
       <div className={styles.cardActions}>
-        <div className={styles.cardActionsLeft}>
-          {showPublishPill ? (
-            <CatalogPublishPill
-              variant="hub"
-              dirName={agent.dirName}
-              published={agent.published}
-              allowPublish={catalogPublishAllowed}
-              busy={busy}
-              onPublish={() => onPublish(agent)}
-              publishedTitle="Listed in the Agent Catalog"
-              publishActionTitle="Publish this agent into the shared catalog"
-            />
-          ) : null}
-        </div>
+        {/* Identity and one way in. Publishing is an account-level decision
+            about one agent and belongs in the detail drawer beside the other
+            decisions, not on every tile in the grid. */}
+        <div className={styles.cardActionsLeft} />
         <div className={styles.cardActionsRight}>
           <button
             className={styles.linkButton}

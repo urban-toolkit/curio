@@ -642,6 +642,34 @@
   text-decoration: underline;
 }
 
+/* A drawer CTA that is neither an action nor a destructive one.
+ *
+ * The catalogs run a strict two-colour vocabulary: dark filled = action, light
+ * bordered = destructive. "View details" is neither - it navigates - so giving
+ * it either treatment would say something false about it. It keeps the CTA
+ * stack's 42px height so the column does not go ragged, and reads as the link
+ * it is. Same role as `.linkButton` on the cards, sized for the drawer.
+ */
+.drawerLinkButton {
+  width: 100%;
+  height: 42px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drawerLinkButton:hover {
+  text-decoration: underline;
+}
+
 /* ══════════════════════════════════════════
    RIGHT DETAIL DRAWER
    ══════════════════════════════════════════ */

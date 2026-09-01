@@ -1,10 +1,6 @@
 import React from "react";
 import { PackagePayload } from "../../api/packagesApi";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
-import {
-  CatalogPublishPill,
-  shouldShowPublishPill,
-} from "../../components/packages/CatalogPublishPill";
 import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 import styles from "./PackageBrowseCard.module.css";
@@ -37,14 +33,8 @@ export interface PackageBrowseCardProps {
   isInstalled: boolean;
   hasUpdate: boolean;
   catalogRow: PackagePayload | undefined;
-  busy: boolean;
-  catalogPublishAllowed: boolean;
-  isPublished?: boolean;
-  publishingDir?: string | null;
-  showPublish: boolean;
   onSelect: () => void;
-  onInstall: (pkg: PackagePayload) => void;
-  onPublish?: (dirName: string) => void;
+  onViewDetails?: () => void;
 }
 
 export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
@@ -53,24 +43,11 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
   isInstalled,
   hasUpdate,
   catalogRow,
-  busy,
-  catalogPublishAllowed,
-  isPublished,
-  publishingDir,
-  showPublish,
   onSelect,
-  onInstall,
-  onPublish,
+  onViewDetails,
 }) => {
   const cat = primaryCategory(pkg);
   const cardStyles = styles as Record<string, string>;
-  const cardBusy = busy;
-  const isAuthorable = pkg.readOnly !== true;
-  const showPublishPill = shouldShowPublishPill({
-    isPublished,
-    allowPublish: catalogPublishAllowed,
-    canPublish: onPublish != null && isAuthorable,
-  });
 
   return (
     <article
@@ -94,7 +71,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
           kind="package"
           badge={<span className={browseStyles.cardFormatBadge}>{cat}</span>}
           trailing={
-            isInstalled ? <span className={browseStyles.stripBadgePopular}>✓ In defaults</span> : null
+            isInstalled ? <span className={browseStyles.stripBadgePopular}>✓ In all projects</span> : null
           }
         />
       </div>
@@ -135,46 +112,23 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
       </div>
 
       <div className={browseStyles.cardActions}>
-        <div className={browseStyles.cardActionsLeft}>
-          {showPublishPill ? (
-            <CatalogPublishPill
-              variant="hub"
-              dirName={pkg.dirName}
-              published={!!isPublished}
-              allowPublish={catalogPublishAllowed}
-              busy={publishingDir === pkg.dirName}
-              onPublish={onPublish ?? (() => {})}
-            />
-          ) : null}
-        </div>
+        {/* Identity and one way in. Publishing is an account-level decision
+            about one package and belongs in the detail drawer beside the other
+            decisions, not on every tile in the grid. */}
+        <div className={browseStyles.cardActionsLeft} />
         <div className={browseStyles.cardActionsRight}>
-          {!isInstalled ? (
-            <button
-              type="button"
-              className={styles.installButton}
-              disabled={cardBusy}
-              onClick={(e) => {
-                e.stopPropagation();
-                onInstall(pkg);
-              }}
-            >
-              Add to all projects
-            </button>
-          ) : hasUpdate ? (
-            <button
-              type="button"
-              className={styles.updateButton}
-              disabled={cardBusy}
-              onClick={(e) => {
-                e.stopPropagation();
-                onInstall(catalogRow ?? pkg);
-              }}
-            >
-              Update
-            </button>
-          ) : (
-            <span className={styles.installedHint}>In defaults</span>
-          )}
+          <button
+            className={browseStyles.linkButton}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              // The modal, not the drawer. This used to call `onSelect`, so on
+              // a card whose drawer was already open the click did nothing.
+              (onViewDetails ?? onSelect)();
+            }}
+          >
+            View details
+          </button>
         </div>
       </div>
     </article>
