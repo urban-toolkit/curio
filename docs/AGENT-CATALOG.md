@@ -261,7 +261,7 @@ account-level setting, edited in **AI Settings** from the header.
 | Provider | OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint. |
 | Base URL | Only for a custom endpoint: Ollama, LM Studio, vLLM, Groq, Azure. |
 | API key | Stored per account. Leave blank to keep the saved one. |
-| Model | Which model answers. **Fetch models** asks the endpoint above what it serves and turns this into a dropdown; endpoints that publish no list keep a free-text box. Leave blank to inherit the deployment's. |
+| Model | Which model answers. **Fetch models** asks the endpoint above what it serves and turns this into a dropdown, topped up with a short curated list for that provider. Leave blank to inherit the deployment's. |
 | HuggingFace token | Not for agents: it unlocks *gated* models in the Street Vision node. It sits here because it is the same kind of setting, a model credential you hold per account. Public models need none. |
 
 ### Choosing the model
@@ -272,12 +272,36 @@ the base URL and key currently *on screen* rather than the saved ones — you ar
 usually choosing a model for an endpoint you have not saved yet). What comes
 back becomes a dropdown.
 
-It is a convenience, not a gate. Only OpenAI-compatible endpoints have a
-listing in the shape the OpenAI SDK speaks, so Anthropic and Gemini report
-`listable: false` and the field stays typeable; so does an endpoint that refuses
-the request, with the reason shown beside the button. A model you saved earlier
-stays selected and is marked *(not listed)* if the endpoint stops offering it,
-rather than disappearing from the control that claims to show it.
+It is a convenience, not a gate. A model you saved earlier stays selected and is
+marked *(not listed)* if the endpoint stops offering it, rather than
+disappearing from the control that claims to show it, and the field is free text
+until you press the button.
+
+**The answer is hybrid** (the decision recorded for [#241]).
+Two sources fill the dropdown, in that order of authority:
+
+| Group | Where it comes from |
+|---|---|
+| *From this endpoint* | What the endpoint reported. OpenAI-compatible endpoints, Anthropic, and Gemini are all asked; for Gemini only models that support `generateContent` are offered, since an embedding model saved here would fail at the first agent run. |
+| *Known models for this provider* | A short curated list per provider, held in `agents/model_catalog.py`. Appended after anything live, and returned on its own when the live call could not happen. |
+
+The curated list is a **suggestion, not an allowlist**. Nothing rejects a model
+that is missing from it, the box stays free text, and a live listing always
+wins. It exists so that someone who has not pasted a key yet, is offline, or
+holds a key without the scope to list still has something to pick instead of an
+error and an empty box. Because of that, a failed listing is a `200` carrying
+`source: "curated"` and the reason in `warning`; only a **custom** endpoint,
+where there is no such thing as a model it probably serves, still answers `400`.
+
+Curio does not send a placeholder key: every provider authenticates its models
+endpoint, so with no key at all the curated list answers immediately rather than
+waiting out a socket timeout for a foregone 401.
+
+An earlier version of this panel reported Anthropic and Gemini as
+`listable: false` and said *"This provider does not publish a model list"*. That
+was untrue - nobody had asked them - and it is what #241 was filed about.
+
+[#241]: https://github.com/urban-toolkit/curio/issues/241
 
 Whoever runs the Curio install can set a default for all four with
 `curio.py start` flags (see [Operator notes](#operator-notes)). Those flags and

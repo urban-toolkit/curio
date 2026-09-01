@@ -73,8 +73,14 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   // asked, or it could not tell us", and the Model field stays free text -
   // an endpoint that cannot list must not become an endpoint you cannot use.
   const [models, setModels] = useState<string[]>([]);
+  // The subset of `models` that came from the curated table rather than from
+  // the endpoint (#241). Held separately so the dropdown can group the two and
+  // the user can see which is which; a curated id is a suggestion, and reading
+  // it as "what this endpoint serves" is how a wrong model gets saved.
+  const [curatedModels, setCuratedModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelsNote, setModelsNote] = useState<string | null>(null);
   // What this deployment configured with --llm-provider / --llm-base-url /
   // --llm-model. Those flags and this panel write the same account-wide
   // setting, so the flags' values belong here as the inherited value rather
@@ -104,7 +110,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setError(null);
       setSuccess(false);
       setModels([]);
+      setCuratedModels([]);
       setModelsError(null);
+      setModelsNote(null);
     }
   }, [isOpen, user]);
 
@@ -124,14 +132,26 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         baseUrl: uiMode === "custom" ? baseUrl : "",
         apiKey,
       });
-      setModels(res.models || []);
-      if (!res.listable) {
-        setModelsError("This provider does not publish a model list.");
-      } else if (!res.models?.length) {
+      const listed = res.models || [];
+      setModels(listed);
+      setCuratedModels(res.curated || []);
+      if (!listed.length) {
         setModelsError("The endpoint returned no models.");
+      } else if (!res.listable) {
+        // It used to say "This provider does not publish a model list", which
+        // was both wrong (nobody had asked Anthropic or Gemini) and a dead end.
+        // Now there is always something to pick, and the reason sits next to it.
+        setModelsNote(
+          res.warning
+            ? `${res.warning} Showing known models for this provider instead.`
+            : "Showing known models for this provider.",
+        );
+      } else if (res.source === "live+curated") {
+        setModelsNote("Known models are listed after the ones this endpoint reported.");
       }
     } catch (e: any) {
       setModels([]);
+      setCuratedModels([]);
       setModelsError(e?.message || "Could not reach the endpoint.");
     } finally {
       setLoadingModels(false);
@@ -147,7 +167,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
     setModel("");
     // A list fetched from one provider must not be offered for another.
     setModels([]);
+    setCuratedModels([]);
     setModelsError(null);
+    setModelsNote(null);
     if (newMode !== "custom") {
       setBaseUrl("");
     }
@@ -216,6 +238,12 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const info = PROVIDER_INFO[uiMode];
+  // `models` is the merged list the server returned, live entries first. Split
+  // it back apart for the dropdown's two groups rather than asking the server
+  // for it twice.
+  const curatedSet = new Set(curatedModels);
+  const liveModels = models.filter((m) => !curatedSet.has(m));
+  const offeredCurated = models.filter((m) => curatedSet.has(m));
 
   return (
     // `layer="overlay"` because the Agent Catalog drawer's header cog opens
@@ -353,9 +381,24 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                       ? `${deployed.model} (from this deployment)`
                       : "Select a model…"}
                   </option>
-                  {models.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
+                  {/* Grouped so a curated suggestion is never mistaken for
+                      something the endpoint said it had (#241). When only one
+                      group has entries the label still reads correctly, so
+                      there is no special case for that. */}
+                  {liveModels.length > 0 && (
+                    <optgroup label="From this endpoint">
+                      {liveModels.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {offeredCurated.length > 0 && (
+                    <optgroup label="Known models for this provider">
+                      {offeredCurated.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </optgroup>
+                  )}
                   {/* A model saved earlier that the endpoint no longer lists
                       would otherwise vanish from the box that claims to show
                       it. */}
@@ -392,6 +435,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 </button>
                 {modelsError && (
                   <span className={styles.modelsError}>{modelsError}</span>
+                )}
+                {!modelsError && modelsNote && (
+                  <span className={styles.modelsNote}>{modelsNote}</span>
                 )}
               </div>
               <span className={modal.hint}>

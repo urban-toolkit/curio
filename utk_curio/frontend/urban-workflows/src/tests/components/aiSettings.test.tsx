@@ -41,7 +41,13 @@ let mockDefault: unknown = {
 };
 let mockDefaultRejects = false;
 
-let mockModels: { models: string[]; listable: boolean } = {
+let mockModels: {
+  models: string[];
+  listable: boolean;
+  source?: string;
+  curated?: string[];
+  warning?: string | null;
+} = {
   models: [],
   listable: true,
 };
@@ -344,6 +350,157 @@ describe("AI Settings: choosing a model from the endpoint", () => {
     expect((await screen.findByLabelText("Model")).tagName).toBe("SELECT");
 
     fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    expect(screen.getByLabelText("Model")).toHaveProperty("tagName", "INPUT");
+  });
+});
+
+/**
+ * #241 asked whether Curio should discover models dynamically, ship a fixed
+ * list, or do both. It does both.
+ *
+ * Two things this suite has to keep honest. The panel must never claim a
+ * provider "does not publish a model list" - that was the old copy for
+ * Anthropic and Gemini, and it was untrue: nobody had asked them. And a
+ * curated suggestion must stay visibly distinct from what an endpoint actually
+ * reported, because confusing the two is how a model the endpoint does not have
+ * gets saved, which surfaces much later as a failed agent run.
+ *
+ * The guard tests above still apply and are load-bearing: the field is free
+ * text until Fetch is pressed, and one provider's list is never offered for
+ * another.
+ */
+describe("AI Settings: the curated fallback", () => {
+  const fetchModels = async () => {
+    fireEvent.click(screen.getByRole("button", { name: /Fetch models/i }));
+    await waitFor(() => expect(agentsApi.providerModels).toHaveBeenCalled());
+  };
+
+  it("offers known models when the endpoint could not be asked", async () => {
+    mockModels = {
+      models: ["claude-sonnet-5", "claude-haiku-4-5"],
+      listable: false,
+      source: "curated",
+      curated: ["claude-sonnet-5", "claude-haiku-4-5"],
+      warning: "Add an API key above to ask this provider what it serves.",
+    };
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    await fetchModels();
+
+    const select = (await screen.findByLabelText("Model")) as HTMLSelectElement;
+    expect(select.tagName).toBe("SELECT");
+    expect(
+      Array.from(select.querySelectorAll("option")).map((o) => o.textContent),
+    ).toEqual(expect.arrayContaining(["claude-sonnet-5", "claude-haiku-4-5"]));
+  });
+
+  it("never says a provider publishes no model list", async () => {
+    // The old copy. It was wrong, and it was a dead end for the user.
+    mockModels = {
+      models: ["claude-sonnet-5"],
+      listable: false,
+      source: "curated",
+      curated: ["claude-sonnet-5"],
+      warning: "Could not list models: 401",
+    };
+    const { baseElement } = open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    await fetchModels();
+    expect(baseElement.textContent).not.toMatch(/does not publish a model list/i);
+  });
+
+  it("says why it is offering a curated list rather than a live one", async () => {
+    mockModels = {
+      models: ["claude-sonnet-5"],
+      listable: false,
+      source: "curated",
+      curated: ["claude-sonnet-5"],
+      warning: "Add an API key above to ask this provider what it serves.",
+    };
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    await fetchModels();
+    expect(await screen.findByText(/Add an API key above/)).toBeInTheDocument();
+    expect(screen.getByText(/Showing known models/i)).toBeInTheDocument();
+  });
+
+  it("keeps curated suggestions in their own group, after the live ones", async () => {
+    // A suggestion read as "what this endpoint serves" is how the wrong model
+    // gets saved.
+    mockModels = {
+      models: ["endpoint-model", "gpt-4o-mini"],
+      listable: true,
+      source: "live+curated",
+      curated: ["gpt-4o-mini"],
+      warning: null,
+    };
+    open();
+    await fetchModels();
+
+    const select = (await screen.findByLabelText("Model")) as HTMLSelectElement;
+    const groups = Array.from(select.querySelectorAll("optgroup"));
+    expect(groups.map((g) => g.getAttribute("label"))).toEqual([
+      "From this endpoint",
+      "Known models for this provider",
+    ]);
+    expect(
+      Array.from(groups[0].querySelectorAll("option")).map((o) => o.value),
+    ).toEqual(["endpoint-model"]);
+    expect(
+      Array.from(groups[1].querySelectorAll("option")).map((o) => o.value),
+    ).toEqual(["gpt-4o-mini"]);
+  });
+
+  it("draws no curated group when everything came from the endpoint", async () => {
+    mockModels = {
+      models: ["gemma4"],
+      listable: true,
+      source: "live",
+      curated: [],
+      warning: null,
+    };
+    open();
+    await fetchModels();
+
+    const select = (await screen.findByLabelText("Model")) as HTMLSelectElement;
+    expect(
+      Array.from(select.querySelectorAll("optgroup")).map((g) =>
+        g.getAttribute("label"),
+      ),
+    ).toEqual(["From this endpoint"]);
+  });
+
+  it("drops the curated list when the provider changes", async () => {
+    // A suggestion for Anthropic offered on the OpenAI tab is worse than none.
+    mockModels = {
+      models: ["claude-sonnet-5"],
+      listable: false,
+      source: "curated",
+      curated: ["claude-sonnet-5"],
+      warning: "no key",
+    };
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    await fetchModels();
+    expect((await screen.findByLabelText("Model")).tagName).toBe("SELECT");
+
+    fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
+    expect(screen.getByLabelText("Model")).toHaveProperty("tagName", "INPUT");
+    expect(screen.queryByText(/Showing known models/i)).toBeNull();
+  });
+
+  it("still reports an endpoint that answered with nothing at all", async () => {
+    mockModels = {
+      models: [],
+      listable: true,
+      source: "none",
+      curated: [],
+      warning: null,
+    };
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
+    await fetchModels();
+    expect(await screen.findByText(/returned no models/i)).toBeInTheDocument();
     expect(screen.getByLabelText("Model")).toHaveProperty("tagName", "INPUT");
   });
 });
