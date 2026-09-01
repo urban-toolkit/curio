@@ -224,6 +224,12 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
                 allowPublish={publishAllowed}
                 busy={publishingId === dataset.id}
                 onPublish={onPublish ?? (() => {})}
+                // Without these the pill falls back to the PACKAGE copy, so a
+                // dataset offered "Publish this installed package into the
+                // shared catalog (packages/)". The browse page already passes
+                // the dataset wording; the canvas surfaces did not.
+                publishedTitle="Listed in the Data Catalog"
+                publishActionTitle="Publish this dataset into the shared catalog (datasets/)"
               />
             ) : null}
           </div>

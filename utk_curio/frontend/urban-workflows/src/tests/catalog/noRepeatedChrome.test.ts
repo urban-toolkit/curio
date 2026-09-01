@@ -168,3 +168,57 @@ describe("Escape dismisses every catalog drawer, and every one honours its pin",
     expect(read(file)).toContain("modalStackDepth() > 0");
   });
 });
+
+describe("the publish pill says what kind of thing it is publishing", () => {
+  // `CatalogPublishPill` defaults to the PACKAGE wording, so any surface that
+  // does not override it tells the user the wrong thing. The two canvas
+  // dataset surfaces did not: hovering Publish on a dataset offered to
+  // "Publish this installed package into the shared catalog (packages/)".
+  // Publish is the only deployment-wide write in the product, so the copy
+  // describing it has to be true.
+  const DATASET_SURFACES = [
+    "components/datasets/catalog/DatasetCard.tsx",
+    "components/datasets/catalog/InstalledDatasetsList.tsx",
+    "pages/dataHub/DataCatalogBrowseCard.tsx",
+    "pages/dataHub/DataCatalogBrowseDrawer.tsx",
+  ];
+  const AGENT_SURFACES = [
+    "components/agents/catalog/AgentCatalogDrawer.tsx",
+    "pages/agents/AgentCatalogBrowseCard.tsx",
+    "pages/agents/AgentCatalogBrowseDrawer.tsx",
+  ];
+
+  test.each(DATASET_SURFACES)("%s calls a dataset a dataset", (file) => {
+    const src = read(file);
+    if (!src.includes("<CatalogPublishPill")) return;
+    expect(src).toContain("publishActionTitle");
+    expect(src).toMatch(/publishActionTitle="Publish this dataset/);
+    expect(src).not.toMatch(/publishActionTitle="[^"]*package/);
+  });
+
+  test.each(AGENT_SURFACES)("%s calls an agent an agent", (file) => {
+    const src = read(file);
+    if (!src.includes("<CatalogPublishPill")) return;
+    expect(src).toMatch(/publishActionTitle="Publish this agent/);
+  });
+
+  test("the default wording is still the package one, for package surfaces", () => {
+    // Package surfaces rely on the default rather than repeating it.
+    expect(read("components/packages/CatalogPublishPill.tsx")).toContain(
+      "Publish this installed package into the shared catalog (packages/)",
+    );
+  });
+});
+
+describe("the node install note describes the environment it really touches", () => {
+  // `services.py` installs through `pip_runner.install_python_deps`, which runs
+  // `sys.executable -m pip install` - the interpreter Curio itself runs on,
+  // shared by every dataflow and every user of the instance. The note used to
+  // say "this project's sandbox interpreter", which is a different thing and
+  // would let someone install into a shared environment believing it private.
+  test("it does not claim the install is project-scoped", () => {
+    const src = read("components/packages/publishing/EnvNote.tsx");
+    expect(src).not.toMatch(/this project.{0,3}s sandbox interpreter/);
+    expect(src).toMatch(/every dataflow and every user|shares|shared/i);
+  });
+});

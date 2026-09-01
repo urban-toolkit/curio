@@ -11,10 +11,12 @@ export const EnvNote: React.FC = () => (
       i
     </span>
     <div>
-      <p className={styles.envTitle}>Shared project environment</p>
+      <p className={styles.envTitle}>Shared Python environment</p>
       <p className={styles.envText}>
-        Package python deps install into this project&apos;s sandbox interpreter;
-        conflicting versions fail at install.
+        Package Python deps install into the interpreter Curio itself runs on,
+        which every dataflow and every user of this instance shares - not into
+        this project alone. Conflicting versions fail at install, and removing a
+        package uninstalls them again for everyone.
       </p>
     </div>
   </div>

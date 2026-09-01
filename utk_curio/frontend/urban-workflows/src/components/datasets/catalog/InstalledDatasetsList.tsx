@@ -92,6 +92,8 @@ function InstalledDatasetRow({
               allowPublish={publishAllowed}
               busy={publishingId === dataset.id}
               onPublish={onPublish}
+              publishedTitle="Listed in the Data Catalog"
+              publishActionTitle="Publish this dataset into the shared catalog (datasets/)"
             />
           ) : null}
           {onUninstall != null ? (
