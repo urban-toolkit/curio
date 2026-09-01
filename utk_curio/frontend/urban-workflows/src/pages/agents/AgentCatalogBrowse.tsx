@@ -10,8 +10,10 @@
  * an agent to ONE dataflow; this page adds it to the user's account, from
  * where it can be installed into any dataflow. The Node Catalog's page says
  * "Add to all projects" because installing there really does reach every
- * project - an agent import does not, so this one says "Add to my account"
- * rather than borrowing a label that would overstate what the click does.
+ * project - an agent import only makes the agent AVAILABLE to every project,
+ * not present in any one of them. One vocabulary across the three catalogs was
+ * judged worth more than that distinction, so the button borrows the label and
+ * the intro carries the nuance ("makes it available to all your projects").
  */
 import React, { useState } from "react";
 
@@ -21,6 +23,8 @@ import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { AgentCatalogBrowseCard } from "./AgentCatalogBrowseCard";
 import { AgentCatalogBrowseDrawer } from "./AgentCatalogBrowseDrawer";
 import { useAgentCatalogBrowse } from "./useAgentCatalogBrowse";
+import { CatalogHeaderImport } from "../catalog/CatalogHeaderImport";
+import { AgentImportModal } from "../../components/agents/catalog/AgentImportModal";
 import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
 
 export const AgentCatalogBrowse: React.FC = () => {
@@ -30,6 +34,7 @@ export const AgentCatalogBrowse: React.FC = () => {
   // already open on the first card, so the click had nothing left to change
   // (#189). The Data Catalog keeps the same two surfaces apart.
   const [detailCoord, setDetailCoord] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const {
     search,
     setSearch,
@@ -48,13 +53,14 @@ export const AgentCatalogBrowse: React.FC = () => {
     categories,
     allCount,
     importedCount,
-    publishedCount,
     selectedCoord,
     setSelectedCoord,
     selectedAgent,
     onImport,
     onRemoveImport,
     onPublish,
+    onUnpublish,
+    reload,
   } = useAgentCatalogBrowse();
 
   // From the unfiltered roster on purpose - the modal outlives a filter change.
@@ -83,16 +89,8 @@ export const AgentCatalogBrowse: React.FC = () => {
           type="button"
           onClick={() => setFilter("imported")}
         >
-          <span>In my account</span>
+          <span>In all projects</span>
           <span className={browseStyles.railCount}>{importedCount}</span>
-        </button>
-        <button
-          className={`${browseStyles.railButton} ${filter === "published" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setFilter("published")}
-        >
-          <span>Published</span>
-          <span className={browseStyles.railCount}>{publishedCount}</span>
         </button>
 
         <div className={browseStyles.railDivider} />
@@ -126,8 +124,9 @@ export const AgentCatalogBrowse: React.FC = () => {
             <span className={browseStyles.titleCount}>{filtered.length}</span>
           </div>
           <p className={browseStyles.pageIntro}>
-            Add agents to <strong>your account</strong>, then add them to a dataflow from that
-            dataflow&apos;s Agent Catalog.
+            Agents in the shared catalog. Adding one here makes it available to{" "}
+            <strong>all your projects</strong>, present and future; add it to a single
+            project from that project&apos;s Agent Catalog.
           </p>
           <div className={browseStyles.headerTools}>
             <input
@@ -136,6 +135,13 @@ export const AgentCatalogBrowse: React.FC = () => {
               placeholder="Search agents…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+            />
+            {/* No `accept`: an agent package is a manifest plus its prompt
+                files, assembled in a modal, not a single archive. */}
+            <CatalogHeaderImport
+              label="Import agent"
+              onClick={() => setImportOpen(true)}
+              title="Upload your own agent definition"
             />
           </div>
         </section>
@@ -153,15 +159,34 @@ export const AgentCatalogBrowse: React.FC = () => {
             type="button"
             onClick={() => setFilter("imported")}
           >
-            In my account
+            In all projects
           </button>
-          <button
-            className={`${browseStyles.chip} ${filter === "published" ? browseStyles.chipActive : ""}`}
-            type="button"
-            onClick={() => setFilter("published")}
-          >
-            Published
-          </button>
+          {/* The agent's own types - canvas, data, and the rest. The rail has
+              had a "By category" section all along and the filter state was
+              already wired (`categoryFilter`); the chip row simply never
+              offered it, so the two filter surfaces on one page disagreed about
+              what you could filter by. Mirrors the Node page's chips. */}
+          {categories.map(([category]) => {
+            const dotSlug = category.toLowerCase().replace(/[^a-z0-9-]/g, "");
+            const dotClass =
+              (browseStyles as Record<string, string>)[`chipDot_${dotSlug}`] ??
+              browseStyles.chipDotDefault;
+            return (
+              <button
+                key={category}
+                className={`${browseStyles.chip} ${
+                  categoryFilter === category ? browseStyles.chipActive : ""
+                }`}
+                type="button"
+                onClick={() =>
+                  setCategoryFilter((prev) => (prev === category ? "" : category))
+                }
+              >
+                <span className={`${browseStyles.chipDot} ${dotClass}`} />
+                {category}
+              </button>
+            );
+          })}
           <span className={browseStyles.filterSpacer} />
           <select
             className={browseStyles.sortSelect}
@@ -201,11 +226,8 @@ export const AgentCatalogBrowse: React.FC = () => {
                 // on arrival the selection is `undefined` and the drawer falls
                 // back to the first row, which should read as selected.
                 selected={selectedAgent?.dirName === agent.dirName}
-                busy={busyCoord === agent.dirName}
-                catalogPublishAllowed
                 onSelect={() => setSelectedCoord(agent.dirName)}
                 onViewDetails={() => setDetailCoord(agent.dirName)}
-                onPublish={(a) => void onPublish(a)}
               />
             ))}
           </section>
@@ -219,12 +241,27 @@ export const AgentCatalogBrowse: React.FC = () => {
         onImport={(a) => void onImport(a)}
         onRemoveImport={(a) => void onRemoveImport(a)}
         onPublish={(a) => void onPublish(a)}
+        onUnpublish={(a) => void onUnpublish(a)}
+        onViewDetails={(a) => setDetailCoord(a.dirName)}
         onClose={() => setSelectedCoord(null)}
         onLayoutChange={setDrawerSlotOpen}
       />
 
       {detailAgent ? (
         <AgentDetailModal agent={detailAgent} onClose={() => setDetailCoord(null)} />
+      ) : null}
+
+      {/* The same modal the drawer's footer opens. Uploading writes a new
+          definition into the account, so the roster has to be re-read. */}
+      {importOpen ? (
+        <AgentImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={(dirName) => {
+            setImportOpen(false);
+            setSelectedCoord(dirName);
+            void reload();
+          }}
+        />
       ) : null}
     </div>
   );

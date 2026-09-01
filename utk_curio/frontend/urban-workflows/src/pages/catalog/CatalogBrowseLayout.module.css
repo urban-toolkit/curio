@@ -642,6 +642,34 @@
   text-decoration: underline;
 }
 
+/* A drawer CTA that is neither an action nor a destructive one.
+ *
+ * The catalogs run a strict two-colour vocabulary: dark filled = action, light
+ * bordered = destructive. "View details" is neither - it navigates - so giving
+ * it either treatment would say something false about it. It keeps the CTA
+ * stack's 42px height so the column does not go ragged, and reads as the link
+ * it is. Same role as `.linkButton` on the cards, sized for the drawer.
+ */
+.drawerLinkButton {
+  width: 100%;
+  height: 42px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drawerLinkButton:hover {
+  text-decoration: underline;
+}
+
 /* ══════════════════════════════════════════
    RIGHT DETAIL DRAWER
    ══════════════════════════════════════════ */
@@ -1012,6 +1040,41 @@
 }
 
 .addToPaletteBtn:hover { background: var(--curio-top-bar-bg-hover); }
+
+/* The destructive twin of `.addToPaletteBtn`, same box so the panel does not
+ * reflow when a card swaps one for the other.
+ *
+ * One vocabulary across every catalog surface: dark is an action, light with a
+ * border is destructive. The Agent browse drawer used `.addToPaletteBtn` for
+ * BOTH "Add to my account" and "Remove from my account", so the two opposite
+ * actions were the same black button in the same place, and the destructive one
+ * carried the visual weight of the primary. */
+.destructiveBtn {
+  width: 100%;
+  height: 42px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 8px;
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.destructiveBtn:hover:not(:disabled) {
+  border-color: #888787;
+  background: var(--curio-page-bg);
+}
+
+.destructiveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .drawerPillRow {
   display: flex;

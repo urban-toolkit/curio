@@ -300,12 +300,12 @@ def test_export_then_load_package_through_node_catalog(
     ):
         _import_archive(page, drawer, clone)
 
-    # The clone is sideloaded, so it shows under "In dataflow" but never under
+    # The clone is sideloaded, so it shows under "In project" but never under
     # Browse, which lists the committed packages/ catalog. That tab renders
     # MyPackagesList rather than PackageCard, so there is no data-pkg-dir to key
     # on - the per-row Remove control's aria-label is the stable hook.
     tabs = drawer.get_by_role("navigation", name="Catalog sections")
-    tabs.get_by_role("button", name="In dataflow").click()
+    tabs.get_by_role("button", name="In project").click()
     expect(
         drawer.get_by_role("button", name=f"Remove {CLONE_NAME}", exact=True)
     ).to_be_visible(timeout=30000)
@@ -373,16 +373,16 @@ def test_export_from_the_drawer_in_dataflow_tab(
     page.wait_for_load_state("domcontentloaded")
 
     drawer = _open_drawer_from_menu(page)
-    # The export control lives on the "In dataflow" rows, which render
+    # The export control lives on the "In project" rows, which render
     # MyPackagesList (no data-pkg-dir there) - the aria-label uses the manifest
     # NAME, while the palette accordion's uses a longer ".curio.zip archive" form.
     drawer.get_by_role("navigation", name="Catalog sections").get_by_role(
-        "button", name="In dataflow"
+        "button", name="In project"
     ).click()
     export_button = drawer.get_by_role("button", name=f"Export {PKG_NAME}", exact=True)
     expect(export_button).to_be_visible(timeout=30000)
 
-    # Visual baseline of the In dataflow tab with its row actions. This is the
+    # Visual baseline of the In project tab with its row actions. This is the
     # surface whose export control was dead code until it was wired, so a
     # baseline here records what "wired" looks like.
     save_workflow_test_screenshot(

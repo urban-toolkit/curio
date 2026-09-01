@@ -141,7 +141,7 @@ _DEFAULT_MODEL = "gemma4"
 #   connection-builder is the only built-in that accepts a connection target,
 #                    which is the gesture this branch added;
 #   dataflow-builder is the only built-in declaring requiresAgents, so its
-#                    button reads "Add to dataflow (+1 required)".
+#                    button reads "Add to project (+1 required)".
 AGENT_EXPLAINER = "agent.node-explainer@1.0.0"
 AGENT_CONNECTION = "agent.connection-builder@1.0.0"
 AGENT_BUILDER = "agent.dataflow-builder@1.0.0"
@@ -453,18 +453,18 @@ def _agent_card(drawer, coord: str):
 
 
 def _add_agent(ctx: Ctx, drawer, coord: str, *, hold: float = 1200):
-    """Click a card's Add to dataflow and wait for the install to land.
+    """Click a card's Add to project and wait for the install to land.
 
     The button label varies - an agent declaring ``requiresAgents`` reads
-    "Add to dataflow (+1 required)" - so it is matched by prefix and the
-    confirmation is the flip to "Remove from dataflow" rather than the label.
+    "Add to project (+1 required)" - so it is matched by prefix and the
+    confirmation is the flip to "Remove from project" rather than the label.
     """
     page, tour = ctx.page, ctx.tour
     card = _agent_card(drawer, coord)
     expect(card).to_have_count(1, timeout=20000)
     card.scroll_into_view_if_needed()
     tour.focus(card, hold=hold)
-    add = card.get_by_role("button", name=re.compile(r"^Add to dataflow"))
+    add = card.get_by_role("button", name=re.compile(r"^Add to project"))
     tour.click(add)
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
@@ -474,10 +474,10 @@ def _add_agent(ctx: Ctx, drawer, coord: str, *, hold: float = 1200):
     ):
         # Adding confirms first now (#196), listing any required agents.
         accept_confirm_dialog(
-            page, title=re.compile(r"^Add "), button="Add to dataflow"
+            page, title=re.compile(r"^Add "), button="Add to project"
         )
     expect(
-        card.get_by_role("button", name="Remove from dataflow", exact=True)
+        card.get_by_role("button", name="Remove from project", exact=True)
     ).to_be_visible(timeout=25000)
     return card
 
@@ -986,7 +986,7 @@ def scene_data_catalog(ctx: Ctx) -> None:
     expect(card).to_have_count(1, timeout=20000)
     tour.focus(card, hold=1400)
     tour.hush()
-    add = card.get_by_role("button", name="Add to dataflow", exact=True)
+    add = card.get_by_role("button", name="Add to project", exact=True)
     tour.click(add)
     with page.expect_response(
         lambda r: "/datasets/install" in r.url
@@ -994,11 +994,11 @@ def scene_data_catalog(ctx: Ctx) -> None:
         timeout=60000,
     ):
         accept_confirm_dialog(
-            page, title=re.compile(r"^Add "), button="Add to dataflow"
+            page, title=re.compile(r"^Add "), button="Add to project"
         )
     expect(
         drawer.locator(f'{CARD}[data-dataset-id="{DATASET_ID}"]').get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=25000)
     tour.say(
@@ -1190,7 +1190,7 @@ def scene_node_catalog(ctx: Ctx) -> None:
     with page.expect_response(
         lambda r: r.url.endswith("/api/packages/resolve"), timeout=40000
     ):
-        card.get_by_role("button", name="Add to dataflow", exact=True).click()
+        card.get_by_role("button", name="Add to project", exact=True).click()
     dialog = page.get_by_role("dialog").filter(
         has=page.get_by_role("heading", name=f'Add "{PKG_NAME}"', exact=True)
     )
@@ -1200,7 +1200,7 @@ def scene_node_catalog(ctx: Ctx) -> None:
         "Python and JS requirements are read from the package manifest.",
         hold=2800,
     )
-    confirm = dialog.get_by_role("button", name="Add to dataflow", exact=True)
+    confirm = dialog.get_by_role("button", name="Add to project", exact=True)
     tour.hush()
     with page.expect_response(
         lambda r: "/api/packages/projects/" in r.url
@@ -1211,7 +1211,7 @@ def scene_node_catalog(ctx: Ctx) -> None:
         tour.click(confirm)
     expect(dialog).to_have_count(0, timeout=40000)
     expect(
-        card.get_by_role("button", name="Remove from dataflow", exact=True)
+        card.get_by_role("button", name="Remove from project", exact=True)
     ).to_be_visible(timeout=25000)
     tour.say("Installed", "No reload: the palette re-renders in place.", hold=2000)
     tour.hush()
@@ -1288,7 +1288,7 @@ def scene_agent_catalog(ctx: Ctx) -> None:
     tour.beat(900)
     tour.say(
         "Agents can require other agents",
-        "This one reads 'Add to dataflow (+1 required)': the closure comes with it.",
+        "This one reads 'Add to project (+1 required)': the closure comes with it.",
         hold=3000,
     )
     _add_agent(ctx, drawer, AGENT_BUILDER, hold=1800)
@@ -1722,7 +1722,7 @@ def scene_catalog_pages(ctx: Ctx) -> None:
     card = page.locator("article").first
     if card.count():
         tour.click(card, hold=1200)
-        add = page.get_by_role("button", name="Add to my account", exact=True)
+        add = page.get_by_role("button", name="Add to all projects", exact=True)
         if add.count():
             tour.focus(add.first, hold=1600)
     tour.say(

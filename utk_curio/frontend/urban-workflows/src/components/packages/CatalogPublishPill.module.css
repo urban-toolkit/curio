@@ -1,14 +1,30 @@
+/* One button vocabulary across every catalog surface.
+ *
+ * Black is an action (Add to dataflow, Publish...), white with a border is
+ * destructive (Remove from dataflow, Delete, Unpublish). Publish sat outside
+ * that vocabulary entirely: a small blue pill, in its own size, in its own
+ * colour, which read as a status chip saying the thing was already published
+ * rather than as a button that would publish it.
+ *
+ * The `hub` variant below therefore takes `.btnInstall`'s colours and
+ * `.btnSecondary`'s box (PackageCard.module.css), so it stacks with the other
+ * card actions instead of floating beside them. `dock` is the dark left-rail
+ * panel, where a black fill would vanish into the background, so it keeps a
+ * light treatment.
+ *
+ * The "Published" BADGE is a state, not an action, and stays deliberately
+ * quiet in both variants. */
+
 /* Dock palette (dark panel) */
 .pillDock {
     flex-shrink: 0;
     font-family: var(--curio-font-family);
     font-size: 10px;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    letter-spacing: 0.02em;
     color: var(--curio-role-published-bg);
-    background: rgba(53, 103, 199, 0.18);
-    border: 1px solid rgba(53, 103, 199, 0.5);
+    background: transparent;
+    border: 1px solid rgba(53, 103, 199, 0.6);
     border-radius: var(--curio-radius-pill);
     padding: 3px 9px;
     cursor: pointer;
@@ -25,44 +41,26 @@
     cursor: not-allowed;
 }
 
-.badgeDock {
-    flex-shrink: 0;
-    font-family: var(--curio-font-family);
-    font-size: 10px;
-    font-weight: 600;
-    text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: rgba(255, 255, 255, 0.5);
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: var(--curio-radius-pill);
-    padding: 3px 9px;
-    line-height: 1.15;
-    cursor: default;
-    user-select: none;
-}
-
 /* Nodes hub rail (light) */
 .pillHub {
     flex-shrink: 0;
+    min-width: 96px;
+    height: 30px;
+    padding: 0 12px;
     font-family: var(--curio-font-family);
-    font-size: 10px;
+    font-size: var(--curio-font-size-sm);
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--curio-role-published-fg);
-    background: var(--curio-role-published-bg);
-    border: 1px solid rgba(53, 103, 199, 0.4);
-    border-radius: var(--curio-radius-pill);
-    padding: 3px 9px;
+    color: var(--curio-text-on-dark);
+    background: var(--curio-top-bar-bg);
+    border: 1px solid var(--curio-top-bar-bg);
+    border-radius: var(--curio-radius-md);
     cursor: pointer;
     line-height: 1.15;
 }
 
 .pillHub:hover:not(:disabled) {
-    background: rgba(53, 103, 199, 0.25);
-    border-color: var(--curio-role-published-fg);
+    background: var(--curio-top-bar-bg-hover);
+    border-color: var(--curio-top-bar-bg-hover);
 }
 
 .pillHub:disabled {
@@ -70,20 +68,118 @@
     cursor: not-allowed;
 }
 
-.badgeHub {
+/* The DRAWER box. A browse drawer stacks the publish control directly under
+ * "Add to all projects" (`.addToPaletteBtn`, 100% x 42px), and the pill's card
+ * geometry (96px x 30px) put a stubby little button under a full-width one.
+ * These two rules deliberately duplicate `.addToPaletteBtn` / `.destructiveBtn`
+ * from CatalogBrowseLayout.module.css: CSS modules hash per file, so the class
+ * cannot be shared across the module boundary, and the drawer's own stylesheet
+ * is not reachable from here. Keep the three in step. */
+.pillDrawer {
+    width: 100%;
+    height: 42px;
+    padding: 0 12px;
+    border: 1px solid var(--curio-top-bar-bg);
+    border-radius: 8px;
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.pillDrawer:hover:not(:disabled) {
+    background: var(--curio-top-bar-bg-hover);
+    border-color: var(--curio-top-bar-bg-hover);
+}
+
+.pillDrawer:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* The destructive twin, same box, matching `.destructiveBtn`. */
+.undoDrawer {
+    width: 100%;
+    height: 42px;
+    padding: 0 12px;
+    border: 1px solid var(--curio-border-strong);
+    border-radius: 8px;
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.undoDrawer:hover:not(:disabled) {
+    background: var(--curio-surface-muted);
+}
+
+.undoDrawer:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* Unpublish is destructive, so it takes the light treatment. It shares the
+ * action's box exactly, because it occupies the same slot: a card swapping
+ * Publish for Unpublish must not change shape. */
+.undoHub {
+    flex-shrink: 0;
+    min-width: 96px;
+    height: 30px;
+    padding: 0 12px;
+    font-family: var(--curio-font-family);
+    font-size: var(--curio-font-size-sm);
+    font-weight: 500;
+    color: var(--curio-text-primary);
+    background: var(--curio-card-bg);
+    border: 1px solid var(--curio-border-strong);
+    border-radius: var(--curio-radius-md);
+    cursor: pointer;
+    line-height: 1.15;
+}
+
+.undoHub:hover:not(:disabled) {
+    border-color: #888787;
+    background: var(--curio-page-bg);
+}
+
+.undoHub:disabled,
+.undoDock:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* The dark rail keeps a light-on-dark treatment; a white fill would be as loud
+ * there as a black one is on a card. */
+.undoDock {
     flex-shrink: 0;
     font-family: var(--curio-font-family);
     font-size: 10px;
     font-weight: 600;
-    text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--curio-text-muted);
-    background: var(--curio-page-bg);
-    border: 1px solid var(--curio-border);
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.72);
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.28);
     border-radius: var(--curio-radius-pill);
     padding: 3px 9px;
+    cursor: pointer;
     line-height: 1.15;
-    cursor: default;
-    user-select: none;
 }
+
+.undoDock:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.45);
+}
+

@@ -1,4 +1,6 @@
 import React, { useRef } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faFileImport } from "@fortawesome/free-solid-svg-icons";
 import styles from "./DrawerFooter.module.css";
 
 export interface DrawerFooterProps {
@@ -42,6 +44,12 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({
         disabled={busy}
         onClick={() => fileInputRef.current?.click()}
       >
+        {/* One icon, rendered here rather than passed in, so every drawer's
+            import wears the same glyph. The Data drawer used to pass its own
+            and the Node drawer passed none, so two footers built from this very
+            component still looked different. The Agent drawer has its own
+            footer element and imports the same icon. */}
+        <FontAwesomeIcon icon={faFileImport} aria-hidden />{" "}
         {label}
       </button>
     </footer>

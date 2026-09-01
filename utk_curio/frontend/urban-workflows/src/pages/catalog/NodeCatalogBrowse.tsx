@@ -9,6 +9,8 @@ import browseStyles from "./CatalogBrowseLayout.module.css";
 import { PackageBrowseCard } from "./PackageBrowseCard";
 import { PackageBrowseDrawer } from "./PackageBrowseDrawer";
 import { useNodeCatalogBrowse } from "./useNodeCatalogBrowse";
+import { CatalogHeaderImport } from "./CatalogHeaderImport";
+import { PackageDetailModal } from "../../components/packages/publishing/PackageDetailModal";
 
 export const NodeCatalogBrowse: React.FC = () => {
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
@@ -41,13 +43,24 @@ export const NodeCatalogBrowse: React.FC = () => {
     quickCategories,
     allCount,
     installedCount,
-    updatesCount,
     selectedHasUpdate,
     onInstall,
+    importing,
+    onImportArchive,
     confirmInstall,
     onPublish,
+    onUnpublish,
     cancelInstall,
   } = useNodeCatalogBrowse();
+
+  // Separate from `selectedDirName`, which drives the side drawer. Wiring both
+  // to one setter is what made the Agent page's "View details" a no-op (#189),
+  // and it is exactly what the Node card's did: it called `onSelect`, so on a
+  // card whose drawer was already open the click changed nothing.
+  const [detailDirName, setDetailDirName] = useState<string | null>(null);
+  const detailPkg = detailDirName
+    ? (filtered.find((p) => p.dirName === detailDirName) ?? null)
+    : null;
 
   return (
     <div className={[browseStyles.page, drawerSlotOpen ? browseStyles.pageWithDrawer : ""].filter(Boolean).join(" ")}>
@@ -66,16 +79,8 @@ export const NodeCatalogBrowse: React.FC = () => {
           type="button"
           onClick={() => setFilter("installed")}
         >
-          <span>In defaults</span>
+          <span>In all projects</span>
           <span className={browseStyles.railCount}>{installedCount}</span>
-        </button>
-        <button
-          className={`${browseStyles.railButton} ${filter === "updates" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setFilter("updates")}
-        >
-          <span>Updates</span>
-          <span className={browseStyles.railCount}>{updatesCount}</span>
         </button>
 
         <div className={browseStyles.railDivider} />
@@ -109,8 +114,9 @@ export const NodeCatalogBrowse: React.FC = () => {
             <span className={browseStyles.titleCount}>{filtered.length}</span>
           </div>
           <p className={browseStyles.pageIntro}>
-            Add packages to <strong>all your projects</strong>, present and future.
-            Removing a package from a single project can be done in that project&apos;s Node Catalog.
+            Node packages in the shared catalog. Adding one here adds it to{" "}
+            <strong>all your projects</strong>, present and future; add or remove it for a
+            single project from that project&apos;s Node Catalog.
           </p>
           <div className={browseStyles.headerTools}>
             <input
@@ -119,6 +125,15 @@ export const NodeCatalogBrowse: React.FC = () => {
               placeholder="Search packages…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+            />
+            {/* The drawer has had this in its footer all along; the page had no
+                import at all. Same position the Projects page uses. */}
+            <CatalogHeaderImport
+              label="Import package"
+              accept=".curio.zip,.zip,application/zip"
+              busy={importing}
+              onPick={(file) => void onImportArchive(file)}
+              title="Import a .curio.zip package archive"
             />
           </div>
         </section>
@@ -136,14 +151,7 @@ export const NodeCatalogBrowse: React.FC = () => {
             type="button"
             onClick={() => setFilter("installed")}
           >
-            In defaults
-          </button>
-          <button
-            className={`${browseStyles.chip} ${filter === "updates" ? browseStyles.chipActive : ""}`}
-            type="button"
-            onClick={() => setFilter("updates")}
-          >
-            Updates
+            In all projects
           </button>
           {quickCategories.map((cat) => {
             const dotSlug = cat.toLowerCase().replace(/[^a-z0-9-]/g, "");
@@ -249,14 +257,8 @@ export const NodeCatalogBrowse: React.FC = () => {
                   isInstalled={isInstalledGlobally}
                   hasUpdate={hasUpdate}
                   catalogRow={catalogRow}
-                  busy={busy}
-                  catalogPublishAllowed={catalogPublishAllowed}
-                  isPublished={isPublished}
-                  publishingDir={publishingPackageKey}
-                  showPublish={showPublish}
                   onSelect={() => setSelectedDirName(pkg.dirName)}
-                  onInstall={(p) => void onInstall(p)}
-                  onPublish={showPublish ? onPublish : undefined}
+                  onViewDetails={() => setDetailDirName(pkg.dirName)}
                 />
               );
             })}
@@ -280,9 +282,24 @@ export const NodeCatalogBrowse: React.FC = () => {
             ? onPublish
             : undefined
         }
+        onUnpublish={
+          selectedPkg != null && installedByDir.get(selectedPkg.dirName) != null
+            ? onUnpublish
+            : undefined
+        }
+        onViewDetails={(p) => setDetailDirName(p.dirName)}
         onClose={() => setSelectedDirName(null)}
         onLayoutChange={setDrawerSlotOpen}
       />
+
+      {detailPkg ? (
+        <PackageDetailModal
+          pkg={detailPkg}
+          inAllProjects={defaults.has(detailPkg.dirName)}
+          isPublished={catalogPublishedDirs.has(detailPkg.dirName)}
+          onClose={() => setDetailDirName(null)}
+        />
+      ) : null}
 
       {installCandidate ? (
         <InstallPermissionsDialog

@@ -196,6 +196,28 @@ class CatalogListing:
         # "available", never "installed"; the marker produced phantom installed
         # rows whose Uninstall then 404d (no ref to remove).
 
+        # Whether the user put this dataset in "all projects". A property of the
+        # ACCOUNT, so it is independent of `installed`, which is derived from
+        # one dataflow's spec refs.
+        #
+        # This is what the palette and the drawer need when there is no dataflow
+        # yet: a dataflow is created on its first save, so `installed` is false
+        # for everything and both surfaces rendered empty - even for datasets
+        # the user had just added to every project. They are in this one too,
+        # the moment it exists.
+        try:
+            from utk_curio.backend.app.datasets import defaults as dataset_defaults
+
+            in_all = (
+                dataset_defaults.load_dataset_defaults(self._paths._user_key())
+                if self.user is not None
+                else set()
+            )
+        except Exception:  # noqa: BLE001 - a listing must not fail on this
+            in_all = set()
+        for item in items:
+            item["inAllProjects"] = item.get("id") in in_all
+
         items = dedupe_items(items)
 
         # A computed dataset published to the hub keeps the title captured at

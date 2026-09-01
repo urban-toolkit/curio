@@ -248,11 +248,11 @@ def test_save_node_as_package_export_then_load_back(
 
     assert upload.value.status == 201, upload.value.text()[:500]
 
-    # 9. It is a real installed package now: listed under "In dataflow" (which
+    # 9. It is a real installed package now: listed under "In project" (which
     #    renders MyPackagesList, so the per-row Remove label is the stable hook)
     #    and present in the palette, since onPickArchive also writes the lockfile.
     drawer.get_by_role("navigation", name="Catalog sections").get_by_role(
-        "button", name="In dataflow"
+        "button", name="In project"
     ).click()
     expect(
         drawer.get_by_role("button", name=f"Remove {NEW_PACKAGE_NAME}", exact=True)

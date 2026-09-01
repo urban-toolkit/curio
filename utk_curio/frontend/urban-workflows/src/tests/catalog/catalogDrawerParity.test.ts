@@ -98,7 +98,10 @@ describe("publish wording is shared across both catalogs", () => {
       "pages/catalog/useNodeCatalogBrowse.ts",
       "components/packages/publishing/NodeCatalogDrawer.tsx",
       "pages/dataHub/DataCatalogBrowse.tsx",
-      "components/datasets/catalog/DatasetDetailPanel.tsx",
+      // `DatasetDetailPanel` used to be on this list. It no longer publishes:
+      // it is the DETAILS view, and it carried a second, ungated publish
+      // control beside the drawer's gated one - which is how an unpublishable
+      // dataset ended up offering Unpublish. One decision, one place.
     ].map(read);
 
     // Every publish path reports success the same way.
@@ -141,10 +144,20 @@ describe("add/remove toasts are shared across all three catalogs (#198)", () => 
   // harness, for the reasons NodeCatalogDrawerReload.test.tsx sets out.
   test("the node catalog passes the success variant at the call site", () => {
     const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
-    for (const verb of ["Added", "Removed"]) {
-      expect(src).toMatch(
-        new RegExp(`showToast\\(\\s*\`${verb} \\$\\{[^}]+\\} (to|from) this dataflow\\.\`,\\s*"success"`),
-      );
-    }
+    // The add is one sentence and still matches the shared template exactly.
+    expect(src).toMatch(
+      new RegExp(`showToast\\(\\s*\`Added \\$\\{[^}]+\\} to this dataflow\\.\`,\\s*"success"`),
+    );
+    // The remove branches now: removing a package can also delete it from the
+    // account and pip-uninstall its libraries from the shared interpreter, so
+    // the toast reports which of those actually happened. Both branches carry
+    // the same sentence stem.
+    expect(src).toMatch(/`Removed \$\{[^}]+\} from this dataflow \$\{extra\}\.`/);
+    expect(src).toMatch(/`Removed \$\{[^}]+\} from this dataflow\.`/);
+    // Whichever branch is taken, the variant is explicit — showToast defaults
+    // to "error", so an omitted one paints a successful removal red.
+    const at = src.indexOf("const extra =");
+    expect(at).toBeGreaterThan(-1);
+    expect(src.slice(at, at + 700)).toContain('"success"');
   });
 });

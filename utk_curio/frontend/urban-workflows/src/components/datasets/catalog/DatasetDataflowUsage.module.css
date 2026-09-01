@@ -43,6 +43,14 @@
   text-decoration: underline;
 }
 
+/* Shown only when two projects share a name, to tell the rows apart. */
+.disambiguator {
+  margin-left: 6px;
+  font-family: var(--curio-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--curio-text-secondary);
+}
+
 .consumers {
   font-size: 11px;
   color: #777;

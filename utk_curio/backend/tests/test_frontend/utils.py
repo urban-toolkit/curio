@@ -891,7 +891,7 @@ def accept_confirm_dialog(
     heading through ``aria-labelledby``.
 
     ``title`` takes a string or a compiled pattern; ``button`` is the confirm
-    button's exact label (it often repeats the card's, e.g. "Add to dataflow").
+    button's exact label (it often repeats the card's, e.g. "Add to project").
     Returns the dialog locator so a caller can assert on its body first.
     """
     dialog = page.get_by_role("dialog", name=title)

@@ -108,7 +108,7 @@ EMPTY_USAGE = "No nodes or dataflows are currently using this dataset."
 # account-level DELETE runs ``unpublish_dataset`` first, which 403s because this
 # user is not the publisher of a committed catalog dataset. The copy is harmless
 # to a re-run because installed-ness is scoped to a dataflow, not to the store,
-# so a fresh project still shows the card offering "Add to dataflow".
+# so a fresh project still shows the card offering "Add to project".
 
 
 def _unversioned(node_type: str | None) -> str:
@@ -152,7 +152,7 @@ def _add_dataset_from_catalog(page, palette):
     card = drawer.locator(f'{CARD}[data-dataset-id="{DATASET_ID}"]')
     expect(card).to_have_count(1, timeout=15000)
 
-    card.get_by_role("button", name="Add to dataflow", exact=True).click()
+    card.get_by_role("button", name="Add to project", exact=True).click()
     with page.expect_response(
         lambda r: "/datasets/install" in r.url and r.request.method == "POST" and r.ok,
         timeout=60000,
@@ -160,14 +160,14 @@ def _add_dataset_from_catalog(page, palette):
         # The Data catalog confirms an add now (#196), so the card click only
         # opens the dialog - the POST follows the confirm.
         accept_confirm_dialog(
-            page, title=re.compile(r"^Add "), button="Add to dataflow"
+            page, title=re.compile(r"^Add "), button="Add to project"
         )
 
     # Re-resolve rather than reuse the handle: the install flips origin
     # hub -> imported, which changes the React key so the card is replaced.
     expect(
         drawer.locator(f'{CARD}[data-dataset-id="{DATASET_ID}"]').get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=20000)
 
@@ -305,12 +305,12 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     expect(center.get_by_text(re.compile(r"^Inputs \("))).to_have_count(0)
     # The badge renders nothing at all while the dataset has no connections.
     expect(card.get_by_text(re.compile(r"\d[↑↓]"))).to_have_count(0)
-    # "Add to dataflow" wrote the dataflow's dataset ref into the saved spec, so
+    # "Add to project" wrote the dataflow's dataset ref into the saved spec, so
     # the backend already lists this dataflow as *using* the dataset - but with
     # no consumer node, which is the "Produced here" row. Owning a dataset is not
     # consuming it, and the section is the one surface where the difference shows.
-    usage_section = center.locator('section[aria-label="Dataflows using this dataset"]')
-    expect(usage_section.get_by_text("Used in dataflows (1)")).to_be_visible(
+    usage_section = center.locator('section[aria-label="Projects using this dataset"]')
+    expect(usage_section.get_by_text("Used in projects (1)")).to_be_visible(
         timeout=15000
     )
     expect(usage_section.get_by_text("Produced here")).to_be_visible()
@@ -389,8 +389,8 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     # 7. And the panel shows that same consumer arriving from the server: the
     #    usage section is fetched, not derived from the canvas.
     _, center, _ = _open_lineage_tab(page)
-    usage_section = center.locator('section[aria-label="Dataflows using this dataset"]')
-    expect(usage_section.get_by_text("Used in dataflows (1)")).to_be_visible(
+    usage_section = center.locator('section[aria-label="Projects using this dataset"]')
+    expect(usage_section.get_by_text("Used in projects (1)")).to_be_visible(
         timeout=15000
     )
     expect(usage_section.get_by_role("link", name="Dataset Lineage")).to_be_visible()

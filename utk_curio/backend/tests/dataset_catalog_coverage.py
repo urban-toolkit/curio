@@ -75,15 +75,52 @@ class CatalogDataset:
         return "dataset-" + self.manifest.id.replace(".", "-")
 
 
+def _tracked_catalog_dirs() -> set[str] | None:
+    """Directory names under ``datasets/`` that git actually tracks.
+
+    ``None`` when git cannot answer (no repo, no git on PATH), in which case the
+    caller falls back to "everything on disk" - degrading to the old behaviour
+    rather than silently testing nothing.
+    """
+    import subprocess
+    from pathlib import Path
+
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--", "datasets/"],
+            cwd=Path(__file__).resolve().parents[3],
+            capture_output=True,
+            check=True,
+            timeout=30,
+        ).stdout.decode("utf-8", "replace")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    dirs = {
+        rel.split("/", 2)[1]
+        for rel in out.splitlines()
+        if rel.startswith("datasets/") and rel.count("/") >= 2
+    }
+    return dirs or None
+
+
 def catalog_datasets() -> list[CatalogDataset]:
     """Every dataset in the committed catalog, sorted by id.
 
     The single source of truth both test layers parametrize over, so adding a
     directory under ``datasets/`` adds a test rather than needing one written.
+
+    "Committed" is load-bearing and was not enforced: this scanned the directory,
+    so anything published into ``datasets/`` from a running Curio - which is
+    exactly what the Publish button does - became a parametrized case asserting
+    invariants that only apply to the datasets this repo ships (marker files,
+    counts matching a committed CSV). A user publishing their own data broke the
+    suite, which is the opposite of what a coverage test should do.
     """
+    tracked = _tracked_catalog_dirs()
     found = [
         CatalogDataset(root=root, manifest=load_dataset_manifest(root))
         for root in list_catalog_datasets()
+        if tracked is None or root.name in tracked
     ]
     return sorted(found, key=lambda entry: entry.dataset_id)
 

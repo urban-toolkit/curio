@@ -53,29 +53,29 @@ const button = (name: string) => screen.queryByRole("button", { name });
 beforeEach(() => jest.clearAllMocks());
 
 describe("DatasetCard - primary action", () => {
-  it("offers Add to dataflow when not installed", () => {
+  it("offers Add to project when not installed", () => {
     renderCard();
-    expect(button("Add to dataflow")).toBeTruthy();
-    expect(button("Remove from dataflow")).toBeNull();
+    expect(button("Add to project")).toBeTruthy();
+    expect(button("Remove from project")).toBeNull();
   });
 
-  it("offers Remove from dataflow once installed", () => {
+  it("offers Remove from project once installed", () => {
     renderCard({ isInstalled: true, onUninstall: jest.fn() });
-    expect(button("Remove from dataflow")).toBeTruthy();
-    expect(button("Add to dataflow")).toBeNull();
+    expect(button("Remove from project")).toBeTruthy();
+    expect(button("Add to project")).toBeNull();
   });
 
   it("passes the dataset through to onInstall", () => {
     const onInstall = jest.fn();
     const item = dataset();
     render(<DatasetCard {...base} dataset={item} onInstall={onInstall} />);
-    fireEvent.click(button("Add to dataflow")!);
+    fireEvent.click(button("Add to project")!);
     expect(onInstall).toHaveBeenCalledWith(item);
   });
 
   it("disables its actions while the drawer is busy", () => {
     renderCard({ busy: true });
-    expect(button("Add to dataflow")!.hasAttribute("disabled")).toBe(true);
+    expect(button("Add to project")!.hasAttribute("disabled")).toBe(true);
   });
 });
 
@@ -88,28 +88,48 @@ describe("DatasetCard - Delete gating", () => {
     expect(button("Delete")).toBeNull();
   });
 
+  // These two now name the store folder, because that is what decides. The
+  // fixture's default is a CATALOG folder (`data.urbanlab.demo@1`), so leaving
+  // it implicit described a catalog dataset while claiming to describe the
+  // user's own - the ambiguity the old `origin !== "hub"` guard fell into.
   it("offers Delete on the owner's computed row", () => {
     renderCard({
-      dataset: dataset({ origin: "computed", producerNodeId: "node-1" }),
+      dataset: dataset({
+        origin: "computed",
+        producerNodeId: "node-1",
+        dirName: "computed.flow-1.node-1@1",
+      }),
       onDelete: jest.fn(),
     });
     expect(button("Delete")).toBeTruthy();
   });
 
-  it("offers Delete on an imported row that has a producer node", () => {
+  it("offers Delete on the owner's computed row once it reads as imported", () => {
+    // Installing a dataset into a dataflow flips its origin to "imported"; the
+    // owner's own asset keeps its `computed.*` folder and stays deletable.
     renderCard({
-      dataset: dataset({ origin: "imported", producerNodeId: "node-1" }),
+      dataset: dataset({
+        origin: "imported",
+        producerNodeId: "node-1",
+        dirName: "computed.flow-1.node-1@1",
+      }),
       onDelete: jest.fn(),
     });
     expect(button("Delete")).toBeTruthy();
   });
 
-  it("hides Delete on a plain imported row with no producer", () => {
+  it("offers Delete on an upload, which has no producer node", () => {
+    // Inverted deliberately: an uploaded file is the user's own account-level
+    // asset and now has an explicit Delete. It previously had none at all.
     renderCard({
-      dataset: dataset({ origin: "imported", producerNodeId: null }),
+      dataset: dataset({
+        origin: "imported",
+        producerNodeId: null,
+        dirName: "imported.my-upload@1",
+      }),
       onDelete: jest.fn(),
     });
-    expect(button("Delete")).toBeNull();
+    expect(button("Delete")).toBeTruthy();
   });
 
   it("hides Delete when no handler is supplied", () => {
@@ -118,19 +138,80 @@ describe("DatasetCard - Delete gating", () => {
   });
 });
 
-describe("DatasetCard - publish affordances", () => {
-  it("offers Publish when allowed and not yet published", () => {
-    renderCard({ onPublish: jest.fn(), publishAllowed: true });
-    expect(button("Publish")).toBeTruthy();
-  });
+describe("DatasetCard - no publish affordance at all", () => {
+  // The card used to carry Publish / Unpublish, gated on whether the dataset
+  // was the user's own. The gate was right and the PLACE was wrong: publishing
+  // puts an item into the catalog everyone on this Curio shares, which is a
+  // decision about the item and not about the project this card sits in. It now
+  // lives in the Data Catalog page's detail drawer, next to the account-level
+  // add/remove, where the ownership gate still applies.
+  //
+  // On a card it also sat in a scrolling grid, one stray click from a browse
+  // gesture, and it was the thing the user asked three times to have removed.
+  const ownUpload = { dirName: "imported.my-upload@1", origin: "imported" as const };
 
-  it("hides Publish when the server forbids it", () => {
-    renderCard({ onPublish: jest.fn(), publishAllowed: false });
+  it("offers no Publish, even for the user's own upload", () => {
+    renderCard({ dataset: dataset(ownUpload) });
     expect(button("Publish")).toBeNull();
   });
 
-  it("does not offer Publish again once published", () => {
-    renderCard({ onPublish: jest.fn(), publishAllowed: true, isPublished: true });
-    expect(button("Publish")).toBeNull();
+  it("offers no Unpublish, even for the user's own published upload", () => {
+    renderCard({ dataset: dataset(ownUpload) });
+    expect(button("Unpublish")).toBeNull();
+  });
+
+  it("still offers the actions that ARE about this project", () => {
+    // Removing the publish control must not have taken the per-project ones.
+    renderCard({ dataset: dataset(ownUpload), isInstalled: true, onUninstall: jest.fn() });
+    expect(button("Remove from project")).toBeTruthy();
+  });
+
+  it("offers the one way into the item's details, under the square", () => {
+    renderCard({ dataset: dataset(ownUpload), onOpenDetails: jest.fn() });
+    // Hidden from the a11y tree: the avatar above it already carries the same
+    // accessible name for the same action, and two controls with one name is a
+    // strict-mode ambiguity. So query the text, not the role.
+    expect(screen.getByText("View details")).toBeTruthy();
+  });
+});
+
+describe("DatasetCard - Delete is for the user's own assets only", () => {
+  // Deleting removes an account-level dataset from the Data Catalog. Offering
+  // it for something the installation shipped makes no sense, and the backend
+  // 403s it - so the affordance must not be there in the first place.
+  it("offers Delete for a dataset the user's own node computed", () => {
+    renderCard({
+      dataset: dataset({
+        origin: "computed",
+        producerNodeId: "n1",
+        dirName: "computed.flow-1.n1@1",
+      }),
+      onDelete: jest.fn(),
+    });
+    expect(button("Delete")).toBeTruthy();
+  });
+
+  it("hides Delete for a catalog dataset", () => {
+    renderCard({
+      dataset: dataset({ origin: "hub", producerNodeId: "n1" }),
+      onDelete: jest.fn(),
+    });
+    expect(button("Delete")).toBeNull();
+  });
+
+  it("hides Delete for a catalog dataset the user merely INSTALLED", () => {
+    // The hole the old `origin !== "hub"` guard left: installing flips origin
+    // to "imported" while the `data.*` store folder stays, so a published
+    // computed dataset slipped through and offered a Delete the backend 403s.
+    renderCard({
+      dataset: dataset({
+        origin: "imported",
+        installed: true,
+        producerNodeId: "n1",
+        dirName: "data.urbanlab.demo@1",
+      }),
+      onDelete: jest.fn(),
+    });
+    expect(button("Delete")).toBeNull();
   });
 });

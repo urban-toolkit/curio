@@ -418,7 +418,7 @@ describe("AgentBuilderStrip missing specialist (dev/106)", () => {
   } as unknown as NonNullable<AgentAttachment["activeProposal"]>;
   const runs = { "node-aaaa-1": "failed", "node-bbbb-2": "failed" } as const;
 
-  it("surfaces Add to dataflow / Dismiss from the mirror alone", async () => {
+  it("surfaces Add to project / Dismiss from the mirror alone", async () => {
     const onApplyProposal = jest.fn().mockResolvedValue(undefined);
     const onDismissProposal = jest.fn().mockResolvedValue(undefined);
     render(
@@ -432,7 +432,7 @@ describe("AgentBuilderStrip missing specialist (dev/106)", () => {
     );
     const group = screen.getByRole("group", { name: "Missing specialist" });
     expect(group).toHaveTextContent("Install Node Content Builder in this project");
-    fireEvent.click(within(group).getByRole("button", { name: "Add to dataflow" }));
+    fireEvent.click(within(group).getByRole("button", { name: "Add to project" }));
     await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("ip1"));
     // Retry stays available alongside.
     expect(screen.getByRole("button", { name: "Retry 2 failed" })).toBeEnabled();

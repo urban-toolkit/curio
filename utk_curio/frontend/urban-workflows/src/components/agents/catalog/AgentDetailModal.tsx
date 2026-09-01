@@ -1,7 +1,9 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import ModalShell from "../../ModalShell";
-import { CatalogKindIcon } from "../../catalog/CatalogKindVisuals";
+import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
+import { agentsApi } from "../../../api/agentsApi";
 import type { AgentCard } from "../../../api/agentsApi";
+import { triggerBlobDownload } from "../../../utils/triggerBlobDownload";
 import styles from "./AgentDetailModal.module.css";
 
 export interface AgentDetailModalProps {
@@ -23,6 +25,55 @@ export interface AgentDetailModalProps {
  * no per-agent GET on the backend and this needs none.
  */
 export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) => {
+  // The definition behind the card: its manifest and the prompt texts. The card
+  // itself carries none of this - `AgentCard` is a summary - so the details
+  // screen described an agent's behaviour without ever showing the prompts that
+  // ARE its behaviour.
+  const [bundle, setBundle] = useState<{
+    manifest: Record<string, unknown>;
+    prompts: Record<string, string>;
+  } | null>(null);
+  const [bundleError, setBundleError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBundle(null);
+    setBundleError(null);
+    agentsApi
+      .readDefinition(agent.dirName)
+      .then((b) => {
+        if (!cancelled) setBundle(b);
+      })
+      .catch(() => {
+        // A built-in that has never been materialized into this account's store
+        // has no readable definition. That is not an error worth shouting
+        // about - the rest of the screen is still accurate - so the prompts
+        // section simply says so.
+        if (!cancelled) setBundleError("Prompts are not available for this agent.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.dirName]);
+
+  const onExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const b = bundle ?? (await agentsApi.readDefinition(agent.dirName));
+      // One file, not a manifest plus loose prompt files in two directories.
+      // `AgentImportModal` accepts this bundle, so an agent exported from one
+      // Curio imports into another in a single pick.
+      const blob = new Blob([JSON.stringify(b, null, 2)], { type: "application/json" });
+      triggerBlobDownload(blob, `${agent.dirName}.curio-agent.json`);
+    } catch {
+      setBundleError("Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const rows: [string, React.ReactNode][] = [
     ["Identifier", agent.id],
     ["Version", agent.version],
@@ -30,24 +81,35 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
     ["Publisher", agent.provenance?.publisher ?? "curio"],
     ["Trust", agent.provenance?.trust ?? "built-in"],
     ["Attaches to", agent.hooks.length ? agent.hooks.join(", ") : "—"],
-    ["In your account", agent.imported ? "Yes" : "No"],
+    ["In all projects", agent.imported ? "Yes" : "No"],
     ["In the catalog", agent.published ? "Published" : "Not published"],
   ];
 
   return (
-    <ModalShell onClose={onClose} size="large" layer="overlay" label="Agent details">
-      <div className={styles.header}>
-        <CatalogKindIcon kind="agent" size="lg" title="Agent" />
-        <div>
-          <h2 className={styles.title}>{agent.name}</h2>
-          <p className={styles.subtitle}>
+    <ModalShell onClose={onClose} size="xlarge" layer="overlay" label="Agent details">
+      <CatalogDetailHeader
+        kind="agent"
+        title={agent.name}
+        subtitle={
+          <>
             {agent.provenance?.publisher ?? "curio"} · v{agent.version}
-          </p>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            className={styles.exportButton}
+            disabled={exporting}
+            onClick={() => void onExport()}
+          >
+            {exporting ? "Exporting…" : "Export"}
+          </button>
+        }
+      />
 
       <div className={styles.body}>
         {agent.purpose ? <p className={styles.purpose}>{agent.purpose}</p> : null}
+
 
         <section className={styles.section}>
           <h3 className={styles.sectionLabel}>Agent info</h3>
@@ -71,6 +133,28 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
             </ul>
           </section>
         ) : null}
+
+        <section className={styles.section}>
+          <h3 className={styles.sectionLabel}>
+            Prompts{bundle ? ` (${Object.keys(bundle.prompts).length})` : ""}
+          </h3>
+          {bundleError ? (
+            <p className={styles.purpose}>{bundleError}</p>
+          ) : !bundle ? (
+            <p className={styles.purpose}>Loading…</p>
+          ) : Object.keys(bundle.prompts).length === 0 ? (
+            <p className={styles.purpose}>This agent ships no prompt files.</p>
+          ) : (
+            Object.entries(bundle.prompts).map(([name, text]) => (
+              <details key={name} className={styles.promptBlock}>
+                {/* Collapsed by default: a prompt runs to hundreds of lines and
+                    would otherwise bury every section under it. */}
+                <summary className={styles.promptName}>{name}</summary>
+                <pre className={styles.promptText}>{text}</pre>
+              </details>
+            ))
+          )}
+        </section>
 
         {agent.requiresAgents.length > 0 ? (
           <section className={styles.section}>

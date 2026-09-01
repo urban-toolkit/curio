@@ -248,6 +248,38 @@
 
 /* Same box as .cardIcon, which fills this slot on a package card. Only the
    button affordances below are specific to the dataset side. */
+/* Column 1 of the card grid: the square, and the way into the item's details
+ * directly beneath it. "View details" was previously wherever each card
+ * happened to put it - in the action column on one, between two buttons on
+ * another - so the same affordance moved around between catalogs. It lives in
+ * one place now, under the square, on every drawer card. */
+.cardAvatarCol {
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A link, not a button: it navigates rather than acting, so it takes neither
+ * the dark action fill nor the light destructive one. */
+.avatarDetailsLink {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--curio-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.avatarDetailsLink:hover {
+  text-decoration: underline;
+}
+
 .cardAvatar {
   flex-shrink: 0;
   width: 72px;
@@ -273,16 +305,24 @@
 
 .cardAvatarButton {
   border: none;
+  padding: 0;
+  font: inherit;
   cursor: pointer;
-  transition: box-shadow 0.15s, transform 0.15s;
 }
 
 .cardAvatarButton:hover {
-  box-shadow: 0 0 0 2px rgba(47, 48, 52, 0.14);
+  box-shadow: 0 0 0 2px var(--curio-top-bar-bg);
 }
 
-.cardAvatarButton:active {
-  transform: scale(0.97);
+/* A card with no details handler still renders the square, just inert. These
+ * come AFTER the :hover rule above - equal specificity, so source order is what
+ * decides, and written first they lost to it. */
+.cardAvatarButton:disabled {
+  cursor: default;
+}
+
+.cardAvatarButton:disabled:hover {
+  box-shadow: none;
 }
 
 /* Format-specific avatar colours (light surface) */

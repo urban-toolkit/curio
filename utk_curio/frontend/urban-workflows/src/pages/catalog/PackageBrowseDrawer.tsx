@@ -32,7 +32,9 @@ export interface PackageBrowseDrawerProps {
   publishingDir?: string | null;
   showPublish: boolean;
   onInstall: (pkg: PackagePayload) => void;
+  onViewDetails?: (pkg: PackagePayload) => void;
   onPublish?: (dirName: string) => void;
+  onUnpublish?: (dirName: string) => void;
   onClose: () => void;
   onLayoutChange?: (slotOpen: boolean) => void;
 }
@@ -62,14 +64,23 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
   isPublished,
   publishingDir,
   onInstall,
+  onViewDetails,
   onPublish,
+  onUnpublish,
   onClose,
 }) => {
   const cat = primaryCategory(pkg);
   const showPublishPill = shouldShowPublishPill({
     isPublished,
     allowPublish: catalogPublishAllowed,
-    canPublish: onPublish != null && pkg.readOnly !== true,
+    // `readOnly !== true` was not an ownership test: `readOnly` is an author's
+    // manifest opt-in that almost nothing sets, so it matched nearly every
+    // package and put Unpublish on ones that shipped with the deployment.
+    // `publishable` is the backend's own answer, and the same rule the
+    // unpublish route now enforces.
+    canPublish: isPublished
+      ? pkg.publishable === true
+      : onPublish != null && pkg.readOnly !== true,
   });
   const shown = pkg.templates.slice(0, TEMPLATE_PREVIEW_LIMIT);
   const hidden = pkg.templates.length - shown.length;
@@ -89,7 +100,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
         <>
           <span className={browseStyles.drawerCategoryBadge}>{cat}</span>
           {isInstalled ? (
-            <span className={browseStyles.drawerInstalledBadge}>✓ In defaults</span>
+            <span className={browseStyles.drawerInstalledBadge}>✓ In all projects</span>
           ) : null}
         </>
       }
@@ -137,15 +148,33 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
           </p>
         )
       }
+      secondaryAction={
+        /* Last in the stack, after the action and the publish control: it is
+           the way OUT of this panel, not another thing to do in it. Opens
+           `PackageDetailModal`, which this catalog had no equivalent of at all
+           until now - and which shows the FULL node list, where the drawer caps
+           it at TEMPLATE_PREVIEW_LIMIT. */
+        <button
+          className={browseStyles.drawerLinkButton}
+          type="button"
+          onClick={() => onViewDetails?.(pkg)}
+        >
+          View details
+        </button>
+      }
       publishPill={
         showPublishPill ? (
           <CatalogPublishPill
-            variant="hub"
+            /* See the Data drawer: same slot, same full-width 42px box as
+               "Add to all projects" directly above it. */
+            variant="drawer"
             dirName={pkg.dirName}
             published={!!isPublished}
             allowPublish={catalogPublishAllowed}
             busy={publishingDir === pkg.dirName}
             onPublish={onPublish ?? (() => {})}
+            onUnpublish={onUnpublish}
+            itemLabel={pkg.name}
           />
         ) : null
       }

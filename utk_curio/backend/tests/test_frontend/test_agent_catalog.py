@@ -166,7 +166,7 @@ def test_drawer_lists_catalog_agents(
 
     expect(_card(drawer, AGENT_COORD)).to_have_count(1, timeout=15000)
     expect(
-        _card(drawer, AGENT_COORD).get_by_role("button", name="Add to dataflow")
+        _card(drawer, AGENT_COORD).get_by_role("button", name="Add to project")
     ).to_be_visible()
 
     # A wedged user store surfaces here as an error banner. Asserting its
@@ -255,7 +255,7 @@ def test_add_agent_propagates_to_palette(
 
     # 3. Adding confirms first (#196), as the Data and Node catalogs do, so the
     #    card click only opens the dialog - the POST follows the confirm.
-    card.get_by_role("button", name="Add to dataflow").click()
+    card.get_by_role("button", name="Add to project").click()
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.url.endswith("/install")
@@ -264,12 +264,12 @@ def test_add_agent_propagates_to_palette(
         timeout=30000,
     ):
         accept_confirm_dialog(
-            page, title=f"Add {AGENT_NAME}?", button="Add to dataflow"
+            page, title=f"Add {AGENT_NAME}?", button="Add to project"
         )
 
     # 4. The card flips. Never target a busy label; wait for the settled state.
     expect(
-        card.get_by_role("button", name="Remove from dataflow", exact=True)
+        card.get_by_role("button", name="Remove from project", exact=True)
     ).to_be_visible(timeout=20000)
 
     # 5. THE POINT: close the drawer (its overlay is inset:0 with
@@ -294,7 +294,7 @@ def test_add_agent_propagates_to_palette(
     card = _card(drawer, AGENT_COORD)
     expect(card).to_have_count(1, timeout=20000)
 
-    card.get_by_role("button", name="Remove from dataflow", exact=True).click()
+    card.get_by_role("button", name="Remove from project", exact=True).click()
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.request.method == "DELETE"
@@ -304,7 +304,7 @@ def test_add_agent_propagates_to_palette(
         accept_confirm_dialog(page, title=f"Remove {AGENT_NAME}?", button="Remove")
 
     expect(
-        card.get_by_role("button", name=re.compile(r"^Add to dataflow"))
+        card.get_by_role("button", name=re.compile(r"^Add to project"))
     ).to_be_visible(timeout=20000)
 
     # The palette empties without a reload, the mirror of step 5.
@@ -351,7 +351,7 @@ def test_requires_agents_closure_is_disclosed_and_installed(
     # Disclosed before the click: the card names what else the install adds.
     expect(card.get_by_text(re.compile("Requires", re.I))).to_be_visible()
 
-    card.get_by_role("button", name=re.compile(r"^Add to dataflow")).click()
+    card.get_by_role("button", name=re.compile(r"^Add to project")).click()
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.url.endswith("/install")
@@ -361,11 +361,11 @@ def test_requires_agents_closure_is_disclosed_and_installed(
     ):
         # The confirmation lists the closure it is about to pull in (dev/106).
         accept_confirm_dialog(
-            page, title=re.compile(r"^Add "), button="Add to dataflow"
+            page, title=re.compile(r"^Add "), button="Add to project"
         )
 
     expect(
-        card.get_by_role("button", name="Remove from dataflow", exact=True)
+        card.get_by_role("button", name="Remove from project", exact=True)
     ).to_be_visible(timeout=20000)
 
     # The server wrote the whole closure, not just the row that was clicked.

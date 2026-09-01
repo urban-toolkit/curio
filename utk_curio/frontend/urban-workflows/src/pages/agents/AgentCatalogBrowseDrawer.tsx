@@ -21,6 +21,8 @@ export interface AgentCatalogBrowseDrawerProps {
   onImport: (agent: AgentCard) => void;
   onRemoveImport: (agent: AgentCard) => void;
   onPublish: (agent: AgentCard) => void;
+  onViewDetails?: (agent: AgentCard) => void;
+  onUnpublish: (agent: AgentCard) => void;
   onClose: () => void;
   onLayoutChange?: (slotOpen: boolean) => void;
 }
@@ -41,6 +43,8 @@ export function AgentCatalogBrowseDrawer({
   onImport,
   onRemoveImport,
   onPublish,
+  onUnpublish,
+  onViewDetails,
   onClose,
   onLayoutChange,
 }: AgentCatalogBrowseDrawerProps) {
@@ -54,6 +58,8 @@ export function AgentCatalogBrowseDrawer({
           onImport={onImport}
           onRemoveImport={onRemoveImport}
           onPublish={onPublish}
+          onUnpublish={onUnpublish}
+          onViewDetails={onViewDetails}
           onClose={onClose}
         />
       ) : null}
@@ -72,6 +78,8 @@ function AgentCatalogBrowseDrawerContent({
   onImport,
   onRemoveImport,
   onPublish,
+  onUnpublish,
+  onViewDetails,
   onClose,
 }: ContentProps) {
   const busy = busyCoord === agent.dirName;
@@ -96,7 +104,7 @@ function AgentCatalogBrowseDrawerContent({
         <>
           <span className={styles.drawerCategoryBadge}>{agent.category}</span>
           {agent.imported ? (
-            <span className={styles.drawerInstalledBadge}>✓ In your account</span>
+            <span className={styles.drawerInstalledBadge}>✓ In all projects</span>
           ) : null}
         </>
       }
@@ -139,12 +147,12 @@ function AgentCatalogBrowseDrawerContent({
       primaryAction={
         agent.imported ? (
           <button
-            className={styles.addToPaletteBtn}
+            className={styles.destructiveBtn}
             type="button"
             disabled={busy}
             onClick={() => onRemoveImport(agent)}
           >
-            {busy ? "Removing…" : "Remove from my account"}
+            {busy ? "Removing…" : "Remove from all projects"}
           </button>
         ) : (
           <button
@@ -153,21 +161,36 @@ function AgentCatalogBrowseDrawerContent({
             disabled={busy}
             onClick={() => onImport(agent)}
           >
-            {busy ? "Adding…" : "Add to my account"}
+            {busy ? "Adding…" : "Add to all projects"}
           </button>
         )
+      }
+      secondaryAction={
+        /* See the Node drawer: one shape for all three right bars. */
+        <button
+          className={styles.drawerLinkButton}
+          type="button"
+          onClick={() => onViewDetails?.(agent)}
+        >
+          View details
+        </button>
       }
       publishPill={
         showPublishPill ? (
           <CatalogPublishPill
-            variant="hub"
+            /* See the Data drawer: same slot, same full-width 42px box as the
+               primary action directly above it. */
+            variant="drawer"
             dirName={agent.dirName}
             published={agent.published}
             allowPublish={catalogPublishAllowed}
             busy={busy}
             onPublish={() => onPublish(agent)}
-            publishedTitle="Listed in the Agent Catalog"
+            onUnpublish={() => onUnpublish(agent)}
             publishActionTitle="Publish this agent into the shared catalog"
+            unpublishActionTitle={`Remove ${agent.name} from the Agent Catalog`}
+            itemLabel={agent.name}
+            catalogLabel="the Agent Catalog"
           />
         ) : null
       }

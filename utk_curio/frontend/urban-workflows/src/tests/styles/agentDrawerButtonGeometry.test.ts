@@ -8,7 +8,7 @@ import path from "path";
  * so the body column cannot collapse when a label is long. That makes the
  * BUTTONS responsible for fitting: the shared `.btnSecondary` in
  * `PackageCard.module.css` is a fixed `height: 30px` with `font: inherit` (which
- * resets line-height) and no wrap handling, so "Remove from my account" at 12px
+ * resets line-height) and no wrap handling, so "Remove from all projects" at 12px
  * wrapped to two lines inside a box nailed to one and spilled out of it.
  *
  * The fix brings the type down rather than letting the button grow, so the card
@@ -38,16 +38,24 @@ function rule(css: string, selector: string): string {
 
 describe("agent drawer action buttons fit their pinned column", () => {
   it("keeps the column pinned - the buttons adapt, not the grid", () => {
+    // 150px, widened from 140px: the extra ten fit "Remove from project" at the
+    // SHARED type size, which is what let the local shrink below be deleted.
     expect(rule(read(DRAWER_CSS), "article.agentCard")).toMatch(
-      /grid-template-columns:\s*72px 1fr 140px/,
+      /grid-template-columns:\s*72px 1fr 150px/,
     );
   });
 
-  it("shrinks the secondary label rather than growing the button", () => {
+  it("no longer shrinks the secondary label", () => {
+    // This asserted `font-size: 10px`. The shrink was for a card carrying four
+    // secondary controls, the longest being "Remove from my account"; three of
+    // them have left, and the column was widened for the one that remains. All
+    // it still did was render this drawer's "Remove from project" visibly
+    // smaller than the identical button on the Data and Node cards.
     const secondary = rule(read(DRAWER_CSS), "button.secondaryBtn");
-    expect(secondary).toMatch(/font-size:\s*10px/);
-    // Growing the row was the other option, and was rejected: it would make the
-    // card heights ragged across a list.
+    expect(secondary).not.toMatch(/font-size:/);
+    expect(secondary).not.toMatch(/padding:/);
+    // Growing the row was the other option, and is still rejected: it would
+    // make the card heights ragged across a list.
     expect(secondary).not.toMatch(/height:\s*auto/);
   });
 
@@ -59,18 +67,30 @@ describe("agent drawer action buttons fit their pinned column", () => {
     expect(secondary).toMatch(/text-overflow:\s*ellipsis/);
   });
 
-  it("applies the override to every secondary button on the card", () => {
-    // Three of them share the column: Remove from dataflow, Remove from my
-    // account, Import. The original fix reached only the primary button.
+  it("leaves no unpinned secondary button behind on the card", () => {
+    // The card used to carry four of these at once - Remove from project,
+    // Unpublish, Remove from all projects, Add to all projects - and the
+    // original geometry fix reached only the primary button. Three of those
+    // four have since left: publishing and the account-level add/remove are
+    // decisions about an item, not about this project, so they live on the
+    // Agent Catalog page's detail drawer. What remains must still be pinned.
     const tsx = read(DRAWER_TSX);
     const bare = tsx.match(/className=\{cardStyles\.btnSecondary\}/g) ?? [];
     expect(bare).toHaveLength(0);
-    const overridden = tsx.match(/cardStyles\.btnSecondary\} \$\{styles\.secondaryBtn\}/g) ?? [];
-    expect(overridden.length).toBeGreaterThanOrEqual(3);
+    // Down to zero: all four of those controls have now left the card. Three
+    // were account-level (publish, unpublish, the all-projects pair) and belong
+    // on the Agent Catalog page's detail drawer; the fourth, "Remove from
+    // project", went because an agent reaches a dataflow by being in the
+    // account and is seeded into every one, so removing it from a single
+    // dataflow contradicted the catalog's own "In all projects".
+    //
+    // The rule that matters survives either way: any secondary button that
+    // comes back must carry the override, which the bare-class check above
+    // enforces at zero just as well as at four.
   });
 
   it("still grows the primary button, whose label may legitimately wrap", () => {
-    // "Add to dataflow" / "Update" / "Installed" vary in length and the primary
+    // "Add to project" / "Update" / "Installed" vary in length and the primary
     // control is allowed two lines; only the secondaries are pinned.
     expect(rule(read(DRAWER_CSS), "button.installBtn")).toMatch(/height:\s*auto/);
   });

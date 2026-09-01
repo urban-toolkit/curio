@@ -9,7 +9,6 @@ import {
   catalogIsFresh,
   catalogRelativeTime,
 } from "../../components/catalog/catalogTimeFormat";
-import { DatasetDataflowUsageSection } from "../../components/datasets/catalog/DatasetDataflowUsage";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
@@ -17,6 +16,7 @@ import {
   datasetSubtitle,
   datasetProvenanceLabel,
   isDatasetPublishedToCatalog,
+  isUserOwnedDataset,
 } from "../../services/datasetCatalog";
 import { DataCatalogGeoPreview } from "./DataCatalogGeoPreview";
 import { datasetCount, formatBytes, metaLeft } from "./dataHubBrowseFormat";
@@ -27,6 +27,11 @@ export interface DataCatalogBrowseDrawerProps {
   publishingId: string | null;
   catalogPublishAllowed: boolean;
   onPublish: (dataset: DatasetCatalogItem) => void;
+  onUnpublish: (dataset: DatasetCatalogItem) => void;
+  inAllProjects?: boolean;
+  defaultsBusy?: boolean;
+  onAddToAllProjects: (dataset: DatasetCatalogItem) => void;
+  onRemoveFromAllProjects: (dataset: DatasetCatalogItem) => void;
   onClose: () => void;
   onViewDetails: (dataset: DatasetCatalogItem) => void;
   onLayoutChange?: (slotOpen: boolean) => void;
@@ -37,6 +42,11 @@ export function DataCatalogBrowseDrawer({
   publishingId,
   catalogPublishAllowed,
   onPublish,
+  onUnpublish,
+  inAllProjects = false,
+  defaultsBusy = false,
+  onAddToAllProjects,
+  onRemoveFromAllProjects,
   onClose,
   onViewDetails,
   onLayoutChange,
@@ -49,6 +59,11 @@ export function DataCatalogBrowseDrawer({
           publishingId={publishingId}
           catalogPublishAllowed={catalogPublishAllowed}
           onPublish={onPublish}
+          onUnpublish={onUnpublish}
+          inAllProjects={inAllProjects}
+          defaultsBusy={defaultsBusy}
+          onAddToAllProjects={onAddToAllProjects}
+          onRemoveFromAllProjects={onRemoveFromAllProjects}
           onClose={onClose}
           onViewDetails={onViewDetails}
         />
@@ -67,6 +82,11 @@ function DataCatalogBrowseDrawerContent({
   publishingId,
   catalogPublishAllowed,
   onPublish,
+  onUnpublish,
+  inAllProjects = false,
+  defaultsBusy = false,
+  onAddToAllProjects,
+  onRemoveFromAllProjects,
   onClose,
   onViewDetails,
 }: DataCatalogBrowseDrawerContentProps) {
@@ -75,7 +95,13 @@ function DataCatalogBrowseDrawerContent({
   const showPublishPill = shouldShowPublishPill({
     isPublished: published,
     allowPublish: catalogPublishAllowed,
-    canPublish: true,
+    // `true` here meant every dataset offered to publish itself back into the
+    // catalog it shipped from, and - once published - offered to unpublish
+    // something the user never published and cannot withdraw. Its two peers
+    // always gated on ownership (`pkg.readOnly !== true`, `agent.publishable`);
+    // this one did not. `isUserOwnedDataset` reads the store folder, which does
+    // not move when installing flips `origin` from hub to imported.
+    canPublish: isUserOwnedDataset(dataset),
   });
 
   return (
@@ -91,7 +117,7 @@ function DataCatalogBrowseDrawerContent({
             {DATASET_FORMAT_LABEL[dataset.format]}
           </span>
           {dataset.installed ? (
-            <span className={styles.drawerInstalledBadge}>✓ In dataflow</span>
+            <span className={styles.drawerInstalledBadge}>✓ In project</span>
           ) : null}
         </>
       }
@@ -120,17 +146,47 @@ function DataCatalogBrowseDrawerContent({
         },
       ]}
       tags={dataset.tags}
-      sections={
-        /* Dataflows that consume this dataset (resolved from saved specs by the
-           backend, so it works on this canvas-less browse page). Renders nothing
-           when the dataset isn't used anywhere. */
-        <div className={styles.drawerSection}>
-          <DatasetDataflowUsageSection datasetId={dataset.id} />
-        </div>
-      }
+      /* No "Used in projects" list. It fired a per-dataset `/usage` request that
+         walks every project's spec, from a panel that opens on the first card
+         the moment the page loads - and it answered a question this page does
+         not ask. The full details view still carries the usage, where someone
+         has actually asked about this one dataset. Its two peers show nothing
+         equivalent. */
       primaryAction={
+        /* The page has no project, so the only add it CAN offer is the
+           account-level one - which is why the Data Catalog had no action here
+           at all until datasets grew a defaults list. Same vocabulary as its
+           peers: dark to add, light to take away. */
+        inAllProjects ? (
+          <button
+            className={styles.destructiveBtn}
+            type="button"
+            disabled={defaultsBusy}
+            title={`Detach ${datasetDisplayTitle(dataset)} from every project. The dataset stays in your catalog.`}
+            onClick={() => onRemoveFromAllProjects(dataset)}
+          >
+            {defaultsBusy ? "Removing…" : "Remove from all projects"}
+          </button>
+        ) : (
+          <button
+            className={styles.addToPaletteBtn}
+            type="button"
+            disabled={defaultsBusy}
+            title={`Add ${datasetDisplayTitle(dataset)} to every project you have, and to new ones`}
+            onClick={() => onAddToAllProjects(dataset)}
+          >
+            {defaultsBusy ? "Adding…" : "Add to all projects"}
+          </button>
+        )
+      }
+      secondaryAction={
+        /* Kept, in the slot below the primary. The drawer's primary used to BE
+           "View details", which left the page with no account-level action at
+           all; that is now the primary, and this moves down rather than away.
+           `datasetDetailEntryPoints` holds the rule that the card and the
+           drawer offer the same one, under the same name. */
         <button
-          className={styles.addToPaletteBtn}
+          className={styles.drawerLinkButton}
           type="button"
           onClick={() => onViewDetails(dataset)}
         >
@@ -140,14 +196,19 @@ function DataCatalogBrowseDrawerContent({
       publishPill={
         showPublishPill ? (
           <CatalogPublishPill
-            variant="hub"
+            /* Not "hub": this sits directly under "Add to all projects", and
+               the card-sized pill left a stubby button below a full-width one. */
+            variant="drawer"
             dirName={dataset.dirName || dataset.id}
             published={published}
             allowPublish={catalogPublishAllowed}
             busy={publishingId === dataset.id}
             onPublish={() => onPublish(dataset)}
-            publishedTitle="Listed in the Data Catalog"
+            onUnpublish={() => onUnpublish(dataset)}
             publishActionTitle="Publish this dataset into the shared catalog (datasets/)"
+            unpublishActionTitle={`Remove ${datasetDisplayTitle(dataset)} from the Data Catalog`}
+            itemLabel={datasetDisplayTitle(dataset)}
+            catalogLabel="the Data Catalog"
           />
         ) : null
       }

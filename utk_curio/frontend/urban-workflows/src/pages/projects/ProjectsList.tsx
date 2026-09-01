@@ -254,7 +254,7 @@ const ProjectsList: React.FC = () => {
               <span className={browseStyles.titleCount}>{filtered.length}</span>
             </div>
             <p className={browseStyles.pageIntro}>
-              Your dataflows. Open one to keep working on it, or start a new one.
+              Your projects. Open one to keep working on it, or start a new one.
             </p>
             <div className={browseStyles.headerTools}>
               <input

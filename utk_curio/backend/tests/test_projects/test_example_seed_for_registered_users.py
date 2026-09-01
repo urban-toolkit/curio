@@ -189,6 +189,82 @@ def test_listing_backfills_for_a_user_seeded_before_the_fix(app, db, user_and_to
     assert len(summaries) == len(_example_stems())
 
 
+def test_a_reused_user_id_does_not_inherit_the_previous_occupant_marker(
+    app, db, user_and_token, tmp_curio
+):
+    """The marker names the account, not the id slot.
+
+    It lives on disk under ``.curio/users/<id>/`` while the id lives in the
+    database, and the two come apart whenever the database is truncated or
+    restored against an existing ``.curio`` directory - sqlite then hands the
+    next signup a rowid that has been used before. Keyed on the id alone, the
+    marker belonged to whoever came first and the new occupant silently got an
+    empty gallery. The e2e harness reproduces this on every run, because it
+    truncates ``user`` between tests.
+    """
+    first, _ = user_and_token
+    assert ensure_user_examples_seeded(first) == len(_example_stems())
+    marker = storage.user_dir(str(first.id)) / "examples.seeded"
+    assert marker.exists()
+    assert f"user={first.username}" in marker.read_text(encoding="utf-8")
+
+    # The database goes away; the files do not. A different account then takes
+    # the same id, exactly as it does after a truncation. Rows go in the order
+    # the e2e harness truncates them (projects before users), or the FK from
+    # project.user_id refuses.
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.users.models import UserSession
+
+    reused_id = first.id
+    Project.query.filter_by(user_id=reused_id).delete(synchronize_session=False)
+    UserSession.query.filter_by(user_id=reused_id).delete(synchronize_session=False)
+    db.session.delete(first)
+    db.session.commit()
+
+    successor = User(username="successor", name="Successor", email="s@test.com")
+    successor.id = reused_id
+    db.session.add(successor)
+    db.session.commit()
+    assert successor.id == reused_id
+    assert list_for_user(successor.id) == []
+
+    # THE POINT: the successor gets their own examples, not an empty gallery.
+    assert ensure_user_examples_seeded(successor) == len(_example_stems())
+    assert len(list_for_user(successor.id)) == len(_example_stems())
+    assert f"user={successor.username}" in marker.read_text(encoding="utf-8")
+
+
+def test_the_same_account_is_still_seeded_only_once(app, db, user_and_token):
+    """The marker must still stop a deliberate deletion being undone."""
+    user, _ = user_and_token
+    assert ensure_user_examples_seeded(user) == len(_example_stems())
+
+    victim = list_for_user(user.id)[0]
+    services.delete_project(user, victim.id, purge=True)
+
+    assert ensure_user_examples_seeded(user) == 0
+    assert victim.id not in {p.id for p in list_for_user(user.id)}
+
+
+def test_a_legacy_marker_without_an_owner_is_not_trusted(app, db, user_and_token):
+    """Markers written before this recorded an owner say nothing about who.
+
+    Treating them as valid would preserve the bug for exactly the installs that
+    already have one. They are re-seeded once and rewritten in the named form;
+    the cost is that a user who had deleted an example gets it back on that one
+    occasion, which is self-correcting from then on.
+    """
+    user, _ = user_and_token
+    marker = storage.user_dir(str(user.id)) / "examples.seeded"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("11", encoding="utf-8")  # the old format: a bare count
+
+    assert ensure_user_examples_seeded(user) == len(_example_stems())
+    assert f"user={user.username}" in marker.read_text(encoding="utf-8")
+    # ...and now it is trusted, so it does not re-seed a second time.
+    assert ensure_user_examples_seeded(user) == 0
+
+
 @pytest.mark.parametrize("flag", ["0", None])
 def test_seeding_is_off_without_the_flag(app, db, user_and_token, monkeypatch, flag):
     """`--with-examples` is what turns this on; unset means off, as before."""

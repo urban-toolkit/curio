@@ -34,16 +34,59 @@ const MIME_EXTENSIONS: Record<string, string> = {
 /** Dispatched after a node auto-installs a computed dataset so open drawers reload. */
 export const DATASET_CATALOG_REFRESH_EVENT = "curio:dataset-catalog-refresh";
 
-export function notifyDatasetCatalogRefresh(): void {
+/** Cross-tab channel name for the same signal. */
+const DATASET_CATALOG_CHANNEL = "curio:dataset-catalog";
+
+export function notifyDatasetCatalogRefresh(fromPeer = false): void {
   // Invalidate BEFORE dispatching, and independently of any listener: mounted
   // surfaces refetch via the event, while unmounted ones must not find a
   // pre-mutation entry when they next mount. This is the single chokepoint
   // that keeps every catalog surface (drawer tabs, palette, prefetch) from
   // serving stale listings after a mutation.
   invalidateDatasetCatalogCache();
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent(DATASET_CATALOG_REFRESH_EVENT));
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(DATASET_CATALOG_REFRESH_EVENT));
+
+  // ...and in the OTHER tabs. A CustomEvent is per-document, so this claimed to
+  // be the single chokepoint while reaching exactly one tab: adding a dataset
+  // to all projects from `/catalog` left a dataflow open in another tab serving
+  // a cached listing from before the mutation, with no way to notice. The
+  // backend state was correct and the screen disagreed with it.
+  //
+  // `fromPeer` stops the echo: a tab that acted on a peer's message must not
+  // broadcast it back.
+  if (fromPeer || typeof BroadcastChannel === "undefined") return;
+  try {
+    const channel = new BroadcastChannel(DATASET_CATALOG_CHANNEL);
+    channel.postMessage({ type: DATASET_CATALOG_REFRESH_EVENT });
+    channel.close();
+  } catch {
+    // Private-mode or an unsupported engine: the single-tab path above still
+    // works, so a broadcast failure must never break the mutation.
   }
+}
+
+/**
+ * Subscribe this tab to peers' catalog mutations. Returns an unsubscribe.
+ *
+ * Called once at app start. Without it the broadcast above has no listener and
+ * the cross-tab half is inert.
+ */
+export function listenForPeerDatasetCatalogRefresh(): () => void {
+  if (typeof BroadcastChannel === "undefined") return () => undefined;
+  let channel: BroadcastChannel;
+  try {
+    channel = new BroadcastChannel(DATASET_CATALOG_CHANNEL);
+  } catch {
+    return () => undefined;
+  }
+  channel.onmessage = (event) => {
+    if (event?.data?.type === DATASET_CATALOG_REFRESH_EVENT) {
+      // `true`: act locally, do not rebroadcast.
+      notifyDatasetCatalogRefresh(true);
+    }
+  };
+  return () => channel.close();
 }
 
 /**
@@ -199,6 +242,40 @@ export const datasetCatalogApi = {
   unpublishDataset(datasetId: string, opts: { dataflowId?: string | null } = {}): Promise<{ id: string; unpublished: boolean }> {
     const qs = opts.dataflowId ? `?dataflowId=${encodeURIComponent(opts.dataflowId)}` : "";
     return apiFetch(`/api/datasets/publish/${encodeURIComponent(datasetId)}${qs}`, {
+      method: "DELETE",
+    });
+  },
+
+  /**
+   * The user's "in all projects" dataset ids.
+   *
+   * A separate fetch rather than a field on each catalog row, exactly like
+   * ``GET /api/packages/defaults``: membership is a property of the ACCOUNT,
+   * not of the dataset, and the same dataset row is shown to every user.
+   */
+  listDatasetDefaults(): Promise<{ datasets: string[] }> {
+    return apiFetch("/api/datasets/defaults");
+  },
+
+  /** Add a dataset to every project, present and future. */
+  addDatasetToDefaults(
+    datasetId: string,
+  ): Promise<{ datasets: string[]; projects: { id: string; ok: boolean }[] }> {
+    return apiFetch("/api/datasets/defaults", {
+      method: "POST",
+      body: JSON.stringify({ datasetId }),
+    });
+  },
+
+  /**
+   * Stop seeding it into new projects, and detach it from existing ones.
+   * Detach only: the dataset stays in the account catalog. Deleting it
+   * outright is ``deleteDataset``.
+   */
+  removeDatasetFromDefaults(
+    datasetId: string,
+  ): Promise<{ datasets: string[]; projects: { id: string; ok: boolean }[] }> {
+    return apiFetch(`/api/datasets/defaults/${encodeURIComponent(datasetId)}`, {
       method: "DELETE",
     });
   },

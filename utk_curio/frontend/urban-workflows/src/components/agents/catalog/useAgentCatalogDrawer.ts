@@ -21,9 +21,20 @@ import { useToastContext } from "../../../providers/ToastProvider";
  * - Errors keep the cached rows (banner over content, never instead of it).
  */
 
-export type AgentScope = "browse" | "imports" | "installed";
+/**
+ * "imports" is gone. It listed the account's imported definitions inside a
+ * PER-DATAFLOW drawer, which put an account-level scope in a place that is
+ * about one project - and it was the surface reporting built-ins like
+ * "Dataflow builder" and "Connection builder" as the user's own imports.
+ *
+ * Adding from this drawer goes straight to the open project. The account-level
+ * decision ("Add to all projects") lives on the Agent Catalog PAGE, which is
+ * the surface that has no project and can only speak about the account. Two
+ * scopes, matching the Node drawer exactly.
+ */
+export type AgentScope = "browse" | "installed";
 
-const ALL_SCOPES: AgentScope[] = ["browse", "imports", "installed"];
+const ALL_SCOPES: AgentScope[] = ["browse", "installed"];
 
 export interface AgentCatalogDrawerState {
   scope: AgentScope;
@@ -32,6 +43,8 @@ export interface AgentCatalogDrawerState {
   loading: boolean;
   busyCoord: string | null;
   error: string | null;
+  /** Agents in the open dataflow, for the "In project" tab badge. */
+  installedCount: number;
   reload: () => Promise<void>;
   importAgent: (coord: string) => Promise<void>;
   removeImport: (coord: string) => Promise<void>;
@@ -63,7 +76,6 @@ export function useAgentCatalogDrawer(
   const [error, setError] = useState<string | null>(null);
   const seqRef = useRef<Record<AgentScope, number>>({
     browse: 0,
-    imports: 0,
     installed: 0,
   });
 
@@ -72,14 +84,14 @@ export function useAgentCatalogDrawer(
    * `projectId` arrives from FlowProvider, so on the render where an install
    * creates the dataflow it is still null. Refetching against null asks for an
    * unscoped listing, every card comes back `installedInProject: false`, and the
-   * agent that was just added still offers "Add to dataflow". Reading the id
+   * agent that was just added still offers "Add to project". Reading the id
    * through this ref closes that window; the prop takes over on the next render.
    */
   const createdProjectIdRef = useRef<string | null>(null);
   const activeProjectId = () => projectId ?? createdProjectIdRef.current;
 
-  // A project switch invalidates every scope's cache (installed state is
-  // per-project; My imports marks installs against the open project too).
+  // A project switch invalidates every scope's cache: installed state is
+  // per-project.
   useEffect(() => {
     if (projectId) createdProjectIdRef.current = null;
     setCardsByScope({});
@@ -92,15 +104,22 @@ export function useAgentCatalogDrawer(
       let resp: { agents: AgentCard[] };
       if (s === "browse") {
         resp = await agentsApi.catalog(id ?? undefined);
-      } else if (s === "imports") {
-        resp = await agentsApi.listImports(id ?? undefined);
       } else {
-        resp = id ? await agentsApi.listProjectAgents(id) : { agents: [] };
+        // No project yet (a dataflow is created on its first save), so there is
+        // no lockfile to read and this returned an empty list - the same blind
+        // spot the agents palette had. The account's "in all projects" agents
+        // belong here: `save_project` seeds them into this dataflow the moment
+        // it exists, so listing them is a preview of a state one save away, not
+        // a promise. Once there IS a project its lockfile is the truth again,
+        // because the user may have removed an agent from THIS dataflow.
+        resp = id
+          ? await agentsApi.listProjectAgents(id)
+          : await agentsApi.listImports();
       }
       if (seqRef.current[s] !== seq) return; // out-of-order response — dropped
       // An unscoped listing cannot know `installedInProject`, so publishing one
       // over a scoped listing silently un-marks every installed agent. That is
-      // what left a just-added agent still offering "Add to dataflow" after the
+      // what left a just-added agent still offering "Add to project" after the
       // drawer auto-saved the dataflow: the save re-rendered mid-flight and a
       // fetch that started before the id existed landed last.
       if (!id && activeProjectId()) return;
@@ -142,6 +161,19 @@ export function useAgentCatalogDrawer(
   useEffect(() => {
     if (presented) void refreshScope(scope);
   }, [presented, scope, refreshScope]);
+
+  // The "In project" tab's badge counts that scope's rows, so it needs them
+  // fetched even while you are looking at "Browse all" - otherwise the count
+  // reads 0 until you happen to click the tab it is describing. Its two peers
+  // have the number up front because their drawers fetch one listing and
+  // derive both tabs from it.
+  useEffect(() => {
+    if (!presented) return;
+    if (cardsByScope.installed !== undefined) return;
+    void fetchScope("installed").catch(() => {
+      // A badge is not worth an error banner; the tab still loads on click.
+    });
+  }, [presented, cardsByScope.installed, fetchScope]);
 
   const run = useCallback(
     async (coord: string, fn: () => Promise<unknown>, successMessage?: string) => {
@@ -185,6 +217,14 @@ export function useAgentCatalogDrawer(
     return created;
   }, [projectId, onEnsureProject]);
 
+  /** How many agents this dataflow has, for the "In project" tab badge.
+   *
+   *  Read off the project scope's own cached rows rather than the visible list,
+   *  so the badge says the same thing whichever tab you are looking at - and
+   *  matches what the Data and Node drawers put on the same tab. The Agent
+   *  drawer was the only one of the three with no count there at all. */
+  const installedCount = (cardsByScope.installed ?? []).length;
+
   const cards = cardsByScope[scope] ?? [];
   // First-ever fetch for this scope only — cached tabs render instantly.
   const loading = cardsByScope[scope] === undefined && fetching;
@@ -196,6 +236,7 @@ export function useAgentCatalogDrawer(
     loading,
     busyCoord,
     error,
+    installedCount,
     reload: refreshAll,
     importAgent: (coord) => run(coord, () => agentsApi.import(coord)),
     removeImport: (coord) => run(coord, () => agentsApi.removeImport(coord)),
