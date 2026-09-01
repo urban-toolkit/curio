@@ -73,8 +73,14 @@ class SilentNarrator:
     would be a baseline of the wrong screen.
     """
 
-    def __init__(self, page) -> None:
+    def __init__(self, page, *, beat_cap: float | None = 150) -> None:
         self.page = page
+        #: Longest a single beat may last, in ms. The baseline pass caps them
+        #: hard - it only needs the app to settle before a capture, and every
+        #: extra millisecond is dead time in CI. A recording passes ``None`` to
+        #: honour the full beat, so the video moves at a watchable pace without
+        #: any narration to supply one.
+        self.beat_cap = beat_cap
 
     def chapter(self, kicker: str, title: str, sub: str = "", hold: float | None = None) -> None:
         return None
@@ -83,16 +89,20 @@ class SilentNarrator:
         return None
 
     def beat(self, ms: float = 700) -> None:
-        # Kept, and deliberately short: journeys use beats to let the app settle
-        # (a drawer transition, a re-render), not only for pacing.
-        self.page.wait_for_timeout(min(ms, 150))
+        # Beats are how a journey lets the app settle (a drawer transition, a
+        # re-render), not only how it paces itself.
+        self.page.wait_for_timeout(ms if self.beat_cap is None else min(ms, self.beat_cap))
 
     def focus(self, locator, *, hold: float = 900, ring: bool = True):
         try:
             locator.wait_for(state="visible", timeout=10000)
         except Exception:
             return None
-        return locator.bounding_box()
+        box = locator.bounding_box()
+        # No ring and no cursor - but a recording still pauses on the subject,
+        # which is the only pacing left once the captions are gone.
+        self.beat(hold)
+        return box
 
     def click(self, locator, *, force: bool = False, dispatch: bool = False,
               hold: float = 700, ring: bool = True) -> None:
@@ -101,6 +111,9 @@ class SilentNarrator:
         else:
             locator.click(force=force)
         self.beat(hold)
+
+    def focus_hold(self, ms: float) -> None:
+        self.beat(ms)
 
     def type_into(self, locator, text: str, *, delay: float = 55) -> None:
         locator.click()
@@ -178,9 +191,14 @@ class Walkthrough:
     #: visual fixes tighten it hard.
     max_diff_ratio: float = 0.20
     #: The example dataflow to open the journey on, by filename under
-    #: ``docs/examples``. Defaults to ``PROVENANCE_EXAMPLE`` -- a scene about a
-    #: multi-view chart or a wide table cannot demonstrate itself on a spec that
-    #: contains neither.
+    #: ``docs/examples``. ``None`` means an EMPTY dataflow.
+    #:
+    #: It used to default to one particular example, so every recording opened
+    #: on "Vega-Lite chained transforms" whether or not the journey had anything
+    #: to do with it - which reads as if that dataflow were part of the subject.
+    #: A catalog scene needs no dataflow at all; one about a chart or a wide
+    #: table cannot demonstrate itself without the right one. So each scene says
+    #: what it needs, and says nothing when it needs nothing.
     example: str | None = None
 
     @property
@@ -327,6 +345,7 @@ PROVENANCE_EXAMPLE = "01-vega-lite-chained-transforms.json"
 
 @walkthrough(
     slug="provenance-graph-of-a-loaded-dataflow",
+    example=PROVENANCE_EXAMPLE,
     refs=[186],
     title="Loaded dataflows get a real provenance graph",
     premise="Open a saved dataflow, then read its version history.",
@@ -390,6 +409,7 @@ def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="provenance-graph-navigation",
+    example=PROVENANCE_EXAMPLE,
     refs=[187],
     title="The provenance graph pans and zooms",
     premise="Drag the version graph to reach a node below the fold.",
@@ -432,6 +452,7 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="provenance-reverting-to-a-previous-version",
+    example=PROVENANCE_EXAMPLE,
     refs=[195],
     title="Reverting a dataflow to an earlier version",
     premise="Step back through the version graph and watch the canvas follow.",
@@ -986,6 +1007,7 @@ def open_view_menu_dashboard(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="dashboard-mode-refuses-a-blank-screen",
+    example=PROVENANCE_EXAMPLE,
     refs=[192],
     title="Dashboard Mode says what it needs",
     premise="Enter Dashboard Mode with nothing pinned, then with one node pinned.",
@@ -1191,8 +1213,25 @@ def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
     node.wait_for(state="visible", timeout=45000)
     node.scroll_into_view_if_needed()
 
+    # RUN it. The mount div exists from first render, so the scene could scroll
+    # an EMPTY container and still pass every assertion below - which is what it
+    # did: the recording showed a scrollbar moving over blank space and no
+    # chart. A clipped chart is the whole subject, so there has to be one.
+    ctx.say("Run it", "The chart is drawn from the node's own output.")
+    play_node(page, node_id)
+
     mount = page.locator(f'#vega{node_id}')
     mount.wait_for(state="attached", timeout=45000)
+
+    # Vega renders to a <canvas> inside the mount; wait for it, and for it to
+    # be taller than the pane, or there is nothing to demonstrate.
+    page.wait_for_function(
+        "(id) => { const el = document.getElementById(id);"
+        " const c = el && el.querySelector('canvas');"
+        " return !!c && c.getBoundingClientRect().height > 0; }",
+        arg=f"vega{node_id}",
+        timeout=180000,
+    )
     ctx.focus(node, hold=1400)
 
     metrics = mount.evaluate(
@@ -1211,10 +1250,22 @@ def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
     # `nowheel` is what stops React Flow zooming the canvas instead.
     assert metrics["nowheel"], "the container scrolls but the wheel zooms the canvas"
 
+    # The claim only means something if the chart is actually taller than its
+    # pane - otherwise there is nothing being clipped and nothing to scroll to.
+    assert metrics["scrollH"] > metrics["clientH"] + 8, (
+        f"the chart fits inside its pane ({metrics['scrollH']}px of content in "
+        f"{metrics['clientH']}px), so this scene cannot show #202 - the node "
+        f"probably rendered a single small view instead of the stacked ones"
+    )
+    ctx.capture("chart-clipped-at-the-fold")
+
     ctx.say("Scroll down to the second view",
             "It was there all along; there was simply no way to reach it.")
     mount.evaluate("el => el.scrollTo({ top: el.scrollHeight })")
     page.wait_for_timeout(900)
+    assert mount.evaluate("el => el.scrollTop") > 0, (
+        "the container reports overflow but would not scroll"
+    )
     ctx.capture("scrolled-to-bottom-view")
 
 

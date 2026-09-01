@@ -3,24 +3,29 @@
 Reported symptom: open Provenance, zoom in, and the edges between the version
 cards disappear while the cards themselves stay put.
 
-The suspected cause is a GLOBAL rule. ``components/MainCanvas.css`` is imported
-once for the whole app and styles ``.react-flow__viewport`` unscoped, so it
-applies to *every* React Flow in the app - including the one nested inside the
-Provenance modal:
+**This test does not currently reproduce the report.** Driven headlessly in
+Chromium, by the wheel and by the zoom control, all the way to React Flow's
+maxZoom, the edges stay present and stay painted. It is kept because it does
+guard a real way the edges CAN vanish: ``TrillProvenanceWindow``'s
+``ProvenanceEdge`` returns ``null`` the moment a node measurement is missing
+(``if (!src?.width || !src?.height || ...) return null``), so anything that
+disturbs node measurement silently removes every edge - and nothing else
+covered that.
+
+What it cannot see, and what the report may be: a COMPOSITOR failure.
+``components/MainCanvas.css`` is imported once for the whole app and styles
+``.react-flow__viewport`` unscoped, so it reaches every React Flow in the app -
+including this one, nested in a modal:
 
     .react-flow__viewport { will-change: transform; }
 
-``will-change: transform`` promotes the viewport to its own compositor layer.
-React Flow paints edges as a single ``<svg class="react-flow__edges">`` inside
-that layer while each node is its own DOM subtree, so when the promoted layer
-grows past what the compositor will rasterise, the SVG is the part that stops
-being painted - which is exactly "the edges vanish, the cards remain".
-
-This test does not assert the cause, only the behaviour: after zooming in, the
-edge paths must still be present AND still have a non-zero rendered geometry.
-``TrillProvenanceWindow``'s ``ProvenanceEdge`` returns ``null`` whenever a node
-measurement is missing, so a regression there would show up here too, which is
-the other reason to check geometry rather than mere presence.
+That promotes the viewport to its own GPU layer (the comment beside it says it
+is there for Firefox). React Flow paints all edges as a single
+``<svg class="react-flow__edges">`` inside that layer while each node is its own
+DOM subtree, so if the layer fails to rasterise it is the edges that vanish and
+the cards that remain. ``getBoundingClientRect`` still reports correct boxes in
+that case, which is exactly why the assertions below cannot detect it - and why
+headless Chromium, which rasterises differently, is the wrong place to look.
 
 Run::
 
@@ -112,13 +117,40 @@ def test_provenance_edges_survive_zooming_in(
         fit_reactflow=False,
     )
 
-    # Zoom in the way a user does: the modal's own zoom-in control, repeatedly.
+    # Both ways a user zooms. The control steps discretely through `zoomIn()`;
+    # the wheel drives d3-zoom continuously and is the only one that produces
+    # fractional intermediate scales - so a rendering problem that depends on
+    # the scale value can hide from one and not the other.
+    graph = dialog.locator(".react-flow__pane").first
+    box = graph.bounding_box()
+    assert box, "the provenance graph has no layout box"
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    for _ in range(14):
+        page.mouse.wheel(0, -240)
+        page.wait_for_timeout(120)
+    page.wait_for_timeout(500)
+
+    mid = _edge_geometry(page)
+    save_workflow_test_screenshot(
+        page, "provenance-edges-wheel-zoom",
+        test_name="test_provenance_edges_survive_zooming_in",
+        fit_reactflow=False,
+    )
+    assert len(mid) == len(before), (
+        f"wheel-zooming dropped provenance edges: {len(before)} -> {len(mid)}"
+    )
+
+    # Then the control, for the discrete `zoomIn()` path - skipping any click
+    # once React Flow has disabled it at maxZoom, which the wheel pass above
+    # has usually already reached.
     zoom_in = dialog.get_by_role("button", name="zoom in")
     zoom_in.wait_for(state="visible", timeout=10000)
-    for _ in range(5):
+    for _ in range(6):
+        if not zoom_in.is_enabled():
+            break
         zoom_in.click()
-        page.wait_for_timeout(250)
-    page.wait_for_timeout(600)
+        page.wait_for_timeout(200)
+    page.wait_for_timeout(500)
 
     after = _edge_geometry(page)
 

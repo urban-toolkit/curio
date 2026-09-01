@@ -32,9 +32,9 @@ import pytest
 
 from . import tour
 from .walkthroughs import (
-    PROVENANCE_EXAMPLE,
     WALKTHROUGHS,
     Ctx,
+    SilentNarrator,
     Walkthrough,
     load_example_spec,
 )
@@ -122,7 +122,13 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
     # collapsed. The narration's own pacing supplies the sense of movement.
     page.emulate_media(reduced_motion="reduce")
 
-    narrator = tour.Tour(page, pace=tour.speed())
+    # No overlay. The recordings carried a title card, captions and a spotlight
+    # cursor; they are the app's own UI competing with the app, and the report
+    # written beside each video already says what the journey is. `Ctx` takes
+    # any Narrator, and `SilentNarrator` implements the same calls with the
+    # presentation removed - the interactions still happen, at the app's own
+    # pace rather than a narrated one.
+    narrator = SilentNarrator(page, beat_cap=None)
     failure: str | None = None
     try:
         stub_login_and_enter_workflow(
@@ -132,12 +138,14 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
             name="Walkthrough",
             username=f"walkvid_{walk.slug.replace(chr(45), chr(95))[:24]}",
             project_name=walk.title[:40],
-            project_spec=load_example_spec(walk.example or PROVENANCE_EXAMPLE),
+            project_spec=load_example_spec(walk.example) if walk.example else None,
         )
         require_owner_view(page)
-        page.wait_for_selector(".react-flow__node", timeout=45000)
+        # An empty dataflow has no nodes; only wait for one when the scene
+        # asked for a spec that puts them there.
+        if walk.example:
+            page.wait_for_selector(".react-flow__node", timeout=45000)
 
-        narrator.chapter("Curio", walk.title, walk.premise)
         walk.run(Ctx(
             page=page,
             frontend=app_frontend.base_url,
@@ -146,7 +154,7 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
             recording=True,
         ))
         dismiss_toasts(page)
-        narrator.beat(1200)
+        page.wait_for_timeout(1200)
     except Exception:
         # Keep the take. A recording that ends early still shows where it broke,
         # and a still of the moment localises it faster than the locator message.
