@@ -1,14 +1,23 @@
+/* The ACTION and the STATE must not look alike.
+ *
+ * They used to be the wrong way round: the action was a filled blue uppercase
+ * pill reading "PUBLISH", which is exactly the shape of a status chip, while
+ * the state that something HAD been published was a muted grey badge. Users
+ * read the loud blue thing as "this is published".
+ *
+ * So the action is now an outlined button in sentence case with an ellipsis
+ * (a dialog follows), and the state keeps the quiet badge plus a tick. */
+
 /* Dock palette (dark panel) */
 .pillDock {
     flex-shrink: 0;
     font-family: var(--curio-font-family);
     font-size: 10px;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    letter-spacing: 0.02em;
     color: var(--curio-role-published-bg);
-    background: rgba(53, 103, 199, 0.18);
-    border: 1px solid rgba(53, 103, 199, 0.5);
+    background: transparent;
+    border: 1px solid rgba(53, 103, 199, 0.6);
     border-radius: var(--curio-radius-pill);
     padding: 3px 9px;
     cursor: pointer;
@@ -49,11 +58,10 @@
     font-family: var(--curio-font-family);
     font-size: 10px;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    letter-spacing: 0.02em;
     color: var(--curio-role-published-fg);
-    background: var(--curio-role-published-bg);
-    border: 1px solid rgba(53, 103, 199, 0.4);
+    background: transparent;
+    border: 1px solid var(--curio-role-published-fg);
     border-radius: var(--curio-radius-pill);
     padding: 3px 9px;
     cursor: pointer;

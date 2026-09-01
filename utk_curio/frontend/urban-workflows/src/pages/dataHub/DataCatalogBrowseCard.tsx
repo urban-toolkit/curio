@@ -10,6 +10,7 @@ import {
   datasetDisplayTitle,
   datasetSubtitle,
   isDatasetPublishedToCatalog,
+  isUserOwnedDataset,
 } from "../../services/datasetCatalog";
 import { isFresh, metaLeft, relativeTime } from "./dataHubBrowseFormat";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
@@ -40,7 +41,10 @@ export function DataCatalogBrowseCard({
   const showPublishPill = shouldShowPublishPill({
     isPublished: published,
     allowPublish: catalogPublishAllowed,
-    canPublish: true,
+    // Only the user's own — see `isUserOwnedDataset`. This said `true`, so
+    // every dataset on the browse page offered to publish itself back into the
+    // catalog it came from.
+    canPublish: isUserOwnedDataset(dataset),
   });
 
   return (

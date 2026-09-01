@@ -119,18 +119,67 @@ describe("DatasetCard - Delete gating", () => {
 });
 
 describe("DatasetCard - publish affordances", () => {
-  it("offers Publish when allowed and not yet published", () => {
+  // The default fixture is a CATALOG dataset (`data.urbanlab.demo@1`), i.e.
+  // something the installation shipped. Publishing means "put this into the
+  // catalog everyone on this Curio shares" - it is already there, and the
+  // backend has no guard, so the button would write a duplicate.
+  const ownUpload = { dirName: "imported.my-upload@1", origin: "imported" as const };
+  const ownOutput = { dirName: "computed.flow-1.n2@1", origin: "computed" as const };
+
+  it("offers Publish for the user's own upload", () => {
+    renderCard({
+      dataset: dataset(ownUpload),
+      onPublish: jest.fn(),
+      publishAllowed: true,
+    });
+    // "Publish…", not "Publish": the ellipsis says a confirmation follows, and
+    // the sentence case keeps the ACTION from reading as a status chip.
+    expect(button("Publish…")).toBeTruthy();
+  });
+
+  it("offers Publish for an output the user's own node computed", () => {
+    renderCard({
+      dataset: dataset(ownOutput),
+      onPublish: jest.fn(),
+      publishAllowed: true,
+    });
+    expect(button("Publish…")).toBeTruthy();
+  });
+
+  it("hides Publish for a dataset that came from the shared catalog", () => {
+    // The reported confusion: every dataset offered to publish itself back
+    // into the catalog it was installed from.
     renderCard({ onPublish: jest.fn(), publishAllowed: true });
-    expect(button("Publish")).toBeTruthy();
+    expect(button("Publish…")).toBeNull();
+  });
+
+  it("still hides Publish for a catalog dataset that has been installed", () => {
+    // Installing flips `origin` from "hub" to "imported", so origin alone
+    // cannot tell an install from an upload - the store folder can.
+    renderCard({
+      dataset: dataset({ origin: "imported", installed: true }),
+      onPublish: jest.fn(),
+      publishAllowed: true,
+    });
+    expect(button("Publish…")).toBeNull();
   });
 
   it("hides Publish when the server forbids it", () => {
-    renderCard({ onPublish: jest.fn(), publishAllowed: false });
-    expect(button("Publish")).toBeNull();
+    renderCard({
+      dataset: dataset(ownUpload),
+      onPublish: jest.fn(),
+      publishAllowed: false,
+    });
+    expect(button("Publish…")).toBeNull();
   });
 
   it("does not offer Publish again once published", () => {
-    renderCard({ onPublish: jest.fn(), publishAllowed: true, isPublished: true });
-    expect(button("Publish")).toBeNull();
+    renderCard({
+      dataset: dataset(ownUpload),
+      onPublish: jest.fn(),
+      publishAllowed: true,
+      isPublished: true,
+    });
+    expect(button("Publish…")).toBeNull();
   });
 });

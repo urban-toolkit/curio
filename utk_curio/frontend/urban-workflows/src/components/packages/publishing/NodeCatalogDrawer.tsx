@@ -295,7 +295,25 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
       await reload();
-      showToast(`Removed ${pkg.name} from this dataflow.`, "success");
+      // The response says whether the prune actually fired; the UI used to read
+      // only `packages` and throw the rest away, so a removal that deleted the
+      // package from the account and pip-uninstalled its libraries from the
+      // shared interpreter reported the same sentence as one that only edited
+      // this dataflow's lockfile.
+      const pruned = result.pruned ?? [];
+      const fromDefaults = result.removedFromDefaults ?? [];
+      const extra = [
+        pruned.length ? "and from your account" : "",
+        fromDefaults.length ? "and from your defaults" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      showToast(
+        extra
+          ? `Removed ${pkg.name} from this dataflow ${extra}.`
+          : `Removed ${pkg.name} from this dataflow.`,
+        "success",
+      );
     } catch (err) {
       reportActionError(`Couldn't remove ${pkg.name}`, err);
     } finally {
@@ -309,7 +327,19 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       title: `Remove ${pkg.name}?`,
       // "from this dataflow", matching the button that opens this — the old
       // copy said "from this project" and contradicted it.
-      body: `Remove ${pkg.name} (${pkg.dirName}) from this dataflow?`,
+      //
+      // The second paragraph is the part that was missing entirely. Removal is
+      // not dataflow-scoped: `prune_unreferenced_packages` deletes the user's
+      // store copy, drops it from defaults, and pip-uninstalls its Python
+      // libraries from the interpreter Curio itself runs on — shared by every
+      // dataflow and every user of this instance. Whether it fires depends on
+      // the other dataflows' lockfiles, so the wording states the condition
+      // rather than guessing the outcome.
+      body:
+        `Remove ${pkg.name} (${pkg.dirName}) from this dataflow?` +
+        `\n\nIf no other dataflow uses it, it is also deleted from your account ` +
+        `and its Python libraries are uninstalled from the shared environment, ` +
+        `which affects every dataflow and everyone using this Curio.`,
       confirmLabel: "Remove",
       run: () => performUninstall(pkg),
     });

@@ -12,6 +12,7 @@ import {
   CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
 import { CatalogPublishPill, shouldShowPublishPill } from "../../packages/CatalogPublishPill";
+import { isUserOwnedDataset } from "../../../services/datasetCatalog";
 import {
   datasetCountCompact as datasetCount,
   relativeTimeOrEmpty as relativeTime,
@@ -89,7 +90,11 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   const showPublishPill = shouldShowPublishPill({
     isPublished,
     allowPublish: publishAllowed,
-    canPublish: onPublish != null,
+    // Only the user's own. A dataset that came from the shared catalog is
+    // already there, and the backend has no guard, so republishing it would
+    // write a duplicate. Both peers gate this the same way - packages on
+    // `readOnly`, agents on the backend's `publishable`.
+    canPublish: onPublish != null && isUserOwnedDataset(dataset),
   });
 
   const count = datasetCount(dataset);

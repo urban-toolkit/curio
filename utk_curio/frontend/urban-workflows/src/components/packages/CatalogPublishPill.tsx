@@ -1,4 +1,5 @@
-import React, { memo } from "react";
+import React, { memo, useState } from "react";
+import ConfirmDialog from "../ConfirmDialog";
 import styles from "./CatalogPublishPill.module.css";
 
 export type CatalogPublishPillVariant = "dock" | "hub";
@@ -33,6 +34,8 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
     variant = "dock",
     publishedTitle,
     publishActionTitle,
+    itemLabel,
+    catalogLabel,
 }: {
     dirName: string;
     published: boolean;
@@ -44,9 +47,15 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
     publishedTitle?: string;
     /** Tooltip on the Publish action (defaults to package-catalog copy). */
     publishActionTitle?: string;
+    /** What is being published, for the confirmation's heading. */
+    itemLabel?: string;
+    /** Where it goes, for the confirmation's body. */
+    catalogLabel?: string;
 }) {
     const pillCls = variant === "hub" ? styles.pillHub : styles.pillDock;
     const badgeCls = variant === "hub" ? styles.badgeHub : styles.badgeDock;
+    // Declared before the early returns below - hooks may not be conditional.
+    const [confirmOpen, setConfirmOpen] = useState(false);
 
     if (published) {
         const title = publishedTitle ?? "Listed in the shared catalog (packages/)";
@@ -55,7 +64,11 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
         // do this on its own bespoke element; every surface gets it now.
         return (
             <span className={badgeCls} role="status" aria-label={title} title={title}>
-                Published
+                {/* A tick, so the state cannot be mistaken for a button. The
+                    action beside it used to be the LOUDER of the two - a filled
+                    blue uppercase pill reading "PUBLISH", which looks exactly
+                    like a status chip saying it had been published. */}
+                <span aria-hidden>✓ </span>Published
             </span>
         );
     }
@@ -63,19 +76,51 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
     // or `--no-allow-publish` on the launcher), the button is hidden entirely
     // rather than disabled — see docs/NODE-CATALOG.md § Operator notes.
     if (!allowPublish) return null;
+    const what = itemLabel ?? "this package";
+    const where = catalogLabel ?? "the shared catalog";
     return (
-        <button
-            type="button"
-            className={pillCls}
-            disabled={busy}
-            title={publishActionTitle ?? "Publish this installed package into the shared catalog (packages/)"}
-            onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                void onPublish(dirName);
-            }}
-        >
-            {busy ? "…" : "Publish"}
-        </button>
+        <>
+            <button
+                type="button"
+                className={pillCls}
+                disabled={busy}
+                title={publishActionTitle ?? "Publish this installed package into the shared catalog (packages/)"}
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setConfirmOpen(true);
+                }}
+            >
+                {/* The ellipsis says a dialog follows, and the label is a verb
+                    in sentence case - the uppercase form read as a status. */}
+                {busy ? "…" : "Publish…"}
+            </button>
+            {confirmOpen ? (
+                <ConfirmDialog
+                    title={`Publish ${what}?`}
+                    // Publishing is the only write in the product that leaves
+                    // this account: it copies into the deployment-wide catalog
+                    // root, where everyone on this Curio can see and install it.
+                    // It was also the only one that happened on a single
+                    // unconfirmed click, while its inverse asked first.
+                    body={
+                        `Publish ${what} to ${where}?
+
+` +
+                        `Everyone using this Curio will be able to see it and add it ` +
+                        `to their own dataflows. You can unpublish it later.`
+                    }
+                    confirmLabel="Publish"
+                    // The catalogs render this from inside a drawer, which
+                    // paints above the default modal layer.
+                    layer="overlay"
+                    onCancel={() => setConfirmOpen(false)}
+                    onConfirm={() => {
+                        setConfirmOpen(false);
+                        void onPublish(dirName);
+                    }}
+                />
+            ) : null}
+        </>
     );
 });

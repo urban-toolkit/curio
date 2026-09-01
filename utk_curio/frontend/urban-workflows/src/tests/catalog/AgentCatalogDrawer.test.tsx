@@ -291,7 +291,11 @@ describe("AgentCatalogDrawer", () => {
     // Exactly one Publish control — the built-in card (publishable:false) shows none.
     const publishBtns = screen.getAllByRole("button", { name: /publish/i });
     expect(publishBtns).toHaveLength(1);
+    // Publishing is the only deployment-wide write in the product, so it asks
+    // first now - the click opens the dialog, the dialog does the publish.
     fireEvent.click(publishBtns[0]);
+    const modal = await waitFor(confirmModal);
+    fireEvent.click(within(modal).getByRole("button", { name: "Publish" }));
     await waitFor(() => expect(api.publish).toHaveBeenCalledWith("agent.my-custom@1.0.0"));
   });
 

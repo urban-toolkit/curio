@@ -490,9 +490,18 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
     if coord in current:
         project_agents.set_project_agents(spec, [c for c in current if c != coord])
         dirty = True
+    # ...and take its attachments with it. Without this the agent was removed
+    # from the lockfile while its badges stayed on the nodes and it kept
+    # running: `attach` is gated on the lockfile but `run_attachment` is not.
+    detached = attachments.detach_all_for_coord(spec, coord)
+    if detached:
+        dirty = True
     if dirty:
         projects_storage.write_spec(user_key, project_id, spec)
-    return {"agents": project_agents.project_agents(spec)}
+    return {
+        "agents": project_agents.project_agents(spec),
+        "detached": [r.get("attachmentId") for r in detached],
+    }
 
 
 def publish_agent(user_key: str, coord: str) -> dict:

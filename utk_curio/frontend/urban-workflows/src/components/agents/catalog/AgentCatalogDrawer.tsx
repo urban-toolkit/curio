@@ -162,6 +162,22 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
     [c],
   );
 
+  // Unpublishing is a deployment-wide write, and both peers confirm it.
+  const requestUnpublish = useCallback(
+    (card: AgentCard) => {
+      setConfirmAction({
+        title: `Unpublish ${card.name}?`,
+        confirmLabel: "Unpublish",
+        destructive: true,
+        body: `Unpublish ${card.name} from the Agent Catalog?
+
+This removes the catalog listing. Copies already added to dataflows are not removed.`,
+        run: () => c.unpublish(card.dirName),
+      });
+    },
+    [c],
+  );
+
   const visibleCards = useMemo(
     () => sortAgentCards(c.cards.filter((card) => matchesAgentSearch(card, search)), sort),
     [c.cards, search, sort],
@@ -285,6 +301,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
                 hasProject={!!projectId}
                 onRequestInstall={requestInstall}
                 onRequestUninstall={requestUninstall}
+                onRequestUnpublish={requestUnpublish}
               />
             ))}
           </div>
@@ -356,7 +373,11 @@ const AgentRow: React.FC<{
   hasProject: boolean;
   onRequestInstall: (card: AgentCard) => void;
   onRequestUninstall: (card: AgentCard) => void;
-}> = ({ card, scope, state, hasProject, onRequestInstall, onRequestUninstall }) => {
+  onRequestUnpublish: (card: AgentCard) => void;
+}> = ({
+  card, scope, state, hasProject,
+  onRequestInstall, onRequestUninstall, onRequestUnpublish,
+}) => {
   const busy = state.busyCoord === card.dirName;
   // The shared catalog card grid: 72px avatar | body | action. There is no
   // accent stripe - it was dropped from every catalog card because the
@@ -450,7 +471,23 @@ const AgentRow: React.FC<{
               variant="hub"
               publishedTitle="Listed in the Agent Catalog"
               publishActionTitle="Publish this agent into the shared catalog (agents/)"
+              itemLabel={card.name}
+              catalogLabel="the Agent Catalog"
             />
+            {/* Unpublish. The hook and the API have always had it, and the
+                browse page offers it - the drawer did not, so from the canvas
+                an agent could be published and never taken back. Its two peers
+                both offer the inverse of publish beside the pill. */}
+            {card.published ? (
+              <button
+                type="button"
+                className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
+                disabled={busy}
+                onClick={() => onRequestUnpublish(card)}
+              >
+                Unpublish
+              </button>
+            ) : null}
             <button
               type="button"
               className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}

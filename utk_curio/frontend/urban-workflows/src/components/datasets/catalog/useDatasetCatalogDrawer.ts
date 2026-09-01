@@ -248,7 +248,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     [performInstall],
   );
 
-  const onUninstall = useCallback(
+  const performUninstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
       const id = await ensureProjectId();
       if (!id) return;
@@ -284,6 +284,56 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       }
     },
     [ensureProjectId, setDataflowDatasets, showToast],
+  );
+
+  /** Would removing this from the dataflow also delete it from the account?
+   *
+   *  The backend deletes an ``imported.*`` upload's store folder once no other
+   *  dataflow references it (``_remove_orphaned_imported_store_dir``), archived
+   *  projects included. Computed and source-node datasets are never deleted
+   *  this way. Usage is read BEFORE the removal, so the current dataflow is
+   *  still counted - one user means this one and nothing else.
+   */
+  const uninstallAlsoDeletes = useCallback(
+    async (dataset: DatasetCatalogItem): Promise<boolean> => {
+      const dirName = String(dataset.dirName ?? "");
+      if (!dirName.startsWith("imported.")) return false;
+      if (dataset.origin === "computed" || dataset.origin === "source_node") return false;
+      try {
+        const usage = await datasetCatalogApi.datasetUsage(dataset.id);
+        return usage.length <= 1;
+      } catch {
+        // If usage cannot be resolved the backend keeps the folder, so the
+        // honest answer is "no deletion" rather than a warning that may be
+        // false. The removal itself is unaffected either way.
+        return false;
+      }
+    },
+    [],
+  );
+
+  // #197 gave the other two catalogs a confirmation for this and left the Data
+  // drawer performing it on a single click - the one of the three that can
+  // permanently delete a file from the account while doing it.
+  const onUninstall = useCallback(
+    async (dataset: DatasetCatalogItem) => {
+      const title = datasetDisplayTitle(dataset);
+      const alsoDeletes = await uninstallAlsoDeletes(dataset);
+      setConfirmAction({
+        title: `Remove ${title}?`,
+        body: alsoDeletes
+          ? `Remove ${title} from this dataflow?
+
+No other dataflow uses it, so the uploaded file is also deleted from your Data Catalog. ${permanentDeletionNotice()}`
+          : `Remove ${title} from this dataflow?
+
+The dataset stays in your Data Catalog and in any other dataflow using it.`,
+        confirmLabel: alsoDeletes ? "Remove and delete" : "Remove",
+        destructive: true,
+        run: () => performUninstall(dataset),
+      });
+    },
+    [performUninstall, uninstallAlsoDeletes],
   );
 
   const onPublish = useCallback(

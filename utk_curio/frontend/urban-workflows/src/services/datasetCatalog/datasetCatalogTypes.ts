@@ -468,6 +468,33 @@ export function isDatasetInstalledFromCatalog(dataset: DatasetCatalogItem): bool
   return dataset.installed === true && isDatasetFromCatalog(dataset);
 }
 
+/**
+ * Is this dataset the user's own, rather than something the installation shipped?
+ *
+ * Publishing means "put this into the catalog everyone on this Curio shares".
+ * That only makes sense for something the user made or brought: their upload,
+ * or an output one of their nodes computed. A dataset that came FROM the shared
+ * catalog is already there, and republishing it just writes a duplicate - the
+ * backend has no guard against it, so the affordance has to.
+ *
+ * Told apart by the store folder, the same signal the backend's uninstall uses
+ * (``_remove_orphaned_imported_store_dir`` keys on ``imported.``): catalog
+ * datasets land under their publisher's id (``data.urbanlab.…@1``), uploads
+ * under ``imported.…`` and node outputs under ``computed.…``. ``origin`` cannot
+ * answer this - installing a catalog dataset flips it from ``hub`` to
+ * ``imported``, so an installed catalog row and an upload look identical there.
+ */
+export function isUserOwnedDataset(dataset: DatasetCatalogItem): boolean {
+  const dir = String(dataset.dirName ?? "");
+  if (dir.startsWith("imported.") || dir.startsWith("computed.")) return true;
+  // A live node output that has not been persisted yet has no folder at all,
+  // and is still the user's own.
+  if (!dir && (dataset.origin === "computed" || dataset.origin === "source_node")) {
+    return true;
+  }
+  return false;
+}
+
 /** Live node output in the current session that is not yet in the user dataset store. */
 export function isProjectSessionDataset(dataset: DatasetCatalogItem): boolean {
   return dataset.origin === "computed" && dataset.installed !== true;
