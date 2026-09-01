@@ -434,6 +434,50 @@ def _persisted_output_refs(
 # Save
 # ---------------------------------------------------------------------------
 
+def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict:
+    """Install the user's "in all projects" datasets into a brand-new project.
+
+    The dataset half of "adds it to all your projects, present and future". The
+    present half is an eager walk at the moment the user adds the dataset
+    (``CatalogMutations.install_dataset_to_defaults``); this is the future half,
+    and the only thing that puts a defaulted dataset into a project created
+    afterwards - loading an existing project never consults defaults.
+
+    Best-effort by design. A default can go stale (the dataset was deleted from
+    the account, a computed output's producer node is gone), and a stale entry
+    must degrade to "that dataset is missing from the new project", never to
+    "the project could not be created".
+
+    Returns the spec to carry forward: re-read from disk when anything was
+    installed, since the installer writes refs through its own repository.
+    """
+    from utk_curio.backend.app.datasets import defaults as dataset_defaults
+
+    try:
+        wanted = dataset_defaults.load_dataset_defaults(ukey)
+    except Exception:  # noqa: BLE001 - a bad defaults file is not fatal
+        return spec
+    if not wanted:
+        return spec
+
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    service = DatasetCatalogService(user)
+    installed_any = False
+    for dataset_id in sorted(wanted):
+        try:
+            service.install_dataset(project_id, dataset_id)
+            installed_any = True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "seed dataset default %s into project %s failed: %s",
+                dataset_id, project_id, exc,
+            )
+    if not installed_any:
+        return spec
+    return storage.read_spec(ukey, project_id) or spec
+
+
 def save_project(user, data: ProjectCreate) -> ProjectDetail:
     from utk_curio.backend.app.packages.services import (
         ensure_user_packages_initialized,
@@ -477,6 +521,27 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     effective_spec = _prune_sink_node_dataset_refs(effective_spec)
     if effective_spec is not data.spec:
         storage.write_spec(ukey, project_id, effective_spec)
+    # The dataset twin of `seed_spec_with_defaults` above: ids the user put in
+    # "all projects" are installed into this brand-new project. Done HERE, after
+    # the spec is on disk, and by calling the ordinary install path rather than
+    # by writing refs directly - the ref shape has three variants and a
+    # materialization step behind it, and a second copy of that would drift from
+    # the real install within a release. Best-effort: a stale default must never
+    # stop a project from being created.
+    effective_spec = _seed_dataset_defaults(user, ukey, project_id, effective_spec)
+    # And the account's imported agents, for the same reason: the agents palette
+    # reads the PROJECT lockfile, so an account-level import that never reaches
+    # a lockfile is invisible on the canvas however the catalog labels it.
+    try:
+        from utk_curio.backend.app.agents.services import (
+            seed_project_with_imported_agents,
+        )
+
+        seed_project_with_imported_agents(ukey, project_id)
+        effective_spec = storage.read_spec(ukey, project_id) or effective_spec
+    except Exception:  # noqa: BLE001 - never block project creation on a seed
+        logger.warning("agent seed for project %s failed", project_id, exc_info=True)
+
     # Record only outputs the reload path can restore from a durable source
     # (installed dataset / legacy copy). Writing the raw client list would let a
     # swallowed install error leave a phantom that vanishes on reload (#144).

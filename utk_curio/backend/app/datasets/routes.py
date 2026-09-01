@@ -240,6 +240,48 @@ def install_dataset(dataflow_id: str):
     return jsonify(payload), 200
 
 
+@datasets_bp.route("/datasets/defaults", methods=["GET"])
+@require_auth
+@_map_catalog_errors
+def list_dataset_defaults():
+    """The user's "in all projects" dataset ids.
+
+    The Data Catalog page reads this to mark cards, exactly as the Node Catalog
+    page reads ``GET /api/packages/defaults``: membership is a separate fetch,
+    not a field on each catalog row, because it is a property of the ACCOUNT
+    rather than of the dataset.
+    """
+    from utk_curio.backend.app.datasets import defaults as dataset_defaults
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user_key = _user_dir_key(g.user)
+    return jsonify({"datasets": sorted(dataset_defaults.load_dataset_defaults(user_key))}), 200
+
+
+@datasets_bp.route("/datasets/defaults", methods=["POST"])
+@require_auth
+@_map_catalog_errors
+def add_dataset_to_defaults():
+    """Add a dataset to every project, present and future."""
+    body = request.get_json(silent=True) or {}
+    dataset_id = body.get("datasetId")
+    if not dataset_id:
+        return _error("datasetId is required")
+    return jsonify(_service().install_dataset_to_defaults(dataset_id)), 200
+
+
+@datasets_bp.route("/datasets/defaults/<dataset_id>", methods=["DELETE"])
+@require_auth
+@_map_catalog_errors
+def remove_dataset_from_defaults(dataset_id: str):
+    """Stop seeding it into new projects, and detach it from existing ones.
+
+    Detach only - the dataset itself stays in the account catalog. Deleting it
+    outright is ``DELETE /datasets/<id>``.
+    """
+    return jsonify(_service().remove_dataset_from_defaults(dataset_id)), 200
+
+
 @datasets_bp.route("/dataflows/<dataflow_id>/datasets/<dataset_id>", methods=["DELETE"])
 @require_auth
 @_map_catalog_errors
