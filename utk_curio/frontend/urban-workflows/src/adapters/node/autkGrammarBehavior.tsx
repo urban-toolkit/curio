@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Feature, FeatureCollection } from 'geojson';
 import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
+import { detectWebGpuSupport } from '../../utils/webgpuSupport';
 import { useToastContext } from '../../providers/ToastProvider';
 import { autkGrammarAdapter } from '../../adapters/autkGrammarAdapter';
 import { VisInteractionType, NodeType } from '../../constants';
@@ -10,6 +11,10 @@ import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     const { showToast } = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
+    // Set when the browser cannot run Autark at all (#201). Renders an
+    // in-node explanation instead of the map container, so the node says why
+    // it is empty rather than looking like it simply produced nothing.
+    const [gpuBlocked, setGpuBlocked] = useState<string | null>(null);
 
     // Grammar instance and last-run spec, kept in refs so effects can access
     // them without causing re-renders.
@@ -41,6 +46,30 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             nodeState.setOutput({ code: 'error', content: 'Invalid JSON grammar spec.' });
             return;
         }
+
+        // Ask whether this browser can run Autark at all, BEFORE any canvas or
+        // DOM work (#201). Upstream of the dynamic import, the compute path and
+        // the canvas creation, so a refusal leaves no orphaned canvas and no
+        // window listeners behind. The library swallows its own init failure and
+        // only throws much later, inside `createShaders()`, where the stack says
+        // nothing about WebGPU.
+        const needsGpu =
+            spec.map != null ||
+            spec.plot != null ||
+            (Array.isArray(spec.compute) && spec.compute.length > 0);
+        if (needsGpu) {
+            const support = await detectWebGpuSupport();
+            if (!support.supported) {
+                const message =
+                    support.reason ??
+                    'Autark nodes need WebGPU, which this browser does not provide.';
+                setGpuBlocked(message);
+                nodeState.setOutput({ code: 'error', content: message });
+                showToast(message, 'error');
+                return;
+            }
+        }
+        setGpuBlocked(null);
 
         const nodeId = data.nodeId;
         const mapCanvasId = 'autk-grammar-map-' + nodeId;
@@ -364,7 +393,19 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         layers = layers.filter((l) => !emptyLayers.includes(l));
                     }
                     if (Array.isArray(spec.compute) && spec.compute.length > 0) {
-                        layers = await applyComputeBlocks(layers, spec.compute);
+                        const computeFailures: string[] = [];
+                        layers = await applyComputeBlocks(
+                            layers, spec.compute, computeFailures,
+                        );
+                        if (computeFailures.length > 0) {
+                            // Emitting here would hand downstream nodes the
+                            // untouched input under a green "Done" badge.
+                            const message =
+                                'Compute failed: ' + computeFailures.join('; ');
+                            nodeState.setOutput({ code: 'error', content: message });
+                            showToast(message, 'error');
+                            return;
+                        }
                     }
                     // Build the pool-compatible wrapper and persist it to the
                     // backend sandbox so downstream nodes see a `{path, dataType}`
@@ -441,7 +482,11 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
                     : grammar.setPlotSelection?.(plotSpec.dataRef, sel);
             }
-        })();
+        })().catch((err) => {
+            // Same reason as GrammarEditor's: an escaped rejection here
+            // surfaces as the dev-server overlay rather than as a node error.
+            console.error("[autk-grammar] interaction sync failed:", err);
+        });
     }, [data.input]);
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
@@ -506,21 +551,48 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // Stable JSX reference across incidental re-renders, but identity changes
     // on run completion so NodeEditor switches to the output tab automatically.
     const contentComponent = React.useMemo<React.ReactNode>(
-        () => (
-            <div
-                className="nodrag nopan nowheel"
-                ref={wrapperRef}
-                style={{
-                    position: 'relative',
-                    width: '100%',
-                    height: '100%',
-                    minHeight: 400,
-                    overflow: 'hidden',
-                }}
-            />
-        ),
+        () =>
+            gpuBlocked ? (
+                // Styled after providers/BackendHealthBanner: an explanation the
+                // user can act on, in the node, rather than an empty box. The red
+                // "Error" chip on the node header comes for free from the output
+                // code set alongside this.
+                <div
+                    role="alert"
+                    className="nodrag nopan nowheel"
+                    style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        padding: '14px 16px',
+                        margin: 8,
+                        border: '1px solid var(--curio-danger, #c0392b)',
+                        borderRadius: 'var(--curio-radius-md, 6px)',
+                        background: 'var(--curio-danger-bg, rgba(192, 57, 43, 0.08))',
+                        color: 'var(--curio-danger-strong, #922b21)',
+                        fontSize: 'var(--curio-font-size-md, 13px)',
+                        lineHeight: 1.45,
+                        overflow: 'auto',
+                    }}
+                >
+                    <strong>WebGPU is not available</strong>
+                    <span>{gpuBlocked}</span>
+                </div>
+            ) : (
+                <div
+                    className="nodrag nopan nowheel"
+                    ref={wrapperRef}
+                    style={{
+                        position: 'relative',
+                        width: '100%',
+                        height: '100%',
+                        minHeight: 400,
+                        overflow: 'hidden',
+                    }}
+                />
+            ),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [nodeState.output],
+        [nodeState.output, gpuBlocked],
     );
 
     // Editor seed, decided ONCE at mount: a node that arrives with no code gets
@@ -1373,6 +1445,10 @@ function buildBatchedUniforms(
 async function applyComputeBlocks(
     layers: Array<{ name: string; type: string; geojson: FeatureCollection }>,
     computeBlocks: any[],
+    /** Appended to for every block that failed, so the caller can refuse to
+     *  report success. A block whose ``dataRef`` matches no upstream layer is
+     *  still skipped quietly - that is a no-op, not a failure. */
+    failures: string[] = [],
 ): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
     if (!Array.isArray(computeBlocks) || computeBlocks.length === 0) return layers;
     const { ComputeGpgpu } = await import('@urban-toolkit/autk-compute');
@@ -1479,7 +1555,14 @@ async function applyComputeBlocks(
             if (sourceCrs && augmented) (augmented as any).crs = sourceCrs;
             result = result.map((l, i) => (i === idx ? { ...l, geojson: augmented } : l));
         } catch (e) {
+            // Recorded, not just warned (#201). A failed block leaves the layer
+            // exactly as it arrived, so swallowing this emitted UNCOMPUTED data
+            // under a green "Done" badge - the node reported success for work
+            // it had not done. The caller turns a non-empty list into an error.
             console.warn(`[autk-grammar] compute block on '${block.dataRef}' failed`, e);
+            failures.push(
+                `${block.dataRef}: ${(e as Error)?.message ?? "compute failed"}`,
+            );
         }
     }
     return result;
