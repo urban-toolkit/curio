@@ -289,6 +289,14 @@ def curio_servers(session_app, request):
     # flips the per-node toggle in the UI, because "the user turned it on" is the
     # scenario #180 reports.
     extra_args.append("--save-node-outputs")
+    # The examples are what #200 was about, and the gap that let it through:
+    # this harness launched with ``--auth`` but never ``--with-examples``, so
+    # the one configuration where the gallery came up empty was the one
+    # configuration never tested. Opt-in rather than always-on because seeding
+    # eleven dataflows (and provisioning the datasets they reference) costs
+    # real time on every boot, and only the tests that read the gallery need it.
+    if env.get("CURIO_E2E_WITH_EXAMPLES", "0") in ("1", "true", "yes", "on"):
+        extra_args.append("--with-examples")
     # Replay the whole e2e suite against isolated node execution by setting
     # CURIO_E2E_ISOLATION=fork. Off by default, and deliberately so: the
     # confinement path is not yet verified anywhere, so turning it on for every

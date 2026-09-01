@@ -14,6 +14,7 @@ import { HandleDef, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
 import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
+import ErrorBoundary from "./ErrorBoundary";
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -240,6 +241,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           custom={nodeState.templateData.custom}
         />
 
+        {/* Per-node blast radius (#201). A throw from one node's content used
+            to unmount the whole React root - canvas, menus and every other
+            node - leaving a blank page. Contained here, the rest of the
+            dataflow keeps working and the broken node says so in place. */}
+        <ErrorBoundary label={`node ${data.nodeId}`}>
         {adapter.editor ? (
           <NodeEditor
             outputId={behavior.outputIdOverride ?? adapter.editor.outputId?.(data.nodeId)}
@@ -270,6 +276,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           // legitimately return ``undefined`` here — they're icon-only.
           behavior.contentComponent ?? null
         )}
+        </ErrorBoundary>
 
         {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </NodeContainer>

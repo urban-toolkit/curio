@@ -47,11 +47,12 @@ import { getCurrentProjectPackagesList } from "../../../registry/projectPackages
 
 export default function UpMenu({
     setDashBoardMode,
-    setDashboardOn,
     dashboardOn,
 }: {
+    /** The single entry point for entering and leaving dashboard mode.
+     *  There used to be a second prop wired to the SAME handler, and this menu
+     *  called both, so every click ran the toggle twice (#192). */
     setDashBoardMode: (mode: boolean) => void;
-    setDashboardOn: (mode: boolean) => void;
     dashboardOn: boolean;
 }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -450,7 +451,6 @@ export default function UpMenu({
                                 className={styles.dropDownRow}
                                 onClick={() => {
                                     setDashBoardMode(!dashboardOn);
-                                    setDashboardOn(!dashboardOn);
                                     setActiveMenu(null);
                                 }}
                             >

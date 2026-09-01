@@ -46,6 +46,33 @@ def _isolate_env(monkeypatch, tmp_path):
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path / "data"))
 
 
+def test_auth_and_examples_together_is_the_combination_200_needed():
+    """`--auth --with-examples` must turn both on at once.
+
+    This pair is the reported configuration for #200: a signed-in account with
+    the examples seeded. The e2e harness launched with ``--auth`` but never
+    ``--with-examples``, which is why nothing caught the empty gallery.
+    """
+    set_environment_variables(**BASE, auth=True, with_examples=True)
+
+    assert os.environ["CURIO_NO_AUTH"] == "0"
+    assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
+
+
+def test_examples_are_off_unless_asked_for():
+    set_environment_variables(**BASE, auth=True)
+
+    assert os.environ["CURIO_SEED_EXAMPLES"] == "0"
+
+
+def test_deploy_seeds_examples_without_the_flag():
+    # --deploy is the "give me a working install" switch, so it implies both.
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_NO_AUTH"] == "0"
+    assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
+
+
 def test_save_node_outputs_defaults_off_and_can_be_turned_on():
     # Opt-in per node (#180): a dataflow should not accumulate a Computed
     # dataset for every node the user happens to run.

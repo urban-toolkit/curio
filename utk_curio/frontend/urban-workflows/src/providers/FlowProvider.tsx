@@ -458,6 +458,16 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     const setDashBoardMode = (value: boolean) => {
+        // Refuse entry with nothing pinned (#192). `applyDashboardLayout`
+        // returns the nodes untouched when no node is pinned, and then every
+        // one of them is given `display: none` below while the edges are
+        // hidden and `{!dashboardOn && <UpMenu>}` removes the top bar - so the
+        // whole screen goes blank with only DashboardPanel's ✕ to escape by.
+        // Better to say what is missing than to enter a mode that shows nothing.
+        if (value && !Object.values(dashboardPins).some(Boolean)) {
+            showToast("Pin at least one node to the dashboard first.", "warning");
+            return;
+        }
         setDashboardOn(value);
         if (value) {
             setDashboardLocked(true);
