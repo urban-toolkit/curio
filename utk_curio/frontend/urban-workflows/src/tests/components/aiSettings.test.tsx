@@ -504,3 +504,146 @@ describe("AI Settings: the curated fallback", () => {
     expect(screen.getByLabelText("Model")).toHaveProperty("tagName", "INPUT");
   });
 });
+
+/**
+ * #242: the saved API key belongs to ONE provider.
+ *
+ * Curio stores a single credential per account - `user.llm_api_key` alongside
+ * `user.llm_api_type` - but this panel has a tab per provider. Every tab read
+ * the same `has_llm_api_key`, so configuring Gemini made OpenAI, Anthropic and
+ * Custom all claim a saved key too.
+ *
+ * The cosmetic half of that is confusing. The other half is a real defect:
+ * `handleSave` sent `apiKey || undefined`, `patch_me` leaves `llm_api_key`
+ * untouched when the field is absent, and it writes the new `llm_api_type`
+ * regardless. Switching to Anthropic and pressing Save therefore kept the
+ * Gemini key, relabelled it Anthropic, and `resolve_provider_config` then sent
+ * it to Anthropic - which fails as an authentication error nowhere near the
+ * screen that caused it.
+ */
+describe("AI Settings: the saved key belongs to one provider", () => {
+  const SAVED_ON_GEMINI = {
+    ...SIGNED_IN,
+    has_llm_api_key: true,
+    llm_api_type: "gemini",
+  };
+
+  const savedMarkers = () => ({
+    label: screen.queryByText(/saved - leave blank to keep/i),
+    masked: screen.queryByPlaceholderText(/unchanged/i),
+    remove: screen.queryByRole("button", { name: /remove saved key/i }),
+  });
+
+  it("shows saved, the masked box and Remove on the provider it was saved for", () => {
+    mockUser = SAVED_ON_GEMINI;
+    open();
+    const { label, masked, remove } = savedMarkers();
+    expect(label).not.toBeNull();
+    expect(masked).not.toBeNull();
+    expect(remove).not.toBeNull();
+  });
+
+  it.each(["OpenAI", "Anthropic", "Custom"])(
+    "shows none of them on the %s tab",
+    (tab) => {
+      mockUser = SAVED_ON_GEMINI;
+      open();
+      fireEvent.click(screen.getByRole("button", { name: tab }));
+      const { label, masked, remove } = savedMarkers();
+      expect(label).toBeNull();
+      expect(masked).toBeNull();
+      expect(remove).toBeNull();
+    },
+  );
+
+  it("leaves an empty, prompting box on a provider with no key", () => {
+    mockUser = SAVED_ON_GEMINI;
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    const box = screen.getByPlaceholderText("Enter your API key");
+    expect(box).toHaveValue("");
+    expect(screen.getByText("(required)")).toBeInTheDocument();
+  });
+
+  it("explains that there is only one key, and whose it is", () => {
+    // Without this the empty box reads as "your Gemini key was lost".
+    mockUser = SAVED_ON_GEMINI;
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    expect(screen.getByText(/one provider key per account/i)).toBeInTheDocument();
+    expect(screen.getByText(/belongs to Gemini/i)).toBeInTheDocument();
+    expect(screen.getByText(/Saving here replaces it/i)).toBeInTheDocument();
+  });
+
+  it("names that explanation from the input, for a screen reader", () => {
+    mockUser = SAVED_ON_GEMINI;
+    const { baseElement } = open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    const described = baseElement
+      .querySelector("#ai-settings-api-key")!
+      .getAttribute("aria-describedby");
+    expect(described).toBeTruthy();
+    expect(baseElement.querySelector(`#${described}`)).not.toBeNull();
+  });
+
+  it("says nothing about other providers when no key is saved at all", () => {
+    mockUser = { ...SIGNED_IN };
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    expect(screen.queryByText(/one provider key per account/i)).toBeNull();
+  });
+
+  it("clears the stale key when saving under a different provider", async () => {
+    // The defect: `apiKey || undefined` was dropped from the PATCH, so the
+    // Gemini key survived and was relabelled Anthropic.
+    mockUser = SAVED_ON_GEMINI;
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    const sent = mockUpdate.mock.calls[0][0];
+    expect(sent.apiType).toBe("anthropic");
+    expect(sent.apiKey).toBe("");
+  });
+
+  it("sends the typed key when saving under a different provider", async () => {
+    mockUser = SAVED_ON_GEMINI;
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    fireEvent.change(screen.getByPlaceholderText("Enter your API key"), {
+      target: { value: "sk-ant-new" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][0].apiKey).toBe("sk-ant-new");
+  });
+
+  it("still keeps the key when saving on the provider it belongs to", async () => {
+    // "Blank means keep" is what the label promises, and re-typing a key to
+    // change an unrelated field would be hostile.
+    mockUser = SAVED_ON_GEMINI;
+    open();
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][0].apiKey).toBeUndefined();
+  });
+
+  it("treats a saved custom endpoint as its own provider", () => {
+    // uiModeFromSaved reads a base URL as "custom", so a key saved against
+    // Ollama must not show as saved on the OpenAI tab.
+    mockUser = {
+      ...SIGNED_IN,
+      has_llm_api_key: true,
+      llm_api_type: "openai_compatible",
+      llm_base_url: "http://localhost:11434/v1",
+    };
+    open();
+    // Opens on Custom, which is where the key lives.
+    expect(savedMarkers().remove).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
+    expect(savedMarkers().remove).toBeNull();
+  });
+});

@@ -260,7 +260,7 @@ account-level setting, edited in **AI Settings** from the header.
 |---|---|
 | Provider | OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint. |
 | Base URL | Only for a custom endpoint: Ollama, LM Studio, vLLM, Groq, Azure. |
-| API key | Stored per account. Leave blank to keep the saved one. |
+| API key | **One per account**, held against the provider you saved it under. The saved-key markers and *Remove saved key* appear only on that provider's tab; on any other tab the field is empty and required, and saving there replaces the stored key rather than adding a second one. Leave blank to keep it while you are on its own tab. |
 | Model | Which model answers. **Fetch models** asks the endpoint above what it serves and turns this into a dropdown, topped up with a short curated list for that provider. Leave blank to inherit the deployment's. |
 | HuggingFace token | Not for agents: it unlocks *gated* models in the Street Vision node. It sits here because it is the same kind of setting, a model credential you hold per account. Public models need none. |
 

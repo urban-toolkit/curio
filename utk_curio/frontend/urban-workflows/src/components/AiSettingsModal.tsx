@@ -48,6 +48,17 @@ const PROVIDER_INFO: Record<UiMode, ProviderInfo> = {
   },
 };
 
+const PROVIDER_LABEL: Record<UiMode, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  gemini: "Gemini",
+  custom: "a custom endpoint",
+};
+
+// Named on the API Key input's aria-describedby, so the one-key-per-account
+// rule reaches a screen reader too and not only a sighted user.
+const OTHER_KEY_NOTE_ID = "ai-settings-api-key-other-provider";
+
 function uiModeFromSaved(apiType: string | null, baseUrl: string | null): UiMode {
   if (apiType === "anthropic") return "anthropic";
   if (apiType === "gemini") return "gemini";
@@ -115,6 +126,14 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setModelsNote(null);
     }
   }, [isOpen, user]);
+
+  // Curio stores ONE provider credential per account (`user.llm_api_key` with
+  // `user.llm_api_type`), but this panel has a tab per provider, so every tab
+  // read the same has_llm_api_key and every tab claimed a saved key (#242).
+  // The key belongs to the provider it was saved under, and nowhere else.
+  const savedMode = uiModeFromSaved(user?.llm_api_type ?? null, user?.llm_base_url ?? null);
+  const keyBelongsHere = !!user?.has_llm_api_key && uiMode === savedMode;
+  const otherProviderHasKey = !!user?.has_llm_api_key && !keyBelongsHere;
 
   const loadModels = async () => {
     setLoadingModels(true);
@@ -215,10 +234,13 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         // the copy said "leave blank to use the deployment default" and there
         // was no way to get back to it.
         model,
-        // Secrets keep "blank means keep" - that is what their labels promise
-        // and re-typing a key to save an unrelated field would be hostile.
-        // Removing one is an explicit action, below.
-        apiKey: apiKey || undefined,
+        // "Blank means keep" holds only while you are on the provider the
+        // stored key belongs to - that is what its label promises, and
+        // re-typing a key to save an unrelated field would be hostile. On any
+        // other tab, blank has to mean *clear* (#242): the account holds one
+        // key, and leaving it in place while writing a new llm_api_type
+        // silently re-attributed a Gemini key to Anthropic and sent it there.
+        apiKey: keyBelongsHere ? (apiKey || undefined) : apiKey,
         huggingfaceToken: hfToken || undefined,
       });
       setSuccess(true);
@@ -327,7 +349,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <label className={modal.label} htmlFor="ai-settings-api-key">
                 API Key{" "}
                 <span className={styles.optional}>
-                  {user?.has_llm_api_key
+                  {keyBelongsHere
                     ? "(saved - leave blank to keep)"
                     : deployed?.hasApiKey
                       ? "(optional - this deployment provides one)"
@@ -342,15 +364,28 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={user?.has_llm_api_key ? "••••••••  (unchanged)" : "Enter your API key"}
+                placeholder={keyBelongsHere ? "••••••••  (unchanged)" : "Enter your API key"}
                 autoComplete="new-password"
+                aria-describedby={otherProviderHasKey ? OTHER_KEY_NOTE_ID : undefined}
               />
+              {/* One credential per account, so switching tabs and saving
+                  replaces the stored key rather than adding a second one. The
+                  panel used to imply otherwise by showing "saved" on every tab
+                  (#242), and saving from one of them quietly kept the other
+                  provider's key and relabelled it. */}
+              {otherProviderHasKey && (
+                <span id={OTHER_KEY_NOTE_ID} className={modal.hint}>
+                  Curio stores one provider key per account, and the saved one
+                  belongs to {PROVIDER_LABEL[savedMode]}. Saving here replaces
+                  it.
+                </span>
+              )}
               {info.keyLink && (
                 <a href={info.keyLink} target="_blank" rel="noreferrer" className={styles.keyLink}>
                   {info.keyLinkLabel} →
                 </a>
               )}
-              {user?.has_llm_api_key && (
+              {keyBelongsHere && (
                 <button
                   type="button"
                   className={styles.removeSecretBtn}
