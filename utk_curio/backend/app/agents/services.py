@@ -401,18 +401,84 @@ def list_installed_in_project(user_key: str, project_id: str) -> list[dict]:
 
 
 # ── lifecycle commands (explicit, non-chaining) ──────────────────────────────
-def import_agent(user_key: str, coord: str) -> dict:
-    """Record *coord* in the account's My Imports (does not install into a project)."""
+def _fan_out_imports(user, user_key: str, coord: str, *, install: bool) -> list[dict]:
+    """Apply an account-level import decision to every project the user has.
+
+    Recording a coordinate in My Imports writes no project lockfile, and the
+    canvas agents palette reads the lockfile (``listProjectAgents`` ->
+    ``dataflow.agents``). So an imported agent was reported as "In all projects"
+    by the catalog while appearing in none of them - the catalog was describing
+    the account, the palette was describing the project, and the label was
+    simply false.
+
+    This is the same eager walk ``packages.services.install_to_defaults`` does,
+    for the same reason: nothing consults the account list when a project is
+    opened, so only a walk at decision time can make the claim true.
+
+    Best-effort per project - one project with a broken spec must not abort the
+    rest, and never fails the import itself.
+    """
+    if user is None:
+        return []
+    from utk_curio.backend.app.projects import repositories as projects_repo
+
+    results: list[dict] = []
+    for project in projects_repo.list_for_user(user.id, scope="mine"):
+        try:
+            if install:
+                install_in_project(user_key, project.id, coord)
+            else:
+                uninstall_from_project(user_key, project.id, coord)
+            results.append({"id": project.id, "ok": True})
+        except Exception as exc:  # noqa: BLE001 - per-project failure is OK
+            log.warning(
+                "agent import fan-out (%s) failed for project %s: %s",
+                "install" if install else "uninstall", project.id, exc,
+            )
+            results.append({"id": project.id, "ok": False, "error": str(exc)})
+    return results
+
+
+def import_agent(user_key: str, coord: str, *, user=None) -> dict:
+    """Record *coord* in My Imports and install it into every project.
+
+    ``user`` is optional so the many existing callers that only hold a
+    ``user_key`` keep working unchanged; without it this records the coordinate
+    and nothing else, exactly as before.
+    """
     _require_definition(user_key, coord)
     _materialize_builtin(user_key, coord)
     imports.add_imported_agent(user_key, coord)
-    return {"coord": coord, "imported": True}
+    projects = _fan_out_imports(user, user_key, coord, install=True)
+    return {"coord": coord, "imported": True, "projects": projects}
 
 
-def remove_import(user_key: str, coord: str) -> dict:
-    """Drop *coord* from My Imports (does not touch project installs)."""
+def remove_import(user_key: str, coord: str, *, user=None) -> dict:
+    """Drop *coord* from My Imports and uninstall it from every project."""
     imports.remove_imported_agent(user_key, coord)
-    return {"coord": coord, "imported": False}
+    projects = _fan_out_imports(user, user_key, coord, install=False)
+    return {"coord": coord, "imported": False, "projects": projects}
+
+
+def seed_project_with_imported_agents(user_key: str, project_id: str) -> None:
+    """Install the account's imported agents into a brand-new project.
+
+    The "future" half of "all your projects, present and future"; the walk above
+    is the "present" half. Best-effort: a stale import must degrade to "that
+    agent is missing here", never to "the project could not be created".
+    """
+    try:
+        coords = imports.load_imported_agents(user_key)
+    except Exception:  # noqa: BLE001
+        return
+    for coord in sorted(coords):
+        try:
+            install_in_project(user_key, project_id, coord)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "seed imported agent %s into project %s failed: %s",
+                coord, project_id, exc,
+            )
 
 
 def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
