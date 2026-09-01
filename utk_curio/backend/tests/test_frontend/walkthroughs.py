@@ -635,10 +635,10 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
         "what the confirmation and the save indicator already say"
     )
 
-    add = dialog.get_by_role("button", name="Add to dataflow").first
+    add = dialog.get_by_role("button", name="Add to project").first
     add.wait_for(state="visible", timeout=15000)
     assert add.is_enabled(), (
-        "Add to dataflow is disabled on an unsaved dataflow - the drawer is "
+        "Add to project is disabled on an unsaved dataflow - the drawer is "
         "still gating on a project id instead of creating one on the click"
     )
     ctx.capture("add-enabled")
@@ -648,10 +648,10 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
 
     # Adding confirms first now (#196), the way all three catalogs do.
     accept_confirm_dialog(
-        ctx.page, title=re.compile(r"^Add "), button="Add to dataflow"
+        ctx.page, title=re.compile(r"^Add "), button="Add to project"
     )
 
-    installed = dialog.get_by_role("button", name="Remove from dataflow").first
+    installed = dialog.get_by_role("button", name="Remove from project").first
     installed.wait_for(state="visible", timeout=30000)
 
     # The save really happened: the route carries a project id now.
@@ -679,7 +679,7 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
     premise="Read the actions on an imported agent's card.",
     note="The action column is pinned at 140px so the card body cannot "
          "collapse, and the shared secondary button is a fixed 30px single "
-         "line - so \"Remove from my account\" wrapped to two lines inside it "
+         "line - so \"Remove from all projects\" wrapped to two lines inside it "
          "and spilled out. The label's type size comes down instead.",
     tests=["src/tests/styles/agentDrawerButtonGeometry.test.ts",
            "test_frontend/test_walkthrough_baselines.py"],
@@ -690,7 +690,7 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
 def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     dialog = open_agent_drawer(ctx)
 
-    # "Remove from my account" only exists on a card in My imports, and a fresh
+    # "Remove from all projects" only exists on a card in My imports, and a fresh
     # account has none - so import one first, through the UI rather than the API.
     ctx.say("Import an agent", "My imports is where the longest label lives.")
     import_button = dialog.get_by_role("button", name="Import", exact=True).first
@@ -698,7 +698,7 @@ def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     ctx.click(import_button)
 
     ctx.click(dialog.get_by_role("button", name="My imports"))
-    remove = dialog.get_by_role("button", name="Remove from my account").first
+    remove = dialog.get_by_role("button", name="Remove from all projects").first
     remove.wait_for(state="visible", timeout=20000)
     ctx.focus(remove, hold=1200)
 
@@ -714,7 +714,7 @@ def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     )
 
     # Every button in the column, not just the reported one.
-    for name in ("Remove from my account", "Add to dataflow"):
+    for name in ("Remove from all projects", "Add to project"):
         button = dialog.get_by_role("button", name=name).first
         if not button.count():
             continue
@@ -792,7 +792,7 @@ def catalog_add_is_confirmed(ctx: Ctx) -> None:
     ctx.say("The Data Catalog", "Adding a dataset used to commit on one click.")
     drawer = open_data_drawer(ctx)
 
-    add = drawer.get_by_role("button", name="Add to dataflow", exact=True).first
+    add = drawer.get_by_role("button", name="Add to project", exact=True).first
     add.wait_for(state="visible", timeout=20000)
     ctx.click(add)
 
@@ -805,7 +805,7 @@ def catalog_add_is_confirmed(ctx: Ctx) -> None:
     ctx.click(modal.get_by_role("button", name="Cancel", exact=True))
     expect(modal).to_have_count(0, timeout=10000)
     expect(
-        drawer.get_by_role("button", name="Add to dataflow", exact=True).first
+        drawer.get_by_role("button", name="Add to project", exact=True).first
     ).to_be_visible(timeout=10000)
 
     close = drawer.get_by_role("button", name="Close Data Catalog drawer")
@@ -816,7 +816,7 @@ def catalog_add_is_confirmed(ctx: Ctx) -> None:
     ctx.say("The Agent Catalog", "The same question, and it discloses more.")
     agent_drawer = open_agent_drawer(ctx)
     agent_add = agent_drawer.get_by_role(
-        "button", name=re.compile(r"^Add to dataflow")
+        "button", name=re.compile(r"^Add to project")
     ).first
     agent_add.wait_for(state="visible", timeout=20000)
     ctx.click(agent_add)
@@ -853,12 +853,12 @@ def catalog_remove_is_an_app_dialog(ctx: Ctx) -> None:
     drawer = open_agent_drawer(ctx)
 
     # Put one in the dataflow first, so there is something to remove.
-    add = drawer.get_by_role("button", name=re.compile(r"^Add to dataflow")).first
+    add = drawer.get_by_role("button", name=re.compile(r"^Add to project")).first
     add.wait_for(state="visible", timeout=20000)
     ctx.click(add)
-    accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to dataflow")
+    accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to project")
 
-    remove = drawer.get_by_role("button", name="Remove from dataflow", exact=True).first
+    remove = drawer.get_by_role("button", name="Remove from project", exact=True).first
     remove.wait_for(state="visible", timeout=30000)
 
     ctx.say("Remove it again", "This is where the browser's own box used to appear.")
@@ -873,7 +873,7 @@ def catalog_remove_is_an_app_dialog(ctx: Ctx) -> None:
     ctx.click(modal.get_by_role("button", name="Remove", exact=True))
     expect(modal).to_have_count(0, timeout=10000)
     expect(
-        drawer.get_by_role("button", name=re.compile(r"^Add to dataflow")).first
+        drawer.get_by_role("button", name=re.compile(r"^Add to project")).first
     ).to_be_visible(timeout=30000)
     ctx.say("Removed", "And the drawer behind it never went anywhere.")
 
@@ -899,12 +899,12 @@ def catalog_add_reports_success(ctx: Ctx) -> None:
     page = ctx.page
 
     drawer = open_agent_drawer(ctx)
-    add = drawer.get_by_role("button", name=re.compile(r"^Add to dataflow")).first
+    add = drawer.get_by_role("button", name=re.compile(r"^Add to project")).first
     add.wait_for(state="visible", timeout=20000)
 
     ctx.say("Add an agent", "The Agent catalog used to finish in silence.")
     ctx.click(add)
-    accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to dataflow")
+    accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to project")
 
     toast = page.locator(TOAST_REGION).get_by_text(
         re.compile(r"^Added .+ to this dataflow\.$")

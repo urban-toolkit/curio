@@ -102,7 +102,7 @@ def test_agent_added_to_an_unsaved_dataflow_reaches_the_palette(
     coord = card.get_attribute("data-agent-coord")
     assert coord, "the first agent card carries no coordinate"
 
-    card.get_by_role("button", name=re.compile(r"^Add to dataflow")).click()
+    card.get_by_role("button", name=re.compile(r"^Add to project")).click()
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.url.endswith("/install")
@@ -110,12 +110,12 @@ def test_agent_added_to_an_unsaved_dataflow_reaches_the_palette(
         and r.ok,
         timeout=60000,
     ):
-        accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to dataflow")
+        accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to project")
 
     # The drawer agrees the add landed.
     expect(
         drawer.locator(f'article[data-agent-coord="{coord}"]').get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=30000)
 

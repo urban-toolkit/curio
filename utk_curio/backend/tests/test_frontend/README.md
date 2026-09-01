@@ -370,7 +370,7 @@ fails in milliseconds instead.
 Other things that surprise people here:
 
 - **"Installed" in a drawer means the project lockfile**, not the user store. A
-  fresh project therefore always offers `Add to dataflow`, even though
+  fresh project therefore always offers `Add to project`, even though
   `.curio/users/*/packages/` persists across runs.
 - `curio.builtin@*` is always treated as installed and offers **no** buttons: it
   ships with every instance and can be neither uninstalled nor published.
@@ -379,7 +379,7 @@ Other things that surprise people here:
 - **A plain re-import is expected to 400.** `onPickArchive` never sets
   `replace`, and no UI path does, so re-importing an installed coordinate fails
   by design. Rename the manifest `id` to fork it instead.
-- The **"In dataflow" tab renders `MyPackagesList`, not `PackageCard`**, so the
+- The **"In project" tab renders `MyPackagesList`, not `PackageCard`**, so the
   `data-pkg-dir` attribute is absent there; key on the row's `Remove {name}`
   aria-label.
 - Card roots carry `data-pkg-dir` / `data-dataset-id` / `data-agent-coord`.

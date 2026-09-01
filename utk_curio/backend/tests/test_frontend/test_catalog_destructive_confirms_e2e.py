@@ -4,10 +4,10 @@ Three of these confirmations did not exist, and the two that did understated
 their reach. The audit that produced this list is in the session notes; each
 test below states the specific defect it pins.
 
-- **Data "Remove from dataflow" had no dialog at all** and, for an upload no
+- **Data "Remove from project" had no dialog at all** and, for an upload no
   other dataflow used, permanently deleted the file from the account while the
   toast said only "Removed ... from this dataflow."
-- **Node "Remove from dataflow" confirmed, but understated.** The prune deletes
+- **Node "Remove from project" confirmed, but understated.** The prune deletes
   the package from the user store, drops it from defaults, and `pip uninstall`s
   its Python libraries from the interpreter Curio itself runs on - shared by
   every dataflow and everyone on the instance. The dialog said none of that,
@@ -115,16 +115,16 @@ def test_removing_a_dataset_from_the_dataflow_asks_first(
     card.wait_for(state="visible", timeout=30000)
     dataset_id = card.get_attribute("data-dataset-id")
 
-    add = card.get_by_role("button", name="Add to dataflow", exact=True)
+    add = card.get_by_role("button", name="Add to project", exact=True)
     add.click()
     with page.expect_response(
         lambda r: "/datasets/install" in r.url and r.request.method == "POST" and r.ok,
         timeout=60000,
     ):
-        accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to dataflow")
+        accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to project")
 
     row = drawer.locator(f'article[data-dataset-id="{dataset_id}"]')
-    remove = row.get_by_role("button", name="Remove from dataflow", exact=True)
+    remove = row.get_by_role("button", name="Remove from project", exact=True)
     expect(remove).to_be_visible(timeout=30000)
 
     # THE POINT: a dialog, where there used to be none.
@@ -142,13 +142,13 @@ def test_removing_a_dataset_from_the_dataflow_asks_first(
     expect(modal).to_have_count(0, timeout=10000)
     expect(
         drawer.locator(f'article[data-dataset-id="{dataset_id}"]').get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=10000)
 
     # And confirming removes it.
     drawer.locator(f'article[data-dataset-id="{dataset_id}"]').get_by_role(
-        "button", name="Remove from dataflow", exact=True
+        "button", name="Remove from project", exact=True
     ).click()
     with page.expect_response(
         lambda r: "/datasets/" in r.url and r.request.method == "DELETE",
@@ -160,7 +160,7 @@ def test_removing_a_dataset_from_the_dataflow_asks_first(
 
     expect(
         drawer.locator(f'article[data-dataset-id="{dataset_id}"]').get_by_role(
-            "button", name="Add to dataflow", exact=True
+            "button", name="Add to project", exact=True
         )
     ).to_be_visible(timeout=30000)
 
@@ -179,7 +179,7 @@ def test_removing_a_package_says_it_reaches_the_shared_environment(
     _enter(page, app_frontend.base_url, current_server, "confirm_pkg_remove")
 
     drawer = _open_node_drawer(page)
-    drawer.get_by_role("button", name=re.compile(r"^In dataflow")).click()
+    drawer.get_by_role("button", name=re.compile(r"^In project")).click()
     row = drawer.locator("[data-pkg-dir]").first
     if not row.count():
         # Nothing installed beyond the builtin, which is not removable; the
@@ -391,7 +391,7 @@ def test_the_catalog_pages_use_one_button_vocabulary(
     expect(publish).to_have_count(1, timeout=30000)
 
     # The action fill, not a blue pill of its own. `--curio-top-bar-bg` is the
-    # same token `.btnInstall` uses for "Add to dataflow".
+    # same token `.btnInstall` uses for "Add to project".
     fill = _button_fill(publish.first)
     assert fill not in ("rgba(0, 0, 0, 0)", "transparent"), (
         f"Publish renders unfilled ({fill}); it should carry the action fill"

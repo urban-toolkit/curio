@@ -1204,7 +1204,9 @@ def chapter_nodes(run: StressRun) -> None:
                 severity="warning",
             )
 
-    for tab in ("Featured", "Browse all", "In dataflow", "Updates"):
+    # Featured and Updates are gone from the Node drawer: neither was a scope
+    # anything could fall into. What is left is everything, and this project.
+    for tab in ("Browse all", "In project"):
         with run.step(f"Node Catalog tab: {tab}", may_fail=True):
             button = page.locator(DRAWER_NODES).get_by_role(
                 "button", name=re.compile(f"^{re.escape(tab)}")
@@ -1239,28 +1241,28 @@ def chapter_nodes(run: StressRun) -> None:
             card = page.locator(f'article[data-pkg-dir="{dir_name}"]')
             card.first.scroll_into_view_if_needed()
             add = card.first.get_by_role(
-                "button", name=re.compile("Add to dataflow|Install")
+                "button", name=re.compile("Add to project|Install")
             )
             add.first.click()
             # A package declaring permissions puts InstallPermissionsDialog
             # between the click and the POST, so the response cannot be awaited
             # around the click itself. Its confirm button carries the same
-            # "Add to dataflow" wording, which is why it is found by the
+            # "Add to project" wording, which is why it is found by the
             # dialog's own heading rather than by the label.
             page.wait_for_timeout(1200)
             heading = page.get_by_role("heading", name=re.compile('^Add "'))
             if heading.count():
                 run.snap(f"permissions-{dir_name}")
                 # InstallPermissionsDialog's confirm defaults to the very same
-                # "Add to dataflow" wording as the card's button, so it is
+                # "Add to project" wording as the card's button, so it is
                 # scoped to the dialog the heading is a child of.
                 heading.first.locator("xpath=..").get_by_role(
-                    "button", name=re.compile("^Add to dataflow")
+                    "button", name=re.compile("^Add to project")
                 ).first.click()
             # pip runs synchronously inside the request for the heavy packages
             # (torch, rasterio, geopandas), capped at 30 minutes server-side.
             expect(
-                card.first.get_by_role("button", name=re.compile("Remove from dataflow"))
+                card.first.get_by_role("button", name=re.compile("Remove from project"))
             ).to_be_visible(timeout=1_900_000)
             dismiss_toasts(page)
             expected = PACKAGE_DEPS.get(dir_name, ())
@@ -1591,7 +1593,9 @@ def chapter_data(run: StressRun) -> None:
         page.wait_for_timeout(1200)
         run.snap("data-catalog-drawer")
 
-    for tab in ("Featured", "Browse all", "In dataflow", "Computed"):
+    # The Data drawer dropped Featured for the same reason. "Computed" stays:
+    # it is a real scope, the datasets nodes produced.
+    for tab in ("Browse all", "In project", "Computed"):
         with run.step(f"Data Catalog tab: {tab}", may_fail=True):
             page.locator(DRAWER_DATA).get_by_role(
                 "button", name=re.compile(f"^{re.escape(tab)}")
@@ -1615,17 +1619,17 @@ def chapter_data(run: StressRun) -> None:
                          severity="warning")
                 continue
             card.first.scroll_into_view_if_needed()
-            add = card.first.get_by_role("button", name=re.compile("^Add to dataflow"))
+            add = card.first.get_by_role("button", name=re.compile("^Add to project"))
             if not add.count():
                 continue
             add.first.click()
             # The Data catalog confirms an add now (#196).
             accept_confirm_dialog(
-                page, title=re.compile(r"^Add "), button="Add to dataflow"
+                page, title=re.compile(r"^Add "), button="Add to project"
             )
             expect(
                 card.first.get_by_role(
-                    "button", name=re.compile("Remove from dataflow")
+                    "button", name=re.compile("Remove from project")
                 )
             ).to_be_visible(timeout=300000)
             added += 1
@@ -1824,15 +1828,15 @@ def chapter_data(run: StressRun) -> None:
         card = page.locator(f'article[data-dataset-id="{dataset_id}"]')
         assert card.count(), f"no card for the uploaded dataset {dataset_id}"
         card.first.scroll_into_view_if_needed()
-        add = card.first.get_by_role("button", name=re.compile("^Add to dataflow"))
+        add = card.first.get_by_role("button", name=re.compile("^Add to project"))
         if add.count():
             tour.click(add.first)
             accept_confirm_dialog(
-                page, title=re.compile(r"^Add "), button="Add to dataflow"
+                page, title=re.compile(r"^Add "), button="Add to project"
             )
             expect(
                 card.first.get_by_role(
-                    "button", name=re.compile("Remove from dataflow")
+                    "button", name=re.compile("Remove from project")
                 )
             ).to_be_visible(timeout=120000)
         else:
@@ -2124,7 +2128,7 @@ def chapter_agents(run: StressRun) -> None:
                          step="Add all agents to the dataflow", severity="warning")
                 continue
             card.first.scroll_into_view_if_needed()
-            add = card.first.get_by_role("button", name=re.compile("^Add to dataflow"))
+            add = card.first.get_by_role("button", name=re.compile("^Add to project"))
             if not add.count():
                 installed.append(coord)      # already in, e.g. a required closure
                 continue

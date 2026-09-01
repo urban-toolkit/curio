@@ -39,7 +39,7 @@ No dataset teardown, deliberately - same reasoning as
 account-level DELETE runs ``unpublish_dataset``, which 403s for a non-publisher
 of a committed catalog dataset). It is harmless to a re-run because
 installed-ness is scoped to a dataflow, not to the store, so a fresh project
-still shows the card offering "Add to dataflow".
+still shows the card offering "Add to project".
 
 Run::
 
@@ -164,7 +164,7 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     # extra card and would break any exact count.
     expect(card).to_have_count(1, timeout=15000)
 
-    card.get_by_role("button", name="Add to dataflow", exact=True).click()
+    card.get_by_role("button", name="Add to project", exact=True).click()
     with page.expect_response(
         lambda r: "/datasets/install" in r.url and r.request.method == "POST" and r.ok,
         timeout=60000,
@@ -172,14 +172,14 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
         # The Data catalog confirms an add now (#196), so the card click only
         # opens the dialog - the POST follows the confirm.
         accept_confirm_dialog(
-            page, title=re.compile(r"^Add "), button="Add to dataflow"
+            page, title=re.compile(r"^Add "), button="Add to project"
         )
 
     # Re-resolve rather than reuse the handle: the install flips origin
     # hub -> imported, which changes the React key so the card is replaced.
     expect(
         drawer.locator(f'{CARD}[data-dataset-id="{dataset.dataset_id}"]').get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=20000)
 
