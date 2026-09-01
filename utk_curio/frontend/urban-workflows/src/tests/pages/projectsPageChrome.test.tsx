@@ -62,6 +62,7 @@ jest.mock('../../components/AiSettingsModal', () => ({ __esModule: true, default
 jest.mock('../../components/VersionBadge', () => ({ __esModule: true, default: () => null }));
 
 import ProjectsList from '../../pages/projects/ProjectsList';
+import { ToastProvider } from '../../providers/ToastProvider';
 
 /** The page fetches every scope at once so the rail can show counts. */
 function stubScopes(byScope: Record<string, unknown[]>) {
@@ -74,8 +75,13 @@ async function renderPage() {
   let utils: ReturnType<typeof render>;
   await act(async () => {
     utils = render(
+      // ProjectsList reports a failed notebook import through the toast
+      // provider (#238), which the app supplies at the router root
+      // (index.tsx). Mounting the component alone needs it too.
       <MemoryRouter initialEntries={['/projects']}>
-        <ProjectsList />
+        <ToastProvider>
+          <ProjectsList />
+        </ToastProvider>
       </MemoryRouter>
     );
   });
