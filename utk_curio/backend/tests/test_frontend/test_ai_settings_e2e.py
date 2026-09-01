@@ -11,7 +11,7 @@ Covers two issues that live in the same panel:
 
 Nothing here reaches a provider. The #241 cases use the no-key short circuit
 (the backend answers from the curated list without opening a socket) and one
-stubbed response; the #242 cases only exercise ``PATCH /api/users/me``.
+stubbed response; the #242 cases only exercise ``PATCH /api/auth/me``.
 
 Run::
 
@@ -167,7 +167,7 @@ def _save_key_on(page, tab: str, key: str):
     _tab(page, tab).click()
     page.locator(API_KEY).fill(key)
     with page.expect_response(
-        lambda r: "/api/users/me" in r.url and r.request.method == "PATCH",
+        lambda r: "/api/auth/me" in r.url and r.request.method == "PATCH",
         timeout=30000,
     ) as saved:
         page.get_by_role("button", name="Save", exact=True).click()
@@ -228,7 +228,7 @@ def test_switching_provider_and_saving_blank_clears_the_stale_key(ai_settings):
     _tab(page, "Anthropic").click()
 
     with page.expect_request(
-        lambda r: "/api/users/me" in r.url and r.method == "PATCH",
+        lambda r: "/api/auth/me" in r.url and r.method == "PATCH",
         timeout=30000,
     ) as sent:
         page.get_by_role("button", name="Save", exact=True).click()
