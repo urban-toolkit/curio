@@ -49,6 +49,12 @@ CURIO_PROJECT_EXEC_CACHE = _env_flag("CURIO_PROJECT_EXEC_CACHE", False)
 CURIO_ALLOW_FACTORY_CATALOG_PUBLISH = _env_flag(
     "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", True
 )
+# Default for catalog parquet + auto-install when the client omits saveOutputDataset.
+# OFF by default: saving a node's output to the Data Catalog is opt-in per node,
+# so a dataflow does not accumulate a Computed dataset for every node the user
+# happens to run. Flip a single node with its Save output toggle, or the whole
+# deployment with =1/true/yes/on.
+CURIO_DEFAULT_SAVE_NODE_OUTPUT = _env_flag("CURIO_DEFAULT_SAVE_NODE_OUTPUT", False)
 # Force re-seeding catalog packages into the guest user's package store at
 # startup, even when the per-user seed-state marker would normally skip them.
 CURIO_RESEED_PACKAGES = _env_flag("CURIO_RESEED_PACKAGES", False)
@@ -62,10 +68,30 @@ ENABLE_COLLAB = _env_flag("ENABLE_COLLAB", False)
 COLLAB_CORS_ORIGINS = os.environ.get("COLLAB_CORS_ORIGINS", "*")
 COLLAB_NAMESPACE = os.environ.get("COLLAB_NAMESPACE", "/collab")
 
-GUEST_LLM_API_TYPE = os.environ.get("GUEST_LLM_API_TYPE", "openai_compatible")
-GUEST_LLM_BASE_URL = os.environ.get("GUEST_LLM_BASE_URL", "")
-GUEST_LLM_API_KEY = os.environ.get("GUEST_LLM_API_KEY", "")
-GUEST_LLM_MODEL = os.environ.get("GUEST_LLM_MODEL", "gpt-4o-mini")
+# Default LLM provider - the single source of truth for provider/model/API
+# defaults when a user (or guest) has not configured their own, so the app has
+# no second built-in default hiding elsewhere. Each value is env-overridable;
+# the API key reuses the AICONN_API_KEY name from the aiconn connection harness.
+#
+# Base URL and model ship EMPTY on purpose. A deployment points these at its own
+# provider; an instance that configures nothing resolves no provider, and the
+# agent surfaces say so and link to AI Settings. Shipping a live third-party
+# endpoint as the built-in default would send an unconfigured instance's prompts
+# somewhere its operator never chose.
+DEFAULT_LLM_API_TYPE = os.environ.get("CURIO_DEFAULT_LLM_API_TYPE", "openai_compatible")
+DEFAULT_LLM_BASE_URL = os.environ.get("CURIO_DEFAULT_LLM_BASE_URL", "")
+DEFAULT_LLM_MODEL = os.environ.get("CURIO_DEFAULT_LLM_MODEL", "")
+DEFAULT_LLM_API_KEY = os.environ.get("CURIO_DEFAULT_LLM_API_KEY") or os.environ.get(
+    "AICONN_API_KEY", ""
+)
+
+# Guest LLM config inherits the default provider above unless explicitly
+# overridden. With no deployment default configured, guests inherit nothing and
+# AI stays unavailable to them until an operator sets one.
+GUEST_LLM_API_TYPE = os.environ.get("GUEST_LLM_API_TYPE", DEFAULT_LLM_API_TYPE)
+GUEST_LLM_BASE_URL = os.environ.get("GUEST_LLM_BASE_URL", DEFAULT_LLM_BASE_URL)
+GUEST_LLM_API_KEY = os.environ.get("GUEST_LLM_API_KEY", DEFAULT_LLM_API_KEY)
+GUEST_LLM_MODEL = os.environ.get("GUEST_LLM_MODEL", DEFAULT_LLM_MODEL)
 
 
 def _is_dev() -> bool:

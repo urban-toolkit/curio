@@ -1,0 +1,560 @@
+"""Tabular and bundle preview for catalog datasets."""
+
+from __future__ import annotations
+
+import csv
+import json
+import logging
+import math
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=2)
+def _load_json_cached(path_str: str, mtime_ns: int, size: int) -> Any:
+    """Parse a JSON file, memoized by (path, mtime, size).
+
+    ``_preview_json`` only needs a single page, but JSON has no row index — the
+    whole array must be parsed to slice it and to count total rows. Paging a large
+    list part (e.g. a multi-hundred-MB matrix) would otherwise re-parse the entire
+    file on every page request. Keying on mtime+size means an edited/regenerated
+    file misses the cache and reloads, so stale data is impossible.
+
+    Callers MUST treat the result as read-only (slice, never mutate) — the same
+    object is shared across requests. ``maxsize=2`` bounds resident memory to at
+    most two parsed files; a third distinct file evicts the least-recently-used.
+    """
+    with open(path_str, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _load_json_file(path: Path) -> Any:
+    stat = path.stat()
+    return _load_json_cached(str(path), stat.st_mtime_ns, stat.st_size)
+
+
+@lru_cache(maxsize=2)
+def _load_json_maybe_compressed_cached(path_str: str, mtime_ns: int, size: int) -> Any:
+    """Parse a JSON file that may be zlib-compressed, memoized by (path, mtime, size).
+
+    Computed ``dict``/``list`` outputs (e.g. autk-grammar pool wrappers) are
+    persisted zlib-compressed with a ``.json.zlib`` name. Reading those as plain
+    UTF-8 text raises ``UnicodeDecodeError`` — a ``ValueError`` subclass — which is
+    exactly what broke the catalog preview for these datasets. Try a transparent
+    zlib decompress first and fall back to the raw bytes for ordinary ``.json``
+    (a plain JSON document never decompresses as zlib, so the fallback is safe).
+    """
+    import zlib
+
+    with open(path_str, "rb") as handle:
+        raw = handle.read()
+    try:
+        raw = zlib.decompress(raw)
+    except zlib.error:
+        # A zlib.error means the bytes are not a zlib stream, i.e. this is an
+        # ordinary (uncompressed) JSON document. That is the expected fallback
+        # path, not an error condition, so we intentionally keep the raw bytes
+        # and decode them as UTF-8 below. Logged at debug for traceability only.
+        logger.debug("zlib decompress failed for %s; treating as plain JSON", path_str)
+    return json.loads(raw.decode("utf-8"))
+
+
+def _load_json_maybe_compressed(path: Path) -> Any:
+    stat = path.stat()
+    return _load_json_maybe_compressed_cached(str(path), stat.st_mtime_ns, stat.st_size)
+
+
+def _json_safe(value: Any) -> Any:
+    """Recursively replace JSON-invalid floats (NaN, +Inf, -Inf) with ``None``.
+
+    Python's ``json``/Flask's ``jsonify`` emit ``NaN``/``Infinity`` literals by
+    default, which are *not* valid JSON: the browser's strict ``Response.json()``
+    rejects them with ``Unexpected token 'N' ... is not valid JSON`` and the whole
+    preview response fails to parse. Preview rows can carry non-finite floats from
+    two raw-``json.load`` sources (``_preview_json``/``_preview_geojson``) and from
+    list/dict artifacts that were serialized with ``allow_nan=True`` — so sanitize
+    the entire payload at the service boundary before it leaves for the frontend.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(sub) for key, sub in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(sub) for sub in value]
+    return value
+
+
+class DatasetPreviewService:
+    def preview(
+        self,
+        item: dict[str, Any],
+        *,
+        row_limit: int = 50,
+        offset: int = 0,
+        part_index: int | None = None,
+    ) -> dict[str, Any]:
+        # Paginated payloads are small (<= row_limit rows per part), so sanitizing
+        # the whole result is cheap and guarantees no non-finite float escapes to
+        # the strict browser JSON parser, regardless of which format handler ran.
+        return _json_safe(
+            self._dispatch(item, row_limit=row_limit, offset=offset, part_index=part_index)
+        )
+
+    def _dispatch(
+        self,
+        item: dict[str, Any],
+        *,
+        row_limit: int = 50,
+        offset: int = 0,
+        part_index: int | None = None,
+    ) -> dict[str, Any]:
+        path_value = item.get("path")
+        if not path_value or str(path_value).startswith("curio://"):
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": item.get("featureCount") or item.get("rowCount") or 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": "Preview is available after the dataset is installed or computed locally.",
+            }
+
+        path = Path(path_value)
+        if not path.exists() or not path.is_file():
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": item.get("featureCount") or item.get("rowCount") or 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": "Dataset file is not available on disk.",
+            }
+
+        fmt = item.get("format")
+        if fmt == "bundle":
+            # A ``part_index`` request paginates a single part (its own offset),
+            # returning that part's table preview so each tab can page through all
+            # of its rows. Without it, return every part's first page for the tabs.
+            if part_index is not None:
+                return self._preview_bundle_part(path, part_index, row_limit, offset, item)
+            return self._preview_bundle(path, row_limit, offset, item)
+        if fmt == "csv":
+            return self._preview_csv(path, row_limit, offset, item)
+        if fmt == "json":
+            return self._preview_json(path, row_limit, offset, item, part_index=part_index)
+        if fmt == "geojson":
+            return self._preview_geojson(path, row_limit, offset, item)
+        if fmt == "parquet":
+            return self._preview_parquet(path, row_limit, offset, item)
+        if fmt == "geotiff":
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": "Raster preview is not available in the catalog yet. Use the map canvas.",
+            }
+        return {
+            "schema": {"fields": []},
+            "rows": [],
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": item.get("featureCount") or item.get("rowCount") or 0,
+            "truncated": False,
+            "unsupported": True,
+            "message": f"Preview is not supported for {fmt} datasets yet.",
+        }
+
+    def _total_rows(self, item: dict[str, Any], computed: int | None) -> int:
+        if computed is not None:
+            return computed
+        return int(item.get("featureCount") or item.get("rowCount") or 0)
+
+    def _count_csv_rows(self, path: Path) -> int:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.reader(handle)
+            next(reader, None)
+            return sum(1 for _ in reader)
+
+    def _infer_fields(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not rows:
+            return []
+        names: list[str] = []
+        for row in rows:
+            for key in row.keys():
+                if key not in names:
+                    names.append(key)
+        fields = []
+        for name in names:
+            sample = next((row.get(name) for row in rows if row.get(name) not in (None, "")), None)
+            field_type = "string"
+            if isinstance(sample, bool):
+                field_type = "boolean"
+            elif isinstance(sample, int):
+                field_type = "integer"
+            elif isinstance(sample, float):
+                field_type = "number"
+            fields.append({"name": name, "type": field_type, "nullable": True, "sample": sample})
+        return fields
+
+    def _preview_bundle(self, bundle_path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
+        try:
+            spec = json.loads(bundle_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": 0,
+                "truncated": False,
+                "bundle": True,
+                "parts": [],
+                "unsupported": True,
+                "message": f"Could not read bundle manifest: {exc}",
+            }
+
+        # ``part['file']`` is stored relative to the dataset dir (e.g.
+        # ``data/parts/00_x.parquet``), and ``bundle_path`` is
+        # ``<id>@1/data/bundle.json`` — so resolve against the dataset dir
+        # (two levels up), matching the loader snippet's dirname(dirname(path)).
+        root = bundle_path.parent.parent
+        parts_payload: list[dict[str, Any]] = []
+        for part in spec.get("parts") or []:
+            if not isinstance(part, dict):
+                continue
+            # First page only (offset 0) — the tab bar just needs each part's
+            # label, format and totalRows; deeper pages are fetched per part.
+            parts_payload.append(self._preview_one_part(part, root, row_limit, 0, item))
+
+        part_count = len(parts_payload)
+        schema = item.get("schema") or {
+            "fields": [{"name": "parts", "type": "integer", "nullable": False, "sample": part_count}],
+            "bundleParts": [
+                {"label": p.get("label"), "format": p.get("format")}
+                for p in parts_payload
+            ],
+        }
+        return {
+            "schema": schema,
+            "rows": [],
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": part_count,
+            "truncated": False,
+            "bundle": True,
+            "parts": parts_payload,
+        }
+
+    def _preview_one_part(
+        self, part: dict[str, Any], root: Path, row_limit: int, offset: int, item: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Preview a single bundle part at ``offset``, tagged with its label/format/kind.
+
+        Shared by the bundle overview (offset 0 for every part) and per-part
+        pagination (a single part at an arbitrary offset).
+        """
+        label = str(part.get("label") or f"Part {part.get('index', 0)}")
+        fmt = str(part.get("format") or "json")
+        rel = part.get("file")
+        part_path = (root / rel).resolve() if rel else None
+        sub_item = {**item, "format": fmt}
+        if part_path is not None and part_path.is_file():
+            if fmt == "csv":
+                part_preview = self._preview_csv(part_path, row_limit, offset, sub_item)
+            elif fmt == "parquet":
+                part_preview = self._preview_parquet(part_path, row_limit, offset, sub_item)
+            elif fmt == "geojson":
+                part_preview = self._preview_geojson(part_path, row_limit, offset, sub_item)
+            elif fmt == "geotiff":
+                part_preview = {
+                    "schema": {"fields": []},
+                    "rows": [],
+                    "rowLimit": row_limit,
+                    "offset": offset,
+                    "totalRows": 0,
+                    "truncated": False,
+                    "unsupported": True,
+                    "message": "Raster preview is not available in the catalog yet.",
+                }
+            else:
+                part_preview = self._preview_json(part_path, row_limit, offset, sub_item)
+        else:
+            part_preview = {
+                "schema": {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": "Part file is not available on disk.",
+            }
+        return {
+            "label": label,
+            "format": fmt,
+            "kind": part.get("kind"),
+            **part_preview,
+        }
+
+    def _preview_bundle_part(
+        self, bundle_path: Path, part_index: int, row_limit: int, offset: int, item: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Paginate one part of a bundle. Returns that part's table preview (the
+        same shape as a single-file preview) so a bundle tab can page through all
+        of its rows, with ``partIndex``/``bundle`` echoed so the client can route it."""
+        not_found = {
+            "schema": {"fields": []},
+            "rows": [],
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": 0,
+            "truncated": False,
+            "bundle": True,
+            "partIndex": part_index,
+            "unsupported": True,
+            "message": "No such bundle part.",
+        }
+        try:
+            spec = json.loads(bundle_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return {**not_found, "message": f"Could not read bundle manifest: {exc}"}
+
+        parts = spec.get("parts") or []
+        if not isinstance(parts, list) or part_index < 0 or part_index >= len(parts):
+            return not_found
+        part = parts[part_index]
+        if not isinstance(part, dict):
+            return not_found
+
+        root = bundle_path.parent.parent
+        preview = self._preview_one_part(part, root, row_limit, offset, item)
+        return {**preview, "bundle": True, "partIndex": part_index}
+
+    def _preview_csv(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
+        total_rows = self._count_csv_rows(path)
+        rows: list[dict[str, Any]] = []
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for index, row in enumerate(reader):
+                if index < offset:
+                    continue
+                if len(rows) >= row_limit:
+                    break
+                rows.append(dict(row))
+        end = offset + len(rows)
+        return {
+            "schema": {"fields": self._infer_fields(rows) if rows else (item.get("schema") or {}).get("fields", [])},
+            "rows": rows,
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": self._total_rows(item, total_rows),
+            "truncated": end < self._total_rows(item, total_rows),
+        }
+
+    def _preview_layer_table(
+        self, layer: dict[str, Any], row_limit: int, offset: int
+    ) -> dict[str, Any]:
+        """Table preview for one normalized pool layer, parsed exactly like the
+        Data Pool (via the shared ``rows_from_parse_output``)."""
+        from utk_curio.sandbox.util.tabular_preview import rows_from_parse_output
+
+        all_rows = rows_from_parse_output(
+            {"dataType": layer.get("dataType"), "data": layer.get("data")}
+        )
+        total_rows = len(all_rows)
+        page = all_rows[offset : offset + row_limit] if offset < total_rows else []
+        end = offset + len(page)
+        return {
+            "schema": {"fields": self._infer_fields(page) if page else []},
+            "rows": page,
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": total_rows,
+            "truncated": end < total_rows,
+        }
+
+    def _preview_pool_envelope(
+        self,
+        layers: list[dict[str, Any]],
+        row_limit: int,
+        offset: int,
+        item: dict[str, Any],
+        part_index: int | None,
+    ) -> dict[str, Any]:
+        """Preview an autk-grammar pool output the way the Data Pool renders it:
+        a single layer becomes a flat table; multiple layers become a bundle with
+        one tab per layer (so the existing bundle UI and per-part paging apply)."""
+        # One layer → flat table, matching a single-tab Data Pool (part_index N/A).
+        if len(layers) == 1:
+            return self._preview_layer_table(layers[0], row_limit, offset)
+
+        def part_meta(layer: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "label": str(layer.get("label") or "Layer"),
+                "format": "geojson" if layer.get("dataType") == "geodataframe" else "json",
+                "kind": layer.get("dataType"),
+            }
+
+        # Paginate a single tab (its own offset) — mirrors _preview_bundle_part.
+        if part_index is not None:
+            if part_index < 0 or part_index >= len(layers):
+                return {
+                    "schema": {"fields": []},
+                    "rows": [],
+                    "rowLimit": row_limit,
+                    "offset": offset,
+                    "totalRows": 0,
+                    "truncated": False,
+                    "bundle": True,
+                    "partIndex": part_index,
+                    "unsupported": True,
+                    "message": "No such bundle part.",
+                }
+            layer = layers[part_index]
+            preview = {**part_meta(layer), **self._preview_layer_table(layer, row_limit, offset)}
+            return {**preview, "bundle": True, "partIndex": part_index}
+
+        # Overview: every tab's first page (offset 0) plus its own totalRows.
+        parts_payload = [
+            {**part_meta(layer), **self._preview_layer_table(layer, row_limit, 0)}
+            for layer in layers
+        ]
+        return {
+            "schema": item.get("schema") or {
+                "fields": [
+                    {"name": "parts", "type": "integer", "nullable": False, "sample": len(parts_payload)}
+                ],
+                "bundleParts": [
+                    {"label": p["label"], "format": p["format"]} for p in parts_payload
+                ],
+            },
+            "rows": [],
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": len(parts_payload),
+            "truncated": False,
+            "bundle": True,
+            "parts": parts_payload,
+        }
+
+    def _preview_json(
+        self,
+        path: Path,
+        row_limit: int,
+        offset: int,
+        item: dict[str, Any],
+        part_index: int | None = None,
+    ) -> dict[str, Any]:
+        from utk_curio.sandbox.util.tabular_preview import normalize_pool_layers
+
+        try:
+            # cached + zlib-aware: page navigation never re-parses, and computed
+            # dict/list outputs (`.json.zlib`) decompress transparently.
+            data = _load_json_maybe_compressed(path)
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": item.get("featureCount") or item.get("rowCount") or 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": f"Could not read JSON preview: {exc}",
+            }
+
+        # autk-grammar pool wrappers (single geodataframe, multi-layer `outputs`
+        # envelope, or a raw layer array) preview as per-layer tables, parsed the
+        # same way the Data Pool parses them.
+        layers = normalize_pool_layers(data)
+        if layers:
+            return self._preview_pool_envelope(layers, row_limit, offset, item, part_index)
+
+        rows = data if isinstance(data, list) else [data] if isinstance(data, dict) else [{"value": data}]
+        total_rows = len(rows)
+        page = rows[offset : offset + row_limit]
+        display_rows = [row if isinstance(row, dict) else {"value": row} for row in page]
+        end = offset + len(display_rows)
+        return {
+            "schema": {"fields": self._infer_fields(display_rows) if display_rows else (item.get("schema") or {}).get("fields", [])},
+            "rows": display_rows,
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": self._total_rows(item, total_rows),
+            "truncated": end < self._total_rows(item, total_rows),
+        }
+
+    def _preview_parquet(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
+        from utk_curio.sandbox.util.tabular_preview import preview_parquet_file
+
+        try:
+            rows, total_rows, _parsed = preview_parquet_file(
+                path,
+                row_limit=row_limit,
+                offset=offset,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": item.get("featureCount") or item.get("rowCount") or 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": f"Could not read parquet preview: {exc}",
+            }
+
+        end = offset + len(rows)
+        schema_fields = (item.get("schema") or {}).get("fields", [])
+        return {
+            "schema": {
+                "fields": schema_fields if schema_fields else self._infer_fields(rows),
+            },
+            "rows": rows,
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": self._total_rows(item, total_rows),
+            "truncated": end < self._total_rows(item, total_rows),
+        }
+
+    def _preview_geojson(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
+        data = _load_json_file(path)  # cached: page navigation never re-parses the file
+        features = data.get("features", []) if isinstance(data, dict) else []
+        total_rows = len(features)
+        rows = []
+        geometry_type = None
+        for feature in features[offset : offset + row_limit]:
+            props = feature.get("properties") or {}
+            geom = feature.get("geometry") or {}
+            geometry_type = geometry_type or geom.get("type")
+            rows.append({**props, "geometry": geom.get("type")})
+        end = offset + len(rows)
+        schema_fields = self._infer_fields(rows) if rows else (item.get("schema") or {}).get("fields", [])
+        return {
+            "schema": {
+                "fields": schema_fields,
+                "geometryType": geometry_type or (item.get("schema") or {}).get("geometryType"),
+                # ``crs`` is optional and may be present-but-null in RFC-7946
+                # GeoJSON; ``or {}`` at each hop avoids ``None.get`` (500).
+                "crs": ((data.get("crs") or {}).get("properties") or {}).get("name")
+                if isinstance(data, dict)
+                else None,
+            },
+            "rows": rows,
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": self._total_rows(item, total_rows),
+            "truncated": end < self._total_rows(item, total_rows),
+        }

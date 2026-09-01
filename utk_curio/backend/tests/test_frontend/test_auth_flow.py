@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from .utils import auth_enabled_env, signup_e2e_user
+from .utils import auth_enabled_env, signup_e2e_user, wait_for_projects_page
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -27,10 +27,10 @@ def test_signup_signin_flow(app_frontend: FrontendPage, page):
         password="testpass123",
     )
 
-    page.get_by_role("heading", name="Projects").wait_for(timeout=10000)
+    wait_for_projects_page(page, timeout=10000)
 
-    # 4. Sign out — use the stable data-testid (UserMenu mounts the sign-out
-    # button asynchronously after the auth context resolves; Playwright's
+    # 4. Sign out — use the stable data-testid (GlobalPageHeader mounts the
+    # sign-out button only once the auth context resolves; Playwright's
     # auto-wait on test_id locators handles the race more cleanly than a
     # bare get_by_text(...).click() which timed out under load).
     page.get_by_test_id("signout-button").click()
@@ -39,6 +39,6 @@ def test_signup_signin_flow(app_frontend: FrontendPage, page):
     # 5. Sign back in by username
     page.get_by_label("Username or Email").fill("e2etestuser")
     page.get_by_label("Password").fill("testpass123")
-    page.get_by_role("button", name="Sign In", exact=True).click()
+    page.get_by_role("button", name="Sign in", exact=True).click()
     page.wait_for_url("**/projects", timeout=30000)
-    page.get_by_text("Projects", exact=True).wait_for(timeout=10000)
+    wait_for_projects_page(page, timeout=10000)

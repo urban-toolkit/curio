@@ -1,6 +1,6 @@
 # Contributing to Curio
 
-This guide is intended for students who are interested in contributing to an open-source software project, as well as for developers looking to participate in the Curio ecosystem. It provides a structured and detailed overview of the system, its architecture, and various ways to contribute. Whether you're building your first pull request or integrating advanced features, this document is designed to support your contribution journey.
+This guide is for students getting their first taste of open-source work and for developers who already know their way around a codebase. It covers how Curio is put together, how to get it running, and where the useful contributions tend to be.
 
 ## Table of Contents
 
@@ -46,7 +46,7 @@ Contributing to Curio offers the opportunity to:
 | Component | Technology                             | Function                                                             |
 | --------- | -------------------------------------- | -------------------------------------------------------------------- |
 | Backend   | Python, Flask                          | REST API for managing users, workflows, and provenance               |
-| Frontend  | JavaScript, Autark, Vega-Lite          | Browser-based interface for authoring and interacting with dataflows |
+| Frontend  | React, TypeScript, Autark, Vega-Lite   | Browser-based interface for authoring and interacting with dataflows |
 | Execution | Python sandbox (multiprocess)          | Secure module for executing user code                                |
 | DevOps    | Docker, Docker Compose, GitHub Actions | Containerization, deployment, and CI/CD                              |
 | Packaging | PyPI (`utk-curio`)                     | Distributes the CLI and backend/frontend bundle                      |
@@ -59,21 +59,26 @@ The codebase follows a modular structure under the `utk_curio/` directory. This 
 curio/
 ├── utk_curio/
 │   ├── backend/                     # Manages database access and user authentication
-│   │   └── tests/                   # pytest files for backend
+│   │   ├── migrations/              # Alembic migrations
+│   │   └── tests/                   # pytest files for backend (+ test_frontend/ for Playwright E2E)
 │   ├── sandbox/                     # Executes user Python code in a secure environment
-│   │   └── tests/                   # pytest files for sandbox
+│   │   └── tests/                   # unittest files for sandbox
 │   └── frontend/                    # All frontend logic
 │       └── urban-workflows/         # Main Curio interface for dataflow editing
 │           └── src/
-│               └── components/     # React components and CSS
+│               ├── components/      # React components and CSS
+│               └── tests/           # Jest unit tests
 │
 ├── curio.py                        # CLI entry point for running and managing all services
-├── tests/                          # Dataflow examples for testing
+├── packages/                       # The shared node catalog: one directory per node package
+├── datasets/                       # The shared Data Catalog: datasets published on this install
+├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py
 ├── docs/                           # Documentation, usage guides, and examples
+│   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
 ```
 
-For how nodes are added — most users via the Node Factory wizard, advanced users via a hand-authored `manifest.json` or a new behavior hook — see [CATALOG.md](CATALOG.md). For a deep dive into how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation Options
 
@@ -184,23 +189,29 @@ Before submitting a pull request, run the relevant test suites to confirm your c
 
 ### TL;DR
 
-A single script starts all Curio services, runs unit tests and Playwright E2E tests, then shuts everything down:
+One command starts all Curio services, runs unit tests and Playwright E2E tests, then shuts everything down:
 
 ```bash
-./scripts/test.sh
+python curio.py test
 ```
 
 Common shortcuts:
 
 ```bash
-# containers already running, unit tests only
-./scripts/test.sh --use-existing --unit-only
+# servers already running, unit tests only (backend + sandbox + jest)
+python curio.py test unit --use-existing
+
+# one suite: all | unit | backend | sandbox | jest | e2e
+python curio.py test backend
 
 # watch the browser, specific workflows only
-./scripts/test.sh --use-existing --e2e-only --headed --workflows Vega.json,Regression.json
+python curio.py test e2e --use-existing --headed --workflows Vega.json,Regression.json
 ```
 
-See `./scripts/test.sh --help` for all options, or read the sections below for more detail.
+See `python curio.py test --help` for all options, or read the sections below for
+more detail. The command is a front end for `./scripts/test.sh`, which CI calls
+directly and which still accepts its own flags (`--unit-only`, `--e2e-only`, ...)
+if you prefer to run it yourself.
 
 ### One-Time Setup
 
@@ -229,7 +240,7 @@ npm test -- --watchAll=false
 
 Tests live under `src/tests/` and mirror the structure of `src/components/`. See [utk_curio/frontend/urban-workflows/src/tests/README.md](../utk_curio/frontend/urban-workflows/src/tests/README.md) for guidelines on writing and organizing tests.
 
-Jest requires **Node ≥ 24** (transitive dep `html-encoding-sniffer@6` uses `require()`-of-ESM). Older Node fails every suite with `ERR_REQUIRE_ESM`. The `curio` conda env ships Node 24 — `conda activate curio` before `npm test`, or use a system install of Node 24+.
+Jest requires **Node ≥ 24** (transitive dep `html-encoding-sniffer@6` uses `require()`-of-ESM). Older Node fails every suite with `ERR_REQUIRE_ESM`. The `curio` conda env ships Node 24, so run `conda activate curio` before `npm test`, or use a system install of Node 24+.
 
 ### Frontend E2E Tests
 
@@ -268,7 +279,7 @@ pytest utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanv
 pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "Vega.json"
 ```
 
-**Test matrix** — each workflow runs four checks:
+**Test matrix.** Each workflow runs four checks:
 
 | Test | What it verifies |
 |---|---|
@@ -390,9 +401,8 @@ Use the following template when creating a new issue:
 
 ## Need Help
 
-* Join the [Curio Discord server](https://discord.gg/vjpSMSJR8r)
 * Post in the GitHub Discussions or Issues tab
 
 ## Final Notes
 
-Every contribution helps. You don’t need deep expertise—just curiosity, commitment, and a willingness to learn.
+Every contribution helps. You don’t need deep expertise, just curiosity, commitment, and a willingness to learn.

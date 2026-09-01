@@ -1,0 +1,33 @@
+{
+  "id": "data.cityofchicago.green-roofs",
+  "name": "Chicago Green Roofs",
+  "version": "1.0.0",
+  "format": "csv",
+  "description": "Inventory of green (vegetated) roofs on Chicago buildings, with square footage, address and building attributes.",
+  "publisher": "City of Chicago",
+  "license": "Open Data",
+  "tags": [
+    "green-roofs",
+    "chicago",
+    "buildings",
+    "csv"
+  ],
+  "dataFile": "data/green-roofs.csv",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Chicago Data Portal",
+  "rowCount": 359,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-08-27T00:00:00Z",
+  "updatedAt": "2026-08-27T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null
+}

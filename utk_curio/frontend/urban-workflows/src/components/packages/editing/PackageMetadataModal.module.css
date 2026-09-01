@@ -63,7 +63,7 @@
 }
 
 .readme {
-    font-family: var(--curio-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-family: var(--curio-font-mono);
     min-height: 180px;
 }
 
@@ -87,7 +87,7 @@
 
 .depsRow {
     margin: 2px 0;
-    font-family: var(--curio-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-family: var(--curio-font-mono);
     font-size: var(--curio-font-size-sm);
     color: var(--curio-text-primary);
 }
@@ -121,9 +121,14 @@
 }
 
 .primaryBtn {
-    background: var(--curio-accent);
-    color: var(--curio-on-accent);
-    border-color: var(--curio-accent);
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
+    border-color: var(--curio-top-bar-bg);
+}
+
+.primaryBtn:hover:not(:disabled) {
+    background: var(--curio-top-bar-bg-hover);
+    border-color: var(--curio-top-bar-bg-hover);
 }
 
 .primaryBtn:disabled,

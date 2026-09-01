@@ -1,0 +1,629 @@
+/* Attached-agent chat panel, styled to the approved concept screens
+   (png-concepts/03 + 06) and the "Chat feedback visual system" contract in
+   docs/03-ui-decisions.md: grouped surfaces (--curio-surface-muted), hairline
+   borders (--curio-border), 12px radii, raised card-bg inner panels, dark
+   right-aligned user
+   bubbles, avatar-prefixed agent rows, soft chips, 16px gutters. */
+
+/* Full-height right drawer flush with the viewport top (portal to <body>):
+   the dark header sits at the top-bar level, like the concept and the roster
+   drawer. Above the main top menu (z 100–200), below the roster drawer's
+   backdrop (z 1200). */
+.panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  /* Catalog-drawer sizing parity (memo dev/46): the Agent Catalog panel's
+     exact dimensions, in the same scale family as the Nodes/Datasets
+     drawers. Content scales (85% bubbles, min-width:0 columns). */
+  width: 560px;
+  max-width: 92vw;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  background: var(--curio-card-bg, var(--curio-card-bg));
+  border-left: 1px solid var(--curio-border, var(--curio-border));
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+/* ── header (DEC-042, dev/21): ONE dark top header for the opened agent view —
+   the ‹ › cycling arrows, agent identity, session details, and Close. No Pin,
+   and no static "Agent Catalog" bar (that chrome is roster-drawer-only). ── */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Flush with the viewport top; the extra top padding optically aligns the
+     identity row with the adjacent main top bar. */
+  padding: 14px 12px 12px;
+  background: var(--curio-top-bar-bg, var(--curio-top-bar-bg));
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.headerSpacer {
+  flex: 1;
+}
+
+.cycleBtn {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--curio-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cycleBtn:hover:not(:disabled),
+.cycleBtn:focus-visible {
+  background: var(--curio-top-bar-bg-hover);
+  color: var(--curio-text-on-dark);
+}
+
+.cycleBtn:disabled {
+  color: var(--curio-text-secondary);
+  cursor: default;
+}
+
+.headerBot {
+  flex: none;
+  font-size: 16px;
+  color: var(--curio-role-running-fg); /* overridden by a category tint class */
+  display: flex;
+  align-items: center;
+}
+
+.position {
+  flex: none;
+  font-size: 11px;
+  color: var(--curio-text-meta);
+}
+
+/* Category tints — same palette as AgentAvatarBadge (icon color, white chip). */
+.tint_node     { color: var(--curio-category-agent-node-fg); }
+.tint_canvas   { color: var(--curio-category-agent-canvas-fg); }
+.tint_data     { color: var(--curio-category-agent-data-fg); }
+.tint_evaluate { color: var(--curio-category-agent-evaluate-fg); }
+.tint_package  { color: var(--curio-category-agent-package-fg); }
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── click-to-rename conversation title (memo dev/25): the affordance is the
+   title itself — hover underline, no edit button or icon. ── */
+.titleButton {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.titleButton:hover,
+.titleButton:focus-visible {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.titleEditing {
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+  overflow: visible;
+}
+
+/* The fixed "<name>: " prefix rendered beside the editable custom portion. */
+.titlePrefix {
+  flex: none;
+  white-space: pre;
+}
+
+.titleInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--curio-top-bar-bg-hover);
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
+}
+
+.titleInput:focus {
+  outline: 2px solid var(--curio-accent-sky-fg, var(--curio-focus-ring));
+  outline-offset: 1px;
+}
+
+/* Rename failure: soft status tone on the dark header, subtitle row. */
+.titleError {
+  flex: none;
+  font-size: 11px;
+  color: var(--curio-danger);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: var(--curio-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.sessionChip {
+  flex: none;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--curio-text-muted);
+  background: var(--curio-top-bar-bg-hover);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.headerBtn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--curio-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.headerBtn:hover,
+.headerBtn:focus-visible {
+  background: var(--curio-top-bar-bg-hover);
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
+}
+
+/* ── initial intent, rendered as the conversation's first message ── */
+.intentMsg {
+  align-self: flex-end;
+  max-width: 85%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.intentClamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Missing prompt asset: same bubble, muted. */
+.intentPlaceholder {
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.intentControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.intentToggle {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+  cursor: pointer;
+}
+
+.intentEdit {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.intentEdit:hover,
+.intentEdit:focus-visible {
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary, var(--curio-text-primary));
+}
+
+.intentEditor {
+  align-self: stretch;
+}
+
+.intentTextarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: inherit;
+  color: var(--curio-text-primary, var(--curio-text-primary));
+  box-sizing: border-box;
+}
+
+.intentTextarea:focus {
+  outline: 2px solid var(--curio-accent-sky-fg, var(--curio-focus-ring));
+  outline-offset: 1px;
+}
+
+.intentActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.intentSave {
+  border: none;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+  color: var(--curio-text-on-dark);
+  cursor: pointer;
+}
+
+.intentSave:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.intentCancel {
+  border: 1px solid var(--curio-border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary, var(--curio-text-primary));
+  cursor: pointer;
+}
+
+.intentError {
+  font-size: 11px;
+  color: var(--curio-danger-text);
+}
+
+/* ── transcript: grouped surface with bubbles / agent rows ── */
+/* Positioning context for the Jump-to-latest overlay (memo dev/75): the pill
+   anchors to this box, not the scroller, so it doesn't scroll with content. */
+.messagesWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.messages {
+  flex: 1;
+  /* A flex child won't shrink below its content without this, so the
+     transcript would grow past the clipped panel and never scroll. */
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--curio-surface-muted);
+}
+
+/* Programmatically focusable (tabindex="-1") as the Jump pill's focus
+   fallback — no visible ring for that non-interactive focus. */
+.messages:focus {
+  outline: none;
+}
+
+.msgUser {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--curio-top-bar-bg, var(--curio-top-bar-bg));
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
+}
+
+.agentRow {
+  align-self: flex-start;
+  display: flex;
+  gap: 8px;
+  max-width: 92%;
+}
+
+/* Bubble + per-reply status meta stacked beside the avatar (dev/80 amd.). */
+.agentCol {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Per-reply execution status (dev/80 amendment): a quiet line under the
+   bubble — running while the reply streams, then duration + tokens. */
+.turnMeta {
+  padding-left: 2px;
+}
+
+.agentRowAvatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
+  font-size: 11px;
+}
+
+/* Agent text: raised white inner panel on the grouped surface. */
+.msgAgent {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--curio-text-primary, var(--curio-text-primary));
+}
+
+/* Soft status tone for failures — gentle fill + hairline, never saturated. */
+.msgError {
+  background: var(--curio-danger-bg);
+  border-color: var(--curio-danger-border);
+  color: var(--curio-danger-strong);
+}
+
+.systemLine {
+  align-self: center;
+  font-size: 11px;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+  text-align: center;
+  padding: 2px 10px;
+}
+
+.systemError {
+  background: var(--curio-danger-bg);
+  border: 1px solid var(--curio-danger-border);
+  border-radius: 999px;
+  color: var(--curio-danger-strong);
+}
+
+.retry {
+  border: none;
+  background: none;
+  padding: 0 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+  cursor: pointer;
+}
+
+/* ── footer: pill input + circular accent send ── */
+.footer {
+  display: flex;
+  gap: 8px;
+  /* Bottom-anchored so the send button stays beside the last line as the
+     multiline composer grows (memo dev/77). */
+  align-items: flex-end;
+  padding: 12px 16px;
+  background: var(--curio-card-bg, var(--curio-card-bg));
+  border-top: 1px solid var(--curio-border);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 14px;
+  border: 1px solid var(--curio-border);
+  /* Half the one-row height: renders as the same pill at a single line, a
+     rounded rectangle once the textarea grows — never a distorted stadium. */
+  border-radius: 18px;
+  font-size: 12.5px;
+  font-family: inherit;
+  line-height: 1.45;
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary, var(--curio-text-primary));
+  /* Growth is content-driven (useAutoGrowTextarea) — no manual drag handle,
+     no scrollbar until the height cap is reached. */
+  resize: none;
+  overflow-y: hidden;
+}
+
+.input:focus {
+  outline: 2px solid var(--curio-accent-sky-fg, var(--curio-focus-ring));
+  outline-offset: 1px;
+  background: var(--curio-card-bg);
+}
+
+.send {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+  color: var(--curio-text-on-dark);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── structured content (memo dev/39) ──────────────────────────────────── */
+
+/* Markdown from the safe renderer: keep the bubble rhythm tight. */
+.msgAgent p {
+  margin: 0 0 6px;
+}
+.msgAgent p:last-child {
+  margin-bottom: 0;
+}
+.msgAgent pre {
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+.msgAgent code {
+  font-size: 0.82em;
+}
+
+/* SUGGESTED PROMPTS chips (docs/03 soft-token treatment): filled soft
+   surfaces with hairlines, above the input row. */
+.suggestedRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px 0;
+  background: var(--curio-card-bg, var(--curio-card-bg));
+  border-top: 1px solid var(--curio-border);
+}
+
+.suggestedLabel {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--curio-text-meta);
+  margin-right: 2px;
+}
+
+.suggestedChip {
+  border: 1px solid var(--curio-border);
+  background: var(--curio-surface-muted);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  color: var(--curio-text-primary);
+  cursor: pointer;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestedChip:hover,
+.suggestedChip:focus-visible {
+  background: var(--curio-surface-muted);
+  border-color: var(--curio-border-strong);
+}
+
+/* The chips row visually joins the footer beneath it. */
+.suggestedRow + .footer {
+  border-top: none;
+}
+
+/* ── counter strip (memo dev/80, amended): the session's accumulated token
+   total, right-aligned by the composer (per-reply statuses live on the
+   messages). Fixed height so appearing/updating causes no layout shift. */
+.statusStrip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 3px 16px;
+  background: var(--curio-card-bg, var(--curio-card-bg));
+  border-top: 1px solid var(--curio-border);
+}
+
+.statusStripSpacer {
+  flex: 1;
+}
+
+/* The strip joins whatever sits directly beneath/above it into one block. */
+.suggestedRow + .statusStrip,
+.statusStrip + .footer {
+  border-top: none;
+}
+
+/* ⚙ Attachment settings cog (memo dev/42) — a quiet labeled control at the
+   top of the content area, beneath the DEC-042 header. */
+.attachmentSettingsBtn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--curio-border);
+  background: var(--curio-surface-muted);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 0.76rem;
+  color: var(--curio-text-secondary);
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.attachmentSettingsBtn:hover,
+.attachmentSettingsBtn:focus-visible {
+  background: var(--curio-surface-muted);
+  border-color: var(--curio-border-strong);
+  color: var(--curio-text-primary);
+}

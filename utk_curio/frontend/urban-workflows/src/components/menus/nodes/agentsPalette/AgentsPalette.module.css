@@ -1,0 +1,27 @@
+/* The AGENTS palette shares the tools-palette shell (paletteShell.module.css)
+   for all common chrome; only the drag-hint line is agent-specific. */
+
+.root { composes: root from "../paletteShell/paletteShell.module.css"; }
+.column { composes: column from "../paletteShell/paletteShell.module.css"; }
+.trigger { composes: trigger from "../paletteShell/paletteShell.module.css"; }
+.triggerTop { composes: triggerTop from "../paletteShell/paletteShell.module.css"; }
+.triggerOpen { composes: triggerOpen from "../paletteShell/paletteShell.module.css"; }
+.triggerIcon { composes: triggerIcon from "../paletteShell/paletteShell.module.css"; }
+.triggerLabel { composes: triggerLabel from "../paletteShell/paletteShell.module.css"; }
+.triggerCount { composes: triggerCount from "../paletteShell/paletteShell.module.css"; }
+.triggerChevron { composes: triggerChevron from "../paletteShell/paletteShell.module.css"; }
+.panel { composes: panel from "../paletteShell/paletteShell.module.css"; }
+.panelHeader { composes: panelHeader from "../paletteShell/paletteShell.module.css"; }
+.title { composes: title from "../paletteShell/paletteShell.module.css"; }
+.scroll { composes: scroll from "../paletteShell/paletteShell.module.css"; }
+.sectionEmpty { composes: sectionEmpty from "../paletteShell/paletteShell.module.css"; }
+.footer { composes: footer from "../paletteShell/paletteShell.module.css"; }
+.catalogButton { composes: catalogButton from "../paletteShell/paletteShell.module.css"; }
+
+.hint {
+  margin: 4px 2px 0;
+  color: rgba(251, 252, 246, 0.55);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: center;
+}

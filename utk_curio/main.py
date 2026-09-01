@@ -7,6 +7,7 @@ import time
 import threading
 import queue
 import argparse
+import secrets
 import signal
 import platform
 import logging
@@ -33,6 +34,8 @@ shutdown_flag = threading.Event()
 processes = []
 file_logger = None
 verbosity = 1
+logger = logging.getLogger(__name__)
+
 
 def setup_logging():
     log_dir = Path(".curio")
@@ -93,15 +96,27 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, allow_runtime_install=None, isolation=None, exec_user=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
     os.environ["FLASK_SANDBOX_HOST"] = sandbox_host
     os.environ["FLASK_SANDBOX_PORT"] = str(sandbox_port)
+    # Shared secret proving to the sandbox that a caller is this backend. The
+    # sandbox runs arbitrary user code, so its /exec, /execJs, /get and
+    # /install routes require it (utk_curio/sandbox/app/auth.py). Minted per
+    # launch and inherited by both children; a hosted instance refuses to boot
+    # without one. Respect a pre-set value so an operator running the two
+    # processes separately can pair them by hand.
+    os.environ["CURIO_SANDBOX_TOKEN"] = (
+        os.environ.get("CURIO_SANDBOX_TOKEN") or secrets.token_urlsafe(32)
+    )
     os.environ["CURIO_SEED_EXAMPLES"] = "1" if (with_examples or deploy) else "0"
     os.environ["CURIO_RESEED_PACKAGES"] = "1" if reseed else "0"
     os.environ["CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"] = "1" if allow_publish else "0"
+    os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1" if save_node_outputs else "0"
+    if catalog_root:
+        os.environ["CURIO_CATALOG_ROOT"] = str(Path(catalog_root).expanduser().resolve())
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
     # harness can point the backend at a dedicated workspace (see
     # utk_curio/backend/tests/conftest.py). Only fall back to cwd otherwise.
@@ -121,6 +136,60 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         )
         os.environ["CURIO_NO_PROJECT"] = "1" if no_project else "0"
 
+    # Follows the --allow-publish precedent: permissive for a local single-user
+    # install, locked down once the instance is multi-user. On a local launch
+    # the endpoint grants nothing the user's own shell does not already have;
+    # on a shared one it is an unrecorded 'pip install' into the interpreter
+    # that executes node code. An explicit flag wins over both defaults.
+    hosted = os.environ["CURIO_NO_AUTH"] == "0"
+    if allow_runtime_install is None:
+        allow_runtime_install = not hosted
+    os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] = "1" if allow_runtime_install else "0"
+
+    # Node-execution isolation (utk_curio/sandbox/isolation/). Opt-in: 'auto'
+    # resolves to off, so nothing changes for an existing deployment until an
+    # operator asks for it with --isolation=fork.
+    os.environ["CURIO_ISOLATION"] = isolation or "auto"
+    if exec_user:
+        os.environ["CURIO_EXEC_USER"] = str(exec_user)
+    if exec_memory_mb:
+        os.environ["CURIO_EXEC_MEMORY_MB"] = str(exec_memory_mb)
+    if exec_parallelism:
+        os.environ["CURIO_EXEC_PARALLELISM"] = str(exec_parallelism)
+    if exec_timeout:
+        # Must stay under the backend's SANDBOX_EXEC_TIMEOUT (600s), or the
+        # browser gives up before the sandbox can report the real reason.
+        if int(exec_timeout) >= 600:
+            log_warning(
+                f"--exec-timeout {exec_timeout}s is at or above the backend's "
+                "600s sandbox deadline. A node hitting it will surface as a "
+                "generic gateway timeout instead of a clear per-node message."
+            )
+        os.environ["CURIO_EXEC_TIMEOUT"] = str(exec_timeout)
+
+    # AI provider. Curio ships no endpoint of its own (see backend/config.py):
+    # an instance whose operator configures nothing resolves no provider, and
+    # the agent surfaces say so rather than reaching a third party nobody chose.
+    if llm_provider:
+        os.environ["CURIO_DEFAULT_LLM_API_TYPE"] = str(llm_provider)
+    if llm_base_url:
+        os.environ["CURIO_DEFAULT_LLM_BASE_URL"] = str(llm_base_url)
+    if llm_model:
+        os.environ["CURIO_DEFAULT_LLM_MODEL"] = str(llm_model)
+    if guest_llm_api_key:
+        os.environ["GUEST_LLM_API_KEY"] = str(guest_llm_api_key)
+
+    # The agents' web-search tool. Unset, the tool is unavailable: an agent
+    # never reaches an endpoint the operator did not name.
+    if agent_search_url:
+        os.environ["CURIO_SEARCH_URL"] = str(agent_search_url)
+
+    # HuggingFace, for the Street Vision node's gated models. A user's own
+    # token in AI Settings wins over this; it is the fallback for everyone who
+    # has not set one.
+    if huggingface_token:
+        os.environ["CURIO_DEFAULT_HUGGINGFACE_TOKEN"] = str(huggingface_token)
+
     os.environ["ENABLE_COLLAB"] = "1" if collab else "0"
 
     log_always(f"Environment Variables Set:")
@@ -135,6 +204,13 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_SEED_EXAMPLES={os.environ['CURIO_SEED_EXAMPLES']}")
     log_always(f"CURIO_RESEED_PACKAGES={os.environ['CURIO_RESEED_PACKAGES']}")
     log_always(f"CURIO_ALLOW_FACTORY_CATALOG_PUBLISH={os.environ['CURIO_ALLOW_FACTORY_CATALOG_PUBLISH']}")
+    log_always(f"CURIO_DEFAULT_SAVE_NODE_OUTPUT={os.environ['CURIO_DEFAULT_SAVE_NODE_OUTPUT']}")
+    log_always(f"CURIO_ALLOW_RUNTIME_INSTALL={os.environ['CURIO_ALLOW_RUNTIME_INSTALL']}")
+    log_always(f"CURIO_ISOLATION={os.environ['CURIO_ISOLATION']}")
+    # The token itself is deliberately not logged.
+    log_always("CURIO_SANDBOX_TOKEN=<set>")
+    if catalog_root:
+        log_always(f"CURIO_CATALOG_ROOT={os.environ['CURIO_CATALOG_ROOT']}")
     log_always(f"ENABLE_COLLAB={os.environ['ENABLE_COLLAB']}")
 
 def logger():
@@ -168,10 +244,18 @@ def run_spa_static_server(directory: str, port: int) -> None:
             request_path = self.path.split("?", 1)[0].split("#", 1)[0]
             candidate = request_path.lstrip("/")
             fs_path = os.path.join(dist_dir, candidate)
+            # Fall back on what the client asked for, not on whether the path
+            # looks like it has a file extension. ``splitext`` reads a dotted
+            # dataset id - ``data.urbanlab.acs-neighborhood-profile`` - as the
+            # extension ``.acs-neighborhood-profile``, so an extension test
+            # refuses exactly the deep links this fallback exists to serve. A
+            # browser navigation sends ``Accept: text/html``; a missing bundle
+            # fetched with ``Accept: */*`` still gets its 404.
+            accepts_html = "text/html" in (self.headers.get("Accept") or "")
             if (
                 request_path not in ("", "/")
                 and not os.path.exists(fs_path)
-                and not os.path.splitext(candidate)[1]
+                and accepts_html
             ):
                 self.path = "/index.html"
             return super().do_GET()
@@ -450,11 +534,56 @@ def _kill_port(port: int) -> None:
             out = subprocess.check_output(
                 ["lsof", "-t", f"-i:{port}"], text=True, stderr=subprocess.DEVNULL
             )
+            pids = []
             for pid_str in out.strip().splitlines():
                 pid = int(pid_str.strip())
                 if pid:
                     log_warning(f"[Backend] Port {port} in use by PID {pid}. Terminating stale process.")
-                    os.kill(pid, _signal.SIGTERM)
+                    try:
+                        os.kill(pid, _signal.SIGTERM)
+                        pids.append(pid)
+                    except ProcessLookupError:
+                        # PID exited between lsof and SIGTERM; nothing to wait for.
+                        logger.debug(
+                            "PID %s exited before SIGTERM on port %s; skipping wait list",
+                            pid,
+                            port,
+                            exc_info=True,
+                        )
+
+            # Wait up to 3 s for the processes to exit; escalate to SIGKILL if needed.
+            if pids:
+                deadline = time.time() + 3.0
+                remaining = list(pids)
+                while remaining and time.time() < deadline:
+                    time.sleep(0.1)
+                    still_alive = []
+                    for pid in remaining:
+                        try:
+                            os.kill(pid, 0)   # 0 = probe only
+                            still_alive.append(pid)
+                        except ProcessLookupError:
+                            # PID exited between checks; treat as no longer alive.
+                            logger.debug(
+                                "PID %s no longer alive while waiting for port %s",
+                                pid,
+                                port,
+                                exc_info=True,
+                            )
+                    remaining = still_alive
+                for pid in remaining:
+                    try:
+                        log_warning(f"[Backend] PID {pid} still alive after SIGTERM; sending SIGKILL.")
+                        os.kill(pid, _signal.SIGKILL)
+                    except ProcessLookupError:
+                        logger.debug(
+                            "PID %s exited before SIGKILL on port %s",
+                            pid,
+                            port,
+                            exc_info=True,
+                        )
+                # Brief pause to let the kernel release the port after SIGKILL.
+                time.sleep(0.2)
     except subprocess.CalledProcessError:
         pass
     except Exception as e:
@@ -667,6 +796,7 @@ def install_manifest_dependencies() -> None:
         install_python_deps,
     )
     from utk_curio.backend.app.packages.seed import example_dep_package_ids
+    from utk_curio.backend.app.packages.backend_runtime import dep_destinations
 
     repo_root = Path(__file__).resolve().parent.parent
     launch_cwd = Path(os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd())
@@ -706,8 +836,21 @@ def install_manifest_dependencies() -> None:
                     per_pkg.append((m.dir_name, dict(m.python_deps)))
 
     # Per-user store walk — every package any user has actually installed.
+    #
+    # Routed, not unioned. ``dep_destinations`` is the one rule deciding where a
+    # package's deps belong (backend_runtime, dev/97): "overlay" means a
+    # backend-bearing package whose handlers read a private overlay and whose
+    # promotion deliberately left the shared interpreter alone. Host-installing
+    # those here at every boot silently undoes that boundary, and a version pin
+    # in one user's manifest can then move a library every other user's nodes
+    # depend on — merge_python_deps only warns, pip has the last word. Only
+    # "host" and "both" name the shared interpreter as a destination.
+    #
+    # The glob is narrowed to the package-store layout for the same reason it is
+    # walked at all: rglob would also match manifests nested inside a package's
+    # own payload, which are not installed packages.
     if users.is_dir():
-        for mf in users.rglob("manifest.json"):
+        for mf in sorted(users.glob("*/packages/*/manifest.json")):
             try:
                 m = load_packageage_manifest(mf.parent)
             except ManifestError:
@@ -715,6 +858,13 @@ def install_manifest_dependencies() -> None:
             if m.dir_name in seen:
                 continue
             seen.add(m.dir_name)
+            destination, why = dep_destinations(m)
+            if destination not in ("host", "both"):
+                log_info(
+                    f"[Setup] Skipping {m.dir_name} deps: {why}",
+                    COLOR_BACKEND, 2,
+                )
+                continue
             if m.python_deps:
                 per_pkg.append((m.dir_name, dict(m.python_deps)))
 
@@ -742,6 +892,103 @@ def install_manifest_dependencies() -> None:
         sys.exit(1)
 
 
+TEST_SUITES = ["all", "unit", "backend", "sandbox", "jest", "e2e"]
+
+
+def _parse_test_args(argv, command_prefix="curio"):
+    """Parse ``curio test``'s own flags, which have nothing in common with
+    ``start``/``setup``'s (hence its own parser rather than more options on
+    the main one)."""
+    parser = argparse.ArgumentParser(
+        prog=f"{command_prefix} test",
+        description="Run Curio's test suite. Delegates to scripts/test.sh.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=f"""
+    Examples:
+        {command_prefix} test                       # clean, boot servers, run every suite
+        {command_prefix} test unit                  # backend + sandbox + jest, no E2E
+        {command_prefix} test backend               # one suite on its own
+        {command_prefix} test e2e --use-existing    # E2E against servers already running
+        {command_prefix} test e2e --headed --workflows Vega.json,Regression.json
+    """,
+    )
+    parser.add_argument(
+        "suite", nargs="?", default="all", choices=TEST_SUITES,
+        help=(
+            "all (default) | unit = backend + sandbox + jest | "
+            "backend | sandbox | jest | e2e = that suite alone"
+        ),
+    )
+    parser.add_argument(
+        "--use-existing", "-e", action="store_true",
+        help="Test the servers already running; skip clean, npm install and start",
+    )
+    parser.add_argument(
+        "--headed", action="store_true",
+        help="Open a visible browser window during E2E tests",
+    )
+    parser.add_argument(
+        "--workflows", default=None, metavar="A.json,B.json",
+        help="Run only the named E2E workflow files",
+    )
+    parser.add_argument(
+        "--allure-dir", default=None, metavar="DIR",
+        help="Write the E2E run's Allure results to DIR",
+    )
+    return parser.parse_args(argv)
+
+
+def _test_script_flags(args) -> list[str]:
+    """Translate parsed ``curio test`` args into ``scripts/test.sh`` flags."""
+    flags = []
+    if args.suite != "all":
+        flags.append(f"--{args.suite}-only")
+    if args.use_existing:
+        flags.append("--use-existing")
+    if args.headed:
+        flags.append("--headed")
+    if args.workflows:
+        flags += ["--workflows", args.workflows]
+    if args.allure_dir:
+        flags += ["--allure-dir", args.allure_dir]
+    return flags
+
+
+def run_tests(argv, command_prefix="curio") -> None:
+    """Run the test suite and exit with its status.
+
+    ``scripts/test.sh`` stays the single source of truth for how each
+    suite is booted, and is what CI calls directly. This is a
+    discoverable front door onto it (``curio test --help`` lists the
+    suites) so the flag spellings do not have to be memorised.
+    Never returns.
+    """
+    args = _parse_test_args(argv, command_prefix)
+
+    script = Path(__file__).resolve().parent.parent / "scripts" / "test.sh"
+    if not script.is_file():
+        # Only shipped in a source checkout, not in the pip wheel.
+        print(
+            f"[ERROR] {script} not found. 'test' needs a git checkout of Curio.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    bash = shutil.which("bash")
+    if bash is None:
+        print(
+            "[ERROR] scripts/test.sh needs 'bash' on PATH "
+            "(on Windows, run from Git Bash).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    cmd = [bash, str(script), *_test_script_flags(args)]
+    print(f"==> {' '.join(cmd)}")
+    # Not log_info: setup_logging() has not run, and clean.sh wipes .curio/.
+    sys.exit(subprocess.call(cmd, cwd=str(script.parent.parent)))
+
+
 def main():
 
     global processes
@@ -753,6 +1000,10 @@ def main():
 
     command_prefix = get_command_prefix()
 
+    # 'test' has its own flag set; keep it out of the start/setup parser.
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        run_tests(sys.argv[2:], command_prefix)
+
     parser = argparse.ArgumentParser(
         description="Curio's multi-server management tool.",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -761,6 +1012,7 @@ def main():
         {command_prefix} start                       # Start all servers (backend, sandbox, frontend)
         {command_prefix} start backend               # Start only the backend (localhost:5002)
         {command_prefix} start sandbox               # Start only the sandbox (localhost:2000)
+        {command_prefix} test                        # Run the test suite ('test --help' for suites)
         {command_prefix} --verbose                   # Verbosity level (e.g., 0=silent, 1=normal, 2=debug)
         {command_prefix} --force-rebuild             # Re-build the frontend (if dev mode)
         {command_prefix} --force-db-init             # Re-initialize the backend database (if dev mode)
@@ -770,12 +1022,13 @@ def main():
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["start", "setup"],
+        choices=["start", "setup", "test"],
         help=(
             "Command to execute "
-            "(start: launch the servers — automatically runs setup first; "
+            "(start: launch the servers, automatically running setup first; "
             "setup: install framework + manifest python deps for this "
-            "interpreter and exit, no servers)"
+            "interpreter and exit, no servers; "
+            "test: run the test suite, see 'test --help')"
         ),
     )
     parser.add_argument(
@@ -839,6 +1092,129 @@ def main():
         ),
     )
     parser.add_argument(
+        "--allow-runtime-install", action=argparse.BooleanOptionalAction, default=None,
+        help=(
+            "Allow the sandbox's POST /install endpoint (sets "
+            "CURIO_ALLOW_RUNTIME_INSTALL=1). Defaults to on for a local "
+            "single-user launch and off once user auth is enabled (--auth / "
+            "--deploy), where it would be a second, unrecorded path to "
+            "'pip install' inside the interpreter that executes node code. "
+            "Pass either form to override the default explicitly."
+        ),
+    )
+    parser.add_argument(
+        "--isolation", choices=["auto", "fork", "off"], default=None,
+        help=(
+            "Run each node's Python in an isolated child process instead of "
+            "in-process (sets CURIO_ISOLATION). 'fork' opts in; 'off' forces "
+            "the in-process path; 'auto' (the default) currently resolves to "
+            "off. Requires Linux. On a hosted instance (--auth / --deploy) "
+            "'fork' is fail-closed: the sandbox refuses to start rather than "
+            "run unisolated."
+        ),
+    )
+    parser.add_argument(
+        "--exec-user", default=None,
+        help=(
+            "Unprivileged OS user to run isolated node code as (sets "
+            "CURIO_EXEC_USER). Only takes effect when the sandbox runs as "
+            "root, i.e. inside the Docker image."
+        ),
+    )
+    parser.add_argument(
+        "--exec-memory-mb", type=int, default=None,
+        help=(
+            "Memory ceiling per isolated node, in MB (sets "
+            "CURIO_EXEC_MEMORY_MB, default 4096). Note the real host ceiling "
+            "is this times --exec-parallelism."
+        ),
+    )
+    parser.add_argument(
+        "--exec-timeout", type=int, default=None,
+        help=(
+            "Wall-clock and CPU allowance per isolated node, in seconds (sets "
+            "CURIO_EXEC_TIMEOUT, default 300). Keep it below the backend's "
+            "600s deadline so a slow node reports a clear message."
+        ),
+    )
+    parser.add_argument(
+        "--exec-parallelism", type=int, default=None,
+        help=(
+            "How many isolated nodes may run at once (sets "
+            "CURIO_EXEC_PARALLELISM, default 2)."
+        ),
+    )
+    parser.add_argument(
+        "--save-node-outputs", action=argparse.BooleanOptionalAction, default=False,
+        help=(
+            "Persist every node run's output as a Computed dataset in the "
+            "account Data Catalog (sets CURIO_DEFAULT_SAVE_NODE_OUTPUT=1). "
+            "Saving is opt-in per node by default (via each node's Save output "
+            "toggle); pass this to turn it on for every node instead."
+        ),
+    )
+    parser.add_argument(
+        "--catalog-root", default=None, metavar="PATH",
+        help=(
+            "Directory for the shared Data Catalog (hub read + publish "
+            "target; sets CURIO_CATALOG_ROOT). Defaults to "
+            "<repo_root>/datasets/. Point it at a writable, persistent path "
+            "for pip/Docker deployments."
+        ),
+    )
+    parser.add_argument(
+        "--llm-provider", default=None, choices=["openai_compatible", "anthropic", "gemini"],
+        help=(
+            "Default AI provider for agents, node authoring and chat when a "
+            "user has not configured their own (sets "
+            "CURIO_DEFAULT_LLM_API_TYPE, default openai_compatible)."
+        ),
+    )
+    parser.add_argument(
+        "--llm-base-url", default=None, metavar="URL",
+        help=(
+            "Base URL of the default OpenAI-compatible endpoint (sets "
+            "CURIO_DEFAULT_LLM_BASE_URL). Curio ships NO default endpoint: "
+            "without this, an unconfigured instance resolves no provider and "
+            "says so, rather than sending prompts somewhere nobody chose."
+        ),
+    )
+    parser.add_argument(
+        "--llm-model", default=None, metavar="NAME",
+        help="Default model name (sets CURIO_DEFAULT_LLM_MODEL). No default.",
+    )
+    # There is deliberately no --llm-api-key. A key passed as an argument is
+    # visible in the process list to every user on the host; set
+    # CURIO_DEFAULT_LLM_API_KEY (or AICONN_API_KEY) in the environment instead.
+    parser.add_argument(
+        "--guest-llm-api-key", default=None, metavar="KEY",
+        help=(
+            "API key that enables AI features for guest users (sets "
+            "GUEST_LLM_API_KEY). Without one, guests are refused. Guests "
+            "otherwise inherit the default provider; GUEST_LLM_API_TYPE / "
+            "_BASE_URL / _MODEL remain env-only overrides for the rare "
+            "deployment that wants guests on a different model."
+        ),
+    )
+    parser.add_argument(
+        "--agent-search-url", default=None, metavar="TEMPLATE",
+        help=(
+            "URL template for the agents' web-search tool, with {q} for the "
+            "query (sets CURIO_SEARCH_URL). Defaults to DuckDuckGo's "
+            "keyless Instant Answer API. Point it at a local SearXNG, "
+            "SerpAPI, or Google Programmable Search for ranked web results."
+        ),
+    )
+    parser.add_argument(
+        "--huggingface-token", default=None, metavar="TOKEN",
+        help=(
+            "Deployment-wide HuggingFace token for the Street Vision node's "
+            "gated models (sets CURIO_DEFAULT_HUGGINGFACE_TOKEN). Each user "
+            "can set their own in AI Settings, which wins over this; gated "
+            "access is a per-account entitlement. Public models need no token."
+        ),
+    )
+    parser.add_argument(
         "--collab", action="store_true", default=False,
         help=(
             "Enable real-time collaborative editing (sets ENABLE_COLLAB=1). "
@@ -877,6 +1253,20 @@ def main():
         reseed=args.reseed,
         allow_publish=args.allow_publish,
         collab=args.collab,
+        save_node_outputs=args.save_node_outputs,
+        catalog_root=args.catalog_root,
+        allow_runtime_install=args.allow_runtime_install,
+        isolation=args.isolation,
+        exec_user=args.exec_user,
+        exec_memory_mb=args.exec_memory_mb,
+        exec_timeout=args.exec_timeout,
+        exec_parallelism=args.exec_parallelism,
+        llm_provider=args.llm_provider,
+        llm_base_url=args.llm_base_url,
+        llm_model=args.llm_model,
+        guest_llm_api_key=args.guest_llm_api_key,
+        agent_search_url=args.agent_search_url,
+        huggingface_token=args.huggingface_token,
     )
 
     # if os.getenv("CURIO_DEV") != "1":
@@ -896,19 +1286,6 @@ def main():
     else:
         args.force_rebuild = False
         args.force_db_init = False
-
-    if args.command == "test":
-        if args.server == "frontend":
-            run_frontend_tests()
-        else:
-            log_error(f"No tests available for '{args.server}'. Available: frontend")
-            sys.exit(1)
-
-    if args.command == "coverage":
-        if args.server not in ("all", "backend"):
-            log_error("coverage only runs backend tests; use: curio coverage  or  curio coverage backend")
-            sys.exit(1)
-        run_backend_coverage()
 
     if args.command == "setup":
         install_framework_requirements()

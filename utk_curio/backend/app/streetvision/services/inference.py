@@ -28,12 +28,19 @@ CITYSCAPES_COLORS = {
 }
 
 
-def run_segmentation(model, processor, image_path: str, classes: List[str], image_id: str) -> dict:
+def run_segmentation(
+    model, processor, image_path: str, classes: List[str], image_id: str, user_key: str,
+) -> dict:
     """Run semantic segmentation on a single image; return per-class pixel ratios.
 
     Supports both SegFormer-style models (direct ``logits`` head) and
     Mask2Former / OneFormer-style models (``post_process_semantic_segmentation``
     is preferred when available).
+
+    ``user_key`` selects the overlay cache directory. It is required rather than
+    defaulted: a wrong-but-plausible "guest" would write one user's overlay into
+    the shared guest folder, which is the cross-user leak the per-user split
+    exists to prevent.
     """
     import numpy as np
     import torch
@@ -61,7 +68,7 @@ def run_segmentation(model, processor, image_path: str, classes: List[str], imag
     else:
         raise ValueError(
             f"Cannot extract semantic segmentation from outputs of type "
-            f"{type(outputs).__name__} — model is not a supported semantic-seg head"
+            f"{type(outputs).__name__} - model is not a supported semantic-seg head"
         )
 
     total_pixels = pred.size
@@ -77,7 +84,7 @@ def run_segmentation(model, processor, image_path: str, classes: List[str], imag
         color = CITYSCAPES_COLORS.get(int(cls_id), (128, 128, 128))
         overlay[pred == cls_id] = color
     stem = os.path.splitext(image_id)[0]
-    overlay_target = os.path.join(cache.overlays_dir(), f"{stem}_overlay.png")
+    overlay_target = os.path.join(cache.overlays_dir(user_key), f"{stem}_overlay.png")
     PILImage.fromarray(overlay).save(overlay_target)
 
     # If the caller asked for a specific class set, filter + renormalize so
@@ -128,6 +135,8 @@ def run_batch(
     model_type: str,
     classes: List[str],
     progress_cb=None,
+    hf_token: Optional[str] = None,
+    user_key: str = "guest",
 ) -> Iterator[dict]:
     """Run inference over a list of images, yielding one result dict per image.
 
@@ -143,10 +152,12 @@ def run_batch(
     """
     from . import huggingface as hf
 
-    cached = hf.get_cached_model(model_id)
+    # The token is captured in the request and passed down: this runs on a
+    # detached worker thread, where the request context is gone.
+    cached = hf.get_cached_model(model_id, hf_token)
     if cached is None:
-        hf.load_model(model_id, model_type)
-        cached = hf.get_cached_model(model_id)
+        hf.load_model(model_id, model_type, hf_token, user_key)
+        cached = hf.get_cached_model(model_id, hf_token)
     model, processor, _ = cached
 
     total = len(images)
@@ -160,7 +171,9 @@ def run_batch(
             continue
         try:
             if model_type == "segmentation":
-                result = run_segmentation(model, processor, local_path, classes, image_id)
+                result = run_segmentation(
+                    model, processor, local_path, classes, image_id, user_key,
+                )
             elif model_type == "detection":
                 result = run_detection(model, local_path, classes, image_id)
             else:

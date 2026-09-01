@@ -1,23 +1,38 @@
+/* Shared modal body: the container, field, footer and button vocabulary every
+ * ModalShell-based dialog uses.
+ *
+ * The class names here are the ones the token-based modals settled on
+ * (.fieldLabel / .footer / .primaryBtn / .ghostBtn), so a modal can be read
+ * without first working out which of three vocabularies it happens to use.
+ * `.label`, `.buttonRow`, `.primaryButton` and `.secondaryButton` are kept as
+ * aliases for existing callers.
+ *
+ * Colours, type and geometry come from ../styles/curioTokens.css.
+ */
+
 .content {
-  padding: 24px 28px;
+  padding: 24px 28px 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   overflow-y: auto;
   flex: 1;
+  font-family: var(--curio-font-family);
+  color: var(--curio-text-primary);
 }
 
 .title {
-  margin: 0;
-  font-size: 18px;
+  margin: 0 32px 0 0;
+  font-size: 1.125rem;
   font-weight: 600;
-  color: #1E1F23;
+  color: var(--curio-text-primary);
 }
 
 .subtitle {
   margin: 0;
-  font-size: 13px;
-  color: #666;
+  font-size: var(--curio-font-size-md);
+  color: var(--curio-text-secondary);
+  line-height: 1.4;
 }
 
 .field {
@@ -26,26 +41,35 @@
   gap: 4px;
 }
 
+.fieldLabel,
 .label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #555;
+  display: block;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: var(--curio-text-muted);
 }
 
 .input,
 .select,
 .textarea {
-  padding: 8px 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 13px;
-  color: #1E1F23;
+  padding: 9px 12px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  font: inherit;
+  font-size: var(--curio-font-size-md);
+  color: var(--curio-text-primary);
   outline: none;
   width: 100%;
   box-sizing: border-box;
-  font-family: inherit;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: var(--curio-top-bar-bg);
 }
 
 .textarea {
@@ -53,6 +77,7 @@
   min-height: 80px;
 }
 
+.footer,
 .buttonRow {
   display: flex;
   justify-content: flex-end;
@@ -60,55 +85,68 @@
   margin-top: 8px;
 }
 
+/* One dark primary across every modal, and one hover for it: a darken, not the
+   orange flip two of these used to do. */
+.primaryBtn,
 .primaryButton {
-  padding: 7px 18px;
+  padding: 0 20px;
+  height: var(--curio-input-height);
   border: none;
-  border-radius: 4px;
-  background: #1E1F23;
-  color: #fff;
-  font-size: 13px;
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  font: inherit;
+  font-size: var(--curio-font-size-lg);
   font-weight: 600;
   cursor: pointer;
-  font-family: inherit;
 }
 
+.primaryBtn:hover:not(:disabled),
 .primaryButton:hover:not(:disabled) {
-  background: rgb(251, 170, 105);
+  background: var(--curio-top-bar-bg-hover);
 }
 
-.primaryButton:disabled {
-  opacity: 0.5;
+.ghostBtn,
+.secondaryButton {
+  padding: 0 16px;
+  height: var(--curio-input-height);
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font: inherit;
+  font-size: var(--curio-font-size-lg);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ghostBtn:hover:not(:disabled),
+.secondaryButton:hover:not(:disabled) {
+  background: var(--curio-page-bg);
+}
+
+.primaryBtn:disabled,
+.primaryButton:disabled,
+.ghostBtn:disabled,
+.secondaryButton:disabled {
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
-.secondaryButton {
-  padding: 7px 18px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background: #fff;
-  color: #555;
-  font-size: 13px;
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.secondaryButton:hover:not(:disabled) {
-  background: #f5f5f5;
-}
-
 .hint {
-  font-size: 11px;
-  color: #999;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-muted);
+  line-height: 1.45;
 }
 
 .error {
-  color: #c0392b;
-  font-size: 13px;
+  color: var(--curio-danger-text);
+  font-size: var(--curio-font-size-md);
   margin: 4px 0 0;
 }
 
 .success {
-  color: #2F8F4A;
-  font-size: 13px;
+  color: var(--curio-success-text);
+  font-size: var(--curio-font-size-md);
   margin: 4px 0 0;
 }

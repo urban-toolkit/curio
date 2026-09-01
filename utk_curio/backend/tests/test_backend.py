@@ -1,6 +1,5 @@
 import shutil
 import unittest
-import tempfile
 import os
 import sys
 import json
@@ -50,31 +49,6 @@ class TestRoutes(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
     @_SKIP_AUTH
-    def test_upload_file(self):
-        # Create a temporary file for the test
-        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-            tmp_file.write(b"Test content")  # Write some test data to the file
-            tmp_file.seek(0)  # Move the file pointer back to the beginning for reading
-            temp_file_path = tmp_file.name  # Save the file path to use in the test
-
-        try:
-            # Simulate a file upload using the temporary file
-            with open(temp_file_path, 'rb') as file:
-                data = {
-                    'file': (file, 'test_file.txt')  # Simulate the file upload
-                }
-                response = self.client.post('/upload', data=data)
-
-                # Test if the file upload was successful
-                self.assertIn('File uploaded successfully', response.data.decode('utf-8'))
-                self.assertEqual(response.status_code, 200)
-
-        finally:
-            # Clean up: Delete the temporary file after the test
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-
-    @_SKIP_AUTH
     def test_process_python_code(self):
         test_code = {
             "code": test_data["data"]["activity_source_code"],
@@ -103,12 +77,6 @@ class TestRoutes(unittest.TestCase):
         self.assertIn('output', data)
         self.assertIn('stdout', data)
         self.assertIn('stderr', data)
-
-    @_SKIP_AUTH
-    def test_db(self):
-        # checkDB now requires SQLAlchemy (full app) — covered by integration tests
-        response = self.client.get('/checkDB')
-        self.assertEqual(response.status_code, 200)
 
 
 class TestSandboxTransportErrors(unittest.TestCase):
@@ -225,20 +193,6 @@ class TestSandboxTransportErrors(unittest.TestCase):
         # to maxRows by design.
         self.assertEqual(body['timeout_seconds'], 60)
 
-    # ---- /installPackages --------------------------------------------------
-
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
-    def test_installPackages_502_on_sandbox_unreachable(self, mock_session):
-        mock_session.post.side_effect = requests.ConnectionError("refused")
-        resp = self.client.post(
-            '/installPackages',
-            json={"packages": ["xarray"]},
-            headers=self._auth_headers(),
-        )
-        self.assertEqual(resp.status_code, 502, resp.data)
-        body = resp.get_json()
-        self.assertEqual(body['error'], 'sandbox_unreachable')
-
     # ---- Smoke test: timeout knobs are wired through to requests.post -----
 
     @patch("utk_curio.backend.app.api.routes._sandbox_session")
@@ -278,6 +232,111 @@ class TestSandboxTransportErrors(unittest.TestCase):
         _, kwargs = mock_session.get.call_args
         self.assertEqual(kwargs['timeout'], SANDBOX_GET_TIMEOUT)
         self.assertEqual(SANDBOX_GET_TIMEOUT, 300)
+
+    # ---- Sandbox shared secret ---------------------------------------------
+
+    @patch.dict(os.environ, {"CURIO_SANDBOX_TOKEN": "backend-side-token"})
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_exec_attaches_the_sandbox_token(self, mock_session):
+        """The sandbox rejects /exec without it (sandbox/app/auth.py)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'stdout': [], 'stderr': '',
+            'output': {'path': 'art_x', 'dataType': 'dataframe'},
+        }
+        mock_session.post.return_value = mock_response
+
+        self.client.post(
+            '/processPythonCode',
+            json={"code": "    return 1", "nodeType": "DATA_LOADING", "input": {}},
+            headers=self._auth_headers(),
+        )
+
+        _, kwargs = mock_session.post.call_args
+        self.assertEqual(
+            kwargs['headers']['X-Curio-Sandbox-Token'], "backend-side-token"
+        )
+
+    @patch.dict(os.environ, {"CURIO_SANDBOX_TOKEN": "backend-side-token"})
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_token_does_not_clobber_a_callers_own_headers(self, mock_session):
+        """/exec sets Content-Type; the arrow path sets Accept."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'stdout': [], 'stderr': '',
+            'output': {'path': 'art_x', 'dataType': 'dataframe'},
+        }
+        mock_session.post.return_value = mock_response
+
+        self.client.post(
+            '/processPythonCode',
+            json={"code": "    return 1", "nodeType": "DATA_LOADING", "input": {}},
+            headers=self._auth_headers(),
+        )
+
+        _, kwargs = mock_session.post.call_args
+        self.assertEqual(kwargs['headers']['Content-Type'], 'application/json')
+        self.assertIn('X-Curio-Sandbox-Token', kwargs['headers'])
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_no_token_configured_sends_no_header(self, mock_session):
+        """A bare `python -m backend.server` pairs with an unguarded sandbox."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'stdout': [], 'stderr': '',
+            'output': {'path': 'art_x', 'dataType': 'dataframe'},
+        }
+        mock_session.post.return_value = mock_response
+
+        env = dict(os.environ)
+        env.pop("CURIO_SANDBOX_TOKEN", None)
+        with patch.dict(os.environ, env, clear=True):
+            self.client.post(
+                '/processPythonCode',
+                json={"code": "    return 1", "nodeType": "DATA_LOADING", "input": {}},
+                headers=self._auth_headers(),
+            )
+
+        _, kwargs = mock_session.post.call_args
+        self.assertNotIn('X-Curio-Sandbox-Token', kwargs['headers'] or {})
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_sandbox_401_becomes_a_clear_error_not_a_500(self, mock_session):
+        """A token mismatch must name its cause.
+
+        Without this the /exec caller would hit `response.json()` on an error
+        body and report 'sandbox returned non-JSON' plus a 500, which says
+        nothing about the two processes disagreeing on the secret.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_session.post.return_value = mock_response
+
+        resp = self.client.post(
+            '/processPythonCode',
+            json={"code": "    return 1", "nodeType": "DATA_LOADING", "input": {}},
+            headers=self._auth_headers(),
+        )
+
+        self.assertEqual(resp.status_code, 502, resp.data)
+        body = resp.get_json()
+        self.assertEqual(body['error'], 'sandbox_unauthorized')
+        self.assertEqual(body['path'], '/exec')
+        self.assertIn('CURIO_SANDBOX_TOKEN', body['message'])
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_get_401_becomes_a_clear_error(self, mock_session):
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_session.get.return_value = mock_response
+
+        resp = self.client.get('/get?fileName=x', headers=self._auth_headers())
+
+        self.assertEqual(resp.status_code, 502, resp.data)
+        self.assertEqual(resp.get_json()['error'], 'sandbox_unauthorized')
 
 
 if __name__ == "__main__":

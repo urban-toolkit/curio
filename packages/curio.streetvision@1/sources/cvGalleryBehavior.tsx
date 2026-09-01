@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
+import { authHeaders } from './apiAuth';
 
 /**
  * CV Gallery behavior.
@@ -191,6 +192,13 @@ export const useCvGalleryBehavior: NodeBehaviorHook = (data, nodeState) => {
       ? `${API_BASE}/inference/overlay/${encodeURIComponent(item.image_id)}`
       : null;
 
+  // Overlays are cached per user, and the route resolves *which* user from the
+  // Authorization header. A bare `<img src>` cannot send one, so a signed-in
+  // user's request resolved to the shared guest key and 404'd on every tile.
+  // Fetch with the header instead and render the bytes through an object URL.
+  const [overlayObjectUrl, setOverlayObjectUrl] = useState<string | null>(null);
+  const [overlayFailed, setOverlayFailed] = useState(false);
+
   const aggStats = results.length > 0 ? (() => {
     const allClasses = new Map<string, number[]>();
     results.forEach(r => {
@@ -228,6 +236,35 @@ export const useCvGalleryBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   const inspectedItem = inspectIdx !== null ? results[inspectIdx] : null;
   const isSegmentation = payload?.model_type === 'segmentation';
+  const inspectedOverlayUrl = inspectedItem ? overlayUrl(inspectedItem) : null;
+
+  useEffect(() => {
+    if (!inspectedOverlayUrl) {
+      setOverlayObjectUrl(null);
+      setOverlayFailed(false);
+      return;
+    }
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    setOverlayObjectUrl(null);
+    setOverlayFailed(false);
+    fetch(inspectedOverlayUrl, { headers: authHeaders() })
+      .then(r => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(blob => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setOverlayObjectUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setOverlayFailed(true);
+      });
+    // Revoke on unmount and whenever the inspected image changes, or each
+    // visit to the inspector leaks a blob for the lifetime of the document.
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [inspectedOverlayUrl]);
 
   const contentComponent = (
     <div style={S.root}>
@@ -383,13 +420,17 @@ export const useCvGalleryBehavior: NodeBehaviorHook = (data, nodeState) => {
             {(inspectTab === 'overlay' || inspectTab === 'side') && (
               <div style={{ position: 'relative' }}>
                 <img src={imgSrc(inspectedItem)} alt="base" style={{ width: '100%', borderRadius: 6, background: '#f1f5f9' }} onError={e => { (e.target as HTMLImageElement).style.background = '#e2e8f0'; }} />
-                {overlayUrl(inspectedItem) && (
-                  <img src={overlayUrl(inspectedItem)!} alt="overlay" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: 'multiply', opacity: 0.6 }} />
+                {overlayObjectUrl && (
+                  <img src={overlayObjectUrl} alt="overlay" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: 'multiply', opacity: 0.6 }} />
                 )}
-                {!overlayUrl(inspectedItem) && (
+                {!overlayObjectUrl && (
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.25)', borderRadius: 6 }}>
                     <span style={{ color: '#fff', fontSize: 11, background: 'rgba(0,0,0,0.5)', padding: '4px 10px', borderRadius: 6 }}>
-                      {inspectedItem.demo_mode ? 'Demo — no real overlay' : 'Overlay unavailable'}
+                      {inspectedItem.demo_mode
+                        ? 'Demo, no real overlay'
+                        : !inspectedOverlayUrl || overlayFailed
+                          ? 'Overlay unavailable'
+                          : 'Loading overlay...'}
                     </span>
                   </div>
                 )}

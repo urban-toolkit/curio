@@ -1,4 +1,5 @@
 from flask import request, abort, jsonify, g, Response, current_app
+import re
 import requests
 import json
 
@@ -14,8 +15,29 @@ _sandbox_session = requests.Session()
 SANDBOX_EXEC_TIMEOUT     = 600  # /processPythonCode and /processJavaScriptCode
 SANDBOX_GET_TIMEOUT      = 300  # /get (full artifact JSON)
 SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
-SANDBOX_UPLOAD_TIMEOUT   = 60
-SANDBOX_INSTALL_TIMEOUT  = 600  # `pip install` of optional libraries can be slow
+# /version is a cached constant on the sandbox side, and the version badge is
+# waiting on it, so it gets a short deadline rather than a generous one.
+SANDBOX_VERSION_TIMEOUT  = 5
+
+
+SANDBOX_TOKEN_HEADER = "X-Curio-Sandbox-Token"
+
+
+def _sandbox_headers(existing):
+    """Merge the shared secret into a caller's headers without clobbering them.
+
+    The sandbox executes arbitrary code, so every guarded route requires this
+    header (see utk_curio/sandbox/app/auth.py). The token is minted per launch
+    by main.py::set_environment_variables and inherited by both processes.
+    Absent (a bare `python -m backend.server`), we send nothing and the sandbox
+    runs in its unauthenticated local-dev mode.
+    """
+    token = os.getenv("CURIO_SANDBOX_TOKEN", "").strip()
+    if not token:
+        return existing
+    headers = dict(existing or {})
+    headers[SANDBOX_TOKEN_HEADER] = token
+    return headers
 
 
 def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs):
@@ -26,6 +48,11 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
     of letting the exception escape (which would otherwise surface to the
     browser as an opaque 'NetworkError when attempting to fetch resource').
 
+    Also attaches the sandbox shared secret, and translates the sandbox's 401
+    into a clear error rather than letting callers hit it as an unparseable
+    body (`/get` would report it as 'Error loading artifact', `/exec` as
+    'sandbox returned non-JSON' plus a 500).
+
     On success returns the `requests.Response` object directly so callers can
     parse the JSON / forward it as before.
 
@@ -35,14 +62,15 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
     """
     url = api_address + ":" + str(api_port) + path
     fn = getattr(_sandbox_session, method)
+    kwargs['headers'] = _sandbox_headers(kwargs.get('headers'))
     try:
-        return fn(url, timeout=timeout, **kwargs)
+        response = fn(url, timeout=timeout, **kwargs)
     except requests.Timeout as e:
         print(f"[backend {label}] sandbox call timed out after {timeout}s: {e}", flush=True)
         return jsonify({
             'error': 'sandbox_timeout',
             'message': (f'The sandbox did not respond within {timeout}s on {path}. '
-                        'The node is likely still running — check the sandbox log. '
+                        'The node is likely still running - check the sandbox log. '
                         'For large data loads, consider trimming columns or rows '
                         'before returning from the node.'),
             'path': path,
@@ -57,73 +85,27 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
                         f'({api_address}:{api_port}).'),
             'path': path,
         }), 502
-from utk_curio.backend.extensions import db
+
+    if response.status_code == 401:
+        print(f"[backend {label}] sandbox rejected the shared secret on {path}", flush=True)
+        return jsonify({
+            'error': 'sandbox_unauthorized',
+            'message': (f'The sandbox rejected the backend on {path}. The two '
+                        'processes disagree about CURIO_SANDBOX_TOKEN - this '
+                        'usually means one of them was started outside '
+                        "'curio start' or was restarted without the other."),
+            'path': path,
+        }), 502
+
+    return response
+
+
 from utk_curio.backend.app.users.dependencies import require_auth, get_current_token
-import uuid
 import os
 import time
 from utk_curio.backend.config import (
-    GUEST_LLM_API_TYPE,
-    GUEST_LLM_BASE_URL,
-    GUEST_LLM_API_KEY,
-    GUEST_LLM_MODEL,
+    CURIO_DEFAULT_SAVE_NODE_OUTPUT,
 )
-
-
-def _resolve_llm_config():
-    """Return (api_key, api_type, base_url, model) for the current authenticated user."""
-    user = g.user
-    if user.is_guest:
-        if not GUEST_LLM_API_KEY:
-            abort(400, description="LLM is not available for guest users at this time.")
-        return GUEST_LLM_API_KEY, GUEST_LLM_API_TYPE, GUEST_LLM_BASE_URL, GUEST_LLM_MODEL
-    if not user.llm_model:
-        abort(400, description="No LLM configured. Set your provider and model in the Projects page.")
-    return (
-        user.llm_api_key or "",
-        user.llm_api_type or "openai_compatible",
-        user.llm_base_url or "",
-        user.llm_model,
-    )
-
-
-def _call_llm(api_key: str, api_type: str, base_url: str, model: str, messages: list) -> str:
-    """Dispatch an LLM chat completion to the configured provider."""
-    if api_type == "anthropic":
-        import anthropic
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model=model,
-            system="\n".join(system_parts) if system_parts else anthropic.NOT_GIVEN,
-            messages=chat_messages,
-            max_tokens=4096,
-        )
-        return resp.content[0].text
-    elif api_type == "gemini":
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
-        history = []
-        for m in chat_messages[:-1]:
-            role = "user" if m["role"] == "user" else "model"
-            history.append({"role": role, "parts": [m["content"]]})
-        last_user_msg = chat_messages[-1]["content"] if chat_messages else ""
-        system_instruction = "\n".join(system_parts) if system_parts else None
-        gen_model = genai.GenerativeModel(model, system_instruction=system_instruction)
-        chat = gen_model.start_chat(history=history)
-        response = chat.send_message(last_user_msg)
-        return response.text
-    else:  # openai_compatible (default)
-        from openai import OpenAI
-        kwargs = {"api_key": api_key or "no-key"}
-        if base_url:
-            kwargs["base_url"] = base_url
-        client = OpenAI(**kwargs)
-        completion = client.chat.completions.create(model=model, messages=messages)
-        return completion.choices[0].message.content
 
 # The Flask app
 from utk_curio.backend.app.api import bp
@@ -132,37 +114,6 @@ from utk_curio.backend.app.api import bp
 # Sandbox address
 api_address='http://'+os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1')
 api_port=int(os.getenv('FLASK_SANDBOX_PORT', 2000))
-
-conversation = {}
-
-tokens_left = 200000 # Tokens allowed per minute
-last_refresh = time.time() # Last time that 60 minutes elapsed
-
-# In-memory node-type registry populated by the frontend via POST /node-types.
-# Initialised with hardcoded defaults so templates work even if the frontend
-# hasn't registered yet (e.g. backend starts before frontend).
-_node_type_registry: dict = {
-    "DATA_LOADING":          {"inputTypes": [],                                                             "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
-    "DATA_EXPORT":           {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": []},
-    "DATA_TRANSFORMATION":   {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
-    "COMPUTATION_ANALYSIS":  {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
-    "FLOW_SWITCH":           {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
-    "VIS_VEGA":              {"inputTypes": ["DATAFRAME"],                                                 "outputTypes": ["DATAFRAME"]},
-    "VIS_SIMPLE":            {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE"],                        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE"]},
-    "CONSTANTS":             {"inputTypes": [],                                                             "outputTypes": ["VALUE"]},
-    "DATA_POOL":             {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
-    "MERGE_FLOW":            {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
-    "DATA_SUMMARY":          {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["JSON"]},
-    "AUTK_GRAMMAR":          {"inputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"],                 "outputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"]},
-}
-
-def get_output_types(node_type: str) -> list:
-    entry = _node_type_registry.get(node_type)
-    return entry["outputTypes"] if entry else []
-
-def get_input_types(node_type: str) -> list:
-    entry = _node_type_registry.get(node_type)
-    return entry["inputTypes"] if entry else []
 
 
 def _parse_input_ref(req_input: dict | None) -> dict:
@@ -181,15 +132,6 @@ def _parse_input_ref(req_input: dict | None) -> dict:
         result['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
     return result
 
-def transform_to_vega(data):
-    """Transform a pandas-style column-based JSON to Vega-Lite row-based JSON."""
-    if "data" in data and isinstance(data["data"], dict):
-        columns = list(data["data"].keys())
-        num_rows = len(data["data"][columns[0]])
-        return [{col: data["data"][col][i] for col in columns} for i in range(num_rows)]
-    return data
-
-
 @bp.route('/')
 def root():
     abort(403)
@@ -200,44 +142,44 @@ def live():
 
 @bp.route('/version')
 def version():
+    """Version, plus how node code is actually being executed.
+
+    The isolation mode comes from the sandbox rather than from this process's
+    own environment: the sandbox is where the requested mode is resolved
+    against what the platform can actually do, so `CURIO_ISOLATION` here would
+    report an intention, not a fact. Degrades to 'unknown' rather than failing
+    -- the version badge must still render when the sandbox is slow or down.
+    """
     from utk_curio import __version__
-    return jsonify({'version': __version__})
 
-@bp.route('/node-types', methods=['POST'])
-def register_node_types():
-    payload = request.get_json(silent=True) or {}
-    node_types = payload.get('nodeTypes', {})
-    if not isinstance(node_types, dict) or len(node_types) == 0:
-        return jsonify({'error': 'Expected { nodeTypes: { NODE_TYPE: { inputTypes, outputTypes } } }'}), 400
+    isolation = 'unknown'
+    try:
+        response = _sandbox_session.get(
+            api_address + ":" + str(api_port) + '/version',
+            timeout=SANDBOX_VERSION_TIMEOUT,
+        )
+        if response.status_code == 200:
+            isolation = response.json().get('isolation', 'unknown')
+    except (requests.RequestException, ValueError):
+        pass
 
-    _node_type_registry.clear()
-    _node_type_registry.update(node_types)
-    return jsonify({'registered': len(_node_type_registry)}), 200
-
-@bp.route('/node-types', methods=['GET'])
-def get_node_types():
-    return jsonify(_node_type_registry), 200
-
-@bp.route('/cwd')
-def cwd():
-    return os.getcwd()
-
-@bp.route('/launchCwd')
-def launchCwd():
-    return os.environ["CURIO_LAUNCH_CWD"]
-
-@bp.route('/sharedDataPath')
-def sharedDataPath():
-    return os.environ["CURIO_SHARED_DATA"]
+    return jsonify({'version': __version__, 'isolation': isolation})
 
 @bp.route('/file/<path:filename>', methods=['GET'])
 def serve_launch_cwd_file(filename: str):
     """Serve a file by its path *relative to CURIO_LAUNCH_CWD* so browser-side
     nodes (e.g. autk-grammar) can fetch binary assets (PBF, GeoTIFF, …) the
-    same way Python sandbox nodes read them from disk — one shared root, one
+    same way Python sandbox nodes read them from disk - one shared root, one
     relative-path convention:
-      Python node:   rasterio.open('docs/examples/data/file.tif')
+      Python node:   rasterio.open('my-data/file.tif')
       Grammar spec:  pbfFileUrl: 'docs/examples/data/file.pbf'
+
+    The grammar example is the live one: the Autark examples (06/07/08/11) fetch
+    their committed ``.osm.pbf`` extracts this way, because ``.pbf`` is not a
+    Data Catalog format and every ``/api/datasets/*`` route requires auth while
+    this one does not. Shipped *Python* nodes no longer read relative paths at
+    all - they resolve ``curio_dataset_path("<id>")`` against the catalog - but
+    a user's own node still can, which is why the root convention stands.
 
     The frontend prepends ``BACKEND_URL`` + ``/file/`` to the relative path at
     run time (see resolveDataSourceUrls in autkGrammarBehavior.tsx).
@@ -259,47 +201,15 @@ def serve_launch_cwd_file(filename: str):
         abort(403)
     return send_from_directory(launch_cwd, filename)
 
-@bp.route('/upload', methods=['POST'])
-@require_auth
-def upload_file():
-
-    if 'file' not in request.files:
-        return 'No file part'
-
-    file = request.files['file']
-
-    if file.filename == '':
-        return 'No selected file'
-
-    response = _sandbox_call(
-        'post', '/upload',
-        label='/upload', timeout=SANDBOX_UPLOAD_TIMEOUT,
-        files={'file': file}, data={'fileName': file.filename},
-    )
-    if isinstance(response, tuple):  # transport-level failure
-        return response
-
-    if response.status_code == 200:
-        return 'File uploaded successfully'
-    else:
-        return 'Error uploading file'
-
-
 @bp.route('/get', methods=['GET'])
 @require_auth
 def get_file():
     file_name = request.args.get('fileName')
-    vega = request.args.get('vega', 'false').lower() == 'true'
 
     if not file_name:
         return 'No artifact id specified', 400
 
     wants_arrow = request.accept_mimetypes.best == ARROW_IPC_MIME
-    if wants_arrow and vega:
-        return jsonify({
-            'error': 'bad_request',
-            'message': "Arrow IPC and vega=true are mutually exclusive.",
-        }), 400
 
     session_id = get_current_token()
     t0 = time.perf_counter()
@@ -333,8 +243,6 @@ def get_file():
     try:
         resp.raise_for_status()
         data = resp.json()
-        if vega:
-            data = transform_to_vega(data)
         print(f"[/get] id={file_name} took={time.perf_counter()-t0:.4f}s", flush=True)
         return jsonify(data), 200
     except Exception as e:
@@ -373,6 +281,65 @@ def get_file_preview():
         return f'Error loading preview: {str(e)}', 500
 
 
+# Literal ``curio_dataset_path("<id>")`` calls in node code. The id charset must
+# stay in sync with _SAFE_DATASET_ID_RE in datasets/domain/catalog_item.py (the
+# backend snippet generator) and the frontend datasetLoaderSnippets.ts - the
+# generators only ever emit ids this scan can find. Single or double quotes are
+# accepted because users edit the generated code.
+_DATASET_PATH_CALL_RE = re.compile(
+    r"""curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+)
+# Bound the per-execution resolution work against pathological/generated code.
+MAX_EXEC_DATASET_IDS = 32
+
+
+def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
+    """Resolve the dataset ids referenced by *code* to absolute file paths.
+
+    Best-effort and fail-open: an empty mapping never blocks execution - the
+    sandbox's injected ``curio_dataset_path`` raises a clear per-id error for
+    anything missing. Only ids appearing as literal calls are found; a
+    dynamically built id simply won't be in the mapping.
+    """
+    if "curio_dataset_path" not in code:
+        return {}
+    ids: list[str] = []
+    for match in _DATASET_PATH_CALL_RE.finditer(code):
+        dataset_id = match.group(2)
+        if dataset_id not in ids:
+            ids.append(dataset_id)
+        if len(ids) >= MAX_EXEC_DATASET_IDS:
+            break
+    if not ids:
+        return {}
+    try:
+        from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+        service = DatasetCatalogService(getattr(g, "user", None))
+        return service.resolve_execution_paths(ids, dataflow_id=dataflow_id)
+    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
+        print(f"[processPythonCode] dataset path resolution failed: {e}", flush=True)
+        return {}
+
+
+def _exec_user_key():
+    """The current user's on-disk storage key, or None when there is no user.
+
+    Matches the key ``auto_install_node_output`` files a node's output under,
+    so a user's work directory and their computed datasets agree about who they
+    belong to. Returns None rather than raising: an unauthenticated launch
+    (``CURIO_NO_AUTH=1``) has no user, and the sandbox then falls back to the
+    launch directory exactly as it did before.
+    """
+    try:
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user = getattr(g, "user", None)
+        return _user_dir_key(user) if user is not None else None
+    except Exception:  # noqa: BLE001 - a work directory is a convenience
+        return None
+
+
 @bp.route('/processPythonCode', methods=['POST'])
 @require_auth
 def process_python_code():
@@ -381,9 +348,25 @@ def process_python_code():
 
     code = request.json['code']
     nodeType = request.json['nodeType']
+    node_id = request.json.get('nodeId') or None
     input = _parse_input_ref(request.json.get('input'))
 
+    save_output_dataset = request.json.get(
+        'saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT,
+    )
+    if isinstance(save_output_dataset, str):
+        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
+
     session_id = get_current_token()
+    dataset_paths = _resolve_exec_dataset_paths(
+        code, request.json.get("dataflowId") or None,
+    )
+    # Under isolation the sandbox gives each user a persistent work directory,
+    # so a node's relative reads and writes land somewhere that belongs to
+    # them instead of the launch tree. The storage key, not a name, and only
+    # this route knows it: the sandbox has no notion of who is logged in, and
+    # the in-process path ignores it entirely.
+    exec_user_key = _exec_user_key()
     t1 = _time.perf_counter()
     response = _sandbox_call(
         'post', '/exec',
@@ -394,6 +377,9 @@ def process_python_code():
             "nodeType": nodeType,
             "dataType": input['dataType'],
             "session_id": session_id,
+            "save_dataset": bool(save_output_dataset),
+            "dataset_paths": dataset_paths,
+            "user_key": exec_user_key,
         }),
         headers={"Content-Type": "application/json"},
     )
@@ -428,7 +414,74 @@ def process_python_code():
         flush=True,
     )
 
-    return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
+    # Auto-install into the user store (not the public Data Catalog).
+    from utk_curio.backend.app.datasets.application.auto_install import auto_install_node_output
+
+    installed_dataset = None
+    dataset_diagnostic = None
+    if save_output_dataset and isinstance(output, dict) and node_id:
+        dataset_diagnostic = auto_install_node_output(
+            user=getattr(g, "user", None),
+            node_id=node_id,
+            sandbox_output=output,
+            dataflow_id=request.json.get("dataflowId") or None,
+            node_name=request.json.get("nodeName") or None,
+            node_type=nodeType,
+        )
+        if dataset_diagnostic.get("status") == "installed":
+            installed_dataset = dataset_diagnostic.get("dataset")
+            print(
+                f"[processPythonCode] auto-installed dataset "
+                f"{installed_dataset.get('id')} for node {node_id}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[processPythonCode] node {node_id} produced no computed dataset: "
+                f"{dataset_diagnostic.get('status')} - {dataset_diagnostic.get('reason')}",
+                flush=True,
+            )
+
+    _record_runtime_outcome(
+        node_id=node_id,
+        dataflow_id=request.json.get("dataflowId") or None,
+        code=code, stdout=stdout, stderr=stderr, output=output,
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
+
+    return {
+        'stdout': stdout,
+        'stderr': stderr,
+        'input': input,
+        'output': output,
+        'installedDataset': installed_dataset,
+        'datasetDiagnostic': dataset_diagnostic,
+    }
+
+
+def _record_runtime_outcome(*, node_id, dataflow_id, code, stdout, stderr, output, duration_ms):
+    """Per-node runtime journal write (memo dev/67-2, DEC-052).
+
+    Best-effort and observational: agents read this to answer "what ran, what
+    failed, and why" — an execution response is never delayed or failed over
+    it. Skipped when the run has no node/project identity (unsaved canvas)."""
+    import time as _time
+
+    from utk_curio.backend.app.execution import runtime_journal
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user = getattr(g, "user", None)
+    if not node_id or not dataflow_id or user is None:
+        return
+    try:
+        runtime_journal.record_execution(
+            _user_dir_key(user), dataflow_id, node_id,
+            code=code, stdout=stdout, stderr=stderr, output=output,
+            started_at=_time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+            duration_ms=duration_ms,
+        )
+    except Exception:
+        pass
 
 
 @bp.route('/processJavaScriptCode', methods=['POST'])
@@ -439,7 +492,14 @@ def process_javascript_code():
 
     code = request.json['code']
     nodeType = request.json['nodeType']
+    node_id = request.json.get('nodeId') or None
     input = _parse_input_ref(request.json.get('input'))
+
+    save_output_dataset = request.json.get(
+        'saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT,
+    )
+    if isinstance(save_output_dataset, str):
+        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
 
     session_id = get_current_token()
     t1 = _time.perf_counter()
@@ -452,6 +512,7 @@ def process_javascript_code():
             "nodeType": nodeType,
             "dataType": input['dataType'],
             "session_id": session_id,
+            "save_dataset": bool(save_output_dataset),
         }),
         headers={"Content-Type": "application/json"},
     )
@@ -486,46 +547,48 @@ def process_javascript_code():
         flush=True,
     )
 
-    return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
+    from utk_curio.backend.app.datasets.application.auto_install import auto_install_node_output
 
+    installed_dataset = None
+    dataset_diagnostic = None
+    if save_output_dataset and isinstance(output, dict) and node_id:
+        dataset_diagnostic = auto_install_node_output(
+            user=getattr(g, "user", None),
+            node_id=node_id,
+            sandbox_output=output,
+            dataflow_id=request.json.get("dataflowId") or None,
+            node_name=request.json.get("nodeName") or None,
+            node_type=nodeType,
+        )
+        if dataset_diagnostic.get("status") == "installed":
+            installed_dataset = dataset_diagnostic.get("dataset")
+            print(
+                f"[processJavaScriptCode] auto-installed dataset "
+                f"{installed_dataset.get('id')} for node {node_id}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[processJavaScriptCode] node {node_id} produced no computed dataset: "
+                f"{dataset_diagnostic.get('status')} - {dataset_diagnostic.get('reason')}",
+                flush=True,
+            )
 
-@bp.route('/installPackages', methods=['POST'])
-@require_auth
-def install_packages():
-    packages = request.json.get('packages', [])
-    response = _sandbox_call(
-        'post', '/install',
-        label='/installPackages', timeout=SANDBOX_INSTALL_TIMEOUT,
-        data=json.dumps({"packages": packages}),
-        headers={"Content-Type": "application/json"},
+    _record_runtime_outcome(
+        node_id=node_id,
+        dataflow_id=request.json.get("dataflowId") or None,
+        code=code, stdout=stdout, stderr=stderr, output=output,
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
     )
-    if isinstance(response, tuple):
-        return response
-    return response.json()
 
-@bp.route('/getUser', methods=['GET'])
-def get_user_legacy():
-    """Deprecated shim — redirects to /api/auth/me."""
-    from flask import redirect
-    return redirect('/api/auth/me', code=308)
-
-@bp.route('/saveUserType', methods=['POST'])
-def save_user_type_legacy():
-    """Deprecated shim — redirects to /api/auth/me (PATCH)."""
-    from flask import redirect
-    return redirect('/api/auth/me', code=308)
-
-@bp.route('/checkDB', methods=['GET'])
-def check_db():
-    db.session.execute(db.text('SELECT 1'))
-    return "OK", 200
-
-@bp.route('/datasets', methods=['GET'])
-def list_datasets():
-    response = requests.get(api_address+":"+str(api_port)+"/datasets", timeout=30)
-    response.raise_for_status()
-    files = response.json()
-    return jsonify(files)
+    return {
+        'stdout': stdout,
+        'stderr': stderr,
+        'input': input,
+        'output': output,
+        'installedDataset': installed_dataset,
+        'datasetDiagnostic': dataset_diagnostic,
+    }
 
 
 @bp.route("/starters", methods=["GET"])
@@ -547,7 +610,7 @@ def get_starters():
     if user is not None:
         try:
             starters = generate_packageage_starters(_user_dir_key(user))
-        except Exception:  # noqa: BLE001 — never fail /starters over a bad package
+        except Exception:  # noqa: BLE001 - never fail /starters over a bad package
             current_app.logger.exception("Package-starter loader failed; returning empty list")
     return jsonify(starters)
 
@@ -591,97 +654,6 @@ def get_loaded_files_metadata(folder_path):
         metadata += f"File name: {file}\nColumns: {', '.join(columns)}\nGeometry type: {geometry_type}\n\n"
 
     return metadata
-
-@bp.route('/llm/chat', methods=['POST'])
-@require_auth
-def llm_chat():
-    global conversation
-
-    data = request.get_json()
-
-    preamble_file = data.get("preamble", None)
-    prompt_file = data.get("prompt", None)
-    text = data.get("text", None)
-    chatId = data.get("chatId", None)
-
-    past_conversation = []
-
-    if chatId is not None and chatId in conversation:
-        past_conversation = conversation[chatId]
-
-    prompt_preamble_file = open("./llm-prompts/"+preamble_file+".txt")
-    prompt_preamble = prompt_preamble_file.read()
-
-    prompt_preamble += "In case you need. This is the list of files and metadata currently loaded into the system"
-
-    metadata = get_loaded_files_metadata("./")
-
-    prompt_preamble += "\n" + metadata
-
-    prompt_file_obj = open("./llm-prompts/"+prompt_file+".txt")
-    prompt_text = prompt_file_obj.read()
-
-    if len(past_conversation) == 0:
-        past_conversation.append({"role": "system", "content": prompt_preamble + "\n" + prompt_text})
-
-    past_conversation.append({"role": "user", "content": text})
-
-    api_key, api_type, base_url, model = _resolve_llm_config()
-    assistant_reply = _call_llm(api_key, api_type, base_url, model, past_conversation)
-
-    past_conversation.append({"role": "assistant", "content": assistant_reply})
-
-    if chatId is not None:
-        conversation[chatId] = past_conversation
-
-    return jsonify({"result": assistant_reply})
-
-@bp.route('/llm/check', methods=['POST'])
-@require_auth
-def llm_check():
-    global tokens_left
-    global last_refresh
-
-    # Non-openai_compatible providers don't have a per-minute token budget.
-    user = g.user
-    api_type = (user.llm_api_type if not user.is_guest else GUEST_LLM_API_TYPE) or "openai_compatible"
-    if api_type != "openai_compatible":
-        return jsonify({"result": "yes"})
-
-    data = request.get_json()
-    chatId = data.get("chatId", None)
-    text = data.get("text", None)
-
-    past_conversation = list(conversation.get(chatId, []))
-    past_conversation.append({"role": "user", "content": text or ""})
-
-    total_tokens = sum(len(m["content"].split()) * 1.5 for m in past_conversation)
-
-    now_time = time.time()
-
-    if (now_time - last_refresh) >= 60:
-        tokens_left = 200000
-
-    if tokens_left > total_tokens:
-        tokens_left -= total_tokens
-        return jsonify({"result": "yes"})
-
-    return jsonify({"result": (60 - (now_time - last_refresh))})
-
-@bp.route('/llm/clean', methods=['GET'])
-@require_auth
-def llm_clean():
-    global conversation
-
-    chatId = request.args.get('chatId', None)
-
-    if chatId is None:
-        return jsonify({"message": "You need to specify which chatId is being cleaned"}), 400
-
-    conversation[chatId] = []
-
-    return jsonify({"message": "Success"}), 200
-
 
 @bp.route('/spatial_join', methods=['POST'])
 def spatial_join():

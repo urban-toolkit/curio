@@ -2,6 +2,7 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point
 
+from utk_curio.sandbox.util import parsers
 from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
 
 
@@ -44,4 +45,42 @@ def test_geodataframe_round_trips_metadata_and_object_columns():
     assert getattr(restored, "metadata", None) == {"name": "schools"}
     assert restored["tags"].tolist()[0] == {"amenity": "school"}
     assert pd.isna(restored["tags"].tolist()[1])
+    assert restored.geometry.iloc[0].equals(gdf.geometry.iloc[0])
+
+
+# ── save_dataset_parquet / load_dataset_parquet round-trip (#146a) ──────────
+
+def test_dataset_parquet_round_trips_object_columns(tmp_path, monkeypatch):
+    monkeypatch.setattr(parsers, "_shared_data_dir", lambda: tmp_path)
+
+    df = pd.DataFrame(
+        {
+            "name": ["A", "B", "C"],
+            "payload": [{"a": 1}, ["x", "y"], None],
+        }
+    )
+    filename = parsers.save_dataset_parquet(df, "dataframe")
+    assert filename is not None
+    # The decode sidecar is written next to the parquet.
+    assert (tmp_path / (filename + ".decode.json")).is_file()
+
+    restored = parsers.load_dataset_parquet(tmp_path / filename)
+    assert restored["payload"].tolist()[0] == {"a": 1}
+    assert restored["payload"].tolist()[1] == ["x", "y"]
+
+
+def test_dataset_geoparquet_round_trips_object_columns(tmp_path, monkeypatch):
+    monkeypatch.setattr(parsers, "_shared_data_dir", lambda: tmp_path)
+
+    gdf = gpd.GeoDataFrame(
+        {"name": ["A", "B"], "tags": [{"k": "v"}, None]},
+        geometry=[Point(-87.62, 41.88), Point(-87.63, 41.89)],
+        crs="EPSG:4326",
+    )
+    filename = parsers.save_dataset_parquet(gdf, "geodataframe")
+    assert filename is not None
+
+    restored = parsers.load_dataset_parquet(tmp_path / filename)
+    assert isinstance(restored, gpd.GeoDataFrame)
+    assert restored["tags"].tolist()[0] == {"k": "v"}
     assert restored.geometry.iloc[0].equals(gdf.geometry.iloc[0])

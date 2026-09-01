@@ -1,13 +1,13 @@
 {
   "dataflow": {
-    "description": "Multiple independent dataflows joined via MERGE_FLOW into one coordinated dashboard (Chicago red-light violations).",
+    "description": "Multiple independent dataflows joined via Merge Flow into one coordinated dashboard (Chicago red-light violations).",
     "nodes": [
       {
         "id": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
         "type": "curio.builtin/data-loading",
         "x": 375,
         "y": 233,
-        "content": "import pandas as pd\n\ndf = pd.read_csv(\"docs/examples/data/08-red_light_violations.zip\")\nreturn df",
+        "content": "import pandas as pd\n\ndataset_path = curio_dataset_path(\"data.cityofchicago.red-light-violations\")\ndf = pd.read_parquet(dataset_path)\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -450,6 +450,16 @@
     "name": "Vega-Lite multi-flow dashboard",
     "task": "",
     "timestamp": 1774979610983,
-    "provenance_id": "DefaultWorkflow"
+    "provenance_id": "DefaultWorkflow",
+    "datasets": [
+      {
+        "datasetId": "data.cityofchicago.red-light-violations",
+        "dirName": "data.cityofchicago.red-light-violations@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-08-27T00:00:00Z"
+      }
+    ]
   }
 }

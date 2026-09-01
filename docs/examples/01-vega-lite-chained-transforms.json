@@ -6,7 +6,7 @@
         "type": "curio.builtin/data-loading",
         "x": -184.49380725228323,
         "y": -192.0725504282294,
-        "content": "import geopandas as gpd\n\ngdf = gpd.read_file('zip://docs/examples/data/04-labels.json.zip!04-labels.json')\n\ngdf.metadata = {\n    'name': 'accessibility_features'\n}\n\nreturn gdf\n",
+        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.projectsidewalk.chicago-labels\")\ngdf = gpd.read_parquet(dataset_path)\n\ngdf.metadata = {\n    'name': 'accessibility_features'\n}\n\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -110,9 +110,20 @@
       }
     ],
     "name": "Vega-Lite chained transforms",
+    "description": "Multiple Vega-Lite views fed from a chain of Data Transformation cleanups.",
     "task": "",
     "timestamp": 1778217921503,
     "provenance_id": "Vega-Lite chained transforms",
-    "packages": []
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.projectsidewalk.chicago-labels",
+        "dirName": "data.projectsidewalk.chicago-labels@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-08-27T00:00:00Z"
+      }
+    ]
   }
 }

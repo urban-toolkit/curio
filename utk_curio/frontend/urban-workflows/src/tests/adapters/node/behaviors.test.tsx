@@ -37,13 +37,16 @@ jest.mock('../../../components/editing/OutputContent', () => {
   return { __esModule: true, default: () => mockReact.createElement('div', null, 'output') };
 });
 
+// `useEdges()` is settable per test so a Play-All test can wire the merge's
+// input slots. Defaults to [] for every other behavior test; reset in afterEach.
+let mockEdges: any[] = [];
 jest.mock('reactflow', () => ({
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   useStoreApi: () => ({
     subscribe: jest.fn().mockReturnValue(jest.fn()),
     getState: () => ({ edges: [] }),
   }),
-  useEdges: () => [],
+  useEdges: () => mockEdges,
 }));
 
 jest.mock('../../../providers/StarterProvider', () => ({
@@ -62,6 +65,28 @@ jest.mock('../../../utils/formatters', () => ({
 
 jest.mock('@urban-toolkit/autk-grammar', () => ({ AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {} })) }), { virtual: true });
 
+// In-browser AutkDb fallback (loadSpecLayers). Mockable per test so the
+// "backend fails → fall back to browser" path can be exercised. `mock`-prefixed
+// names are the only out-of-scope refs jest.mock's hoisted factory may capture.
+const mockAutkDbLoadOsm = jest.fn().mockResolvedValue(undefined);
+// Declared with a rest parameter so the forwarding wrapper below
+// (`(...a: any[]) => mockAutkDbGetLayerTables(...a)`) can spread into it.
+const mockAutkDbGetLayerTables = jest.fn(
+  (..._a: unknown[]) => [] as Array<{ name: string; type?: string }>,
+);
+jest.mock('@urban-toolkit/autk-db', () => ({
+  AutkDb: jest.fn().mockImplementation(() => ({
+    init: jest.fn().mockResolvedValue(undefined),
+    loadOsm: (...a: any[]) => mockAutkDbLoadOsm(...a),
+    loadGeojson: jest.fn().mockResolvedValue(undefined),
+    loadCsv: jest.fn().mockResolvedValue(undefined),
+    loadJson: jest.fn().mockResolvedValue(undefined),
+    getLayerTables: (...a: any[]) => mockAutkDbGetLayerTables(...a),
+    getLayer: jest.fn().mockResolvedValue({ type: 'FeatureCollection', features: [] }),
+  })),
+  DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
+}), { virtual: true });
+
 import { useCodeNodeBehavior } from '../../../adapters/node/codeNodeBehavior';
 import { useDataExportBehavior } from '../../../adapters/node/dataExportBehavior';
 import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
@@ -69,11 +94,14 @@ import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
 import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
 import { useDataPoolBehavior } from '../../../adapters/node/dataPoolBehavior';
 import { useAutkGrammarBehavior, attachMapInteractionZoomFix } from '../../../adapters/node/autkGrammarBehavior';
+import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
     nodeId: 'node-1',
-    nodeType: 'DATA_LOADING',
+    // Real versioned dispatcher id, as the palette/loadTrill produce since the
+    // curio.builtin@1 pack — invented unversioned strings masked dev/64.
+    nodeType: 'curio.builtin/data-loading@1',
     outputCallback: jest.fn(),
     propagationCallback: jest.fn(),
     interactionsCallback: jest.fn(),
@@ -227,6 +255,81 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(output.type).toBe('source');
       expect(output.position).toBe('right');
     });
+
+    // Regression for #151: Merge Flow must not set `disablePlay`. When it did,
+    // UniversalNode's Play-All handler short-circuited (signalNodeExecDone +
+    // return) before invoking `sendCode`, so the run advanced to the downstream
+    // level before the merged output was propagated — downstream nodes then ran
+    // with stale/empty input. Routing Play All through `sendCodeOverride`
+    // (which emits synchronously, then signals done) is what fixes it.
+    test('does not disable Play and exposes sendCodeOverride for Play All', async () => {
+      const result = await callBehavior(useMergeFlowBehavior);
+      expect(result.current.disablePlay).toBeFalsy();
+      expect(typeof result.current.sendCodeOverride).toBe('function');
+    });
+
+    afterEach(() => {
+      mockEdges = [];
+    });
+
+    // The actual #151 bug was about ORDERING: Play All must propagate the merged
+    // output downstream *synchronously* (before the run advances). This drives
+    // sendCodeOverride and asserts outputCallback fires synchronously with the
+    // full merged array — so a regression where sendCodeOverride stops emitting
+    // synchronously (e.g. becomes async) is caught, not just re-adding disablePlay.
+    test('sendCodeOverride emits the merged output synchronously when all slots are ready', async () => {
+      mockEdges = [
+        { source: 'a', target: 'merge-1', targetHandle: 'in_0' },
+        { source: 'b', target: 'merge-1', targetHandle: 'in_1' },
+      ];
+      const outputCallback = jest.fn();
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useMergeFlowBehavior,
+        { nodeId: 'merge-1', outputCallback, input: [{ id: 'a-data' }, { id: 'b-data' }] },
+        { setOutput },
+      );
+
+      // Ignore any emission from the mount effect; assert only the Play-All call.
+      outputCallback.mockClear();
+      act(() => {
+        result.current.sendCodeOverride!('print(1)');
+      });
+
+      // Propagated synchronously (we assert right after the sync act, no await)
+      // with the merged slot array — and no "inputs not ready" error.
+      expect(outputCallback).toHaveBeenCalledTimes(1);
+      expect(outputCallback).toHaveBeenCalledWith('merge-1', {
+        data: [{ id: 'a-data' }, { id: 'b-data' }],
+        dataType: 'outputs',
+      });
+      expect(setOutput).not.toHaveBeenCalled();
+    });
+
+    // The flip side: Play All must NOT emit stale/partial input when a wired slot
+    // is still empty — it surfaces an error instead of propagating downstream.
+    test('sendCodeOverride does not propagate partial input; reports inputs-not-ready', async () => {
+      mockEdges = [
+        { source: 'a', target: 'merge-2', targetHandle: 'in_0' },
+        { source: 'b', target: 'merge-2', targetHandle: 'in_1' },
+      ];
+      const outputCallback = jest.fn();
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useMergeFlowBehavior,
+        { nodeId: 'merge-2', outputCallback, input: [{ id: 'a-data' }] }, // only 1 of 2 ready
+        { setOutput },
+      );
+
+      outputCallback.mockClear();
+      act(() => {
+        result.current.sendCodeOverride!('print(1)');
+      });
+
+      expect(outputCallback).not.toHaveBeenCalled();
+      expect(setOutput).toHaveBeenCalledTimes(1);
+      expect(setOutput.mock.calls[0][0].code).toBe('error');
+    });
   });
 
   describe('useDataPoolBehavior', () => {
@@ -244,6 +347,24 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   });
 
   describe('useAutkGrammarBehavior', () => {
+    // Autark refuses to run without a WebGPU adapter now (#201), and jsdom has
+    // no `navigator.gpu` at all - so without this every case in here would take
+    // the refusal path and assert nothing about the grammar. The dedicated
+    // coverage for the refusal itself is
+    // `autkGrammarWebgpuFallback.test.tsx`.
+    beforeEach(() => {
+      __resetWebGpuSupportCache();
+      Object.defineProperty(navigator, 'gpu', {
+        configurable: true,
+        value: { requestAdapter: jest.fn().mockResolvedValue({ name: 'fake' }) },
+      });
+    });
+
+    afterEach(() => {
+      __resetWebGpuSupportCache();
+      Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
+    });
+
     test('returns applyGrammar, contentComponent, and default spec', async () => {
       const result = await callBehavior(useAutkGrammarBehavior);
       assertValidBehaviorResult(result.current);
@@ -258,6 +379,39 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       } as any);
       assertValidBehaviorResult(result.current);
       expect(result.current.defaultValueOverride).toBeUndefined();
+    });
+
+    // dev/70 regression: the seed decision is frozen at mount. ``data.code`` is
+    // mutated by useNodeState one commit behind the editor (and the old reset
+    // chain even wrote ``undefined`` into it), so deriving the override from it
+    // per render flip-flopped ``defaultValue`` and reset the editor to the
+    // default spec while the user typed.
+    test('defaultValueOverride stays stable while data.code mutates mid-typing (dev/70)', async () => {
+      const stableData = makeMockData();
+      const stableNodeState = makeMockNodeState();
+      let rendered: any;
+      await act(async () => {
+        rendered = renderHook(() => useAutkGrammarBehavior(stableData, stableNodeState));
+      });
+
+      const seed = rendered.result.current.defaultValueOverride;
+      expect(typeof seed).toBe('string');
+
+      // Editor floats a keystroke back into the mutable node data.
+      (stableData as any).code = '{"user":"typed"}';
+      await act(async () => { rendered.rerender(); });
+      expect(rendered.result.current.defaultValueOverride).toBe(seed);
+
+      // The old reset chain cleared it again — the override must not flip back.
+      (stableData as any).code = undefined;
+      await act(async () => { rendered.rerender(); });
+      expect(rendered.result.current.defaultValueOverride).toBe(seed);
+
+      // An explicit external update (dataset drop / LLM apply) writes
+      // data.defaultCode via updateDefaultCode and must win over the seed.
+      (stableData as any).defaultCode = '{"map":{}}';
+      await act(async () => { rendered.rerender(); });
+      expect(rendered.result.current.defaultValueOverride).toBeUndefined();
     });
 
     test('data-only node runs the data section in the backend and emits the DuckDB artifact ref', async () => {
@@ -350,6 +504,63 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // keeps tables in EPSG:4326; 2.0.1 projected to EPSG:3395). The mock
       // layer's Point sits at (0,0) degrees, so detection yields WGS84.
       expect(injected.coordinateFormat).toBe('EPSG:4326');
+    });
+
+    // Regression: the flaky 06-autark-what-if-shadow-study failure. The backend
+    // data load occasionally returns no artifact; the node then fell back to an
+    // in-browser AutkDb load whose PBF fetch 404'd, and autk-db crashed with
+    // "Cannot read properties of null (reading 'length')" — surfaced to the user
+    // as an opaque error with no hint at the real (backend) cause. The fix:
+    // retry the backend load once, and when both paths fail, report BOTH reasons
+    // instead of letting a null-deref escape.
+    test('data-only node: backend failure retries once, then surfaces an attributed error (no null crash)', async () => {
+      // Backend load always fails (no output.path) with a known stderr.
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'sandbox boom', output: { path: '', dataType: 'str' } }),
+      );
+      // In-browser fallback also fails: the PBF load rejects (mirrors the 404),
+      // and no tables result — loadSpecLayers must report this, not crash.
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockRejectedValue(new Error('HTTP error! Status: 404'));
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
+
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any },
+        { setOutput },
+      );
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'osm',
+            pbfFileUrl: 'docs/examples/data/back_bay.osm.pbf',
+            outputTableName: 'table_osm',
+            autoLoadLayers: { layers: ['surface'] },
+          }],
+          // no map / plot => data-only node
+        }));
+      });
+
+      // The backend load was retried once (2 attempts total) before falling back.
+      expect(interpretCode).toHaveBeenCalledTimes(2);
+
+      // The node ends in error with an ATTRIBUTED message carrying BOTH reasons …
+      const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+      expect(errCall).toBeTruthy();
+      expect(errCall![0].content).toContain('sandbox boom');
+      expect(errCall![0].content).toContain('404');
+      // … and never the opaque autk-db null-deref the user used to see.
+      expect(errCall![0].content).not.toContain("reading 'length'");
+
+      // Restore defaults so the persistent rejection can't leak to later tests.
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
     });
   });
 

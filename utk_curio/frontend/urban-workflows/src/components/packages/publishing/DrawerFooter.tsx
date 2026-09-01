@@ -1,17 +1,28 @@
 import React, { useRef } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faFileImport } from "@fortawesome/free-solid-svg-icons";
 import styles from "./DrawerFooter.module.css";
 
 export interface DrawerFooterProps {
   busy: boolean;
-  /** Called with the selected File when the user picks a sideload archive. */
+  /** Called with the selected File when the user picks an archive/file. */
   onSideload: (file: File) => void;
+  /** Accepted file types. Pass ``null`` to accept any file. Defaults to ``.curio.zip`` archives. */
+  accept?: string | null;
+  /** Button content. Defaults to the Node Catalog's "Import package". */
+  label?: React.ReactNode;
 }
 
 /**
- * Sticky footer rendered at the bottom of the Node Catalog drawer.
- * Provides a hidden file input for sideloading ``.curio.zip`` archives.
+ * Sticky footer shared by the Node Catalog and Data Catalog drawers.
+ * Provides a hidden file input for importing archives/datasets.
  */
-export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload }) => {
+export const DrawerFooter: React.FC<DrawerFooterProps> = ({
+  busy,
+  onSideload,
+  accept = ".curio.zip,.zip,application/zip",
+  label = "Import package",
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -19,7 +30,7 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload }) 
       <input
         ref={fileInputRef}
         type="file"
-        accept=".curio.zip,.zip,application/zip"
+        {...(accept != null ? { accept } : {})}
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -33,7 +44,13 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload }) 
         disabled={busy}
         onClick={() => fileInputRef.current?.click()}
       >
-        Import package
+        {/* One icon, rendered here rather than passed in, so every drawer's
+            import wears the same glyph. The Data drawer used to pass its own
+            and the Node drawer passed none, so two footers built from this very
+            component still looked different. The Agent drawer has its own
+            footer element and imports the same icon. */}
+        <FontAwesomeIcon icon={faFileImport} aria-hidden />{" "}
+        {label}
       </button>
     </footer>
   );

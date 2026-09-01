@@ -29,6 +29,10 @@ def list_for_user(
 
     if scope == "archived":
         q = q.filter(Project.archived_at.isnot(None))
+    elif scope == "all":
+        # Active AND archived — destructive gates (dataset delete/uninstall)
+        # must see refs held by archived projects too (#176).
+        pass
     elif scope == "recent":
         q = q.filter(Project.archived_at.is_(None))
     else:

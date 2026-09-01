@@ -1,30 +1,25 @@
 /* Package palette panel (adjacent to built-in tools; dropdown opens toward canvas). */
 
+/* Trigger lives in the left rail (below the built-in nodes); the panel opens
+   into the strip to the right of the rail. */
 .packagePaletteRoot {
     display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
     flex-shrink: 0;
+    pointer-events: none;
+}
+
+.packagePaletteRoot > * {
+    pointer-events: auto;
 }
 
 .packagePaletteColumn {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 6px;
+    gap: 4px;
     flex-shrink: 0;
-    width: 56px;
-}
-
-.packagePaletteEmptyHint {
-    margin: 0;
-    font-size: 8px;
-    font-weight: 500;
-    color: rgba(251, 252, 246, 0.68);
-    text-align: center;
-    line-height: 1.25;
-    padding: 0 2px;
 }
 
 .packagePaletteFooter {
@@ -65,8 +60,9 @@
     flex-direction: column;
     align-items: center;
     gap: 4px;
-    padding: 10px 8px;
-    min-width: 56px;
+    padding: 8px;
+    width: 100%;
+    box-sizing: border-box;
     background-color: #1E1F23;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 5px;
@@ -82,6 +78,14 @@
 .packagePaletteTriggerOpen {
     border-color: rgba(251, 170, 105, 0.85);
     color: #FBAA69;
+}
+
+.packagePaletteTriggerTop {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
 }
 
 .packagePaletteTriggerIcon {
@@ -116,9 +120,15 @@
     opacity: 0.85;
 }
 
+/* Absolutely positioned against #tools-palette-dock (the only positioned
+   ancestor) so the panel opens beside the built-in rail without widening it. */
 .packagePalettePanel {
+    position: absolute;
+    top: 0;
+    left: 100%;
+    margin-left: 10px;
     width: min(380px, calc(100vw - 120px));
-    max-height: min(720px, 86vh);
+    max-height: min(720px, calc(100vh - 170px));
     background-color: #1E1F23;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 5px;
@@ -133,10 +143,10 @@
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.8px;
+    line-height: 1.2;
     color: rgba(255, 255, 255, 0.55);
     text-transform: uppercase;
-    text-align: center;
-    padding: 10px 8px 6px;
+    text-align: left;
 }
 
 .packagePaletteRowAnchor {
@@ -284,14 +294,17 @@
     box-shadow: 0 0 0 1px rgba(42, 109, 244, 0.35);
 }
 
+/* Header bar of the panel. Matches the dataset palette's `.panelHeader` so both
+   panels put their title on the same left inset and baseline. */
 .packagePaletteToolbar {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    padding: 8px 10px;
+    min-height: 34px;
+    padding: 0 10px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
 }
 
 .packageEditToggle {
@@ -466,7 +479,6 @@
     border-radius: 4px;
     padding: 2px 6px;
     line-height: 1;
-    align-self: flex-start;
 }
 
 .packageAddSectionRow {

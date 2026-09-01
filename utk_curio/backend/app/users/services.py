@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.users.models import User
 from utk_curio.backend.app.users.schemas import (
@@ -17,6 +19,9 @@ from utk_curio.backend.config import (
     CURIO_SHARED_GUEST_NAME,
     CURIO_SHARED_GUEST_USERNAME,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class AuthError(Exception):
@@ -39,6 +44,7 @@ def _user_out(u: User) -> UserOut:
         llm_api_type=u.llm_api_type,
         llm_base_url=u.llm_base_url,
         llm_model=u.llm_model,
+        has_huggingface_token=bool(u.huggingface_token),
     )
 
 
@@ -91,6 +97,17 @@ def signup(data: SignUpIn) -> AuthOut:
         password_hash=security.hash_password(data.password),
         type="programmer",
     )
+    # A new account lands on an empty gallery otherwise: the examples were
+    # seeded to the shared guest only, and listing is a plain owner filter, so
+    # under ``--auth`` nobody with an account ever saw them (#200). Best-effort
+    # - a failed seed must never cost the user their sign-up, and
+    # ``list_projects`` back-fills on the next listing anyway.
+    from utk_curio.backend.app.projects.seed import ensure_user_examples_seeded
+
+    try:
+        ensure_user_examples_seeded(user)
+    except Exception:
+        logger.exception("Seeding examples at sign-up failed for %s", user.username)
     return _auth_out(user)
 
 
@@ -151,5 +168,7 @@ def patch_me(user: User, data: UserPatchIn) -> UserOut:
             user.llm_base_url = data.llm_base_url if data.llm_base_url else None
         if data.llm_model is not None:
             user.llm_model = data.llm_model if data.llm_model else None
+        if data.huggingface_token is not None:
+            user.huggingface_token = data.huggingface_token or None
     db.session.commit()
     return _user_out(user)

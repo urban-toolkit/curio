@@ -1,6 +1,6 @@
 # Curio Architecture
 
-This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how nodes and packages work — including how to add a new behavior hook or icon — see [CATALOG.md](CATALOG.md), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
+This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how nodes and packages work, including how to add a new behavior hook or icon, see [NODE-CATALOG.md](NODE-CATALOG.md), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
 
 ## Table of Contents
 
@@ -26,6 +26,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [Sandbox Isolation](#sandbox-isolation)
 * [Interactions and Propagation](#interactions-and-propagation)
 * [Provenance Tracking](#provenance-tracking)
+* [The Trill Dataflow Format](#the-trill-dataflow-format)
 * [Python Dependencies](#python-dependencies)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
@@ -61,7 +62,7 @@ The system is designed around three principles:
                        │ HTTP (REST)
 ┌──────────────────────▼──────────────────────────────┐
 │  Sandbox (Flask / Python)                            │
-│  Executes user code in isolation                    │
+│  Executes user code in a separate process           │
 │  Port: 2000                                         │
 └─────────────────────────────────────────────────────┘
 ```
@@ -84,17 +85,51 @@ The frontend is a React/TypeScript application built on [React Flow](https://rea
 
 ### Provider Hierarchy
 
-State is managed through a nested context-provider tree rather than a global store. From outermost to innermost (as assembled in `src/index.tsx`):
+State is managed through a nested context-provider tree rather than a global
+store. Every provider wraps exactly one child, so the tree is really a single
+chain: the lists below run from outermost to innermost, each entry containing
+the one after it.
 
-```
-ReactFlowProvider
-  LLMProvider          — LLM chat
-  ProvenanceProvider   — Provenance tracking
-  UserProvider         — Auth / user profile
-  DialogProvider       — Modal dialogs
-  FlowProvider         — Nodes, edges, outputs, interactions  ← primary state
-    StarterProvider    — Per-template starter source snippets (formerly TemplateProvider)
-```
+The chain comes in two parts, and the split matters. Only the first is app-wide;
+the rest exists on the dataflow route alone, which is why a component rendered
+on `/projects` or `/catalog/*` can call `useUserContext` but not
+`useFlowContext`.
+
+App-wide, in `src/index.tsx`:
+
+1. `BrowserRouter`
+2. `BackendHealthBanner`: offline / unreachable-backend notice
+3. `ToastProvider`: app-wide toasts
+4. `ReactFlowProvider`
+5. `ProvenanceProvider`: provenance tracking
+6. `UserProvider`: auth / user profile
+7. `Routes`: every route lives below this point
+
+Per dataflow route, inside `MainCanvasRoute` in the same file:
+
+1. `DialogProvider`: modal dialogs
+2. `CollaborationProvider`: presence, locks, proposals
+3. `FlowProvider`: nodes, edges, outputs, interactions. The primary state
+4. `NodeCatalogDrawerProvider`
+5. `DatasetCatalogDrawerProvider`
+6. `AgentCatalogDrawerProvider`
+7. `StarterProvider`: per-template starter source snippets
+8. `ProjectLoader`
+9. `PackagePaletteProvider`
+10. `DatasetPaletteProvider`
+11. `MainCanvas`
+12. `AgentAttachmentsProvider`: the attached agents, mounted in `MainCanvas.tsx`
+    rather than `index.tsx` because it needs React Flow's instance and only
+    applies where there is a dataflow to attach agents to
+
+Two of these orderings are load-bearing rather than incidental:
+
+- `CollaborationProvider` must wrap `FlowProvider`. Outside it, FlowProvider's
+  mutation paths get the no-op default context and silently drop every peer
+  edit.
+- The three catalog drawer providers must sit inside `FlowProvider`, because a
+  drawer's Install writes to the open dataflow. Outside it, `useFlowContext`
+  returns no-op defaults and Install appears to succeed while doing nothing.
 
 Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProvenance()`). Components call these hooks rather than reaching into global variables.
 
@@ -118,14 +153,13 @@ When a node produces output, it calls `outputCallback(nodeId, output)`, which up
 
 ### Node Packages and Manifests
 
-Node types are no longer hardcoded into a TypeScript enum. They live in **node packages** under [`packages/<packageId>@<major>/`](../packages/) — each directory ships a `manifest.json` that declares one or more **templates**, the manifest's name for what becomes a `NodeDescriptor` at runtime.
+Node types live in **node packages** under [`packages/<packageId>@<major>/`](../packages/). Each directory ships a `manifest.json` that declares one or more **templates**, the manifest's name for what becomes a `NodeDescriptor` at runtime.
 
 ```
 packages/
   curio.builtin@1/        # always-on baseline (data, computation, autk, vis, flow nodes)
     manifest.json
-    sources/              # per-template Python starter code (data-loading, …)
-    integrity.json        # SHA-256 of every file (verified on install)
+    integrity.json        # SHA-256 of every file (written on install, not verified)
   curio.streetvision@1/   # optional package, install from /catalog
     manifest.json
     sources/*.tsx         # custom behavior hooks (Street View Fetcher, …)
@@ -147,7 +181,7 @@ A manifest's `templates[*]` entry maps cleanly to a `NodeDescriptor`:
 }
 ```
 
-[`packagesClient.ts::buildDescriptor`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads each installed manifest and constructs the corresponding `NodeDescriptor` at boot — there is no longer a static enum or a hand-written descriptors file. The frontend `nodeRegistry` is populated entirely from these manifests.
+[`packagesClient.ts::buildDescriptor`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads each installed manifest and constructs the corresponding `NodeDescriptor` at boot. The frontend `nodeRegistry` is populated entirely from these manifests.
 
 Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 
@@ -155,7 +189,7 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 |---|---|
 | Data | `data-loading`, `data-transformation`, `data-summary`, `data-export`, `data-pool` |
 | Computation | `computation-analysis`, `js-computation`, `merge-flow`, `spatial-join` |
-| Grammar (Autark) | `autk-grammar` — one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
+| Grammar (Autark) | `autk-grammar`, one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
 | Chart/table visualization | `vis-vega`, `vis-simple` |
 
 Third-party packages (or first-party optional ones, like `curio.streetvision@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
@@ -177,10 +211,10 @@ interface NodeDescriptor {
 ```
 
 Port cardinality strings follow a mini-language:
-- `'1'` — exactly one connection
-- `'n'` — any number of connections
-- `'[1,2]'` — between 1 and 2 connections
-- `'[1,n]'` — one or more connections
+- `'1'`: exactly one connection
+- `'n'`: any number of connections
+- `'[1,2]'`: between 1 and 2 connections
+- `'[1,n]'`: one or more connections
 
 ### NodeAdapter: Runtime Wiring
 
@@ -197,7 +231,7 @@ interface NodeAdapter {
 
 ### Behavior Hooks
 
-Every template in a manifest references a **behavior key** (the `behavior` field — `"code"`, `"vega"`, `"data-pool"`, `"street-view-fetcher"`, …). A behavior is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
+Every template in a manifest references a **behavior key** (the `behavior` field, holding values such as `"code"`, `"vega"`, `"data-pool"`, or `"street-view-fetcher"`). A behavior is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
 
 ```typescript
 type NodeBehaviorHook = (
@@ -215,13 +249,13 @@ The hook can return:
 | `defaultValueOverride` | Override the initial code shown in the editor |
 | `dynamicHandles` / `handlesOverride` | Add or replace connection handles at runtime |
 
-Behaviors register against a single global registry — [`behaviorRegistry.ts::registerBehavior(name, hook)`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) — and the manifest's `behavior` key looks them up by name. Two distribution channels:
+Behaviors register against a single global registry, [`behaviorRegistry.ts::registerBehavior(name, hook)`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts), and the manifest's `behavior` key looks them up by name. Two distribution channels:
 
-**1. Built-in (ships with Curio's main bundle).** [`builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts) calls `registerBehavior(...)` at import time for the hooks every install needs — `useCodeNodeBehavior`, `useVegaBehavior`, `useAutkGrammarBehavior`, `useDataPoolBehavior`, `useMergeFlowBehavior`, `useSpatialJoinBehavior`, etc. These power `curio.builtin@1`'s templates.
+**1. Built-in (ships with Curio's main bundle).** [`builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts) calls `registerBehavior(...)` at import time for the hooks every install needs: `useCodeNodeBehavior`, `useVegaBehavior`, `useAutkGrammarBehavior`, `useDataPoolBehavior`, `useMergeFlowBehavior`, `useSpatialJoinBehavior`, and so on. These power `curio.builtin@1`'s templates.
 
 **2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"behaviorScript": "scripts/behaviors.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageBehaviorScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each hook it ships.
 
-**Worked example — `curio.streetvision@1`** ships three custom behaviors:
+**Worked example: `curio.streetvision@1`** ships three custom behaviors:
 
 | Behavior key | Hook | Purpose |
 |---|---|---|
@@ -309,20 +343,20 @@ CREATE TABLE artifacts (
 2. The sandbox prints `{ "path": "<artifact_id>", "dataType": "<kind>" }` to stdout.
 3. The backend reads stdout and returns `{ path, dataType }` to the frontend.
 4. The frontend stores the artifact ID in `FlowProvider.outputs` and passes it as `INodeData.input` to downstream nodes.
-5. When a downstream node executes, it sends the artifact ID to the sandbox, which calls `load_from_duckdb(id)` to reconstruct the Python object — no re-serialization of the original data needed.
+5. When a downstream node executes, it sends the artifact ID to the sandbox, which calls `load_from_duckdb(id)` to reconstruct the Python object, with no re-serialization of the original data needed.
 6. For previewing data in the UI, the frontend fetches via `GET /get-preview?fileName=<artifact_id>`, which loads the artifact and returns only the first 100 rows as JSON.
 
 ### Referencing Upstream Data in Autark Nodes
 
-The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) resolves whatever arrived on the input edge and injects it as named `geojson` sources the spec can reference. Upstream geojson is data the browser already holds, so it stays client-side — only the spec's own authored `data` sources (OSM / PBF / CSV / …) run in the backend sandbox. There are two cases:
+The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) resolves whatever arrived on the input edge and injects it as named `geojson` sources the spec can reference. Upstream geojson is data the browser already holds, so it stays client-side; only the spec's own authored `data` sources (OSM / PBF / CSV and the like) run in the backend sandbox. There are two cases:
 
-**1. Single frame — the `upstream` keyword.** A single upstream frame (e.g. a Python GeoDataFrame from a computation node, or one routed through a Data Pool) is injected as one source named `upstream`:
+**1. Single frame, the `upstream` keyword.** A single upstream frame (e.g. a Python GeoDataFrame from a computation node, or one routed through a Data Pool) is injected as one source named `upstream`:
 
 ```json
 "map": { "layerRefs": [{ "dataRef": "upstream", "getFnv": "mean", "getFnvType": "quantitative" }] }
 ```
 
-**2. Layer array — named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually:
+**2. Layer array, named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually:
 
 ```json
 "map": { "layerRefs": [{ "dataRef": "table_osm_buildings" }, { "dataRef": "table_osm_roads" }] }
@@ -330,17 +364,17 @@ The `autk-grammar` node consumes upstream data differently from Python nodes: it
 
 When a layer array arrives, `upstream` is additionally kept as an alias for the **first** layer, so a single-layer spec keeps working when its upstream node starts emitting an array. New multi-layer specs should use the real layer names.
 
-A `dataRef` that names an unavailable table — an empty layer, a layer that was never loaded, or one dropped by an upstream node — does not fail the run. The behavior drops the dangling `map.layerRefs` entry or `plot` block before the grammar executes and logs a console warning listing the table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. The visible symptom of a typo'd reference is therefore a missing layer plus a DevTools warning, not an error.
+A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, does not fail the run. The behavior drops the dangling `map.layerRefs` entry or `plot` block before the grammar executes and logs a console warning listing the table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. The visible symptom of a typo'd reference is therefore a missing layer plus a DevTools warning, not an error.
 
 [Example 09](examples/09-heterogeneous-data-linked-views.md) demonstrates the `upstream` keyword; [Example 11](examples/11-autark-pbf-loading.md) demonstrates named layer references.
 
 ### Connection Validation
 
-`src/utils/ConnectionValidator.ts` enforces rules when the user draws an edge:
+`src/ConnectionValidator.ts` enforces rules when the user draws an edge:
 
 - Source port type must be compatible with target port type.
 - Port cardinality is respected (e.g., a `'1'` input port rejects a second incoming edge).
-- `MERGE_FLOW` and `FLOW_SWITCH` nodes have special cardinality rules handled by their behavior hooks via `dynamicHandles`.
+- `Merge Flow` nodes have special cardinality rules handled by their behavior hook via `dynamicHandles`.
 
 ---
 
@@ -355,13 +389,17 @@ When a user clicks the play button on a node, the following sequence occurs:
    Collects: node code, nodeType, upstream artifact ID + kind
 
 2. POST /processPythonCode  (Backend)   [Python nodes]
-   POST /processJavaScriptCode (Backend) [JS_COMPUTATION nodes]
+   POST /processJavaScriptCode (Backend) [JS Computation nodes]
    Body: { code, nodeType, input: { filename: <artifact_id>, dataType: <kind> } }
 
 3. Backend proxies to Sandbox
    POST {SANDBOX_HOST}:{SANDBOX_PORT}/exec    [Python nodes]
-   POST {SANDBOX_HOST}:{SANDBOX_PORT}/execJs  [JS_COMPUTATION nodes]
-   Body: { code, nodeType, file_path: <artifact_id>, dataType: <kind> }
+   POST {SANDBOX_HOST}:{SANDBOX_PORT}/execJs  [JS Computation nodes]
+   Body: { code, nodeType, file_path: <artifact_id>, dataType: <kind>,
+           dataset_paths: { <datasetId>: <absPath> } }
+
+   dataset_paths resolves the portable curio_dataset_path("<id>") calls that
+   Data Catalog loader snippets emit. See "Portable dataset paths" below.
 
 4. Sandbox executes user code
    Python: wraps in python_wrapper.txt, runs via exec() in-process
@@ -378,11 +416,11 @@ When a user clicks the play button on a node, the following sequence occurs:
    - Downstream nodes' INodeData.input is updated
    - React re-renders downstream nodes
 
-7. ProvenanceProvider.recordExecution()
-   POST /nodeExecProv — records timestamps, types, source
+7. ProvenanceProvider.nodeExecProv()
+   records timestamps, types, source; in-browser only, no backend call
 ```
 
-**JavaScript execution detail:** `JS_COMPUTATION` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed — the Node subprocess is per-request and fully isolated.
+**JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
 
 ### The Python Wrapper
 
@@ -398,18 +436,169 @@ Data loading, saving, and type detection logic lives in `utk_curio/sandbox/util/
 
 ### Sandbox Isolation
 
-The sandbox runs as a completely separate Flask process. It:
+The sandbox runs as a separate Flask process. It:
 
-- Is not directly reachable from the browser (only the backend calls it).
-- Has its own Python environment for package installation (`POST /install`).
-- Supports file uploads for initial data ingestion (`POST /upload`).
+- Binds `127.0.0.1` by default and is not published by the Docker image, so
+  only the backend on the same host can reach it.
+- Requires a shared secret on every route that can run code or read artifacts
+  (`/exec`, `/execJs`, `/get`, `/install`). The secret is minted per launch by
+  `main.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
+  the backend in `_sandbox_call`, and checked in `sandbox/app/auth.py`. An
+  instance started with `--auth` or `--deploy` refuses to boot without one.
+- Sends no CORS headers, because no browser calls it directly.
 - Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
+
+> [!WARNING]
+> **By default this is a network boundary, not an execution boundary.** Unless
+> `--isolation=fork` is passed, node code runs with `exec()` inside the sandbox
+> process itself (`worker.py::execute_code`), with unrestricted builtins, as the
+> same OS user, with no memory cap and no timeout. Anyone who can author or edit
+> a node can read and write everything that process can, including
+> `instance/urban_workflow.db`. Treat node-authoring rights as equivalent to
+> shell access on the host, and do not offer them to untrusted users.
+
+### Isolated node execution (opt-in, Linux only)
+
+`--isolation=fork` runs each node's Python in a short-lived child process
+instead of in-process. `utk_curio/sandbox/isolation/`:
+
+| Module | Role |
+|---|---|
+| `mode.py` | Resolves whether isolation is active, and whether a missing capability is fatal |
+| `protocol.py` | The JSON manifest crossing the boundary, and the validation applied to anything a child returns |
+| `zygote.py` | A warm, single-threaded process that forks one child per execution |
+| `child.py` | The confinement steps and the node run itself |
+| `supervisor.py` | Parent side: scratch directories, the wall-clock deadline, process-group kill |
+| `runner.py` | One execution end to end |
+| `lifecycle.py` | Starting and replacing the zygote |
+| `util/staging.py` | Artifacts in and out of a child's scratch directory |
+| `hardening.py` | Filesystem permissions, and the startup audit that verifies them |
+
+Five design points worth knowing:
+
+- **The parent keeps every privilege the child must not have.** It owns the
+  DuckDB connection, resolves artifacts, and enforces session scoping. The child
+  sees only a scratch directory of staged files. Frames are already stored as
+  parquet files, so staging an input is a hardlink and persisting an output is a
+  rename: the parent never parses bytes a child produced.
+- **One execution account, not one per Curio user.** `--exec-user` names a
+  single OS account that every user's nodes run as. The boundary this buys is
+  therefore *node code against the host*, not *user A against user B*. What
+  keeps two users apart is session scoping in the parent, which the child cannot
+  reach at all: `staging._read_row` reports another session's artifact as
+  **missing** rather than forbidden, so its existence cannot be probed. Two
+  consequences follow from the shared uid, and neither is fixed by a mode bit:
+  concurrent children can reach each other's scratch directories, and a node can
+  find a sibling through `/proc`. Per-user OS accounts would close that, at the
+  cost of copying instead of hardlinking every staged input, because `chown`
+  acts on the inode. That is the trade being made, deliberately.
+- **A node's writes go through the parent, never straight into a store.** The
+  path is child, then scratch directory, then the parent's validated
+  `persist_output`, then the backend's `auto_install_node_output`. Because the
+  child never writes into an indexed store, it cannot forge a manifest or a
+  catalog entry. Under `--exec-user` the child's cwd is a per-user work
+  directory (`.curio/exec-scratch/users/<key>/`), which is the one place it may
+  write: it is `0700` and owned by the execution account, it persists between
+  runs, and a `docs` symlink is dropped in so the bundled examples' relative
+  reads still resolve. A relative write anywhere else fails, since the launch
+  tree is root-owned by then.
+- **No pickle in either direction.** A child's manifest carries a kind tag,
+  JSON scalars, and flat filenames only. Unpickling a hostile child's output in
+  the privileged parent would hand back most of what isolation removed.
+- **Node code loses direct store access.** The in-process path seeds
+  `load_from_duckdb` / `save_to_duckdb` / `save_dataset_parquet` into user
+  scope; under isolation those names raise instead. Nodes exchange data through
+  inputs and return values.
+
+**Syscall confinement is not enough on its own.** seccomp does not stop
+`open()`, and reading files is what a data node legitimately does, so a
+world-readable `instance/urban_workflow.db` is readable by node code with no
+escape required. `hardening.py` tightens those paths to owner-only at startup
+and then audits them; a hosted instance that is still exposed refuses to serve
+rather than pretend. This is also why `--exec-user` matters: without an
+unprivileged execution account the child shares the sandbox's own filesystem
+access, and only the resource limits and syscall filter apply.
+
+Network denial uses a seccomp **denylist** (`socket`, `connect`, `ptrace`,
+`mount`, and friends), not an allowlist. An allowlist for arbitrary Python with
+arbitrary C extensions would break constantly and get widened until it meant
+nothing. The denylist promises less and is honest about it. `unshare(CLONE_NEWNET)`
+would be stronger but needs `CAP_SYS_ADMIN`, which Docker does not grant by
+default.
+
+> [!IMPORTANT]
+> **Implementation status.** The confinement code runs in CI. Three jobs cover
+> it, and each covers a different half:
+>
+> - `test-gpu` runs `tests/test_isolation_linux.py` on the Linux runner: the
+>   fork, the seccomp filter (socket, connect and ptrace denied), the rlimits,
+>   the deadline kill, session scoping across the boundary, and the zygote
+>   holding no DuckDB handle. This is where the *boundary* is demonstrated.
+> - `test-gpu-isolated` boots a second stack with `--isolation=fork` and runs
+>   the Python-node workflows against it. This is where *ordinary nodes still
+>   work* is demonstrated. It asserts the stack actually came up isolated
+>   before trusting the result.
+> - `test-gpu-exec-user` boots a third stack with `--isolation=fork
+>   --exec-user curio-exec`, the same pair `docker-compose.deploy.yml` ships,
+>   and asserts the **filesystem** half over the sandbox's HTTP API
+>   (`tests/live/test_exec_user_boundary.py`). This is the only job whose
+>   children are unprivileged: everywhere else they run as root, and root reads
+>   through any mode bit. It pins that node code really is `curio-exec` and not
+>   uid 0, that a hardlinked input still reaches the child, that the work
+>   directory is `0700` and owned by the execution account, and that
+>   `instance/`, `.curio/data`, `.curio/users`, `datasets/` and another user's
+>   file named by absolute path are all denied.
+>
+> It is a separate job because `--exec-user` and the e2e harness cannot
+> coexist: hardening `.curio/data` breaks the host-side ground-truth step, which
+> executes every code node in the test process and writes artifacts there as the
+> runner user. So that job drops the workflow comparison and asserts over the
+> API instead (see `docker-compose.ci-exec-user.yml`).
+>
+> One gap remains, deliberately: `--isolation` still defaults to `auto`, which
+> still resolves to `off`, so a local `curio start` changes nothing. The
+> deployed instances pass `--isolation=fork --exec-user curio-exec` explicitly,
+> via `docker-compose.deploy.yml`.
+
+`POST /install` (`pip install` into the sandbox's interpreter) is off unless
+`--allow-runtime-install` is passed. It defaults on for a local single-user
+launch and off once `--auth` / `--deploy` is in play. Nothing in Curio calls
+it; library installs go through the backend's `packages/pip_runner.py`.
+
+### Portable dataset paths
+
+Data Catalog loader snippets do not embed absolute paths. They emit
+`curio_dataset_path("<datasetId>")`, resolved per execution, so a saved dataflow
+stays valid when it is shared, moved, or opened by another user on the same
+install.
+
+The curated examples in `docs/examples/` are the reference consumers of this
+mechanism: every one of their loader nodes resolves a committed catalog dataset
+by id. Note the argument is the bare manifest `id`, never the `<id>@<major>`
+`dirName` that `dataflow.datasets` refs carry - `SAFE_DATASET_ID_RE` permits `@`,
+so an id with the major appended passes validation, misses the by-id lookup, and
+fails open into a runtime error from the sandbox.
+
+1. `backend/app/api/routes.py` scans the outgoing code for literal
+   `curio_dataset_path("<id>")` calls (single or double quoted), dedupes the
+   ids, and caps them at `MAX_EXEC_DATASET_IDS` (32).
+2. It resolves them via `DatasetCatalogService.resolve_execution_paths`, which
+   refuses any path outside the allowed read roots. Resolution **fails open**: an
+   error yields an empty mapping rather than blocking the run.
+3. The resulting `{id: absPath}` map rides along on the `/exec` body. The sandbox
+   re-validates it (dict-shaped, stringified, ≤32 entries) and injects
+   `curio_dataset_path` into the user namespace, where an unknown id raises an
+   actionable `RuntimeError` instead of returning a foreign path.
+
+The id must satisfy the same safe-id pattern on both sides before it is
+interpolated into generated Python; an id that fails it falls back to a literal
+quoted path. See [DATA-CATALOG.md](DATA-CATALOG.md) for the authoring view.
 
 ---
 
 ## Interactions and Propagation
 
-Visualization nodes (`AUTK_GRAMMAR`, `VIS_VEGA`, `VIS_SIMPLE`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
+Visualization nodes (`Autark`, `Vega-Lite`, `Simple View`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
 
 ### IInteraction
 
@@ -443,21 +632,31 @@ Curio records a per-node execution history (start/end time, source code, input/o
 
 ---
 
+## The Trill Dataflow Format
+
+A saved dataflow is one JSON document, a **trill**, written to `.curio/users/<userKey>/projects/<projectId>/spec.trill.json`. It holds the graph (`dataflow.nodes`, `dataflow.edges`), the dependency lockfiles (`dataflow.packages`, `dataflow.datasets`, `dataflow.agents`), and the two provenance sections described above.
+
+Every trill is validated against [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) (JSON Schema Draft 2020-12). The schema is the source of truth for what fields a dataflow can carry. Note what it deliberately does *not* decide: a node's `type` is a coordinate into a package manifest's `templates[].id`, so which templates exist, which handles are legal, and whether a node has code at all are manifest questions that depend on the installed packages. [`projects/storage.py`](../utk_curio/backend/app/projects/storage.py) performs no validation of its own - it reads and writes the spec as opaque JSON - so the schema and the tests around it are the only enforcement.
+
+Full field reference, ownership rules, and the CLI for checking your own projects: [`docs/TRILL-SPEC.md`](TRILL-SPEC.md).
+
+---
+
 ## Python Dependencies
 
 Curio's Python deps live in two places:
 
-**1. Framework deps** ([`requirements.txt`](../requirements.txt), mirrored in [`pyproject.toml::dependencies`](../pyproject.toml)) — only what the backend + sandbox Flask apps need at module load (Flask, Flask-SQLAlchemy, Flask-Migrate, Flask-Caching, `requests`, `python-dotenv`, the LLM SDKs, `altair`, `tqdm`, `pygments`) plus test/dev tools. No data-ops libraries.
+**1. Framework deps** ([`requirements.txt`](../requirements.txt), mirrored in [`pyproject.toml::dependencies`](../pyproject.toml)) carries only what the backend and sandbox Flask apps need at module load (Flask, Flask-SQLAlchemy, Flask-Migrate, Flask-Caching, `requests`, `python-dotenv`, the LLM SDKs, `altair`, `tqdm`, `pygments`) plus test/dev tools. No data-ops libraries.
 
-**2. Per-package deps** — every node package declares the libraries its templates need in its manifest's `dependencies.python`:
+**2. Per-package deps.** Every node package declares the libraries its templates need in its manifest's `dependencies.python`:
 
 ```json
 // packages/curio.builtin@1/manifest.json
 "dependencies": {
   "python": {
-    "pandas": "==3.0.2", "geopandas": "==1.1.3", "shapely": ">=2.0",
-    "numpy": "", "pyarrow": "==24.0.0",
-    "duckdb": ">=1.5.0", "fiona": "==1.10.1", "pillow": "==12.2.0"
+    "pandas": ">=3.0.2", "geopandas": ">=1.1.3", "pyproj": ">=3.7.2",
+    "shapely": ">=2.0", "numpy": "", "pyarrow": ">=24.0.0",
+    "duckdb": ">=1.5.0", "fiona": ">=1.10.1", "pillow": ">=12.2.0"
   }
 }
 
@@ -474,37 +673,39 @@ Spec syntax accepts PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`), bare ver
 
 ### Install paths
 
-- **At `curio start`** — the launcher ([`main.py::install_manifest_dependencies`](../utk_curio/main.py)) walks every installed manifest (`packages/curio.builtin@*` from the catalog source + every user store under `.curio/users/<u>/packages/`), unions their `dependencies.python` via [`resolver.merge_python_deps`](../utk_curio/backend/app/packages/resolver.py) (which surfaces range conflicts as warnings instead of silently last-write-wins), and pip-installs the merged map via [`pip_runner.install_python_deps`](../utk_curio/backend/app/packages/pip_runner.py). Already-satisfied deps are skipped via `importlib.metadata.version` — the steady-state cost is ~1 s with no network.
+- **At `curio start`**, the launcher ([`main.py::install_manifest_dependencies`](../utk_curio/main.py)) walks every installed manifest (`packages/curio.builtin@*` from the catalog source + every user store under `.curio/users/<u>/packages/`), unions their `dependencies.python` via [`resolver.merge_python_deps`](../utk_curio/backend/app/packages/resolver.py) (which surfaces range conflicts as warnings instead of silently last-write-wins), and pip-installs the merged map via [`pip_runner.install_python_deps`](../utk_curio/backend/app/packages/pip_runner.py). Already-satisfied deps are skipped via `importlib.metadata.version`, so the steady-state cost is about a second with no network.
 
-- **At catalog install time** (`/api/packages/projects/<id>/install`) — when the user installs a package from the drawer, [`services._ensure_user_store_install`](../utk_curio/backend/app/packages/services.py) copies the files, then calls `pip_runner.install_python_deps` on the freshly-installed manifest. The Install button stays busy until pip finishes; heavy installs (`torch`, ~3 GB) can take minutes.
+- **At catalog install time** (`/api/packages/projects/<id>/install`), when the user installs a package from the drawer, [`services._ensure_user_store_install`](../utk_curio/backend/app/packages/services.py) copies the files, then calls `pip_runner.install_python_deps` on the freshly-installed manifest. The Install button stays busy until pip finishes; heavy installs (`torch`, ~3 GB) can take minutes.
 
-- **At catalog uninstall time** — `prune_unreferenced_packages` walks every other still-installed package's manifest, finds the deps the pruned package declared that no other surviving package still requires, and pip-uninstalls only those (ref-counted shared deps survive).
+- **At catalog uninstall time**, `prune_unreferenced_packages` walks every other still-installed package's manifest, finds the deps the pruned package declared that no other surviving package still requires, and pip-uninstalls only those (ref-counted shared deps survive).
 
 ### Why this split
 
-The framework needs to boot before any manifests can be walked — so `pip install -r requirements.txt` (or `pip install utk-curio`) seeds enough of an env that the launcher can read `manifest.dependencies.python` and continue. Heavy ML/data libraries are intentionally NOT in the framework requirements: a fresh `pip install utk-curio` is small + fast; the multi-GB pulls happen lazily when the user actually installs the matching package (Street Vision pulls `torch` only after they click Install in the catalog).
+The framework needs to boot before any manifests can be walked, so `pip install -r requirements.txt` (or `pip install utk-curio`) seeds enough of an env that the launcher can read `manifest.dependencies.python` and continue. Heavy ML/data libraries are intentionally NOT in the framework requirements: a fresh `pip install utk-curio` is small and fast, and the multi-GB pulls happen lazily when the user actually installs the matching package (Street Vision pulls `torch` only after they click Install in the catalog).
 
-Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → File → Installed libraries) sit in a third bucket — per-user JSON at `.curio/users/<u>/installed-libraries.json` — and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
+Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → Data ⏷ → Installed libraries) sit in a third bucket, per-user JSON at `.curio/users/<u>/installed-libraries.json`, and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
 
 ---
 
 ## Backend API Reference
 
-The backend is a Flask application in `utk_curio/backend/`. All routes are defined in `backend/app/api/routes.py`.
+The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, agents in `backend/app/agents/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
 
 ### Core Routes
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/live` | GET | Health check |
+| `/live` | GET | Health check (the container healthcheck uses `/health` on `server.py`) |
+| `/version` | GET | Installed `utk_curio` version, as JSON |
 | `/processPythonCode` | POST | Execute Python node code (proxies to sandbox `/exec`) |
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
-| `/upload` | POST | Upload a file to `.curio/data/` |
-| `/get` | GET | Download a data file by name |
-| `/get-preview` | GET | Download first 100 rows of a data file |
-| `/toLayers` | POST | Convert GeoJSON to map layers |
-| `/installPackages` | POST | Install Python packages in the sandbox (legacy; per-project pip libs) |
-| `/node-types` | GET/POST | Get or register node type metadata |
+| `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it) |
+| `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
+| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use |
+| `/starters` | GET | Per-template starter source bodies from every installed package |
+| `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
+
+File ingestion is **not** here - it lives in the datasets blueprint as `POST /api/datasets/import`.
 
 ### Package Routes
 
@@ -517,14 +718,137 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `/api/packages/projects/<id>/<dirName>` | DELETE | Uninstall a package from a project (ref-counted prune + pip uninstall of unique deps) |
 | `/api/packages/<dirName>/file/<path>` | GET | Serve a static file from the user's installed copy (behavior bundles, icons, …) |
 | `/api/packages/defaults` | GET/POST | Per-user "always installed" set (drives the catalog page's Installed badge) |
-| `/api/packages/libraries` | GET/POST/DELETE | Per-user "Installed libraries" surface — list / add / remove standalone pip libs alongside manifest-derived ones |
+| `/api/packages/libraries` | GET/POST/DELETE | Per-user "Installed libraries" surface: list, add, or remove standalone pip libs alongside manifest-derived ones |
 
-### Template Routes
+### The dataset index
+
+Catalog listings used to scan a user's account store and parse every
+`manifest.json` on each request. `backend/app/datasets/repositories/index.py`
+turns that into keyed lookups against `DatasetIndexEntry`
+(`backend/app/datasets/models.py`, alembic revision `d4e5f6a7b8c9`).
+
+The index is a **derived cache**, and two invariants keep it from ever becoming a
+source of truth:
+
+- **Disk wins.** `reconcile()` walks the store, compares each manifest's
+  `(mtime_ns, size)` against the row, and re-parses only what changed. It
+  commits nothing when nothing moved. A dir whose manifest fails validation has
+  its row **deleted**, matching the listing's own skip behavior, so the index
+  cannot resurrect a dataset the catalog considers unreadable.
+- **Never raise into a caller.** Every entry point has a `safe_*` wrapper
+  (`safe_upsert_from_dir`, `safe_forget`, `safe_sync_rows_by_dir`,
+  `safe_reconcile`) that rolls back and degrades to "no row". Callers fall back
+  to parsing the manifest, so a DB failure costs speed, never correctness.
+
+Rows are keyed on `user_key`, deliberately **not** a foreign key to `user.id`:
+the literal `"guest"` is a valid key. Writes go through on every install path
+(`install/installer.py`, `install/bundle.py`) and rows are dropped on delete.
+Reads hydrate in `repositories/user_store.py` and `repositories/installed.py`,
+always *after* `ensure_computed_ids_migrated`, since that migration renames dirs
+and the index mirrors dir names.
+
+`application/listing.py::resolve_execution_paths` uses the index as a fast path
+for turning dataset ids into filesystem paths at execution time, falling back to
+a full listing for hub and live-output ids. Both paths run the same containment
+check, so an index row pointing outside the allowed read roots is refused rather
+than served.
+
+### Dataset Routes
+
+Defined in `backend/app/datasets/routes.py`; all require authentication. See [DATA-CATALOG.md](DATA-CATALOG.md) for the user-facing model.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/templates` | GET | List available code templates |
-| `/addTemplate` | POST | Save a custom template |
+| `/api/datasets/catalog` | GET | List catalog items (`q`, `format`, `origin`, `sort`, `includeHub`, `groupOsm`, `dataflowId`, `liveOutputs`) |
+| `/api/datasets/<id>` | GET | Dataset detail, including resolved producer node for computed datasets |
+| `/api/datasets/<id>/preview` | GET | Paginated tabular/geo preview (`rowLimit` 1 to 500, default 50; `offset`; `part` for bundles) |
+| `/api/datasets/<id>/usage` | GET | Dataflows across the user's projects that reference this dataset |
+| `/api/datasets/<id>/download` | GET | Download the dataset file as an attachment |
+| `/api/datasets/import` | POST | Upload a local file into the user's catalog (multipart: `file`, `dataflowId`, `title`, `sourceUpdatedAt`) |
+| `/api/datasets/publish` | POST | Publish a dataset into the shared catalog |
+| `/api/datasets/publish/<id>` | DELETE | Unpublish (remove from the shared catalog). **403** unless you published it |
+| `/api/datasets/<id>` | DELETE | Permanently delete an account-level dataset. **403** unless you published it. Returns `failedDirs: string[]`; `deleted` is `false` when a directory survived (still HTTP 200) |
+| `/api/dataflows/<dataflowId>/datasets/install` | POST | Attach a dataset to one dataflow (`datasetId`, optional `sourceItem`, `nodeTitle`) |
+| `/api/dataflows/<dataflowId>/datasets/<id>` | DELETE | Detach a dataset from one dataflow (keeps the account asset) |
+
+### Agent Routes
+
+Defined in `backend/app/agents/routes.py` over `backend/app/agents/services.py`; all
+require authentication, and every project endpoint checks ownership (404 when the
+project is not the caller's). See [AGENT-CATALOG.md](AGENT-CATALOG.md) for the
+user-facing model, the manifest contract, and the storage layers.
+
+Catalog and account scope:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/catalog` | GET | List the agent definitions available to add (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
+| `/api/agents/provider-default` | GET | The deployment's default provider, base URL and model, so AI Settings can show what a user inherits. The API key is reported as a boolean only |
+| `/api/agents/provider-models` | POST | The models an OpenAI-compatible endpoint reports it serves, so AI Settings can offer a dropdown instead of a free-text box. POST because the panel asks *before* the user saves, carrying the base URL and key on screen; anything omitted falls back to the account's resolved provider. Non-OpenAI providers answer `{models: [], listable: false}` |
+| `/api/agents/imports` | GET | List the account's imported definitions, as cards |
+| `/api/agents/imports` | POST | Record `<id>@<version>` in My imports. Never adds to a dataflow |
+| `/api/agents/imports/upload` | POST | Upload a user-authored definition (`manifest` + `prompts` as JSON, no archives). Trust forced to `imported`, digests stamped from the bytes, **409** on an existing coordinate |
+| `/api/agents/imports/<coord>` | DELETE | Drop it from My imports. The definition stays on disk |
+| `/api/agents/publications` | POST | Publish an owned, imported, store-backed definition to the shared catalog |
+| `/api/agents/publications/<coord>` | DELETE | Unpublish it. Owner only |
+
+Per-dataflow scope:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/projects/<projectId>` | GET | The dataflow's added agents, from its `dataflow.agents` lockfile |
+| `/api/agents/projects/<projectId>/install` | POST | Add `{coord}` **and its `requiresAgents` closure** in one spec write. Resolves the closure before writing: **409** naming the missing ids, nothing written |
+| `/api/agents/projects/<projectId>/<coord>` | DELETE | Remove it and its defaults record. **409** naming the dependents while another added agent requires it |
+
+Attachments and runs:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/projects/<projectId>/attachments` | GET, POST | List, or bind an added agent to a `{kind: node\|canvas\|connection, targetId?}`. Never auto-adds |
+| `/api/agents/projects/<projectId>/attachments/<id>` | DELETE, PATCH | Detach (also deletes the transcript), or set the editable initial intent |
+| `/api/agents/projects/<projectId>/attachments/<id>/session` | GET, DELETE | The persisted chat transcript, or clear it (the attachment survives) |
+| `/api/agents/projects/<projectId>/attachments/<id>/run` | POST | Run one turn. Returns `{reply, executionId, usage, content}`; persists both turns |
+| `/api/agents/projects/<projectId>/attachments/<id>/run/stream` | POST | The same turn as Server-Sent Events: `execution` then `delta` chunks, tool rounds, `review_required`, `content`, `done` |
+| `/api/agents/projects/<projectId>/attachments/<id>/proposals/<proposalId>` | POST `/apply`, DELETE | Apply a pending review proposal (the only mutation path; re-checks the pinned digest, **409** on drift) or dismiss it |
+
+Solve and planning. The Dataflow Builder drives a batch that plans, generates,
+executes and self-corrects; each stage is a reviewed proposal the user applies,
+never an automatic write:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/agents/projects/<projectId>/attachments/<id>/solve` | POST | Run the Solve batch over a plan's nodes |
+| `/api/agents/projects/<projectId>/attachments/<id>/solve/stream` | POST | The same batch as Server-Sent Events |
+| `/api/agents/projects/<projectId>/attachments/<id>/solve/cancel` | POST | Stop dispatching new children; undispatched targets revert to pending. **409** when nothing is running |
+| `/api/agents/projects/<projectId>/attachments/<id>/simulate` | POST | Simulation Mode, as Server-Sent Events |
+| `/api/agents/projects/<projectId>/attachments/<id>/simulate/cancel` | POST | Stop at the next action boundary; what is done stays done |
+| `/api/agents/projects/<projectId>/attachments/<id>/run-node` | POST | Execute the dataflow *through* one node, using its saved content, as Server-Sent Events |
+| `/api/agents/projects/<projectId>/attachments/<id>/validate-node` | POST | Generate, execute-through, validate, self-correct, then propose, for one node, as Server-Sent Events |
+| `/api/agents/.../proposals/<proposalId>/apply-node` | POST | Apply one planned node from a pending dataflow-plan proposal |
+| `/api/agents/.../proposals/<proposalId>/apply-edges` | POST | Apply the plan's edges: the connection review stage |
+| `/api/agents/.../proposals/<proposalId>/plan-goals` | PATCH | Edit one planned node's goal before it is created |
+
+Every run appends to a per-day ledger under a file lock
+(`.curio/users/<key>/agents/ledger/`), written from the token counts each
+provider returns on the completion itself. It is a record, not a gate: no run is
+refused for usage, no USD is computed, and no endpoint exposes it. There were
+three policy scopes here (account, per-dataflow, per-attachment) with
+tighten-only writes and optimistic revisions; all six endpoints are gone with
+the limits interface they served, and `maxOutputTokens` is now the deployment
+constant `services.DEPLOYMENT_MAX_OUTPUT_TOKENS`.
+
+### Starter Routes
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/starters` | GET | Per-template starter source bodies from every installed package, keyed on `<packageId>/<templateId>@<major>` |
+
+Starters come from each installed package's optional per-template `source` file.
+`curio.builtin@1` ships no sources, so dragging a built-in node onto the canvas
+yields an empty editor; third-party packages may ship a starter per template.
+When a template declares both `behavior: "code"` and a `source`, the frontend
+composes `withPackageStarter` over the behavior hook so the starter is injected
+on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 
 ### Auth Routes
 
@@ -557,17 +881,20 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `src/registry/types.ts` | TypeScript interfaces for descriptors, adapters, behavior hooks |
 | `src/constants.ts` | `SupportedType`, `EdgeType` enums (node types live in manifests now) |
 | `src/adapters/node/` | Built-in behavior hook implementations (code, vega, autk family, …) |
-| `src/utils/ConnectionValidator.ts` | Edge validation logic |
-| `src/api/` | API client wrappers (`packagesApi`, `projectsApi`, `authApi`) |
+| `src/ConnectionValidator.ts` | Edge validation logic |
+| `src/api/` | API client wrappers (`packagesApi`, `projectsApi`); `authApi` lives at `src/utils/authApi.ts` |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |
-| `src/components/menus/packages/PackageManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
+| `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
+| `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
+| `src/components/AiSettingsModal.tsx` | AI Settings: the account-level provider, model and credentials every AI surface reads |
+| `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend
 
 | File | Purpose |
 |---|---|
 | `backend/server.py` | Flask app factory; Werkzeug reloader exclude patterns |
-| `backend/app/api/routes.py` | Legacy REST endpoints (sandbox proxies, node-types) |
+| `backend/app/api/routes.py` | Legacy REST endpoints (sandbox proxies, starters, file serving) |
 | `backend/app/packages/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
 | `backend/app/packages/installer.py` | Catalog-source-dir → archive → user-store copy + integrity hashing |
 | `backend/app/packages/pip_runner.py` | `install_python_deps` / `uninstall_python_deps`; PEP 440 + caret support, idempotent skip |
@@ -575,6 +902,28 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `backend/app/packages/services.py` | Catalog install/uninstall orchestration; calls `pip_runner` on file-copy + prune |
 | `backend/app/packages/routes.py` | `/api/packages/*` endpoints (list, catalog, install, libraries, defaults) |
 | `backend/app/packages/libraries.py` | Per-user `.curio/users/<u>/installed-libraries.json` storage + aggregator |
+| `backend/app/datasets/service.py` | `DatasetCatalogService`, the façade every dataset route calls |
+| `backend/app/datasets/routes.py` | `/api/datasets/*` and `/api/dataflows/<id>/datasets/*` endpoints |
+| `backend/app/datasets/domain/` | Dataset manifest parsing, catalog items, computed-dataset identity, dedup, provenance |
+| `backend/app/datasets/application/` | Listing, preview, export, mutations, path resolution, auto-install, migrations |
+| `backend/app/datasets/install/` | Dataset installer, multi-part bundles, OSM/PBF layer extraction |
+| `backend/app/datasets/repositories/` | Installed / local / registry / user-store persistence, plus the per-user dataset index |
+| `backend/app/datasets/repositories/index.py` | The dataset index: write-through, disk reconciliation, never-raise `safe_*` wrappers |
+| `backend/app/datasets/models.py` | `DatasetIndexEntry`, the index's SQLAlchemy table |
+| `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
+| `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
+| `backend/app/agents/routes.py` | `/api/agents/*` endpoints (catalog, imports, publications, per-dataflow, attachments, runs) |
+| `backend/app/agents/services.py` | The facade every agent route calls; owns the `requiresAgents` closure on add and the dependent check on remove |
+| `backend/app/agents/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES` |
+| `backend/app/agents/builtin.py` | The 21 built-in agents, as a data-driven roster |
+| `backend/app/agents/storage.py` | Definition store under `.curio/users/<u>/agents/<coord>/` |
+| `backend/app/agents/imports.py` | My imports registry (`imported-agents.json`) |
+| `backend/app/agents/project_agents.py` | The per-dataflow lockfile in `spec.dataflow.agents` |
+| `backend/app/agents/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
+| `backend/app/agents/provider_config.py` | The single provider resolver: guest env, then per-user `llm_*`, then the deployment default |
+| `backend/app/agents/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported |
+| `backend/app/agents/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives |
+| `backend/app/agents/ledger.py` | Append-only per-day record of runs and tokens; flock-guarded. A record, not a gate |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |
 | `backend/extensions.py` | SQLAlchemy and Flask-Migrate initialization |
 
@@ -582,7 +931,7 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 
 | File | Purpose |
 |---|---|
-| `sandbox/app/api.py` | Sandbox REST endpoints (`/exec`, `/execJs`, `/install`, `/upload`) |
+| `sandbox/app/api.py` | Sandbox REST endpoints (`/exec`, `/execJs`, `/install`, `/get`) |
 | `sandbox/python_wrapper.txt` | Execution wrapper template for user code |
 | `sandbox/util/db.py` | DuckDB connection, path resolution, and `artifacts` table initialization |
 | `sandbox/util/parsers.py` | `save_to_duckdb`, `load_from_duckdb`, `detect_kind`, and type validation |

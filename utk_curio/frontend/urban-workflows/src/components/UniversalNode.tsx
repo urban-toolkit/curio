@@ -7,11 +7,14 @@ import DescriptionModal from './DescriptionModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
+import { behaviorDataView } from "../utils/behaviorDataView";
 import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvasTemplateConfig';
 import { useNodeState } from '../hook/useNodeState';
 import { HandleDef, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
+import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
+import ErrorBoundary from "./ErrorBoundary";
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -60,7 +63,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const { adapter } = descriptor;
 
   const nodeState = useNodeState(data, descriptor.id);
-  const behavior = adapter.useNodeBehavior(data, nodeState);
+  // dev/90 A15: behaviors read content as data.code OR data.content — hand
+  // the hook the compat view (render-time only, never persisted).
+  const behavior = adapter.useNodeBehavior(behaviorDataView(data), nodeState);
   const edges = useEdges();
 
   const sendCode = behavior.sendCodeOverride ?? nodeState.sendCode;
@@ -120,7 +125,13 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         });
       }
     }
-  }, [output?.code]);
+    // Keyed on the OBJECT, not `output?.code`: a node that errors twice in a
+    // row (e.g. a merge re-triggered by Play with inputs still missing) keeps
+    // code === "error", and a code-keyed effect never re-fires — the run then
+    // hangs on the stall watchdog. setOutput always produces a fresh object,
+    // and signalNodeExecDone ignores nodes outside the active level, so
+    // duplicate signals are harmless (dev/64).
+  }, [output]);
 
   // Signal done on unmount if the node was still executing (e.g. deleted while running).
   useEffect(() => {
@@ -130,9 +141,14 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       }
     };
   }, []);
+  // Prefer data.defaultCode (always up-to-date via updateDefaultCode / setNodes) over
+  // the locally-cached templateData.code which is only initialised once when templateId
+  // first appears and never re-synced.  This ensures that programmatic code updates
+  // (e.g. dataset drag-and-drop, AI suggestions) are reflected in the Monaco editor.
   const defaultValue =
     behavior.defaultValueOverride ??
-    (nodeState.templateData.code ? nodeState.templateData.code : data.defaultCode);
+    data.defaultCode ??
+    nodeState.templateData.code;
   const readOnly =
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 
@@ -225,6 +241,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           custom={nodeState.templateData.custom}
         />
 
+        {/* Per-node blast radius (#201). A throw from one node's content used
+            to unmount the whole React root - canvas, menus and every other
+            node - leaving a blank page. Contained here, the rest of the
+            dataflow keeps working and the broken node says so in place. */}
+        <ErrorBoundary label={`node ${data.nodeId}`}>
         {adapter.editor ? (
           <NodeEditor
             outputId={behavior.outputIdOverride ?? adapter.editor.outputId?.(data.nodeId)}
@@ -233,7 +254,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             grammar={editorTabs.grammar}
             widgets={editorTabs.widgets}
             provenance={editorTabs.provenance}
-            explanation={editorTabs.explanation}
             disableWidgets={adapter.editor.disableWidgets}
             setOutputCallback={setOutputCallback}
             data={data}
@@ -256,9 +276,13 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           // legitimately return ``undefined`` here — they're icon-only.
           behavior.contentComponent ?? null
         )}
+        </ErrorBoundary>
 
         {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </NodeContainer>
+
+      {/* Agents attached to this node render as avatars at its bottom edge. */}
+      {!dashboardOn && <NodeAgentBadges nodeId={data.nodeId} />}
     </div>
   );
 });

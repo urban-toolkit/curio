@@ -15,7 +15,6 @@ export interface CanvasTemplateConfig {
   hasWidgets: boolean;
   hasGrammar: boolean;
   hasProvenance: boolean;
-  hasExplanation: boolean;
   inputPorts: PortDraft[];
   outputPorts: PortDraft[];
   sourceFilename: string;
@@ -35,9 +34,13 @@ function portDefToDraft(
 
 function defaultSourceFilename(desc: NodeDescriptor): string {
   const path = desc.package?.source;
-  if (!path) return "default.py";
-  const last = path.split("/").pop() ?? "";
-  return last || "default.py";
+  // Blank when the descriptor names no file, because
+  // `applyCanvasTemplateConfigToTemplateDraft` reads a blank as "no override"
+  // and keeps the per-kind name the draft derived from the template id.
+  // Inventing a constant here would win that merge and reintroduce the
+  // collision the draft's fallback exists to avoid.
+  if (!path) return "";
+  return path.split("/").pop()?.trim() ?? "";
 }
 
 export function canvasTemplateConfigFromDescriptor(
@@ -59,7 +62,6 @@ export function canvasTemplateConfigFromDescriptor(
     hasWidgets: desc.hasWidgets,
     hasGrammar,
     hasProvenance: desc.hasProvenance ?? true,
-    hasExplanation: hasCode || hasGrammar,
     inputPorts: portDefToDraft(desc.inputPorts),
     outputPorts:
       desc.outputPorts.length > 0
@@ -122,7 +124,6 @@ export function resolveEditorTabFlags(
   grammar: boolean;
   widgets: boolean;
   provenance: boolean;
-  explanation: boolean;
 } {
   const code = config?.hasCode ?? desc.hasCode;
   const grammar = config?.hasGrammar ?? desc.hasGrammar;
@@ -132,6 +133,27 @@ export function resolveEditorTabFlags(
     grammar,
     widgets,
     provenance: config?.hasProvenance ?? desc.hasProvenance ?? true,
-    explanation: config?.hasExplanation ?? (code || grammar),
   };
+}
+
+/**
+ * The tab a node's editor should open on.
+ *
+ * NodeEditor used to hardcode `"code"`. Grammar-only kinds (autk-grammar and
+ * vis-vega both declare `hasCode: false`) render no code pane, so that left NO
+ * pane active on mount and the grammar editor mounted inside a `display: none`
+ * Bootstrap tab (#157).
+ *
+ * Order follows the tab strip, so the first tab the user can actually see is the
+ * one that opens. `"output"` is the last resort: every node has an output pane.
+ */
+export function resolveInitialEditorTab(flags: {
+  code: boolean;
+  grammar: boolean;
+  widgets: boolean;
+}): "code" | "grammar" | "widgets" | "output" {
+  if (flags.code) return "code";
+  if (flags.grammar) return "grammar";
+  if (flags.widgets) return "widgets";
+  return "output";
 }

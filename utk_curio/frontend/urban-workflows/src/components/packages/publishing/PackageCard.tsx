@@ -1,23 +1,22 @@
 import React from "react";
 import { PackagePayload } from "../../../api/packagesApi";
-import { CatalogPublishPill } from "../CatalogPublishPill";
-import { packageInitial, primaryCategory } from "./packageUtils";
+import {
+  CatalogKindIcon,
+} from "../../catalog/CatalogKindVisuals";
+import { packageInitial,primaryCategory } from "./packageUtils";
 import styles from "./PackageCard.module.css";
 
-/** CSS class variants cycled deterministically per package dirName. */
-const CARD_ICON_VARIANTS = [
-  styles.cardIconWarm,
-  styles.cardIconCool,
-  styles.cardIconViolet,
-] as const;
-
-function iconVariantForPack(dirName: string): string {
-  let hash = 0;
-  for (let i = 0; i < dirName.length; i++) {
-    hash = (hash + dirName.charCodeAt(i)) % CARD_ICON_VARIANTS.length;
-  }
-  return CARD_ICON_VARIANTS[hash]!;
+/**
+ * The icon tile is coloured by the package's node category, so it matches both
+ * the chip you filtered with and the left border the canvas paints on a node of
+ * that category. It used to be a character-sum hash of `dirName`, which meant
+ * three `data` packages could render in three unrelated colours while a
+ * `computation` package borrowed one of them.
+ */
+function iconVariantForCategory(category: string): string {
+  return (styles as Record<string, string>)[`cardIcon_${category}`] ?? styles.cardIcon_package;
 }
+
 
 export interface PackageCardProps {
   pkg: PackagePayload;
@@ -28,17 +27,16 @@ export interface PackageCardProps {
   busy: boolean;
   /** When set, this card's secondary actions show a busy state. */
   cardActionDir?: string | null;
-  /** Whether dev catalog fixture writes are allowed on this server. */
-  catalogPublishAllowed: boolean;
+  /** Whether shared-catalog writes are allowed on this server. */
   /** True when the package exists in the shared catalog (drives the Published badge). */
-  isPublished?: boolean;
   /** When set, this card's Publish pill shows a busy state. */
-  publishingDir?: string | null;
   onInstall: (pkg: PackagePayload) => void;
   onUninstall?: (pkg: PackagePayload) => void;
-  onUnpublish?: (pkg: PackagePayload) => void;
+  /** False in a dataflow that has not been saved yet: there is no project to
+   *  remove from, so the control shows disabled rather than vanishing. */
+  hasProject?: boolean;
+  onOpenDetails?: (pkg: PackagePayload) => void;
   /** Supplied on the /catalog page surface; when omitted, the Publish pill is hidden. */
-  onPublish?: (dirName: string) => void;
 }
 
 export const PackageCard: React.FC<PackageCardProps> = ({
@@ -48,13 +46,10 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   catalogRow,
   busy,
   cardActionDir,
-  catalogPublishAllowed,
-  isPublished,
-  publishingDir,
   onInstall,
   onUninstall,
-  onUnpublish,
-  onPublish,
+  hasProject = true,
+  onOpenDetails,
 }) => {
   const cardBusy = busy || cardActionDir === pkg.dirName;
   // Author actions (Publish / Unpublish) are suppressed on read-only
@@ -62,44 +57,85 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   // backend rejects modify/publish there anyway, so don't tempt users with
   // buttons that 4xx. The Published BADGE still renders (it's
   // informational, not destructive).
-  const isAuthorable = pkg.readOnly !== true;
   // Uninstall is a project-lockfile operation, not a modification of the
   // package files, so `readOnly` doesn't gate it. Only ``curio.builtin@*``
   // is genuinely non-uninstallable (backend enforces; see
   // ``uninstall_from_project``).
   const isUninstallable = !pkg.dirName.startsWith("curio.builtin@");
   const showUninstall = isInstalled && onUninstall != null && isUninstallable;
-  const showUnpublish = catalogPublishAllowed && onUnpublish != null && isAuthorable;
-  const showPublishButton = onPublish != null && catalogPublishAllowed && isAuthorable;
-  // The pill renders for two distinct cases:
-  //   - The package is already published — show the "Published" badge (purely
-  //     informational; no click handler needed, so onPublish may be omitted).
-  //   - The user has a local copy AND the operator allows publish AND the
-  //     package isn't read-only — show the "Publish" button.
-  const showPublishPill = isPublished === true || showPublishButton;
+  // Unpublish only makes sense for a package that IS in the shared catalog —
+  // without the isPublished check it offered to unpublish packages that had
+  // never been published.
+
+  const cat = primaryCategory(pkg);
 
   return (
-    <article className={styles.card}>
-      <div className={`${styles.cardIcon} ${iconVariantForPack(pkg.dirName)}`}>
-        {packageInitial(pkg.name)}
+    <article
+      className={styles.card}
+      /* Stable hook for e2e locators: the CSS module class is hashed, and
+         keying on the display name couples tests to copy that has been
+         renamed repeatedly. Mirrors data-pkg-palette-coords. */
+      data-pkg-dir={pkg.dirName}
+    >
+      {/* The square, and the way into the package's details beneath it - the
+          same position on every drawer card. */}
+      <div className={styles.cardAvatarCol}>
+        {/* The square is the same affordance as the link beneath it, so it is
+            a button too - on every drawer card. */}
+        <button
+          type="button"
+          className={`${styles.cardIcon} ${styles.cardAvatarButton}`}
+          title={`View ${pkg.name} details`}
+          aria-label={`View ${pkg.name} details`}
+          disabled={!onOpenDetails}
+          onClick={() => onOpenDetails?.(pkg)}
+        >
+          <CatalogKindIcon
+            className={`${styles.cardIcon} ${styles.cardIconPackage} ${iconVariantForCategory(cat)} `}
+            kind="package"
+            size="md"
+            title="Node package"
+          >
+            <span className={styles.cardIconText}>
+              {packageInitial(pkg.name)}
+            </span>
+          </CatalogKindIcon>
+        </button>
+        {onOpenDetails ? (
+          <button
+            type="button"
+            className={styles.avatarDetailsLink}
+            onClick={() => onOpenDetails(pkg)}
+          >
+            View details
+          </button>
+        ) : null}
       </div>
 
+      {/* The Agent drawer's card body, which is the baseline all three now
+          share: a title and ONE meta line. This carried a `CatalogItemRowHeader`
+          strip, a differently-classed `<p className={cardMeta}>`, and a
+          four-chip tag row on top of that - three rows of chrome around one
+          package name, where the Agent card next door had one.
+
+          Nothing informative was dropped, only re-sited: the category, the node
+          count and a non-stable channel all read perfectly well as meta text,
+          and the update chip stays a chip because it is the one item here that
+          is actionable state rather than description. */}
       <div className={styles.cardBody}>
         <h3 className={styles.cardTitle}>{pkg.name}</h3>
-        <p className={styles.cardMeta}>
-          {pkg.publisher || pkg.packageId} · v{pkg.version}
-          {pkg.license ? ` · ${pkg.license}` : ""}
-        </p>
-        <div className={styles.tagRow}>
-          <span className={styles.tag}>
-            {pkg.templates.length} node{pkg.templates.length === 1 ? "" : "s"}
+        <div className={styles.cardMetaRow}>
+          <span className={styles.cardMetaText}>
+            {[
+              pkg.publisher || pkg.packageId,
+              `v${pkg.version}`,
+              cat,
+              `${pkg.templates.length} node${pkg.templates.length === 1 ? "" : "s"}`,
+              (pkg.channel ?? "stable") !== "stable" ? pkg.channel : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
-          <span className={styles.tag}>{primaryCategory(pkg)}</span>
-          {(pkg.channel ?? "stable") !== "stable" ? (
-            <span className={`${styles.tag} ${styles.tagChannel}`} title={`Release channel: ${pkg.channel}`}>
-              {pkg.channel}
-            </span>
-          ) : null}
           {hasUpdate && catalogRow ? (
             <span className={`${styles.tag} ${styles.tagUpdate}`}>
               Update to {catalogRow.version}
@@ -107,16 +143,18 @@ export const PackageCard: React.FC<PackageCardProps> = ({
           ) : null}
         </div>
       </div>
-
+      
+      {/* Actions */}
       <div className={styles.cardAction}>
         {!isInstalled ? (
           <button
             type="button"
             className={styles.btnInstall}
             disabled={cardBusy}
+            title={`Add ${pkg.name} to this project`}
             onClick={() => onInstall(pkg)}
           >
-            Install
+            Add to project
           </button>
         ) : hasUpdate ? (
           <button
@@ -129,44 +167,26 @@ export const PackageCard: React.FC<PackageCardProps> = ({
           </button>
         ) : null}
 
-        {(showUninstall || showUnpublish || showPublishPill) && (
+        {/* Publishing is not a card action on any surface: it is an
+            account-level decision about one package, and it lives in the Node
+            Catalog page's detail drawer with the other decisions. */}
+        {showUninstall ? (
           <div className={styles.cardSecondaryActions}>
-            {showUninstall ? (
-              <button
-                type="button"
-                className={styles.btnSecondary}
-                disabled={cardBusy}
-                title={`Remove ${pkg.name} from this project`}
-                onClick={() => onUninstall(pkg)}
-              >
-                Uninstall
-              </button>
-            ) : null}
-            {showUnpublish ? (
-              <button
-                type="button"
-                className={styles.btnSecondary}
-                disabled={cardBusy}
-                title={`Remove ${pkg.dirName} from the dev catalog (packages/)`}
-                onClick={() => onUnpublish(pkg)}
-              >
-                Unpublish
-              </button>
-            ) : null}
-            {showPublishPill ? (
-              <CatalogPublishPill
-                variant="hub"
-                dirName={pkg.dirName}
-                published={!!isPublished}
-                allowPublish={catalogPublishAllowed}
-                busy={publishingDir === pkg.dirName}
-                // Badge case (published=true) ignores onPublish; supply a no-op
-                // so the published-but-not-locally-installed path still renders.
-                onPublish={onPublish ?? (() => {})}
-              />
-            ) : null}
+            <button
+              type="button"
+              className={styles.btnSecondary}
+              disabled={cardBusy || !hasProject}
+              title={
+                hasProject
+                  ? `Remove ${pkg.name} from this project`
+                  : "Save this dataflow first. There is no project to remove it from yet."
+              }
+              onClick={() => onUninstall(pkg)}
+            >
+              Remove from project
+            </button>
           </div>
-        )}
+        ) : null}
       </div>
     </article>
   );

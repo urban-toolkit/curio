@@ -3,27 +3,54 @@
 #
 # Adds the --deploy flag to the runtime command so the deployed stack
 # boots with auth + projects enabled (CURIO_NO_AUTH=0, CURIO_NO_PROJECT=0).
+#
+# --no-allow-publish locks down the two author-only catalog mutators
+# (publish-catalog / delete-catalog). On a shared deployment the package
+# catalog lives inside the image (see the volumes note in docker-compose.yml),
+# so a publish would be discarded on the next recreate anyway -- and before
+# that it silently rewrote catalog entries for every other user.
 services:
   curio:
+    # Bring the container back up automatically after a host reboot or daemon
+    # restart, but respect a manual `docker stop`.
+    restart: unless-stopped
     command:
       - python
       - curio.py
       - start
       - all
       - --deploy
+      - --no-allow-publish
       - --backend-host
       - 0.0.0.0
       - --backend-port
       - "5002"
-      - --sandbox-host
-      - 0.0.0.0
+      # No --sandbox-host: the sandbox keeps its 127.0.0.1 default. It runs
+      # arbitrary user code and the backend reaches it over loopback in this
+      # same container.
       - --sandbox-port
       - "2000"
-      - --backend-host
-      - 0.0.0.0
-      - --backend-port
-      - "5002"
-      - --sandbox-host
-      - 0.0.0.0
-      - --sandbox-port
-      - "2000"
+      # Each node's Python runs in a confined child process instead of
+      # in-process: memory and CPU capped, a seccomp denylist, and -- because
+      # --exec-user is set -- as an unprivileged account that cannot read
+      # instance/ (password hashes, session tokens) or .curio/data (every
+      # session's artifacts). The account is created in the image; see the
+      # Dockerfile's curio-exec note.
+      #
+      # This is FAIL-CLOSED, deliberately. A deployment has auth on, so if the
+      # sandbox cannot confine (no Linux, no pyseccomp, or those paths are
+      # still reachable by curio-exec after hardening) it refuses to start
+      # rather than serve while claiming a boundary it does not have. That
+      # makes a misconfiguration an unhealthy container, which the deploy
+      # workflow now waits for and fails on, instead of a silent regression to
+      # in-process execution.
+      #
+      # Two side effects on the host, both permanent and both on the
+      # bind-mounted workspace: ./instance and ./.curio/data are chmod'd to
+      # 0700/0600 owned by root at every boot (isolation/hardening.py). Any
+      # other process on the host that reads them -- a backup job, an operator
+      # shell as a non-root user -- loses access. Check that before deploying.
+      - --isolation
+      - fork
+      - --exec-user
+      - curio-exec

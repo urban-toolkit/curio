@@ -1,6 +1,7 @@
 import geopandas as gpd
 import pandas as pd
 import json
+import math
 import mmap
 import zlib
 import os
@@ -18,6 +19,28 @@ from pathlib import Path
 import io
 import duckdb
 from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_db
+# Value <-> bytes conversion lives in codec.py, which deliberately has no access
+# to the artifact store. Re-exported here so existing imports of these names
+# from parsers keep working (worker.py seeds detect_kind into every node's
+# namespace, and test_sandbox_namespace.py pins that).
+from utk_curio.sandbox.util.codec import (
+    PARQUET_DECODE_SIDECAR_SUFFIX,
+    _decode_object_cell_from_parquet,
+    _encode_object_cell_for_parquet,
+    _is_missing_value,
+    _json_safe_value,
+    _make_serializable,
+    _object_column_needs_json_encoding,
+    _parse_parquet_meta,
+    _prepare_frame_for_parquet,
+    _restore_frame_from_parquet,
+    _serialize_parquet_meta,
+    _write_dataframe_parquet,
+    detect_kind,
+    make_json_safe,
+    safe_json_loads,
+)
+
 
 # Utility Functions
 # transforms the whole input into a dict (json) in depth
@@ -235,135 +258,55 @@ def parseInput(parsed_json):
     return None
 
 
-def make_json_safe(obj):
-    if isinstance(obj, (dict, list)):
-        return obj
-    elif isinstance(obj, (np.integer, np.floating)):
-        return obj.item()
-    elif isinstance(obj, (datetime.datetime, datetime.date)):
-        return obj.isoformat()
-    elif obj is None:
-        return None
-    elif isinstance(obj, (float, int)) and pd.isnull(obj):  # Only apply pd.isnull to scalars
-        return None
-    return obj  # Fallback for str, bool, etc.
+def _read_parquet_sidecar_meta(path):
+    """Return ``(frame_metadata, encoded_object_columns)`` from a parquet file's
+    ``<file>.decode.json`` decode sidecar, or ``(None, [])`` when it's absent."""
+    import os
 
-def safe_json_loads(val):
+    meta_path = str(path) + PARQUET_DECODE_SIDECAR_SUFFIX
+    if not os.path.exists(meta_path):
+        return None, []
+    with open(meta_path, encoding="utf-8") as handle:
+        return _parse_parquet_meta(handle.read())
+
+
+def restore_parquet_sidecar(frame, path, *, geometry_col=None):
+    """Decode JSON-encoded object columns recorded in a parquet file's
+    ``<file>.decode.json`` sidecar (written by :func:`save_dataset_parquet`).
+
+    No-op when the sidecar is absent or records no encoded columns — so it never
+    touches columns that weren't encoded. Used by the preview and export paths
+    so they show/emit real objects instead of raw JSON strings.
+    """
+    _frame_metadata, encoded_object_columns = _read_parquet_sidecar_meta(path)
+    if encoded_object_columns:
+        frame = _restore_frame_from_parquet(
+            frame, encoded_object_columns, geometry_col=geometry_col
+        )
+    return frame
+
+
+def load_dataset_parquet(path):
+    """Read a dataset parquet written by :func:`save_dataset_parquet`, restoring
+    any JSON-encoded object columns recorded in the ``<file>.decode.json`` sidecar.
+
+    Reads as a GeoDataFrame when the file is GeoParquet, otherwise a plain
+    DataFrame. The inverse of :func:`save_dataset_parquet`.
+    """
     try:
-        if isinstance(val, str) and val.strip().startswith('{'):
-            return json.loads(val)
-    except Exception as e:
-        print("Exception in safe_json_loads", e)
-    return val
-
-def _make_serializable(val):
-    """Recursively convert numpy/pandas types to native Python types."""
-    if isinstance(val, np.ndarray):
-        return [_make_serializable(v) for v in val.tolist()]
-    elif isinstance(val, tuple):
-        return [_make_serializable(v) for v in val]
-    elif isinstance(val, set):
-        return [_make_serializable(v) for v in sorted(val, key=repr)]
-    elif isinstance(val, bytes):
-        return val.decode("utf-8", errors="replace")
-    elif isinstance(val, (np.integer,)):
-        return int(val)
-    elif isinstance(val, (np.floating,)):
-        return float(val)
-    elif isinstance(val, (np.bool_,)):
-        return bool(val)
-    elif isinstance(val, (pd.Timestamp, datetime.datetime, datetime.date)):
-        return val.isoformat()
-    elif isinstance(val, dict):
-        return {k: _make_serializable(v) for k, v in val.items()}
-    elif isinstance(val, list):
-        return [_make_serializable(v) for v in val]
-    return val
-
-
-def _is_missing_value(val):
-    if val is None:
-        return True
-    try:
-        missing = pd.isna(val)
+        frame = gpd.read_parquet(path)
+        geometry_col = frame.geometry.name
     except Exception:
-        return False
-    return isinstance(missing, (bool, np.bool_)) and bool(missing)
+        frame = pd.read_parquet(path)
+        geometry_col = None
 
-
-def _encode_object_cell_for_parquet(val):
-    if _is_missing_value(val):
-        return None
-    normalized = _make_serializable(val)
-    return json.dumps(normalized, ensure_ascii=False, default=str)
-
-
-def _decode_object_cell_from_parquet(val):
-    if _is_missing_value(val):
-        return None
-    if isinstance(val, str):
+    frame_metadata, _encoded = _read_parquet_sidecar_meta(path)
+    frame = restore_parquet_sidecar(frame, path, geometry_col=geometry_col)
+    if frame_metadata is not None:
         try:
-            return json.loads(val)
-        except Exception:
-            return safe_json_loads(val)
-    return val
-
-
-def _prepare_frame_for_parquet(frame, geometry_col=None):
-    prepared = frame
-    encoded_object_columns = []
-
-    for col in prepared.columns:
-        if geometry_col is not None and col == geometry_col:
-            continue
-        if prepared[col].dtype == object and _object_column_needs_json_encoding(prepared[col]):
-            if prepared is frame:
-                prepared = frame.copy(deep=False)
-            prepared[col] = prepared[col].apply(_encode_object_cell_for_parquet)
-            encoded_object_columns.append(col)
-
-    return prepared, encoded_object_columns
-
-
-def _serialize_parquet_meta(frame_metadata=None, encoded_object_columns=None):
-    payload = {}
-    if frame_metadata:
-        payload["frame_metadata"] = frame_metadata
-    if encoded_object_columns:
-        payload["encoded_object_columns"] = encoded_object_columns
-    return json.dumps(payload) if payload else None
-
-
-def _parse_parquet_meta(meta_json):
-    if not meta_json:
-        return None, []
-
-    try:
-        payload = json.loads(meta_json)
-    except Exception:
-        return None, []
-
-    if isinstance(payload, dict) and (
-        "frame_metadata" in payload or "encoded_object_columns" in payload
-    ):
-        return payload.get("frame_metadata"), payload.get("encoded_object_columns", [])
-
-    # Backward compatibility: older geodataframe rows stored only ``gdf.metadata``.
-    return payload, []
-
-
-def _restore_frame_from_parquet(frame, encoded_object_columns, geometry_col=None):
-    if encoded_object_columns:
-        for col in encoded_object_columns:
-            if col in frame.columns:
-                frame[col] = frame[col].apply(_decode_object_cell_from_parquet)
-        return frame
-
-    for col in frame.columns:
-        if geometry_col is not None and col == geometry_col:
-            continue
-        if frame[col].dtype == object:
-            frame[col] = frame[col].apply(safe_json_loads)
+            frame.metadata = frame_metadata
+        except Exception:  # noqa: BLE001 - metadata is best-effort
+            pass
 
     return frame
 
@@ -487,7 +430,12 @@ def _json_artifact_rel_path(art_id):
 
 
 def _write_json_artifact(art_id, value):
-    payload = json.dumps(value, ensure_ascii=False).encode("utf-8")
+    # allow_nan=False makes invalid floats a hard error instead of silently
+    # emitting bare NaN/Infinity tokens; _json_safe_value scrubs them to null
+    # first so a legitimate non-finite value persists as null rather than raising.
+    payload = json.dumps(
+        _json_safe_value(value), ensure_ascii=False, allow_nan=False
+    ).encode("utf-8")
     rel_path = _json_artifact_rel_path(art_id)
     full_path = _resolve_stored_artifact_path(rel_path, create_parent=True)
     full_path.write_bytes(zlib.compress(payload))
@@ -497,39 +445,6 @@ def _write_json_artifact(art_id, value):
 def _read_json_artifact(rel_path):
     payload = _resolve_stored_artifact_path(rel_path).read_bytes()
     return json.loads(zlib.decompress(payload).decode("utf-8"))
-
-
-def _object_column_needs_json_encoding(series):
-    inferred = pd.api.types.infer_dtype(series, skipna=True)
-    return inferred not in {
-        "empty",
-        "string",
-        "unicode",
-        "bytes",
-        "integer",
-        "floating",
-        "boolean",
-        "date",
-        "datetime",
-        "datetime64",
-        "timedelta",
-        "timedelta64",
-        "decimal",
-    }
-
-
-def _write_dataframe_parquet(frame, parquet_path):
-    writer = duckdb.connect(database=":memory:")
-    try:
-        writer.register("curio_frame", frame)
-        escaped_path = str(parquet_path).replace("'", "''")
-        writer.execute(f"COPY curio_frame TO '{escaped_path}' (FORMAT PARQUET)")
-    finally:
-        try:
-            writer.unregister("curio_frame")
-        except Exception:
-            pass
-        writer.close()
 
 
 def save_to_duckdb(value, node_id=None, session_id=None):
@@ -858,19 +773,58 @@ def load_tabular_preview_from_duckdb(art_id, max_rows, session_id=None):
             pass
 
 
-def detect_kind(obj):
-    """Return the Curio 'kind' string for a Python object (no conversion)."""
-    if obj is None: return 'null'
-    # bool MUST come before int
-    if isinstance(obj, bool): return 'bool'
-    if isinstance(obj, int): return 'int'
-    if isinstance(obj, float): return 'float'
-    if isinstance(obj, str): return 'str'
-    if isinstance(obj, list): return 'list'
-    if isinstance(obj, dict): return 'dict'
-    # GeoDataFrame MUST come before DataFrame
-    if isinstance(obj, gpd.GeoDataFrame): return 'geodataframe'
-    if isinstance(obj, pd.DataFrame): return 'dataframe'
-    if 'rasterio' in sys.modules and isinstance(obj, sys.modules['rasterio'].io.DatasetReader): return 'raster'
-    if isinstance(obj, tuple): return 'outputs'
-    return 'unknown'
+def save_dataset_parquet(output, kind):
+    """Save a DataFrame or GeoDataFrame as a named Parquet file in the shared data
+    directory (top-level, not inside ``artifacts/``).
+
+    This file is tracked as a *dataset* by the catalog (via liveOutputs / copy_outputs)
+    so it appears immediately after node execution and is persisted on project save.
+
+    Args:
+        output: the raw Python object (DataFrame or GeoDataFrame).
+        kind:   the Curio kind string ('dataframe' or 'geodataframe').
+
+    Returns:
+        str: The bare filename (e.g. ``1718123456789_ab12cd34_output.parquet``), or
+             ``None`` if saving failed or the kind is not tabular.
+    """
+    if kind not in ('dataframe', 'geodataframe'):
+        return None
+
+    data_dir = _shared_data_dir()
+    timestamp = str(int(time.time() * 1000))
+    rand = hashlib.sha256(os.urandom(8)).digest()[:4].hex()
+    filename = f"{timestamp}_{rand}_output.parquet"
+    full_path = data_dir / filename
+
+    try:
+        if isinstance(output, gpd.GeoDataFrame):
+            # GeoParquet preserves CRS and geometry column automatically.
+            prepared, encoded_object_columns = _prepare_frame_for_parquet(
+                output, geometry_col=output.geometry.name
+            )
+            prepared.to_parquet(full_path)
+            meta_json = _serialize_parquet_meta(
+                frame_metadata=getattr(output, 'metadata', None),
+                encoded_object_columns=encoded_object_columns,
+            )
+        else:
+            prepared, encoded_object_columns = _prepare_frame_for_parquet(output)
+            _write_dataframe_parquet(prepared, full_path)
+            meta_json = _serialize_parquet_meta(
+                encoded_object_columns=encoded_object_columns,
+            )
+        # Object columns (dict/list cells) are JSON-encoded for parquet; the artifacts
+        # path stashes the decode list in DuckDB, but a named dataset file has no such
+        # row, so persist it in a ``<file>.decode.json`` sidecar instead. Without it the
+        # columns reload as JSON strings instead of the original objects. (Distinct
+        # from file_meta's ``.meta.json`` counts sidecar so neither clobbers the other.)
+        if meta_json:
+            (data_dir / (filename + PARQUET_DECODE_SIDECAR_SUFFIX)).write_text(
+                meta_json, encoding="utf-8"
+            )
+        return filename
+    except Exception as exc:
+        print(f"[save_dataset_parquet] Could not save dataset file: {exc}", file=sys.stderr)
+        return None
+

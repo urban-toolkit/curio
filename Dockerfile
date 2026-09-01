@@ -21,8 +21,15 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 COPY requirements.txt curio.py ./
+# pyproject.toml / MANIFEST.in are what carry utk_curio/llm-prompts (not an
+# importable package -- the hyphen makes packages.find blind to it) into an
+# sdist and a wheel. tests/test_agents/test_prompt_assets.py asserts against
+# both files, and CI runs the backend suite INSIDE this image, so without
+# them here the packaging assertion cannot run where it matters.
+COPY pyproject.toml MANIFEST.in ./
 COPY scripts/ scripts/
 COPY packages/ packages/
+COPY datasets/ datasets/
 COPY docs/examples/ docs/examples/
 COPY docs/schemas/ docs/schemas/
 COPY utk_curio/ utk_curio/
@@ -61,20 +68,41 @@ FROM runtime_base AS runtime
 # Production mode: serve built frontend with Python http.server on 8080
 ENV CURIO_DEV=0
 
+# Unprivileged account for isolated node execution
+# (utk_curio/sandbox/isolation/). Creating it changes nothing on its own: the
+# container still runs as root and no process uses this account unless a launch
+# passes --isolation=fork --exec-user curio-exec. It exists here because the
+# account has to be in the image for that flag to work at all.
+#
+# Deliberately NOT adding a `USER` directive or chowning anything. CI depends on
+# the container running as root and works around bind-mount ownership with
+# `umask 000` (see docker-compose.ci.yml), and the live deployments bind-mount
+# ./instance, ./.curio and ./datasets from the host. Tightening those globally
+# would break both for the sake of a feature that is off by default. The
+# permissions that isolation needs are applied at runtime, only when isolation
+# is actually enabled, by utk_curio/sandbox/isolation/hardening.py.
+RUN groupadd --system curio-exec \
+    && useradd --system --gid curio-exec --no-create-home \
+        --shell /usr/sbin/nologin curio-exec
+
 # Adjust these COPY paths if your build outputs to "build/" instead of "dist/"
 COPY --from=frontend_builder /src/utk_curio/frontend/urban-workflows/dist \
     /app/utk_curio/frontend/urban-workflows/dist
 
-# Expose necessary ports
-EXPOSE 2000 5002 8080
+# Expose necessary ports. The sandbox (2000) is deliberately NOT exposed: it
+# runs arbitrary user code and is reached only by the backend over loopback
+# inside this container.
+EXPOSE 5002 8080
 
 # Dockerfile with Health Check
 HEALTHCHECK --start-period=180s --interval=30s --timeout=60s --retries=20 CMD \
   curl -sf http://localhost:2000/health && \
   curl -sf http://localhost:5002/health && \
   curl -sf http://localhost:8080
-  
+
 # RUN chmod +x curio.py && ln -s /app/curio.py /usr/local/bin/curio
-# CMD ["curio", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
-# CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
-CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000", "--with-examples"]
+# The sandbox binds 127.0.0.1 (the default) rather than 0.0.0.0. Backend and
+# sandbox share this container, so loopback is all the backend needs, and
+# binding the wider interface published an unauthenticated code-execution API
+# to anything that could reach the container.
+CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-port", "2000", "--with-examples"]

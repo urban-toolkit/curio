@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 499;
+  z-index: var(--curio-z-modal-base-backdrop);
 }
 
 .modal {
@@ -13,10 +13,10 @@
   width: 480px;
   max-width: 90vw;
   max-height: 80vh;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-  z-index: 500;
+  background: var(--curio-card-bg);
+  border-radius: var(--curio-radius-lg);
+  box-shadow: var(--curio-shadow-modal);
+  z-index: var(--curio-z-modal-base);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -29,12 +29,26 @@
   max-height: none;
 }
 
+.xlarge {
+  width: min(1200px, max(320px, calc(100vw - 452px)));
+  height: calc(100vh - 32px);
+  max-width: none;
+  max-height: none;
+  background: #f7f7f4;
+}
+
+/* Center in the canvas area left of the dataset catalog drawer (~420px). */
+.xlargeOverlay {
+  left: max(16px, calc((100vw - 420px) / 2));
+  transform: translate(-50%, -50%);
+}
+
 .backdropOverlay {
-  z-index: 10054;
+  z-index: var(--curio-z-modal-backdrop);
 }
 
 .modalOverlay {
-  z-index: 10055;
+  z-index: var(--curio-z-modal);
 }
 
 .closeX {
@@ -46,7 +60,7 @@
   background: none;
   border: none;
   line-height: 1;
-  color: #1E1F23;
+  color: var(--curio-text-primary);
   padding: 0;
   z-index: 1;
   display: flex;
@@ -55,5 +69,5 @@
 }
 
 .closeX:hover {
-  color: #555;
+  color: var(--curio-text-secondary);
 }

@@ -2,11 +2,18 @@ include README.md
 include pyproject.toml
 include LICENSE
 recursive-include packages *
+recursive-include datasets *
 recursive-include tests *
 
 recursive-include utk_curio/backend *
 recursive-include utk_curio/sandbox *
 recursive-include utk_curio/frontend *
+
+# The built-in agents' system and task prompts. Not a Python package (the
+# hyphen makes it unimportable, so packages.find cannot see it), so without
+# this line an sdist or wheel ships every one of the roster agents with no
+# prompt bytes at all, and builtin.read_prompt_text just returns None.
+recursive-include utk_curio/llm-prompts *.txt
 
 prune utk_curio/frontend/urban-workflows/node_modules
 

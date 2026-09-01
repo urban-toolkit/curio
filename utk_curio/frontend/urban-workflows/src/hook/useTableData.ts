@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { formatDate, mapTypes } from "../utils/formatters";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { fetchData } from "../services/api";
+import { sandboxArtifactId } from "../utils/flowOutputRef";
 
 const useTableData = ({ data }: { data: INodeData }) => {
   const [tabData, setTabData] = useState<any[]>([]);
@@ -138,6 +139,13 @@ const useTableData = ({ data }: { data: INodeData }) => {
         } else {
           wrappers = [data.input];
         }
+      } else if (typeof data.input === "string" && data.input.trim()) {
+        wrappers = [{ path: data.input.trim() }];
+      }
+
+      if (wrappers.length === 0) {
+        setTabData([]);
+        return { code: "success", content: "" };
       }
 
       // Known application-level shapes the rest of this hook handles directly.
@@ -164,7 +172,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
       // — are passed through untouched.
       const fetched = await Promise.all(
         wrappers.map(async (w) => {
-          const fileId = w?.filename ?? w?.path;
+          const fileId = sandboxArtifactId(w);
           if (fileId) {
             try {
               const raw = await fetchData(fileId);

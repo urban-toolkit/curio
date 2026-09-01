@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "id": "curio.example-ui",
+  "name": "Example: Custom UI Node",
+  "publisher": "Curio",
+  "description": "A minimal worked example of a node that renders its own React interface instead of a code editor. Filters a DataFrame's rows by a numeric threshold you pick from controls in the node body. No API keys, no Python dependencies — read it, fork it, replace the UI with your own.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-08-22T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {}
+  },
+  "permissions": [],
+  "behaviorScript": "scripts/behaviors.js",
+  "templates": [
+    {
+      "id": "column-filter",
+      "label": "Column Filter",
+      "description": "Pick a numeric column, a comparison and a threshold from controls in the node body; sends the matching rows downstream. A reference implementation for custom-UI nodes.",
+      "category": "computation",
+      "engine": "python",
+      "editor": "none",
+      "behavior": "column-filter",
+      "iconRef": "fa-solid:cube",
+      "hasCode": false,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "DATAFRAME"
+          ]
+        }
+      ],
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "DATAFRAME"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/agent-package.v1.json",
+  "title": "Curio Hookable Agent Manifest (v1)",
+  "description": "Schema for a Curio hookable-agent manifest.json. An agent ships in a directory named '<agentId>@<version>' containing this manifest and a prompts/ directory with the system preamble and instruction assets referenced by digest. Field names are camelCase. Agent package ids begin with 'agent.' to distinguish them from node packages ('curio.builtin' etc.). Capabilities are semantic behavior contracts, kept independent of the prompt files that implement them. This schema is the canonical spec; the backend validator in utk_curio/backend/app/agents/manifest.py implements the supported subset. User-facing overview: docs/AGENT-CATALOG.md.",
+  "type": "object",
+  "required": [
+    "id",
+    "version",
+    "name",
+    "category",
+    "capabilities",
+    "provenance"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Pointer to this schema. Conventionally a relative path or the raw GitHub URL of the schema file."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Agent package id. Always begins with 'agent.' followed by a kebab-case name, e.g. 'agent.node-explainer' or 'agent.dataflow-builder'."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9.-]+)?$",
+      "description": "Semver-style version. Pre-release / build metadata accepted. The on-disk directory is '<id>@<version>'."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable agent name shown in the Agent Catalog."
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "data",
+        "node",
+        "canvas",
+        "package",
+        "evaluate"
+      ],
+      "description": "Catalog category chip. Drives the drawer category filter and the hook target family."
+    },
+    "purpose": {
+      "type": "string",
+      "description": "One-line description shown in catalog cards."
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Display/behavior roles (e.g. 'orchestration', 'discovery', 'explanation'). Informational."
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Semantic capability contracts this agent declares. Capabilities are discovered/resolved/substituted by id; they never grant authorization and are independent of prompt files.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "contractVersion"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$",
+            "description": "Semantic capability id: two or more dot-separated lowercase segments, e.g. 'node.explain', 'dataflow.orchestrate', 'package.recommend'. Must NOT contain a prompt filename, path separator, underscore, or '.txt' \u2014 capability ids are behavior contracts, not asset paths."
+          },
+          "contractVersion": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Capability contract version (string), e.g. '1'."
+          }
+        }
+      }
+    },
+    "delegatesTo": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+      },
+      "description": "Agent ids this agent may delegate to. Expresses a preferred/required implementation only; it grants nothing and never auto-imports or auto-installs."
+    },
+    "requiresAgents": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+      },
+      "uniqueItems": true,
+      "description": "Hard dependencies: agents that must be installed alongside this one. Every entry MUST also appear in delegatesTo, must not be this agent's own id, and must not repeat. Install resolves the closure and remove refuses while a dependent is still installed."
+    },
+    "prompts": {
+      "type": "object",
+      "description": "Prompt assets referenced by package-relative path and SHA-256 digest. Prompt filenames are implementation assets, never capability ids.",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.][A-Za-z0-9_./-]*$",
+            "description": "Path to the prompt file inside the package, relative to its root. Must be contained inside the package: no leading '/', no '..' segment, and no leading '-'. The upload flow writes every prompt as 'prompts/<filename>.txt', so a manifest that names anything else cannot be imported through the UI even though the path itself is legal."
+          },
+          "sha256": {
+            "type": "string",
+            "description": "SHA-256 hex digest of the asset bytes."
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Declared template variable names."
+          }
+        }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "description": "Package-relative paths to the input/output JSON Schemas for this agent's capability contract. RESERVED: accepted for forward compatibility but not read by the current manifest parser, so it has no effect on how an agent runs.",
+      "properties": {
+        "inputSchema": {
+          "type": "string"
+        },
+        "outputSchema": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "compatibleTargets": {
+      "type": "array",
+      "description": "Where this agent can attach. Drives which nodes/canvas glow and which palette drag targets accept it.",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "node",
+              "canvas",
+              "connection"
+            ],
+            "description": "Attachment target kind."
+          },
+          "requires": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Target constraints (e.g. 'data-loading', 'code-or-output')."
+          }
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Context this agent reads and the config it requires.",
+      "properties": {
+        "reads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredConfig": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Named outputs the agent produces."
+    },
+    "configuration": {
+      "type": "object",
+      "description": "Non-secret configuration options and defaults. RESERVED: accepted for forward compatibility but not read by the current manifest parser, so it has no effect on how an agent runs.",
+      "properties": {
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "runtime": {
+      "type": "object",
+      "description": "Execution posture.",
+      "properties": {
+        "execution": {
+          "type": "string",
+          "enum": [
+            "foreground",
+            "background"
+          ]
+        },
+        "reviewPolicy": {
+          "type": "string",
+          "enum": [
+            "report-only",
+            "review-before-apply"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "providerRequirements": {
+      "type": "object",
+      "description": "Provider capability requirements (e.g. 'structured-output', 'code-generation'). Provider CREDENTIALS are selected through an authorized account-level providerProfileId outside the manifest; only requirements belong here.",
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "tools": {
+      "type": "array",
+      "description": "Typed, allowlisted tool requirements \u2014 not executable code or permission grants.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$",
+            "description": "Tool id: two or more dot-separated lowercase segments, e.g. 'web.search', 'node.content.write'. Same grammar as a capability id, and enforced the same way at import: a bare name like 'web' is rejected."
+          },
+          "required": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+    "settingsDefaults": {
+      "type": "object",
+      "description": "Immutable, non-secret seed suggestions and a reviewed profile-family id/version. Not active policy; a manifest cannot create a new trusted profile family implicitly.",
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "profileVersion": {
+          "type": "string"
+        },
+        "suggestions": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "publisher"
+      ],
+      "description": "Origin and trust of the definition.",
+      "properties": {
+        "publisher": {
+          "type": "string"
+        },
+        "license": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trust": {
+          "type": "string",
+          "enum": [
+            "built-in",
+            "global",
+            "imported"
+          ],
+          "description": "Trust tier of the artifact."
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

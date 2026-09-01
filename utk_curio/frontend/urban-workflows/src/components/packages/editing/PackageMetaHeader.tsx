@@ -1,13 +1,19 @@
 import React, { useCallback, useMemo } from "react";
 import type { NodeCategory, NodePackageMeta } from "../../../registry/types";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../constants/nodeCategoryShortLabels";
+import { NODE_CATEGORY_KEY } from "../../../constants/nodeCategoryPalette";
 import { formatForkOfSubtitle } from "../../../utils/forkPackageLineage";
 import { usePackagePalette } from "../../../providers/PackagePaletteContext";
 import { useHeaderIconDragClick } from "../../../utils/headerIconDragClick";
 import styles from "./PackageMetaHeader.module.css";
 
 export interface PackageMetaHeaderProps {
-  package: NodePackageMeta;
+  /** The package this node came from. Required: the component dereferences it
+   * unconditionally, and its only caller renders nothing without one. The
+   * interface used to declare a required `package` that nobody passed and an
+   * optional `pkg` that everybody did, so the call site was an error and every
+   * use inside was possibly-undefined. */
+  pkg: NodePackageMeta;
   category: NodeCategory;
   suggestionActive: boolean;
 }
@@ -40,11 +46,16 @@ export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMe
   const packageBadgeClick = useHeaderIconDragClick(focusPackageInPalette);
 
   return (
-    <div
-      className={styles.pills}
-      style={suggestionActive ? { pointerEvents: "none" } : undefined}
-    >
-      <span className={styles.categoryBadge} title={NODE_CATEGORY_SHORT_LABEL[category]}>
+    <div className={styles.pills} style={suggestionActive ? { pointerEvents: "none" } : undefined}>
+      {/* Coloured by category, like the node's own left border. It used to be
+          one flat peach for every category, so the pill named the category
+          while the border beside it was the only thing showing it. */}
+      <span
+        className={`${styles.categoryBadge} ${
+          (styles as Record<string, string>)[`categoryBadge_${NODE_CATEGORY_KEY[category]}`] ?? ""
+        }`}
+        title={NODE_CATEGORY_SHORT_LABEL[category]}
+      >
         {NODE_CATEGORY_SHORT_LABEL[category]}
       </span>
       <button

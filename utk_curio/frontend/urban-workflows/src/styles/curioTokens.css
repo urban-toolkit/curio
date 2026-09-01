@@ -1,13 +1,21 @@
 /*
  * Curio design tokens.
  *
- * Single source of truth for the colors / typography / spacing used by
- * the catalog drawer, the Node Factory wizard, and the supporting
- * modals (NodeKindConfig, NodeSaveAs, ConfirmDestructive, etc.).
+ * Single source of truth for the colors / typography / spacing / layering
+ * used across every user-facing surface: the project list, the two catalog
+ * browse pages, the in-canvas Node and Data Catalog drawers, the browse
+ * detail drawers, and the modals.
  *
- * Lifted from the canonical user-facing surface: the project list at
- * `src/pages/projects/ProjectsList.tsx`. Keep these two in sync — if a
- * token here changes, the project list should change with it.
+ * Values were lifted from the project list and the catalog browse pages,
+ * which are the surfaces users see most. A component stylesheet should reach
+ * for a token here rather than restating a literal — that is how the format
+ * palette ended up copied into five files with five different values, and
+ * how a modal shipped a primary button painted with a token that was never
+ * declared.
+ *
+ * Guarded by `src/tests/styles/curioTokens.test.ts` (every `var(--curio-…)`
+ * referenced under src/ is declared here) and
+ * `src/tests/styles/zLayerScale.test.ts` (the layering scale stays ordered).
  */
 
 :root {
@@ -15,11 +23,21 @@
   --curio-page-bg: #f0f0f0;
   --curio-card-bg: #ffffff;
   --curio-top-bar-bg: #1E1F23;
+  /* Hover for anything painted --curio-top-bar-bg (dark primary buttons, the
+     active section tab). Was written three ways: #2a2b30 / #2a2b31 / #2c2d32. */
+  --curio-top-bar-bg-hover: #2a2b30;
   --curio-top-bar-border: rgba(255, 255, 255, 0.08);
+  /* Neutral chip / tile surfaces on a light page. */
+  --curio-surface-muted: #ECEEF2;
+  --curio-surface-alt: #F0EFEB;
 
   /* ── Text ──────────────────────────────────────────────────────────── */
   --curio-text-primary: #1E1F23;
   --curio-text-secondary: #6B6B76;
+  /* Card meta, publisher lines, table captions. Absorbs the near-identical
+     #85868b / #86878c / #999999 that had accumulated across surfaces. */
+  --curio-text-meta: #888888;
+  /* Placeholders, uppercase section labels, disabled-looking hints. */
   --curio-text-muted: #9E9E9E;
   --curio-text-on-dark: #fbfcf6;
   --curio-text-on-dark-muted: #ddd;
@@ -27,15 +45,28 @@
   /* ── Strokes ───────────────────────────────────────────────────────── */
   --curio-border: #E5E5E7;
   --curio-border-strong: #D0D0D5;
-  --curio-border-on-dark: rgba(255, 255, 255, 0.08);
   --curio-border-context-menu: #333;
 
   /* ── Status ────────────────────────────────────────────────────────── */
   --curio-danger: #ff6b6b;
   --curio-danger-strong: #8b2e26;
+  /* Destructive/error treatment on a light surface. The catalog pages and the
+     modals used to ship two different error boxes (#9f3f3f on #fff6f4 vs
+     #c0392b on #fdf0ee); these are the one set. */
+  --curio-danger-text: #C0392B;
+  --curio-danger-bg: #FDF0EE;
+  --curio-danger-border: #E8A79E;
+  --curio-success-text: var(--curio-accent-mint-fg);
+  --curio-success-bg: var(--curio-accent-mint-bg);
+  /* Completes the status triad. A warning is not an error: the agent review
+     card distinguishes a blocking finding (danger) from an advisory one, and
+     collapsing them would erase a severity the UI deliberately shows. */
+  --curio-warning-text: var(--curio-accent-amber-fg);
+  --curio-warning-bg: var(--curio-accent-amber-bg);
 
   /* ── Typography ────────────────────────────────────────────────────── */
   --curio-font-family: Rubik, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --curio-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
   --curio-font-size-xs: 11px;
   --curio-font-size-sm: 12px;
   --curio-font-size-md: 13px;
@@ -51,16 +82,213 @@
 
   /* ── Effects ───────────────────────────────────────────────────────── */
   --curio-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+  /* Browse-page cards sit on the page rather than inside a drawer, so they
+     carry a slightly deeper resting shadow and lift on hover/selection. */
+  --curio-shadow-browse-card: 0 1px 4px rgba(0, 0, 0, 0.06);
+  --curio-shadow-browse-card-raised: 0 4px 16px rgba(0, 0, 0, 0.1);
   --curio-shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.18);
   --curio-shadow-context-menu: 0 4px 12px rgba(0, 0, 0, 0.3);
 
-  /* ── Accent palette (Project list thumbnail accents) ───────────────── */
+  /* ── Accent palette ────────────────────────────────────────────────────
+     Raw colours behind the semantic roles above. Nothing outside this file
+     should reference these directly: a rule wants "update available" or
+     "published", not "peach" or "sky", and the two meanings drifted apart
+     precisely because one name served both. */
   --curio-accent-peach-bg: #FFE3DA;
   --curio-accent-peach-fg: #E86A3C;
   --curio-accent-sky-bg:   #DCE8FF;
   --curio-accent-sky-fg:   #3567C7;
   --curio-accent-mint-bg:  #DFF2E1;
   --curio-accent-mint-fg:  #2F8F4A;
-  --curio-accent-lilac-bg: #EADCFB;
-  --curio-accent-lilac-fg: #7A4BD1;
+  /* Amber, for the advisory tier between success and danger. The values are
+     the Parquet format pair's, deliberately: that tint and that text colour
+     are already proven to clear contrast together in this palette, so this
+     introduces a role rather than an untested colour. Separate names because
+     a format is not a role - Parquet's tint must be free to change without
+     dragging every warning with it. */
+  --curio-accent-amber-bg:  #FFF0DC;
+  --curio-accent-amber-fg:  #996300;
+
+  /* ── Dataset format palette ────────────────────────────────────────────
+     One colour per dataset format, used by every surface that keys a colour
+     off `DatasetFormat`: the browse card strip / rail dot / link colour
+     (`-fg`), the tinted tag, drawer badge, row badge and card avatar
+     (`-bg` + `-on-tint`), and the in-project card's left accent bar.
+
+     These were previously copied into five stylesheets with five different
+     values — GeoTIFF alone was purple, teal, cyan and a fourth teal, and it
+     collided exactly with JSON on the card strip. Add a format here, never in
+     a component stylesheet; `src/tests/catalog/datasetFormatStyles.test.ts`
+     asserts every surface resolves to these tokens.
+
+     `-fg`      saturated fill (coloured strip, dot, accent bar, link text)
+     `-bg`      tint background (tag, badge, avatar)
+     `-on-tint` text on that tint — same as `-fg` unless contrast needs darker
+     ───────────────────────────────────────────────────────────────────── */
+  --curio-format-geojson-fg: #2F8F4A;
+  --curio-format-geojson-bg: #DFF2E1;
+  --curio-format-geojson-on-tint: #2F8F4A;
+
+  --curio-format-csv-fg: #3B6FD4;
+  --curio-format-csv-bg: #DCE8FF;
+  --curio-format-csv-on-tint: #3B6FD4;
+
+  --curio-format-json-fg: #7A4BD1;
+  --curio-format-json-bg: #EADCFB;
+  --curio-format-json-on-tint: #7A4BD1;
+
+  /* Parquet's fill is a light amber; it fails contrast as tint text, so the
+     on-tint value is the darker amber the tag already used. */
+  --curio-format-parquet-fg: #FBAA69;
+  --curio-format-parquet-bg: #FFF0DC;
+  --curio-format-parquet-on-tint: #996300;
+
+  /* Teal, promoted from the drawer badge. Was #7A4BD1 on the strip and dot,
+     i.e. identical to JSON. */
+  --curio-format-geotiff-fg: #2E6874;
+  --curio-format-geotiff-bg: #E3F1F3;
+  --curio-format-geotiff-on-tint: #2E6874;
+
+  /* Mauve, promoted from the drawer badge. Was #888888, i.e. a second grey
+     next to Bundle's. */
+  --curio-format-shp-fg: #7A4865;
+  --curio-format-shp-bg: #F0E5EC;
+  --curio-format-shp-on-tint: #7A4865;
+
+  --curio-format-bundle-fg: #5B6472;
+  --curio-format-bundle-bg: #E4E7EC;
+  --curio-format-bundle-on-tint: #475467;
+
+  --curio-format-osm-fg: #7AB648;
+  --curio-format-osm-bg: #EAF5DF;
+  --curio-format-osm-on-tint: #4C7A1F;
+
+  /* ── Node category palette ─────────────────────────────────────────────
+     One colour per node category. Promoted from the canvas, which is where
+     this colour already meant something: `nodeTypeBorderColor` in
+     components/styles.tsx paints each node's left border, and NODE_COLORS in
+     components/DataflowThumbnail.tsx was a hand-kept copy of the same map.
+
+     Every surface that shows a node's category reads these: the canvas border,
+     the dataflow thumbnail, the node header tag, the Node Catalog card strip,
+     its filter chip dots, the browse drawer's category badge, and the in-canvas
+     drawer's card icon. Before this, the catalog picked a colour by hashing the
+     package's directory name, so three packages in the same category rendered
+     in three different colours and a `computation` package shared a colour with
+     a `data` one.
+
+     Keys match `primaryCategory()` in
+     components/packages/publishing/packageUtils.ts: data | computation | vis |
+     package. Guarded by src/tests/styles/nodeCategoryPalette.test.ts.
+     ───────────────────────────────────────────────────────────────────── */
+  --curio-category-data-fg: #3498db;
+  --curio-category-data-bg: #E3F1FA;
+  --curio-category-data-on-tint: #1F6DA1;
+
+  --curio-category-computation-fg: #8e44ad;
+  --curio-category-computation-bg: #F0E4F6;
+  --curio-category-computation-on-tint: #6B3184;
+
+  --curio-category-vis-fg: #1abc9c;
+  --curio-category-vis-bg: #DDF5EF;
+  --curio-category-vis-on-tint: #107662;
+
+  /* A package with no category of its own, and the canvas fallback border. */
+  --curio-category-package-fg: #95a5a6;
+  --curio-category-package-bg: #ECEEF2;
+  --curio-category-package-on-tint: #5A6B6C;
+
+  /* ── Agent category palette ────────────────────────────────────────────
+     One colour per *agent* category. A separate family from the node
+     categories above because it is a separate taxonomy: an agent's category
+     says what the agent acts on (a node, the canvas, data, a package) or that
+     it judges rather than acts (evaluate). Those five do not map onto
+     data | computation | vis | package without lying about one of them.
+
+     The first version of this catalog folded all five onto the node buckets to
+     avoid minting hues. It worked, and it made the drawer unreadable: `node`
+     and `package` both landed on the neutral grey and `canvas` on the dataflow
+     slate, so 16 of the 21 built-ins rendered grey or near-grey and the tile
+     stopped telling you anything.
+
+     Three of the five still alias an existing colour, because the tie is
+     honest and a colour keeping one meaning matters more than novelty: data is
+     the data blue, evaluate the computation purple, package the package grey.
+     Only `node` and `canvas` are new, and they are new because nothing in the
+     existing palette means "one node" or "the whole canvas" without already
+     meaning something else.
+
+     Deliberately NOT the raw accents: peach, sky, mint and amber are spoken
+     for by the semantic roles below (update, published, installed, warning).
+     Reusing one here would recreate exactly the collision the role split was
+     introduced to end.
+
+     Keys match `AgentCategory` in api/agentsApi.ts. Guarded by
+     src/tests/styles/agentCategoryPalette.test.ts.
+     ───────────────────────────────────────────────────────────────────── */
+  --curio-category-agent-data-fg: var(--curio-category-data-fg);
+  --curio-category-agent-data-bg: var(--curio-category-data-bg);
+  --curio-category-agent-data-on-tint: var(--curio-category-data-on-tint);
+
+  --curio-category-agent-evaluate-fg: var(--curio-category-computation-fg);
+  --curio-category-agent-evaluate-bg: var(--curio-category-computation-bg);
+  --curio-category-agent-evaluate-on-tint: var(--curio-category-computation-on-tint);
+
+  --curio-category-agent-package-fg: var(--curio-category-package-fg);
+  --curio-category-agent-package-bg: var(--curio-category-package-bg);
+  --curio-category-agent-package-on-tint: var(--curio-category-package-on-tint);
+
+  /* The two new hues: indigo for the whole canvas, rose for one node. */
+  --curio-category-agent-canvas-fg: #4A56C4;
+  --curio-category-agent-canvas-bg: #E7E9FB;
+  --curio-category-agent-canvas-on-tint: #333DA0;
+
+  --curio-category-agent-node-fg: #C2417B;
+  --curio-category-agent-node-bg: #FBE4EF;
+  --curio-category-agent-node-on-tint: #94285A;
+
+  /* ── Catalog kind palette ──────────────────────────────────────────────
+     One colour per *kind* of catalog item, for the places that identify a
+     dataflow / package / dataset rather than a category or a format. Dataflows
+     have no categorization at all, so the projects list paints every card with
+     the one dataflow colour instead of a per-project accent. */
+  --curio-kind-dataflow-fg: #5B6472;
+  --curio-kind-dataflow-bg: #E4E7EC;
+
+  /* ── Semantic roles ────────────────────────────────────────────────────
+     Named for what they mean, so a role can change without dragging a category
+     colour with it. Each points at the raw accent palette below; before this
+     split, peach was simultaneously "category warm" and "update available",
+     and sky was both "category cool" and "published". */
+  --curio-role-update-fg: var(--curio-accent-peach-fg);
+  --curio-role-update-bg: var(--curio-accent-peach-bg);
+  --curio-role-published-fg: var(--curio-accent-sky-fg);
+  --curio-role-published-bg: var(--curio-accent-sky-bg);
+  --curio-role-installed-fg: var(--curio-accent-mint-fg);
+  --curio-role-installed-bg: var(--curio-accent-mint-bg);
+  /* Work in flight: an agent solving, a phase in progress. Distinct from
+     'published', which happens to share the raw accent - the two mean
+     different things and must be free to diverge. */
+  --curio-role-running-fg: var(--curio-accent-sky-fg);
+  --curio-role-running-bg: var(--curio-accent-sky-bg);
+  --curio-focus-ring: var(--curio-accent-sky-fg);
+
+  /* ── Overlay / layering scale ──────────────────────────────────────────
+     Single source of truth for the high stacking band. Higher sits in
+     front. Toasts sit ABOVE the entire overlay band so dataset action
+     feedback (import / install / publish, errors) stays visible while a
+     drawer, modal, or dialog is open. When adding a new overlay, slot it
+     into this scale instead of hard-coding a bare z-index literal. */
+  /* Base tier, for a modal opened from a page rather than over the canvas
+     overlays. ModalShell used to hard-code 499/500 here while using the scale
+     for its overlay tier, so half of one component sat outside the scale. */
+  --curio-z-modal-base-backdrop: 499;
+  --curio-z-modal-base: 500;
+  --curio-z-node-drawer: 10040;
+  --curio-z-dataset-drawer: 10045;
+  --curio-z-agent-drawer: 10048;
+  --curio-z-modal-backdrop: 10054;
+  --curio-z-modal: 10055;
+  --curio-z-dialog: 10060;
+  --curio-z-toast: 10070;
 }

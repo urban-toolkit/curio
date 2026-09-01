@@ -70,9 +70,42 @@ log = logging.getLogger(__name__)
 
 _STAGING_PREFIX = "stage-"
 
+# A staging dir younger than this is assumed to belong to a live install and is
+# never swept, whatever the caller passed as ``keep``. ``keep`` only protects the
+# sweeper's *own* directory, which is no help against a sweeper that is not
+# installing anything: ``seed_dev_packageages`` runs on every ``GET
+# /api/packages`` (see ``routes.py``), and the drawer's import flow fires that
+# listing from ``refreshPackageRegistry`` while the upload it just posted is
+# still extracting. The sweep then deletes the extraction mid-flight and the
+# install fails with ENOENT on a file it had already written. Age is the right
+# discriminator because an orphan is by definition one nothing is writing to;
+# anything genuinely abandoned is still collected on the next sweep after this
+# window.
+_STAGING_ORPHAN_MIN_AGE_S = 600.0
 
-def _purge_stale_staging(user_key: str) -> None:
+
+def _is_recent(entry: "Path", now: float) -> bool:
+    """True when *entry* was touched inside the live-install window."""
+    try:
+        return (now - entry.stat().st_mtime) < _STAGING_ORPHAN_MIN_AGE_S
+    except OSError:
+        # Vanished under us, or unreadable. Either way, leave it alone.
+        return True
+
+
+def _purge_stale_staging(user_key: str, keep: "Path | None" = None) -> None:
     """Remove any orphaned staging directories for ``user_key``.
+
+    Two guards keep a live install safe, and both are needed:
+
+    * *keep* is the caller's own in-flight staging directory, which must never be
+      swept: Flask serves requests concurrently, so a second install starting
+      while the first is mid-extract would otherwise delete the first's tree out
+      from under it (surfacing as ``WinError 2`` from the manifest-validation
+      copytree on a file that had just been written).
+    * Age (``_STAGING_ORPHAN_MIN_AGE_S``) covers everyone *else*'s in-flight
+      directory, which ``keep`` cannot: a sweeper that is not installing has no
+      ``keep`` to pass. The seeder is exactly that case.
 
     Two sources need sweeping:
 
@@ -87,9 +120,22 @@ def _purge_stale_staging(user_key: str) -> None:
     Best-effort; never raises.
     """
     staging_base = user_packageage_staging_dir(user_key)
+    keep_resolved = keep.resolve() if keep is not None else None
+    now = time.time()
     if staging_base.is_dir():
         for entry in staging_base.iterdir():
             if not entry.is_dir():
+                continue
+            if _is_recent(entry, now):
+                # Someone else's live install (see _STAGING_ORPHAN_MIN_AGE_S).
+                continue
+            if not entry.name.startswith(_STAGING_PREFIX):
+                # Only sweep what this module created. A concurrent install's
+                # validate copy also lives here (see
+                # load_packageage_manifest_from_dir) and deleting it mid-copy is
+                # exactly the race this guard exists to prevent.
+                continue
+            if keep_resolved is not None and entry.resolve() == keep_resolved:
                 continue
             try:
                 shutil.rmtree(entry, ignore_errors=True)
@@ -102,6 +148,8 @@ def _purge_stale_staging(user_key: str) -> None:
             if not entry.is_dir():
                 continue
             if not entry.name.startswith(".staging-") and not entry.name.startswith(".stage-"):
+                continue
+            if _is_recent(entry, now):
                 continue
             try:
                 shutil.rmtree(entry, ignore_errors=True)
@@ -117,7 +165,9 @@ _ALLOWED_TOP_FILES: frozenset[str] = frozenset({
     "manifest.json", "README.md", "LICENSE", "LICENSE.md", "LICENSE.txt",
 })
 _ALLOWED_TOP_DIRS: frozenset[str] = frozenset({
-    "sources", "starters", "grammars", "widgets", "icons", "scripts",
+    # "backend" (memo dev/91): the package's declared server-side entry —
+    # inert on disk like sources/; executed ONLY by the backend sandbox.
+    "sources", "starters", "grammars", "widgets", "icons", "scripts", "backend",
 })
 
 # A safe path segment matches the existing safe-paths charset, with the
@@ -494,13 +544,16 @@ def install_packageage_from_archive(
         user_packageages_dir(user_key).mkdir(parents=True, exist_ok=True)
         staging_base = user_packageage_staging_dir(user_key)
         staging_base.mkdir(parents=True, exist_ok=True)
-        # Best-effort sweep of any orphaned staging dirs from a previous
-        # crashed install. ``tempfile.mkdtemp`` does not clean up after
-        # a SIGKILL / power loss, and the orphans accumulate every cycle.
-        _purge_stale_staging(user_key)
+        # Claim our own staging dir BEFORE sweeping, then exclude it: the sweep
+        # is indiscriminate, and a concurrent install must not delete a tree that
+        # is still being extracted.
         staging_root = Path(
             tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=str(staging_base))
         )
+        # Best-effort sweep of any orphaned staging dirs from a previous
+        # crashed install. ``tempfile.mkdtemp`` does not clean up after
+        # a SIGKILL / power loss, and the orphans accumulate every cycle.
+        _purge_stale_staging(user_key, keep=staging_root)
         try:
             _extract_into(zf, staging_root)
             try:
@@ -588,7 +641,16 @@ def load_packageage_manifest_from_dir(package_root: Path) -> PackageManifest:
             f"manifest yields malformed package dir name {expected!r}"
         )
 
-    side_parent = Path(tempfile.mkdtemp(prefix=".validate-"))
+    # Sibling of the tree being validated, not the system temp dir. Same
+    # filesystem (so the copy is local and cheap), and out of reach of the
+    # OS temp cleaners and scanners that were intermittently deleting
+    # ``%TEMP%/.validate-*`` mid-copy - surfacing as a shutil.Error with
+    # ``WinError 3`` on every destination path at once. The ".validate-" prefix
+    # is deliberately not ``_STAGING_PREFIX``, so ``_purge_stale_staging``
+    # leaves it alone.
+    side_parent = Path(
+        tempfile.mkdtemp(prefix=".validate-", dir=str(package_root.parent))
+    )
     try:
         validate_root = side_parent / expected
         shutil.copytree(package_root, validate_root)

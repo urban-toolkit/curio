@@ -2,9 +2,9 @@
 
 Three nodes for street-level computer vision pipelines in Curio:
 
-- **Street View Fetcher** — geocode a place name, sample Google Street View imagery in its bounding box, emit a GEODATAFRAME of image points (each feature carrying `image_url`, `pano_id`, `latitude`, `longitude`).
-- **HF CV Inference** — run HuggingFace segmentation or detection models on the image points. Pluggable input: works with the Street View Fetcher *or* any node that emits a GEODATAFRAME with an `image_url` property. Emits per-image inference results as JSON.
-- **CV Gallery** — inspect results in a gallery + per-image overlay view + aggregate stats, then re-emit as a GEODATAFRAME for downstream nodes (Spatial Join, Vega-Lite, AUTK Map).
+- **Street View Fetcher.** Geocode a place name, sample Google Street View imagery in its bounding box, emit a GEODATAFRAME of image points (each feature carrying `image_url`, `pano_id`, `latitude`, `longitude`).
+- **HF CV Inference.** Run HuggingFace segmentation or detection models on the image points. Pluggable input: works with the Street View Fetcher *or* any node that emits a GEODATAFRAME with an `image_url` property. Emits per-image inference results as JSON.
+- **CV Gallery.** Inspect results in a gallery + per-image overlay view + aggregate stats, then re-emit as a GEODATAFRAME for downstream nodes (Spatial Join, Vega-Lite, AUTK Map).
 
 A typical pipeline:
 
@@ -18,16 +18,25 @@ See [`docs/examples/10-street-vision-cv-analysis.md`](../../docs/examples/10-str
 
 ## Setup
 
-1. **Install the package**: open `/catalog` in Curio and install Street Vision. The first install pip-installs the package's Python deps (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in `manifest.dependencies.python` — about 3 GB on a cold conda env, possibly minutes on a slow connection. The Install button stays in its busy state until pip finishes. Re-installs of the same package are near-instant because the deps are already satisfied.
+1. **Add the package**: open `/catalog` in Curio and click **Add to all projects** on Street Vision. The first add pip-installs the package's Python deps (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in `manifest.dependencies.python`, about 3 GB on a cold conda env, possibly minutes on a slow connection. The button stays in its busy state until pip finishes. Adding the same package again is near-instant because the deps are already satisfied.
 
-2. **Have a Google Maps API key handy.** You paste it directly into the Street View Fetcher node — it lives in the node's UI for the current session, never written to the backend env or saved with the dataflow, so a shared dataflow won't leak your key.
+2. **Have a Google Maps API key handy.** You paste it directly into the Street View Fetcher node, where it lives for the current session, never written to the backend env or saved with the dataflow, so a shared dataflow won't leak your key.
 
-   The Street View Static API is paid past Google's free tier — the Fetcher node defaults to a 20-image limit per run; raise it with care.
+   The Street View Static API is paid past Google's free tier, so the Fetcher node defaults to a 20-image limit per run; raise it with care.
 
-3. **(Optional) HuggingFace token** — only needed for gated models:
+3. **(Optional) HuggingFace token**, only needed for gated models: ones you
+   unlock by accepting a licence on your own HuggingFace account. Public
+   models need none.
+
+   Set your own in **AI Settings** in the Curio header. That is per account,
+   which matches how gated access works: the licence is accepted by your
+   HuggingFace account, not by the deployment.
+
+   An operator can supply a fallback for everyone who has not set one:
 
    ```bash
-   export HUGGINGFACE_TOKEN=hf_...
+   python curio.py start --huggingface-token hf_...
+   # or set CURIO_DEFAULT_HUGGINGFACE_TOKEN in the environment
    ```
 
 A GPU is *not* required, but with one you'll see roughly 10× faster inference.

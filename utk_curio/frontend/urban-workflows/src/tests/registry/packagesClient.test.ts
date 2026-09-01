@@ -154,3 +154,35 @@ describe('registerPackageTemplates → NodeDescriptor', () => {
     expect(merge.adapter.container.noContent).toBe(true);
   });
 });
+
+describe('backendHandler dispatch key (memo dev/91 commit 5)', () => {
+  afterEach(() => clearPackageNodes());
+
+  const backendPack = {
+    ...FIXTURE_PACK,
+    packageId: 'ai.agent.wordcount',
+    dirName: 'ai.agent.wordcount@1',
+    permissions: ['server-code'],
+    templates: [
+      {
+        ...FIXTURE_PACK.templates[0],
+        id: 'ai.agent.wordcount/word-count-kind@1',
+        templateId: 'word-count-kind',
+        label: 'Word count',
+        behavior: 'code',
+        backendHandler: 'word-count',
+      },
+    ],
+  };
+
+  test('the descriptor carries backendHandler — registry-driven dispatch, no literals', () => {
+    const [kind] = registerPackageTemplates([backendPack]);
+    expect(kind.backendHandler).toBe('word-count');
+    expect(kind.package?.packageId).toBe('ai.agent.wordcount');
+  });
+
+  test('templates without the field register without it (ordinary execution)', () => {
+    const [dl] = registerPackageTemplates([FIXTURE_PACK]);
+    expect(dl.backendHandler).toBeUndefined();
+  });
+});

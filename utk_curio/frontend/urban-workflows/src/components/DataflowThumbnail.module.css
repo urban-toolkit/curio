@@ -1,0 +1,8 @@
+/* Placeholder for a dataflow with nothing on its canvas yet. A flat surface, not
+   a per-dataflow tint: dataflows have no categories, so the only colour in this
+   thumbnail is the node bars, which are keyed to node type. */
+.emptyPreview {
+  width: 100%;
+  height: 100%;
+  background-color: var(--curio-kind-dataflow-bg);
+}

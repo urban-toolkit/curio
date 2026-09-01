@@ -58,7 +58,7 @@ export default function BiDirectionalEdge({
       path={edgePath}
       markerEnd={markerEnd}
       markerStart={markerStart}
-      style={{stroke: data.keywordHighlighted ? 'blue' : 'red'}}
+      style={{stroke: data?.keywordHighlighted ? 'blue' : 'red'}}
     />
   );
 }

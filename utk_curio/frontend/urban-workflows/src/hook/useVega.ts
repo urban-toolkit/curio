@@ -7,6 +7,7 @@ import { formatDate, mapTypes } from "../utils/formatters";
 import { parseDataframe, parseGeoDataframe } from "../utils/parsing";
 import { useFlowContext } from "../providers/FlowProvider";
 import { useToastContext } from "../providers/ToastProvider";
+import { applyContainerSizing } from "../utils/vegaSpecSizing";
 
 // const schema = require('./vega-schema.json');
 const vega = require("vega");
@@ -71,15 +72,6 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
     if (inputType != "dataframe" && inputType !== "geodataframe") {
       throw new Error(inputType + " is not a valid input type for the 2D Plot (Vega-Lite)");
     }
-
-    // if (parsedInput.dataType == "dataframe" || parsedInput.dataType == "geodataframe") {
-    //   if(parsedInput.path) {
-    //     values = await fetchData(`${parsedInput.path}`, true);
-    //   }
-    //   else {
-    //     values = transformToVega(parsedInput);
-    //   }
-    // }
 
     const parserMap = {
       "dataframe": parseDataframe,
@@ -185,9 +177,10 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
     let values: any = await parseInputData(data.input);
 
     specObj["data"] = { values: values, name: "data" };
-    specObj["height"] = "container";
-    specObj["width"] = "container";
-    // specObj["autosize"] = {type: "fit", contains: "padding", resize: true};
+    // Multi-view specs keep their authored size (vega-lite discards a
+    // "container" injection there anyway) and the output pane scrolls; unit
+    // and layer specs fill the node, unless the author sized them (#202).
+    applyContainerSizing(specObj);
 
     let vegaspec = lite.compile(specObj).spec;
 

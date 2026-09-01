@@ -1,9 +1,9 @@
-import React, { ReactNode, useState, useEffect } from "react";
+import React, { ReactNode, useState, useEffect, useRef } from "react";
 import CSS from "csstype";
 import { Dropdown, Spinner } from "react-bootstrap";
 
 import { useFlowContext } from "../providers/FlowProvider";
-import { NodeRemoveChange, useReactFlow } from "reactflow";
+import { NodeRemoveChange, useReactFlow, useStore } from "reactflow";
 
 import { CommentsList, IComment } from "./comments/CommentsList";
 
@@ -13,13 +13,13 @@ import {
     faCircle,
     faCircleDot,
 } from "@fortawesome/free-solid-svg-icons";
-import { useUserContext } from "../providers/UserProvider";
-import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
-import { canvasTemplateLabelFromNode } from "../utils/palettePackageFactoryDraft";
+import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
+import { CATEGORY_FALLBACK_FG, categoryFg } from "../constants/nodeCategoryPalette";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
+import { unversionedNodeType } from "../utils/flowNodeCanonicalType";
 import { HeaderIconButton } from "./HeaderIconButton";
 import {
     EditableNodeHeaderLabel,
@@ -28,11 +28,8 @@ import {
     PackageMetaHeader,
 } from "./packages/editing";
 import Col from "react-bootstrap/Col";
-import Nav from "react-bootstrap/Nav";
 import Row from "react-bootstrap/Row";
 import {
-    faGear,
-    faCircleInfo,
     faCirclePlay,
     faCopy,
     faFloppyDisk,
@@ -60,11 +57,23 @@ import {
 import { AccessLevelType, NodeType, SupportedType } from "../constants";
 import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
 import { NodeTemplateId } from "../registry/types";
+import {
+    applyDatasetToNodeData,
+    canApplyDatasetToNode,
+    hasDatasetDrag,
+    readDatasetDragPayload,
+} from "../services/datasetCatalog";
 import "./styles.css";
 import { useStarterContext } from "../providers/StarterProvider";
 import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
+import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
+import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { nodeRunStatus } from "../utils/nodeRunStatus";
+import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
+import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
+import { useDatasetPalette } from "../providers/DatasetPaletteContext";
 
 const MIN_NODE_WIDTH = 200;
 const MIN_NODE_HEIGHT = 150;
@@ -133,7 +142,22 @@ export const NodeContainer = ({
         playNodesUpTo,
         dashboardOn,
         dashboardLocked,
+        markDirty,
+        defaultSaveOutputDataset,
     } = useFlowContext();
+    const saveOutputDataset = resolveSaveOutputDataset(data, defaultSaveOutputDataset);
+    // Nodes created from the dataset palette load an installed listing and can't
+    // regenerate a dataset — hide the save toggle and show the dataset chip instead.
+    const datasetPaletteNode = isDatasetPaletteNode(data);
+    // Producer linkage: if this node generated an installed computed dataset, show
+    // an OUTPUT chip linking to its palette row. Derived from the catalog (not
+    // stamped) so it tracks install/uninstall. Distinct from the save-lock above —
+    // producer nodes keep their save toggle.
+    const { installedComputedByProducer: producerByNode } = useDatasetPalette();
+    const producerDataset = producerByNode.get(nodeId);
+    // Whether this node is selected on the canvas — drives a more vibrant dataset
+    // chip. Read reactively from the React Flow store so it updates on selection.
+    const isNodeSelected = useStore((s) => !!s.nodeInternals.get(nodeId)?.selected);
     const { getNodes, getEdges } = useReactFlow();
     const { getStarters, deleteStarter, fetchStarters } = useStarterContext();
     const { createCodeNode, loadTrill } = useCode();
@@ -141,14 +165,10 @@ export const NodeContainer = ({
     const [saveAsOpen, setSaveAsOpen] = useState(false);
     const [configOpen, setConfigOpen] = useState(false);
     const [comments, setComments] = useState<IComment[]>([]);
-    const [goal, setGoal] = useState(data.goal);
     const [pinnedToDashboard, setPinnedToDashboard] = useState<boolean>(!!dashboardPins[nodeId]);
     const [expectedInputType, setExpectedInputType] = useState(data.in);
     const [expectedOutputType, setExpectedOutputType] = useState(data.out);
-    const [isConnectionLeftOpen, setIsConnectionLeftOpen] = useState(false);
-    const [isConnectionRightOpen, setIsConnectionRightOpen] = useState(false);
     const [showWarnings, setShowWarnings] = useState<boolean>(false);
-    const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
     const [currentNodeWidth, setCurrentNodeWidth] = useState<number | undefined>(
         nodeWidth
     );
@@ -159,11 +179,9 @@ export const NodeContainer = ({
     // spatial-join, etc.) start minimized: they have no body to expand and the
     // 50×180 footprint is their default render.
     const [minimized, setMinimized] = useState(!!noContent);
-    const { llmRequest, setCurrentEventPipeline, AIModeRef } = useLLMContext();
-
-    useEffect(() => {
-        setGoal(data.goal);
-    }, [data.goal])
+    // Hover state for the minimized chip's delete control (noContent nodes have
+    // no header band to put it in).
+    const [chipHovered, setChipHovered] = useState(false);
 
     useEffect(() => {
         if (nodeWidth !== undefined) {
@@ -332,33 +350,6 @@ export const NodeContainer = ({
         };
     }, [dashboardOn, dashboardLocked]);
 
-    const updateDataGoal = (goal: string) => {
-        if(data.goal != goal){
-
-            setCurrentEventPipeline("Directly editing a Subtask");
-
-            let newData = {...data}; 
-            newData.goal = goal; 
-            updateDataNode(nodeId, newData);
-        }
-    }
-
-    const generateSubtaskFromExec = async (node_content: string, node_type: NodeType, current_task: string) => {
-        try {
-            let result = await llmRequest("default_preamble", "new_subtask_from_exec_prompt", " Node content: " + node_content + "\n" + "Node type: " + node_type + " Task: " + current_task);
-            
-            console.log("generateSubtaskFromExec result", result);
-
-            let new_subtask = result.result;
-
-            setGoal(new_subtask);
-            updateDataGoal(new_subtask);
-        } catch (error) {
-            console.error("Error communicating with LLM", error);
-            showToast("Error communicating with LLM", "error");
-        }
-    }
-
     const deleteComment = (commentId: number) => {
         setComments(comments.filter((comment) => comment.id !== commentId));
     };
@@ -410,104 +401,91 @@ export const NodeContainer = ({
         setExpectedOutputType(event.target.value as SupportedType);
     };
 
-    const generateConnectionSuggestions = async (nodes: any, edges: any, workflowNameRef: any, workflowGoal: string, inOrOut: string) => {
-
-        let trill_spec = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current, workflowGoal);
-
-        try {
-    
-            let result = await llmRequest("default_preamble", "new_connection_prompt", "Dataflow task: " + workflowGoal + "\n nodeId: " + nodeId + "\n Subtask: " + goal + "\n Your suggested nodes will be connected to the: " + inOrOut + "\n Current Trill: " + JSON.stringify(trill_spec));
-
-            let clean_result = result.result.replaceAll("```json", "").replaceAll("```python", "");
-            clean_result = clean_result.replaceAll("```", "");
-
-            console.log("generateConnectionSuggestions result", clean_result);
-
-            let parsed_result = JSON.parse(clean_result);
-            parsed_result.dataflow.name = workflowNameRef.current;
-
-            parsed_result.dataflow.edges = [];
-
-            for(const node of parsed_result.dataflow.nodes){
-                if(inOrOut == "input"){
-                    parsed_result.dataflow.edges.push({
-                        id: "reactflow__" + node.id + "_" + nodeId + "_1",
-                        source: node.id,
-                        target: nodeId
-                    }); 
-                }else if(inOrOut == "output"){
-                    parsed_result.dataflow.edges.push({
-                        id: "reactflow__" + nodeId + "_" + node.id + "_1",
-                        source: nodeId,
-                        target: node.id
-                    });  
-                }
-            }
-
-            loadTrill(parsed_result, "connection");
-        } catch (error) {
-            console.error("Error communicating with LLM", error);
-            showToast("Error communicating with LLM", "error");
-        }
-
-    }
-
-    const generateContentNode = async (nodes: any, edges: any, workflowNameRef: any, goal: string, workflowGoal: string) => {
-
-        const isConfirmed = window.confirm("Are you sure you want to proceed? This will overwrite the node's content.");
-    
-        if(isConfirmed){
-
-            let trill_spec = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current, workflowGoal);
-
-            try {
-
-                for(const node of trill_spec.dataflow.nodes){ // reseting the content of the node before sending to the LLM
-                    if(node.id == nodeId){
-                        node.content = "";
-                    }
-                }
-
-                let result = await llmRequest("default_preamble", "new_content_prompt", "Current Trill: " + JSON.stringify(trill_spec) + "\n" + " Node ID: " + nodeId + "\n" + "Subtask: "+goal+" Task: " + "\n" + workflowGoal);
-    
-                let clean_result = result.result.replaceAll("```json", "").replaceAll("```python", "");
-                clean_result = clean_result.replaceAll("```", "");
-
-                console.log("generateContentNode result", clean_result);
-
-                updateDefaultCode(nodeId, clean_result);
-
-            } catch (error) {
-                console.error("Error communicating with LLM", error);
-                showToast("Error communicating with LLM", "error");
-            }
-        }
-
-    }
-
-    const clickGenerateContentNode = () => {
-        setCurrentEventPipeline("Generate content for node");
-        generateContentNode(getNodes(), getEdges(), workflowNameRef, goal, workflowGoal);
-    }
-
     const nodeIconTranslation = (nodeType: NodeTemplateId) => {
         try { return getNodeDescriptor(nodeType).icon; }
         catch { return faCopy; }
     };
 
-    const nodeNameTranslation = (nodeType: NodeTemplateId) => {
-        try { return getNodeDescriptor(nodeType).label; }
-        catch { return nodeType; }
-    };
-
     const packageDescriptor = tryGetNodeDescriptor(data.nodeType as NodeTemplateId);
-    const headerKindLabel = packageDescriptor
-        ? canvasTemplateLabelFromNode({ data }, packageDescriptor)
-        : nodeNameTranslation(data.nodeType);
+    const headerKindLabel = resolveNodeDisplayLabel(data);
     const hasPackageMetaHeader = packageDescriptor?.source === "package" && !!packageDescriptor.package;
     const showPackageNodeActions = hasPackageMetaHeader && !dashboardOn;
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
     const nodeHeaderBandPx = 28;
+
+    // --- Dataset drag-and-drop via capture-phase native listeners ---
+    // Monaco editor installs its own native dragover/drop handlers that call
+    // stopPropagation() before React's event delegation layer runs. Using
+    // capture-phase listeners lets us intercept the event *before* Monaco.
+    const resizableRef = useRef<HTMLDivElement>(null);
+
+    // Keep a ref to the handler so the capture listener always uses the latest
+    // closure values (data, code, etc.) without needing to re-register.
+    const datasetDropHandlerRef = useRef<(e: DragEvent) => void>(() => {});
+    datasetDropHandlerRef.current = (e: DragEvent) => {
+        if (!e.dataTransfer) return;
+        const dataset = readDatasetDragPayload(e.dataTransfer);
+        if (!dataset) return;
+        if (!canApplyDatasetToNode(data)) {
+            // Let the event bubble to the canvas drop target.
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        const applied = applyDatasetToNodeData(data, code ?? data.code ?? data.defaultCode, dataset);
+        updateDataNode(nodeId, applied.data);
+        updateDefaultCode(nodeId, applied.code);
+        sendCodeToWidgets?.(applied.code);
+        markDirty();
+        showToast(`Applied ${dataset.title} to this node.`, "success");
+    };
+    const canApplyRef = useRef(false);
+    canApplyRef.current = canApplyDatasetToNode(data);
+
+    useEffect(() => {
+        const el = resizableRef.current;
+        if (!el) return;
+
+        const handleDragOver = (e: DragEvent) => {
+            if (!e.dataTransfer || !hasDatasetDrag(e.dataTransfer)) return;
+            if (!canApplyRef.current) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "copy";
+        };
+
+        const handleDrop = (e: DragEvent) => {
+            datasetDropHandlerRef.current(e);
+        };
+
+        el.addEventListener("dragover", handleDragOver, true);
+        el.addEventListener("drop", handleDrop, true);
+        return () => {
+            el.removeEventListener("dragover", handleDragOver, true);
+            el.removeEventListener("drop", handleDrop, true);
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [nodeId]);
+
+    // Keep React synthetic handlers as pass-throughs so the browser still
+    // sees preventDefault() called (belt-and-suspenders).
+    const onDatasetDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+        if (!hasDatasetDrag(event.dataTransfer)) return;
+        if (!canApplyDatasetToNode(data)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "copy";
+    };
+
+    const onDatasetDrop = (event: React.DragEvent<HTMLDivElement>) => {
+        // Primary handling is done by the capture-phase native listener above.
+        // This synthetic handler is kept only to prevent browser default actions
+        // (e.g. Monaco opening dropped file as text) for dataset drags that the
+        // native listener already handled.
+        if (!hasDatasetDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+    };
 
     return (
         <>
@@ -533,101 +511,53 @@ export const NodeContainer = ({
                 null
             }
 
-            {!minimized && AIModeRef.current ?
-                <button style={{border: "none", background: "none", color: "#1d3853", ...(isSubtasksOpen ? openSubtasksButton : closedSubtasksButton)}} onClick={() => setIsSubtasksOpen(!isSubtasksOpen)}>
-                    <FontAwesomeIcon icon={faAnglesUp} style={{...(isSubtasksOpen ? {} : {transform: "rotate(180deg)"})}} />
-                </button> : null            
-            }
-
-            {!minimized && isSubtasksOpen ?
-                <div style={{...goalInput, ...(currentNodeWidth ? {width: (currentNodeWidth-4)+"px"} : {}), ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: "50%", pointerEvents: "none"} : {})}} className={"nodrag"}>
-                    <label htmlFor={nodeId+"_goal_box_input"}>Subtask: </label>
-                    <input id={nodeId+"_goal_box_input"} type={"text"} style={{width: "65%", border: "none", background: "transparent", color: "rgb(251, 252, 246)", borderBottom: "1px solid rgb(46, 91, 136)"}} value={goal} onBlur={() => {updateDataGoal(goal)}} onChange={(value: any) => {setGoal(value.target.value)}}/>
-                    <button style={buttonStyle} onClick={() => {
-                        if(AIModeRef.current)
-                            clickGenerateContentNode();
-                    }} >Get code</button>
-                </div> : null
-            }
-
-            {!minimized && data.warnings != undefined && data.warnings.length > 0 ?
-                <div style={{display: "flex", flexDirection: "row", position: "absolute", bottom: "-45px", right: "20px", ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: "50%"} : {})}}>   
-                    <FontAwesomeIcon style={{fontSize: "24px", color: "#e8c548"}} icon={faTriangleExclamation} onMouseEnter={() => {setShowWarnings(true)}} onMouseLeave={() => {setShowWarnings(false)}} />
-                    <ul style={{padding: "5px", backgroundColor: "white", border: "1px solid black", zIndex: 300, position: "fixed", width: "300px", height: "200px", marginLeft: "30px", overflowY: "auto", ...(showWarnings ? {} : {display: "none"})}}>
-                        {   
-                            data.warnings.map((warning: string, index: number) => (
-                                <li key={nodeId+"_warning_"+index} ><p>{warning}</p></li>
-                            ))
-                        }
-                    </ul> 
-                </div> : null
-            }
-
-            {!minimized && (handleType == "in/out" || handleType == "in") && AIModeRef.current ?
-                <button style={{border: "none", background: "none", color: "#1d3853", ...(isConnectionLeftOpen ? openConnectionLeftButton : closedConnectionLeftButton)}} onClick={() => setIsConnectionLeftOpen(!isConnectionLeftOpen)}>
-                    <FontAwesomeIcon icon={faAnglesUp} style={{...(isConnectionLeftOpen ? {transform: "rotate(90deg)"} : {transform: "rotate(270deg)"})}} />
-                </button> : null            
-            }
-
-            {!minimized && (handleType == "in/out" || handleType == "out") && AIModeRef.current ?
-                <button style={{border: "none", background: "none", color: "#1d3853", ...(isConnectionRightOpen ? openConnectionRightButton : closedConnectionRightButton)}} onClick={() => setIsConnectionRightOpen(!isConnectionRightOpen)}>
-                    <FontAwesomeIcon icon={faAnglesUp} style={{...(isConnectionRightOpen ? {transform: "rotate(270deg)"} : {transform: "rotate(90deg)"})}} />
-                </button> : null            
-            }
-
-            {!minimized && isConnectionLeftOpen && (handleType == "in/out" || handleType == "in") ?
-                <div style={inputTypeSelect}>
-                    <select id={nodeId+"_expected_box_input_type"} value={expectedInputType} onChange={handleChangeExpectedInputType}>
-                        {Object.values(SupportedType).map((type) => {
-
-                            if(ConnectionValidator._inputTypesSupported[data.nodeType].includes(type))
-                                return <option key={type} value={type}>
-                                    {type}
-                                </option>
-                            else
-                                return null
-                        })}
-                        <option value="MUTLIPLE">MULTIPLE</option>
-                        <option value="DEFAULT">EXPECTED INPUT</option>
-                    </select>
-                </div> : null
-            }
-
-            {!minimized && isConnectionLeftOpen && (handleType == "in/out" || handleType == "in") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
-                <FontAwesomeIcon
-                    style={newInConnectionStyle as any}
-                    icon={faCirclePlus}
-                    onClick={() => {
-                        if(AIModeRef.current)
-                            generateConnectionSuggestions(getNodes(), getEdges(), workflowNameRef, goal, "input")
-                    }} /> : null
-            }
-
-            {
-                !minimized && isConnectionRightOpen && (handleType == "in/out" || handleType == "out") ?
-                <div style={outputTypeSelect}>
-                    <select id={nodeId+"_expected_box_output_type"} value={expectedOutputType} onChange={handleChangeExpectedOutputType}>
-                        {Object.values(SupportedType).map((type) => {
-
-                            if(ConnectionValidator._outputTypesSupported[data.nodeType].includes(type))
-                                return <option key={type} value={type}>
-                                    {type}
-                                </option>
-                            else
-                                return null
-                        })}
-                        <option value="MUTLIPLE">MULTIPLE</option>
-                        <option value="DEFAULT">EXPECTED OUTPUT</option>
-                    </select>
-                </div> : null
-            }
-
-            {!minimized && isConnectionRightOpen && (handleType == "in/out" || handleType == "out") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
-                <FontAwesomeIcon style={newOutConnectionStyle as any} icon={faCirclePlus} onClick={() => {
-                    if(AIModeRef.current)
-                        generateConnectionSuggestions(getNodes(), getEdges(), workflowNameRef, goal, "output")
-                }} /> : null
-            }
+            {/* Per-node warnings. `updateWarnings` maps them onto nodes from
+                the spec and `useCode.loadTrill` round-trips them, so the data
+                has never stopped flowing; the indicator was deleted along with
+                the retired AI-mode chrome, which left the channel writing into
+                nothing and a user with no way to see a flagged node. */}
+            {!minimized && Array.isArray(data.warnings) && data.warnings.length > 0 ? (
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "row",
+                        position: "absolute",
+                        bottom: "-45px",
+                        right: "20px",
+                        ...((data.suggestionType != "none" && data.suggestionType != undefined)
+                            ? { opacity: "50%" }
+                            : {}),
+                    }}
+                >
+                    <FontAwesomeIcon
+                        style={{ fontSize: "24px", color: "#e8c548" }}
+                        icon={faTriangleExclamation}
+                        title={`${data.warnings.length} warning${data.warnings.length === 1 ? "" : "s"}`}
+                        onMouseEnter={() => setShowWarnings(true)}
+                        onMouseLeave={() => setShowWarnings(false)}
+                    />
+                    <ul
+                        style={{
+                            padding: "5px",
+                            backgroundColor: "white",
+                            border: "1px solid black",
+                            zIndex: 300,
+                            position: "fixed",
+                            width: "300px",
+                            maxHeight: "200px",
+                            marginLeft: "30px",
+                            overflowY: "auto",
+                            ...(showWarnings ? {} : { display: "none" }),
+                        }}
+                    >
+                        {data.warnings.map((warning: string, index: number) => (
+                            <li key={nodeId + "_warning_" + index}>
+                                <p>{warning}</p>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            ) : null}
 
             {(!dashboardOn || !dashboardLocked) && !noContent && <div
                 id={nodeId + "resizer"}
@@ -637,18 +567,24 @@ export const NodeContainer = ({
                 }}
             ></div>}
             <div
+                ref={resizableRef}
                 id={nodeId + "resizable"}
                 className={"resizable"}
+                data-curio-node-status={nodeRunStatus(output)}
+                onDragOver={onDatasetDragOver}
+                onDrop={onDatasetDrop}
                 style={{
-                    ...getNodeContainerStyles(data.nodeType),
+                    ...getNodeContainerStyles(data.nodeType, {
+                        dashboardOn,
+                        suggested: data.suggestionType != "none" && data.suggestionType != undefined,
+                        acceptable: data.suggestionAcceptable,
+                    }),
                     ...styles,
                     width: currentNodeWidth + "px",
                     height: currentNodeHeight + "px",
                     ...(minimized ? { display: "none" } : {}),
-                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, borderWidth: "2px", borderStyle: "dashed", pointerEvents: "none"} : {}),
-                    ...(data.suggestionAcceptable ? {borderColor: "#1d3853"} : {}),
+                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, pointerEvents: "none"} : {}),
                     ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),
-                    ...(dashboardOn ? {border: "2px solid #000", boxShadow: "none", borderRadius: "0", resize: "none"} : {})
                 }}
             >
                 {!noContent && !dashboardOn ? (
@@ -691,6 +627,31 @@ export const NodeContainer = ({
                             <PackageMetaHeader
                                 pkg={packageDescriptor.package}
                                 category={packageDescriptor.category}
+                                suggestionActive={suggestionActive}
+                            />
+                        ) : null}
+
+                        {/* Dataset linkage pills — independent of the PACKAGE pill
+                            and of each other; any combination may render. */}
+                        {datasetPaletteNode && data.datasetSource ? (
+                            <DatasetMetaHeader
+                                source={data.datasetSource}
+                                variant="consumer"
+                                selected={isNodeSelected}
+                                suggestionActive={suggestionActive}
+                            />
+                        ) : null}
+
+                        {producerDataset ? (
+                            <DatasetMetaHeader
+                                source={{
+                                    datasetId: producerDataset.id,
+                                    title: producerDataset.title,
+                                    format: producerDataset.format,
+                                    origin: producerDataset.origin,
+                                }}
+                                variant="producer"
+                                selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
                             />
                         ) : null}
@@ -770,13 +731,24 @@ export const NodeContainer = ({
                                             }}
                                             onClick={() => {
                                                 playNodesUpTo(data.nodeId);
-                                                if(AIModeRef.current)
-                                                    generateSubtaskFromExec((code ? code : ""), data.nodeType, workflowGoal);
                                             }}
                                         />
                                     )}
                                 </Col> : null
                             }
+                            {!disablePlay && !datasetPaletteNode ? (
+                                <Col md="auto" style={{ padding: 0, display: "flex", alignItems: "center" }}>
+                                    <SaveOutputToggle
+                                        variant="node"
+                                        id={`save-output-${data.nodeId}`}
+                                        checked={saveOutputDataset}
+                                        disabled={isLoading}
+                                        onChange={(next) => {
+                                            updateDataNode(nodeId, { ...data, saveOutputDataset: next });
+                                        }}
+                                    />
+                                </Col>
+                            ) : null}
                             {output != undefined ? (
                                 <Col
                                     md={2}
@@ -1001,6 +973,8 @@ export const NodeContainer = ({
 
             {minimized ? (
                 <div
+                    onMouseEnter={() => setChipHovered(true)}
+                    onMouseLeave={() => setChipHovered(false)}
                     style={{
                         ...{
                             width: currentNodeWidth + "px",
@@ -1011,6 +985,7 @@ export const NodeContainer = ({
                             justifyContent: "center",
                             display: "flex",
                             alignItems: "center",
+                            position: "relative",
                             boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
                         },
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
@@ -1041,6 +1016,36 @@ export const NodeContainer = ({
                             ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
                         }}
                     />
+                    {/* A noContent node (merge-flow, spatial-join) is the one
+                        shape that never renders the header band, and it can
+                        never be expanded to reach one - so without this it has
+                        no on-node control at all, and the only way to remove a
+                        mis-dropped one is the Delete key, which nothing on
+                        screen suggests. Delete alone: an icon-only flow node
+                        renders no output to pin to a dashboard and has no body
+                        to annotate. Revealed on hover so the 50x180 chip reads
+                        the same at rest. */}
+                    {noContent && !dashboardOn ? (
+                        <div
+                            style={{
+                                position: "absolute",
+                                top: "2px",
+                                right: "3px",
+                                // Quiet at rest, legible on hover. This file
+                                // styles inline, so the transition is state
+                                // rather than a :hover rule.
+                                opacity: chipHovered ? 1 : 0.35,
+                                transition: "opacity 120ms ease",
+                            }}
+                        >
+                            <HeaderIconButton
+                                icon={faXmark}
+                                style={{ ...headerIconStyle, fontSize: "10px" }}
+                                title="Delete node"
+                                onActivate={onDelete}
+                            />
+                        </div>
+                    ) : null}
                 </div>
             ) : null}
 
@@ -1085,26 +1090,77 @@ const headerIconStyle: CSS.Properties = {
     flexShrink: 0,
 };
 
+// Node border colour = node category, read from the shared palette rather than
+// restated here. DataflowThumbnail used to carry a hand-kept copy of the same
+// hexes, and the Node Catalog picked a third set by hashing a directory name.
 const nodeTypeBorderColor: Record<string, string> = {
-    [NodeType.DATA_LOADING]: "#3498db",
-    [NodeType.DATA_EXPORT]: "#3498db",
-    [NodeType.DATA_TRANSFORMATION]: "#3498db",
-    [NodeType.DATA_SUMMARY]: "#3498db",
-    [NodeType.COMPUTATION_ANALYSIS]: "#8e44ad",
-    [NodeType.MERGE_FLOW]: "#8e44ad",
-    [NodeType.DATA_POOL]: "#8e44ad",
-    [NodeType.VIS_VEGA]: "#1abc9c",
-    [NodeType.VIS_SIMPLE]: "#1abc9c",
+    [NodeType.DATA_LOADING]: categoryFg("data"),
+    [NodeType.DATA_EXPORT]: categoryFg("data"),
+    [NodeType.DATA_TRANSFORMATION]: categoryFg("data"),
+    [NodeType.DATA_SUMMARY]: categoryFg("data"),
+    [NodeType.COMPUTATION_ANALYSIS]: categoryFg("computation"),
+    [NodeType.MERGE_FLOW]: categoryFg("computation"),
+    [NodeType.DATA_POOL]: categoryFg("computation"),
+    [NodeType.VIS_VEGA]: categoryFg("vis"),
+    [NodeType.VIS_SIMPLE]: categoryFg("vis"),
 };
 
-const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({
-    position: "relative",
-    backgroundColor: "#ffffff",
-    borderLeft: `4px solid ${nodeTypeBorderColor[nodeType] ?? "#95a5a6"}`,
-    borderRadius: "10px",
-    padding: "5px",
-    boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
-});
+/** The node container's border and surface, resolved in one place.
+ *
+ * Longhands only, never the `border` shorthand. The two used to be layered: this
+ * function supplied `borderLeft` and the inline style added `border` when
+ * dashboard mode was on, so toggling it changed which of the two was present
+ * between renders and React warned "Removing border borderLeft". The suggestion
+ * state added `borderWidth`/`borderStyle`/`borderColor` on top, colliding with
+ * the same shorthand. Deciding the whole border here removes the layering
+ * instead of reordering it.
+ */
+export const getNodeContainerStyles = (
+    nodeType: string,
+    state: { dashboardOn?: boolean; suggested?: boolean; acceptable?: boolean } = {},
+): CSS.Properties => {
+    // `nodeType` arrives versioned for palette-dragged nodes
+    // (`curio.builtin/merge-flow@1`) but this map is keyed by the unversioned
+    // NodeType enum, so an unnormalized lookup silently falls back to grey (#159).
+    const accent = nodeTypeBorderColor[unversionedNodeType(nodeType)] ?? CATEGORY_FALLBACK_FG;
+    const base: CSS.Properties = {
+        position: "relative",
+        backgroundColor: "#ffffff",
+        borderRadius: "10px",
+        padding: "5px",
+        boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
+    };
+
+    if (state.dashboardOn) {
+        // Dashboard mode frames every node identically, accent included.
+        return {
+            ...base,
+            borderStyle: "solid",
+            borderColor: "#000",
+            borderWidth: "2px",
+            borderRadius: "0",
+            boxShadow: "none",
+            resize: "none",
+        };
+    }
+
+    const suggested = state.suggested === true;
+    return {
+        ...base,
+        borderTopStyle: suggested ? "dashed" : undefined,
+        borderRightStyle: suggested ? "dashed" : undefined,
+        borderBottomStyle: suggested ? "dashed" : undefined,
+        borderLeftStyle: "solid",
+        borderTopWidth: suggested ? "2px" : undefined,
+        borderRightWidth: suggested ? "2px" : undefined,
+        borderBottomWidth: suggested ? "2px" : undefined,
+        borderLeftWidth: "4px",
+        borderTopColor: state.acceptable ? "#1d3853" : undefined,
+        borderRightColor: state.acceptable ? "#1d3853" : undefined,
+        borderBottomColor: state.acceptable ? "#1d3853" : undefined,
+        borderLeftColor: state.acceptable ? "#1d3853" : accent,
+    };
+};
 
 const nodeContentStyle: CSS.Properties = {
     backgroundColor: "white",

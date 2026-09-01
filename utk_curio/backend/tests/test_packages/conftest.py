@@ -1,41 +1,26 @@
 """Shared fixtures for package tests.
 
-Mirrors ``test_projects/conftest.py`` so the same auth/DB fixtures work
-here, plus helpers for building in-memory ``.curio.zip`` zips and
-for materialising synthetic packages in the user's package store.
+Reuses the common app/DB/auth fixtures from
+``utk_curio.backend.tests._unit_fixtures`` (same as test_projects), plus
+helpers for building in-memory ``.curio.zip`` zips, stubbing pip, and
+materialising synthetic packages in the user's package store.
 """
 from __future__ import annotations
 
 import io
 import json
-import os
 import zipfile
 
 import pytest
 
-from utk_curio.backend.app import create_app
 from utk_curio.backend.app.packages.storage import user_packageages_dir
-from utk_curio.backend.extensions import db as _db
-
-
-class TestConfig:
-    TESTING = True
-    SQLALCHEMY_DATABASE_URI = "sqlite://"
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SECRET_KEY = "test-secret"
-    WTF_CSRF_ENABLED = False
-
-
-@pytest.fixture()
-def tmp_curio(tmp_path, monkeypatch):
-    data_dir = tmp_path / ".curio" / "data"
-    data_dir.mkdir(parents=True)
-    # Use monkeypatch so the session-level CURIO_LAUNCH_CWD (set in the root
-    # conftest) is *restored* on teardown rather than deleted — a bare
-    # ``os.environ.pop`` here clobbers it for every later test that reads it
-    # (e.g. test_routes::test_file_route_serves_relative_to_launch_cwd).
-    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
-    yield tmp_path
+from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
+    app,
+    client,
+    db,
+    tmp_curio,
+    user_and_token,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -60,38 +45,6 @@ def _stub_pip_runner(monkeypatch):
         pip_runner, "uninstall_python_deps",
         lambda names: UninstallReport(removed=list(names), kept=[]),
     )
-
-
-@pytest.fixture()
-def app(tmp_curio):
-    application = create_app(TestConfig)
-    with application.app_context():
-        _db.create_all()
-        yield application
-        _db.session.remove()
-        _db.drop_all()
-
-
-@pytest.fixture()
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture()
-def db(app):
-    return _db
-
-
-@pytest.fixture()
-def user_and_token(app, db):
-    from utk_curio.backend.app.users.models import User, UserSession
-    u = User(username="alice", name="Alice", email="alice@test.com")
-    db.session.add(u)
-    db.session.flush()
-    s = UserSession(user_id=u.id, token="alice-token-123")
-    db.session.add(s)
-    db.session.commit()
-    return u, "alice-token-123"
 
 
 # ---------------------------------------------------------------------------
@@ -198,3 +151,69 @@ def install_packageage(tmp_curio, make_archive):
 def packages_base(tmp_curio):
     """Path to ``.curio/users/`` for the current test workspace."""
     return user_packageages_dir("guest").parent.parent
+
+
+def write_fake_tool(directory, name: str, source: str):
+    """Write an executable stand-in for a pinned build tool, cross-platform.
+
+    The build tests fake ``esbuild`` and the preview runner with a Python
+    script carrying a ``#!/usr/bin/env python3`` shebang plus ``chmod 0o755``.
+    That only runs where the OS honours ``#!``. On Windows the exec fails with
+    ``[WinError 193] %1 is not a valid Win32 application``, which took out 21
+    of these tests at fixture setup and made another 14 fail downstream.
+
+    On POSIX this keeps the shebang script. On Windows it writes the script as
+    ``<name>.py`` next to a ``<name>.cmd`` shim that hands it to *this*
+    interpreter by absolute path - the build code runs its tools under a
+    deliberately minimal environment, so nothing may depend on ``python``
+    being discoverable on PATH.
+
+    Returns the path to hand to ``CURIO_BUILD_ESBUILD`` /
+    ``CURIO_BUILD_PREVIEW_RUNNER``.
+    """
+    import os
+    import sys
+    from pathlib import Path
+
+    directory = Path(directory)
+    if os.name != "nt":
+        tool = directory / name
+        tool.write_text(source, encoding="utf-8")
+        tool.chmod(0o755)
+        return tool
+
+    script = directory / f"{name}.py"
+    script.write_text(source, encoding="utf-8")
+    shim = directory / f"{name}.cmd"
+    # `%*` forwards argv with its original quoting; cmd.exe propagates the
+    # child's exit code, which the version probe and the failure cases rely on.
+    shim.write_text(
+        "@echo off\r\n"
+        f'"{sys.executable}" "{script}" %*\r\n',
+        encoding="utf-8",
+    )
+    return shim
+
+@pytest.fixture()
+def default_llm_provider(monkeypatch):
+    """Stand in for an operator who configured a default LLM provider.
+
+    The DoD scenarios in ``test_custom_look_dod.py`` drive real agent runs, and
+    an agent route resolves a provider before it validates anything else - so
+    with none configured they fail at that first step with
+    ``400 No AI provider is configured`` instead of exercising the package
+    build they are about.
+
+    Curio ships no built-in endpoint (``config.DEFAULT_LLM_*`` are empty),
+    which is deliberate: an instance whose operator configured nothing must not
+    send prompts to a third party. So the test supplies one rather than leaning
+    on a shipped default, exactly as ``test_agents/conftest.py`` does. The URL
+    is unroutable on purpose - every provider call in these tests is stubbed,
+    and one that forgot should fail loudly rather than reach the network.
+    """
+    from utk_curio.backend.app.agents import provider_config
+
+    monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
+    monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "test-model")
+    monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "test-key")

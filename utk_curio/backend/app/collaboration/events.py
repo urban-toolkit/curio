@@ -22,7 +22,7 @@ import re
 from typing import Optional
 
 from flask import request
-from flask_socketio import ConnectionRefusedError, join_room, leave_room
+from flask_socketio import ConnectionRefusedError, join_room
 
 from utk_curio.backend.app.collaboration import room_state
 from utk_curio.backend.app.collaboration.auth import authenticate_handshake
@@ -145,26 +145,6 @@ def register(sio):
             to=room, skip_sid=request.sid, namespace=ns,
         )
         return {"ok": True, "snapshot": snap}
-
-    @sio.on("leave_session", namespace=ns)
-    def _leave(payload):
-        sess, room, err = _gated(payload)
-        if err:
-            return err
-        removed = room_state.remove_user(room, request.sid)
-        leave_room(room, namespace=ns)
-        if removed:
-            sio.emit(
-                "user_left",
-                {
-                    "user_id": removed.get("user_id"),
-                    "username": removed.get("username"),
-                    "released_locks": removed.get("released_locks", []),
-                    "users": room_state.users_in(room),
-                },
-                to=room, namespace=ns,
-            )
-        return {"ok": True}
 
     # ------------------------------------------------------------------
     # Per-node soft locks

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef,
 import type { CSSProperties } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronDown } from "@fortawesome/free-solid-svg-icons";
+import { modalStackDepth } from "../ModalShell";
 import dockStyles from "./ForkFamilyPicker.dock.module.css";
 import hubStyles from "./ForkFamilyPicker.hub.module.css";
 
@@ -73,6 +74,9 @@ export function ForkFamilyPicker({ variant, rootKey, options, value, onChange }:
             if (!rootRef.current?.contains(ev.target as Node)) setOpen(false);
         };
         const onKey = (ev: KeyboardEvent) => {
+            // See AgentChatPanel: a modal raised over the picker owns Escape,
+            // and this window listener cannot be stopped by it.
+            if (modalStackDepth() > 0) return;
             if (ev.key === "Escape") setOpen(false);
         };
         document.addEventListener("mousedown", onDocMouseDown, true);

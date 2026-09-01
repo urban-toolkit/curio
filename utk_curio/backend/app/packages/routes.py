@@ -14,7 +14,7 @@ derives from ``app.projects.services._user_dir_key`` just like
 | ``GET /api/packages/catalog``                | catalog-api-ui (this commit)   |
 | ``POST /api/packages/factory/build``         | factory-impl (this commit)     |
 | ``POST /api/packages/factory/install``       | factory-impl (this commit)     |
-| ``GET /api/packages/factory/capabilities``  | wizard — publish gated flags   |
+| ``GET /api/packages/factory/capabilities``  | wizard - publish gated flags   |
 | ``POST /api/packages/factory/publish-catalog`` | dev catalog fixture write (on by default; env to disable) |
 | ``DELETE /api/packages/catalog/<dir>``       | dev catalog fixture remove (same env gate as publish) |
 | ``POST /api/packages/resolve``               | dep-resolver (this commit)     |
@@ -33,7 +33,6 @@ from pathlib import Path
 
 import json as _json
 
-import requests
 from flask import Blueprint, Response, g, jsonify, request
 
 from utk_curio.backend.app.packages.factory import (
@@ -50,6 +49,7 @@ from utk_curio.backend.app.packages.installer import (
     remove_packageage_from_catalog_dir,
     uninstall_packageage,
 )
+from utk_curio.backend.app.packages import publisher_record
 from utk_curio.backend.app.packages.catalog_family import (
     CatalogReleaseTriple,
     catalog_release_collision_groups,
@@ -61,9 +61,10 @@ from utk_curio.backend.app.packages.manifest import (
     PackageManifest,
     load_packageage_manifest,
 )
+from utk_curio.backend.app.packages.locks import package_seed_lock
 from utk_curio.backend.app.packages.resolver import (
     ResolverError,
-    resolve_for_project,
+    resolve_for_project_unlocked,
 )
 from utk_curio.backend.app.packages.seed import BUILTIN_PACKAGE_ID
 from utk_curio.backend.app.packages.storage import (
@@ -143,6 +144,9 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
                 "containerStyle": tpl.container_style,
                 "hasProvenance": tpl.has_provenance,
                 "tutorialId": tpl.tutorial_id,
+                # dev/91: the declared backend handler this template's Run
+                # invokes through the package backend sandbox (null = none).
+                "backendHandler": tpl.backend_handler,
             }
         )
     payload = {
@@ -187,11 +191,11 @@ _README_MAX_BYTES = 64 * 1024  # 64 KiB cap on README content surfaced via paylo
 
 
 def _catalog_root() -> Path:
-    """``<repo_root>/packages/`` — committed package catalog root.
+    """``<repo_root>/packages/`` - committed package catalog root.
 
     Resolved relative to this file's location so the seeder finds the
     catalog regardless of the launch CWD. This is the dev catalog
-    source — production deployments rely on user installs via the
+    source - production deployments rely on user installs via the
     catalog drawer (and the future remote registry).
     """
     # routes.py -> packages/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packages/
@@ -204,7 +208,7 @@ def _resolver_overrides_for(user_key: str, packages: list[str]) -> dict[str, Pat
     The pre-install conflict probe in the catalog UI passes the
     candidate's ``dirName`` alongside the already-installed packages so it
     can show the InstallDialog with a precise conflict report. The
-    candidate is by definition *not yet installed* — its manifest lives
+    candidate is by definition *not yet installed* - its manifest lives
     in the committed catalog at ``<repo_root>/packages/<dirName>/``,
     not in ``<user>/packages/<dirName>/``. Without an override, the
     resolver would raise ``package <name> is malformed: missing
@@ -214,6 +218,11 @@ def _resolver_overrides_for(user_key: str, packages: list[str]) -> dict[str, Pat
     the resolver at the catalog directory iff a well-formed manifest is
     present there. Unknown packages are left alone so the resolver still
     surfaces a precise "not installed" error.
+
+    UNLOCKED: the caller holds the per-user seed lock (memo dev/99) so the
+    "is it installed?" answer here and the resolver's own store reads describe
+    the same instant — otherwise a seeded package caught in the swap window
+    would be resolved against its catalog copy instead of its installed one.
     """
     catalog_root = _catalog_root()
     if not catalog_root.is_dir():
@@ -232,12 +241,23 @@ def _resolver_overrides_for(user_key: str, packages: list[str]) -> dict[str, Pat
     return out
 
 
+def _resolve_snapshot(user_key: str, packages: list[str]):
+    """Override discovery + resolution against ONE store snapshot (dev/99).
+
+    The seed lock is released before anything slow: both callers hand the
+    result to the sandbox / the response after this returns.
+    """
+    with package_seed_lock(user_key):
+        overrides = _resolver_overrides_for(user_key, packages)
+        return resolve_for_project_unlocked(user_key, packages, overrides=overrides)
+
+
 def _error(message: str, status: int = 400) -> tuple[Response, int]:
     return jsonify({"error": message}), status
 
 
 # ---------------------------------------------------------------------------
-# GET /api/packages — list installed
+# GET /api/packages - list installed
 # ---------------------------------------------------------------------------
 
 def _ensure_user_seeded(user_key: str) -> None:
@@ -247,11 +267,11 @@ def _ensure_user_seeded(user_key: str) -> None:
     Startup-time seeding only handles the shared ``guest`` key, so signed-up
     accounts (and ``/api/testing/stub-login`` users during e2e tests) land
     with an empty store. ``/api/packages`` and ``/api/packages/catalog`` both
-    rely on the user's store to compute "installed" — without a seed, the
+    rely on the user's store to compute "installed" - without a seed, the
     catalog page shows the built-in package as available-but-not-installed
     and any saved dataflow's nodes fail to find their descriptors. The
     catalog page additionally reads ``defaults`` to render the "Installed"
-    badge, so we also add the seeded builtin to defaults — symmetric with
+    badge, so we also add the seeded builtin to defaults - symmetric with
     the catalog-page install path. The seeder and defaults writer are both
     idempotent (a marker file + a sorted set on disk), so this is a no-op
     after the first call.
@@ -266,14 +286,20 @@ def _ensure_user_seeded(user_key: str) -> None:
         # The seeder returns only NEWLY-seeded names, so a re-seed-suppressed
         # call returns []. Inspect the store directly to find whatever
         # ``curio.builtin@<major>`` the user actually has and ensure it's in
-        # defaults — covers both first-run and "store exists but defaults
+        # defaults - covers both first-run and "store exists but defaults
         # never got the entry" (e.g. an earlier seed before this code shipped).
         prefix = f"{BUILTIN_PACKAGE_ID}@"
         existing_defaults = defaults_io.load_defaults(user_key)
-        for package_path in list_user_packageages(user_key):
-            if package_path.name.startswith(prefix) and package_path.name not in existing_defaults:
-                defaults_io.add_to_defaults(user_key, package_path.name)
-    except Exception:  # noqa: BLE001 — never block the request on a seed error
+        # Names-only snapshot under the seed lock (memo dev/99); the defaults
+        # write happens after release - the seed lock is a leaf.
+        with package_seed_lock(user_key):
+            builtin_names = [
+                p.name for p in list_user_packageages(user_key) if p.name.startswith(prefix)
+            ]
+        for name in builtin_names:
+            if name not in existing_defaults:
+                defaults_io.add_to_defaults(user_key, name)
+    except Exception:  # noqa: BLE001 - never block the request on a seed error
         log.warning("Lazy builtin seed failed for user_key=%s", user_key, exc_info=True)
 
 
@@ -283,14 +309,17 @@ def list_installed_packageages():
     user_key = _user_dir_key(g.user)
     _ensure_user_seeded(user_key)
     out: list[dict] = []
-    for package_path in list_user_packageages(user_key):
-        try:
-            manifest = load_packageage_manifest(package_path)
-        except ManifestError as exc:
-            log.warning("Skipping malformed package %s: %s", package_path.name, exc)
-            continue
-        out.append(_manifest_to_payload(manifest, package_mtime_path=package_path))
-    # Newest ``manifest.createdAt`` first — canonical authoring time / ordering.
+    # Enumeration + manifests + mtimes under ONE seed-lock hold (memo dev/99):
+    # the payloads are detached dicts, so nothing live leaves the lock.
+    with package_seed_lock(user_key):
+        for package_path in list_user_packageages(user_key):
+            try:
+                manifest = load_packageage_manifest(package_path)
+            except ManifestError as exc:
+                log.warning("Skipping malformed package %s: %s", package_path.name, exc)
+                continue
+            out.append(_manifest_to_payload(manifest, package_mtime_path=package_path))
+    # Newest ``manifest.createdAt`` first - canonical authoring time / ordering.
     out.sort(
         key=lambda p: (-int(p.get("createdAtMs") or 0), p.get("dirName") or ""),
     )
@@ -298,7 +327,7 @@ def list_installed_packageages():
 
 
 # ---------------------------------------------------------------------------
-# GET /api/packages/catalog — fixture-backed catalog index
+# GET /api/packages/catalog - fixture-backed catalog index
 # ---------------------------------------------------------------------------
 
 @packages_bp.route("/catalog", methods=["GET"])
@@ -312,7 +341,8 @@ def list_catalog_packageages():
     """
     user_key = _user_dir_key(g.user)
     _ensure_user_seeded(user_key)
-    installed_coords = {p.name for p in list_user_packageages(user_key)}
+    with package_seed_lock(user_key):  # memo dev/99: no transient "not installed"
+        installed_coords = {p.name for p in list_user_packageages(user_key)}
 
     root = _catalog_root()
     if not root.is_dir():
@@ -329,6 +359,13 @@ def list_catalog_packageages():
             continue
         payload = _manifest_to_payload(manifest, package_mtime_path=entry)
         payload["installed"] = manifest.dir_name in installed_coords
+        # Whether THIS user may withdraw it, which is the same question as
+        # "is this the user's own package". The agent catalog has carried a
+        # `publishable` flag from the start; packages had nothing, so the UI
+        # fell back to `readOnly !== true` and offered Unpublish on everything.
+        payload["publishable"] = publisher_record.is_publisher(
+            root, manifest.dir_name, user_key,
+        )
         out.append(payload)
 
     out.sort(
@@ -359,7 +396,7 @@ def list_catalog_packageages():
 
 
 # ---------------------------------------------------------------------------
-# POST /api/packages/upload — sideload a .curio.zip
+# POST /api/packages/upload - sideload a .curio.zip
 # ---------------------------------------------------------------------------
 
 @packages_bp.route("/upload", methods=["POST"])
@@ -395,7 +432,7 @@ def upload_packageage():
 
 
 # ---------------------------------------------------------------------------
-# POST /api/packages/catalog/install — install a catalog package by dirName
+# POST /api/packages/catalog/install - install a catalog package by dirName
 # ---------------------------------------------------------------------------
 
 @packages_bp.route("/catalog/install", methods=["POST"])
@@ -406,7 +443,7 @@ def install_from_catalog():
     The body is ``{"dirName": "<packageId>@<major>", "replace": false}``;
     the route copies the catalog directory into the user's package store
     via :func:`install_packageage_from_directory`. The catalog set is the
-    committed packages shipped in ``<repo_root>/packages/`` — same data the
+    committed packages shipped in ``<repo_root>/packages/`` - same data the
     ``GET /api/packages/catalog`` route advertises.
     """
     user_key = _user_dir_key(g.user)
@@ -432,7 +469,7 @@ def install_from_catalog():
 
 
 # ---------------------------------------------------------------------------
-# DELETE /api/packages/catalog/<dir_name> — remove fixture from dev catalog
+# DELETE /api/packages/catalog/<dir_name> - remove fixture from dev catalog
 # ---------------------------------------------------------------------------
 
 
@@ -441,7 +478,7 @@ def install_from_catalog():
 def unpublish_from_catalog(dir_name: str):
     """Remove a package directory from ``<repo_root>/packages/`` (developer catalog only).
 
-    Does **not** uninstall from the user's package store — use
+    Does **not** uninstall from the user's package store - use
     ``DELETE /api/packages/<dir_name>`` for that. Gated by the same env flag as
     ``factory/publish-catalog``.
     """
@@ -459,17 +496,40 @@ def unpublish_from_catalog(dir_name: str):
     if not PACKAGE_DIR_RE.match(dir_name):
         return _error("dir_name must match <packageId>@<major>")
 
+    catalog = _catalog_root()
+    # Existence BEFORE authorization, so a package that is simply not there
+    # reports 404 rather than "not yours" - a removed package has no publisher
+    # record either, and the ownership gate fails closed, so checking that
+    # first turned every 404 into a confusing 403.
+    if not (catalog / dir_name).is_dir():
+        return _error(f"catalog has no package {dir_name}", 404)
+
+    # Only the publisher may withdraw it. This route was gated by the env flag
+    # alone, so any authenticated user could remove any package from the shared
+    # catalog - including the ones that ship with the deployment. Fails closed
+    # for unrecorded packages, which is every package published before the
+    # record existed. Mirrors the dataset rule in
+    # `CatalogMutations._assert_is_publisher`.
+    if not publisher_record.is_publisher(catalog, dir_name, _user_dir_key(g.user)):
+        return jsonify({
+            "error": (
+                "Only the account that published this package can remove it "
+                "from the shared catalog."
+            ),
+        }), 403
+
     try:
-        removed = remove_packageage_from_catalog_dir(_catalog_root(), dir_name)
+        removed = remove_packageage_from_catalog_dir(catalog, dir_name)
     except InstallerError as exc:
         return _error(str(exc))
     if not removed:
         return _error(f"catalog has no package {dir_name}", 404)
+    publisher_record.forget_publisher(catalog, dir_name)
     return "", 204
 
 
 # ---------------------------------------------------------------------------
-# DELETE /api/packages/<dir_name> — uninstall
+# DELETE /api/packages/<dir_name> - uninstall
 # ---------------------------------------------------------------------------
 
 @packages_bp.route("/<dir_name>", methods=["DELETE"])
@@ -484,11 +544,16 @@ def remove_packageage(dir_name: str):
         return _error(str(exc))
     if not removed:
         return _error("package not installed", 404)
+    # dev/97: backend residue goes with the package (overlay, data dir,
+    # pin); the invocation ledger survives an uninstall.
+    from utk_curio.backend.app.packages.backend_runtime import remove_backend_residue
+
+    remove_backend_residue(user_key, dir_name)
     return "", 204
 
 
 # ---------------------------------------------------------------------------
-# PATCH /api/packages/<dir_name> — partial metadata edit
+# PATCH /api/packages/<dir_name> - partial metadata edit
 # ---------------------------------------------------------------------------
 
 _PATCH_ALLOWED_TOP_KEYS: frozenset[str] = frozenset({
@@ -506,7 +571,7 @@ def patch_package_metadata(dir_name: str):
     Read-only packages (``curio.builtin@1`` and similar) reject with ``403``.
     Identity-bearing keys (``id``, ``version``, ``major``, ``kinds``,
     ``lineage``, ``readOnly``, ``createdAt``, ``distribution``,
-    ``dependencies``) cannot be mutated through this endpoint — ``dependencies``
+    ``dependencies``) cannot be mutated through this endpoint - ``dependencies``
     in particular comes from source-scan now.
     """
     user_key = _user_dir_key(g.user)
@@ -590,7 +655,12 @@ def patch_package_metadata(dir_name: str):
         if isinstance(readme_update, str) and readme_update.strip():
             try:
                 tmp_readme = readme_path.with_name("README.md.tmp")
-                tmp_readme.write_text(readme_update, encoding="utf-8")
+                # newline="" disables the platform line-ending translation that
+                # write_text applies by default. Without it a README authored on
+                # Windows lands on disk with CRLF, and export_packageage_archive
+                # ships those bytes to every consumer of the archive -- so the
+                # same edit would produce a different package per author OS.
+                tmp_readme.write_text(readme_update, encoding="utf-8", newline="")
                 tmp_readme.replace(readme_path)
             except OSError as exc:
                 return _error(f"cannot write README: {exc}")
@@ -608,7 +678,7 @@ def patch_package_metadata(dir_name: str):
 
 
 # ---------------------------------------------------------------------------
-# GET /api/packages/<dir_name>/archive — re-export
+# GET /api/packages/<dir_name>/archive - re-export
 # ---------------------------------------------------------------------------
 
 @packages_bp.route("/<dir_name>/archive", methods=["GET"])
@@ -695,7 +765,7 @@ def get_package_file(dir_name: str, filename: str):
         return _error(f"could not read package file: {exc}", 500)
 
     response = Response(body, mimetype=mimetype)
-    # Package files are content-addressed via integrity.json — once a sha
+    # Package files are content-addressed via integrity.json - once a sha
     # matches, the file is immutable for this install. A short browser
     # cache is safe and keeps the dynamic loader fast on repeat boots.
     response.headers["Cache-Control"] = "private, max-age=300"
@@ -722,7 +792,7 @@ def factory_capabilities():
 @packages_bp.route("/factory/publish-catalog", methods=["POST"])
 @require_auth
 def factory_publish_catalog():
-    """Build draft and publish into ``<repo_root>/packages/`` — **developers only**.
+    """Build draft and publish into ``<repo_root>/packages/`` - **developers only**.
 
     Allowed by default; set ``CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`` to ``0``,
     ``false``, ``no``, or ``off`` to disable.
@@ -775,6 +845,10 @@ def factory_publish_catalog():
     except InstallerError as exc:
         return _error(str(exc))
     catalog_path = catalog / result.manifest.dir_name
+    # Who published it. Without this the catalog is a global tree with no
+    # recorded owner, so nothing could tell a package the user authored from one
+    # that shipped with the deployment - see packages/publisher_record.py.
+    publisher_record.record_publisher(catalog, result.manifest.dir_name, user_key)
     return jsonify({
         "package": _manifest_to_payload(result.manifest, package_mtime_path=catalog_path),
         "integrity": result.integrity,
@@ -784,11 +858,39 @@ def factory_publish_catalog():
     }), 201
 
 
+def _installed_dir_for_draft(user_key: str, manifest_raw) -> "Path | None":
+    """The user's installed directory for a draft's coordinate, if any.
+
+    Save-As rebuilds a whole package from one draft, so both the build and the
+    install path need to know whether they are rewriting something that already
+    exists on disk - that is what makes source preservation possible.
+    """
+    if not isinstance(manifest_raw, dict):
+        return None
+    package_id_raw = manifest_raw.get("id")
+    major_raw = (manifest_raw.get("compatibility") or {}).get("major")
+    if not isinstance(package_id_raw, str) or not isinstance(major_raw, int):
+        return None
+    try:
+        candidate = package_dir(user_key, f"{package_id_raw}@{major_raw}")
+    except PackageIdError:
+        return None
+    return candidate if candidate.is_dir() else None
+
+
 @packages_bp.route("/factory/build", methods=["POST"])
 @require_auth
 def factory_build():
     """Validate a draft and return the produced ``.curio.zip`` bytes."""
+    user_key = _user_dir_key(g.user)
     draft = request.get_json(silent=True) or {}
+    # Same preservation the install path does: a Save-As draft over an existing
+    # package carries real source only for the edited template, so building
+    # without this ships placeholder bodies for every sibling - an exported
+    # archive that silently destroys code when imported elsewhere.
+    draft = preserve_unedited_sources(
+        draft, _installed_dir_for_draft(user_key, draft.get("manifest")),
+    )
     try:
         result = build_packageage_archive(draft)
     except FactoryError as exc:
@@ -803,7 +905,7 @@ def factory_build():
 
 
 # ---------------------------------------------------------------------------
-# POST /api/packages/factory/install — wizard -> install in one shot
+# POST /api/packages/factory/install - wizard -> install in one shot
 # ---------------------------------------------------------------------------
 
 @packages_bp.route("/factory/install", methods=["POST"])
@@ -820,7 +922,7 @@ def factory_install():
     manifest_raw = draft.get("manifest")
     if isinstance(manifest_raw, dict):
         if manifest_raw.get("readOnly") is True:
-            return _error("this package is read-only — save changes as a new package")
+            return _error("this package is read-only - save changes as a new package")
         # Defense-in-depth: a forged draft can omit readOnly, so also check the
         # installed package at the target coord. Catches any attempt to overwrite a
         # read-only package that's already installed (e.g. curio.builtin).
@@ -834,7 +936,7 @@ def factory_install():
             if installed_dir is not None and installed_dir.is_dir():
                 try:
                     if load_packageage_manifest(installed_dir).read_only:
-                        return _error("this package is read-only — save changes as a new package")
+                        return _error("this package is read-only - save changes as a new package")
                 except ManifestError:
                     pass  # Let the install path surface a more specific error.
     replace = bool(draft.get("replace", False))
@@ -842,18 +944,9 @@ def factory_install():
     # template the user actively edited; every other template comes through
     # with the STARTER_CODE placeholder. Read the unedited templates' real
     # source from disk before the rebuild so we don't clobber them.
-    existing_dir: Path | None = None
-    if isinstance(manifest_raw, dict):
-        package_id_raw = manifest_raw.get("id")
-        major_raw = (manifest_raw.get("compatibility") or {}).get("major")
-        if isinstance(package_id_raw, str) and isinstance(major_raw, int):
-            try:
-                candidate = package_dir(user_key, f"{package_id_raw}@{major_raw}")
-            except PackageIdError:
-                candidate = None
-            if candidate is not None and candidate.is_dir():
-                existing_dir = candidate
-    draft = preserve_unedited_sources(draft, existing_dir)
+    draft = preserve_unedited_sources(
+        draft, _installed_dir_for_draft(user_key, manifest_raw),
+    )
     try:
         built = build_packageage_archive(draft)
         result = install_packageage_from_archive(
@@ -873,117 +966,7 @@ def factory_install():
 
 
 # ---------------------------------------------------------------------------
-# POST /api/packages/resolve — dep resolution
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Sandbox install helper
-# ---------------------------------------------------------------------------
-
-def _forward_to_sandbox_install(packages: list[str]) -> tuple[dict, int]:
-    """POST the merged package list to the sandbox ``/install`` route.
-
-    Mirrors the shape of :func:`api.routes.install_packageages` so the
-    behaviour stays in lockstep with the existing ``/installPackages``
-    endpoint — same Flask address resolution, same timeout policy. Lives
-    in this module (rather than importing from ``api.routes``) so the
-    test suite can monkey-patch without booting the sandbox.
-    """
-    from utk_curio.backend.app.api import routes as api_routes  # local: no cycle
-    response = api_routes._sandbox_call(
-        "post", "/install",
-        label="/api/packages/install-deps",
-        timeout=api_routes.SANDBOX_INSTALL_TIMEOUT,
-        data=_json.dumps({"packages": packages}),
-        headers={"Content-Type": "application/json"},
-    )
-    if isinstance(response, tuple):
-        flask_resp, status = response
-        try:
-            return flask_resp.get_json(), status
-        except Exception:  # noqa: BLE001
-            return {"error": "sandbox_unreachable"}, status
-    try:
-        return response.json(), response.status_code
-    except (ValueError, requests.JSONDecodeError):
-        return {
-            "error": "sandbox_returned_non_json",
-            "status": response.status_code,
-            "body": response.text[:512],
-        }, 502
-
-
-# ---------------------------------------------------------------------------
-# POST /api/packages/install-deps — resolve + push to sandbox
-# ---------------------------------------------------------------------------
-
-@packages_bp.route("/install-deps", methods=["POST"])
-@require_auth
-def install_packageage_deps():
-    """Resolve a set of package dirs and install the merged python deps.
-
-    Body shape: ``{"packages": ["ai.urbanlab.uhvi@1", ...]}``.
-
-    Returns ``{lockfile, conflicts, sandboxStatus, sandboxBody}``:
-
-    * On conflict (409) the resolver returns ``conflicts``; the sandbox
-      is never touched.
-    * On success the resolver hands the **merged** python deps over to
-      the existing ``/install`` route on the shared sandbox interpreter
-      (this is the same path the legacy ``/installPackages`` route
-      uses). The lockfile is returned so the frontend can persist it in
-      the project's ``spec.trill.json``.
-    """
-    user_key = _user_dir_key(g.user)
-    body = request.get_json(silent=True) or {}
-    packages = body.get("packages")
-    if not isinstance(packages, list) or not all(isinstance(p, str) for p in packages):
-        return _error("body must be {'packages': [<dirName>, ...]}")
-    overrides = _resolver_overrides_for(user_key, packages)
-    try:
-        result = resolve_for_project(user_key, packages, overrides=overrides)
-    except ResolverError as exc:
-        return _error(str(exc))
-    except PackageIdError as exc:
-        return _error(str(exc))
-
-    if result.conflicts:
-        return jsonify({
-            "lockfile": result.to_lockfile(),
-            "conflicts": [
-                {
-                    "package": c.package,
-                    "ranges": [
-                        {"packageDir": p, "range": r} for (p, r) in c.ranges
-                    ],
-                }
-                for c in result.conflicts
-            ],
-            "sandboxStatus": None,
-        }), 409
-
-    # ``resolver._format_range`` only ever emits ``"*"`` (no constraint),
-    # ``">=X.Y.Z"`` or ``">=X.Y.Z,<A.B.C"`` — all directly understood by
-    # pip. ``"*"`` becomes a bare package name (install latest).
-    pip_requirements = [
-        pkg if rng == "*" else f"{pkg}{rng}"
-        for pkg, rng in sorted(result.python_deps.items())
-    ]
-    sandbox_body, sandbox_status = (
-        _forward_to_sandbox_install(pip_requirements) if pip_requirements else ({"installed": []}, 200)
-    )
-
-    return jsonify({
-        "lockfile": result.to_lockfile(),
-        "conflicts": [],
-        "sandboxStatus": sandbox_status,
-        "sandboxBody": sandbox_body,
-        "pipRequirements": pip_requirements,
-    }), 200 if sandbox_status < 400 else sandbox_status
-
-
-# ---------------------------------------------------------------------------
-# POST /api/packages/resolve — dep resolution only (no sandbox install)
+# POST /api/packages/resolve - dep resolution only (no sandbox install)
 # ---------------------------------------------------------------------------
 
 @packages_bp.route("/resolve", methods=["POST"])
@@ -993,20 +976,19 @@ def resolve_deps():
 
     Body shape: ``{"packages": ["ai.urbanlab.uhvi@1", ...]}``.
 
-    * 200 — fully resolved; returns ``{lockfile, conflicts: []}``.
-    * 409 — at least one Python (or JS) range conflict across packages;
+    * 200 - fully resolved; returns ``{lockfile, conflicts: []}``.
+    * 409 - at least one Python (or JS) range conflict across packages;
       returns ``{lockfile: {...}, conflicts: [{package, ranges: [{packageDir,
       range}, ...]}, ...]}`` so the UI can show a precise error.
-    * 400 — malformed body, cycle, missing package dep.
+    * 400 - malformed body, cycle, missing package dep.
     """
     user_key = _user_dir_key(g.user)
     body = request.get_json(silent=True) or {}
     packages = body.get("packages")
     if not isinstance(packages, list) or not all(isinstance(p, str) for p in packages):
         return _error("body must be {'packages': [<dirName>, ...]}")
-    overrides = _resolver_overrides_for(user_key, packages)
     try:
-        result = resolve_for_project(user_key, packages, overrides=overrides)
+        result = _resolve_snapshot(user_key, packages)
     except ResolverError as exc:
         return _error(str(exc))
     except PackageIdError as exc:
@@ -1028,7 +1010,7 @@ def resolve_deps():
 
 
 # ---------------------------------------------------------------------------
-# /workflow-deps — install a dataflow's declared package dependencies on load
+# /workflow-deps - install a dataflow's declared package dependencies on load
 # ---------------------------------------------------------------------------
 #
 # A dataflow declares the catalog packages it depends on in its
@@ -1036,7 +1018,7 @@ def resolve_deps():
 # posts that lockfile to /check to learn which declared packages aren't ready
 # (not installed, or installed-but-with-a-missing-dep), warns the user, and
 # auto-installs them via /install. Installing the package provisions both its
-# nodes and its declared python libraries — a dataflow depends on packages,
+# nodes and its declared python libraries - a dataflow depends on packages,
 # and the libraries follow.
 
 
@@ -1045,7 +1027,7 @@ def resolve_deps():
 def check_workflow_deps():
     """Report which of a dataflow's declared packages aren't ready.
 
-    Body: ``{"packages": ["<dirName>", ...]}`` — the loaded spec's
+    Body: ``{"packages": ["<dirName>", ...]}`` - the loaded spec's
     ``dataflow.packages`` lockfile. A dataflow declares the catalog packages
     it depends on there; loading it should install any that aren't present.
     A package is "needed" if it isn't in the user's store, OR it is but some
@@ -1064,17 +1046,24 @@ def check_workflow_deps():
 
     from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
 
-    in_store = {p.name for p in list_user_packageages(user_key)}
+    wanted = [
+        dn for dn in packages if isinstance(dn, str) and PACKAGE_DIR_RE.match(dn)
+    ]
+    # Store membership + declared deps in ONE seed-lock hold (memo dev/99);
+    # the pip presence probes run after release.
+    with package_seed_lock(user_key):
+        in_store = {p.name for p in list_user_packageages(user_key)}
+        declared = {
+            dn: packages_services._read_python_deps(user_key, dn)
+            for dn in wanted if dn in in_store
+        }
     need: set[str] = set()
-    for dir_name in packages:
-        if not isinstance(dir_name, str) or not PACKAGE_DIR_RE.match(dir_name):
-            continue
+    for dir_name in wanted:
         if dir_name not in in_store:
             need.add(dir_name)
             continue
-        # Installed in the store — flag only if a declared dep went missing.
-        deps = packages_services._read_python_deps(user_key, dir_name)
-        if any(not is_satisfied(n, s) for n, s in deps.items()):
+        # Installed in the store - flag only if a declared dep went missing.
+        if any(not is_satisfied(n, s) for n, s in declared[dir_name].items()):
             need.add(dir_name)
     return jsonify({"packages": sorted(need)}), 200
 
@@ -1086,7 +1075,7 @@ def install_workflow_deps():
 
     Body: ``{"packages": ["<dirName>", ...]}``. Each is installed into the
     user's store via :func:`services.install_to_store`, which copies the
-    package (if missing) and pip-installs its declared python deps — so the
+    package (if missing) and pip-installs its declared python deps - so the
     package's libraries and nodes both become available. A dataflow depends
     on *packages*, not loose libraries; the libraries follow from the package.
 
@@ -1118,9 +1107,9 @@ def install_workflow_deps():
 # ---------------------------------------------------------------------------
 #
 # These five endpoints implement the project-scoped install/uninstall and the
-# per-user defaults list from [docs/CATALOG.md]. The drawer in the canvas
+# per-user defaults list from [docs/NODE-CATALOG.md]. The drawer in the canvas
 # uses the `/projects/<id>/...` endpoints; the `/catalog` page uses
-# `/defaults`. There is deliberately no `DELETE /defaults/<dir>` — the only
+# `/defaults`. There is deliberately no `DELETE /defaults/<dir>` - the only
 # way a package leaves the defaults list is via `prune_unreferenced_packages`,
 # which fires when the last project drops a dep.
 
@@ -1191,7 +1180,7 @@ def get_defaults_route():
     # `/api/packages`. If this endpoint resolves before either of those has
     # seeded the user, the page renders with an empty defaults set and the
     # built-in package shows as "available but not installed" until the next
-    # refresh. Seed eagerly here too — idempotent on the seeded path.
+    # refresh. Seed eagerly here too - idempotent on the seeded path.
     _ensure_user_seeded(user_key)
     return jsonify({"packages": sorted(defaults_io.load_defaults(user_key))}), 200
 
@@ -1212,7 +1201,7 @@ def install_to_defaults_route():
 
 
 # ---------------------------------------------------------------------------
-# /api/libraries — per-user "Installed libraries" surface (Python + JS)
+# /api/libraries - per-user "Installed libraries" surface (Python + JS)
 # ---------------------------------------------------------------------------
 
 @packages_bp.route("/libraries", methods=["GET"])
@@ -1240,6 +1229,53 @@ def list_libraries_route():
     }), 200
 
 
+# ---------------------------------------------------------------------------
+# POST /api/packages/<dir_name>/backend/<handler> — the package backend sandbox
+# ---------------------------------------------------------------------------
+
+@packages_bp.route("/<dir_name>/backend/<handler>", methods=["POST"])
+@require_auth
+def invoke_packageage_backend(dir_name: str, handler: str):
+    """Invoke one declared backend handler (memo dev/91 §3) — the ONLY
+    caller surface for package server code. Body: ``{"payload": <JSON>}``.
+
+    The handler runs in a per-invocation sandboxed worker (never in this
+    process); the promote/install-time entry pin gates verify-on-read. The
+    memo's §6 status matrix: 404 unknown package/backend/handler, 403 is
+    impossible here by construction (an undeclared-permission backend cannot
+    install — the manifest loader refuses it), 409 digest drift, 413/422
+    payload bounds, 503 no worker slot, 507 data dir over cap, 502 honest
+    sanitized worker/contract failure. A well-formed ``ok: false`` reply
+    (handler-error) returns 200 — the envelope IS the diagnosis."""
+    from utk_curio.backend.app.packages import backend_contract as bc
+    from utk_curio.backend.app.packages import backend_runtime
+
+    if request.content_length and request.content_length > bc.PAYLOAD_MAX_BYTES + 4096:
+        return _error(
+            f"payload exceeds the {bc.PAYLOAD_MAX_BYTES // (1024 * 1024)} MiB "
+            "request bound", 413,
+        )
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or "payload" not in body:
+        return _error('body must be a JSON object with a "payload" member', 422)
+    user_key = _user_dir_key(g.user)
+    pin = backend_runtime.pinned_entry_digest(user_key, dir_name)
+    try:
+        out = backend_runtime.invoke_handler(
+            user_key, dir_name, handler, body["payload"],
+            expected_entry_digest=pin,
+        )
+    except backend_runtime.BackendRuntimeError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({
+        "reply": out["reply"],
+        "invocationId": out["invocationId"],
+        "durationMs": out["durationMs"],
+        "limitsApplied": out["limitsApplied"],
+        "entryDigest": out["entryDigest"],
+    }), 200
+
+
 @packages_bp.route("/libraries", methods=["POST"])
 @require_auth
 def add_library_route():
@@ -1251,7 +1287,7 @@ def add_library_route():
     """
     from utk_curio.backend.app.packages import libraries as libs
     from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, install_python_deps,
+        PipInstallError, PipSpecError, install_python_deps,
     )
 
     body = request.get_json(silent=True) or {}
@@ -1262,7 +1298,7 @@ def add_library_route():
     if kind not in ("python", "js"):
         return _error("kind must be 'python' or 'js'")
     if kind == "js":
-        # No JS install runner yet — the modal will still accept the
+        # No JS install runner yet - the modal will still accept the
         # entry as a declaration, but won't actually `npm install`. This
         # keeps the data path consistent for a future js_runner module.
         return _error("JS library install is not yet supported; declare in a node package's manifest instead", 501)
@@ -1273,12 +1309,16 @@ def add_library_route():
     name, version = _split_lib_spec(spec)
     try:
         report = install_python_deps({name: version})
+    except PipSpecError as exc:
+        # A malformed requirement is the caller's mistake, not pip's failure:
+        # answer 400 rather than letting it read as an upstream 502.
+        return _error(str(exc), 400)
     except PipInstallError as exc:
         return _error(f"pip install failed: {exc}", 502)
     libs.add_library(user_key, kind, spec)
     return jsonify({
         "standalone": libs.list_standalone(user_key),
-        # ``skipped`` is non-empty when the lib was already importable —
+        # ``skipped`` is non-empty when the lib was already importable -
         # the frontend reads this to show "Already installed" instead of
         # "Installed" so the user knows nothing was actually downloaded.
         "installed": list(report.installed),
@@ -1291,7 +1331,7 @@ def add_library_route():
 def remove_library_route(kind: str, spec: str):
     """Drop a standalone library and pip-uninstall it.
 
-    Package-derived libs aren't removable here — the package itself has
+    Package-derived libs aren't removable here - the package itself has
     to be uninstalled, which triggers the ref-counted prune in
     ``prune_unreferenced_packages``.
     """
@@ -1308,7 +1348,7 @@ def remove_library_route(kind: str, spec: str):
     user_key = _user_dir_key(g.user)
     name, _ = _split_lib_spec(spec)
     # Only uninstall via pip if no installed package still declares this
-    # library — same ref-counting contract as the package prune path.
+    # library - same ref-counting contract as the package prune path.
     if not _any_package_declares(user_key, name, "python"):
         try:
             uninstall_python_deps([name])
@@ -1335,19 +1375,20 @@ def _split_lib_spec(spec: str) -> tuple[str, str]:
 def _any_package_declares(user_key: str, lib_name: str, kind: str) -> bool:
     """True if any installed package's manifest declares *lib_name* under
     ``dependencies.<kind>``. Used to gate pip uninstall on standalone
-    remove — if a package needs the lib, we keep it on disk."""
+    remove - if a package needs the lib, we keep it on disk."""
     from utk_curio.backend.app.packages.manifest import (
         ManifestError,
         load_packageage_manifest,
     )
     from utk_curio.backend.app.packages.storage import list_user_packageages
 
-    for package_path in list_user_packageages(user_key):
-        try:
-            m = load_packageage_manifest(package_path)
-        except ManifestError:
-            continue
-        deps = (m.python_deps if kind == "python" else m.js_deps) or {}
-        if lib_name in deps:
-            return True
+    with package_seed_lock(user_key):  # memo dev/99: one consistent walk
+        for package_path in list_user_packageages(user_key):
+            try:
+                m = load_packageage_manifest(package_path)
+            except ManifestError:
+                continue
+            deps = (m.python_deps if kind == "python" else m.js_deps) or {}
+            if lib_name in deps:
+                return True
     return False

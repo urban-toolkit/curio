@@ -32,7 +32,7 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--curio-accent-mint-fg);
+    background: var(--curio-role-installed-fg);
     flex-shrink: 0;
 }
 
@@ -89,7 +89,7 @@
 }
 
 .rowActionBtn:focus-visible {
-    outline: 2px solid var(--curio-accent-sky-fg);
+    outline: 2px solid var(--curio-focus-ring);
     outline-offset: 1px;
 }
 

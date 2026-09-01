@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import time
 import zipfile
 
 import pytest
@@ -153,6 +154,87 @@ def test_export_unknown_packageage(tmp_curio):
         export_packageage_archive("guest", "ai.test.demo@1")
 
 
+def test_export_omits_integrity_and_reinstall_rebuilds_it(tmp_curio, make_archive):
+    """``integrity.json`` is never shipped in an archive, only recomputed on install.
+
+    The builder and the exporter both skip it deliberately: hashes describe the
+    files as installed, so carrying a stale copy in the zip would either be
+    ignored or actively wrong. Nothing verifies it on install, so a regression
+    here is silent - hence asserting the absence, not just the presence.
+    """
+    install_packageage_from_archive("guest", make_archive())
+    installed = package_dir("guest", "ai.test.demo@1")
+    assert (installed / "integrity.json").is_file(), "install should write integrity.json"
+
+    archive_bytes = export_packageage_archive("guest", "ai.test.demo@1")
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+        names = set(zf.namelist())
+    assert "manifest.json" in names
+    assert any(n.startswith("starters/") for n in names), names
+    assert "integrity.json" not in names, (
+        f"exported archive must not carry integrity.json: {sorted(names)}"
+    )
+
+    uninstall_packageage("guest", "ai.test.demo@1")
+    install_packageage_from_archive("guest", archive_bytes)
+    rebuilt = json.loads((installed / "integrity.json").read_text(encoding="utf-8"))
+    assert "manifest.json" in rebuilt["sha256"]
+    # The map describes the files actually on disk, so every hashed path exists.
+    for rel in rebuilt["sha256"]:
+        assert (installed / rel).is_file(), f"integrity names a missing file: {rel}"
+
+
+def _rewrite_archive_package_id(archive: bytes, new_id: str) -> bytes:
+    """Copy *archive*, replacing only ``manifest.json``'s ``id``."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(archive)) as src:
+        with zipfile.ZipFile(out, mode="w", compression=zipfile.ZIP_DEFLATED) as dst:
+            for item in src.infolist():
+                body = src.read(item.filename)
+                if item.filename == "manifest.json":
+                    manifest = json.loads(body.decode("utf-8"))
+                    manifest["id"] = new_id
+                    body = json.dumps(manifest, indent=2).encode("utf-8")
+                dst.writestr(item.filename, body)
+    return out.getvalue()
+
+
+def test_renamed_archive_installs_alongside_original(tmp_curio, make_archive):
+    """Editing the manifest id forks a package rather than colliding with it.
+
+    ``dir_name`` is derived purely from the manifest (``<id>@<major>``), and
+    nothing verifies integrity on install - so retitling an exported archive
+    yields an independent package. This is what makes an export -> edit ->
+    re-import round trip usable without ``replace=True``.
+    """
+    original = make_archive()
+    install_packageage_from_archive("guest", original)
+
+    forked = _rewrite_archive_package_id(original, "ai.test.forked")
+    result = install_packageage_from_archive("guest", forked)
+
+    assert result.manifest.package_id == "ai.test.forked"
+    assert result.replaced_existing is False, "a new coordinate must not replace anything"
+
+    original_dir = package_dir("guest", "ai.test.demo@1")
+    forked_dir = package_dir("guest", "ai.test.forked@1")
+    assert original_dir.is_dir() and forked_dir.is_dir()
+    assert original_dir != forked_dir
+    # Both remain independently loadable, each with its own integrity map.
+    for d in (original_dir, forked_dir):
+        assert (d / "manifest.json").is_file()
+        assert (d / "integrity.json").is_file()
+
+
+def test_reinstalling_the_same_coordinate_still_needs_replace(tmp_curio, make_archive):
+    """The fork above works *because* the coordinate changed, not because
+    re-import is permissive: the unmodified archive is still refused."""
+    archive = make_archive()
+    install_packageage_from_archive("guest", archive)
+    with pytest.raises(InstallerError, match="already installed"):
+        install_packageage_from_archive("guest", archive)
+
+
 def test_install_packageage_from_directory_uses_committed_fixture(tmp_curio):
     """The catalog install path turns a fixture dir into an installed package."""
     from pathlib import Path
@@ -172,6 +254,23 @@ def test_install_packageage_from_directory_uses_committed_fixture(tmp_curio):
 # ---------------------------------------------------------------------------
 # Orphan staging directory cleanup
 # ---------------------------------------------------------------------------
+
+def _make_orphan(*paths):
+    """Backdate *paths* past the sweep's live-install window.
+
+    ``_purge_stale_staging`` only collects staging dirs older than
+    ``_STAGING_ORPHAN_MIN_AGE_S``, because age is the only thing that
+    distinguishes a crashed install's leftovers from a tree another request is
+    extracting into right now. A dir created by the test a millisecond ago is
+    indistinguishable from the latter, so anything that is meant to *be* an
+    orphan has to say so.
+    """
+    from utk_curio.backend.app.packages.installer import _STAGING_ORPHAN_MIN_AGE_S
+
+    stale = time.time() - (_STAGING_ORPHAN_MIN_AGE_S * 2)
+    for path in paths:
+        os.utime(path, (stale, stale))
+
 
 def test_install_purges_orphan_staging_dirs(tmp_curio, make_archive):
     """A previous install that was SIGKILL'd / lost power leaves a
@@ -198,6 +297,7 @@ def test_install_purges_orphan_staging_dirs(tmp_curio, make_archive):
     legacy_orphan = legacy_base / ".staging-legacy"
     legacy_orphan.mkdir()
     (legacy_orphan / "leftover.py").write_text("# old")
+    _make_orphan(orphan_a, orphan_b, legacy_orphan)
 
     install_packageage_from_archive("guest", make_archive())
 
@@ -258,6 +358,7 @@ def test_seeder_purges_orphan_staging_dirs(tmp_curio):
     legacy_base.mkdir(parents=True, exist_ok=True)
     legacy_orphan = legacy_base / ".staging-legacy"
     legacy_orphan.mkdir()
+    _make_orphan(new_orphan, legacy_orphan)
 
     seed_dev_packageages(user_key="guest")
     assert not new_orphan.exists()
@@ -324,3 +425,161 @@ def test_watchdog_pathlib_ignore_fails_deep_curio_paths_documentation():
         "expected pathlib to miss deep .curio trees (Watchdog ignore bug)"
     )
     assert _matches_exclude(str(deep), list(RELOADER_EXCLUDE_PATTERNS))
+
+
+def test_purge_stale_staging_keeps_the_in_flight_dir(tmp_curio):
+    """A concurrent install must not delete a staging tree still being extracted.
+
+    The sweep is indiscriminate by design (a crashed install leaves no marker to
+    distinguish it from a live one), so the caller's own directory has to be
+    named explicitly. Without ``keep`` this races: Flask serves requests
+    concurrently, and the victim fails much later - as a WinError 2 from the
+    manifest-validation copytree on a file it had just written.
+
+    ``keep`` is only half the protection; see
+    ``test_purge_stale_staging_spares_a_fresh_dir_it_was_not_told_to_keep`` for
+    the other half, which covers sweepers that have no ``keep`` to give.
+    """
+    from utk_curio.backend.app.packages.installer import _purge_stale_staging
+    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+
+    base = user_packageage_staging_dir("guest")
+    base.mkdir(parents=True, exist_ok=True)
+    orphan = base / "stage-orphaned"
+    in_flight = base / "stage-in-flight"
+    for d in (orphan, in_flight):
+        (d / "scripts").mkdir(parents=True)
+        (d / "scripts" / "behaviors.js.map").write_text("{}", encoding="utf-8")
+    _make_orphan(orphan)
+
+    _purge_stale_staging("guest", keep=in_flight)
+
+    assert not orphan.exists(), "a genuine orphan should still be swept"
+    assert (in_flight / "scripts" / "behaviors.js.map").is_file(), (
+        "the in-flight staging tree must survive the sweep"
+    )
+
+
+def test_purge_stale_staging_sweeps_everything_when_nothing_is_kept(tmp_curio):
+    from utk_curio.backend.app.packages.installer import _purge_stale_staging
+    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+
+    base = user_packageage_staging_dir("guest")
+    (base / "stage-a").mkdir(parents=True)
+    (base / "stage-b").mkdir(parents=True)
+    _make_orphan(base / "stage-a", base / "stage-b")
+
+    _purge_stale_staging("guest")
+
+    assert list(base.iterdir()) == []
+
+
+def test_purge_stale_staging_spares_a_fresh_dir_it_was_not_told_to_keep(tmp_curio):
+    """A live install survives a sweeper that has no ``keep`` to give.
+
+    ``keep`` only protects the sweeper's *own* staging dir, which is no help
+    against a sweeper that is not installing anything. ``seed_dev_packageages``
+    is exactly that: it sweeps with no ``keep`` and it runs on every
+    ``GET /api/packages`` (routes.py), which the drawer's import flow fires
+    from ``refreshPackageRegistry`` while the upload it just posted is still
+    extracting. The victim then dies with ENOENT on a file it had already
+    written, from a request that looks unrelated.
+
+    Age is the discriminator: an orphan is by definition one nothing is
+    writing to.
+    """
+    from utk_curio.backend.app.packages.installer import _purge_stale_staging
+    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+
+    base = user_packageage_staging_dir("guest")
+    base.mkdir(parents=True, exist_ok=True)
+    live = base / "stage-live"
+    orphan = base / "stage-orphan"
+    for d in (live, orphan):
+        (d / "sources").mkdir(parents=True)
+        (d / "sources" / "default.py").write_text("return arg", encoding="utf-8")
+    _make_orphan(orphan)
+
+    # No keep at all - the seeder's call shape.
+    _purge_stale_staging("guest")
+
+    assert (live / "sources" / "default.py").is_file(), (
+        "a staging tree being extracted right now must survive a keep-less sweep"
+    )
+    assert not orphan.exists(), "a genuine orphan must still be collected"
+
+
+def test_seeder_spares_an_in_flight_install(tmp_curio):
+    """The same guard, through the caller that actually triggers it."""
+    from utk_curio.backend.app.packages.seed import seed_dev_packageages
+    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+
+    base = user_packageage_staging_dir("guest")
+    base.mkdir(parents=True, exist_ok=True)
+    live = base / "stage-live"
+    (live / "sources").mkdir(parents=True)
+    (live / "sources" / "default.py").write_text("return arg", encoding="utf-8")
+
+    seed_dev_packageages(user_key="guest")
+
+    assert (live / "sources" / "default.py").is_file(), (
+        "seeding must not delete an install that is mid-extract"
+    )
+
+
+def test_purge_stale_staging_only_sweeps_its_own_prefix(tmp_curio):
+    """The sweep must not touch directories this module did not create.
+
+    A concurrent install's manifest-validation copy lives in the same parent
+    (``load_packageage_manifest_from_dir`` stages it there to stay on one
+    filesystem). Deleting it mid-copy surfaces as a shutil.Error with WinError 3
+    on every destination path at once, from a request that looks unrelated.
+    """
+    from utk_curio.backend.app.packages.installer import _purge_stale_staging
+    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+
+    base = user_packageage_staging_dir("guest")
+    base.mkdir(parents=True, exist_ok=True)
+    ours = base / "stage-orphaned"
+    theirs = base / ".validate-inflight"
+    for d in (ours, theirs):
+        d.mkdir(parents=True)
+        (d / "manifest.json").write_text("{}", encoding="utf-8")
+    _make_orphan(ours)
+
+    _purge_stale_staging("guest")
+
+    assert not ours.exists(), "a stale stage- dir should still be swept"
+    assert (theirs / "manifest.json").is_file(), (
+        "a concurrent validate copy must survive the sweep"
+    )
+
+
+def test_validate_copy_lands_beside_the_tree_it_validates(tmp_curio, make_archive):
+    """The validate copy stays on the same filesystem, not in the system temp dir.
+
+    Asserted by observing where it appears during the load: the system temp dir
+    is exposed to OS cleaners and scanners, which was deleting it mid-copy.
+    """
+    import tempfile
+    from utk_curio.backend.app.packages import installer as inst
+
+    seen: list[str] = []
+    real_mkdtemp = tempfile.mkdtemp
+
+    def spy(*args, **kwargs):
+        path = real_mkdtemp(*args, **kwargs)
+        if str(kwargs.get("prefix", "")).startswith(".validate-"):
+            seen.append(str(kwargs.get("dir")))
+        return path
+
+    original = inst.tempfile.mkdtemp
+    inst.tempfile.mkdtemp = spy
+    try:
+        install_packageage_from_archive("guest", make_archive())
+    finally:
+        inst.tempfile.mkdtemp = original
+
+    assert seen, "the validate copy should declare an explicit parent dir"
+    assert all(d and "package-staging" in d for d in seen), seen
+

@@ -9,6 +9,8 @@ import zipfile
 
 import pytest
 
+from utk_curio.backend.app.packages.factory import _STARTER_CODE_SENTINEL
+
 
 def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -270,6 +272,72 @@ def test_export_after_install(client, user_and_token, tmp_curio):
         names = set(zf.namelist())
     assert "manifest.json" in names
     assert "sources/demo.py" in names
+    assert "integrity.json" not in names
+
+
+def test_archive_sets_content_disposition_filename(client, user_and_token, tmp_curio):
+    """The download name comes from this header, and only a route test can see it.
+
+    ``packagesApi.downloadArchive`` synthesises ``<dirName>.curio.zip`` client
+    side and ignores the header entirely, so no browser test can catch the
+    server dropping it - but anything fetching the endpoint directly (curl, a
+    script, a future client that does read it) depends on it.
+    """
+    _, token = user_and_token
+    client.post(
+        "/api/packages/upload",
+        data={"file": (io.BytesIO(_archive_from_draft(_draft())), "x.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    resp = client.get(
+        "/api/packages/ai.test.factory@1/archive", headers=_auth(token)
+    )
+    assert resp.status_code == 200
+    assert resp.headers["Content-Disposition"] == (
+        'attachment; filename="ai.test.factory@1.curio.zip"'
+    )
+
+
+def test_export_then_upload_with_replace_round_trips(client, user_and_token, tmp_curio):
+    """install -> GET /archive -> POST /upload?replace=true over HTTP.
+
+    The byte round trip is covered at the installer layer and ``replace`` is
+    covered on its own, but not the two joined - which is the actual shape of
+    "export a package, edit it, put it back".
+    """
+    _, token = user_and_token
+    client.post(
+        "/api/packages/upload",
+        data={"file": (io.BytesIO(_archive_from_draft(_draft())), "x.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    exported = client.get(
+        "/api/packages/ai.test.factory@1/archive", headers=_auth(token)
+    ).data
+
+    # Without replace the coordinate collides.
+    rejected = client.post(
+        "/api/packages/upload",
+        data={"file": (io.BytesIO(exported), "again.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    assert rejected.status_code == 400
+    assert "already installed" in rejected.get_json()["error"]
+
+    # With it, the same bytes reinstall cleanly.
+    accepted = client.post(
+        "/api/packages/upload?replace=true",
+        data={"file": (io.BytesIO(exported), "again.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    assert accepted.status_code == 201, accepted.get_json()
+    body = accepted.get_json()
+    assert body["replacedExisting"] is True
+    assert body["package"]["packageId"] == "ai.test.factory"
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +354,89 @@ def test_factory_build_returns_zip(client, user_and_token, tmp_curio):
     assert resp.status_code == 200
     assert resp.mimetype == "application/zip"
     assert resp.headers["X-Curio-Package-Dir"] == "ai.test.factory@1"
+    assert resp.headers["X-Curio-Package-Version"] == "1.0.0"
+    # The browser reads the download name from Content-Disposition
+    # (packagesApi.factoryBuild), so the server must actually send it.
+    assert resp.headers["Content-Disposition"] == (
+        'attachment; filename="ai.test.factory@1-1.0.0.curio.zip"'
+    )
+    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
+        names = set(zf.namelist())
+    assert "manifest.json" in names
+    assert "sources/demo.py" in names
+    # integrity.json is computed post-extraction by the installer, never shipped
+    # in an archive. Regressing this would make every archive carry stale hashes.
+    assert "integrity.json" not in names
+
+
+def _two_template_draft():
+    """A draft for a package with two code templates, each with distinct source."""
+    draft = _draft()
+    draft["manifest"]["templates"] = [
+        {
+            "id": f"{name}-kind",
+            "label": name.title(),
+            "category": "computation",
+            "engine": "python",
+            "editor": "code",
+            "hasCode": True,
+            "hasWidgets": False,
+            "hasGrammar": False,
+            "inputPorts": [],
+            "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+            "source": f"sources/{name}-kind.py",
+        }
+        for name in ("foo", "bar")
+    ]
+    draft["sources"] = {
+        "foo-kind": {"filename": "foo-kind.py", "code": "def run():\n    return 'foo-original'\n"},
+        "bar-kind": {"filename": "bar-kind.py", "code": "def run():\n    return 'bar-original'\n"},
+    }
+    return draft
+
+
+def test_factory_build_preserves_unedited_sources(client, user_and_token, tmp_curio):
+    """Export must not blank the code of templates the user didn't edit.
+
+    ``factory_install`` calls ``preserve_unedited_sources`` before building;
+    ``factory_build`` historically did not. Save-As only carries the real body
+    for the one canvas template - every sibling arrives as a STARTER_CODE
+    placeholder - so Export shipped a zip whose other node kinds had lost their
+    code, while Save preserved them. Importing such a zip elsewhere silently
+    destroys work, which is the same failure
+    ``test_factory.py::test_preserve_unedited_sources_restores_real_source_for_placeholder_kind``
+    guards on the install path.
+    """
+    _, token = user_and_token
+    original = _two_template_draft()
+    install = client.post(
+        "/api/packages/factory/install",
+        data=json.dumps(original),
+        headers=_auth(token),
+    )
+    assert install.status_code == 201
+
+    # Save-As rebuild: foo is really edited, bar carries the placeholder.
+    edited_foo = "def run():\n    return 'foo-edited'\n"
+    rebuild = _two_template_draft()
+    rebuild["sources"] = {
+        "foo-kind": {"filename": "foo-kind.py", "code": edited_foo},
+        "bar-kind": {"filename": "bar-kind.py", "code": _STARTER_CODE_SENTINEL},
+    }
+    resp = client.post(
+        "/api/packages/factory/build",
+        data=json.dumps(rebuild),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
+        foo_body = zf.read("sources/foo-kind.py").decode("utf-8")
+        bar_body = zf.read("sources/bar-kind.py").decode("utf-8")
+    assert foo_body == edited_foo
+    assert bar_body == "def run():\n    return 'bar-original'\n", (
+        "Export blanked an unedited sibling template. factory_build must call "
+        "preserve_unedited_sources like factory_install does."
+    )
 
 
 def test_factory_install_creates_packageage(client, user_and_token, tmp_curio):
@@ -448,6 +599,82 @@ def test_patch_package_metadata_404_for_missing(client, user_and_token, tmp_curi
     assert resp.status_code == 404
 
 
+PATCHED_README = "# Patched README\n"
+
+
+def test_patched_metadata_and_readme_survive_export_and_reupload(
+    client, user_and_token, tmp_curio
+):
+    """PATCH -> GET /archive -> DELETE -> POST /upload keeps every edited field.
+
+    The last leg of authoring a package is editing its metadata, and the archive
+    is how it leaves this machine. Those two are tested separately today: PATCH
+    against the payload it returns, export against a package nobody edited. The
+    join is what a user actually does, and it has a real seam in it - ``license``
+    and ``permissions`` live in ``manifest.json`` while ``readme`` is a sibling
+    file the PATCH writes only after the manifest revalidates, so the two halves
+    travel independently and only one of them is in the manifest the exporter
+    re-zips.
+
+    The README comparison is byte-exact on purpose: ``write_text`` translates
+    line endings by default, so without ``newline=""`` in the route a README
+    authored on Windows would ship CRLF and the same edit would produce a
+    different archive per author OS.
+
+    Kept at the route layer because it is the cheapest place the whole join
+    fits; ``test_package_metadata_roundtrip_e2e.py`` drives the same path
+    through the two modals that produce this body.
+    """
+    _, token = user_and_token
+    _install_factory_demo(client, token)
+
+    patched = client.patch(
+        "/api/packages/ai.test.factory@1",
+        data=json.dumps({
+            "publisher": "Publisher After Patch",
+            "license": "Apache-2.0",
+            "permissions": ["filesystem.read", "network.fetch"],
+            "readme": PATCHED_README,
+        }),
+        headers=_auth(token),
+    )
+    assert patched.status_code == 200, patched.get_data(as_text=True)
+
+    exported = client.get(
+        "/api/packages/ai.test.factory@1/archive", headers=_auth(token)
+    )
+    assert exported.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(exported.data), "r") as zf:
+        names = set(zf.namelist())
+        assert "README.md" in names, sorted(names)
+        manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+        assert zf.read("README.md").decode("utf-8") == PATCHED_README
+    assert manifest["publisher"] == "Publisher After Patch"
+    assert manifest["license"] == "Apache-2.0"
+    assert manifest["permissions"] == ["filesystem.read", "network.fetch"]
+
+    # Uninstall first: no UI path sets ``replace``, so a plain re-import is the
+    # real shape of loading an exported package back in.
+    assert client.delete(
+        "/api/packages/ai.test.factory@1", headers=_auth(token)
+    ).status_code == 204
+
+    reimported = client.post(
+        "/api/packages/upload",
+        data={"file": (io.BytesIO(exported.data), "patched.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    assert reimported.status_code == 201, reimported.get_data(as_text=True)
+
+    listing = client.get("/api/packages", headers=_auth(token)).get_json()["packages"]
+    pkg = next(p for p in listing if p["dirName"] == "ai.test.factory@1")
+    assert pkg["publisher"] == "Publisher After Patch"
+    assert pkg["license"] == "Apache-2.0"
+    assert pkg["permissions"] == ["filesystem.read", "network.fetch"]
+    assert pkg["readme"] == PATCHED_README
+
+
 # ---------------------------------------------------------------------------
 # GET /api/packages/factory/capabilities + POST publish-catalog
 # ---------------------------------------------------------------------------
@@ -607,88 +834,6 @@ def test_resolve_ok(client, user_and_token, tmp_curio):
     assert "numpy" in body["lockfile"]["pythonDeps"]
 
 
-def test_install_deps_forwards_to_sandbox(client, user_and_token, tmp_curio, monkeypatch):
-    """``/install-deps`` resolves, then hands merged deps to the sandbox."""
-    _, token = user_and_token
-
-    # Install a package with a single python dep so the resolver has
-    # something to forward.
-    client.post(
-        "/api/packages/factory/install",
-        data=json.dumps(_draft()),
-        headers=_auth(token),
-    )
-
-    captured: dict = {}
-
-    def _fake_forward(packages):
-        captured["packages"] = packages
-        return ({"installed": packages}, 200)
-
-    from utk_curio.backend.app.packages import routes as package_routes
-    monkeypatch.setattr(package_routes, "_forward_to_sandbox_install", _fake_forward)
-
-    resp = client.post(
-        "/api/packages/install-deps",
-        data=json.dumps({"packages": ["ai.test.factory@1"]}),
-        headers=_auth(token),
-    )
-    assert resp.status_code == 200
-    body = resp.get_json()
-    assert body["conflicts"] == []
-    # numpy lands in pip requirements with no version pin (source-driven
-    # detection emits ``*``).
-    assert any(req == "numpy" or req.startswith("numpy ") or req.startswith("numpy==") or req.startswith("numpy>=") for req in body["pipRequirements"])
-    assert captured["packages"] == body["pipRequirements"]
-    assert body["lockfile"]["installedPackages"][0]["dirName"] == "ai.test.factory@1"
-
-
-@pytest.mark.skip(
-    reason="Manual python dep pinning is no longer the source of truth — factory now "
-           "derives dependencies from source imports (see dependency_scanner.py), so "
-           "tests that fabricate version conflicts via manifest['dependencies']['python'] "
-           "no longer have a path to surface conflicts through factory_install. Conflict "
-           "logic remains exercised by tests that install via .curio.zip upload "
-           "(archive sideload skips source detection by design)."
-)
-def test_install_deps_conflict_skips_sandbox(client, user_and_token, tmp_curio, monkeypatch):
-    """A range conflict returns 409 and never invokes the sandbox forwarder."""
-    _, token = user_and_token
-
-    a = _draft()
-    a["manifest"]["id"] = "ai.test.alpha"
-    a["manifest"]["dependencies"]["python"] = {"rasterio": "^1.3"}
-    client.post(
-        "/api/packages/factory/install",
-        data=json.dumps(a), headers=_auth(token),
-    )
-    b = _draft()
-    b["manifest"]["id"] = "ai.test.beta"
-    b["manifest"]["dependencies"]["python"] = {"rasterio": "^2.0"}
-    client.post(
-        "/api/packages/factory/install",
-        data=json.dumps(b), headers=_auth(token),
-    )
-
-    invoked = {"count": 0}
-
-    def _fake_forward(_packages):  # pragma: no cover — must not run
-        invoked["count"] += 1
-        return ({}, 200)
-
-    from utk_curio.backend.app.packages import routes as package_routes
-    monkeypatch.setattr(package_routes, "_forward_to_sandbox_install", _fake_forward)
-
-    resp = client.post(
-        "/api/packages/install-deps",
-        data=json.dumps({"packages": ["ai.test.alpha@1", "ai.test.beta@1"]}),
-        headers=_auth(token),
-    )
-    assert resp.status_code == 409
-    assert invoked["count"] == 0
-    assert any(c["package"] == "rasterio" for c in resp.get_json()["conflicts"])
-
-
 def test_resolve_falls_back_to_catalog_for_uninstalled_packageage(
     client, user_and_token, tmp_curio,
 ):
@@ -714,10 +859,11 @@ def test_resolve_falls_back_to_catalog_for_uninstalled_packageage(
 
 
 @pytest.mark.skip(
-    reason="Same as test_install_deps_conflict_skips_sandbox: factory now derives deps "
-           "from source so the test's manual rasterio pin is overridden. Catalog "
-           "conflict semantics still verified by other tests that exercise "
-           "/packages/upload (archive sideload preserves manifest deps verbatim)."
+    reason="Factory now derives deps from source imports (see dependency_scanner.py), "
+           "so the test's manual rasterio pin is overridden and it has no path to "
+           "surface a version conflict. Catalog conflict semantics stay verified by "
+           "the tests that install via /packages/upload (archive sideload preserves "
+           "manifest deps verbatim)."
 )
 def test_resolve_catalog_fallback_still_reports_conflicts(
     client, user_and_token, tmp_curio,
@@ -750,6 +896,41 @@ def test_resolve_catalog_fallback_still_reports_conflicts(
     assert any(c["package"] == "rasterio" for c in body["conflicts"])
 
 
+def test_resolve_catalog_candidate_alongside_the_builtin_package(
+    client, user_and_token, tmp_curio,
+):
+    """The install probe the UI actually sends: candidate **plus** builtin.
+
+    This is the gap that let #154 ship. The test above resolves
+    ``ai.urbanlab.uhvi@1`` on its own, but no real install ever looks like
+    that - ``useNodeCatalogBrowse.onInstall`` posts every installed package plus
+    the candidate, and ``curio.builtin@1`` is force-reseeded for every user, so
+    it is always in that list.
+
+    UHVI used to declare ``geopandas ^0.14`` (i.e. ``<1.0.0``) against builtin's
+    ``>=1.1.3``. Disjoint, so the resolver correctly 409'd and the Install button
+    stayed disabled - permanently, because builtin is ``readOnly`` and refuses to
+    uninstall. Resolving the candidate alone could never see it.
+    """
+    _, token = user_and_token
+    resp = client.post(
+        "/api/packages/resolve",
+        data=json.dumps({"packages": ["curio.builtin@1", "ai.urbanlab.uhvi@1"]}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200, resp.get_json()
+    body = resp.get_json()
+    assert body["conflicts"] == [], (
+        "a shipped catalog package must be installable next to the mandatory "
+        "built-in package; the install dialog's advice to 'uninstall one of the "
+        "conflicting packages' is impossible to follow when one of them is "
+        "curio.builtin@1"
+    )
+    # The merged range must still be builtin's floor - relaxing the candidate
+    # must not have quietly loosened what actually gets pip-installed.
+    assert body["lockfile"]["pythonDeps"]["geopandas"] == ">=1.1.3"
+
+
 def test_resolve_unknown_packageage_still_errors(client, user_and_token, tmp_curio):
     """A package that is neither installed nor in the catalog must still
     surface the precise 'is malformed' error so the wizard / probe gets
@@ -766,8 +947,8 @@ def test_resolve_unknown_packageage_still_errors(client, user_and_token, tmp_cur
 
 
 @pytest.mark.skip(
-    reason="Same as test_install_deps_conflict_skips_sandbox: factory derives deps from "
-           "source so test cannot fabricate version conflicts via factory_install."
+    reason="Factory derives deps from source imports, so this test cannot fabricate "
+           "a version conflict via factory_install."
 )
 def test_resolve_conflict_returns_409(client, user_and_token, tmp_curio):
     _, token = user_and_token
@@ -795,3 +976,167 @@ def test_resolve_conflict_returns_409(client, user_and_token, tmp_curio):
     assert resp.status_code == 409
     body = resp.get_json()
     assert any(c["package"] == "rasterio" for c in body["conflicts"])
+
+
+# ---------------------------------------------------------------------------
+# POST /api/packages/catalog/install with replace -- the "Reload from catalog"
+# action in the drawer's Installed tab.
+#
+# Authoring a package under packages/ means editing it in place. Plain install
+# is a no-op once a copy exists in the user store, so the drawer's Reload
+# button re-installs with replace=true; without that, on-disk edits (including
+# a rebuilt scripts/behaviors.js) never reach the running app.
+# ---------------------------------------------------------------------------
+
+def _write_catalog_package(root, manifest: dict, sources: dict[str, str]) -> str:
+    """Materialise a package directory under *root*; returns its dirName."""
+    dir_name = f"{manifest['id']}@{manifest['compatibility']['major']}"
+    package_root = root / dir_name
+    (package_root / "sources").mkdir(parents=True, exist_ok=True)
+    (package_root / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    for name, body in sources.items():
+        (package_root / "sources" / name).write_text(body, encoding="utf-8")
+    return dir_name
+
+
+@pytest.fixture()
+def fake_catalog(tmp_path, monkeypatch):
+    """Point the packages routes at a throwaway catalog directory.
+
+    The real catalog is <repo_root>/packages/, which tests must not mutate.
+    """
+    from utk_curio.backend.app.packages import routes as packages_routes
+
+    catalog = tmp_path / "catalog"
+    catalog.mkdir()
+    monkeypatch.setattr(packages_routes, "_catalog_root", lambda: catalog)
+    return catalog
+
+
+def test_catalog_install_replace_picks_up_edited_sources(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """Reload overwrites the installed copy with the catalog's current bits."""
+    _, token = user_and_token
+    manifest = manifest_dict(package_id="ai.test.reload", major=1)
+    manifest["templates"] = [
+        {
+            "id": "reload-kind",
+            "label": "Reload kind",
+            "category": "computation",
+            "engine": "python",
+            "editor": "code",
+            "hasCode": True,
+            "hasWidgets": False,
+            "hasGrammar": False,
+            "inputPorts": [],
+            "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+            "source": "sources/reload-kind.py",
+        }
+    ]
+    dir_name = _write_catalog_package(
+        fake_catalog, manifest, {"reload-kind.py": "return 'first'\n"}
+    )
+
+    resp = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert resp.get_json()["replacedExisting"] is False
+
+    file_url = f"/api/packages/{dir_name}/file/sources/reload-kind.py"
+    body = client.get(file_url, headers=_auth(token)).get_data(as_text=True)
+    assert "first" in body
+
+    # Author edits the package on disk...
+    (fake_catalog / dir_name / "sources" / "reload-kind.py").write_text(
+        "return 'second'\n", encoding="utf-8"
+    )
+
+    # ...and a plain install does nothing, because a copy already exists.
+    # This is the trap the Reload button exists to avoid.
+    stale = client.get(file_url, headers=_auth(token)).get_data(as_text=True)
+    assert "first" in stale
+
+    # Reload == install with replace.
+    resp = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name, "replace": True}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert resp.get_json()["replacedExisting"] is True
+
+    fresh = client.get(file_url, headers=_auth(token)).get_data(as_text=True)
+    assert "second" in fresh
+    assert "first" not in fresh
+
+
+def test_catalog_install_without_replace_rejects_existing(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """The same coordinate cannot be installed twice without replace."""
+    _, token = user_and_token
+    manifest = manifest_dict(package_id="ai.test.twice", major=1)
+    dir_name = _write_catalog_package(fake_catalog, manifest, {})
+
+    first = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name}),
+        headers=_auth(token),
+    )
+    assert first.status_code == 201, first.get_data(as_text=True)
+
+    second = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name}),
+        headers=_auth(token),
+    )
+    assert second.status_code == 400
+    assert "already installed" in second.get_json()["error"].lower()
+
+
+def test_catalog_install_replace_refreshes_behavior_bundle(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """A rebuilt scripts/behaviors.js reaches the user store on reload.
+
+    This is the custom-UI case: the frontend fetches the bundle from the
+    *installed* copy, so a reload is what makes a rebuilt bundle live.
+    """
+    _, token = user_and_token
+    manifest = manifest_dict(package_id="ai.test.uinode", major=1)
+    manifest["behaviorScript"] = "scripts/behaviors.js"
+    dir_name = f"{manifest['id']}@1"
+    package_root = fake_catalog / dir_name
+    (package_root / "scripts").mkdir(parents=True)
+    (package_root / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    bundle = package_root / "scripts" / "behaviors.js"
+    bundle.write_text("/* build 1 */\n", encoding="utf-8")
+
+    resp = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+    bundle_url = f"/api/packages/{dir_name}/file/scripts/behaviors.js"
+    assert "build 1" in client.get(bundle_url, headers=_auth(token)).get_data(as_text=True)
+
+    bundle.write_text("/* build 2 */\n", encoding="utf-8")
+    resp = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name, "replace": True}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+    served = client.get(bundle_url, headers=_auth(token)).get_data(as_text=True)
+    assert "build 2" in served

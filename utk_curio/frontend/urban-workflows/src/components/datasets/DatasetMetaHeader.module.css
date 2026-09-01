@@ -1,0 +1,50 @@
+.pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-family: var(--curio-font-family);
+}
+
+.datasetBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--curio-role-installed-fg);
+  background-color: var(--curio-role-installed-bg);
+  border: 1px solid rgba(47, 143, 74, 0.4);
+  border-radius: var(--curio-radius-pill);
+  padding: 2px 8px;
+  line-height: 1.15;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.datasetBadge:hover {
+  background-color: rgba(47, 143, 74, 0.22);
+  border-color: var(--curio-role-installed-fg);
+}
+
+.datasetBadge:focus-visible {
+  outline: 2px solid var(--curio-role-installed-fg);
+  outline-offset: 1px;
+}
+
+/* Owning node is selected on the canvas — vibrant solid fill that pops against
+   the node header. */
+.datasetBadgeSelected,
+.datasetBadgeSelected:hover {
+  color: #ffffff;
+  background-color: var(--curio-role-installed-fg);
+  border-color: var(--curio-role-installed-fg);
+  box-shadow: 0 0 0 2px rgba(47, 143, 74, 0.35);
+}
+
+.icon {
+  font-size: 8px;
+}

@@ -64,3 +64,16 @@
     background-repeat: no-repeat;
     background-position: right 10px center;
 }
+
+/* Narrow drawer (both catalogs go full-width under 640px): the sort select
+   drops below the input instead of squeezing it. Lived as a dead `.searchBar`
+   rule in DatasetCatalogDrawer.module.css, which never declared that class. */
+@media (max-width: 640px) {
+    .searchRow {
+        flex-wrap: wrap;
+    }
+
+    .sortSelect {
+        width: 100%;
+    }
+}

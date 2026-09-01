@@ -388,8 +388,10 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     );
 
     // Follow the current project. When enabled flips on, take whatever
-    // project is already loaded; on every project change emit
-    // leave_session and reconnect with the new room.
+    // project is already loaded; on every project change close the socket
+    // and reconnect with the new room. Closing is the whole story - the
+    // backend's ``disconnect`` handler releases this sid's locks and emits
+    // ``user_left`` to the old room, so there is nothing to send first.
     useEffect(() => {
         if (!enabled) {
             closeSocket();

@@ -13,6 +13,9 @@ CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type,Authorization",
     "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
+    # Expose Content-Disposition so cross-origin clients (e.g. dataset export)
+    # can read the friendly download filename returned by send_file.
+    "Access-Control-Expose-Headers": "Content-Disposition",
     "Access-Control-Max-Age": "600",
 }
 
@@ -36,6 +39,11 @@ def create_app(config_class=config_class):
     db.init_app(app)
     migrate.init_app(app, db)
 
+    # Settings whose meaning changed in this release. Warns and continues:
+    # each of these leaves a working boot and a quietly broken feature.
+    from utk_curio.backend.app.upgrade_notices import check_upgrade_notices
+    check_upgrade_notices()
+
     from utk_curio.backend.app.api import bp as api_bp
     app.register_blueprint(api_bp, url_prefix='')
 
@@ -54,6 +62,12 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.packages import packages_bp, seed_dev_packageages
     app.register_blueprint(packages_bp)
+
+    from utk_curio.backend.app.datasets import datasets_bp
+    app.register_blueprint(datasets_bp)
+
+    from utk_curio.backend.app.agents.routes import agents_bp
+    app.register_blueprint(agents_bp)
 
     from utk_curio.backend.app.streetvision import bp as streetvision_bp
     app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")

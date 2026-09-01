@@ -24,6 +24,7 @@ the test environment (e.g. CI without geopandas / rasterio installed).
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -39,6 +40,21 @@ REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..")
 )
 SANDBOX_BOOT_TIMEOUT_S = 90  # importing geopandas / rasterio is slow on a cold cache
+
+# Dedicated DuckDB store, so this test cannot collide with a running
+# `curio start` writing to the same path. Relative because the sandbox
+# subprocess resolves it against REPO_ROOT (its cwd).
+SHARED_DATA_REL = ".curio/test-large-df-data/"
+WATCHDOG_DATA_REL = ".curio/test-watchdog-data/"
+
+
+def _remove_shared_data(rel_path: str) -> None:
+    """Delete one of this module's dedicated DuckDB stores.
+
+    Best-effort: a leaked handle from the sandbox subprocess must not fail an
+    otherwise-passing test, and the next run recreates the directory anyway.
+    """
+    shutil.rmtree(os.path.join(REPO_ROOT, rel_path.rstrip("/")), ignore_errors=True)
 
 
 def _free_port() -> int:
@@ -60,6 +76,47 @@ def _wait_for_live(port: int, proc: subprocess.Popen, deadline: float) -> bool:
             return False
         time.sleep(0.5)
     return False
+
+
+def _process_has_exited(pid: int) -> bool:
+    """Has the process at *pid* exited, counting an unreaped zombie as exited?
+
+    ``psutil.pid_exists`` asks the wrong question on POSIX. A process that has
+    exited but has not been waited on is a zombie, and it keeps a ``/proc``
+    entry, so ``pid_exists`` still returns True. Inside the Docker image PID 1
+    is ``exec python curio.py start``, which does not reap orphans, so a
+    reloader worker that self-destructs exactly as intended lingers as a zombie
+    indefinitely.
+
+    What this test actually cares about is whether the worker released the
+    DuckDB lock and its file descriptors, and a zombie has released both. On
+    Windows there are no zombies, so this is equivalent to ``pid_exists``
+    there.
+    """
+    try:
+        import psutil  # type: ignore
+
+        return psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+    except ImportError:
+        return True
+    except Exception:
+        # NoSuchProcess, or AccessDenied on a pid we no longer own.
+        return True
+
+
+def _describe_processes(pids) -> str:
+    """pid -> status, for a failure message that says what was actually seen."""
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        return str(list(pids))
+    described = []
+    for pid in pids:
+        try:
+            described.append(f"{pid}={psutil.Process(pid).status()}")
+        except Exception:
+            described.append(f"{pid}=gone")
+    return ", ".join(described) or "none"
 
 
 def _shutdown_sandbox(proc: subprocess.Popen) -> None:
@@ -97,7 +154,7 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         env["CURIO_LAUNCH_CWD"] = REPO_ROOT
         # Use a dedicated DuckDB store so the test cannot collide with a running
         # `curio start` instance writing to the same path.
-        env["CURIO_SHARED_DATA"] = ".curio/test-large-df-data/"
+        env["CURIO_SHARED_DATA"] = SHARED_DATA_REL
         env["PYTHONUNBUFFERED"] = "1"
         env["FLASK_USE_RELOADER"] = "0"
 
@@ -156,6 +213,12 @@ class TestLargeDataFrameE2E(unittest.TestCase):
 
         if hasattr(cls, "_user_patch"):
             cls._user_patch.stop()
+
+        # Drop the dedicated DuckDB store. Each run of this test spills a
+        # 50M-row DataFrame to parquet (gigabytes per artifact); without this
+        # the directory accumulates across runs until the disk fills, which
+        # surfaces as unrelated IOExceptions all over the suite.
+        _remove_shared_data(SHARED_DATA_REL)
 
     def _auth_headers(self):
         return {"Authorization": "Bearer test-token"}
@@ -258,8 +321,17 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         env["CURIO_LAUNCH_CWD"] = REPO_ROOT
         # Separate DuckDB store so a leak here is obvious and doesn't trash the
         # other tests' artifacts.
-        env["CURIO_SHARED_DATA"] = ".curio/test-watchdog-data/"
+        env["CURIO_SHARED_DATA"] = WATCHDOG_DATA_REL
         env["PYTHONUNBUFFERED"] = "1"
+        # The supervisor/worker pair IS the thing under test, so ask for the
+        # reloader explicitly instead of inheriting whatever the environment
+        # happens to say. Inside the Docker image os.environ carries
+        # FLASK_USE_RELOADER=0 (docker-compose.yml disables it, because runtime
+        # file writes trip the watcher and drop in-flight requests), which left
+        # this test asserting that a reloader it had just disabled had spawned a
+        # worker. It never surfaced because psutil was undeclared, so the skip
+        # above fired in CI; declaring psutil made the test real.
+        env["FLASK_USE_RELOADER"] = "1"
 
         proc = subprocess.Popen(
             [sys.executable, "-m", "utk_curio.sandbox.server"],
@@ -300,19 +372,21 @@ class TestLargeDataFrameE2E(unittest.TestCase):
             still_alive: list[int] = []
             while time.time() < deadline:
                 still_alive = [pid for pid in worker_pids
-                               if psutil.pid_exists(pid)]
+                               if not _process_has_exited(pid)]
                 if not still_alive:
                     break
                 time.sleep(0.25)
 
             self.assertEqual(
                 still_alive, [],
-                f"sandbox worker(s) {still_alive} survived after supervisor was "
-                "killed — the parent-watchdog in sandbox/server.py "
-                "(_self_destruct_when_parent_dies) regressed",
+                f"sandbox worker(s) survived after the supervisor was killed, "
+                f"so the parent-watchdog in sandbox/server.py "
+                f"(_self_destruct_when_parent_dies) regressed. Observed: "
+                f"{_describe_processes(worker_pids)}",
             )
         finally:
             _shutdown_sandbox(proc)
+            _remove_shared_data(WATCHDOG_DATA_REL)
             # Best-effort cleanup of any survivor we still see (would only run
             # if the assertion above failed, in which case we don't want to
             # leak processes onto the host).

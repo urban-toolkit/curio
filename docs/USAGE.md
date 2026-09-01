@@ -9,6 +9,8 @@
   - [Logged-in users](#logged-in-users)
   - [Guest users](#guest-users)
 - [Node Catalog](#node-catalog)
+- [Data Catalog](#data-catalog)
+- [Agent Catalog](#agent-catalog)
 - [Real-time collaboration](#real-time-collaboration)
 - [Quick start](#quick-start)
 
@@ -33,31 +35,57 @@ If installed from Git:
 python curio.py --help
 ```
 
-Sample output:
+There are two commands. `start` launches the servers (running `setup` first automatically); `setup` installs the framework and every installed package's Python dependencies for the current interpreter, then exits without starting anything, which is useful for warming a container image or a CI job.
 
 ```bash
-Usage:
-  curio start                       # Start all servers (Backend, Sandbox, Frontend)
-  curio start backend               # Start only the backend (localhost:5002)
-  curio start sandbox               # Start only the sandbox (localhost:2000)
-  curio start frontend              # Start only the frontend (localhost:8080)
-  curio start --auth                # Require login before reaching the project page
-  curio start --no-project          # Skip login and project page; open the canvas directly
-  curio start --deploy              # Same as --auth; use for production deployments
-  curio start --collab              # Enable real-time multi-user collaboration
-  curio start --verbose 2           # Verbosity level (0=silent, 1=normal, 2=debug)
-  curio start --force-rebuild       # Re-build the frontend and start all servers
-  curio start --force-db-init       # Re-initialize the backend database and start all servers
+curio start                  # all three servers
+curio start backend          # one server: all | frontend | backend | sandbox
+curio setup                  # install deps and exit
 ```
+
+**Startup mode**
+
+| Flag | Effect |
+|---|---|
+| *(none)* | Auto sign-in as shared guest, projects page shown |
+| `--auth` | Require login (`CURIO_NO_AUTH=0`) |
+| `--no-project` | Skip both login and projects; open the canvas directly |
+| `--deploy` | Auth **and** projects on. Use for anything reachable by others |
+| `--collab` | Real-time collaborative editing. Experimental, LAN-only |
+
+**Catalogs**
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
+| `--save-node-outputs` / `--no-save-node-outputs` | off | Default state of every node's save-output toggle |
+| `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
+| `--with-examples` | off | Seed the example projects from `docs/examples/` |
+| `--reseed` | off | Force re-seeding catalog packages into the guest package store |
+| `--isolation auto\|fork\|off` | `auto` (resolves to off) | Run each node's Python in an isolated child process. Linux only. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only) |
+| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` / `--exec-user` | 4096 / 300 / 2 / none | Limits for isolated execution. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
+| `--allow-runtime-install` / `--no-allow-runtime-install` | on locally, off with `--auth` / `--deploy` | Whether the sandbox's `POST /install` endpoint accepts `pip install` requests |
+
+**Hosts, ports, and diagnostics**
+
+`--backend-host` / `--backend-port` (127.0.0.1:5002), `--sandbox-host` / `--sandbox-port` (127.0.0.1:2000), `--frontend-host` / `--frontend-port` (localhost:8080), and `--verbose N` (0=silent, 1=normal, 2=debug).
+
+> [!WARNING]
+> Leave `--sandbox-host` at `127.0.0.1` unless you are genuinely running the backend on another machine. The sandbox executes arbitrary node code and, while it now requires a shared secret, there is no reason to offer that surface to the network.
+
+> [!NOTE]
+> `--force-rebuild` and `--force-db-init` exist only in dev mode, which `curio.py` sets and the pip entry point does not. From a pip install or inside Docker they are rejected as unknown arguments; rebuild by other means there.
+
+Because these flags are set as environment variables on every start, putting the corresponding `CURIO_*` var in a `.env` has no effect when you launch through `curio.py`. Use the flag.
 
 The three startup modes control which pages are shown when a user first opens Curio:
 
 | Mode | Login page | Project page | Typical use |
 |------|-----------|--------------|-------------|
-| *(default)* | No — auto sign-in as shared guest | Yes | Local single-user development |
+| *(default)* | No (auto sign-in as shared guest) | Yes | Local single-user development |
 | `--auth` / `--deploy` | Yes | Yes | Multi-user or production deployment |
-| `--no-project` | No — auto sign-in as shared guest | No — opens canvas directly | Demos or embedding Curio in a kiosk |
-| `--collab` | Stackable with other modes (pairs naturally with `--auth`) | — | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
+| `--no-project` | No (auto sign-in as shared guest) | No, opens the canvas directly | Demos or embedding Curio in a kiosk |
+| `--collab` | Stackable with other modes (pairs naturally with `--auth`) | n/a | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
 
 > [!NOTE]
 > When reading files from inside Curio's dataflow nodes, paths are resolved relative to the directory where you started Curio. If you see a "No such file or directory" error while loading a file, double-check the folder you're running Curio from, because the file path you provide is interpreted relative to that location.
@@ -190,13 +218,15 @@ npm run build
 
 ## LLM configuration
 
-Curio includes an LLM Assistant sidebar available on the canvas. This feature was originally developed as part of **Urbanite**, a project that has since been migrated into Curio. The assistant lets users ask questions and receive AI-generated guidance in the context of their active dataflow.
+Curio's AI surfaces (the Agent Catalog's agents, the node-authoring assistants, and chat) all answer through one provider, configured in **AI Settings**.
 
-To use the LLM Assistant, Curio needs access to an LLM API. Each user can connect their own account, or you can configure a shared key for guest users.
+Curio ships no endpoint of its own, so an instance whose operator configures nothing resolves no provider and says so rather than sending prompts somewhere nobody chose. Each user can connect their own account, or you can configure a shared key for guest users.
 
 ### Logged-in users
 
-Logged-in users configure their own LLM connection from the **Projects page**. Click the **LLM Settings** button in the top navigation bar to open the settings panel.
+Logged-in users configure their own connection in **AI Settings**, reachable from the **Projects page** and the catalog pages via the top navigation bar, and on the canvas from the Agent Catalog drawer's header.
+
+The panel sets the provider, base URL, API key, model, and a HuggingFace token (used only for gated models in the Street Vision node). Each field falls back to the deployment default when you leave it blank, so filling in only one box keeps the rest of the operator's configuration. Key and base URL are not inherited across providers: switching to Anthropic does not lend you the deployment's OpenAI-compatible endpoint.
 
 The following providers are supported:
 
@@ -211,13 +241,13 @@ Settings are stored per user in the database and apply across all of their proje
 
 ### Guest users
 
-Guest users cannot configure their own LLM key. Instead, a shared key is set by via environment variables in a `.env` file at the project root:
+Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in **`utk_curio/backend/.env`**. The backend loads its `.env` relative to its own package directory ([`config.py`](../utk_curio/backend/config.py)), so a `.env` at the repo root is not read by the app. (Docker Compose does read a root `.env`, but only for interpolating values like `BACKEND_URL` into `docker-compose.yml`.)
 
 ```bash
 # Required
 GUEST_LLM_API_KEY=sk-...
 
-# Optional — defaults shown
+# Optional (defaults shown)
 GUEST_LLM_API_TYPE=openai_compatible   # openai_compatible | anthropic | gemini
 GUEST_LLM_MODEL=gpt-4o-mini
 GUEST_LLM_BASE_URL=                    # leave blank for the provider default
@@ -249,22 +279,105 @@ If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for gu
 
 ## Node Catalog
 
-Curio's nodes ship as **packages** — small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, Autark, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.
+Curio's nodes ship as **packages**: small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, Autark, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.
 
-One Autark-specific note: an Autark node's spec references incoming data by name — a single upstream frame is auto-injected as the `upstream` source, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Referencing Upstream Data in Autark Nodes](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
+One Autark-specific note: an Autark node's spec references incoming data by name. A single upstream frame is auto-injected as the `upstream` source, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Referencing Upstream Data in Autark Nodes](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
-To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Packages** dropdown (cube icon) and open it; the **Get more packages +** button sits in the dropdown's footer. From there you can:
+To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Node Catalog** dropdown (cube icon) and open it; the **Browse Node Catalog +** button sits in the dropdown's footer. From there you can:
 
 - Browse the catalog and install new packages.
-- See your installed packages grouped by fork family in the **Installed** tab.
+- See the packages added to this dataflow, grouped by fork family, in the **In dataflow** tab.
 - Import a `.curio.zip` archive from the footer.
-- Author your own package directly from the canvas: build the node, click the cog on its header, then **Save as pack node…**. Edit per-package metadata later via the pencil button next to the export icon in the **Packages** dropdown.
+- Author your own package directly from the canvas: build the node, click the cog on its header, then **Save as package node…**. Edit per-package metadata later via the pencil button next to the export icon in the **Node Catalog** dropdown.
 
-The full walkthrough — concepts, the Save-As flow, the per-package metadata editor, exporting / importing, versioning, and fork lineage — is in [docs/CATALOG.md](CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
+For the full walkthrough, covering concepts, the Save-As flow, the per-package metadata editor, exporting and importing, versioning, and fork lineage, see [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
+
+## Data Catalog
+
+Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships eleven datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.
+
+Three surfaces manage datasets:
+
+- The **Data Catalog drawer** inside the canvas. Open it from the top menu **Data ⏷ → Data Catalog**, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Install datasets into the open dataflow, import files from your machine, publish, or delete.
+- The **Data Catalog** dropdown in the Tools panel, listing your installed datasets. Drag one onto the canvas to create (or extend) a node with generated loader code.
+- The **`/catalog/data`** page, a read-only library view reached from `/projects` → **Catalog** → the **Data** tab.
+
+A node can also save its output as a **computed dataset** in your account (the database toggle next to each node's play button), so its result can be reused as an input elsewhere. This is off by default, so turn the toggle on for the nodes whose output you want to keep; set `CURIO_DEFAULT_SAVE_NODE_OUTPUT=1` to turn it on for every node instead.
+
+Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs and Docker deployments should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
+
+> [!NOTE]
+> `CURIO_CATALOG_ROOT` relocates the **dataset** catalog only. The shared *node
+> package* catalog is always `<install_root>/packages/`, resolved relative to
+> the installed `utk_curio` package with no env override. On a pip install that
+> is inside `site-packages`, so publishing a node package there is at best
+> non-persistent. That is one more reason to author node packages from a git
+> checkout (see [Authoring nodes](AUTHORING-NODES.md)).
+
+For the full walkthrough, covering storage layers, the action matrix, computed datasets and lineage, OSM PBF imports, publishing, and previews, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
+
+## Agent Catalog
+
+Agents are AI assistants you attach to your dataflow. Curio ships twenty-one of
+them, covering chat, debugging, node authoring, dataset discovery, planning and
+evaluation. Which model answers is the provider set in **AI Settings** above.
+
+There are two scopes, and they are different writes:
+
+- **`/catalog/agents`**, the third tab beside the node and data catalogs, is
+  your **account**. Adding an agent here makes it available to every dataflow.
+- **The Agent Catalog drawer**, opened on the canvas from **Data → Agent
+  Catalog** or the agents tab in the left rail, adds an agent to **this
+  dataflow**.
+
+### Attaching an agent
+
+Drag an agent from the left rail's agents palette onto the canvas. Where you
+drop it is what it attaches to:
+
+- **a node**, for agents that reason about one node's content or output,
+- **a connection**, for agents that reason about an edge between two nodes,
+- **the canvas**, for agents that work over the whole dataflow.
+
+An agent only accepts the targets its manifest declares, so dropping one
+somewhere it does not belong is refused rather than silently rebound. Node
+agents appear as a badge on their node; canvas and connection agents appear in
+the dock at the top of the canvas.
+
+### Working with an agent
+
+Click an agent to open its chat panel. From there you can rename the
+conversation, clear it, cycle through every attached agent with the ‹ › arrows,
+and edit the initial intent the agent starts from. Agents that propose changes
+(new nodes, edges, node content, packages) put them up for review first: nothing
+lands on your canvas until you apply it.
+
+The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
+strip adds planning phases, per-node progress, **Solve** (fill in the planned
+nodes in one batch) and **Simulation Mode** (walk the plan without executing).
+
+The goal box in the dock is shared with your agents: several of them, the
+Dataflow Task Planner most of all, are written around knowing what the dataflow
+is for. It is saved with the project.
+
+### What an agent may reach
+
+Agents run under a default-deny egress policy. Web fetches are restricted to
+http and https, refused when a host resolves to a non-public address, capped in
+body size and redirect count, and bounded per run. A refusal surfaces in the
+chat as "refused by the egress policy", which means the address was internal or
+otherwise disallowed, not that the site was down.
+
+The agents' web-search tool defaults to DuckDuckGo's keyless Instant Answer API.
+Operators who would rather not send queries to a third party can point
+`--agent-search-url` at their own provider, or elsewhere entirely.
+
+For the full guide, covering the roster, agent packages, delegation, publishing,
+and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
 
 ## Real-time collaboration
 
-`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default — passing `--collab` flips an env flag that the frontend reads at runtime, so no rebuild is needed.
+`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default. Passing `--collab` flips an env flag that the frontend reads at runtime, so no rebuild is needed.
 
 See [COLLABORATION.md](COLLABORATION.md) for the full architecture, security model, setup instructions, and current limitations.
 

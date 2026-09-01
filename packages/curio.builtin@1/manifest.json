@@ -77,7 +77,8 @@
       "label": "Data Export",
       "behavior": "data-export",
       "outputPorts": [],
-      "paletteOrder": 1
+      "paletteOrder": 1,
+      "tutorialId": "step-export"
     },
     {
       "category": "data",
@@ -218,7 +219,8 @@
           ]
         }
       ],
-      "paletteOrder": 10
+      "paletteOrder": 10,
+      "tutorialId": "step-summary"
     },
     {
       "category": "computation",
@@ -258,7 +260,8 @@
           ]
         }
       ],
-      "paletteOrder": 11
+      "paletteOrder": 11,
+      "tutorialId": "step-js"
     },
     {
       "badge": "VEGA",
@@ -413,7 +416,8 @@
           "types": ["GEODATAFRAME"]
         }
       ],
-      "paletteOrder": 4
+      "paletteOrder": 4,
+      "tutorialId": "step-spatial-join"
     },
     {
       "category": "flow",

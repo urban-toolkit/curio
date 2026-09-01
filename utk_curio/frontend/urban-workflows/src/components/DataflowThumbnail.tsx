@@ -1,25 +1,32 @@
 import React, { useMemo } from "react";
 import { GraphPreview } from "../api/projectsApi";
+import styles from "./DataflowThumbnail.module.css";
+import {
+  CATEGORY_FALLBACK_FG,
+  NODE_TYPE_CATEGORY,
+  colorForNodeType,
+} from "../constants/nodeCategoryPalette";
 
 // Keyed by the canonical unversioned node-type string written into trill
 // `graph_preview.nodes[].type` post-Phase-B. The thumbnail runs without the
-// node registry loaded (it renders on the projects list, before package discovery),
-// so this map is intentionally a static mirror of the built-in package.
-const NODE_COLORS: Record<string, string> = {
-  "curio.builtin/data-loading": "#3498db",
-  "curio.builtin/data-export": "#3498db",
-  "curio.builtin/data-transformation": "#3498db",
-  "curio.builtin/data-summary": "#3498db",
-  "curio.builtin/computation-analysis": "#8e44ad",
-  "curio.builtin/merge-flow": "#8e44ad",
-  "curio.builtin/data-pool": "#8e44ad",
-  "curio.builtin/js-computation": "#8e44ad",
-  "curio.builtin/vis-vega": "#1abc9c",
-  "curio.builtin/vis-simple": "#1abc9c",
-  "curio.builtin/autk-grammar": "#1abc9c",
-};
+// node registry loaded (it renders on the projects list, before package
+// discovery), so it cannot ask a descriptor for its category — but the type ->
+// category map and the colours themselves now come from the shared palette
+// instead of being restated here. This file used to hold a hand-kept copy of
+// the canvas's map, which is exactly the kind of mirror that drifts.
+const NODE_COLORS: Record<string, string> = Object.fromEntries(
+  Object.keys(NODE_TYPE_CATEGORY).map((type) => [type, colorForNodeType(type)])
+);
 
-const FALLBACK_COLOR = "#95a5a6";
+const FALLBACK_COLOR = CATEGORY_FALLBACK_FG;
+
+// Local, dependency-free mirror of `unversionedNodeType`. This component renders
+// on the projects list before package discovery runs, so it deliberately avoids
+// importing anything that would pull in the node registry.
+const VERSIONED_TYPE = /^(.+)\/([^/@]+)@(\d+)$/;
+const unversionedType = (nodeType: string): string =>
+  VERSIONED_TYPE.test(nodeType) ? nodeType.replace(/@\d+$/, "") : nodeType;
+
 // Coordinate space for layout calculations — the SVG scales this to fill its container
 const VB_W = 260;
 const VB_H = 160;
@@ -30,11 +37,16 @@ const NODE_H = 16;
 
 interface Props {
   preview?: GraphPreview | null;
-  accentColor: string;
-  bgColor: string;
 }
 
-const DataflowThumbnail: React.FC<Props> = ({ preview, accentColor, bgColor }) => {
+/**
+ * A dataflow has no category of its own, so the thumbnail carries no
+ * per-dataflow accent: the only colour in it is the node bars, which are keyed
+ * to node type. The caller used to pass an accentColor/bgColor pair derived
+ * from `project.thumbnail_accent`; `accentColor` was never read, and `bgColor`
+ * only tinted the empty state.
+ */
+const DataflowThumbnail: React.FC<Props> = ({ preview }) => {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { scaledNodes, nodeCenter } = useMemo(() => {
     const nodes = preview?.nodes ?? [];
@@ -77,7 +89,7 @@ const DataflowThumbnail: React.FC<Props> = ({ preview, accentColor, bgColor }) =
 
   if (!preview || preview.nodes.length === 0) {
     return (
-      <div style={{ width: "100%", height: "100%", backgroundColor: bgColor }} />
+      <div className={styles.emptyPreview} />
     );
   }
 
@@ -109,7 +121,9 @@ const DataflowThumbnail: React.FC<Props> = ({ preview, accentColor, bgColor }) =
       })}
 
       {scaledNodes.map((n) => {
-        const color = NODE_COLORS[n.type] ?? FALLBACK_COLOR;
+        // Palette-dragged nodes persist a versioned type (`.../merge-flow@1`);
+        // this map is keyed unversioned, so strip the suffix first (#159).
+        const color = NODE_COLORS[unversionedType(n.type)] ?? FALLBACK_COLOR;
         return (
           <g key={n.id}>
             <rect x={n.sx} y={n.sy} width={NODE_W} height={NODE_H} rx={2} fill="#ffffff" stroke="#e0e0e0" strokeWidth={0.5} />
@@ -120,5 +134,11 @@ const DataflowThumbnail: React.FC<Props> = ({ preview, accentColor, bgColor }) =
     </svg>
   );
 };
+
+
+// Exposed for the #159 parity guard in src/tests/utils/versionedNodeTypeParity.test.ts:
+// the colour map is keyed unversioned, so a versioned id must resolve to the same
+// entry rather than silently taking FALLBACK_COLOR.
+export const __testables = { NODE_COLORS, FALLBACK_COLOR, unversionedType };
 
 export default DataflowThumbnail;

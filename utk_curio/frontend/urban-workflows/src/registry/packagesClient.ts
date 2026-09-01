@@ -30,6 +30,7 @@ import {
   useCodeNodeBehavior,
   usePackageNodeBehavior,
   withBidirectional,
+  withPackageStarter,
 } from '../adapters/node';
 import { packagesApi } from 'api/packagesApi';
 import { getToken } from '../utils/authApi';
@@ -77,6 +78,8 @@ interface RawPackageTemplate {
   } | null;
   hasProvenance: boolean | null;
   tutorialId: string | null;
+  /** dev/91: declared backend handler name (sandbox route dispatch). */
+  backendHandler?: string | null;
 }
 
 interface RawPackage {
@@ -178,8 +181,16 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
 
   const isBuiltin = pkg.packageId === BUILTIN_PACKAGE_ID;
   const lookedUpBehavior = template.behavior ? getBehavior(template.behavior) : undefined;
-  const behavior = lookedUpBehavior
+  const resolvedBehavior = lookedUpBehavior
     ?? (isBuiltin ? useCodeNodeBehavior : usePackageNodeBehavior);
+  // A template that ships a `source` starter must get it injected on a fresh
+  // drop no matter which behavior key its manifest names — resolving `"code"`
+  // lands on the no-op `useCodeNodeBehavior`, which would leave the editor
+  // empty. `usePackageNodeBehavior` already does injection on its own, so it
+  // is not double-wrapped.
+  const behavior = template.source && resolvedBehavior !== usePackageNodeBehavior
+    ? withPackageStarter(resolvedBehavior)
+    : resolvedBehavior;
   const icon = resolveIconRef(template.iconRef) ?? faCube;
   const paletteOrder = typeof template.paletteOrder === 'number'
     ? template.paletteOrder
@@ -243,6 +254,7 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
     hasGrammar: template.hasGrammar,
     ...(template.hasProvenance !== null ? { hasProvenance: template.hasProvenance } : {}),
     ...(template.tutorialId ? { tutorialId: template.tutorialId } : {}),
+    ...(template.backendHandler ? { backendHandler: template.backendHandler } : {}),
     ...(template.grammarId ? { grammarId: template.grammarId } : {}),
     ...(template.badge ? { badge: template.badge } : isBuiltin ? {} : { badge: 'PACKAGE' as const }),
     adapter: {
@@ -298,6 +310,20 @@ export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor
  * templates will fall back to `usePackageNodeBehavior` (generic code
  * editor) so the palette still renders.
  */
+/**
+ * Bundles currently being fetched, keyed by `<packageId>@<major>`.
+ *
+ * The DOM marker below is only written *after* two awaits, so it cannot stop a
+ * second caller that entered the window in between — and nothing single-flights
+ * `refreshPackageRegistry`, which several surfaces call on the same tick. The
+ * result was the same bundle fetched and evaluated repeatedly on one page load,
+ * each pass re-running its top-level `registerBehavior` side-effects and
+ * logging `Behavior "x" already registered; overwriting.` This map is claimed
+ * before the first await, so concurrent callers join the in-flight load instead
+ * of starting their own.
+ */
+const inFlightBehaviorScripts = new Map<string, Promise<void>>();
+
 async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void> {
   const base = process.env.BACKEND_URL ?? '';
   const targets = packages.filter((p) => p.behaviorScript && p.dirName);
@@ -308,11 +334,21 @@ async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void>
   // matches the deterministic order the old `<script async={false}>` chain
   // guaranteed.
   for (const p of targets) {
+    const key = `${p.packageId}@${p.major}`;
     // De-dupe across re-renders: the same bundle should only load once
     // even if refreshPackageRegistry runs again.
-    const existing = document.querySelector(`script[data-curio-package="${p.packageId}@${p.major}"]`);
+    const existing = document.querySelector(`script[data-curio-package="${key}"]`);
     if (existing) continue;
+    // De-dupe *within* a tick: join a load already in flight rather than
+    // racing it to the same <script> injection.
+    const pending = inFlightBehaviorScripts.get(key);
+    if (pending) {
+      await pending;
+      continue;
+    }
     const url = `${base}/api/packages/${encodeURIComponent(p.dirName!)}/file/${p.behaviorScript}`;
+    let settle: () => void = () => {};
+    inFlightBehaviorScripts.set(key, new Promise<void>((resolve) => { settle = resolve; }));
     try {
       // ``<script src>`` cannot carry an Authorization header, and the
       // file-serving endpoint is under ``@require_auth``. Firefox's ORB
@@ -331,18 +367,21 @@ async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void>
       const res = await fetch(url, { headers, cache: 'no-store' });
       if (!res.ok) {
         console.warn(
-          `[curio] failed to load behavior script for ${p.packageId}@${p.major}: HTTP ${res.status}`,
+          `[curio] failed to load behavior script for ${key}: HTTP ${res.status}`,
         );
         continue;
       }
       const code = await res.text();
       const s = document.createElement('script');
-      s.dataset.curioPackage = `${p.packageId}@${p.major}`;
+      s.dataset.curioPackage = key;
       s.textContent = code;
       document.head.appendChild(s);
     } catch (err) {
-      console.warn(`[curio] failed to load behavior script for ${p.packageId}@${p.major}:`, err);
+      console.warn(`[curio] failed to load behavior script for ${key}:`, err);
       // never throw — descriptor build still proceeds (with code-editor fallback)
+    } finally {
+      inFlightBehaviorScripts.delete(key);
+      settle();
     }
   }
 }

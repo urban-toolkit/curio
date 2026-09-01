@@ -1,0 +1,218 @@
+/* Shared type icons — aligned with palette menus (faDatabase / faCube). */
+
+.kindIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  line-height: 1;
+}
+
+.kindIcon_dataset,
+.kindIcon_package,
+.kindIcon_dataflow,
+.kindIcon_agent {
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+}
+
+.size_sm {
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+.size_md {
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+}
+
+.size_lg {
+  width: 48px;
+  height: 48px;
+  font-size: 22px;
+  border-radius: 10px;
+}
+
+/* Colored card strip header (browse cards) */
+.stripRoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.stripLeading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stripTypeIcon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.stripKindLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
+  flex-shrink: 0;
+}
+
+.stripDivider {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.28);
+  flex-shrink: 0;
+}
+
+.stripBadgeSlot {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.stripTrailing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Drawer / inline title row with kind icon */
+.titleWithKind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.drawerTitleText {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1f23;
+}
+
+/* Compact list-row header (drawer cards, installed rows — palette row parity) */
+.rowHeader {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.rowHeaderButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.rowHeaderButton:hover .formatBadge {
+  box-shadow: 0 0 0 1px rgba(47, 48, 52, 0.12);
+}
+
+.formatBadge {
+  flex-shrink: 0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+
+.formatBadge_geojson {
+  background: var(--curio-format-geojson-bg);
+  color: var(--curio-format-geojson-on-tint);
+}
+
+.formatBadge_csv {
+  background: var(--curio-format-csv-bg);
+  color: var(--curio-format-csv-on-tint);
+}
+
+.formatBadge_json {
+  background: var(--curio-format-json-bg);
+  color: var(--curio-format-json-on-tint);
+}
+
+.formatBadge_parquet {
+  background: var(--curio-format-parquet-bg);
+  color: var(--curio-format-parquet-on-tint);
+}
+
+.formatBadge_geotiff {
+  background: var(--curio-format-geotiff-bg);
+  color: var(--curio-format-geotiff-on-tint);
+}
+
+.formatBadge_shp {
+  background: var(--curio-format-shp-bg);
+  color: var(--curio-format-shp-on-tint);
+}
+
+.formatBadge_bundle {
+  background: var(--curio-format-bundle-bg);
+  color: var(--curio-format-bundle-on-tint);
+}
+
+.formatBadge_osm {
+  background: var(--curio-format-osm-bg);
+  color: var(--curio-format-osm-on-tint);
+}
+
+.categoryBadge {
+  flex-shrink: 0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+  line-height: 1.3;
+}
+
+.categoryBadge_data {
+  background: var(--curio-category-data-bg);
+  color: var(--curio-category-data-on-tint);
+}
+
+.categoryBadge_computation {
+  background: var(--curio-category-computation-bg);
+  color: var(--curio-category-computation-on-tint);
+}
+
+.categoryBadge_vis {
+  background: var(--curio-category-vis-bg);
+  color: var(--curio-category-vis-on-tint);
+}
+
+.categoryBadge_package {
+  background: var(--curio-category-package-bg);
+  color: var(--curio-category-package-on-tint);
+}

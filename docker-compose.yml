@@ -11,12 +11,32 @@ services:
     stdin_open: true
     environment:
       - PYTHONUNBUFFERED=1
+      # The container runs the backend from source baked into the image, so the
+      # Werkzeug auto-reloader provides no value here and only causes spurious
+      # mid-run restarts when runtime files are written (e.g. Data Catalog
+      # dataset bundles), dropping in-flight requests. The local e2e harness
+      # disables it for the same reason (FLASK_USE_RELOADER=0 in fixtures).
+      - FLASK_USE_RELOADER=0
     ports:
-      - "${CURIO_PORT_2000:-2000}:2000"
+      # Port 2000 (the sandbox) is deliberately not published. It executes
+      # arbitrary user code and the backend reaches it over loopback inside
+      # the container; publishing it exposed that API to the host network.
       - "${CURIO_PORT_5002:-5002}:5002"
       - "${CURIO_PORT_8080:-8080}:8080"
     volumes:
-      - ./packages:/app/packages
+      # NOTE: `packages/` is deliberately NOT bind-mounted. The package catalog
+      # (`_catalog_root()` -> /app/packages) is baked into the image by the
+      # Dockerfile COPY, so it always matches the deployed commit and is reset
+      # on every recreate. A bind mount here pointed the catalog at the host's
+      # git checkout, and `POST /api/packages/factory/publish-catalog` rewrites
+      # catalog entries in place (rmtree + replace) -- so one publish from the
+      # UI permanently mutated the deploy host's working tree and every
+      # subsequent install served the rewritten package.
+      # Publish target for the Data Catalog (catalog_root() -> <repo_root>/datasets).
+      # Unlike packages/ this one IS user data, so it must survive a recreate.
+      # Point --catalog-root at a path outside the git checkout to keep
+      # published datasets from dirtying it.
+      - ./datasets:/app/datasets
       # Share sandbox .data files with the host so Playwright (runs on host in CI) can read them
       - ./.curio:/app/.curio
       # Persist the Flask SQLite DB (users, projects, sessions) across container recreates

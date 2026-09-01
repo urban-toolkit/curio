@@ -4,7 +4,12 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from .utils import require_project_page, signup_and_enter_new_workflow, signup_e2e_user
+from .utils import (
+    require_project_page,
+    signup_and_enter_new_workflow,
+    signup_e2e_user,
+    wait_for_projects_page,
+)
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -51,7 +56,7 @@ def test_project_save_via_menu(app_frontend: "FrontendPage", page):
     # row with that title must be present.
     page.goto(f"{app_frontend.base_url}/projects")
     page.wait_for_load_state("domcontentloaded")
-    page.get_by_role("heading", name="Projects").wait_for(timeout=15000)
+    wait_for_projects_page(page, timeout=15000)
     expected = page.get_by_text("DefaultDataflow", exact=True)
     expected.first.wait_for(state="visible", timeout=10000)
 
@@ -66,4 +71,4 @@ def test_project_list_page(app_frontend: "FrontendPage", page):
     )
     page.goto(f"{base}/projects")
     page.wait_for_load_state("domcontentloaded")
-    page.get_by_role("heading", name="Projects").wait_for(timeout=10000)
+    wait_for_projects_page(page, timeout=10000)

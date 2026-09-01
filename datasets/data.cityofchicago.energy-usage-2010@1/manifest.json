@@ -1,0 +1,33 @@
+{
+  "id": "data.cityofchicago.energy-usage-2010",
+  "name": "Chicago Energy Usage 2010",
+  "version": "1.0.0",
+  "format": "csv",
+  "description": "Aggregated 2010 electricity and gas consumption by census block and building type, with monthly totals and building-age columns.",
+  "publisher": "City of Chicago",
+  "license": "Open Data",
+  "tags": [
+    "energy",
+    "buildings",
+    "chicago",
+    "csv"
+  ],
+  "dataFile": "data/energy-usage-2010.csv",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Chicago Data Portal",
+  "rowCount": 5000,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-08-27T00:00:00Z",
+  "updatedAt": "2026-08-27T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null
+}

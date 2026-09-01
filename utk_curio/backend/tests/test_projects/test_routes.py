@@ -10,7 +10,21 @@ def _auth(token):
 
 
 def _spec():
-    return {"dataflow": {"name": "route-test", "nodes": [], "edges": []}}
+    # A complete trill, per docs/schemas/trill.v1.json. Completeness matters for
+    # the round-trip assertions below: save_project backfills the identity fields
+    # a spec arrives without (services._ensure_dataflow_identity), so a partial
+    # fixture would not come back equal to itself and the preservation tests
+    # would be measuring the backfill instead of preservation.
+    return {
+        "dataflow": {
+            "name": "route-test",
+            "nodes": [],
+            "edges": [],
+            "task": "",
+            "timestamp": 1748990000000,
+            "provenance_id": "route-test",
+        }
+    }
 
 
 def test_create_project(client, user_and_token, tmp_curio):
@@ -41,6 +55,27 @@ def test_list_projects(client, user_and_token, tmp_curio):
     resp = client.get("/api/projects?scope=mine", headers=_auth(token))
     assert resp.status_code == 200
     assert len(resp.get_json()) == 2
+
+
+def test_list_projects_serves_a_registered_users_examples(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    """#200 end to end at the route: the gallery is not empty under --auth.
+
+    Examples were seeded to the shared guest alone and listing is a plain owner
+    filter, so a signed-in account got `[]` here however the stack was started.
+    """
+    monkeypatch.setenv("CURIO_SEED_EXAMPLES", "1")
+    _, token = user_and_token
+
+    resp = client.get("/api/projects?scope=mine", headers=_auth(token))
+
+    assert resp.status_code == 200
+    names = {p["name"] for p in resp.get_json()}
+    assert names, "a registered user's gallery came back empty"
+    # Named, not just counted: the rows must be the curated examples rather
+    # than any project that happens to exist.
+    assert "Vega-Lite chained transforms" in names, sorted(names)
 
 
 def test_get_project(client, user_and_token, tmp_curio):

@@ -188,8 +188,16 @@ class TestProjDataDir(unittest.TestCase):
     gpd.read_file() on a GeoJSON with an embedded EPSG:32632 CRS succeeds.
     """
 
+    #: The Milan census polygons, now a Data Catalog dataset rather than a loose
+    #: file under docs/examples/data. Addressed by path, not by
+    #: ``curio_dataset_path``, because these tests call ``execute_code``
+    #: directly and so never get the backend's resolved ``dataset_paths``.
     _CENSUS_GJ = os.path.join(
-        _REPO_ROOT, "docs", "examples", "data", "09-milan_census.geojson"
+        _REPO_ROOT,
+        "datasets",
+        "data.urbanlab.milan-census-gt65@1",
+        "data",
+        "milan-census-gt65.geojson",
     )
 
     @classmethod
@@ -198,10 +206,8 @@ class TestProjDataDir(unittest.TestCase):
         _worker_init()
 
     @unittest.skipUnless(
-        os.path.exists(os.path.join(
-            _REPO_ROOT, "docs", "examples", "data", "09-milan_census.geojson"
-        )),
-        "09-milan_census.geojson not present — skipping",
+        os.path.exists(_CENSUS_GJ),
+        f"{_CENSUS_GJ} not present (is the Data Catalog checked out?), skipping",
     )
     def test_census_load_resolves_epsg_32632(self):
         """execute_code() must load the census GeoJSON without a CRS error."""
@@ -226,10 +232,8 @@ class TestProjDataDir(unittest.TestCase):
         self.assertEqual(result['output']['dataType'], 'geodataframe')
 
     @unittest.skipUnless(
-        os.path.exists(os.path.join(
-            _REPO_ROOT, "docs", "examples", "data", "09-milan_census.geojson"
-        )),
-        "09-milan_census.geojson not present — skipping",
+        os.path.exists(_CENSUS_GJ),
+        f"{_CENSUS_GJ} not present (is the Data Catalog checked out?), skipping",
     )
     def test_reproject_epsg_3395(self):
         """set_crs(32632).to_crs(3395) must not raise after _worker_init()."""

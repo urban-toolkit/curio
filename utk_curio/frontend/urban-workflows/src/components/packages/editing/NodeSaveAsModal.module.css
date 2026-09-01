@@ -67,10 +67,10 @@
     margin: 0 0 16px;
     padding: 10px 12px;
     border-radius: var(--curio-radius-md);
-    border: 1px solid var(--curio-accent-peach-fg);
-    background: var(--curio-accent-peach-bg);
+    border: 1px solid var(--curio-role-update-fg);
+    background: var(--curio-role-update-bg);
     font-size: var(--curio-font-size-sm);
-    color: var(--curio-accent-peach-fg);
+    color: var(--curio-role-update-fg);
     line-height: 1.45;
 }
 
@@ -139,7 +139,7 @@
 }
 
 .primaryBtn:hover:not(:disabled) {
-    background: #2c2d32;
+    background: var(--curio-top-bar-bg-hover);
 }
 
 .primaryBtn:disabled,

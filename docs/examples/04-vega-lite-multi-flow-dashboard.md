@@ -1,6 +1,6 @@
 # Example: Multiple dataflows joined into one Vega-Lite dashboard
 
-This example shows how several independent dataflows — each loading from the same source CSV and reducing it differently — can be joined back together via `MERGE_FLOW` and `COMPUTATION_ANALYSIS` to drive coordinated Vega-Lite views. The use case is Chicago's [red-light-violation dataset](data/08-red_light_violations.zip): six dataflow branches answer six analytical questions (seasonal trend, monthly heatmap, stacked area by season, top intersections, camera-count distribution, and spatial map), all reading from a single root `DATA_LOADING` node.
+This example shows how several independent dataflows, each loading from the same source table and reducing it differently, can be joined back together via `Merge Flow` and `Python Computation` to drive coordinated Vega-Lite views. The use case is Chicago's red-light-violation dataset: six dataflow branches answer six analytical questions (seasonal trend, monthly heatmap, stacked area by season, top intersections, camera-count distribution, and spatial map), all reading from a single root `Data Loading` node.
 
 This example is intentionally large; the markdown shows the *shape* of each branch and one representative Vega-Lite spec per branch. The full set of 24 nodes is in [04-vega-lite-multi-flow-dashboard.json](04-vega-lite-multi-flow-dashboard.json).
 
@@ -8,48 +8,56 @@ This example is intentionally large; the markdown shows the *shape* of each bran
 
 ```mermaid
 flowchart LR
-  L[DATA_LOADING<br/>CSV root]
+  L[`Data Loading`<br/>CSV root]
 
-  L --> A[DATA_TRANSFORMATION<br/>daily by season] --> AV[VIS_VEGA<br/>seasonal line]
+  L --> A[`Data Transformation`<br/>daily by season] --> AV[`Vega-Lite`<br/>seasonal line]
 
-  L --> B1[DATA_TRANSFORMATION<br/>monthly heatmap]
-  L --> B2[DATA_TRANSFORMATION<br/>daily by season]
-  B1 --> BM[MERGE_FLOW]
-  B2 --> BM --> BC[COMPUTATION_ANALYSIS<br/>merge daily + monthly] --> BT[DATA_TRANSFORMATION<br/>typecast] --> BV[VIS_VEGA<br/>heatmap + line concat]
+  L --> B1[`Data Transformation`<br/>monthly heatmap]
+  B1 --> BM[`Merge Flow`]
+  A --> BM --> BC[`Python Computation`<br/>merge daily + monthly] --> BT[`Data Transformation`<br/>typecast] --> BV[`Vega-Lite`<br/>heatmap + line concat]
 
-  L --> C[DATA_TRANSFORMATION<br/>yearly + season] --> CV[VIS_VEGA<br/>stacked area]
+  L --> C[`Data Transformation`<br/>yearly + season] --> CV[`Vega-Lite`<br/>stacked area]
 
-  L --> D[DATA_TRANSFORMATION<br/>top-3 intersections / year] --> DV[VIS_VEGA<br/>stacked bar]
+  L --> D[`Data Transformation`<br/>top-3 intersections / year] --> DV[`Vega-Lite`<br/>stacked bar]
 
-  L --> E1[DATA_TRANSFORMATION<br/>cameras per intersection]
-  L --> E2[DATA_TRANSFORMATION<br/>% reduction over time]
-  E1 --> EM[MERGE_FLOW]
-  E2 --> EM --> EC[COMPUTATION_ANALYSIS<br/>join camera + reduction] --> ET[DATA_TRANSFORMATION<br/>typecast] --> EV[VIS_VEGA<br/>boxplot + bar concat]
+  L --> E1[`Data Transformation`<br/>cameras per intersection]
+  L --> E2[`Data Transformation`<br/>% reduction over time]
+  E1 --> EM[`Merge Flow`]
+  E2 --> EM --> EC[`Python Computation`<br/>join camera + reduction] --> ET[`Data Transformation`<br/>typecast] --> EV[`Vega-Lite`<br/>boxplot + bar concat]
 
-  L --> F1[DATA_TRANSFORMATION<br/>year tag]
-  L --> F2[DATA_TRANSFORMATION<br/>per-intersection lat/lon]
-  F1 --> FM[MERGE_FLOW]
-  F2 --> FM --> FC[COMPUTATION_ANALYSIS<br/>spatial aggregates] --> FT[DATA_TRANSFORMATION<br/>typecast] --> FV[VIS_VEGA<br/>map + bar concat with brush]
+  L --> F1[`Data Transformation`<br/>year tag]
+  L --> F2[`Data Transformation`<br/>per-intersection lat/lon]
+  F1 --> FM[`Merge Flow`]
+  F2 --> FM --> FC[`Python Computation`<br/>spatial aggregates] --> FT[`Data Transformation`<br/>typecast] --> FV[`Vega-Lite`<br/>map + bar concat with brush]
 ```
 
 ## Data
 
-[08-red_light_violations.zip](data/08-red_light_violations.zip) — Chicago's open-data export of red-light camera violations.
+This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
+addresses a dataset by id via `curio_dataset_path("<id>")` rather than by a repo-relative path,
+so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
-Paths in the code below are relative to the directory you launched Curio from — run `curio start` from the repo root.
+| Dataset | Id | Format | Size |
+|---|---|---|---|
+| Chicago Red-Light Violations | `data.cityofchicago.red-light-violations` | parquet | 354,418 rows |
 
-## Step 1: Load the violations CSV (`DATA_LOADING`)
+The catalog dataset is a Parquet conversion of the original zipped export, so it loads faster
+and takes less space in the repo while keeping every row. It ships in the committed catalog under
+`datasets/` and is already added to this dataflow. Source: [Chicago Data Portal](https://data.cityofchicago.org/).
+
+## Step 1: Load the violations table (`Data Loading`)
 
 Every branch starts here. The same loaded DataFrame is fed into every downstream transformation; Curio reuses the result rather than re-reading the file once per branch.
 
 ```python
 import pandas as pd
 
-df = pd.read_csv("docs/examples/data/08-red_light_violations.zip")
+dataset_path = curio_dataset_path("data.cityofchicago.red-light-violations")
+df = pd.read_parquet(dataset_path)
 return df
 ```
 
-## Branch A: Seasonal trend over time (`DATA_TRANSFORMATION` → `VIS_VEGA`)
+## Branch A: Seasonal trend over time (`Data Transformation` → `Vega-Lite`)
 
 Parse the date, derive month / year / season, then sum violations per day and tag each day with its season.
 
@@ -58,18 +66,24 @@ import pandas as pd
 
 df = arg.copy()
 df['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'])
-df['Year']  = df['VIOLATION DATE'].dt.year
+df['Year'] = df['VIOLATION DATE'].dt.year
 df['Month'] = df['VIOLATION DATE'].dt.month
 
 def assign_season(month):
-    if month in [12, 1, 2]: return "Winter"
-    if month in [3, 4, 5]:  return "Spring"
-    if month in [6, 7, 8]:  return "Summer"
-    return "Fall"
+    if month in [12, 1, 2]:
+        return "Winter"
+    elif month in [3, 4, 5]:
+        return "Spring"
+    elif month in [6, 7, 8]:
+        return "Summer"
+    else:
+        return "Fall"
 
 df['Season'] = df['Month'].apply(assign_season)
+
 df_trend = df.groupby(['VIOLATION DATE', 'Year', 'Season'])['VIOLATIONS'].sum().reset_index()
 df_trend['VIOLATION DATE'] = df_trend['VIOLATION DATE'].astype(str)
+
 return pd.DataFrame(df_trend)
 ```
 
@@ -93,36 +107,91 @@ A single line chart of daily totals coloured by season makes the seasonal patter
 }
 ```
 
-## Branch B: Monthly heatmap + linked daily trend (`MERGE_FLOW` → concat view)
+## Branch B: Monthly heatmap + linked daily trend (`Merge Flow` → concat view)
 
-A second `DATA_TRANSFORMATION` aggregates by `(Year, Month)` for the heatmap. It is then merged with the Branch A daily-by-season output through a `MERGE_FLOW` and a `COMPUTATION_ANALYSIS` node, producing a unified table with both daily and yearly fields. The Vega-Lite spec is an `hconcat` of a heatmap (left) and a line chart (right) where clicking a year cell on the heatmap filters the line chart through a Vega-Lite `param`:
+A second `Data Transformation` aggregates by `(Year, Month)` for the heatmap. It is then merged with the Branch A daily-by-season output through a `Merge Flow` and a `Python Computation` node, producing a unified table with both daily and yearly fields. The Vega-Lite spec is an `hconcat` of a heatmap (left) and a line chart (right) where clicking a year cell on the heatmap filters the line chart through a Vega-Lite `param`:
 
 ```json
 {
-  "params": [{"name": "yearFilter", "select": {"type": "point", "fields": ["Year"], "on": "click"}}],
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "params": [
+    {
+      "name": "cameraFilter",
+      "bind": {
+        "input": "select",
+        "options": ["1", "2", "3", "4+"],
+        "labels": ["1 Camera", "2 Cameras", "3 Cameras", "4+ Cameras"]
+      }
+    }
+  ],
   "hconcat": [
-    {"mark": "rect", "encoding": {"x": {"field": "Month"}, "y": {"field": "Year"}, "color": {"aggregate": "sum", "field": "Yearly Total"}}},
-    {"transform": [{"filter": "yearFilter.Year == null || datum.Year == yearFilter.Year"}],
-     "mark": "line", "encoding": {"x": {"field": "VIOLATION DATE", "type": "temporal"}, "y": {"field": "Daily Violations"}}}
+    {
+      "width": 500,
+      "mark": "boxplot",
+      "encoding": {
+        "x": {
+          "field": "CAMERA_BIN",
+          "type": "nominal",
+          "title": "Camera Count"
+        },
+        "y": {
+          "field": "VIOLATIONS",
+          "type": "quantitative",
+          "title": "Violations"
+        },
+        "color": {
+          "field": "CAMERA_BIN",
+          "type": "nominal"
+        }
+      }
+    },
+    {
+      "width": 500,
+      "mark": {
+        "type": "bar",
+        "cursor": "pointer"
+      },
+      "transform": [
+        { "filter": "cameraFilter == null || datum.CAMERA_BIN == cameraFilter" }
+      ],
+      "encoding": {
+        "x": {
+          "field": "Percent_Reduction",
+          "type": "quantitative",
+          "title": "Percent Reduction"
+        },
+        "y": {
+          "field": "INTERSECTION",
+          "type": "nominal",
+          "sort": "-x",
+          "title": "Intersection"
+        },
+        "color": {
+          "field": "Percent_Reduction",
+          "type": "quantitative",
+          "scale": { "scheme": "blues" }
+        }
+      }
+    }
   ]
 }
 ```
 
-## Branch C: Stacked area by season+year (`DATA_TRANSFORMATION` → `VIS_VEGA`)
+## Branch C: Stacked area by season+year (`Data Transformation` → `Vega-Lite`)
 
-A standalone branch that aggregates totals by `(Year, Season)` and renders a stacked area chart — useful for spotting year-over-year shifts in seasonal mix.
+A standalone branch that aggregates totals by `(Year, Season)` and renders a stacked area chart, useful for spotting year-over-year shifts in seasonal mix.
 
-## Branch D: Top-3 intersections per year (`DATA_TRANSFORMATION` → `VIS_VEGA`)
+## Branch D: Top-3 intersections per year (`Data Transformation` → `Vega-Lite`)
 
 Group by `(INTERSECTION, Year)`, rank within each year, and keep rank ≤ 3. Render as a stacked bar chart so the same intersection appearing across multiple years is immediately visible.
 
-## Branch E: Camera count vs. compliance (`MERGE_FLOW` → concat view)
+## Branch E: Camera count vs. compliance (`Merge Flow` → concat view)
 
-Two `DATA_TRANSFORMATION` nodes feed a `MERGE_FLOW`: the first counts unique cameras per intersection and bins them into `1 / 2 / 3 / 4+`; the second computes the percent reduction in violations between each intersection's first and last year. After a merge + cleanup pass the result drives an `hconcat` of a boxplot (violation distribution per camera-count bin) and a per-intersection bar chart (percent reduction), wired together through a `cameraFilter` param so picking a bin filters the bar chart.
+Two `Data Transformation` nodes feed a `Merge Flow`: the first counts unique cameras per intersection and bins them into `1 / 2 / 3 / 4+`; the second computes the percent reduction in violations between each intersection's first and last year. After a merge + cleanup pass the result drives an `hconcat` of a boxplot (violation distribution per camera-count bin) and a per-intersection bar chart (percent reduction), wired together through a `cameraFilter` param so picking a bin filters the bar chart.
 
-## Branch F: Spatial brush ↔ top-N bar (`MERGE_FLOW` → concat view)
+## Branch F: Spatial brush ↔ top-N bar (`Merge Flow` → concat view)
 
-The final branch aggregates violations per `(INTERSECTION, LATITUDE, LONGITUDE)`, joins with a year-tagged copy of the data through `MERGE_FLOW` + `COMPUTATION_ANALYSIS`, and renders an `hconcat` of a circle map (left) and a bar chart of the top 15 intersections (right). A Vega-Lite `interval` selection on the map filters the bar chart in real time:
+The final branch aggregates violations per `(INTERSECTION, LATITUDE, LONGITUDE)`, joins with a year-tagged copy of the data through `Merge Flow` + `Python Computation`, and renders an `hconcat` of a circle map (left) and a bar chart of the top 15 intersections (right). A Vega-Lite `interval` selection on the map filters the bar chart in real time:
 
 ```json
 {
@@ -155,4 +224,4 @@ The final branch aggregates violations per `(INTERSECTION, LATITUDE, LONGITUDE)`
 
 ## Final result
 
-Each branch answers a different question (when, where, who, how much, how does enforcement compare?) but they all read from the same root `DATA_LOADING` node. The `MERGE_FLOW` + `COMPUTATION_ANALYSIS` pattern is what lets Branches B / E / F join two independent reductions into a single coordinated view. Adding a new analytical question is one more branch off the root — the existing branches are unaffected.
+Each branch answers a different question (when, where, who, how much, how does enforcement compare?) but they all read from the same root `Data Loading` node. The `Merge Flow` + `Python Computation` pattern is what lets Branches B / E / F join two independent reductions into a single coordinated view. Adding a new analytical question is one more branch off the root; the existing branches are unaffected.

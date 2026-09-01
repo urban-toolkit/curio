@@ -38,7 +38,7 @@ export const CommentsList = ({
 
   const onAddComment = () => {
     if (newCommentText.trim() === "") { showToast("Please write a comment before submitting.", "warning"); return; }
-    if (!user) { showToast("Please log in to post a comment.", "warning"); return; }
+    if (!user) { showToast("Please sign in to post a comment.", "warning"); return; }
 
     addComment({
       id: comments.length + 1,

@@ -1,15 +1,9 @@
 import React, { useState, useEffect } from "react";
 import Nav from 'react-bootstrap/Nav';
-// mui
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
-import Paper from "@mui/material/Paper";
-import { shortenString } from '../../../utils/parsing';
+import { TabularPreviewTable } from '../../../components/tables/TabularPreviewTable';
 import { fetchPreviewData } from '../../../services/api';
+import { sandboxArtifactId } from '../../../utils/flowOutputRef';
+import { rowsFromParseOutput } from '../../../utils/tabularPreview';
 
 interface DataPoolContentProps {
   activeTab: string;
@@ -42,9 +36,7 @@ const ContentComponent = ({
       let cancelled = false;
 
       const loadPreviewData = async () => {
-          const fileId = data.input && typeof data.input === "object"
-              ? (data.input.filename ?? data.input.path)
-              : null;
+          const fileId = sandboxArtifactId(data.input);
 
           if (!fileId) {
               setPreviewTable([]);
@@ -55,20 +47,7 @@ const ContentComponent = ({
           setIsLoadingPreview(true);
           try {
               const previewData = await fetchPreviewData(fileId);
-
-              let nextPreviewTable: any[] = [];
-              if (previewData.dataType === "dataframe" && previewData.data) {
-                  const columns = Object.keys(previewData.data);
-                  const firstColumn = columns[0];
-                  const indices = firstColumn ? Object.keys(previewData.data[firstColumn] ?? {}) : [];
-                  nextPreviewTable = indices.map((idx) => {
-                      const row: any = {};
-                      columns.forEach((col) => { row[col] = previewData.data[col][idx]; });
-                      return row;
-                  });
-              } else if (previewData.dataType === "geodataframe" && previewData.data?.features) {
-                  nextPreviewTable = previewData.data.features.map((feature: any) => ({ ...feature.properties }));
-              }
+              const nextPreviewTable = rowsFromParseOutput(previewData);
 
               if (cancelled) return;
 
@@ -100,94 +79,18 @@ const ContentComponent = ({
   return (
       <div
           className="nowheel"
-          style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}
+          data-curio-datapool-scroll="true"
+          // overflow:'auto' is what makes this the scroll owner. The outer clamp
+          // below is overflow:'hidden', so without it the rows are simply clipped
+          // and the user has to resize the node to see them (#156).
+          style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column", overflow: "auto" }}
       >
-          {isLoadingPreview && (
-              <div style={{ padding: "10px", textAlign: "center", color: "#666" }}>
-                  Loading preview...
-              </div>
-          )}
-          {/* Scroll on the TableContainer (not the outer div) so the horizontal
-              scrollbar sits at the table's own bottom edge — otherwise it ends
-              up at the bottom of the scroll viewport and is only reachable
-              after scrolling all the way down. */}
-          <TableContainer
-              component={Paper}
-              sx={{ flex: 1, minHeight: 0, minWidth: 0, overflow: "auto" }}
-          >
-              <Table aria-label="simple table">
-                  {displayTable.length > 0 ? (
-                      <TableHead>
-                          <TableRow>
-                              {Object.keys(displayTable[0]).map(
-                                  (column, index) => {
-                                      return (
-                                          <TableCell
-                                              style={{
-                                                  fontWeight: "bold",
-                                              }}
-                                              key={
-                                                  "cell_header_" +
-                                                  index +
-                                                  "_" +
-                                                  data.nodeId
-                                              }
-                                              align="right"
-                                          >
-                                              {column}
-                                          </TableCell>
-                                      );
-                                  }
-                              )}
-                          </TableRow>
-                      </TableHead>
-                  ) : null}
-
-                  <TableBody>
-                      {displayTable
-                          .slice(0, 100)
-                          .map((row: any, index: any) => {
-                              return (
-                                  <TableRow
-                                      key={"row_" + index + data.nodeId}
-                                      sx={{
-                                          "&:last-child td, &:last-child th":
-                                              { border: 0 },
-                                      }}
-                                  >
-                                      {Object.keys(row).map(
-                                          (column, columnIndex) => {
-                                              return (
-                                                  <TableCell
-                                                      key={
-                                                          "cell_" +
-                                                          columnIndex +
-                                                          "_" +
-                                                          index +
-                                                          "_" +
-                                                          data.nodeId
-                                                      }
-                                                      align="right"
-                                                  >
-                                                      {row[column] !=
-                                                          undefined &&
-                                                      row[column] != null
-                                                          ? shortenString(
-                                                                row[
-                                                                    column
-                                                                ].toString()
-                                                            )
-                                                          : "null"}
-                                                  </TableCell>
-                                              );
-                                          }
-                                      )}
-                                  </TableRow>
-                              );
-                          })}
-                  </TableBody>
-              </Table>
-          </TableContainer>
+          <TabularPreviewTable
+              rows={displayTable}
+              rowKeyPrefix={data.nodeId}
+              loading={isLoadingPreview}
+              excludeColumns={[]}
+          />
       </div>
   );
 };
@@ -231,8 +134,11 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
         variant="tabs"
         activeKey={activeTab}
         onSelect={(k) => onSelectTab(k || '0')}
-        className="mb-3"
-        style={{ flexShrink: 0 }}
+        className="mb-3 nowheel"
+        // nowrap + overflowX keeps the strip one row tall regardless of table
+        // count, so adding tables never steals height from the table below.
+        // `nowheel` stops React Flow swallowing the scroll (#156).
+        style={{ flexShrink: 0, flexWrap: 'nowrap', overflowX: 'auto' }}
         data-testid="data-pool-tabs"
       >
         {hasData ? (

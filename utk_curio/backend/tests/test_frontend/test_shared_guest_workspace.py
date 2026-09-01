@@ -8,7 +8,13 @@ from uuid import uuid4
 
 import pytest
 
-from .utils import allow_guest_login_env, auth_enabled_env, require_project_page
+from .utils import (
+    allow_guest_login_env,
+    auth_enabled_env,
+    project_card,
+    require_project_page,
+    wait_for_projects_page,
+)
 
 
 def _auth_enabled() -> bool:
@@ -28,7 +34,7 @@ def _enter_guest_workspace(page, base_url: str) -> None:
         page.get_by_text("Continue as Guest").click()
 
     page.wait_for_url("**/projects", timeout=30000)
-    page.get_by_role("heading", name="Projects").wait_for(timeout=10000)
+    wait_for_projects_page(page, timeout=10000)
 
 
 def _session_token(page) -> str:
@@ -78,11 +84,11 @@ def test_guest_workspace_shared_across_sessions(app_frontend, current_server, br
         _create_project(current_server, token, project_name)
 
         first_page.goto(f"{base}/projects")
-        first_page.get_by_text(project_name).wait_for(timeout=10000)
+        project_card(first_page, project_name).first.wait_for(timeout=10000)
 
         _enter_guest_workspace(second_page, base)
         second_page.goto(f"{base}/projects")
-        second_page.get_by_text(project_name).wait_for(timeout=10000)
+        project_card(second_page, project_name).first.wait_for(timeout=10000)
     finally:
         first_context.close()
         second_context.close()

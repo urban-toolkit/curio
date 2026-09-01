@@ -1,0 +1,46 @@
+/*
+ * Canvas slide-over Data Catalog drawer — what is specific to this drawer.
+ *
+ * The panel itself is the shared
+ * ../../packages/publishing/CatalogDrawerShell.module.css, which the Node
+ * Catalog drawer also imports; header, search row, tab strip and footer are the
+ * shared packages/publishing components.
+ */
+
+/* This drawer sits one tier above the node drawer, because the dataset detail
+   modal can open on top of it (see curioTokens.css). */
+.overlayRoot {
+  --curio-drawer-z: var(--curio-z-dataset-drawer);
+}
+
+/* Loading skeletons. Specific to this drawer: the dataset catalog is fetched
+   over the network on open, where the package list is already in memory. */
+.skeletonList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.skeletonCard {
+  height: 72px;
+  border-radius: var(--curio-radius-md);
+  background: linear-gradient(90deg, #eceae4 0%, #f5f4f0 50%, #eceae4 100%);
+  background-size: 200% 100%;
+  animation: catalogSkeletonShimmer 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonCard {
+    animation: none;
+  }
+}
+
+@keyframes catalogSkeletonShimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}

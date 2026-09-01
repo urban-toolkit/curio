@@ -1,0 +1,54 @@
+/* Top-level section tabs — Projects / Node Catalog / Data Catalog. Sits directly
+   under GlobalPageHeader on every section page. */
+
+.tabBar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  min-height: 48px;
+  background: #fafafa;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.tabLink {
+  padding: 8px 16px;
+  border: 1px solid #d0d0d5;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b6b76;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+  opacity: 1;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+/* Do not apply inactive-tab hover colors to the active tab (avoids “washed out” / fake opacity). */
+.tabLink:hover:not(.tabLinkActive) {
+  border-color: #b0b0b8;
+  color: #1e1f23;
+  background: #f7f7f7;
+}
+
+.tabLinkActive {
+  background: #1e1f23;
+  border-color: #1e1f23;
+  color: #fbfcf6;
+  font-weight: 600;
+}
+
+.tabLinkActive:hover {
+  color: var(--curio-text-on-dark);
+  background: var(--curio-top-bar-bg-hover);
+  border-color: var(--curio-top-bar-bg-hover);
+  opacity: 1;
+}
+
+.tabLink:focus-visible {
+  outline: 2px solid var(--curio-focus-ring);
+  outline-offset: 2px;
+}

@@ -42,6 +42,7 @@ interface UserProviderProps {
     baseUrl?: string;
     apiKey?: string;
     model?: string;
+    huggingfaceToken?: string;
   }) => Promise<void>;
   saveUserType: (newType: "programmer" | "expert") => Promise<void>;
   logout: () => void;
@@ -77,7 +78,7 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const applyUser = useCallback((nextUser: UserData) => {
     setUser(nextUser);
     // The per-user node-package store only responds once we carry a Bearer token.
-    // Sync immediately so palette + `/node-types` match Nodes hub — do not rely
+    // Refresh immediately so the palette matches the Nodes hub - do not rely
     // solely on ``window.curio`` indirection which can silently no-op.
     void refreshPackageRegistry();
     return nextUser;
@@ -121,7 +122,6 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         setSkipProjectPage(projectPageSkipped);
         setAllowGuest(Boolean(authEnabled && cfg?.allow_guest_login));
         setSharedGuestUsername(sharedGuestUsername);
-
         const token = getToken();
 
         if (!authEnabled) {
@@ -193,6 +193,11 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
+  // `loading` belongs to the mount-time bootstrap alone. It gates `children`
+  // below, so setting it here would unmount whatever form is awaiting this
+  // call: on a rejection a *fresh* form remounts with empty fields and no
+  // error, because the catch that set the error ran on the old instance. The
+  // forms track their own submitting state and disable their buttons.
   const signup = useCallback(
     async (data: {
       name: string;
@@ -200,40 +205,27 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
       password: string;
       email?: string;
     }) => {
-      setLoading(true);
-      try {
-        const res = await authApi.signup(data);
-        return handleAuth(res);
-      } finally {
-        setLoading(false);
-      }
+      const res = await authApi.signup(data);
+      return handleAuth(res);
     },
     [handleAuth]
   );
 
   const signin = useCallback(
     async (identifier: string, password: string) => {
-      setLoading(true);
-      try {
-        const res = await authApi.signin({ identifier, password });
-        return handleAuth(res);
-      } finally {
-        setLoading(false);
-      }
+      const res = await authApi.signin({ identifier, password });
+      return handleAuth(res);
     },
     [handleAuth]
   );
 
   const signinGuest = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await authApi.signinGuest();
       return handleAuth(res);
     } catch (e) {
       console.error(e);
       return null;
-    } finally {
-      setLoading(false);
     }
   }, [handleAuth]);
 
@@ -264,12 +256,14 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
       baseUrl?: string;
       apiKey?: string;
       model?: string;
+      huggingfaceToken?: string;
     }) => {
       const updated = await authApi.patchMe({
         llm_api_type: config.apiType,
         llm_base_url: config.baseUrl,
         llm_api_key: config.apiKey,
         llm_model: config.model,
+        huggingface_token: config.huggingfaceToken,
       });
       setUser(updated);
     },

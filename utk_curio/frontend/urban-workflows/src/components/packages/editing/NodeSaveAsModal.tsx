@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { useReactFlow } from "reactflow";
+import { useReactFlow, useStore } from "reactflow";
 import ModalShell from "../../ModalShell";
-import { packagesApi, refreshPackageRegistry } from "../../../api/packagesApi";
+import { packagesApi, refreshPackageRegistry, triggerBlobDownload } from "../../../api/packagesApi";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { groupPalettePackages } from "../../menus/nodes/toolsMenuPackagePalette/model";
 import { useStarterContext } from "../../../providers/StarterProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
+import { useFlowContext } from "../../../providers/FlowProvider";
+import { setCurrentProjectPackages } from "../../../registry/projectPackagesStore";
 import {
   SAVE_AS_NEW_PACK,
   buildFactoryInstallEnvelope,
@@ -46,12 +48,14 @@ export function NodeSaveAsModal({
   nodeId: string;
   onClose: () => void;
 }) {
-  const { getNodes, setNodes } = useReactFlow();
+  const { setNodes } = useReactFlow();
   const { getStarters } = useStarterContext();
   const { showToast } = useToastContext();
+  const { projectId } = useFlowContext();
   const [targetKey, setTargetKey] = useState<string>(SAVE_AS_NEW_PACK);
   const [newPackageName, setNewPackageName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyKind, setBusyKind] = useState<"save" | "export" | null>(null);
 
   const registryKey = useSyncExternalStore(
     typeof window !== "undefined" ? subscribeToRegistry : NOOP,
@@ -70,10 +74,26 @@ export function NodeSaveAsModal({
       }));
   }, [registryKey]);
 
-  const canvasNode = useMemo(() => {
-    if (!show) return null;
-    return getNodes().find((n) => String(n.id) === nodeId) ?? null;
-  }, [show, nodeId, getNodes]);
+  // Subscribed, not sampled. The only way in here is the Node settings modal's
+  // "Save as package node...", whose onSave (styles.tsx) calls updateDataNode
+  // and setSaveAsOpen(true) in one batch. updateDataNode writes FlowProvider's
+  // useNodesState array, which reaches React Flow's store only when its
+  // prop-sync effect runs, i.e. after the render in which `show` flips true. A
+  // useMemo keyed on [show, nodeId, getNodes] therefore captured the *pre-edit*
+  // node and, since none of those deps ever change again, held it for the
+  // modal's whole lifetime: every edit just made in Node settings was dropped
+  // from the saved package. Selecting off the store fixes that and keeps the
+  // draft honest if the node changes again while the modal is open.
+  //
+  // The `show` guard matters for cost as much as correctness: this modal is
+  // rendered once per canvas node, and returning a stable null for the closed
+  // ones keeps them from re-rendering on every store change.
+  const canvasNode = useStore(
+    useCallback(
+      (s: any) => (show ? s.nodeInternals.get(nodeId) ?? null : null),
+      [show, nodeId],
+    ),
+  );
 
   const nodeLabel = useMemo(() => {
     if (!canvasNode) return "Node";
@@ -102,42 +122,63 @@ export function NodeSaveAsModal({
     [packageOptions, targetKey],
   );
 
+  // Shared by Save and Export: resolve the target package and turn the canvas
+  // node into a factory draft. Returns null (after toasting) when the draft
+  // can't be built, so both callers can simply bail.
+  const buildDraft = useCallback(async () => {
+    if (!canvasNode) return null;
+
+    let draft;
+    let replace = false;
+    let replacedExistingKind = false;
+
+    if (targetKey === SAVE_AS_NEW_PACK) {
+      draft = buildSaveAsInstallDraft({
+        canvasNode,
+        target: { kind: "new", packageDisplayName: newPackageName.trim() || undefined },
+        getStarters,
+      });
+    } else {
+      const { packages } = await packagesApi.listInstalled();
+      const pkg = packages.find((p) => `${p.packageId}@${p.major}` === targetKey);
+      if (!pkg) {
+        showToast("Could not load the selected package.", "warning");
+        return null;
+      }
+      replacedExistingKind = saveAsWouldReplaceByLabel(pkg, nodeLabel);
+      draft = buildSaveAsInstallDraft({
+        canvasNode,
+        target: { kind: "installed", package: pkg },
+        getStarters,
+      });
+      replace = true;
+    }
+
+    if (!draft) {
+      showToast("Could not build a package draft from this node.", "error");
+      return null;
+    }
+    return { draft, replace, replacedExistingKind };
+  }, [canvasNode, getStarters, newPackageName, nodeLabel, showToast, targetKey]);
+
   const onConfirm = useCallback(async () => {
     if (!canvasNode || busy) return;
     setBusy(true);
+    setBusyKind("save");
     try {
-      let draft;
-      let replace = false;
-      let replacedExistingKind = false;
-
-      if (targetKey === SAVE_AS_NEW_PACK) {
-        draft = buildSaveAsInstallDraft({
-          canvasNode,
-          target: { kind: "new", packageDisplayName: newPackageName.trim() || undefined },
-          getStarters,
-        });
-      } else {
-        const { packages } = await packagesApi.listInstalled();
-        const pkg = packages.find((p) => `${p.packageId}@${p.major}` === targetKey);
-        if (!pkg) {
-          showToast("Could not load the selected package.", "warning");
-          return;
-        }
-        replacedExistingKind = saveAsWouldReplaceByLabel(pkg, nodeLabel);
-        draft = buildSaveAsInstallDraft({
-          canvasNode,
-          target: { kind: "installed", package: pkg },
-          getStarters,
-        });
-        replace = true;
-      }
-
-      if (!draft) {
-        showToast("Could not build a package draft from this node.", "error");
-        return;
-      }
+      const built = await buildDraft();
+      if (!built) return;
+      const { draft, replace, replacedExistingKind } = built;
 
       const result = await packagesApi.factoryInstall(buildFactoryInstallEnvelope(draft, replace));
+      // When creating a brand-new package via Save As, the package is only in
+      // the user store after factoryInstall. refreshPackageRegistry filters
+      // by the project lockfile, so the new descriptor would be invisible.
+      // Add it to the project lockfile first so the descriptor gets registered.
+      if (targetKey === SAVE_AS_NEW_PACK && projectId) {
+        const projResult = await packagesApi.installToProject(projectId, result.package.dirName);
+        setCurrentProjectPackages(projResult.packages);
+      }
       await refreshPackageRegistry();
       // Rebind the canvas node to the new/updated kind so re-opening Settings
       // resolves to the new descriptor (e.g. its readOnly flag), not the
@@ -176,21 +217,52 @@ export function NodeSaveAsModal({
       showToast((err as Error)?.message ?? "Save As failed.", "error");
     } finally {
       setBusy(false);
+      setBusyKind(null);
     }
-  }, [busy, canvasNode, getStarters, newPackageName, nodeId, nodeLabel, onClose, setNodes, showToast, targetKey]);
+  }, [buildDraft, busy, canvasNode, nodeId, nodeLabel, onClose, projectId, setNodes, showToast, targetKey]);
+
+  // Export the same draft as a .curio.zip without installing it. Shares the
+  // `busy` flag with Save so the two can never run concurrently, and leaves
+  // the modal open - an export is not a commit.
+  //
+  // Deliberately sends the *same* envelope Save would: `/factory/build` reads
+  // only manifest/sources/readme/license and ignores `replace`. Both endpoints
+  // run preserve_unedited_sources, so the downloaded zip carries the same
+  // template bodies Save would have installed - including the real source of
+  // siblings this draft only has placeholders for. Not literally byte-identical:
+  // each request stamps its own `createdAt` when the draft omits one.
+  const onExport = useCallback(async () => {
+    if (!canvasNode || busy) return;
+    setBusy(true);
+    setBusyKind("export");
+    try {
+      const built = await buildDraft();
+      if (!built) return;
+      const { blob, filename } = await packagesApi.factoryBuild(
+        buildFactoryInstallEnvelope(built.draft, built.replace),
+      );
+      triggerBlobDownload(blob, filename);
+      showToast(`Exported ${filename}.`, "success");
+    } catch (err) {
+      showToast((err as Error)?.message ?? "Export failed.", "error");
+    } finally {
+      setBusy(false);
+      setBusyKind(null);
+    }
+  }, [buildDraft, busy, canvasNode, showToast]);
 
   if (!show) return null;
 
   return (
-    <ModalShell preservePackagePaletteOpen onClose={busy ? () => {} : onClose}>
+    <ModalShell preservePackagePaletteOpen onClose={busy ? () => {} : onClose} titleId="save-as-package-title">
       <div className={styles.content}>
-        <h2 className={styles.title}>Save As pkg node</h2>
+        <h2 id="save-as-package-title" className={styles.title}>Save as package node</h2>
         <p className={styles.subtitle}>
-          Save <strong>{nodeLabel}</strong> into an installed pkg or create a new one.
+          Save <strong>{nodeLabel}</strong> into an installed package or create a new one.
         </p>
 
         <label className={styles.fieldLabel} htmlFor="save-as-package-target">
-          Destination pkg
+          Destination package
         </label>
         <div className={styles.selectWrap}>
           <select
@@ -200,7 +272,7 @@ export function NodeSaveAsModal({
             disabled={busy}
             onChange={(e) => setTargetKey(e.target.value)}
           >
-            <option value={SAVE_AS_NEW_PACK}>New pkg…</option>
+            <option value={SAVE_AS_NEW_PACK}>New package…</option>
             {packageOptions.map((opt) => (
               <option key={opt.sectionKey} value={opt.sectionKey}>
                 {opt.displayName}
@@ -215,7 +287,7 @@ export function NodeSaveAsModal({
         {targetKey === SAVE_AS_NEW_PACK ? (
           <div className={styles.newPackageField}>
             <label className={styles.fieldLabel} htmlFor="save-as-new-package-name">
-              New pkg name
+              New package name
             </label>
             <input
               id="save-as-new-package-name"
@@ -233,15 +305,24 @@ export function NodeSaveAsModal({
             settings with this canvas node.
           </p>
         ) : (
-          <p className={styles.hint}>Adds this node as a new kind in the selected pkg.</p>
+          <p className={styles.hint}>Adds this node as a new kind in the selected package.</p>
         )}
 
         <div className={styles.footer}>
           <button type="button" className={styles.ghostBtn} disabled={busy} onClick={onClose}>
             Cancel
           </button>
+          <button
+            type="button"
+            className={styles.ghostBtn}
+            disabled={busy}
+            title="Download this node as a .curio.zip package without installing it"
+            onClick={() => void onExport()}
+          >
+            {busyKind === "export" ? "Exporting…" : "Export"}
+          </button>
           <button type="button" className={styles.primaryBtn} disabled={busy} onClick={() => void onConfirm()}>
-            {busy ? "Saving…" : willReplace ? "Replace" : "Save"}
+            {busyKind === "save" ? "Saving…" : willReplace ? "Replace" : "Save"}
           </button>
         </div>
       </div>

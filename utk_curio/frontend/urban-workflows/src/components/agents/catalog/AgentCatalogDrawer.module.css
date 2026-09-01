@@ -1,0 +1,130 @@
+/*
+ * Canvas slide-over Agent Catalog drawer - what is specific to this drawer.
+ *
+ * The panel itself (overlay root, scrim, sliding drawer, scroll body, section
+ * label, card list, empty/error states, action-error banner) is the shared
+ * ../../packages/publishing/CatalogDrawerShell.module.css, which the Node and
+ * Data Catalog drawers also import. This file used to restate all of it -
+ * overlay, scrim, panel, its own transition timings, its own empty and error
+ * blocks - which is how the first two drawers drifted apart in six places
+ * before the shell was extracted.
+ *
+ * Sub-component styles live in their own CSS modules:
+ *   DrawerHeader.module.css     - top bar, subtitle
+ *   DrawerTabs.module.css       - tab strip
+ *   PackageSearchRow.module.css - search input + sort select
+ *   PackageCard.module.css      - card grid, avatar tile, action buttons
+ *   DrawerFooter.module.css     - footer geometry
+ *
+ * Category colour is not here either: it folds onto the shared palette in
+ * ../../menus/nodes/agentsPalette/agentCategoryStyle.ts.
+ */
+
+/* This drawer's tier in the overlay scale (see curioTokens.css). Consumed by
+   .overlayRoot in the shared shell. Above the Data Catalog drawer: an agent
+   drawer can be opened over it, never the other way round. */
+.overlayRoot {
+    --curio-drawer-z: var(--curio-z-agent-drawer);
+}
+
+/* The robot glyph inside the shared .cardAvatar tile. */
+.avatarIcon {
+    font-size: 24px;
+}
+
+/* Category-tinted avatar tiles on this light surface. One per agent category
+   (agentCategoryStyle.ts); the glyph varies with them, because a tint alone
+   left 21 identical robots. `!important` mirrors the dataset drawer: it
+   overrides .cardAvatar's neutral fallback. */
+.avatar_node     { background: var(--curio-category-agent-node-bg) !important; color: var(--curio-category-agent-node-on-tint); }
+.avatar_canvas   { background: var(--curio-category-agent-canvas-bg) !important; color: var(--curio-category-agent-canvas-on-tint); }
+.avatar_data     { background: var(--curio-category-agent-data-bg) !important; color: var(--curio-category-agent-data-on-tint); }
+.avatar_evaluate { background: var(--curio-category-agent-evaluate-bg) !important; color: var(--curio-category-agent-evaluate-on-tint); }
+.avatar_package  { background: var(--curio-category-agent-package-bg) !important; color: var(--curio-category-agent-package-on-tint); }
+
+/* Account-policy entry in the header's actions slot: it opens AI Settings,
+   the single account-level place the provider and the agent limits are set. */
+.headerSettingsBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    border-radius: var(--curio-radius-sm);
+    padding: 4px 8px;
+    color: var(--curio-text-on-dark);
+    font-family: var(--curio-font-family);
+    font-size: var(--curio-font-size-sm);
+    cursor: pointer;
+}
+
+.headerSettingsBtn:hover,
+.headerSettingsBtn:focus-visible {
+    background: var(--curio-top-bar-bg-hover);
+}
+
+/* The hard-dependency disclosure under a card's tags: what an Install also
+   adds, and whether each requirement can be resolved. */
+.requiresLine {
+    margin: 4px 0 0;
+    font-size: var(--curio-font-size-xs);
+    color: var(--curio-text-meta);
+}
+
+.requireMet {
+    color: var(--curio-success-text);
+}
+
+.requireMissing {
+    color: var(--curio-warning-text);
+    font-weight: 600;
+}
+
+/* Stable card geometry when a label is long.
+ *
+ * The shared card grid is `72px 1fr auto`, so its third column widens to fit
+ * the longest button on the card. Every peer's labels are short enough that
+ * this never shows, but "Add to dataflow (+1 required)" is nearly twice the
+ * width of the plain label: it took enough from the body column that the tag
+ * row wrapped into a narrow stack, giving one card in the list a different
+ * shape from the rest. Pin the column instead and let the label wrap inside.
+ *
+ * Element-qualified so it beats the shared `.card` on specificity rather than
+ * on bundle order, which CSS modules do not guarantee.
+ *
+ * 150px, not the original 140px: the extra ten fit "Remove from project" at the
+ * shared 13px, which is what let the type shrink above be deleted. The tag row
+ * the pin was originally protecting from the squeeze is gone too, so this is
+ * now purely about keeping every card in the list the same shape.
+ */
+article.agentCard {
+    grid-template-columns: 72px 1fr 150px;
+}
+
+/* The shared button is a fixed-height single line, so a wrapped label would
+   overflow it. Grow instead, keeping the one-line height as the floor so the
+   short labels are unchanged. */
+button.installBtn {
+    height: auto;
+    min-height: var(--curio-input-height);
+    padding: 6px 12px;
+    line-height: 1.25;
+    white-space: normal;
+}
+
+/* No type shrink. This used to drop the label to 10px with the padding trimmed
+   to 8px, because the column was pinned at 140px and it had to fit four
+   controls' worth of labels - the longest being "Remove from my account".
+   Three of those four have since left the card, and the pin has been widened
+   to fit the shared size, so the only thing the shrink still did was make this
+   drawer's "Remove from project" visibly smaller than the identical button on
+   the Data and Node cards.
+
+   `nowrap` stays as the guard, not as a fix: if a longer label ever appears it
+   will visibly ellipsize rather than silently overflow, and the geometry test
+   fails on the measurement. */
+button.secondaryBtn {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

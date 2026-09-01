@@ -105,3 +105,135 @@ def test_uninstall_invokes_pip_with_names():
     assert "uninstall" in argv and "-y" in argv
     assert "torch" in argv and "transformers" in argv
     assert report.removed == ["torch", "transformers"]
+
+
+# ---------------------------------------------------------------------------
+# The streaming (on_line) path
+# ---------------------------------------------------------------------------
+#
+# install_python_deps has two implementations picked by whether on_line is
+# given. Only the buffered one was covered, yet the streaming one is what the
+# launcher uses (main.py install_manifest_dependencies) - so a break there
+# surfaces as a broken `curio start`, not a failing API call.
+
+
+class _FakeProc:
+    """Minimal Popen stand-in: iterable stdout plus a fixed exit code."""
+
+    def __init__(self, lines, returncode=0):
+        self.stdout = iter(lines)
+        self._rc = returncode
+
+    def wait(self, timeout=None):
+        # Mirrors ``Popen.wait``: the streaming branch bounds pip with
+        # ``timeout=_PIP_TIMEOUT_SECONDS`` rather than waiting forever.
+        return self._rc
+
+    def kill(self):  # pragma: no cover - only on the timeout path
+        pass
+
+
+def test_streaming_path_reports_each_line_and_returns_installed():
+    seen: list[str] = []
+    with patch(
+        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False
+    ), patch(
+        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen",
+        return_value=_FakeProc(["Collecting inflection", "Successfully installed"]),
+    ) as popen:
+        report = install_python_deps({"inflection": ""}, on_line=seen.append)
+
+    assert seen == ["Collecting inflection", "Successfully installed"]
+    assert report.installed == ["inflection"]
+    assert report.skipped == []
+    # Popen itself takes no timeout; the deadline is applied at `proc.wait()`,
+    # which is what bounds the branch. It previously called a bare `wait()` and
+    # a wedged mirror hung the caller forever.
+    assert "timeout" not in popen.call_args.kwargs
+
+
+def test_streaming_path_raises_with_the_output_tail():
+    with patch(
+        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False
+    ), patch(
+        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen",
+        return_value=_FakeProc(["ERROR: could not build wheel"], returncode=1),
+    ):
+        with pytest.raises(PipInstallError) as exc:
+            install_python_deps({"inflection": ""}, on_line=lambda _l: None)
+
+    assert "exit 1" in str(exc.value)
+    assert "could not build wheel" in str(exc.value)
+
+
+def test_streaming_path_keeps_only_the_last_40_lines():
+    """The tail is capped, so a chatty failure stays a readable error."""
+    lines = [f"line-{i}" for i in range(200)]
+    with patch(
+        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False
+    ), patch(
+        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen",
+        return_value=_FakeProc(lines, returncode=2),
+    ):
+        with pytest.raises(PipInstallError) as exc:
+            install_python_deps({"inflection": ""}, on_line=lambda _l: None)
+
+    message = str(exc.value)
+    assert "line-199" in message
+    assert "line-160" in message      # 200 - 40 = the oldest line still kept
+    assert "line-159" not in message  # ...and the one before it is dropped
+
+
+def test_streaming_path_skips_pip_entirely_when_satisfied():
+    """The satisfied short-circuit precedes the branch, so on_line is never called."""
+    seen: list[str] = []
+    with patch(
+        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=True
+    ), patch(
+        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen"
+    ) as popen:
+        report = install_python_deps({"inflection": ""}, on_line=seen.append)
+
+    popen.assert_not_called()
+    assert seen == []
+    assert report.installed == []
+    assert report.skipped == ["inflection"]
+
+
+
+def test_streaming_path_kills_pip_when_it_overruns(monkeypatch):
+    """The streaming branch is bounded, like the buffered one.
+
+    It used to call a bare ``proc.wait()``. A mirror that accepts the
+    connection and then never sends EOF pinned the calling thread forever, and
+    this branch is reachable over HTTP: ``build_overlay`` streams, and it sits
+    on the promotion and catalog-install paths.
+    """
+    import subprocess
+
+    from utk_curio.backend.app.packages import pip_runner
+
+    killed = {"count": 0}
+
+    class _HangingProc:
+        def __init__(self):
+            self.stdout = iter(["Collecting slowpkg"])
+
+        def wait(self, timeout=None):
+            if timeout is not None:
+                raise subprocess.TimeoutExpired(cmd="pip", timeout=timeout)
+            return 0
+
+        def kill(self):
+            killed["count"] += 1
+
+    monkeypatch.setattr(pip_runner, "_is_satisfied", lambda name, spec: False)
+    monkeypatch.setattr(pip_runner.subprocess, "Popen", lambda *a, **k: _HangingProc())
+
+    # The module-level import, not ``pip_runner.install_python_deps``: the
+    # package conftest's autouse fixture replaces that attribute with a stub
+    # that takes no ``on_line``. The other streaming tests bind it the same way.
+    with pytest.raises(PipInstallError, match="timed out"):
+        install_python_deps({"slowpkg": ""}, on_line=lambda line: None)
+
+    assert killed["count"] == 1, "a pip that overruns must be killed, not leaked"

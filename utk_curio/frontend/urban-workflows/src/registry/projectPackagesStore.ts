@@ -3,7 +3,7 @@
  *
  * The palette filters by intersection with this set so two projects open
  * in different tabs / sessions see different palettes even though they
- * share one user package store. See ``docs/CATALOG.md`` § "Per-project
+ * share one user package store. See ``docs/NODE-CATALOG.md`` § "Per-project
  * lockfile".
  *
  * Writers:
@@ -17,11 +17,11 @@
  */
 
 export type ProjectPackages = {
-  /** ``undefined`` means "no project loaded — show everything in the palette". */
+  /** ``undefined`` means "no project loaded - show everything in the palette". */
   projectId: string | undefined;
   /**
    * Sorted dirNames in the project's lockfile. Empty when no project is
-   * loaded — but {@link getCurrentProjectPackages} returns ``null`` in that
+   * loaded - but {@link getCurrentProjectPackages} returns ``null`` in that
    * case so the palette filter knows to skip the intersection.
    */
   packages: ReadonlySet<string>;
@@ -42,7 +42,7 @@ export function setCurrentProject(projectId: string, packages: Iterable<string>)
 }
 
 export function setCurrentProjectPackages(packages: Iterable<string>): void {
-  // Same project, new package set — drawer install / uninstall path.
+  // Same project, new package set - drawer install / uninstall path.
   _state = { projectId: _state.projectId, packages: new Set(packages) };
   _notify();
 }
@@ -85,4 +85,23 @@ function _notify(): void {
       // Subscribers must be resilient; one bad listener can't block others.
     }
   }
+}
+
+/**
+ * Apply the backend's lockfile for the current project (memo dev/101).
+ *
+ * The drawer re-reads ``GET /api/packages/projects/<id>`` on every reload
+ * and pushes it here; the palette and the descriptor registry filter by this
+ * set. Returns whether the set actually changed so the caller knows to pulse
+ * ``refreshPackageRegistry`` — a package that arrived server-side (a Package
+ * Builder Apply in another tab, a clobbered-then-healed lockfile) must reach
+ * the palette AND resolve its nodes, not only flip the drawer's pill.
+ */
+export function applyProjectLockfile(packages: Iterable<string>): boolean {
+  const next = new Set(packages);
+  const current = _state.packages;
+  const changed =
+    next.size !== current.size || Array.from(next).some((p) => !current.has(p));
+  if (changed) setCurrentProjectPackages(next);
+  return changed;
 }

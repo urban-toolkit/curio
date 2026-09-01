@@ -16,10 +16,15 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 # )
 from .utils import (
     save_workflow_test_screenshot,
+    assert_vega_canvas_rendered,
     get_shared_data_dir,
     load_artifact_as_dict,
     execute_workflow_programmatically,
     dump_browser_log,
+    node_execution_timeout_ms,
+    play_node,
+    read_node_error_text,
+    wait_for_node_done,
 )
 from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES
 
@@ -28,35 +33,6 @@ This test file is to test the loading of workflow files in the frontend.
 To watch the browser (see the menu open): run with --headed, e.g.
 """
 
-# Probe shared by the wait_for_function poll and the final evaluate in the
-# VIS_VEGA canvas check; returns {width, height, nonBlank} or null.
-_VEGA_CANVAS_PROBE_JS = """(containerId) => {
-    const el = document.getElementById(containerId);
-    if (!el) return null;
-    const canvas = el.querySelector('canvas');
-    if (!canvas) return null;
-    const w = canvas.width, h = canvas.height;
-    if (!w || !h) return { width: w, height: h, nonBlank: false };
-    let nonBlank = false;
-    try {
-        const ctx = canvas.getContext('2d');
-        const { data } = ctx.getImageData(0, 0, w, h);
-        for (let i = 0; i < data.length; i += 4) {
-            const r = data[i], g = data[i + 1],
-                  b = data[i + 2], a = data[i + 3];
-            // any opaque, non-white pixel means a mark was drawn
-            if (a !== 0 && !(r === 255 && g === 255 && b === 255)) {
-                nonBlank = true;
-                break;
-            }
-        }
-    } catch (e) {
-        // getImageData throws on a tainted canvas —
-        // treat as drawn rather than failing.
-        nonBlank = true;
-    }
-    return { width: w, height: h, nonBlank };
-}"""
 
 def test_load_workflow_files(workflow_files):
     """
@@ -102,6 +78,16 @@ class TestWorkflowCanvas:
         """Return a Playwright ``Locator`` for a ReactFlow node element."""
         return self.page.locator(f'.react-flow__node[data-id="{node.id}"]')
 
+    # WebGPU (AUTK_GRAMMAR) workflows render maps/shadows on the GPU, which is
+    # non-deterministic across GPU, driver, anti-aliasing and run (the
+    # shadow-study canvas can differ ~20-25% run-to-run). They need a looser
+    # screenshot pixel-diff tolerance than the deterministic Vega/data
+    # workflows; AUTK *correctness* is independently guarded by the per-node
+    # "Done" check and ``_assert_hardware_webgpu``, so the screenshot here is
+    # only a coarse layout/regression guard.
+    _WEBGPU_SCREENSHOT_MAX_DIFF_RATIO = 0.35
+    _DEFAULT_SCREENSHOT_MAX_DIFF_RATIO = 0.20
+
     def _save_screenshot(self, request):
         """Persist canvas screenshot (see ``save_workflow_test_screenshot``)
         and dump the captured browser console/pageerror log alongside it.
@@ -111,10 +97,16 @@ class TestWorkflowCanvas:
         calling ``console.error``), so we always write it — not just on
         failure — while we're debugging the rendering issue.
         """
+        is_webgpu = any(n.type in self._WEBGPU_DIAGNOSTIC_TYPES for n in self.spec.nodes)
         save_workflow_test_screenshot(
             self.page,
             self.spec.filepath,
             test_name=request.function.__name__,
+            max_diff_ratio=(
+                self._WEBGPU_SCREENSHOT_MAX_DIFF_RATIO
+                if is_webgpu
+                else self._DEFAULT_SCREENSHOT_MAX_DIFF_RATIO
+            ),
         )
         log_entries = getattr(self.page, "_curio_browser_log", None) or []
         autk_errors = getattr(self.__class__, "_autk_error_texts", None) or {}
@@ -253,39 +245,10 @@ class TestWorkflowCanvas:
         )
 
     def _read_code_node_error_text(self, node_el) -> str | None:
-        """Return the error message text from a code node's inline output
-        area. Returns ``None`` if it cannot be read.
-
-        Works for both autk behavior nodes and Python/JS code nodes:
-        CodeEditor renders any output (success or error) into the same
-        ``.nowheel.nodrag`` div with the ``[N]:`` counter (CodeEditor.tsx
-        ~200-219). For autk, ``autkBehaviorFactory``'s catch block sets
-        ``output = { code: 'error', content: err.message }``; for
-        COMPUTATION_ANALYSIS / DATA_LOADING / DATA_TRANSFORMATION the
-        sandbox's stderr/exception traceback is routed there too. We
-        switch to the code tab so that area is in the layout, then read
-        it.
-        """
-        try:
-            code_tab = node_el.locator(
-                '.nav-link[data-rr-ui-event-key="code"]'
-            ).first
-            try:
-                code_tab.wait_for(state="visible", timeout=2000)
-                if "active" not in (code_tab.get_attribute("class") or ""):
-                    code_tab.click(force=True)
-            except Exception:
-                # Some autk nodes may not expose a code tab depending on
-                # NodeEditor config; fall through and read whatever is
-                # currently visible.
-                pass
-            output_area = node_el.locator(".nowheel.nodrag").filter(
-                has_text=re.compile(r"\[(\d+|\*| )\]:")
-            ).first
-            output_area.wait_for(state="visible", timeout=2000)
-            return output_area.text_content()
-        except Exception:
-            return None
+        """See ``utils.read_node_error_text``. Kept as a method because
+        ``_capture_autk_error`` and the failure paths below read better
+        alongside the other ``self._`` diagnostics."""
+        return read_node_error_text(node_el)
 
     def _capture_autk_error(self, node, node_el) -> None:
         """Print the autk error text to pytest output and stash it on the
@@ -317,92 +280,8 @@ class TestWorkflowCanvas:
         )
 
     def _node_execution_timeout_ms(self, node: NodeSpec) -> int:
-        """Return a generous timeout for nodes that execute heavy data ops.
-
-        AUTK_GRAMMAR shares the data-node budget: a node with a `data` section
-        runs it in the backend sandbox — autk-db parses a local OSM PBF
-        (multi-MB) via DuckDB-WASM in Node and round-trips the layers back over
-        HTTP. This is deterministic and fast now that the data is local: a
-        1.6 MB PBF (171k features) parses in ~12 s including cold-start WASM
-        init, and the largest bundled PBF is ~6 MB, so 2 min is ~2.5x the
-        worst case. The old 5-min budget dated from the Overpass era (a remote,
-        throttled OSM endpoint), which has since been removed — a node that now
-        runs past this budget is hung, not slow, so fail it.
-        """
-        if node.type in {
-            "AUTK_GRAMMAR",
-            "DATA_LOADING",
-            "DATA_TRANSFORMATION",
-            "COMPUTATION_ANALYSIS",
-        }:
-            return 120000
-        return 30000
-
-    def _click_play_until_started(self, node, node_el, max_attempts: int = 3):
-        """Click *play* and confirm execution actually started.
-
-        ``BoxStyles`` swaps the play SVG for a Bootstrap Spinner the moment
-        ``isLoading`` flips to true (see styles.tsx:740-768) and the
-        ``CodeEditor`` updates its inline counter from ``[ ]:`` to
-        ``[*]:`` once the behavior reports ``output.code === 'exec'``.
-        Either signal proves the click was honoured.
-
-        We don't use ``play_btn.click(force=True)`` — ``force=True`` skips
-        actionability checks so React Flow's transformed viewport, pointer
-        events, or an overlay can swallow the click. Instead we
-        ``element.click()`` via ``page.evaluate``, which bypasses the
-        viewport transform entirely and delivers the event straight to the
-        SVG's React onClick.
-        """
-        play_btn = node_el.locator("svg.fa-circle-play")
-        spinner = node_el.locator(".spinner-border")
-        if node.category == "code":
-            counter = node_el.locator(".nowheel.nodrag").filter(
-                has_text=re.compile(r"\[(\d+|\*)\]:")
-            ).first
-        else:
-            counter = node_el.locator("span").filter(
-                has_text=re.compile(r"^(Running|Done|Error)$")
-            ).first
-
-        last_error = None
-        for attempt in range(max_attempts):
-            try:
-                play_btn.wait_for(state="visible", timeout=10000)
-                # The play button is an ``<svg>`` (FontAwesomeIcon).
-                # ``SVGElement`` has no native ``click()`` method, so
-                # ``el.click()`` via ``evaluate`` raises ``TypeError`` and
-                # ``page.click(force=True)`` silently misses when React
-                # Flow's CSS transform throws off the click coordinates.
-                # ``dispatch_event("click")`` sends a bubbling synthetic
-                # ``MouseEvent`` that React's onClick picks up regardless
-                # of where the element actually sits on screen.
-                play_btn.dispatch_event("click")
-                try:
-                    self.page.wait_for_function(
-                        r"""(nodeId) => {
-                            const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
-                            if (!el) return false;
-                            if (el.querySelector('.spinner-border')) return true;
-                            const texts = [...el.querySelectorAll('.nowheel.nodrag, span')]
-                                .map(e => e.textContent);
-                            return texts.some(
-                                t => /\[(\d+|\*)\]:/.test(t) || /^(Running|Done|Error)$/.test(t.trim())
-                            );
-                        }""",
-                        arg=node.id,
-                        timeout=20000,
-                    )
-                    return
-                except PlaywrightTimeoutError:
-                    last_error = TimeoutError("No spinner or counter-flip within 20s")
-            except PlaywrightTimeoutError as e:
-                last_error = e
-        raise AssertionError(
-            f"Node {node.id} ({node.type}) never acknowledged Play after "
-            f"{max_attempts} attempts; click is being silently dropped "
-            f"(React handler likely not bound). Last error: {last_error}"
-        )
+        """See ``utils.node_execution_timeout_ms``."""
+        return node_execution_timeout_ms(node.type)
 
     def _execute_all_playable_nodes(self):
         """Click *play* on every node that has a play button (topological order)
@@ -466,55 +345,28 @@ class TestWorkflowCanvas:
             if not node.has_play_button:
                 continue
 
-            self._click_play_until_started(node, node_el)
+            play_node(self.page, node.id)
 
-            # Wait until either "Done" or "Error" is visible. A node that
-            # never settles is a hard timeout failure — there is no
-            # tolerance and no retry (all data is local/deterministic).
-            result_span = node_el.locator("span").filter(
-                has_text=re.compile(r"^(Done|Error)$")
-            ).first
+            # Wait for success, or fail with the node's own error text. A
+            # node that never settles is a hard timeout failure - there is
+            # no tolerance and no retry (all data is local/deterministic).
             try:
-                result_span.wait_for(
-                    state="visible",
-                    timeout=self._node_execution_timeout_ms(node),
-                )
-            except PlaywrightTimeoutError:
-                raise PlaywrightTimeoutError(
-                    f"Node {node.id} ({node.type}) timed out after "
-                    f"{self._node_execution_timeout_ms(node)} ms"
-                )
-            result_text = result_span.text_content() or ""
-
-            if "Error" in result_text:
+                wait_for_node_done(self.page, node.id, node_type=node.type)
+            except AssertionError:
                 # Capture the autk Error tab text (and the once-per-session
                 # WebGPU diagnostics) so the failure dump shows the literal
                 # err.message — the usual reason an autk node fails.
                 if node.type == "AUTK_GRAMMAR":
                     self._capture_autk_error(node, node_el)
-                # Surface the inline output text so the failure message says
-                # *why* it errored.
-                detail = (
-                    self._read_code_node_error_text(node_el)
-                    if node.category == "code" else None
-                )
-                raise AssertionError(
-                    f"Node {node.id} ({node.type}) execution failed with Error"
-                    + (f"\n--- node error output ---\n{detail}" if detail else "")
-                )
-
-            done_span = node_el.locator("span").filter(has_text=re.compile(r"^Done$"))
-            assert done_span.count() >= 1, (
-                f"Node {node.id} ({node.type}) did not produce 'Done'"
-            )
+                raise
 
             # verify the inline output area shows a Jupyter-style counter.
             # Grammar nodes (VIS_VEGA / AUTK_GRAMMAR) render their result via a
             # ``contentComponent`` / output tab rather than the inline code
             # counter, so this only applies to "code" category nodes (their
-            # success is already proven by the Done span above).
+            # success is already proven by the status attribute above).
             if node.category == "code":
-                output_area = node_el.locator(".nowheel.nodrag").filter(
+                output_area = node_el.locator("[data-curio-node-output]").filter(
                     has_text=re.compile(r"\[\d+\]:")
                 ).first
                 output_area.wait_for(state="visible", timeout=10000)
@@ -607,14 +459,14 @@ class TestWorkflowCanvas:
 
                 # 1. Check that the inline output area (below the Monaco editor)
                 #    is present and shows the initial "No output yet" placeholder.
-                output_area = node_el.locator(".nowheel.nodrag").filter(
+                output_area = node_el.locator("[data-curio-node-output]").filter(
                     has_text=re.compile(r"\[[ ]\]:")
                 )
                 assert output_area.count() >= 1, (
                     f"Code node {node.id} ({node.type}) is missing its "
                     f"inline output area"
                 )
-                no_output_text = node_el.locator(".nowheel.nodrag").filter(
+                no_output_text = node_el.locator("[data-curio-node-output]").filter(
                     has_text="No output yet"
                 )
                 assert no_output_text.count() >= 1, (
@@ -708,7 +560,7 @@ class TestWorkflowCanvas:
                 #    and the tab never activates. ``dispatch_event("click")``
                 #    fires a synthetic event directly on the element, bypassing
                 #    coordinate translation entirely (same trick we use for
-                #    Play in ``_click_play_until_started``).
+                #    Play in ``utils.play_node``).
                 is_active = "active" in (grammar_tab.get_attribute("class") or "")
                 if not is_active:
                     grammar_tab.first.dispatch_event("click")
@@ -800,11 +652,11 @@ class TestWorkflowCanvas:
             if node.category == "code":
                 # Since commit d8050b0 code nodes no longer have a separate output
                 # tab – the execution result is shown inline inside CodeEditor as
-                # a ".nowheel.nodrag" div with a Jupyter-style "[N]:" counter.
+                # the "[data-curio-node-output]" div with a Jupyter-style "[N]:" counter.
                 # This covers every code node (DATA_LOADING, DATA_TRANSFORMATION,
                 # COMPUTATION_ANALYSIS, JS_COMPUTATION, …); autk nodes are
                 # category "grammar" and handled in the branch below.
-                output_area = node_el.locator(".nowheel.nodrag").filter(
+                output_area = node_el.locator("[data-curio-node-output]").filter(
                     has_text=re.compile(r"\[\d+\]:")
                 )
                 output_area.first.wait_for(state="visible", timeout=10000)
@@ -816,7 +668,7 @@ class TestWorkflowCanvas:
                 # CodeEditor writes "Saved to file: {artifact_id}" in the inline
                 # output (no .data extension with DuckDB).  Extract the artifact_id
                 # and compare content against the programmatic run.
-                data_output = node_el.locator(".nowheel.nodrag").filter(
+                data_output = node_el.locator("[data-curio-node-output]").filter(
                     has_text=re.compile(r"Saved to file:\s\w+_\w+")
                 )
                 if data_output.count() >= 1 and node.id in expected_map:
@@ -926,57 +778,10 @@ class TestWorkflowCanvas:
                     # and drew non-blank content (the upstream data turned into
                     # marks). Visual regressions are still caught by the per-node
                     # screenshot comparison in ``_save_screenshot``.
+                    # The probe and its poll live in ``utils`` so the per-dataset
+                    # suite asserts Vega rendering the same way this one does.
                     if node.type == "VIS_VEGA":
-                        vega_container_id = f"vega{node.id}"
-
-                        canvas_locator = node_el.locator(
-                            f"#{vega_container_id} canvas"
-                        )
-                        canvas_locator.first.wait_for(
-                            state="visible", timeout=15000
-                        )
-                        assert canvas_locator.count() >= 1, (
-                            f"Grammar node {node.id} ({node.type}) is missing "
-                            f"its rendered canvas inside #{vega_container_id}"
-                        )
-
-                        # Vega paints asynchronously after the canvas becomes
-                        # visible — on a slow CI runner the canvas can be
-                        # attached and sized before any marks are drawn, so a
-                        # single pixel sample races the paint. Poll the probe
-                        # until it reports drawn content; on timeout fall
-                        # through to one final sample so the asserts below
-                        # still produce the detailed failure message.
-                        try:
-                            self.page.wait_for_function(
-                                "(containerId) => {"
-                                f" const probe = {_VEGA_CANVAS_PROBE_JS};"
-                                "  const info = probe(containerId);"
-                                "  return !!(info && info.width > 0"
-                                "        && info.height > 0 && info.nonBlank);"
-                                "}",
-                                arg=vega_container_id,
-                                timeout=30000,
-                                polling=500,
-                            )
-                        except PlaywrightTimeoutError:
-                            pass
-
-                        canvas_info = self.page.evaluate(
-                            _VEGA_CANVAS_PROBE_JS, vega_container_id
-                        )
-                        assert canvas_info is not None, (
-                            f"Grammar node {node.id} ({node.type}): could not "
-                            f"find a canvas inside #{vega_container_id}"
-                        )
-                        assert canvas_info["width"] > 0 and canvas_info["height"] > 0, (
-                            f"VIS_VEGA node {node.id}: canvas has zero backing "
-                            f"size ({canvas_info['width']}x{canvas_info['height']})"
-                        )
-                        assert canvas_info["nonBlank"], (
-                            f"VIS_VEGA node {node.id}: canvas rendered blank — "
-                            f"no chart marks drawn from the upstream data"
-                        )
+                        assert_vega_canvas_rendered(self.page, node.id)
 
         # ---- VIS_SIMPLE content verification -----------------------------------
         # VIS_SIMPLE has no play button so the loop above skips it.  After all

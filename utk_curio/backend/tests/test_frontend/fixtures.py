@@ -2,11 +2,17 @@ import os
 import sys
 import json
 import time
+import secrets
 import sqlite3
 import tempfile
 import pytest
 import subprocess
 from signal import SIGINT
+
+try:  # POSIX only; the Windows branch of _terminate_process_tree never uses it.
+    from signal import SIGKILL
+except ImportError:  # pragma: no cover - Windows
+    SIGKILL = SIGINT
 from playwright.sync_api import Page
 from .utils import (
     FrontendPage,
@@ -32,6 +38,17 @@ from .workflow_spec import PY_CODE_TYPES, normalize_type
 # SQLAlchemy connections against the shared sqlite file.
 # ---------------------------------------------------------------------------
 
+# Test classes that own a class-scoped browser session and must NOT have the DB
+# truncated between their methods (see ``_clean_db``).
+_SHARED_SESSION_CLASSES = (
+    "TestWorkflowCanvas",
+    "TestAgentChatGallery",
+    # The stress tour signs one account up in its first chapter and keeps
+    # using it for the other five; a truncation between chapters would
+    # invalidate the session token the browser is still holding.
+    "TestCurioStressTour",
+)
+
 _SQLA_MUTABLE_TABLES = (
     "exec_cache_entry",
     "project",
@@ -39,6 +56,61 @@ _SQLA_MUTABLE_TABLES = (
     "user_session",
     "user",
 )
+
+
+def _terminate_process_tree(process: "subprocess.Popen", *, timeout: float = 10.0) -> None:
+    """Kill *process* and every descendant it spawned.
+
+    ``curio.py start`` is only a supervisor: it spawns ``backend.server``,
+    ``sandbox.server`` and an ``npm``->``cmd``->``webpack`` chain as separate
+    processes. Terminating the supervisor alone orphans all of them, and on
+    Windows ``Popen.terminate()`` is ``TerminateProcess``, so the supervisor's
+    own cleanup never runs either. The orphaned backend and sandbox keep the
+    test SQLite file open, which makes the *next* run die at conftest import
+    with ``PermissionError: [WinError 32]`` before collecting a single test.
+
+    Order matters: the tree is walked via parent-PID links, so the root has to
+    still be alive when we ask. Kill the tree first, then reap the root.
+
+    No early return when the root has already exited. A supervisor that died on
+    its own - or was killed without its cleanup running - leaves exactly the
+    children this function exists to remove, and returning early because the
+    root is gone skips them. ``taskkill`` on a dead pid just answers 128, and
+    the POSIX branch's ``getpgid`` raises ``ProcessLookupError``, which is
+    already handled.
+    """
+    if sys.platform == "win32":
+        # /T = tree, /F = force. Returns 128 when the pid is already gone,
+        # which is fine - we only care that nothing survives.
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    else:
+        # The child was started with start_new_session=True, so it leads its
+        # own process group and one signal reaches every descendant.
+        try:
+            os.killpg(os.getpgid(process.pid), SIGINT)
+            process.wait(timeout=timeout / 2)
+        except (ProcessLookupError, PermissionError):
+            pass
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(process.pid), SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+    # Reap the root itself so it doesn't linger as a zombie.
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
 
 
 def _free_port(port: int, *, raise_on_failure: bool, total_timeout: float = 10.0) -> None:
@@ -62,7 +134,12 @@ def _free_port(port: int, *, raise_on_failure: bool, total_timeout: float = 10.0
         return
 
     if sys.platform == "win32":
-        cmd: list = [f"npx kill-port {port}"]
+        # A STRING, not a one-element list: with shell=True on Windows,
+        # subprocess runs list2cmdline() first, which quotes the whole
+        # thing into a single token - cmd.exe then reports
+        # '"npx kill-port 5002"' is not recognized. The port was never
+        # freed, so setup always failed hard whenever one was occupied.
+        cmd: "list | str" = f"npx kill-port {port}"
         shell = True
     else:
         cmd = ["npx", "kill-port", str(port)]
@@ -177,11 +254,22 @@ def curio_servers(session_app, request):
         if key in os.environ:
             env[key] = os.environ[key]
 
+    # The sandbox's code-execution routes require a shared secret
+    # (utk_curio/sandbox/app/auth.py). `curio start` would mint one into the
+    # child's environment only, which this pytest process could not then read.
+    # A couple of tests call the sandbox directly (test_alive,
+    # test_library_install_integration), so pin it here instead and publish it
+    # via os.environ for the `sandbox_auth_headers` fixture. main.py honours a
+    # pre-set value.
+    sandbox_token = os.environ.get("CURIO_SANDBOX_TOKEN") or secrets.token_urlsafe(32)
+    os.environ["CURIO_SANDBOX_TOKEN"] = sandbox_token
+    env["CURIO_SANDBOX_TOKEN"] = sandbox_token
+
     # The E2E suite exercises the real signup / signin / guest flows, so the
     # backend must run with user auth enabled. ``curio.py start`` defaults to
     # ``CURIO_NO_AUTH=1`` (auto-guest mode, no login UI), which would send the
     # browser straight to ``/projects`` and make every auth-gated test time
-    # out looking for ``Sign In`` / ``Create an account`` / ``Continue as
+    # out looking for ``Sign in`` / ``Create an account`` / ``Continue as
     # Guest``. ``--auth`` flips ``CURIO_NO_AUTH=0`` so the login UI renders;
     # tests that opt out (e.g. ``test_frontend_server``) branch on
     # ``auth_enabled_env()`` and will follow the no-auth path only when the
@@ -191,10 +279,46 @@ def curio_servers(session_app, request):
         extra_args.append("--auth")
     if env.get("CURIO_NO_PROJECT", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--no-project")
+    # Saving a node's output to the Data Catalog is opt-in per node by default
+    # (#180). Several tests here are ABOUT that save - test_dataset_palette,
+    # test_dataset_lineage_e2e, test_dataset_export all expect a computed dataset
+    # to exist after a run - so the suite turns it on deployment-wide rather than
+    # flipping a toggle in each. Stated explicitly rather than inherited, so a
+    # future change to the default cannot silently empty those tests.
+    # test_computed_json_output_e2e.py deliberately does NOT rely on this: it
+    # flips the per-node toggle in the UI, because "the user turned it on" is the
+    # scenario #180 reports.
+    extra_args.append("--save-node-outputs")
+    # The examples are what #200 was about, and the gap that let it through:
+    # this harness launched with ``--auth`` but never ``--with-examples``, so
+    # the one configuration where the gallery came up empty was the one
+    # configuration never tested. Opt-in rather than always-on because seeding
+    # eleven dataflows (and provisioning the datasets they reference) costs
+    # real time on every boot, and only the tests that read the gallery need it.
+    if env.get("CURIO_E2E_WITH_EXAMPLES", "0") in ("1", "true", "yes", "on"):
+        extra_args.append("--with-examples")
+    # Replay the whole e2e suite against isolated node execution by setting
+    # CURIO_E2E_ISOLATION=fork. Off by default, and deliberately so: the
+    # confinement path is not yet verified anywhere, so turning it on for every
+    # run would make an unrelated failure look like an isolation bug. Pair it
+    # with CURIO_E2E_EXEC_USER on a host that has an unprivileged account.
+    _e2e_isolation = os.environ.get("CURIO_E2E_ISOLATION", "").strip()
+    if _e2e_isolation:
+        extra_args += ["--isolation", _e2e_isolation]
+        _exec_user = os.environ.get("CURIO_E2E_EXEC_USER", "").strip()
+        if _exec_user:
+            extra_args += ["--exec-user", _exec_user]
 
     # Discard child stdout/stderr: PIPE deadlocks the subprocess once the
     # buffer fills, and a file in the repo trips webpack-dev-server's
     # watcher. Full output is in $CURIO_LAUNCH_CWD/.curio/messages.log.
+    # Own process group / session so teardown can take down the whole server
+    # tree in one shot (see _terminate_process_tree).
+    if sys.platform == "win32":
+        spawn_kwargs = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    else:
+        spawn_kwargs = {"start_new_session": True}
+
     process = subprocess.Popen(
         [
             "python", "curio.py", "start",
@@ -206,7 +330,41 @@ def curio_servers(session_app, request):
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
+        **spawn_kwargs,
     )
+
+    def shutdown():
+        # Let any in-flight request finish before pulling the rug out.
+        time.sleep(2)
+        _terminate_process_tree(process)
+        # Backstop only: the tree kill should already have released these. A
+        # port still held here means something escaped the tree (e.g. a
+        # detached webpack respawn), so sweep it rather than leave the next
+        # run to fail at wait_for_port.
+        for port in (backend_port, sandbox_port, frontend_port):
+            _free_port(port, raise_on_failure=False)
+        for port in (backend_port, sandbox_port, frontend_port):
+            if is_port_in_use(port):
+                debug_log(
+                    "fixtures.py:curio_servers.shutdown",
+                    "port still in use after teardown",
+                    {"port": port},
+                )
+
+    # Registered IMMEDIATELY after Popen, BEFORE the readiness gates below.
+    #
+    # This used to sit after them, and that leaked the whole stack whenever one
+    # failed: the gates allow up to ~6.5 minutes between the spawn and this
+    # line, and any timeout raised out of the fixture with nothing registered to
+    # kill what had already started. The orphans keep 5002/2000/8080 and the
+    # test sqlite file, so the damage lands on the NEXT run - which dies at
+    # conftest import with ``PermissionError: [WinError 32]`` before collecting
+    # a test, or sails through ``wait_for_port`` because a stale process is
+    # answering on the port it is waiting for.
+    #
+    # A slow cold start is exactly when a gate trips, so the failure mode
+    # clustered on the machines least able to absorb it.
+    request.addfinalizer(shutdown)
 
     # Cold-start budget: backend/sandbox imports + webpack compile can easily
     # exceed the previous 40/45/90s timeouts on Windows.
@@ -219,20 +377,6 @@ def curio_servers(session_app, request):
     wait_for_http_ready(f"http://{host}:{backend_port}", timeout=15.0)
     wait_for_http_ready(f"http://{host}:{sandbox_port}", timeout=15.0)
 
-    def shutdown():
-
-        time.sleep(2)
-        if sys.platform != "win32":
-            process.send_signal(SIGINT)
-        process.terminate()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
-        for port in (backend_port, sandbox_port, frontend_port):
-            _free_port(port, raise_on_failure=False)
-
-    request.addfinalizer(shutdown)
     yield {
         "backend_port": backend_port,
         "sandbox_port": sandbox_port,
@@ -251,6 +395,21 @@ def current_server(curio_servers):
 def sandbox_server(curio_servers):
     """Sandbox URL (servers already started by curio_servers or existing stack)."""
     yield base_url(curio_servers, "sandbox_port")
+
+
+@pytest.fixture(scope="session")
+def sandbox_auth_headers(curio_servers):
+    """Headers proving to the sandbox that we may call its guarded routes.
+
+    ``/exec``, ``/execJs``, ``/get`` and ``/install`` require the shared secret
+    (utk_curio/sandbox/app/auth.py). ``curio_servers`` pins it into os.environ
+    when it starts the stack; under ``CURIO_E2E_USE_EXISTING`` the workflow
+    exports the same value the container was given. Empty dict when unset, so
+    an unauthenticated local sandbox still works.
+    """
+    from .utils import sandbox_auth_header
+
+    return sandbox_auth_header()
 
 
 @pytest.fixture(scope="session")
@@ -308,18 +467,18 @@ def _clean_db(request, test_db_paths) -> None:
     file than the one ``conftest.py`` resolved, so we call
     ``/api/testing/reset-db`` over HTTP instead of touching the file directly.
 
-    Skipped for ``TestWorkflowCanvas`` (class-scoped ``loaded_workflow`` /
-    ``workflow_page``) so tests share one DB-backed session and canvas; a
-    reset between methods would invalidate the stub user's token while the
-    browser still holds the cookie, and the File menu never appears.
+    Skipped for the classes that hold a class-scoped browser session
+    (``loaded_workflow`` / ``workflow_page``) so their tests share one
+    DB-backed session and canvas; a reset between methods would invalidate the
+    stub user's token while the browser still holds the cookie, and the File
+    menu never appears. ``TestAgentChatGallery`` is in that set for the same
+    reason: it logs in once and runs one parameter per built-in agent.
 
     We skip by class name as well as ``fixturenames`` because some pytest
     versions/paths do not list indirect fixtures in ``request.fixturenames``
     early enough for autouse ordering.
     """
-    if getattr(request, "cls", None) and request.cls.__name__ == (
-        "TestWorkflowCanvas"
-    ):
+    if getattr(request, "cls", None) and request.cls.__name__ in _SHARED_SESSION_CLASSES:
         return
     if (
         "loaded_workflow" in request.fixturenames
@@ -482,8 +641,10 @@ def loaded_workflow(
 
     # DB-stub login + DB-stubbed empty project, then navigate *directly* to
     # /workflow/<project_id> — no signup form, no "+ New Workflow" click on
-    # /projects. The stub endpoints are available in any non-production
-    # environment (CURIO_ENV != 'prod'); see backend/app/testing/routes.py.
+    # /projects. The stub endpoints need TWO factors: a non-production
+    # environment (CURIO_ENV != 'prod') AND CURIO_TESTING; see
+    # backend/app/testing/routes.py. A stack booted without the second one
+    # answers 404 here, which is why the CI overlays set it explicitly.
     # upload_workflow then imports the seeded JSON onto that canvas.
     # test_project_* tests still exercise the real /auth/signup UI via
     # utils.signup_and_enter_new_workflow.

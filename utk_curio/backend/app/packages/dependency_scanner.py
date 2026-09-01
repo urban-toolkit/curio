@@ -109,9 +109,18 @@ _JS_IMPORT_RE = re.compile(
 
 
 def _js_top_level_specifier(spec: str) -> str | None:
-    """Collapse `lodash/fp` → `lodash`; keep `@scope/pkg`; skip relative/abs paths."""
+    """Collapse `lodash/fp` → `lodash`; keep `@scope/pkg`; skip relative/abs paths.
+
+    Protocol-prefixed specifiers are not packages: ``node:fs`` is a Node
+    builtin, and ``http:``/``data:`` URLs resolve without npm. Declaring one as
+    a dependency would put an uninstallable name in the manifest, show it to the
+    user in the install dialog, and feed the cross-package dep resolver a
+    specifier no registry can satisfy. Mirrors the sandbox's own import
+    rewriter, which likewise refuses any specifier containing ``:``
+    (``worker.py`` ``resolve_pkg_entry_url``).
+    """
     s = spec.strip()
-    if not s or s.startswith(".") or s.startswith("/"):
+    if not s or s.startswith(".") or s.startswith("/") or ":" in s:
         return None
     if s.startswith("@"):
         parts = s.split("/", 2)
@@ -136,6 +145,7 @@ def scan_imports_for_filename(filename: str, source: str) -> tuple[list[str], li
     lower = filename.lower()
     if lower.endswith(".py"):
         return scan_python_imports(source), []
-    if lower.endswith(".js") or lower.endswith(".mjs") or lower.endswith(".cjs") or lower.endswith(".ts"):
+    if lower.endswith((".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx")):
+        # .tsx/.jsx: behavior-hook sources (dev/89) use the same import forms.
         return [], scan_js_imports(source)
     return [], []

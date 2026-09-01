@@ -14,6 +14,7 @@ from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.projects.models import Project
 from utk_curio.backend.app.projects.schemas import VALID_ACCENTS, _slugify
 from utk_curio.backend.app.projects.services import _is_shared_guest, _user_dir_key
+from utk_curio.backend.config import _env_flag
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,25 @@ def _name_from_stem(stem: str) -> str:
     return cleaned[:1].upper() + cleaned[1:] if cleaned else stem
 
 
+def _name_from_spec(spec: dict) -> Optional[str]:
+    """The example's own ``dataflow.name``, if it has one.
+
+    Every curated example carries this field, and it is the title the docs table
+    and the walkthroughs use. Deriving the name from the filename instead turned
+    ``Vega-Lite chained transforms`` into ``Vega lite chained transforms`` and
+    ``Street-level computer vision`` into ``Street vision cv analysis`` (#148),
+    so the spec wins and the filename is only a fallback.
+    """
+    if not isinstance(spec, dict):
+        return None
+    dataflow = spec.get("dataflow")
+    name = dataflow.get("name") if isinstance(dataflow, dict) else None
+    if isinstance(name, str):
+        cleaned = name.strip()
+        return cleaned or None
+    return None
+
+
 def _description_from_spec(spec: dict) -> Optional[str]:
     if not isinstance(spec, dict):
         return None
@@ -52,11 +72,25 @@ def _description_from_spec(spec: dict) -> Optional[str]:
     return None
 
 
-def _example_id(stem: str) -> str:
-    return str(uuid.uuid5(_EXAMPLES_NAMESPACE, stem))
+def _example_id(stem: str, user=None) -> str:
+    """The deterministic project id for one example, scoped to ``user``.
+
+    ``Project.id`` is a **global** primary key, so a namespace keyed on the
+    filename alone gives every user the same ids. Seeding a second account then
+    takes the insert branch with an id that already exists, raises an
+    IntegrityError, and the caller's broad ``except`` swallows it into a silent
+    zero-seed (#200).
+
+    The shared guest keeps the bare-stem id so installs seeded before this
+    change still upsert their existing rows rather than growing a duplicate set
+    beside them.
+    """
+    if user is None or _is_shared_guest(user):
+        return str(uuid.uuid5(_EXAMPLES_NAMESPACE, stem))
+    return str(uuid.uuid5(_EXAMPLES_NAMESPACE, f"{user.id}:{stem}"))
 
 
-def seed_example_projects(user) -> int:
+def seed_example_projects(user, *, prune: bool | None = None) -> int:
     """Seed/refresh example projects for ``user`` from docs/examples/.
 
     Each example JSON gets a deterministic project_id derived from its
@@ -64,12 +98,19 @@ def seed_example_projects(user) -> int:
     (overwrite semantics) without ever colliding with user-created
     projects (which use random uuid4s).
     """
-    if not _is_shared_guest(user):
-        logger.warning(
-            "seed_example_projects refused: user %r is not the shared guest",
-            getattr(user, "username", None),
-        )
-        return 0
+    # Registered accounts get their own copies (#200). Under ``--auth`` the
+    # signed-in user is not the guest that owned the seeded rows, so the
+    # gallery came up empty for everyone with an account; ``--deploy`` carried
+    # the identical defect. The dataset half of this was already fixed in
+    # services.py and the project half never was.
+    is_guest = _is_shared_guest(user)
+
+    # Pruning is destructive - it deletes every project of the seeded user that
+    # is not an example, storage tree included. That is the right posture for
+    # the shared guest, whose projects are disposable scratch, and catastrophic
+    # for a registered account. Default to the guest's behaviour exactly.
+    if prune is None:
+        prune = is_guest
 
     examples_dir = _repo_root() / "docs" / "examples"
     if not examples_dir.exists():
@@ -78,7 +119,7 @@ def seed_example_projects(user) -> int:
 
     ukey = _user_dir_key(user)
     seeded = 0
-    keep_ids = {_example_id(p.stem) for p in _example_files(examples_dir)}
+    keep_ids = {_example_id(p.stem, user) for p in _example_files(examples_dir)}
 
     for i, json_path in enumerate(_example_files(examples_dir)):
         try:
@@ -88,14 +129,15 @@ def seed_example_projects(user) -> int:
             continue
 
         stem = json_path.stem
-        project_id = _example_id(stem)
-        name = _name_from_stem(stem)
+        project_id = _example_id(stem, user)
+        name = _name_from_spec(spec) or _name_from_stem(stem)
         description = _description_from_spec(spec)
         accent = _ACCENT_CYCLE[i % len(_ACCENT_CYCLE)]
 
-        # Stamp the canonical workflow name into the spec so the canvas shows
-        # the project name on load (the example JSONs don't carry a name field
-        # of their own, and TrillGenerator falls back to "DefaultWorkflow").
+        # Keep the canvas title in sync with the project name so TrillGenerator
+        # never falls back to "DefaultWorkflow". `name` is now the spec's own
+        # `dataflow.name` whenever it has one, so this is a no-op for every
+        # curated example and only fills in a name for a spec that lacks one.
         if isinstance(spec.get("dataflow"), dict):
             spec["dataflow"]["name"] = name
 
@@ -144,10 +186,79 @@ def seed_example_projects(user) -> int:
     if seeded:
         db.session.commit()
 
-    pruned = _prune_non_example_projects(user, ukey, keep_ids)
-    if pruned:
-        logger.info("Pruned %d non-example guest project(s)", pruned)
+    if prune:
+        pruned = _prune_non_example_projects(user, ukey, keep_ids)
+        if pruned:
+            logger.info("Pruned %d non-example guest project(s)", pruned)
 
+    return seeded
+
+
+def _seeded_marker(ukey: str) -> Path:
+    return storage.user_dir(ukey) / "examples.seeded"
+
+
+def _marker_owner(marker: Path) -> str | None:
+    """The username the marker was written for, or ``None``.
+
+    ``None`` covers both "no marker" and "a marker from before this recorded an
+    owner", and both mean the same thing to the caller: it cannot be trusted to
+    describe whoever holds this id now.
+    """
+    try:
+        for line in marker.read_text(encoding="utf-8").splitlines():
+            if line.startswith("user="):
+                return line[len("user="):].strip() or None
+    except OSError:
+        return None
+    return None
+
+
+def ensure_user_examples_seeded(user) -> int:
+    """Give ``user`` their copy of the examples, once, on first listing.
+
+    Seeding happens at sign-up, but that only covers accounts created after
+    this shipped. Everyone who registered before it - and the shared guest on
+    a stack started without ``--with-examples`` - would still see an empty
+    gallery, so the listing back-fills the same way packages and datasets
+    already self-heal per user.
+
+    The marker is what keeps it a back-fill rather than a reset: an example the
+    user deliberately deleted must stay deleted, and without a marker every
+    listing would resurrect it. Pruning is never enabled here.
+
+    **The marker names the account, not the id slot.** It lives on disk under
+    ``.curio/users/<id>/`` while the id it is keyed to lives in the database,
+    and those two can come apart: truncate or restore the database against an
+    existing ``.curio`` directory and sqlite hands the next signup a rowid that
+    has been used before. A marker that said only "seeded" then belonged to
+    whoever came first, and the new occupant of that id silently got an empty
+    gallery - which is exactly what the e2e harness produces, since it
+    truncates ``user`` between tests. Recording the username and requiring it
+    to match costs one line and makes the marker mean what it says.
+    """
+    # Read at call time, not import time, so the launcher's value is honoured
+    # and a test can flip it. Default off, matching ``config.CURIO_SEED_EXAMPLES``:
+    # a stack started without ``--with-examples`` seeds nobody, exactly as before.
+    if not _env_flag("CURIO_SEED_EXAMPLES"):
+        return 0
+    ukey = _user_dir_key(user)
+    marker = _seeded_marker(ukey)
+    owner = str(getattr(user, "username", "") or "")
+    if marker.exists() and _marker_owner(marker) == owner:
+        return 0
+    try:
+        seeded = seed_example_projects(user, prune=False)
+    except Exception:
+        logger.exception("Back-filling examples failed for user %s", user.id)
+        return 0
+    # Written even for a zero-seed: a missing examples directory is not a
+    # reason to retry the whole walk on every listing.
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(f"user={owner}\ncount={seeded}\n", encoding="utf-8")
+    except OSError:
+        logger.exception("Could not write the examples marker at %s", marker)
     return seeded
 
 

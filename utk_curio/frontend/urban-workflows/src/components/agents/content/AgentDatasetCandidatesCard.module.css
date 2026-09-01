@@ -1,0 +1,142 @@
+/* dev/50 — the docs/06 two-lane suggestions surface. Shares the review-card
+   shell language; state is labeled, never color-only. */
+
+.card {
+  margin-top: 8px;
+  border: 1px solid var(--curio-border);
+  border-radius: 10px;
+  background: var(--curio-surface-muted);
+  padding: 10px 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.accentDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.kind {
+  margin-left: auto;
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--curio-text-meta);
+}
+
+.lane {
+  margin-top: 10px;
+}
+
+.laneLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--curio-text-secondary);
+  margin-bottom: 4px;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row {
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.rowLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.rowLabel input {
+  margin-top: 3px;
+}
+
+.rowBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rowHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.badge {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--curio-text-secondary);
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.installedChip,
+.notInstalledChip {
+  font-size: 0.66rem;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.installedChip {
+  color: var(--curio-success-text);
+  border: 1px solid var(--curio-success-bg);
+  background: var(--curio-success-bg);
+}
+
+.notInstalledChip {
+  color: var(--curio-text-secondary);
+  border: 1px solid var(--curio-border);
+  background: var(--curio-surface-muted);
+}
+
+.meta,
+.url,
+.fit,
+.requirement {
+  font-size: 0.74rem;
+  color: var(--curio-text-secondary);
+  word-break: break-word;
+}
+
+.url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--curio-text-secondary);
+}
+
+.requirement {
+  color: var(--curio-warning-text);
+}

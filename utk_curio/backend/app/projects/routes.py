@@ -1,4 +1,4 @@
-"""Flask blueprint: /api/projects — all endpoints require @require_auth."""
+"""Flask blueprint: /api/projects - all endpoints require @require_auth."""
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -22,7 +22,7 @@ def _error(msg: str, status: int = 400):
 
 
 # ---------------------------------------------------------------------------
-# POST /api/projects — create
+# POST /api/projects - create
 # ---------------------------------------------------------------------------
 @projects_bp.route("", methods=["POST"])
 @require_auth
@@ -51,7 +51,7 @@ def create_project():
 
 
 # ---------------------------------------------------------------------------
-# PUT /api/projects/:id — update
+# PUT /api/projects/:id - update
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>", methods=["PUT"])
 @require_auth
@@ -85,7 +85,7 @@ def update_project(project_id: str):
 
 
 # ---------------------------------------------------------------------------
-# GET /api/projects — list
+# GET /api/projects - list
 # ---------------------------------------------------------------------------
 @projects_bp.route("", methods=["GET"])
 @require_auth
@@ -101,7 +101,7 @@ def list_projects():
 
 
 # ---------------------------------------------------------------------------
-# GET /api/projects/:id — detail + hydration
+# GET /api/projects/:id - detail + hydration
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>", methods=["GET"])
 @require_auth
@@ -121,7 +121,7 @@ def get_project(project_id: str):
 
 
 # ---------------------------------------------------------------------------
-# GET /api/projects/:id/shared — link-based public read (no auth)
+# GET /api/projects/:id/shared - link-based public read (no auth)
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>/shared", methods=["GET"])
 def get_shared_project(project_id: str):

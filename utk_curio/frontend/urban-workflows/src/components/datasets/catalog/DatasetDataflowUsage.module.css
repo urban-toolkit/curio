@@ -1,0 +1,57 @@
+.section {
+  margin-top: 22px;
+}
+
+/* Matches `.lineageLabel` in DatasetDetailPanel.module.css - a peer section
+   title in the same list of rows. */
+.label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #1e1f23;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Rows, matching the hairline-separated lineage rows in the detail panel
+   rather than adding another stack of bordered cards. */
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 40px;
+  justify-content: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.link {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3b6fd4;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+/* Shown only when two projects share a name, to tell the rows apart. */
+.disambiguator {
+  margin-left: 6px;
+  font-family: var(--curio-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--curio-text-secondary);
+}
+
+.consumers {
+  font-size: 11px;
+  color: #777;
+}

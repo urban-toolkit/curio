@@ -1,6 +1,60 @@
 import duckdb
 import os
+import time
 from pathlib import Path
+
+
+# DuckDB allows a single read-write connection across processes. The sandbox
+# holds a read-write connection during node execution while the backend opens
+# short-lived read-only connections (catalog, auto-install, output resolution).
+# Those opens can briefly collide and raise a "Conflicting lock"/"Could not set
+# lock" error. Rather than surface that as a flaky node failure, retry the open
+# with a short backoff — the conflicting connection is always released quickly.
+_LOCK_RETRY_ATTEMPTS = 12
+_LOCK_RETRY_BASE_DELAY = 0.05  # seconds; total worst-case wait ~3.9s
+
+
+def _is_lock_conflict(exc: Exception) -> bool:
+    """True when *exc* is cross-process contention rather than a real fault.
+
+    The wording is platform-specific, and matching only the POSIX phrasing is
+    not enough. POSIX/DuckDB says "Could not set lock" / "Conflicting lock is
+    held". **Windows** raises a sharing violation whose message never contains
+    the word "lock" at all::
+
+        IO Error: Cannot open file "...curio_data.duckdb": The process cannot
+        access the file because it is being used by another process.
+        File is already open in <python.exe> (PID 1234)
+
+    Missing that phrasing made ``_connect_with_retry`` re-raise on the first
+    attempt, so the retry below never engaged on Windows and a transient
+    collision with a backend read-only open failed the whole node. Both Windows
+    signatures are contention-specific, so matching them cannot swallow a
+    genuine corruption or permission fault.
+    """
+    msg = str(exc).lower()
+    return (
+        "lock" in msg
+        or "conflicting" in msg
+        or "resource temporarily unavailable" in msg
+        or "being used by another process" in msg
+        or "already open in" in msg
+    )
+
+
+def _connect_with_retry(path: str, *, read_only: bool = False):
+    """Open a DuckDB connection, retrying transient cross-process lock conflicts."""
+    last_exc: Exception | None = None
+    for attempt in range(_LOCK_RETRY_ATTEMPTS):
+        try:
+            return duckdb.connect(path, read_only=read_only)
+        except Exception as exc:  # noqa: BLE001 - re-raised below if not a lock conflict
+            if not _is_lock_conflict(exc):
+                raise
+            last_exc = exc
+            time.sleep(_LOCK_RETRY_BASE_DELAY * (attempt + 1))
+    assert last_exc is not None
+    raise last_exc
 
 
 class _NonClosingConn:
@@ -25,6 +79,7 @@ class _NonClosingConn:
 
 
 _connection: '_NonClosingConn | None' = None
+_connection_path: str | None = None
 _initialized: bool = False
 
 
@@ -57,10 +112,17 @@ def get_connection() -> '_NonClosingConn':
     Return the shared persistent DuckDB connection for this process.
     Opens it on first call; subsequent calls return the same object.
     close() on the returned wrapper is a no-op.
+
+    Reopens when ``CURIO_LAUNCH_CWD`` / ``CURIO_SHARED_DATA`` change — e.g.
+    pytest switches per-test workspaces while reusing the same process.
     """
-    global _connection
+    global _connection, _connection_path
+    path = get_db_path()
+    if _connection is not None and _connection_path != path:
+        release_connection()
     if _connection is None:
-        _connection = _NonClosingConn(duckdb.connect(get_db_path()))
+        _connection = _NonClosingConn(_connect_with_retry(path))
+        _connection_path = path
     return _connection
 
 
@@ -75,7 +137,7 @@ def get_read_connection():
     """
     if _connection is not None:
         return _connection
-    return duckdb.connect(get_db_path(), read_only=True)
+    return _connect_with_retry(get_db_path(), read_only=True)
 
 
 def release_connection() -> None:
@@ -84,10 +146,11 @@ def release_connection() -> None:
     Call this when the current process is done with DuckDB and another
     process (e.g., the sandbox subprocess) needs write access to the file.
     """
-    global _connection, _initialized
+    global _connection, _connection_path, _initialized
     if _connection is not None:
         object.__getattribute__(_connection, '_con').close()
         _connection = None
+    _connection_path = None
     _initialized = False
 
 

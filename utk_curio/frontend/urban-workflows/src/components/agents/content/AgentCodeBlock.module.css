@@ -1,0 +1,46 @@
+/* Copy affordance on fenced code blocks (memo dev/78). The wrapper resets
+   the .msgAgent pre-wrap inheritance so the button chrome lays out normally;
+   the <pre> itself keeps the parent's `.msgAgent pre` styling. */
+.block {
+  position: relative;
+  white-space: normal;
+}
+
+/* Subtle-always-visible (hover-only reveal is undiscoverable and dead on
+   touch); full opacity on block hover, keyboard focus, and while a feedback
+   state is showing. Absolute overlay + translucent backdrop: zero layout
+   shift, and the button never joins the <pre>'s horizontal scroll. */
+.copyBtn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 2px 6px;
+  border: 1px solid var(--curio-border);
+  border-radius: 6px;
+  background: rgba(247, 247, 248, 0.92);
+  color: var(--curio-text-secondary);
+  font-size: 0.68rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+
+.block:hover .copyBtn,
+.copyBtn:focus-visible,
+.copyBtn.active {
+  opacity: 1;
+}
+
+.copyBtn.failed {
+  color: var(--curio-danger-text);
+  border-color: var(--curio-danger-border);
+}
+
+.feedback:empty {
+  display: none;
+}

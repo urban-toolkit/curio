@@ -6,12 +6,12 @@ with the shape ``{"version": 1, "packages": ["<pkg>@<major>", ...]}``.
 Managed implicitly: ``/catalog`` page install adds a dirName,
 ``prune_unreferenced_packages`` removes it when no project still
 references the package. There is no user-facing "remove from defaults"
-action — that's a deliberate UX choice in the plan.
+action - that's a deliberate UX choice in the plan.
 
 A missing file is equivalent to an empty list. A corrupt or
 schema-mismatched file is also treated as empty (we never raise from
 the read path), matching the seed-state convention in
-``packages/seed_state.py`` — startup must not be blockable by a bad
+``packages/seed_state.py`` - startup must not be blockable by a bad
 JSON file the user can't easily edit.
 """
 
@@ -48,7 +48,7 @@ def load_defaults(user_key: str) -> set[str]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        log.warning("Corrupt %s for %s — treating as empty", _FILENAME, user_key)
+        log.warning("Corrupt %s for %s - treating as empty", _FILENAME, user_key)
         return set()
     packages = raw.get("packages") if isinstance(raw, dict) else None
     if not isinstance(packages, list):

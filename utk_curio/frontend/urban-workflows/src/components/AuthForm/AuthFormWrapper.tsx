@@ -13,6 +13,8 @@ interface Props {
 }
 
 const siblingLogos = [
+  // A sibling research project, not a Curio feature. The Urbanite *feature*
+  // was folded into the Agent Catalog; this credit stays.
   { src: urbaniteLogo, alt: "Urbanite", href: "https://urbantk.org/urbanite", label: "urbantk.org/urbanite", filter: "grayscale(1)" },
   { src: scoutLogo,    alt: "Scout",    href: "https://urbantk.org/scout",    label: "urbantk.org/scout",    filter: "grayscale(1)" },
   { src: autarkLogo,   alt: "Autark",   href: "https://autarkjs.org",          label: "autarkjs.org",          filter: "brightness(0) invert(1)" },

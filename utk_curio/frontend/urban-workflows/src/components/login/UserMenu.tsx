@@ -23,7 +23,7 @@ export const UserMenu = () => {
   if (!user) {
     return (
       <Link to="/auth/signin" style={loginStyle} data-testid="login-link">
-        Login
+        Sign in
       </Link>
     );
   }

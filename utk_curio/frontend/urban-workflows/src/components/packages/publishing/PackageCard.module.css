@@ -1,6 +1,7 @@
 /* ── Package card ─────────────────────────────────────────────────────────── */
 
 .card {
+    position: relative;
     display: grid;
     grid-template-columns: 72px 1fr auto;
     gap: 16px;
@@ -18,7 +19,8 @@
     border-color: var(--curio-border-strong);
 }
 
-/* Icon tile — accent palette mirrors the project list thumbnails */
+/* Icon tile — keyed to the package's node category, the same palette the
+   canvas paints a node's left border with. */
 
 .cardIcon {
     width: 72px;
@@ -27,24 +29,33 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    background: var(--curio-page-bg);
+}
+
+.cardIcon_data {
+    background: var(--curio-category-data-bg);
+    color: var(--curio-category-data-on-tint);
+}
+
+.cardIcon_computation {
+    background: var(--curio-category-computation-bg);
+    color: var(--curio-category-computation-on-tint);
+}
+
+.cardIcon_vis {
+    background: var(--curio-category-vis-bg);
+    color: var(--curio-category-vis-on-tint);
+}
+
+.cardIcon_package {
+    background: var(--curio-category-package-bg);
+    color: var(--curio-category-package-on-tint);
+}
+
+.cardIconText {
     font-size: 1.375rem;
     font-weight: 700;
-    flex-shrink: 0;
-}
-
-.cardIconWarm {
-    background: var(--curio-accent-peach-bg);
-    color: var(--curio-accent-peach-fg);
-}
-
-.cardIconCool {
-    background: var(--curio-accent-sky-bg);
-    color: var(--curio-accent-sky-fg);
-}
-
-.cardIconViolet {
-    background: var(--curio-accent-lilac-bg);
-    color: var(--curio-accent-lilac-fg);
 }
 
 /* Body */
@@ -67,6 +78,60 @@
     color: var(--curio-text-muted);
 }
 
+.cardSource {
+    margin: 0;
+    font-size: 11px;
+    color: var(--curio-text-meta);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.versionBadge {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--curio-text-meta);
+    background: var(--curio-surface-alt);
+    border-radius: 4px;
+    padding: 0 4px;
+    line-height: 16px;
+}
+
+.cardMetaRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 16px;
+    /* Matches .cardMeta, the package card's equivalent line. */
+    margin: 0 0 8px;
+}
+
+.cardMetaText {
+    width: 100%;
+    font-size: 11px;
+    color: var(--curio-text-meta);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.connBadge {
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: var(--curio-surface-alt);
+    color: var(--curio-text-secondary);
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+  
 .tagRow {
     display: flex;
     flex-wrap: wrap;
@@ -83,14 +148,14 @@
 }
 
 .tagUpdate {
-    background: var(--curio-accent-peach-bg);
-    color: var(--curio-accent-peach-fg);
+    background: var(--curio-role-update-bg);
+    color: var(--curio-role-update-fg);
     font-weight: 700;
 }
 
 .tagChannel {
-    background: var(--curio-accent-sky-bg);
-    color: var(--curio-accent-sky-fg);
+    background: var(--curio-role-published-bg);
+    color: var(--curio-role-published-fg);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -128,11 +193,11 @@
 }
 
 .btnInstall:hover:not(:disabled) {
-    background: #2c2d32;
+    background: var(--curio-top-bar-bg-hover);
 }
 
 .btnInstallAccent {
-    background: var(--curio-accent-peach-fg);
+    background: var(--curio-role-update-fg);
     color: var(--curio-card-bg);
 }
 
@@ -169,3 +234,104 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* ── Draggable card  ─────────────────────────────────────────────────────────── */
+.cardDraggable {
+  cursor: grab;
+}
+
+.cardDraggable:active {
+  cursor: grabbing;
+}
+
+/* ── Format avatar ───────────────────────────────────────────────────────────── */
+
+/* Same box as .cardIcon, which fills this slot on a package card. Only the
+   button affordances below are specific to the dataset side. */
+/* Column 1 of the card grid: the square, and the way into the item's details
+ * directly beneath it. "View details" was previously wherever each card
+ * happened to put it - in the action column on one, between two buttons on
+ * another - so the same affordance moved around between catalogs. It lives in
+ * one place now, under the square, on every drawer card. */
+.cardAvatarCol {
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A link, not a button: it navigates rather than acting, so it takes neither
+ * the dark action fill nor the light destructive one. */
+.avatarDetailsLink {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--curio-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.avatarDetailsLink:hover {
+  text-decoration: underline;
+}
+
+.cardAvatar {
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  align-self: center;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--curio-radius-md);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+  word-break: break-all;
+  /* Fallback for a format with no tint of its own. */
+  background: var(--curio-surface-alt);
+  color: var(--curio-text-secondary);
+}
+
+.cardAvatarButton {
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cardAvatarButton:hover {
+  box-shadow: 0 0 0 2px var(--curio-top-bar-bg);
+}
+
+/* A card with no details handler still renders the square, just inert. These
+ * come AFTER the :hover rule above - equal specificity, so source order is what
+ * decides, and written first they lost to it. */
+.cardAvatarButton:disabled {
+  cursor: default;
+}
+
+.cardAvatarButton:disabled:hover {
+  box-shadow: none;
+}
+
+/* Format-specific avatar colours (light surface) */
+.avatar_geojson { background: var(--curio-format-geojson-bg) !important; color: var(--curio-format-geojson-on-tint); }
+.avatar_csv { background: var(--curio-format-csv-bg) !important; color: var(--curio-format-csv-on-tint); }
+.avatar_json { background: var(--curio-format-json-bg) !important; color: var(--curio-format-json-on-tint); }
+.avatar_parquet { background: var(--curio-format-parquet-bg) !important; color: var(--curio-format-parquet-on-tint); }
+.avatar_geotiff { background: var(--curio-format-geotiff-bg) !important; color: var(--curio-format-geotiff-on-tint); }
+.avatar_shp { background: var(--curio-format-shp-bg) !important; color: var(--curio-format-shp-on-tint); }
+.avatar_bundle { background: var(--curio-format-bundle-bg) !important; color: var(--curio-format-bundle-on-tint); }
+.avatar_osm { background: var(--curio-format-osm-bg) !important; color: var(--curio-format-osm-on-tint); }
+

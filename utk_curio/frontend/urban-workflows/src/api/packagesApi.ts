@@ -61,7 +61,11 @@ export interface PackageTemplatePayload {
   hasProvenance: boolean | null;
   /** Anchor id for the in-app tutorial system. */
   tutorialId: string | null;
+  /** dev/91: declared backend handler this template's Run invokes through
+   * the package backend sandbox (null/absent = ordinary execution). */
+  backendHandler?: string | null;
 }
+
 
 /** Package-relative coordinate (`packageId` + compatibility major). */
 export interface PackageLineageCoordPayload {
@@ -122,6 +126,18 @@ export interface PackagePayload {
   readme?: string;
   /** When the manifest's package is read-only (e.g. ``curio.builtin@1``). */
   readOnly?: boolean;
+  /**
+   * Catalog endpoint only - whether THIS user published it, and may therefore
+   * withdraw it. The peer of `AgentCard.publishable`.
+   *
+   * The UI used to gate Unpublish on `readOnly !== true`, which is not the same
+   * question: `readOnly` is an author's opt-in that almost no manifest sets, so
+   * the gate matched nearly every package and offered Unpublish on ones that
+   * shipped with the deployment. Computed by the backend from the publisher
+   * record, and enforced there too - the unpublish route now 403s a
+   * non-publisher rather than trusting this flag.
+   */
+  publishable?: boolean;
 }
 
 /** Partial-update body for `PATCH /api/packages/<dirName>` (metadata editor). */
@@ -186,14 +202,6 @@ export interface ResolveResponse {
   conflicts: ResolveConflict[];
 }
 
-export interface InstallDepsResponse {
-  lockfile: Lockfile;
-  conflicts: ResolveConflict[];
-  sandboxStatus: number | null;
-  sandboxBody?: Record<string, unknown>;
-  pipRequirements?: string[];
-}
-
 /** Response from `POST /api/packages/workflow-deps/check`. */
 export interface WorkflowDepsCheckResponse {
   /** Declared dependency packages (dirNames) that aren't installed yet, or
@@ -217,6 +225,9 @@ export interface ProjectPackagesResponse {
   pruned?: string[];
   /** Set on uninstall responses: defaults entries the prune sweep removed. */
   removedFromDefaults?: string[];
+  /** dev/92 B-2: present exactly when this install's pip step actually
+   * installed/changed shared libraries under the running server. */
+  restartRecommended?: { libs: string[] };
 }
 
 /** Per-project result row in a global (defaults) install response. */
@@ -263,10 +274,20 @@ async function uploadArchive(
 }
 
 /**
- * Trigger a browser download of an installed package as a ``.curio.zip``
- * archive. The blob never lives in JS memory longer than the click
- * handler — we hand it straight to ``URL.createObjectURL``.
+ * Hand a blob to the browser as a download. Shared by the two archive
+ * paths - `download` (an already-installed package) and `factoryBuild`
+ * (an un-installed wizard draft). The blob never lives in JS memory longer
+ * than the click handler - we hand it straight to ``URL.createObjectURL``
+ * and revoke immediately after.
  */
+// The implementation moved to a leaf module: this file's import graph reaches
+// the whole node-package registry, and components that only wanted to save
+// bytes as a file were dragging that in. Re-exported so existing callers here
+// are unchanged.
+export { triggerBlobDownload } from "../utils/triggerBlobDownload";
+import { triggerBlobDownload } from "../utils/triggerBlobDownload";
+
+/** Download an already-installed package as a ``.curio.zip`` archive. */
 async function downloadArchive(dirName: string): Promise<void> {
   const token = getToken();
   const res = await fetch(`${BACKEND_URL}/api/packages/${dirName}/archive`, {
@@ -276,13 +297,7 @@ async function downloadArchive(dirName: string): Promise<void> {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `HTTP ${res.status}`);
   }
-  const blob = await res.blob();
-  const objUrl = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = objUrl;
-  a.download = `${dirName}.curio.zip`;
-  a.click();
-  URL.revokeObjectURL(objUrl);
+  triggerBlobDownload(await res.blob(), `${dirName}.curio.zip`);
 }
 
 /**
@@ -425,19 +440,6 @@ export const packagesApi = {
   },
 
   /**
-   * Resolve, then forward the merged python deps to the shared sandbox
-   * via ``/installPackages``. Returns the lockfile the caller should
-   * persist in ``spec.trill.json`` (epic invariant: project lockfile
-   * lives inside the project).
-   */
-  installDeps(packages: string[]): Promise<InstallDepsResponse> {
-    return apiFetch("/api/packages/install-deps", {
-      method: "POST",
-      body: JSON.stringify({ packages }),
-    });
-  },
-
-  /**
    * Load-time dependency probe: given the dataflow's declared package
    * lockfile (`dataflow.packages`), report which packages aren't ready
    * (not installed, or installed but missing a declared python dep).
@@ -459,7 +461,7 @@ export const packagesApi = {
   },
 
   // --------------------------------------------------------------
-  // Per-project lockfile + per-user defaults (see docs/CATALOG.md)
+  // Per-project lockfile + per-user defaults (see docs/NODE-CATALOG.md)
   // --------------------------------------------------------------
 
   /** Read the project's current lockfile (sorted dirNames). */
@@ -545,3 +547,4 @@ export const packagesApi = {
 };
 
 export { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
+

@@ -126,7 +126,7 @@ export const SignUpForm: React.FC = () => {
         {error && <p style={errorStyle}>{error}</p>}
 
         <button type="submit" style={submitBtnStyle} disabled={submitting}>
-          {submitting ? "Creating account..." : "Create Account"}
+          {submitting ? "Creating account..." : "Create account"}
         </button>
       </form>
 

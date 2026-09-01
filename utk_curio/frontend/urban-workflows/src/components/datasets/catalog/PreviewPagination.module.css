@@ -1,0 +1,68 @@
+.pagination {
+  /* Pin the bar to the bottom of the scrolling catalog/list view so it stays
+     visible without scrolling to the end of a long table. It sticks to the
+     bottom edge of the nearest scroll container (the detail panel's center
+     column / bundle panel); the opaque background keeps rows from showing
+     through as they scroll underneath. */
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 0 16px;
+  background: #fafafa;
+  border-top: 1px solid #ebebeb;
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.paginationNote {
+  color: #888;
+  font-size: 11px;
+}
+
+.paginationControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pageEllipsis {
+  min-width: 16px;
+  color: #aaa;
+  font-size: 11px;
+  line-height: 1;
+  text-align: center;
+  user-select: none;
+}
+
+.pageButton {
+  min-width: 22px;
+  height: 20px;
+  border: 1px solid #ebebeb;
+  border-radius: 4px;
+  background: #fff;
+  color: #888;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 6px;
+}
+
+.pageButton:hover:not(:disabled) {
+  border-color: #d0d0d0;
+  color: #555;
+}
+
+.pageButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pageButtonActive {
+  background: #1e1f23;
+  border-color: #1e1f23;
+  color: #fff;
+}

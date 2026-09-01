@@ -1,0 +1,375 @@
+/* The review card shares the docs/03 chat-feedback surface with AgentChatCard
+   and adds the system review controls (Apply/Dismiss) — the sanctioned
+   exception family to "no agent action buttons" (docs/08, DEC-035 pattern). */
+
+.card {
+  background: var(--curio-surface-muted);
+  border: 1px solid var(--curio-border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.accentDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.kind {
+  font-weight: 400;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--curio-text-meta);
+}
+
+.preview {
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--curio-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.apply {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--curio-text-on-dark);
+  background: var(--curio-success-text);
+  cursor: pointer;
+}
+
+.apply:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.dismiss {
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  color: var(--curio-text-secondary);
+  background: var(--curio-card-bg);
+  cursor: pointer;
+}
+
+.dismiss:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.outcome {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+}
+
+.outcome_applied {
+  color: var(--curio-success-text);
+}
+
+.outcome_stale {
+  color: var(--curio-warning-text);
+}
+
+.error {
+  margin-top: 8px;
+  font-size: 0.76rem;
+  color: var(--curio-danger-text);
+}
+
+/* dev/48 — the node.template.create adequacy gate: the model's reasoning,
+   rendered verbatim above the definition. */
+.justification {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  background: var(--curio-warning-bg);
+  border-left: 3px solid var(--curio-warning-text);
+  border-radius: 4px;
+  color: var(--curio-warning-text);
+}
+
+/* Secondary metadata / effect lines under the preview. */
+.meta {
+  margin-top: 6px;
+  font-size: 0.74rem;
+  color: var(--curio-text-secondary);
+}
+
+/* dev/59 (DEC-049.2) — the destructive Removes section: reviewed by name. */
+.removals {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--curio-danger-bg);
+  border-left: 3px solid var(--curio-danger-text);
+  border-radius: 4px;
+}
+
+.removalsTitle {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--curio-danger-strong);
+}
+
+.removalsList {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 0.74rem;
+  color: var(--curio-danger-strong);
+}
+
+/* dev/67-5 — the per-node plan review rows (Simulation Mode: create). */
+.planNodes {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.planNodeRow {
+  border: 1px solid var(--curio-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.planNodeHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.planNodeTitle {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.planNodeType {
+  color: var(--curio-text-secondary);
+  font-size: 0.75rem;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planNodeCreated {
+  color: var(--curio-success-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.planNodeExpects {
+  color: var(--curio-text-secondary);
+  font-size: 0.75rem;
+}
+
+/* dev/72: the compact icon-link riding a row's review chip — opens the node
+ * agent's chat, where the content review and Solve trace live. */
+.reviewLink {
+  margin-left: 5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  background: var(--curio-card-bg);
+  color: inherit;
+  font-size: 9px;
+  padding: 0;
+  cursor: pointer;
+  vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reviewLink:hover,
+.reviewLink:focus-visible {
+  transform: scale(1.12);
+  outline: none;
+}
+
+.planGoalInput {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 6px 8px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.planGoalInput:disabled {
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-secondary);
+}
+
+/* dev/67-7 — the validation verdict block. */
+.validation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.validationPass {
+  background: var(--curio-success-bg);
+  border: 1px solid var(--curio-success-bg);
+  color: var(--curio-success-text);
+}
+
+.validationFail {
+  background: var(--curio-danger-bg);
+  border: 1px solid var(--curio-danger-border);
+  color: var(--curio-danger-text);
+}
+
+.validationBadge {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.validationDetails {
+  flex-basis: 100%;
+}
+
+.validationDetails pre {
+  margin: 6px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+}
+
+/* dev/67-8 — the connection review rows (Simulation Mode: connect). */
+.planEdges {
+  margin-top: 8px;
+  border: 1px solid var(--curio-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.planEdgesHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.82rem;
+  margin-bottom: 6px;
+}
+
+.planEdgesList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.planEdgeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.planEdgeNames {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planEdgeRefused {
+  color: var(--curio-danger-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* dev/96: the rich draft sections — native disclosure, calm by default. */
+.draftSection {
+    margin: 8px 12px 0;
+    font-size: var(--curio-font-size-sm);
+    font-family: var(--curio-font-family);
+    color: var(--curio-text-secondary, var(--curio-text-secondary));
+}
+
+.draftSection summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--curio-text-primary);
+}
+
+.draftList {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    overflow-wrap: anywhere;
+}
+
+.draftOverflow {
+    font-style: italic;
+}
+
+.findingBlock {
+    color: var(--curio-danger-strong, var(--curio-danger-text));
+    font-weight: 600;
+}
+
+.findingWarn {
+    color: var(--curio-warning-text);
+}
+
+.draftNodesRow {
+    margin: 8px 12px 0;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-secondary, var(--curio-text-secondary));
+}

@@ -40,7 +40,7 @@ def create_job(total_images: int) -> str:
             "error": None,
             # ``stage_message`` lets the worker tell the UI what slow thing
             # it's currently waiting on (image downloads, HF model fetch,
-            # …) so the frontend can show "Downloading model — first run
+            # …) so the frontend can show "Downloading model - first run
             # takes a few minutes" instead of a static 0/N progress bar.
             "stage_message": None,
         }
@@ -69,6 +69,8 @@ def start_inference(
     model_type: str,
     classes: List[str],
     api_key: Optional[str] = None,
+    hf_token: Optional[str] = None,
+    user_key: str = "guest",
 ) -> None:
     """Spawn a daemon worker thread that runs inference and updates the job store.
 
@@ -79,11 +81,16 @@ def start_inference(
             the Street View service first. Local paths are used as-is.
         model_id, model_type, classes: forwarded to ``services.inference.run_batch``.
         api_key: Google Maps key needed only when fetching Street View URLs.
+        hf_token: the caller's HuggingFace token, resolved in the request and
+            handed over because this worker has no request context.
+        user_key: whose ``.curio/users/<key>/streetvision/`` caches the
+            downloaded panoramas, overlays and model weights. Resolved in the
+            request for the same reason.
     """
 
     def _worker():
         # Lazy-import the heavy services here so the import doesn't run on
-        # every Curio startup — only when a user actually starts an inference.
+        # every Curio startup - only when a user actually starts an inference.
         try:
             from .services import inference as inference_svc
             from .services import streetview as streetview_svc
@@ -98,7 +105,7 @@ def start_inference(
         # First pass: materialize every image to a local path. For Street View
         # URLs we need to download; for already-local paths we trust the caller.
         prepared: List[dict] = []
-        download_dir = cache_svc.images_dir()
+        download_dir = cache_svc.images_dir(user_key)
         for img in images:
             url_or_path = img.get("image_url") or ""
             local_path: Optional[str] = img.get("local_path")
@@ -110,7 +117,7 @@ def start_inference(
                     and "googleapis.com" in url_or_path
                     and api_key
                 ):
-                    # Street View URL with a key supplied by the caller —
+                    # Street View URL with a key supplied by the caller -
                     # use the pano_id-aware downloader so we reuse the
                     # existing cache layout. Without a key we fall through
                     # to the generic HTTP path: the URL itself embeds the
@@ -125,7 +132,7 @@ def start_inference(
                         lon=img.get("longitude"),
                     )
                 elif url_or_path.startswith(("http://", "https://")):
-                    # Generic HTTP URL — fetch via requests so this node works
+                    # Generic HTTP URL - fetch via requests so this node works
                     # for any image source, not just Street View.
                     import hashlib
                     import requests as _rq
@@ -149,14 +156,14 @@ def start_inference(
             prepared.append({**img, "local_path": local_path})
 
         # Update total_images to the count we actually prepared.
-        # Switch the stage to "model loading" — the next thing run_batch
+        # Switch the stage to "model loading" - the next thing run_batch
         # does is fetch the HF model (potentially hundreds of MB on a
         # cold cache). The first ``progress_cb`` call clears this once
         # actual inference starts.
         _update(
             job_id,
             total_images=len(prepared),
-            stage_message="Loading model — first run can take a few minutes for HuggingFace download…",
+            stage_message="Loading model - first run can take a few minutes for HuggingFace download…",
         )
 
         def _progress(processed: int, _total: int) -> None:
@@ -167,6 +174,7 @@ def start_inference(
         try:
             for result in inference_svc.run_batch(
                 prepared, model_id, model_type, classes, progress_cb=_progress,
+                hf_token=hf_token, user_key=user_key,
             ):
                 _update_results_append(job_id, result)
             _update(job_id, status="completed", stage_message=None)

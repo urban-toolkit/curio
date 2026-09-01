@@ -15,8 +15,6 @@ so a corrupt install fails per-request with a 503 instead of crashing the
 backend on boot.
 """
 
-import os
-
 from flask import jsonify, request, send_file
 
 from . import bp, jobs
@@ -26,7 +24,7 @@ from .services import cache, streetview
 def _missing_extras_response(err: ImportError):
     return jsonify({
         "error": f"streetvision dependency unavailable: {err}",
-        "hint": "Reinstall Curio — torch/transformers/huggingface_hub ship in the base dependencies",
+        "hint": "Reinstall Curio - torch/transformers/huggingface_hub ship in the base dependencies",
     }), 503
 
 
@@ -37,10 +35,15 @@ def health():
     """Lightweight liveness check. The Google Maps API key is supplied
     per-request by the Street View Fetcher node, not from the backend
     environment, so it isn't reported here."""
-    return jsonify({
-        "status": "healthy",
-        "has_huggingface_token": bool(os.environ.get("HUGGINGFACE_TOKEN")),
-    })
+    try:
+        from .services import huggingface as hf_svc
+
+        has_token = bool(hf_svc.resolve_hf_token())
+    except ImportError:
+        has_token = False
+    # True when a token resolves for THIS caller: their own account setting, or
+    # the deployment default behind --huggingface-token.
+    return jsonify({"status": "healthy", "has_huggingface_token": has_token})
 
 
 # ── HuggingFace model search ────────────────────────────────────────
@@ -56,12 +59,16 @@ def models_search():
     except ImportError as e:
         return _missing_extras_response(e)
     try:
-        results = hf.search_models(task, query)
+        # Resolved from the caller, like /inference/run: gated models are a
+        # per-account entitlement, so an unauthenticated search only ever
+        # listed public models and a user with a token could not find the
+        # gated model they had accepted the licence for.
+        results = hf.search_models(task, query, token=hf.resolve_hf_token())
         return jsonify({"models": results})
     except ImportError as e:
         # ``search_models`` defers the ``huggingface_hub`` import until
         # called. A missing dep here means the user's Curio install is
-        # incomplete — surface the same hint.
+        # incomplete - surface the same hint.
         return _missing_extras_response(e)
     except Exception as e:
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
@@ -163,11 +170,11 @@ def inference_run():
     """Start an inference job. Accepts either:
 
     1. A list of image entries: ``{ images: [{image_id, image_url, pano_id?,
-       latitude?, longitude?}, ...], model: {...}, classes: [...] }`` — used
+       latitude?, longitude?}, ...], model: {...}, classes: [...] }`` - used
        by the wired-up Inference node when fed by Street View Fetcher.
 
     2. A GEODATAFRAME FeatureCollection (as ``input``) with per-feature
-       ``image_url`` properties — used by the Inference node when fed by
+       ``image_url`` properties - used by the Inference node when fed by
        any node emitting GEODATAFRAME shape (Data Loading, Spatial Join, etc).
     """
     body = request.get_json(silent=True) or {}
@@ -220,6 +227,16 @@ def inference_run():
     # fetch already embed the key, so the generic HTTP path works without it).
     api_key = (body.get("api_key") or "").strip() or None
 
+    # Resolve the caller's HuggingFace token HERE, while the request context
+    # still exists: the worker thread below has none.
+    try:
+        from .services import huggingface as hf_svc
+
+        hf_token = hf_svc.resolve_hf_token()
+        user_key = hf_svc.resolve_user_key()
+    except ImportError:
+        hf_token, user_key = None, "guest"
+
     job_id = jobs.create_job(total_images=len(images))
     jobs.start_inference(
         job_id=job_id,
@@ -228,6 +245,8 @@ def inference_run():
         model_type=model_type,
         classes=classes,
         api_key=api_key,
+        hf_token=hf_token,
+        user_key=user_key,
     )
     return jsonify({"job_id": job_id, "status": "queued", "total_images": len(images)})
 
@@ -245,7 +264,12 @@ def inference_results(job_id: str):
 def inference_overlay(image_id: str):
     """Serve the segmentation overlay PNG for a single image (used by the
     CV Gallery's inspect view)."""
-    path = cache.overlay_path(image_id)
+    # Scoped to the caller: this route has no @require_auth, so before the
+    # cache was per-user anyone who could guess an image id could read another
+    # user's overlay.
+    from .services import huggingface as hf_svc
+
+    path = cache.overlay_path(hf_svc.resolve_user_key(), image_id)
     if not path:
         return jsonify({"error": "overlay not found"}), 404
     return send_file(path, mimetype="image/png")

@@ -1,0 +1,60 @@
+/*
+ * The one details-view header, shared by all three catalogs.
+ *
+ * There were two stylesheets and three results: the Data panel put its icon,
+ * title and Export on one row inside `.pageHeader`; the Agent and Node modals
+ * stacked an icon and a title in `.header` and pushed the action into the body.
+ * Different paddings, different title sizes, different action placement - the
+ * same screen looked like a different product depending on which catalog you
+ * opened it from, and every attempt to line them up moved one and not the
+ * others. One rule now, so they cannot drift again.
+ */
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  /* The right inset clears ModalShell's `.closeX`, which is absolutely
+     positioned at top/right 16px. Without it the header's action rendered
+     underneath the close button. */
+  padding: 24px 68px 16px 24px;
+  border-bottom: 1px solid var(--curio-border);
+  background: var(--curio-page-bg);
+}
+
+.titleBlock {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.titleText {
+  min-width: 0;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0;
+  color: var(--curio-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--curio-text-secondary);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Never squeezed by a long title. */
+  flex-shrink: 0;
+}

@@ -1,25 +1,78 @@
+/* Left rail: built-in nodes, then the three catalog triggers (Node, Data,
+   Agent), then Run all.
+   Palette panels are absolutely positioned against this dock (see each
+   palette's `.panel`), so they open in the strip to its right without
+   stretching the rail. `width: max-content` keeps `left: 100%` on those
+   panels anchored to the rail's own width.
+
+   Deliberately NO `overflow` here: this dock is `position: fixed`, so it is the
+   containing block for those absolute panels, and an overflow on it would clip
+   them. The rail's height is capped on `.builtinStack` instead, and only the
+   built-in tile block scrolls. */
 .paletteDock {
     position: fixed;
     z-index: 100;
     top: 150px;
     left: 50px;
     display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 10px;
+    flex-direction: column;
+    align-items: stretch;
+    width: max-content;
+    /* Let clicks pass through areas not covered by visible controls. */
+    pointer-events: none;
 }
 
+/* Capped to the viewport so the rail cannot run past the fold. Nothing used to
+   constrain it, so on a short screen the Run-all button at its foot was simply
+   drawn off screen with no way to scroll to it - unreachable on a 1366x768
+   laptop, which is ~660px of viewport after browser chrome.
+   166px = the 150px `top` above plus 16px of breathing room. */
 .builtinStack {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    max-height: calc(100vh - 166px);
+    pointer-events: none;
 }
 
+.builtinStack > * {
+    pointer-events: auto;
+}
+
+/* The tile block is the only part of the rail that grows (two tiles per 45px
+   row, and it gains a row with every built-in node), so it is the part that
+   absorbs the cap. The three catalog triggers and Run all stay pinned.
+   `min-height: 0` is load-bearing: a column flex item's automatic minimum is
+   its content size, so without it this refuses to shrink and overflows the cap
+   instead of scrolling. Scrollbar styling matches paletteShell's `.scroll`. */
 .menuStyle {
     background-color: #1E1F23;
     padding: 5px;
     border-radius: 5px;
     border: 1px solid rgba(255,255,255,0.08);
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+    scrollbar-width: thin;
+}
+
+.menuStyle::-webkit-scrollbar {
+    width: 5px;
+}
+
+.menuStyle::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.menuStyle::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.menuStyle:hover::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.22);
 }
 
 .containerStyle {
@@ -76,13 +129,35 @@
     color: #fbfcf6;
 }
 
+/* flex-shrink: 0 so the capped rail squeezes the scrollable tile block rather
+   than this. The three palette roots already declare it; this row was the one
+   item that could be compressed away. */
+.playAllRow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.playAllRow .toolbar {
+  flex: 1 1 auto;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background-color: #1E1F23;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 .playAllButton {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    margin-top: 6px;
-    padding: 8px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 0;
     background-color: #1E1F23;
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 5px;

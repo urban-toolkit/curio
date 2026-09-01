@@ -1,0 +1,238 @@
+
+.row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  /*border-radius: 6px;*/
+  /*background: rgba(255, 255, 255, 0.04);*/
+  overflow: hidden;
+  cursor: grab;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.row:active {
+  cursor: grabbing;
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* ── Left accent bar (coloured per format) ───────────────────────────────── */
+
+/* ── Row body ────────────────────────────────────────────────────────────── */
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px 8px 9px;
+}
+
+.rowTop {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  position: relative;
+}
+
+.rowTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(251, 252, 246, 0.95);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowSource {
+  max-width: 100%;
+  overflow: hidden;
+  color: rgba(251, 252, 246, 0.5);
+  font-size: 10.5px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  justify-content: space-between;
+  gap: 5px;
+}
+
+.rowMetaText {
+  color: rgba(251, 252, 246, 0.48);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.connBadge {
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(251, 252, 246, 0.6);
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+/* ── Format chip (coloured per format) ───────────────────────────────────── */
+.typePill {
+  max-width: 100%;
+  width: 100%;
+  text-align: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.68);
+  padding: 2px 6px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.formatChip {
+  flex-shrink: 0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(251, 252, 246, 0.8);
+}
+
+.datasetDragIcon {
+
+}
+
+.datasetRowDrag {
+  width: 52px;
+  height: 52px;
+}
+
+.iconBadge {
+  position: absolute;
+  bottom: 4px;
+  left: 2px;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.chip_geojson { background: color-mix(in srgb, var(--curio-format-geojson-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-geojson-fg) 55%, white); }
+.chip_csv { background: color-mix(in srgb, var(--curio-format-csv-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-csv-fg) 55%, white); }
+.chip_json { background: color-mix(in srgb, var(--curio-format-json-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-json-fg) 55%, white); }
+.chip_parquet { background: color-mix(in srgb, var(--curio-format-parquet-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-parquet-fg) 55%, white); }
+.chip_geotiff { background: color-mix(in srgb, var(--curio-format-geotiff-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-geotiff-fg) 55%, white); }
+.chip_shp { background: color-mix(in srgb, var(--curio-format-shp-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-shp-fg) 55%, white); }
+.chip_bundle { background: color-mix(in srgb, var(--curio-format-bundle-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-bundle-fg) 55%, white); }
+.chip_osm { background: color-mix(in srgb, var(--curio-format-osm-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-osm-fg) 55%, white); }
+
+
+/* ── OSM PBF group (collapsible parent + indented member layers) ──────────── */
+
+.groupBlock {
+  display: flex;
+  flex-direction: column;
+}
+
+.groupHeader {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+/* The meta button highlights linked nodes (like a single dataset row); the icon
+   box is the drag handle and the caret button owns expand/collapse. */
+.groupMetaButton {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.groupMetaButton:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.groupCaretButton {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  align-self: stretch;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.groupCaret {
+  font-size: 11px;
+  color: rgba(251, 252, 246, 0.6);
+}
+
+.groupCaretButton:hover .groupCaret {
+  color: rgba(251, 252, 246, 0.95);
+}
+
+/* Indented member layers with a coloured left accent bar tying them to the
+   parent group. */
+.groupMembers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 2px 12px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(76, 175, 114, 0.55);
+}
+
+
+/* "Installing…" placeholder row — subdued + non-interactive while in flight. */
+.installingRow {
+  opacity: 0.65;
+  cursor: default;
+}

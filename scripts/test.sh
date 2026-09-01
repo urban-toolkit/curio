@@ -9,7 +9,11 @@
 #
 # Options:
 #   --use-existing      Skip start/stop and clean; use already-running Curio servers
+#                       (export CURIO_SANDBOX_TOKEN to the value that
+#                        stack was started with, or the two e2e tests
+#                        calling the sandbox directly will get 401s)
 #   --headed            Open a visible browser window during E2E tests
+#   --videos            Also record the per-issue fix screencasts (slow)
 #   --workflows A,B     Run only the named workflow files (e.g. Vega.json,Regression.json)
 #   --backend-only      Run only backend unit tests
 #   --sandbox-only      Run only sandbox unit tests
@@ -22,6 +26,7 @@ set -uo pipefail
 
 USE_EXISTING=0
 HEADED=0
+VIDEOS=0
 E2E_WORKFLOWS=""
 ALLURE_DIR=""
 SUITE="all"   # all | backend | sandbox | jest | e2e | unit
@@ -30,6 +35,7 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --use-existing)  USE_EXISTING=1;       shift ;;
     --headed)        HEADED=1;             shift ;;
+    --videos)        VIDEOS=1;             shift ;;
     --workflows)     E2E_WORKFLOWS="$2";   shift 2 ;;
     --backend-only)  SUITE="backend";      shift ;;
     --sandbox-only)  SUITE="sandbox";      shift ;;
@@ -47,6 +53,18 @@ done
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CURIO_PID=""
 
+# This script NEVER lets pytest own the server lifecycle. It either attaches to
+# a stack someone else booted (--use-existing) or boots one itself below and
+# still runs the E2E suite with CURIO_E2E_USE_EXISTING=1. Export it for the
+# WHOLE run rather than only the E2E step, because backend/tests/conftest.py
+# reads it to decide whether this process owns the test DB: without it the
+# backend unit run deletes .curio/test/urban_workflow_test.db at import and
+# rmtrees .curio/test at session end -- out from under the live backend that is
+# serving from exactly those paths (CI sets CURIO_TESTING=1 on the container,
+# see docker-compose.ci.yml). Every backend unit package uses the in-memory
+# sqlite:// from tests/_unit_fixtures.py, so nothing here needs that file.
+export CURIO_E2E_USE_EXISTING=1
+
 # Derived run flags
 RUN_BACKEND=0; RUN_SANDBOX=0; RUN_JEST=0; RUN_E2E=0
 case "$SUITE" in
@@ -61,6 +79,20 @@ esac
 # result tracking
 RESULTS=()   # "PASS|FAIL  label" entries
 OVERALL=0
+
+# Abort immediately on a failed setup step. These are preconditions, not
+# suites: continuing past a failed `npm install` or `playwright install`
+# produces downstream failures whose real cause is buried, and if the
+# remaining suites happen to pass the script would exit 0 despite the error.
+die() {
+  local label=$1 rc=$2
+  if [[ $rc -ne 0 ]]; then
+    RESULTS+=("  FAIL  $label (setup step, exit $rc)")
+    OVERALL=1
+    echo "ERROR: $label failed with exit $rc - aborting." >&2
+    exit $rc
+  fi
+}
 
 record() {
   local label=$1 rc=$2
@@ -94,8 +126,30 @@ wait_for_port() {
 cleanup() {
   if [[ -n "$CURIO_PID" ]]; then
     echo ""
-    echo "==> Stopping Curio (pid $CURIO_PID)..."
-    kill "$CURIO_PID" 2>/dev/null || true
+    echo "==> Stopping Curio (pid $CURIO_PID) and its server tree..."
+    # 'curio.py start' only supervises: backend.server, sandbox.server and the
+    # npm -> webpack chain are separate processes. Killing the supervisor alone
+    # orphans all of them, and they keep holding :5002/:2000/:8080 - so the next
+    # run either fails to bind or, worse, silently tests the stale servers left
+    # listening from this one.
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*)
+        # /T walks parent-PID links, so the supervisor has to still be alive
+        # when we ask - kill the tree first, never the root first.
+        # MSYS2_ARG_CONV_EXCL stops MSYS rewriting the flags as paths, so the
+        # switches are passed with single slashes. Do NOT also double them:
+        # with conversion disabled '//PID' reaches taskkill verbatim and errors.
+        MSYS2_ARG_CONV_EXCL='*' taskkill /PID "$CURIO_PID" /T /F >/dev/null 2>&1 || true
+        ;;
+      *)
+        # Launched under 'set -m', so the job leads its own process group and a
+        # negative pid signals every descendant. Fall back to the bare pid if
+        # the group is already gone.
+        kill -TERM "-$CURIO_PID" 2>/dev/null || kill -TERM "$CURIO_PID" 2>/dev/null || true
+        sleep 2
+        kill -KILL "-$CURIO_PID" 2>/dev/null || true
+        ;;
+    esac
     wait "$CURIO_PID" 2>/dev/null || true
   fi
 
@@ -121,6 +175,7 @@ cleanup() {
 # ---------------------------------------------------------------------------
 if [[ $USE_EXISTING -eq 0 ]]; then
   bash "$REPO_ROOT/scripts/clean.sh"
+  die "clean.sh" $?
 fi
 
 # ---------------------------------------------------------------------------
@@ -128,13 +183,16 @@ fi
 # ---------------------------------------------------------------------------
 echo "==> Installing Python dependencies..."
 pip install -r "$REPO_ROOT/requirements.txt" -q
+die "pip install -r requirements.txt" $?
 
 echo "==> Installing manifest python deps via curio setup..."
 PYTHONPATH="$REPO_ROOT" python "$REPO_ROOT/curio.py" setup
+die "curio.py setup" $?
 
 if [[ $USE_EXISTING -eq 0 ]]; then
   echo "==> Installing frontend npm dependencies..."
   (cd "$REPO_ROOT/utk_curio/frontend/urban-workflows" && npm install -q)
+  die "npm install" $?
 fi
 
 # ---------------------------------------------------------------------------
@@ -152,9 +210,41 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # source) rather than the prebuilt static dist/, so the E2E suite always
   # tests the current frontend — matching how the e2e curio_servers fixture
   # boots. Without it a stale dist/ hides in-tree frontend changes.
-  CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_LAUNCH_CWD="$REPO_ROOT" \
-    python "$REPO_ROOT/curio.py" start --with-examples &
+  # Job control on for the launch only: it puts the background job in its own
+  # process group so cleanup() can signal the whole server tree by negative pid
+  # on POSIX. Without it the job shares this script's group and a group-kill
+  # would take the script down with it.
+  # Pin the sandbox shared secret. The sandbox requires it on /exec,
+  # /execJs, /get and /install (utk_curio/sandbox/app/auth.py), and
+  # 'curio.py start' would otherwise mint a random one into the server's
+  # environment only, which this script and the pytest process could not
+  # then read. Two e2e tests call the sandbox directly. main.py honours a
+  # pre-set value.
+  export CURIO_SANDBOX_TOKEN="${CURIO_SANDBOX_TOKEN:-$(python -c 'import secrets; print(secrets.token_urlsafe(32))')}"
+  # --auth is REQUIRED, not optional. The E2E suite exercises the real signup /
+  # signin / guest flows and most of it acts as an authenticated OWNER: a
+  # dataflow's own packages, datasets and agents are visible only to the user
+  # who installed them. Booted without it, 'curio.py start' sets
+  # CURIO_NO_AUTH=1, the browser is the read-only shared guest, every catalog
+  # fetch comes back empty, and 43 tests - the whole agent-catalog suite among
+  # them - skipped instead of running, so a green run proved far less than it
+  # appeared to. The curio_servers fixture already passes --auth when it boots
+  # its own stack; this is the CURIO_E2E_USE_EXISTING=1 path catching up.
+  # CURIO_TESTING is REQUIRED here for the same reason --auth is. The E2E
+  # suite seeds users and projects through /api/testing/* and resets the DB
+  # between tests through /api/testing/reset-db, and that blueprint refuses
+  # with 404 unless the server is BOTH a dev env and a declared test rig
+  # (backend/app/testing/routes.py). backend/tests/conftest.py sets the flag
+  # for the pytest process, but this server is a child of THIS script, so
+  # without it every E2E test errors in its autouse fixture on a bare 404.
+  # It also puts the server on the test DB under .curio/test/, which is
+  # where the suite already looks.
+  set -m
+  CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_TESTING=1 \
+  CURIO_LAUNCH_CWD="$REPO_ROOT" \
+    python "$REPO_ROOT/curio.py" start --auth --with-examples &
   CURIO_PID=$!
+  set +m
 
   wait_for_port "backend"  5002
   wait_for_port "sandbox"  2000
@@ -181,8 +271,15 @@ fi
 if [[ $RUN_SANDBOX -eq 1 ]]; then
   echo ""
   echo "==> Running sandbox unit tests..."
-  PYTHONPATH="$REPO_ROOT" python -m unittest discover \
-    -s "$REPO_ROOT/utk_curio/sandbox/tests" -t "$REPO_ROOT" -p "test_*.py" -v
+  # pytest, not `unittest discover`. Discover only collects
+  # unittest.TestCase subclasses, so every pytest-style test in this
+  # directory (module-level `def test_*` using fixtures) was silently not
+  # running: 211 tests collected against 271 under pytest. That quietly
+  # excluded the whole test_isolation_linux.py suite, which exists
+  # precisely to be run here on Linux, plus test_isolation_staging.py and
+  # test_json_artifact_writer.py. pytest runs TestCase classes too, so
+  # nothing is lost by switching.
+  PYTHONPATH="$REPO_ROOT" python -m pytest "$REPO_ROOT/utk_curio/sandbox/tests" -v
   record "Sandbox unit tests" $?
 fi
 
@@ -203,17 +300,24 @@ if [[ $RUN_E2E -eq 1 ]]; then
   echo ""
   echo "==> Installing Playwright browser..."
   python -m playwright install chromium
+  die "playwright install chromium" $?
 
   PYTEST_ARGS="-v"
   [[ $HEADED -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --headed"
+  [[ $VIDEOS -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --videos"
   [[ -n "$ALLURE_DIR" ]] && PYTEST_ARGS="$PYTEST_ARGS --alluredir=$ALLURE_DIR"
 
   E2E_ENV="PYTHONUNBUFFERED=1 CURIO_E2E_USE_EXISTING=1 PYTHONPATH=$REPO_ROOT"
+  # Pass the isolation opt-in through to the e2e stack (see the
+  # CURIO_E2E_ISOLATION hook in tests/test_frontend/fixtures.py).
+  [[ -n "${CURIO_E2E_ISOLATION:-}" ]] && E2E_ENV="$E2E_ENV CURIO_E2E_ISOLATION=$CURIO_E2E_ISOLATION"
+  [[ -n "${CURIO_E2E_EXEC_USER:-}" ]] && E2E_ENV="$E2E_ENV CURIO_E2E_EXEC_USER=$CURIO_E2E_EXEC_USER"
   [[ -n "$E2E_WORKFLOWS" ]] && E2E_ENV="$E2E_ENV CURIO_E2E_WORKFLOWS=$E2E_WORKFLOWS"
 
   echo ""
   echo "==> Running E2E tests..."
   cd "$REPO_ROOT/utk_curio/backend"
+  die "cd to utk_curio/backend" $?
   env $E2E_ENV python -m pytest tests/test_frontend/ $PYTEST_ARGS
   record "E2E tests" $?
 fi

@@ -51,7 +51,7 @@ export function useEnsureWorkflowDeps() {
         if (!needed.length) return;
         const names = needed.join(", ");
         showToast(
-          `This dataflow depends on packages that aren't installed: ${names} — installing them now…`,
+          `This dataflow depends on packages that aren't installed: ${names}. Installing them now…`,
           "warning"
         );
         try {
@@ -66,7 +66,7 @@ export function useEnsureWorkflowDeps() {
         } catch (err) {
           console.error("Workflow dependency install failed:", err);
           showToast(
-            `Could not install ${names} — nodes may fail until these are installed manually.`,
+            `Could not install ${names}. Nodes may fail until these are installed manually.`,
             "error"
           );
         }

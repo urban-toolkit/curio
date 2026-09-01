@@ -78,6 +78,56 @@ class TestMeRoute:
         assert resp.get_json()["username"] == "alice"
 
 
+class TestHuggingFaceToken:
+    """The HuggingFace token is an account setting, not an operator secret.
+
+    It gates *gated* models, which are unlocked per HuggingFace account by
+    accepting a licence, so one shared deployment token could not represent
+    what each user is entitled to download. It used to be read from a bare
+    ``HUGGINGFACE_TOKEN`` env var and was invisible to the people it applied
+    to; it is now edited in AI Settings, with
+    ``curio.py start --huggingface-token`` supplying the fallback.
+    """
+
+    def _patch(self, client, token, body):
+        return client.patch(
+            "/api/auth/me",
+            data=json.dumps(body),
+            content_type="application/json",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    def test_absent_by_default(self, client):
+        token = _signup(client).get_json()["token"]
+        assert _get(client, "/api/auth/me", token=token).get_json()[
+            "has_huggingface_token"
+        ] is False
+
+    def test_saved_and_reported_as_a_boolean_only(self, client):
+        token = _signup(client).get_json()["token"]
+        r = self._patch(client, token, {"huggingface_token": "hf_secret"})
+        assert r.status_code == 200
+        assert r.get_json()["has_huggingface_token"] is True
+        # The value itself never leaves the server, exactly as the LLM key does
+        # not, which is also why neither has a launcher flag.
+        raw = _get(client, "/api/auth/me", token=token).get_data(as_text=True)
+        assert "hf_secret" not in raw
+
+    def test_empty_string_clears_it(self, client):
+        token = _signup(client).get_json()["token"]
+        self._patch(client, token, {"huggingface_token": "hf_secret"})
+        r = self._patch(client, token, {"huggingface_token": ""})
+        assert r.get_json()["has_huggingface_token"] is False
+
+    def test_omitting_it_leaves_it_alone(self, client):
+        # AI Settings sends the field only when the user typed something, so a
+        # save that changes the model must not wipe a stored token.
+        token = _signup(client).get_json()["token"]
+        self._patch(client, token, {"huggingface_token": "hf_secret"})
+        r = self._patch(client, token, {"llm_model": "some-model"})
+        assert r.get_json()["has_huggingface_token"] is True
+
+
 class TestSignoutRoute:
     def test_signout_invalidates_token(self, client):
         signup_resp = _signup(client)
@@ -152,6 +202,8 @@ class TestPublicConfig:
         assert "curio_no_project" in data
         assert "skip_project_page" in data
         assert "shared_guest_username" in data
+        assert "default_save_node_output" in data
+        assert isinstance(data["default_save_node_output"], bool)
         assert "enable_user_auth" not in data
 
 

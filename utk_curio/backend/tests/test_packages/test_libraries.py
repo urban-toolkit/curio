@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from utk_curio.backend.app.packages import libraries as libs
+from utk_curio.backend.app.packages import pip_runner
+from utk_curio.backend.app.packages import routes as packages_routes
+from utk_curio.backend.app.packages.pip_runner import InstallReport, UninstallReport
 
 
 def _auth(token):
@@ -182,3 +187,123 @@ class TestLibraryRoutes:
         body = client.get("/api/packages/libraries", headers=_auth(token)).get_json()
         derived_names = [e["name"] for e in body["fromPackages"]]
         assert "requests" in derived_names
+
+
+# ---------------------------------------------------------------------------
+# Spec parsing + the pip-uninstall ref-count gate
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "spec, expected",
+    [
+        ("numpy", ("numpy", "")),
+        ("  numpy  ", ("numpy", "")),
+        ("scikit-learn==1.4.0", ("scikit-learn", "==1.4.0")),
+        ("pkg>=1", ("pkg", ">=1")),
+        ("pkg<=2", ("pkg", "<=2")),
+        ("pkg~=2.1", ("pkg", "~=2.1")),
+        ("pkg!=3", ("pkg", "!=3")),
+        ("pkg<4,>=2", ("pkg", "<4,>=2")),
+        # npm-ish separator: the '@' is consumed, the version kept verbatim.
+        ("pkg@1.2", ("pkg", "1.2")),
+        # A leading '@' is a scoped name, not a separator - splitting there
+        # would yield the meaningless name "". The guard is blunt though: it
+        # skips the '@' branch entirely, so a *versioned* scoped name keeps its
+        # version in the name. Latent rather than live - scoped names only arise
+        # for JS specs, and JS install/remove both 501 (no runner exists).
+        ("@scope/pkg", ("@scope/pkg", "")),
+        ("@scope/pkg@1.2", ("@scope/pkg@1.2", "")),
+    ],
+)
+def test_split_lib_spec(spec, expected):
+    assert packages_routes._split_lib_spec(spec) == expected
+
+
+def test_remove_keeps_a_library_a_package_still_declares(
+    client, user_and_token, tmp_curio, monkeypatch, install_packageage, manifest_dict,
+):
+    """Removing a standalone entry must not pip-uninstall a package's dependency.
+
+    Both can name the same library. The standalone list is the user's own, but
+    an installed package needs the lib to run, so the ref-count gate keeps it on
+    disk and only drops the list entry.
+    """
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    install_packageage(
+        _user_dir_key(user),
+        manifest=manifest_dict(package_id="ai.test.needsflask", python_deps={"flask": ""}),
+    )
+
+    uninstalled: list[list[str]] = []
+    monkeypatch.setattr(
+        pip_runner,
+        "uninstall_python_deps",
+        lambda names: uninstalled.append(list(names))
+        or UninstallReport(removed=[], kept=list(names)),
+    )
+
+    client.post(
+        "/api/packages/libraries",
+        headers=_auth(token),
+        data=json.dumps({"kind": "python", "spec": "flask"}),
+    )
+    resp = client.delete("/api/packages/libraries/python/flask", headers=_auth(token))
+
+    assert resp.status_code == 200
+    assert "flask" not in resp.get_json()["standalone"]["python"]
+    assert uninstalled == [], "a package still declares flask - it must stay installed"
+
+
+def test_remove_uninstalls_a_library_no_package_declares(
+    client, user_and_token, tmp_curio, monkeypatch,
+):
+    """The mirror case: nothing else needs it, so it really is pip-uninstalled."""
+    _, token = user_and_token
+    uninstalled: list[list[str]] = []
+    monkeypatch.setattr(
+        pip_runner,
+        "uninstall_python_deps",
+        lambda names: uninstalled.append(list(names))
+        or UninstallReport(removed=list(names), kept=[]),
+    )
+
+    client.post(
+        "/api/packages/libraries",
+        headers=_auth(token),
+        data=json.dumps({"kind": "python", "spec": "inflection"}),
+    )
+    resp = client.delete(
+        "/api/packages/libraries/python/inflection", headers=_auth(token)
+    )
+
+    assert resp.status_code == 200
+    assert uninstalled == [["inflection"]]
+
+
+def test_delete_js_library_returns_501(client, user_and_token, tmp_curio):
+    """DELETE mirrors POST: there is no JS runner, so neither direction works."""
+    _, token = user_and_token
+    resp = client.delete("/api/packages/libraries/js/lodash", headers=_auth(token))
+    assert resp.status_code == 501
+    assert "not yet supported" in resp.get_json()["error"]
+
+
+def test_js_add_never_reaches_pip(client, user_and_token, tmp_curio, monkeypatch):
+    """The 501 returns before the installer, so no pip process is started."""
+    _, token = user_and_token
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        pip_runner,
+        "install_python_deps",
+        lambda deps, **kw: calls.append(dict(deps))
+        or InstallReport(installed=[], skipped=[]),
+    )
+    resp = client.post(
+        "/api/packages/libraries",
+        headers=_auth(token),
+        data=json.dumps({"kind": "js", "spec": "lodash"}),
+    )
+    assert resp.status_code == 501
+    assert calls == []

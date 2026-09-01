@@ -18,12 +18,12 @@ This feature is based on the design originally proposed by [@kirtanpatel2003](ht
 
 When two or more users open the same project (`/dataflow/<UUID>`) on a host that was started with `--collab`, they see:
 
-- **Presence** — open the side panel from the 👥 button in the top bar (next to the Urbanite robot). It lists everyone currently in the project room, with a connection indicator.
-- **Live graph sync** — adding, removing, or dragging a node propagates to every peer's canvas in real time. Same for edges: connecting two nodes or deleting an edge applies on every other client immediately.
-- **Per-node soft locks** — focusing a node's editor records a lock for that user; peers see an avatar chip in the node's corner and the editor becomes read-only on their side.
-- **Code-change proposals** — when a user blurs a Monaco editor (Python code or Vega grammar) and the contents differ from the loaded baseline, a proposal is broadcast. Peers see Approve / Reject buttons; once every peer approves, the change is applied to all editors at once.
-- **Shared execution output** — when a node finishes running on one user's machine, the rendered output payload is broadcast over the socket so peers see the same result without re-running and **without crossing the sandbox session-isolation boundary**.
-- **Activity log** — the side panel keeps the last ~20 room events (joins, locks, proposals, applies, conflict resolutions).
+- **Presence.** Open the side panel from the 👥 button in the top bar. It lists everyone currently in the project room, with a connection indicator.
+- **Live graph sync.** Adding, removing, or dragging a node propagates to every peer's canvas in real time. Same for edges: connecting two nodes or deleting an edge applies on every other client immediately.
+- **Per-node soft locks.** Focusing a node's editor records a lock for that user; peers see an avatar chip in the node's corner and the editor becomes read-only on their side.
+- **Code-change proposals.** When a user blurs a Monaco editor (Python code or Vega grammar) and the contents differ from the loaded baseline, a proposal is broadcast. Peers see Approve / Reject buttons; once every peer approves, the change is applied to all editors at once.
+- **Shared execution output.** When a node finishes running on one user's machine, the rendered output payload is broadcast over the socket so peers see the same result without re-running and **without crossing the sandbox session-isolation boundary**.
+- **Activity log.** The side panel keeps the last 200 room events (joins, locks, proposals, applies, conflict resolutions); see `ACTIVITY_CAP` in [`room_state.py`](../utk_curio/backend/app/collaboration/room_state.py).
 
 ## Setup
 
@@ -35,7 +35,7 @@ python curio.py start --auth --collab
 COLLAB_CORS_ORIGINS=http://192.168.1.5:8080 python curio.py start --auth --collab
 ```
 
-Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator's browser. The `--collab` flag is read at runtime by the frontend via `/api/config/public` — **no frontend rebuild is required** to flip the flag.
+Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator's browser. The `--collab` flag is read at runtime by the frontend via `/api/config/public`, so **no frontend rebuild is required** to flip the flag.
 
 Useful environment variables:
 
@@ -49,7 +49,7 @@ Useful environment variables:
 
 - **Namespace:** `/collab` (overridable via `COLLAB_NAMESPACE`).
 - **Transport:** Socket.IO over WebSocket (with polling fallback).
-- **Async mode:** `threading` — preserves the existing Flask dev-reloader and avoids the eventlet/gevent monkey-patching trap. Acceptable for small teams (<~20 concurrent sockets); production with many concurrent rooms should switch to `eventlet` or `gevent`.
+- **Async mode:** `threading`, which preserves the existing Flask dev-reloader and avoids the eventlet/gevent monkey-patching trap. Acceptable for small teams (<~20 concurrent sockets); production with many concurrent rooms should switch to `eventlet` or `gevent`.
 - **Room key:** `project:<uuid>`. The UUID is the canonical project identifier from the URL (`/dataflow/:id`) and the source of truth in `projectPackagesStore.getCurrentProjectId()`.
 - **Room state:** in-memory dicts in [utk_curio/backend/app/collaboration/room_state.py](../utk_curio/backend/app/collaboration/room_state.py), guarded by a single `threading.RLock`. **Not persisted across restarts.**
 
@@ -57,7 +57,7 @@ Useful environment variables:
 
 | File | Role |
 |------|------|
-| [extensions.py](../utk_curio/backend/extensions.py) | `init_socketio(app)` — lazy import of `flask_socketio`. |
+| [extensions.py](../utk_curio/backend/extensions.py) | `init_socketio(app)`, a lazy import of `flask_socketio`. |
 | [app/__init__.py](../utk_curio/backend/app/__init__.py) | Mounts the SocketIO singleton and registers events when `ENABLE_COLLAB=True`. |
 | [app/collaboration/auth.py](../utk_curio/backend/app/collaboration/auth.py) | Bearer-token handshake; resolves the socket to a real `User` + `UserSession`. |
 | [app/collaboration/room_state.py](../utk_curio/backend/app/collaboration/room_state.py) | All in-memory dicts and helpers. |
@@ -73,19 +73,19 @@ Useful environment variables:
 | [components/editing/CodeEditor.tsx](../utk_curio/frontend/urban-workflows/src/components/editing/CodeEditor.tsx) | Proposal-on-blur for Python code, banner UI, apply-on-receive. |
 | [components/editing/GrammarEditor.tsx](../utk_curio/frontend/urban-workflows/src/components/editing/GrammarEditor.tsx) | Same for grammar specs. |
 | [components/collab/CollaborationSidePanel.tsx](../utk_curio/frontend/urban-workflows/src/components/collab/CollaborationSidePanel.tsx) | Right-docked Users / Proposals / Activity panel. |
-| [components/menus/top/UpMenu.tsx](../utk_curio/frontend/urban-workflows/src/components/menus/top/UpMenu.tsx) | 👥 trigger button (next to Urbanite) that toggles the side panel; only rendered when `collab.enabled`. |
+| [components/menus/top/UpMenu.tsx](../utk_curio/frontend/urban-workflows/src/components/menus/top/UpMenu.tsx) | 👥 trigger button that toggles the side panel; only rendered when `collab.enabled`. |
 
 ## Security model
 
 - **Identity** is anchored in `UserSession.token` (the same Bearer token used by REST). The token is sent through Socket.IO's `auth` handshake (`io(url, { auth: { token } })`); the server resolves it in [auth.py](../utk_curio/backend/app/collaboration/auth.py) and stashes the `(user_id, username, name, profile_image)` tuple via `room_state.set_identity(sid, ...)`. **Every subsequent event handler reads from that stashed identity, never from the client-supplied payload.** Spoofing `userId`/`username` fields in an event has no effect.
-- **Sandbox artifact isolation is preserved.** The check at [sandbox/util/parsers.py:691-697](../utk_curio/sandbox/util/parsers.py) that gates DuckDB artifact reads on `session_id` is **unchanged**. Outputs flow between collaborators over the socket as `output_produced` payloads, not by one user fetching another user's artifact via `/get`.
+- **Sandbox artifact isolation is preserved.** The check in [`sandbox/util/parsers.py`](../utk_curio/sandbox/util/parsers.py) that gates DuckDB artifact reads on `session_id` is **unchanged**. Outputs flow between collaborators over the socket as `output_produced` payloads, not by one user fetching another user's artifact via `/get`.
 - **Room access** today is "any signed-in user who knows the project UUID can join". This matches the existing project share model (the URL is the share). A stricter `ProjectCollaborator` ACL is out of scope for v1.
 - **Editability of shared dataflows.** Without `--collab`, a non-owner who opens a project URL lands in a read-only "shared view" (project ownership in Curio is single-user). With `--collab` on, that read-only gate stands down so peers can actually collaborate. Edits flow over the socket to the owner's tab, which persists them via the existing auto-save path. **Only the owner writes to disk**; if the owner is offline, collaborator edits are ephemeral. A multi-writer model needs the `ProjectCollaborator` ACL above.
 - **No transport encryption out of the box.** Run behind HTTPS for deployments crossing an untrusted network.
 
 ## Conflict resolution UX
 
-- **Soft locks** are advisory only — they show "user X is editing" but don't physically block the network. They release when the editor blurs (`onDidBlurEditorText`) or when the user disconnects.
+- **Soft locks** are advisory only. They show "user X is editing" but don't physically block the network. They release when the editor blurs (`onDidBlurEditorText`) or when the user disconnects.
 - **Code proposals** require approval from every other connected peer. The proposer's editor stays as-typed; peers see a banner with Approve / Reject buttons. On unanimous approval the backend emits `code_change_applied`, and every peer's editor updates atomically.
 - **Conflicts** between simultaneous edits are surfaced via the side panel's "Activity" stream; resolution is currently a broadcast-only signal (peers update their local view based on the resolver's choice). Richer 3-way merge UX is future work.
 
@@ -95,6 +95,6 @@ Useful environment variables:
 - **No transport encryption** is enforced by Curio. Run behind HTTPS for any deployment that crosses an untrusted network.
 - **No room-membership ACL.** Anyone signed in who knows a project UUID can join. Acceptable for the URL-share model; not acceptable for true tenant isolation.
 - **Output payload size.** Outputs are relayed as JSON over the socket. Very large outputs (>~256 KB, images, parquet) may render slowly on peers; large-output gating is future work.
-- **Lock TTL.** Stale locks are released only on socket disconnect — a laptop suspended mid-edit holds the lock until the socket times out. A configurable idle-TTL is future work.
+- **Lock TTL.** Stale locks are released only on socket disconnect, so a laptop suspended mid-edit holds the lock until the socket times out. A configurable idle-TTL is future work.
 - **Persistence of activity log.** The 200-entry activity ring buffer is lost on restart.
 - **`async_mode="threading"`.** Fine for dev and small teams. Production with many concurrent rooms should switch to `eventlet` or `gevent`.

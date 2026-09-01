@@ -106,3 +106,30 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   return override !== undefined ? { defaultValueOverride: override } : {};
 };
+
+/**
+ * Wrap *inner* so a package template that ships a `source` starter still gets
+ * its code injected on a fresh drop.
+ *
+ * A manifest names its behavior by string key (`"code"`, `"vega"`, a
+ * package-shipped key, …). Resolving `"code"` yields the built-in no-op
+ * `useCodeNodeBehavior`, which knows nothing about package starters — so
+ * every package template declaring `behavior: "code"` alongside a `source`
+ * (curio.weather, ai.urbanlab.uhvi, and everything the node factory
+ * scaffolds) used to open with an empty editor.
+ *
+ * The composed hook runs both: *inner* owns the whole behavior surface, and
+ * the starter injection only fills in `defaultValueOverride` when *inner*
+ * does not provide one of its own. Both hooks are called unconditionally and
+ * in a fixed order, so the rules of hooks hold.
+ */
+export function withPackageStarter(inner: NodeBehaviorHook): NodeBehaviorHook {
+  return (data, nodeState) => {
+    const starter = usePackageNodeBehavior(data, nodeState);
+    const base = inner(data, nodeState);
+    if (base.defaultValueOverride !== undefined) return base;
+    return starter.defaultValueOverride !== undefined
+      ? { ...base, defaultValueOverride: starter.defaultValueOverride }
+      : base;
+  };
+}

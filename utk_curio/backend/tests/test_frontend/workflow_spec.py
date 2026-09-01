@@ -26,19 +26,17 @@ GRAMMAR_TYPES = {"VIS_VEGA", "AUTK_GRAMMAR"}
 # but its content is JavaScript, so it must be excluded from this set.
 PY_CODE_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
-    "DATA_EXPORT", "COMPUTATION_ANALYSIS", "CONSTANTS",
-    "FLOW_SWITCH",
+    "DATA_EXPORT", "COMPUTATION_ANALYSIS",
 }
 CODE_TYPES = PY_CODE_TYPES | {"JS_COMPUTATION"}
 
 # Subset of CODE_TYPES whose frontend component passes ``code={true}``
 # to ``NodeEditor``, meaning they render a "code" tab with a Monaco editor.
-# The remaining CODE_TYPES (DATA_EXPORT, CONSTANTS) use
-# ``code={false}`` and have no code tab.
+# The remaining CODE_TYPE (DATA_EXPORT) uses ``code={false}`` and has no
+# code tab.
 CODE_EDITOR_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
-    "COMPUTATION_ANALYSIS", "FLOW_SWITCH",
-    "JS_COMPUTATION",
+    "COMPUTATION_ANALYSIS", "JS_COMPUTATION",
 }
 
 

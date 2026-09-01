@@ -8,6 +8,7 @@ from utk_curio.backend.config import (
     ALLOW_GUEST_LOGIN,
     CURIO_NO_AUTH,
     CURIO_NO_PROJECT,
+    CURIO_DEFAULT_SAVE_NODE_OUTPUT,
     CURIO_ENV,
     CURIO_SHARED_GUEST_USERNAME,
     ENABLE_COLLAB,
@@ -143,6 +144,7 @@ def me_patch_route():
         llm_base_url=body.get("llm_base_url"),
         llm_api_key=body.get("llm_api_key"),
         llm_model=body.get("llm_model"),
+        huggingface_token=body.get("huggingface_token"),
     )
     try:
         user_out = patch_me(g.user, data)
@@ -162,5 +164,6 @@ def public_config_route():
             "curio_env": CURIO_ENV,
             "shared_guest_username": CURIO_SHARED_GUEST_USERNAME,
             "enable_collab": ENABLE_COLLAB,
+            "default_save_node_output": CURIO_DEFAULT_SAVE_NODE_OUTPUT,
         }
     ), 200

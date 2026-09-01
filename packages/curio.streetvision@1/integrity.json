@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "README.md": "ae98dff005720dde399a28f431359f76cd89959d630a9d83378d476d221d3c06",
+    "README.md": "0d2053e06c16293556162639e2ccad394a57f8fcaf54b586bda012cbf3200681",
     "manifest.json": "74099f2faee3a2853bcd84f9bb356d784db02e16b63816cf776d38ced5d3bae7",
     "scripts/behaviors.js": "c66c009292cdb9dbe9adba23517a67c6958420e9acef5061333e4ad91c279dea",
     "scripts/behaviors.js.map": "ea7081c6ad1c8c6ddf734a34ed8729ce56b0814b829ae273a8a8cb4b43425a4e",

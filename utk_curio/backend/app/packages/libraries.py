@@ -3,7 +3,7 @@
 The `/api/libraries` surface backs the "Installed libraries" menu (formerly
 "Python packages"). Two distinct populations live here:
 
-- **Standalone**: libraries the user added directly through the modal —
+- **Standalone**: libraries the user added directly through the modal -
   things like ``numpy`` or ``scikit-learn==1.4.0`` that aren't tied to any
   installed node package. Persisted globally per user (one file per user),
   so the same set is available across every project. Stored as a JSON
@@ -13,13 +13,13 @@ The `/api/libraries` surface backs the "Installed libraries" menu (formerly
 
 - **Package-derived**: libraries declared by an installed node package's
   ``manifest.dependencies.{python,js}``. These are *read-only* from the
-  modal's perspective — they get installed automatically by the catalog
+  modal's perspective - they get installed automatically by the catalog
   flow (see ``pip_runner.py``) and removed by ``prune_unreferenced_packages``.
   We surface them in the list so the user knows what's on their machine
   and why.
 
 A corrupt or missing file is treated as an empty list (matches the
-defaults/seed-state convention — startup is never blockable by a bad JSON).
+defaults/seed-state convention - startup is never blockable by a bad JSON).
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from utk_curio.backend.app.packages.locks import package_seed_lock
 from utk_curio.backend.app.packages.storage import (
     _user_key_segment,
     _users_base,
@@ -60,7 +61,7 @@ class LibraryEntry:
 @dataclass(frozen=True)
 class LibraryList:
     standalone: dict[str, list[str]] = field(default_factory=dict)
-    """``{"python": [...], "js": [...]}`` — bare spec strings as written
+    """``{"python": [...], "js": [...]}`` - bare spec strings as written
     by the user (``"numpy"``, ``"scikit-learn==1.4.0"``)."""
     from_packages: list[LibraryEntry] = field(default_factory=list)
     """Flat list with attribution; one entry per (package, library)."""
@@ -77,7 +78,7 @@ def _load_raw(user_key: str) -> dict:
     try:
         raw = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        log.warning("Corrupt %s for %s — treating as empty", _FILENAME, user_key)
+        log.warning("Corrupt %s for %s - treating as empty", _FILENAME, user_key)
         return {"python": [], "js": []}
     if not isinstance(raw, dict):
         return {"python": [], "js": []}
@@ -132,7 +133,7 @@ def remove_library(user_key: str, kind: str, spec: str) -> dict[str, list[str]]:
 
 def package_derived(user_key: str) -> list[LibraryEntry]:
     """Read every installed package's manifest and collect their
-    declared python + js deps. One entry per ``(package, lib)`` pair —
+    declared python + js deps. One entry per ``(package, lib)`` pair -
     no de-dup across packages so the user sees which package brought
     each library in.
     """
@@ -142,21 +143,30 @@ def package_derived(user_key: str) -> list[LibraryEntry]:
     )
     from utk_curio.backend.app.packages.pip_runner import is_satisfied
 
+    # Snapshot the declarations under the seed lock (memo dev/99); the
+    # presence probes below are importlib-metadata work, not store reads, and
+    # run after release so the hold stays bounded to local manifest I/O.
+    declared: list[tuple[str, dict[str, str], dict[str, str]]] = []
+    with package_seed_lock(user_key):
+        for package_path in list_user_packageages(user_key):
+            try:
+                m = load_packageage_manifest(package_path)
+            except ManifestError:
+                continue
+            declared.append(
+                (package_path.name, dict(m.python_deps or {}), dict(m.js_deps or {}))
+            )
+
     out: list[LibraryEntry] = []
-    for package_path in list_user_packageages(user_key):
-        try:
-            m = load_packageage_manifest(package_path)
-        except ManifestError:
-            continue
-        source = package_path.name
-        for name, spec in (m.python_deps or {}).items():
+    for source, python_deps, js_deps in declared:
+        for name, spec in python_deps.items():
             # A package can declare a dep that isn't actually present (never
-            # installed, or pip-uninstalled later) — surface real state.
+            # installed, or pip-uninstalled later) - surface real state.
             out.append(LibraryEntry(
                 name=name, spec=spec, kind="python", source=source,
                 installed=is_satisfied(name, spec),
             ))
-        for name, spec in (m.js_deps or {}).items():
+        for name, spec in js_deps.items():
             out.append(LibraryEntry(name=name, spec=spec, kind="js", source=source))
     return out
 

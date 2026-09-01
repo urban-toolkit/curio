@@ -65,19 +65,39 @@ on:
       - 'docs/**'
       - 'Dockerfile'
       - 'docker-compose.yml'
+      - 'docker-compose.deploy.yml'
       - '.github/workflows/deploy.yml'
+      # Baked into the image (see Dockerfile runtime_base COPYs). Without
+      # these, a commit that only touches the package catalog never triggers
+      # a deploy and curio-dev keeps serving a stale `packages/` tree.
+      - 'requirements.txt'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'curio.py'
+      - 'scripts/**'
+      - 'packages/**'
+      - 'datasets/**'
   workflow_dispatch:
     inputs:
       ref:
         description: 'Git ref to deploy (branch, tag, or SHA). Leave empty to deploy the latest v* tag.'
         required: false
         default: ''
+      target:
+        description: 'Which stack(s) to deploy'
+        type: choice
+        options:
+          - both
+          - dev
+          - stable
+        default: both
+        required: true
 
 jobs:
   deploy-dev:
-    # Runs on every push (matching the paths filter) AND alongside deploy-stable
-    # whenever the workflow is manually dispatched, so dev tracks stable.
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Runs on every push (matching the paths filter) AND on dispatches unless
+    # target is stable-only, so dev tracks stable on full releases.
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.target == 'both' || inputs.target == 'dev'))
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-dev
@@ -110,6 +130,17 @@ jobs:
           ref="${1:-}"
           cd /srv/curio-dev
           git fetch --prune --tags origin
+          # Reset the package catalog before checking out. Earlier builds
+          # bind-mounted ./packages into the container, where
+          # publish-catalog rewrites entries in place -- so this checkout can
+          # hold container-authored edits. `git checkout --detach` carries
+          # those forward (it only writes paths that differ between HEAD and
+          # the target) and aborts outright when an incoming commit touches a
+          # locally-modified file. Scoped to packages/ on purpose: a bare
+          # `git clean -fd` here would delete .env, instance/, .curio/ and
+          # published datasets/, all untracked by design.
+          git checkout -- packages/ 2>/dev/null || true
+          git clean -fdq packages/ || true
           if [ -z "$ref" ]; then
             ref="main"
           fi
@@ -118,15 +149,97 @@ jobs:
           echo "Deploying $ref ($(git rev-parse --short HEAD))"
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           export BACKEND_URL=https://curio-dev.urbantk.org/api
-          docker compose -p curio-dev down --remove-orphans 2>/dev/null || true
+          set -a; [ -f .env ] && . ./.env; set +a
+          docker compose -p curio-dev down --remove-orphans --timeout 30 2>/dev/null || true
+          # A container from an earlier convention / manual run keeps itself alive
+          # via restart:unless-stopped and can hold the published ports, so a
+          # freshly built image never actually serves. Force-remove it by name.
+          docker rm -f "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || true
           docker run --rm -v "$PWD:/work" -w /work alpine rm -rf .curio
           mkdir -p instance .curio
           docker compose -p curio-dev build --no-cache
-          docker compose -p curio-dev up -d
+          docker compose -p curio-dev up -d --force-recreate --remove-orphans
+          # Wait for the container to report healthy, and FAIL if it does not.
+          #
+          # `up -d` returns as soon as the container is created, so every check
+          # below used to run against a stack that might never have served a
+          # request. That was survivable while a bad boot was unlikely; it is
+          # not now that the deploy runs --isolation=fork, which is fail-closed:
+          # a sandbox that cannot confine exits rather than serve, and without
+          # this gate the deploy would go green over a dead stack.
+          #
+          # The image's HEALTHCHECK has --start-period=180s (it curls backend,
+          # sandbox and frontend), so allow generously more than that.
+          echo "=== waiting for health ==="
+          deadline=$((SECONDS + 420))
+          while true; do
+            health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || echo missing)"
+            state="$(docker inspect -f '{{.State.Status}}' "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || echo missing)"
+            if [ "$health" = "healthy" ]; then
+              echo "healthy"
+              break
+            fi
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+              echo "::error::the stack exited during startup (state=$state)"
+              docker compose -p curio-dev logs --no-color --tail=200 curio || true
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::the stack never became healthy (state=$state health=$health)"
+              docker compose -p curio-dev logs --no-color --tail=200 curio || true
+              exit 1
+            fi
+            sleep 5
+          done
+          # Isolation is fail-closed, so a healthy stack has already proved
+          # it came up isolated. Assert it anyway: a stack booted WITHOUT
+          # the deploy overlay would have neither auth nor isolation and
+          # would still be perfectly healthy, which is exactly the
+          # regression worth catching.
+          #
+          # Ask the sandbox, do not grep the logs. The startup banner goes
+          # to the sandbox subprocess's stderr, which curio.py routes into
+          # .curio/messages.log, so `docker compose logs` carries only the
+          # launcher's own output. The grep this replaces could therefore
+          # never match, and passed silently on every deploy. /version
+          # reports the mode the sandbox actually resolved, which is the
+          # question being asked, and it is the same answer the UI badge
+          # shows.
+          #
+          # Port 2000 is deliberately not published (it executes user
+          # code), so reach it from inside the container. curl is present:
+          # the image's HEALTHCHECK uses it.
+          #
+          # `< /dev/null` is load-bearing. This whole script is fed to the
+          # remote shell as `bash -s` on STDIN, and `docker compose exec -T`
+          # forwards ITS stdin to the container, so without the redirect it
+          # swallows the rest of the script: bash hits EOF, exits 0, and
+          # every step below here silently never runs.
+          echo "=== node execution isolation ==="
+          version_json="$(docker compose -p curio-dev exec -T curio \
+                            curl -sf http://127.0.0.1:2000/version 2>/dev/null < /dev/null \
+                          | tr -d ' \r\n' || true)"
+          case "$version_json" in
+            *'"isolation":"fork"'*)
+              echo "OK: node execution is isolated (fork)"
+              ;;
+            *)
+              echo "::error::the deployed stack is NOT isolated. /version said: ${version_json:-nothing}. Node code would run in-process with the sandbox's own privileges."
+              docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+                'grep -i isolation .curio/messages.log 2>/dev/null | tail -20' || true
+              docker compose -p curio-dev logs --no-color --tail=100 curio || true
+              exit 1
+              ;;
+          esac
+
+          echo "=== docker ps (post-deploy) ==="
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true
+          echo "=== serving container ==="
+          docker inspect -f 'name={{.Name}} image={{.Config.Image}} imageId={{.Image}} created={{.Created}} restart={{.HostConfig.RestartPolicy.Name}}' "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || true
           EOF
 
   deploy-stable:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && (inputs.target == 'both' || inputs.target == 'stable')
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-stable
@@ -159,6 +272,17 @@ jobs:
           ref="${1:-}"
           cd /srv/curio
           git fetch --prune --tags origin
+          # Reset the package catalog before checking out. Earlier builds
+          # bind-mounted ./packages into the container, where
+          # publish-catalog rewrites entries in place -- so this checkout can
+          # hold container-authored edits. `git checkout --detach` carries
+          # those forward (it only writes paths that differ between HEAD and
+          # the target) and aborts outright when an incoming commit touches a
+          # locally-modified file. Scoped to packages/ on purpose: a bare
+          # `git clean -fd` here would delete .env, instance/, .curio/ and
+          # published datasets/, all untracked by design.
+          git checkout -- packages/ 2>/dev/null || true
+          git clean -fdq packages/ || true
           if [ -z "$ref" ]; then
             ref=$(git describe --tags --abbrev=0 --match 'v*' origin/main)
           fi
@@ -168,7 +292,89 @@ jobs:
           mkdir -p instance .curio
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           export BACKEND_URL=https://curio.urbantk.org/api
-          docker compose -p curio down --remove-orphans 2>/dev/null || true
+          set -a; [ -f .env ] && . ./.env; set +a
+          docker compose -p curio down --remove-orphans --timeout 30 2>/dev/null || true
+          # A container from an earlier convention / manual run keeps itself alive
+          # via restart:unless-stopped and can hold the published ports, so a
+          # freshly built image never actually serves. Force-remove it by name.
+          docker rm -f "${CURIO_CONTAINER_NAME:-curio}" 2>/dev/null || true
           docker compose -p curio build --no-cache
-          docker compose -p curio up -d
+          docker compose -p curio up -d --force-recreate --remove-orphans
+          # Wait for the container to report healthy, and FAIL if it does not.
+          #
+          # `up -d` returns as soon as the container is created, so every check
+          # below used to run against a stack that might never have served a
+          # request. That was survivable while a bad boot was unlikely; it is
+          # not now that the deploy runs --isolation=fork, which is fail-closed:
+          # a sandbox that cannot confine exits rather than serve, and without
+          # this gate the deploy would go green over a dead stack.
+          #
+          # The image's HEALTHCHECK has --start-period=180s (it curls backend,
+          # sandbox and frontend), so allow generously more than that.
+          echo "=== waiting for health ==="
+          deadline=$((SECONDS + 420))
+          while true; do
+            health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${CURIO_CONTAINER_NAME:-curio}" 2>/dev/null || echo missing)"
+            state="$(docker inspect -f '{{.State.Status}}' "${CURIO_CONTAINER_NAME:-curio}" 2>/dev/null || echo missing)"
+            if [ "$health" = "healthy" ]; then
+              echo "healthy"
+              break
+            fi
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+              echo "::error::the stack exited during startup (state=$state)"
+              docker compose -p curio logs --no-color --tail=200 curio || true
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::the stack never became healthy (state=$state health=$health)"
+              docker compose -p curio logs --no-color --tail=200 curio || true
+              exit 1
+            fi
+            sleep 5
+          done
+          # Isolation is fail-closed, so a healthy stack has already proved
+          # it came up isolated. Assert it anyway: a stack booted WITHOUT
+          # the deploy overlay would have neither auth nor isolation and
+          # would still be perfectly healthy, which is exactly the
+          # regression worth catching.
+          #
+          # Ask the sandbox, do not grep the logs. The startup banner goes
+          # to the sandbox subprocess's stderr, which curio.py routes into
+          # .curio/messages.log, so `docker compose logs` carries only the
+          # launcher's own output. The grep this replaces could therefore
+          # never match, and passed silently on every deploy. /version
+          # reports the mode the sandbox actually resolved, which is the
+          # question being asked, and it is the same answer the UI badge
+          # shows.
+          #
+          # Port 2000 is deliberately not published (it executes user
+          # code), so reach it from inside the container. curl is present:
+          # the image's HEALTHCHECK uses it.
+          #
+          # `< /dev/null` is load-bearing. This whole script is fed to the
+          # remote shell as `bash -s` on STDIN, and `docker compose exec -T`
+          # forwards ITS stdin to the container, so without the redirect it
+          # swallows the rest of the script: bash hits EOF, exits 0, and
+          # every step below here silently never runs.
+          echo "=== node execution isolation ==="
+          version_json="$(docker compose -p curio exec -T curio \
+                            curl -sf http://127.0.0.1:2000/version 2>/dev/null < /dev/null \
+                          | tr -d ' \r\n' || true)"
+          case "$version_json" in
+            *'"isolation":"fork"'*)
+              echo "OK: node execution is isolated (fork)"
+              ;;
+            *)
+              echo "::error::the deployed stack is NOT isolated. /version said: ${version_json:-nothing}. Node code would run in-process with the sandbox's own privileges."
+              docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+                'grep -i isolation .curio/messages.log 2>/dev/null | tail -20' || true
+              docker compose -p curio logs --no-color --tail=100 curio || true
+              exit 1
+              ;;
+          esac
+
+          echo "=== docker ps (post-deploy) ==="
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true
+          echo "=== serving container ==="
+          docker inspect -f 'name={{.Name}} image={{.Config.Image}} imageId={{.Image}} created={{.Created}} restart={{.HostConfig.RestartPolicy.Name}}' "${CURIO_CONTAINER_NAME:-curio}" 2>/dev/null || true
           EOF

@@ -17,6 +17,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 - [Updating](#updating)
 - [Optional: dev stack alongside stable](#optional-dev-stack-alongside-stable)
 - [Optional: CI/CD with GitHub Actions + Tailscale](#optional-cicd-with-github-actions--tailscale)
+- [Cutting a release](#cutting-a-release)
 - [Troubleshooting](#troubleshooting)
 - [Security checklist](#security-checklist)
 
@@ -29,14 +30,15 @@ Clone and create the data directories:
 ```bash
 git clone https://github.com/urban-toolkit/curio.git /srv/curio
 cd /srv/curio
-mkdir -p instance .curio data templates
+mkdir -p instance .curio datasets
 ```
 
 Create `/srv/curio/.env`:
 
 ```bash
 CURIO_CONTAINER_NAME=curio
-CURIO_PORT_2000=2000
+# CURIO_PORT_2000 is no longer used: the sandbox executes arbitrary node
+# code and is no longer published. Harmless to leave in an existing .env.
 CURIO_PORT_5002=5002
 CURIO_PORT_8080=8080
 
@@ -48,7 +50,23 @@ PUBLIC_PATH=/curio/
 BACKEND_URL=https://lab-name.your-uni.edu/curio/api
 ```
 
-The four directories you created are bind-mounted into the container and persist across recreates: `instance/` holds the SQLite DB (users, projects, sessions, **back this up**), `data/` holds workflow artifacts (**back this up**), `.curio/` holds logs and sandbox files, `templates/` holds workflow templates exposed in the UI.
+The three directories you created are bind-mounted into the container and persist across recreates:
+
+| Directory | Holds | Back up? |
+|---|---|---|
+| `instance/` | The SQLite DB: users, projects, sessions | **Yes** |
+| `datasets/` | The shared Data Catalog: every dataset your users publish | **Yes** |
+| `.curio/` | Per-user stores, logs, sandbox artifacts | Yes, if users' imported datasets and computed outputs matter |
+
+`packages/` is deliberately **not** mounted. The node catalog is baked into the
+image so it always matches the deployed commit; a bind mount there let a single
+UI publish rewrite the host's git checkout in place. See the comment block in
+`docker-compose.yml` for the full story.
+
+> [!TIP]
+> `datasets/` lives inside the git checkout, so publishing a dataset dirties your
+> working tree. To avoid that, point the catalog at a path outside the checkout
+> with `CURIO_CATALOG_ROOT` (or `--catalog-root`) and mount that path instead.
 
 ## 2. Configure Caddy
 
@@ -98,10 +116,28 @@ sudo systemctl reload caddy
 
 This is where the frontend bundle gets compiled with `BACKEND_URL` and `PUBLIC_PATH` baked in. The first build takes 10-15 minutes because it has to install Python and Node dependencies and run the full webpack build, subsequent builds are faster thanks to layer caching.
 
+> [!WARNING]
+> **Always deploy with both compose files.** `docker-compose.yml` alone starts
+> Curio the way a local dev instance starts: the image's default command has no
+> `--deploy`, so [`main.py`](../utk_curio/main.py) sets `CURIO_NO_AUTH=1` and
+> **anyone who can reach the URL gets straight in with no login**. The
+> [`docker-compose.deploy.yml`](../docker-compose.deploy.yml) overlay is what adds
+> `--deploy` (auth + projects on), `--no-allow-publish` (locks the author-only
+> catalog mutators), and `restart: unless-stopped`. Exporting `COMPOSE_FILE` once
+> per shell applies it to every later `docker compose` command.
+
 ```bash
 cd /srv/curio
+export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
 docker compose build
 docker compose up -d
+```
+
+Confirm auth actually came up before you hand out the URL. The container logs
+the resolved flags on boot:
+
+```bash
+docker compose logs curio | grep CURIO_NO_AUTH   # must print CURIO_NO_AUTH=0
 ```
 
 Verify from outside the server:
@@ -117,12 +153,26 @@ Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something look
 Pulling new code is straightforward, but the `--no-cache` flag is important: Docker's layer cache occasionally fails to invalidate the npm-build step when build args change, which silently produces a frontend bundle still pointing at the old URL. Forcing a clean build is slower but guarantees correctness.
 
 ```bash
+cd /srv/curio
+export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
 git pull
 docker compose build --no-cache
-docker compose up -d
+docker compose up -d --force-recreate
 ```
 
 After the deploy completes, hard-refresh the browser (Ctrl+Shift+R) to drop any cached JavaScript.
+
+`--force-recreate` matters: without it Compose reuses a container whose image
+digest has not changed in its view, and the deploy silently keeps serving the old
+build. The CI workflow passes it for the same reason.
+
+If a user published a package from the UI on an older build, `git pull` will
+refuse to fast-forward because `packages/` is dirty. That mutation is exactly what
+`--no-allow-publish` now prevents, so it is safe to discard:
+
+```bash
+git checkout -- packages/ && git clean -fdq packages/
+```
 
 ## Optional: dev stack alongside stable
 
@@ -132,15 +182,16 @@ A second checkout running on different ports under a different path lets you tes
 |---|---|---|
 | Path on server | `/srv/curio` | `/srv/curio-dev` |
 | Container | `curio` | `curio-dev` |
-| Ports | 2000 / 5002 / 8080 | 2010 / 5012 / 8090 |
+| Published ports | 5002 / 8080 | 5012 / 8090 |
 | Public URL | `lab-name.your-uni.edu/curio/` | `lab-name.your-uni.edu/curio-dev/` |
 
 Clone into `/srv/curio-dev`, write a parallel `.env` with `CURIO_PORT_*=2010/5012/8090`, `PUBLIC_PATH=/curio-dev/`, and `BACKEND_URL=https://lab-name.your-uni.edu/curio-dev/api`. Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` → 5012, `/curio-dev/*` → 8090). Then:
 
 ```bash
 cd /srv/curio-dev
+export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
 docker compose -p curio-dev build
-docker compose -p curio-dev up -d
+docker compose -p curio-dev up -d --force-recreate
 ```
 
 The `-p curio-dev` flag isolates this stack's Compose project so it doesn't conflict with stable.
@@ -152,6 +203,25 @@ The repo includes [`.github/workflows/deploy.yml`](../.github/workflows/deploy.y
 To adapt it: install Tailscale on the server (`sudo tailscale up --advertise-tags=tag:curio-server --ssh`), create a Tailscale OAuth client with the `auth_keys` scope and tag `tag:ci`, add an ACL allowing `tag:ci -> tag:curio-server:22`, create a `deploy` user on the server with the `docker` group, and set three GitHub secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` (private key whose pubkey is in `~deploy/.ssh/authorized_keys`). Then update the hostname (`utk` → your Tailscale machine name) and the `BACKEND_URL` exports in the workflow file.
 
 Pushing to `main` triggers the dev deploy. Stable runs manually via Actions → Deploy → Run workflow.
+
+`deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref, export the two-file `COMPOSE_FILE`, and rebuild with `--no-cache --force-recreate`.
+
+## Cutting a release
+
+Version bumps are automated by [`.github/workflows/bump-version.yml`](../.github/workflows/bump-version.yml), which owns `utk_curio/__init__.py`. It used to classify each release as minor-or-patch via GitHub Models; that service was retired on 2026-07-30, so the bump type is now explicit.
+
+| You do | Bump | Tag | Deploys |
+|---|---|---|---|
+| Push to `main` (touching `utk_curio/**` or `docs/examples/**`) | patch | none | dev only |
+| Actions → Bump version → Run workflow, `bump: minor` | minor | `vX.Y.0` | dev **and** stable |
+| Actions → Bump version → Run workflow, `bump: major` | major | `vX.0.0` | dev **and** stable |
+
+So a routine merge quietly ships to `curio-dev` and nothing else. Cutting a stable release is a deliberate act: dispatch the workflow with `minor` or `major`, and it bumps the version, tags the bump commit, and dispatches `deploy.yml` with `target: both` to put that exact tag on both stacks.
+
+> [!NOTE]
+> Pushes made with `GITHUB_TOKEN` never trigger workflows, which is why the bump job dispatches `deploy.yml` over the API rather than relying on its own commit to set things off. `workflow_dispatch` events are exempt from that recursion guard, so no PAT is needed.
+
+To roll back, dispatch Deploy with `ref` set to the previous tag and `target: stable`.
 
 ## Troubleshooting
 
@@ -166,7 +236,24 @@ Pushing to `main` triggers the dev deploy. Stable runs manually via Actions → 
 
 ## Security checklist
 
-- Set a real `SECRET_KEY` if running with auth.
+- **Verify auth is on**: `docker compose logs curio | grep CURIO_NO_AUTH` must print `CURIO_NO_AUTH=0`. If it prints `1`, you started without the `docker-compose.deploy.yml` overlay and the instance is open to anyone.
+- Set a real `SECRET_KEY`. Auth is on for any real deployment, so this is not optional.
+- Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into or delete from the shared node catalog, and `DELETE /api/packages/catalog/<dirName>` performs no ownership check. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
+- Dataset publishing has no equivalent switch. Any signed-in user can publish into the shared Data Catalog; only the original publisher can unpublish or delete. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
+- **Verify the sandbox is not exposed**: `docker compose ps` must not list a published port for 2000. The sandbox executes arbitrary node code; only the backend inside the container should reach it. The image binds it to `127.0.0.1` and publishes nothing, so a published 2000 means a local override added one.
+- **Verify the sandbox token is set**: `docker compose logs curio | grep CURIO_SANDBOX_TOKEN` must print `CURIO_SANDBOX_TOKEN=<set>` (the value itself is never logged). A deployment with auth on refuses to start without it.
+- **Isolated node execution is on, and is fail-closed.** `docker-compose.deploy.yml` passes `--isolation=fork --exec-user curio-exec`, so each node's Python runs in a confined child process: memory and CPU capped, network and `ptrace` denied by seccomp, and no read access to `instance/` or `.curio/data`. If the sandbox cannot confine, it **refuses to start** rather than quietly serve in-process, and the deploy workflow waits for the container to report healthy and fails if it does not. To check a running instance, ask the sandbox rather than reading the logs (the startup banner goes to `.curio/messages.log`, not to `docker compose logs`):
+
+  ```bash
+  docker compose -p curio exec -T curio curl -sf http://127.0.0.1:2000/version
+  ```
+
+  The `isolation` field must read `fork`. The deploy workflow now runs exactly this check and fails on anything else. The version badge in the UI shows the same answer.
+- **Isolation chmods several paths on the host, permanently.** At every boot the sandbox tightens the bind-mounted `./instance` to `0700` with its files at `0600`, the three stores `./.curio/data`, `./.curio/users` and `./datasets` to `0700`, and `./.env` to `0600`. It changes **modes only, never ownership**, so each path keeps whatever user created it: root for anything the container wrote, the deploy account for directories the deploy step made. What the tightening removes is group and other access, which is what denies `curio-exec` inside the container. The three stores keep their *file* modes on purpose: a staged input reaches the child as a **hardlink**, which shares its source's inode, so tightening the files would lock the copy the child has to read. The directory is the control instead. Any other host process that reads these paths, such as a backup job or an operator shell as a third user, loses access and needs to run as root or as the owning account. This is what buys the filesystem half of the boundary; `--exec-user` without it would be decorative.
+- **The boundary is node code against the host, not user against user.** `--exec-user` names one OS account that every Curio user's nodes run as. What keeps two users' data apart is session scoping in the parent process, which no child can reach. Because all children share a uid, two nodes running concurrently can reach each other's scratch directories and find each other through `/proc`. Treat "another user's node ran at the same time" as within reach, and "another user's stored artifacts" as not.
+- **Relative writes from node code land in a per-user work directory**, `.curio/exec-scratch/users/<key>/`, which is `0700` and owned by `curio-exec`. It persists between runs and is the only place a node may write; a relative write anywhere else fails, because the launch tree is root-owned. Node output still reaches the user's store, but through the parent's validated persist step rather than the child's filesystem access. Nothing cleans this directory automatically, so include it when you size the disk.
+- **Node authoring is still close to shell access, but no longer equal to it.** A node author can no longer read `instance/urban_workflow.db` or another session's artifacts, and cannot open a socket. They can still run arbitrary Python within the child's limits, and writes are bounded by ownership and `RLIMIT_FSIZE` rather than confined to a directory. Keep giving accounts accordingly. See [ARCHITECTURE.md § Sandbox Isolation](ARCHITECTURE.md#sandbox-isolation).
+- **To turn it off** (an incident, or a host where it cannot work), edit the `--isolation` flag in `docker-compose.deploy.yml` to `off` and redeploy. The permission changes above are not reverted by that; `chmod` them back by hand if something else needs them.
 - `.env` is gitignored, but verify with `git status` after creating it.
-- Back up `instance/urban_workflow.db` and `data/` regularly.
+- Back up `instance/urban_workflow.db`, `datasets/`, and `.curio/` regularly.
 

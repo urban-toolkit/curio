@@ -1,0 +1,263 @@
+/* ─────────────────────────────────────────────────────────────
+   /projects in the shape of the catalog browse pages:
+   category rail | project cards | detail drawer.
+
+   The rail, page grid, header band, filter bar and drawer shell are reused
+   from ../catalog/CatalogBrowseLayout.module.css. This file holds only what
+   is specific to projects.
+
+   Colours and geometry come from ../../styles/curioTokens.css. The card grid
+   also inherits the --catalogBrowseCard* variables declared on `.page` in the
+   catalog layout, so gaps and padding change on all three browse pages at once.
+   ───────────────────────────────────────────────────────────── */
+
+.main {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The card area owns the scroll so the header and filter bar stay put. Same
+   effect as the catalog's card grid, without pinning a viewport calc that
+   breaks whenever the header's height changes. The scrollbar treatment is the
+   catalog's, driven by the same inherited variables — the two pages used to
+   scroll with visibly different bars. */
+.cardScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--catalogBrowseCardGridPadding, 24px);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--catalogBrowseCardGridScrollbarThumb, rgba(30, 31, 35, 0.22))
+    var(--catalogBrowseCardGridScrollbarTrack, rgba(30, 31, 35, 0.06));
+}
+
+.cardScroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.cardScroll::-webkit-scrollbar-track {
+  background: var(--catalogBrowseCardGridScrollbarTrack, rgba(30, 31, 35, 0.06));
+  border-radius: 3px;
+  margin: 4px 0;
+}
+
+.cardScroll::-webkit-scrollbar-thumb {
+  background: var(--catalogBrowseCardGridScrollbarThumb, rgba(30, 31, 35, 0.22));
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.cardScroll::-webkit-scrollbar-thumb:hover {
+  background: var(--catalogBrowseCardGridScrollbarThumbHover, rgba(30, 31, 35, 0.35));
+  background-clip: padding-box;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--catalogBrowseCardGridGap, 20px);
+  /* Pack rows to the top so a short filtered list does not stretch. */
+  align-content: start;
+}
+
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.viewSwitch {
+  display: flex;
+  gap: 4px;
+}
+
+/* Same shape as .chip in the catalog filter bar — this sits in that same bar. */
+.viewButton {
+  height: 26px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-pill);
+  background: transparent;
+  color: var(--curio-text-secondary);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.viewButton:hover:not(.viewButtonActive) {
+  background: var(--curio-page-bg);
+}
+
+.viewButtonActive {
+  background: var(--curio-top-bar-bg);
+  border-color: var(--curio-top-bar-bg);
+  color: var(--curio-card-bg);
+}
+
+/* ── Project cards ──
+
+   The selection language is lifted from .card / .cardActive in
+   ../catalog/CatalogBrowseLayout.module.css so a picked dataflow reads exactly
+   like a picked catalog item: a raised shadow plus a border in the item's own
+   colour. On the catalog pages that colour carries information — a dataset's
+   format, a package's node category. A dataflow has neither, so here it is the
+   one dataflow colour on every card. */
+
+.card {
+  position: relative;
+  height: 180px;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background: var(--curio-card-bg);
+  box-shadow: var(--curio-shadow-browse-card);
+  overflow: hidden;
+  cursor: pointer;
+  outline: none;
+  box-sizing: border-box;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  /* Same top-down order as the catalog browse cards: accent strip, then the
+     title block, then the artwork fills whatever height is left. The title used
+     to sit at the bottom over a gradient, which read nothing like the other
+     browse pages. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* One colour for every dataflow. The catalog pages key a card's colour to
+   something real (a dataset's format, a package's node category); a dataflow
+   has no categorization at all, so a per-project accent was decoration that
+   read as information. The thumbnail below still colours its nodes by type,
+   which is the part that says something. */
+.cardStrip {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  flex-shrink: 0;
+  background: var(--curio-kind-dataflow-fg);
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px 8px;
+  flex-shrink: 0;
+}
+
+/* Matches .cardTitle / .publisher on the catalog browse cards. */
+.cardTitle {
+  font-size: var(--curio-font-size-md);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--curio-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardSub {
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardThumbnail {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.card:hover,
+.card:focus-visible {
+  box-shadow: var(--curio-shadow-browse-card-raised);
+}
+
+.cardActive {
+  box-shadow: var(--curio-shadow-browse-card-raised);
+  border-color: var(--curio-kind-dataflow-fg);
+}
+
+/* ── List view ──
+
+   The Grid/List switch used to change only the container, so "List" rendered a
+   single column of full 180px grid cards. In list view the same card turns on
+   its side: the coloured strip becomes a leading block that keeps the kind
+   label and revision badge, the title block takes the remaining width, and the
+   thumbnail shrinks to a trailing tile. Nothing is hidden, so the two views
+   carry the same information. */
+
+.cardRow {
+  height: 56px;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.cardRow .cardStrip {
+  width: 168px;
+  min-height: 0;
+  flex-shrink: 0;
+  padding: 0 12px;
+}
+
+.cardRow .cardBody {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+  padding: 0 14px;
+}
+
+.cardRow .cardThumbnail {
+  flex: 0 0 120px;
+  min-height: 0;
+}
+
+/* Detail drawer: only the projects-specific action buttons live here. The rest
+   of the drawer is ../catalog/CatalogBrowseDrawerBody, shared with both
+   catalogs, so a layout change there necessarily lands on this page too. */
+
+.detailButtonRow {
+  display: flex;
+  gap: 8px;
+}
+
+/* Secondary action in the detail drawer, sitting under the dark primary. */
+.secondaryButton {
+  flex: 1;
+  height: 36px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg);
+  background: transparent;
+  color: var(--curio-text-primary);
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondaryButton:hover {
+  background: #fafafa;
+  border-color: var(--curio-border-strong);
+}
+
+.dangerButton {
+  color: var(--curio-danger-text);
+}
+
+.dangerButton:hover {
+  background: var(--curio-danger-bg);
+  border-color: var(--curio-danger-border);
+}

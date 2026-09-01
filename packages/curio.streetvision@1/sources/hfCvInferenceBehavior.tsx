@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
+import { authHeaders } from './apiAuth';
 
 /**
  * HuggingFace CV Inference behavior.
@@ -19,6 +20,9 @@ import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/sr
 
 // See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/streetvision`;
+
+// Shared with cvGalleryBehavior, which needs the same identity to read back
+// the overlays this node's runs wrote. See sources/apiAuth.ts.
 
 type ModelType = 'segmentation' | 'detection';
 
@@ -135,7 +139,7 @@ export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [backendUp, setBackendUp] = useState(false);
   useEffect(() => {
     const check = () => {
-      fetch(`${API_BASE}/health`).then(r => r.json())
+      fetch(`${API_BASE}/health`, { headers: authHeaders() }).then(r => r.json())
         .then(() => setBackendUp(true))
         .catch(() => setBackendUp(false));
     };
@@ -166,7 +170,7 @@ export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
     const t = setTimeout(() => {
       setModelsLoading(true);
       setModelsError(null);
-      fetch(`${API_BASE}/models/search?task=${task}&query=${encodeURIComponent(query)}`)
+      fetch(`${API_BASE}/models/search?task=${task}&query=${encodeURIComponent(query)}`, { headers: authHeaders() })
         .then(async r => {
           const d = await r.json().catch(() => ({}));
           if (!r.ok) {
@@ -271,7 +275,7 @@ export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
 
     fetch(`${API_BASE}/inference/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({
         images,
         model: selectedModel,

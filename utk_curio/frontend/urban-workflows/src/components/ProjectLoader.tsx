@@ -6,7 +6,7 @@
  * FlowContext.outputs so every node renders in an executed state.
  */
 import React, { useEffect, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useFlowContext, IOutput } from "../providers/FlowProvider";
 import { useCode } from "../hook/useCode";
 import { useEnsureWorkflowDeps } from "../hook/useEnsureWorkflowDeps";
@@ -32,11 +32,13 @@ function hasLoadableDataflow(
 
 export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { id } = useParams<{ id?: string }>();
+  const navigate = useNavigate();
   const loaded = useRef<string | null>(null);
   const {
     loadProject,
     loadSharedProject,
     setOutputs,
+    hydrateRestoredOutputs,
     loadParsedTrill,
     projectId,
   } = useFlowContext();
@@ -46,6 +48,19 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
   // package names come from node source the loader can't vet and installing
   // an sdist runs setup.py server-side (see the hook's doc comment).
   const ensureWorkflowDeps = useEnsureWorkflowDeps();
+
+  // Canonicalize the URL when a brand-new dataflow gets persisted out-of-band —
+  // e.g. installing a dataset or a producing node's auto-install creates+saves
+  // the project (setting projectId) without going through the Save button's
+  // navigate. Without this the URL stays /dataflow/new, so a reload would reset
+  // to a fresh canvas and drop the just-created project. Mirrors the
+  // first-save navigate in UpMenu.handleSave; the [id] effect below then bails
+  // via its `projectId === id` guard, so no reload/re-fetch occurs.
+  useEffect(() => {
+    if (id === "new" && projectId && UUID_RE.test(projectId)) {
+      navigate(`/dataflow/${projectId}`, { replace: true });
+    }
+  }, [id, projectId, navigate]);
 
   useEffect(() => {
     if (id === "new") {
@@ -102,6 +117,10 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
           }
           return merged;
         });
+        // Refill downstream data.input (incl. merge slots) from the restored
+        // outputs — otherwise every reload requires rerunning each upstream
+        // node before merges/pools receive anything (dev/64).
+        hydrateRestoredOutputs(newOutputs);
       }
     };
 

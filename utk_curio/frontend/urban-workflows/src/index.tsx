@@ -56,12 +56,11 @@ export { refreshPackageRegistry };
 // Boot sequence:
 //   Fetch installed packages first — `refreshPackageRegistry()` registers every
 //   package-derived descriptor (including the auto-installed `curio.builtin@1`)
-//   and *then* pushes the merged port table to the backend. Calling
-//   `syncNodeTypeRegistry()` up-front would POST an empty `{nodeTypes: {}}`
-//   (the registry is empty at module-evaluation time post-Phase-B) and clear
-//   the backend's `_node_type_registry`, leaving a validation gap until the
-//   package fetch resolves. Anonymous boots are no-ops until sign-in calls
-//   `refreshPackageRegistry()` explicitly.
+//   so the palette is populated before anything reads it.
+//
+//   An anonymous boot is a genuine no-op: `refreshPackageRegistry` returns
+//   early without a session token, because `/api/packages` requires auth and
+//   would only 401 on the sign-up page. Sign-in refreshes the registry itself.
 void refreshPackageRegistry();
 
 import FlowProvider from "./providers/FlowProvider";
@@ -71,18 +70,27 @@ import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
 import { NodeCatalogDrawerProvider } from "./providers/NodeCatalogDrawerProvider";
+import { AgentCatalogDrawerProvider } from "./providers/AgentCatalogDrawerProvider";
+import { listenForPeerDatasetCatalogRefresh } from "./services/datasetCatalog";
+import { DatasetCatalogDrawerProvider } from "./providers/datasetCatalog";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
 import { PackagePaletteProvider } from "./providers/PackagePaletteContext";
+import { DatasetPaletteProvider } from "./providers/DatasetPaletteContext";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
-import LLMProvider from "./providers/LLMProvider";
 import { RequireAuth } from "./components/RequireAuth";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
 import ProjectsList from "./pages/projects/ProjectsList";
-import CatalogPage from "./pages/catalog/CatalogPage";
+import CatalogMasterPage from "./pages/catalog/CatalogMasterPage";
+import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
+import DataCatalogBrowse from "./pages/dataHub/DataCatalogBrowse";
+import DataCatalogDetail from "./pages/dataHub/DataCatalogDetail";
+import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
+import DataHubPage from "./pages/dataHub/DataHubPage";
 import { ProjectLoader } from "./components/ProjectLoader";
 
 const MainCanvasRoute: React.FC = () => (
@@ -102,13 +110,19 @@ const MainCanvasRoute: React.FC = () => (
             components (UpMenu, PackagesPaletteDropdown), so scoping it here
             doesn't reduce reach. */}
         <NodeCatalogDrawerProvider>
-          <StarterProvider>
-            <ProjectLoader>
-              <PackagePaletteProvider>
-                <MainCanvas />
-              </PackagePaletteProvider>
-            </ProjectLoader>
-          </StarterProvider>
+          <DatasetCatalogDrawerProvider>
+            <AgentCatalogDrawerProvider>
+              <StarterProvider>
+                <ProjectLoader>
+                  <PackagePaletteProvider>
+                    <DatasetPaletteProvider>
+                      <MainCanvas />
+                    </DatasetPaletteProvider>
+                  </PackagePaletteProvider>
+                </ProjectLoader>
+              </StarterProvider>
+            </AgentCatalogDrawerProvider>
+          </DatasetCatalogDrawerProvider>
         </NodeCatalogDrawerProvider>
       </FlowProvider>
     </CollaborationProvider>
@@ -141,9 +155,12 @@ const App: React.FC = () => {
       <BackendHealthBanner>
         <ToastProvider>
             <ReactFlowProvider>
-              <LLMProvider>
                 <ProvenanceProvider>
                   <UserProvider>
+                    {/* Backstop under the per-node boundaries (#201): a throw
+                        from page chrome rather than from a node still has to
+                        land somewhere other than a blank document. */}
+                    <ErrorBoundary label="route">
                     <Routes>
                     <Route path="/auth/signin" element={<SignIn />} />
                     <Route path="/auth/signup" element={<SignUp />} />
@@ -167,7 +184,21 @@ const App: React.FC = () => {
                       path="/catalog"
                       element={
                         <RequireAuth>
-                          <CatalogPage />
+                          <CatalogMasterPage />
+                        </RequireAuth>
+                      }
+                    >
+                      <Route index element={<Navigate to="nodes" replace />} />
+                      <Route path="nodes" element={<NodeCatalogBrowse />} />
+                      <Route path="data" element={<DataCatalogBrowse />} />
+                      <Route path="data/:datasetId" element={<DataCatalogDetail />} />
+                      <Route path="agents" element={<AgentCatalogBrowse />} />
+                    </Route>
+                    <Route
+                      path="/data-hub/:datasetId?"
+                      element={
+                        <RequireAuth>
+                          <DataHubPage />
                         </RequireAuth>
                       }
                     />
@@ -184,15 +215,32 @@ const App: React.FC = () => {
                       }
                     />
                     </Routes>
+                    </ErrorBoundary>
                   </UserProvider>
                 </ProvenanceProvider>
-              </LLMProvider>
             </ReactFlowProvider>
         </ToastProvider>
       </BackendHealthBanner>
     </BrowserRouter>
   );
 };
+
+// A rejected promise nobody caught reaches `window` as an `unhandledrejection`,
+// and webpack-dev-server's `client.overlay.runtimeErrors` listens for exactly
+// that - so in development one escaped rejection paints the error overlay over
+// the whole app (#201). Logging it here does not stop the overlay, but it names
+// the rejection in the console instead of leaving only the overlay's stack, and
+// it makes an escaped promise visible in production too, where there is no
+// overlay at all and the failure was previously silent.
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("[curio] unhandled promise rejection:", event.reason);
+});
+
+// Catalog mutations in ANOTHER tab must invalidate this one's cache. Without
+// this the broadcast has no listener and the cross-tab half is inert: adding a
+// dataset to all projects from `/catalog` in one tab left a dataflow open in
+// another serving a listing cached from before the mutation.
+listenForPeerDatasetCatalogRefresh();
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 

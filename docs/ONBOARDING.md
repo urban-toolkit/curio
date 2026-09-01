@@ -29,19 +29,19 @@ This document is meant for **undergraduate students** involved in the Curio proj
 
 **Curio** is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations. [GitHub](https://github.com/urban-toolkit/curio)
 
-In-browser map rendering and GPU compute are provided by the **Autark** grammar (`@urban-toolkit/autk-grammar`). It is exposed in dataflows through a single `AUTK_GRAMMAR` node whose "UrbanSpec" declaratively combines data loading (OSM/PBF), GPU `compute` (WGSL), and `map` / `plot` rendering. How a spec references data arriving from upstream nodes — the `upstream` keyword versus named layer references — is covered in [ARCHITECTURE.md](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
+In-browser map rendering and GPU compute are provided by the **Autark** grammar (`@urban-toolkit/autk-grammar`). It is exposed in dataflows through a single `Autark` node whose "UrbanSpec" declaratively combines data loading (OSM/PBF), GPU `compute` (WGSL), and `map` / `plot` rendering. How a spec references data arriving from upstream nodes, using either the `upstream` keyword or named layer references, is covered in [ARCHITECTURE.md](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
-**Urbanite** is a separate research project that has been integrated into Curio, adding LLM-powered assistance for dataflow authoring. See [urbantk.org/urbanite](https://urbantk.org/urbanite) for the paper.
+The **Agent Catalog** adds model-backed help for dataflow authoring: attach an agent to a node, a connection, or the canvas, and chat with it from the dock. Which model answers is configured in **AI Settings**.
 
 If you would like to learn more about the design and research behind Curio, please see the research papers linked in the repository.
 
 
 > "We have seen that computer programming is an art, because it applies accumulated knowledge to the world, because it requires skill and ingenuity, and especially because it produces objects of beauty. A programmer who subconsciously views himself as an artist will enjoy what he does and will do it better."  
-> — Donald Knuth
+> Donald Knuth
 
-As you code for Curio, remember that things not working is a normal, expected part of programming. Debugging is not just about fixing mistakes; it is how programmers learn, understand, and improve their work. Each error you encounter is an opportunity to clarify your thinking, discover how the systems and frameworks truly work, and refine your design. **This is the craft you are developing.** Treat debugging and refinement as part of your learning, not interruptions to it.
+As you code for Curio, remember that things not working is a normal, expected part of programming. Most of what you will learn about a system, you will learn while debugging it. An error usually means your mental model and the code disagree, and finding out which one is wrong is the whole job. **This is the craft you are developing.** Treat debugging and refinement as part of your learning, not interruptions to it.
 
-As you learn, consider reading [Peter Norvig’s "Teach Yourself Programming in Ten Years"](https://norvig.com/21-days.html). Norvig emphasizes that programming is not about shortcuts or overnight mastery but about learning deeply, practicing consistently, and staying curious while building meaningful systems. Likewise, Donald Knuth, one of the most respected computer scientists, describes programming as an art that requires creativity, skill, and the pursuit of clarity and beauty in your work. You can read his classic perspective in ["Computer Programming as an Art"](https://dl.acm.org/doi/pdf/10.1145/1283920.1283929).
+As you learn, consider reading [Peter Norvig’s "Teach Yourself Programming in Ten Years"](https://norvig.com/21-days.html). Norvig’s argument is that real skill comes from years of deliberate practice, not from a shortcut. Donald Knuth makes a related point: he treats programming as an art, where clarity and elegance are worth pursuing for their own sake. His classic essay is ["Computer Programming as an Art"](https://dl.acm.org/doi/pdf/10.1145/1283920.1283929).
 
 When your code breaks or your pipeline fails, take a breath: this is not a reason for frustration, but an invitation to engage with programming and strengthen your ability to think, debug, and build effectively.
 
@@ -108,30 +108,26 @@ These functions handle environment setup, server startup, and process management
 
 The `mainCanvas` component (located here: `utk_curio/frontend/urban-workflows/src/components/MainCanvas.tsx`) is responsible for building and rendering the entire editor canvas. Inside the `components` folder, you will find modular subcomponents. For example:
 
-- `TableBox` → renders and manages table nodes
-- `ImageBox` → handles image nodes
-- `UserMenu`, `ToolsMenu`, `TopMenu` → UI layers
+- `ToolsMenu` → the left rail: built-in node icons, plus the Node Catalog and Data Catalog dropdowns
+- `UpMenu` → the top menu bar (File, Data, and the rest)
+- `UniversalNode` → the single component every node type renders through
 
-If you check the `MainCanvas.tsx` file, at around line 97, you will see something similar to:
+If you scroll to the component's `return (`, currently around line 471, you will see something similar to:
 
 ```tsx
 return (
     <div>
-        <ReactFlow />
-        <UserMenu />
-        <ToolsMenu />
+        {!dashboardOn && <ToolsMenu />}
+        {!dashboardOn && <UpMenu ... />}
+        <ReactFlow ... />
         {/* other components */}
     </div>
 );
 ```
 
-This JSX structure defines the editor layout with React components, not raw HTML. Components are implemented in other files. For examples:
+This JSX structure defines the editor layout with React components, not raw HTML. Each component is implemented in its own file: `<ToolsMenu />` comes from `components/menus/nodes/ToolsMenu.tsx` and `<UpMenu />` from `components/menus/top/UpMenu.tsx`. Style classes are likewise defined elsewhere, in CSS modules such as `UpMenu.module.css`.
 
-```tsx
-<TopMenu />
-```
-
-References to: `components/menu/top/TopMenu.tsx`. Similarly, style classes (e.g., `className="rightSide"`) are defined in other files (e.g., `UpMenu.module.css`).
+Do not take the line number literally, because it moves. Use your editor's "go to symbol" or search for `return (` instead.
 
 ## 3. Essential Installations
 
@@ -145,9 +141,11 @@ Install these tools before you start:
 
 This is the folder structure of the Curio repository:
 
-- `docs/` – Usage guides, examples, contribution guidelines, developer references
-- `tests/` – Unit tests and integration tests
-- `utk_curio/` – Source code for Curio (backend, frontend, sandbox)
+- `docs/`: usage guides, examples, contribution guidelines, developer references
+- `packages/`: the shared node catalog, one directory per node package
+- `datasets/`: the shared Data Catalog
+- `scripts/`: `test.sh` and the package-authoring helpers
+- `utk_curio/`: source code for Curio (backend, frontend, sandbox). Tests live beside the code they cover: `utk_curio/backend/tests/`, `utk_curio/sandbox/tests/`, and `utk_curio/frontend/urban-workflows/src/tests/`
 
 ## 5. Making Contributions
 

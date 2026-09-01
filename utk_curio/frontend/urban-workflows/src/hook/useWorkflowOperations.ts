@@ -7,7 +7,7 @@
  * and connection logic.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
     Node,
     Edge,
@@ -23,7 +23,12 @@ import { useUserContext } from "../providers/UserProvider";
 import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap, extractKeywordMaps } from "../utils/flowNodeUtils";
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
-import { projectsApi, OutputRef } from "../api/projectsApi";
+import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
+import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
+import { notifyAgentDockRefresh } from "../utils/agentCatalogEvents";
+import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
+import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
+import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import {
     getCurrentProjectPackagesList,
     setCurrentProject,
@@ -37,7 +42,11 @@ export interface WorkflowOperationsDeps {
     setNodes: any;
     setEdges: any;
     setOutputs: any;
-    outputsRef: React.MutableRefObject<Array<{ nodeId: string; output: string }>>;
+    // `output` is `unknown`, matching IOutput in FlowProvider (which is what is
+    // actually passed) and SaveableOutput in saveOutputDataset (which is what
+    // actually consumes it). Declaring it `string` here made the provider's own
+    // ref unassignable to the hook it feeds.
+    outputsRef: React.MutableRefObject<Array<{ nodeId: string; output: unknown }>>;
     setInteractions: any;
     setDashboardPins: (value: any) => void;
     setPositionsInDashboard: (data: any) => void;
@@ -49,8 +58,11 @@ export interface WorkflowOperationsDeps {
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
     onNodesChange: (changes: NodeChange[]) => void;
-    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean) => void;
+    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => void;
     addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
+    // Workflow-wide default for the per-node "Save output dataset" toggle,
+    // sourced from the backend (CURIO_DEFAULT_SAVE_NODE_OUTPUT) via FlowProvider.
+    defaultSaveOutputDataset: boolean;
 }
 
 export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
@@ -65,6 +77,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         workflowDescriptionRef,
         onEdgesDelete, onNodesDelete, onNodesChange,
         onConnect, addNode,
+        defaultSaveOutputDataset,
     } = deps;
 
     const reactFlow = useReactFlow();
@@ -82,11 +95,29 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const [expandStatus, setExpandStatus] = useState<'expanded' | 'minimized'>('expanded');
     const [suggestionsLeft, setSuggestionsLeft] = useState<number>(0); // Number of suggestions left
     const [workflowGoal, setWorkflowGoal] = useState("");
+    // The save paths run from callbacks that close over stale state, so they
+    // read the goal through a ref, the way the name and description already do.
+    const workflowGoalRef = useRef("");
+    useEffect(() => { workflowGoalRef.current = workflowGoal; }, [workflowGoal]);
     // ``packages`` is the current project's lockfile (``spec.dataflow.packages``).
     // The authoritative copy lives in ``projectPackagesStore`` so non-React
     // code (palette filter, registry bootstrap) can read it without context.
     // This component subscribes so save callers see fresh state.
     const [packages, setPackagesState] = useState<string[]>(getCurrentProjectPackagesList());
+    const [dataflowDatasets, setDataflowDatasets] = useState<any[]>([]);
+    // Keep a ref that's always in sync so saveCurrentProject never reads a
+    // stale closure value (important: set during render, not in a useEffect,
+    // so it's always the value from the most recent completed render).
+    const dataflowDatasetsRef = useRef<any[]>([]);
+    dataflowDatasetsRef.current = dataflowDatasets;
+    // In-flight dataset installs, surfaced as "Adding…" placeholders in the
+    // palette + drawer. Volatile/session-only — never serialized into the spec.
+    // Mirrored in a ref so begin/clear from async callbacks never read a stale
+    // closure, and a per-key timeout map backstops crashed/aborted installs.
+    const [pendingInstalls, setPendingInstalls] = useState<PendingInstall[]>([]);
+    const pendingInstallsRef = useRef<PendingInstall[]>([]);
+    pendingInstallsRef.current = pendingInstalls;
+    const pendingInstallTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     useEffect(() => subscribeProjectPackages(() => {
         setPackagesState(getCurrentProjectPackagesList());
     }), []);
@@ -109,6 +140,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
     // Project state
     const [projectId, setProjectId] = useState<string | null>(null);
+    // Mirror projectId in a ref so saveCurrentProject can decide create-vs-update
+    // from the *live* id, not a stale closure: after a create sets projectId, a
+    // follow-up save in the same async flow (e.g. a serialized install save) would
+    // otherwise still see ``null`` and POST a second project. Synced on render and
+    // set explicitly the instant a create resolves (below).
+    const projectIdRef = useRef<string | null>(null);
+    projectIdRef.current = projectId;
     const [projectName, setProjectName] = useState<string>("");
     const [projectDirty, setProjectDirty] = useState<boolean>(false);
     const [projectSavedAt, setProjectSavedAt] = useState<Date | null>(null);
@@ -162,6 +200,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 attempts += 1;
 
                 if (attempts >= 20) {
+                    // Measurement never produced positive dimensions for every
+                    // node within the retry budget (e.g. a hidden/zero-sized
+                    // node, or a context where fitViewWithMenuOffset's pane
+                    // fallback is never reached because its measurement gate
+                    // keeps short-circuiting). Don't leave the canvas at the
+                    // default viewport — do a best-effort plain fitView so
+                    // content is at least roughly framed before giving up.
+                    reactFlow.fitView(fitOptions);
                     setFitViewOnLoad(false);
                     return;
                 }
@@ -202,29 +248,47 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, () => ({ ...newData })));
     }, [setNodes]);
 
-    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string) => {
+    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[]) => {
         if (!merge) {
             TrillGenerator.reset();
             setWorkflowName(workflowName);
             setWorkflowDescription(incomingDescription || "");
-            const empty_trill = TrillGenerator.generateTrill([], [], workflowName, "", [], incomingDescription || "");
+            // `task` is the dataflow's goal. It has always been a spec field
+            // and has always been accepted here, but nothing applied it, so a
+            // saved goal was silently dropped on every open.
+            setWorkflowGoal(task || "");
+            const empty_trill = TrillGenerator.generateTrill([], [], workflowName, task || "", [], incomingDescription || "", incomingDatasets || []);
             TrillGenerator.intializeProvenance(empty_trill);
             setPackages(incomingPackages || []);
+            setDataflowDatasets(incomingDatasets || []);
             console.log("loadParsedTrill reseting nodes");
             setNodes(() => []);
         }
 
+        // Provenance is recorded below, from these local arrays, NOT by addNode /
+        // onConnect. Those two snapshot `reactFlow.getNodes()`, and React Flow only
+        // syncs `useNodesState` into its zustand store from a useEffect - so inside
+        // this synchronous loop the store still holds the graph as it was before the
+        // load. Every version came out with one node and no edges, which is why a
+        // loaded dataflow's provenance thumbnails were blank and its versions carried
+        // edges whose endpoints were absent (#186, and the crash in #195).
+        const priorNodes: Node[] = merge ? reactFlow.getNodes() : [];
+        const priorEdges: Edge[] = merge ? reactFlow.getEdges() : [];
+        const addedNodes: Node[] = [];
+
         if (merge) {
             // Use reactFlow to get fresh state (avoid stale closure)
-            const currentNodeIds = new Set(reactFlow.getNodes().map((n: Node) => n.id));
+            const currentNodeIds = new Set(priorNodes.map((n: Node) => n.id));
             for (const node of loaded_nodes) {
                 if (!currentNodeIds.has(node.id)) {
-                    addNode(node, workflowName, provenance);
+                    addNode(node, workflowName, false);
+                    addedNodes.push(node);
                 }
             }
         } else {
             for (const node of loaded_nodes) {
-                addNode(node, workflowName, provenance);
+                addNode(node, workflowName, false);
+                addedNodes.push(node);
             }
         }
 
@@ -235,17 +299,60 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // Use reactFlow to get fresh edge ids (avoid stale closure)
         const currentEdgeIds = new Set(reactFlow.getEdges().map((e: Edge) => e.id));
 
+        const addedEdges: any[] = merge
+            ? loaded_edges.filter((e: Edge) => !currentEdgeIds.has(e.id))
+            : [...loaded_edges];
+
+        /** One provenance version per loaded node, then one per loaded edge.
+         *
+         * Built from the arrays this function was handed rather than from the
+         * React Flow store, so each version holds the graph as it stood at that
+         * step: cumulative nodes, then the full node set with cumulative edges.
+         * The invariant that matters is that every version's edges have both
+         * endpoints among its own nodes - `onConnect` dereferences the resolved
+         * target, so a version that breaks it crashes the canvas when a user
+         * clicks it in the provenance graph (#195).
+         */
+        const recordLoadProvenance = () => {
+            const acc: Node[] = [...priorNodes];
+            for (const node of addedNodes) {
+                acc.push(node);
+                TrillGenerator.addNewVersionProvenance(
+                    [...acc], [...priorEdges], workflowName, task || "", "Node added",
+                );
+            }
+            // An edge whose endpoints are not both in `acc` would recreate the very
+            // shape #195 crashes on, so it never enters a version.
+            const present = new Set(acc.map((n: Node) => n.id));
+            const accEdges: any[] = [...priorEdges];
+            for (const edge of addedEdges) {
+                if (!present.has(edge.source) || !present.has(edge.target)) continue;
+                accEdges.push(edge);
+                TrillGenerator.addNewVersionProvenance(
+                    acc, [...accEdges], workflowName, task || "", "Connection added",
+                );
+            }
+        };
+
         console.log("loadParsedTrill second");
         setNodes((prevNodes: any) => {
+            // skipValidation=true: these edges come from a saved/imported trill and
+            // were validated when created. Re-validating on load races the async
+            // node-descriptor registry and would drop valid edges + toast mid-render.
             if (merge) {
                 for (const edge of loaded_edges) {
                     if (!currentEdgeIds.has(edge.id)) {
-                        onConnect(edge, prevNodes, undefined, workflowName, provenance);
+                        onConnect(edge, prevNodes, undefined, workflowName, false, true);
                     }
                 }
             } else {
+                // Accumulate the spec edges connected so far and hand them to
+                // onConnect, so merge-handle resolution sees the earlier edges
+                // of this load (in_N occupancy) instead of an empty list.
+                const connectedSoFar: any[] = [];
                 for (const edge of loaded_edges) {
-                    onConnect(edge, prevNodes, [], workflowName, provenance);
+                    onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true);
+                    connectedSoFar.push(edge);
                 }
             }
 
@@ -265,6 +372,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setFitViewOnLoad(true);
             return prevNodes;
         });
+
+        // After the updater, not inside it: a state updater must stay pure, and
+        // `addedEdges` never depended on `prevNodes` anyway.
+        if (provenance) {
+            recordLoadProvenance();
+        }
     }
 
     const updateDefaultCode = useCallback((nodeId: string, content: string) => {
@@ -352,7 +465,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                     edge.target == change.id
                 ) {
                     showToast(
-                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing backspace.",
+                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing Delete or Backspace.",
                         "warning"
                     );
                     allowed = false;
@@ -366,6 +479,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         onNodesDelete(allowedChanges);
         return onNodesChange(allowedChanges);
     }, [reactFlow, showToast, onNodesDelete, onNodesChange]);
+
+    // A reviewed plan apply (dev/62, DEC-049): the user authorized every
+    // victim by name and the edge cascade arrived with them, so the manual
+    // "remove the edges first" guard does not apply — the edges leave in the
+    // same operation. Bookkeeping parity with manual deletion: onEdgesDelete
+    // (collab broadcast, provenance, survivor-input reset) and onNodesDelete
+    // (output pruning, provenance, broadcast). Already-absent elements no-op.
+    const applyReviewedRemovals = useCallback((nodeIds: string[], edgeIds: string[]) => {
+        const edgeSet = new Set(edgeIds);
+        const victimEdges = reactFlow.getEdges().filter((e: Edge) => edgeSet.has(e.id));
+        if (victimEdges.length) {
+            onEdgesDelete(victimEdges);
+            setEdges((prev: Edge[]) => prev.filter((e: Edge) => !edgeSet.has(e.id)));
+        }
+        const nodeSet = new Set(nodeIds);
+        const changes: NodeRemoveChange[] = reactFlow
+            .getNodes()
+            .filter((n: Node) => nodeSet.has(n.id))
+            .map((n: Node) => ({ id: n.id, type: "remove" as const }));
+        if (changes.length) {
+            onNodesDelete(changes);
+            onNodesChange(changes);
+        }
+    }, [reactFlow, onEdgesDelete, setEdges, onNodesDelete, onNodesChange]);
 
     // ---------------------------------------------------------------------------
     // Suggestion Management
@@ -523,20 +660,67 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      * anything that isn't a single safe string segment, so we coerce here at
      * the serialization boundary and drop refs we can't normalize.
      */
-    const buildOutputRefs = (): OutputRef[] =>
-        deps.outputsRef.current
-            .map((o: any) => {
-                const raw = o?.output;
-                const filename =
-                    typeof raw === "string"
-                        ? raw
-                        : typeof raw?.path === "string"
-                            ? raw.path
-                            : null;
-                if (!filename || !o?.nodeId) return null;
-                return { node_id: o.nodeId, filename };
-            })
-            .filter((r: OutputRef | null): r is OutputRef => r !== null);
+    const buildOutputRefs = (): OutputRef[] => {
+        // Honor the per-node "Save output dataset" toggle (defaults to
+        // CURIO_DEFAULT_SAVE_NODE_OUTPUT): only saving-enabled nodes persist
+        // their output as a computed dataset. Shared with the catalog's live
+        // discovery via ``buildSaveableLiveOutputs`` so the save-time and
+        // listing-time filters can never drift apart.
+        const refs =
+            buildSaveableLiveOutputs(
+                deps.outputsRef.current,
+                reactFlow.getNodes(),
+                defaultSaveOutputDataset,
+            ) ?? [];
+        // Attach each producing node's friendly display label so the save-time
+        // installer (``_auto_install_computed_outputs``) titles computed datasets
+        // by their node — matching execution-time auto-install — instead of the
+        // raw generated filename. Non-CodeEditor nodes (grammar, data pool, …)
+        // are persisted only via this save path, so without this they kept the
+        // filename title even after a "Play All" rerun.
+        const labelByNodeId = new Map<string, string>();
+        const typeByNodeId = new Map<string, string>();
+        for (const node of reactFlow.getNodes()) {
+            // Key by both ids: outputs reference node.id or node.data.nodeId
+            // depending on the node type (matches buildSaveableLiveOutputs).
+            const ids: string[] = [];
+            if (typeof node.id === "string") ids.push(node.id);
+            const dataNodeId = (node.data as { nodeId?: unknown })?.nodeId;
+            if (typeof dataNodeId === "string") ids.push(dataNodeId);
+
+            const label = resolveNodeDisplayLabel(node.data).trim();
+            // The node's type slug feeds the computed dataset's producer lineage.
+            const nodeType = (
+                (node.data as { nodeType?: unknown })?.nodeType ?? node.type ?? ""
+            );
+            const typeStr = typeof nodeType === "string" ? nodeType.trim() : "";
+            for (const id of ids) {
+                if (label) labelByNodeId.set(id, label);
+                if (typeStr) typeByNodeId.set(id, typeStr);
+            }
+        }
+        return refs.map((ref) => {
+            const label = labelByNodeId.get(ref.node_id);
+            const nodeType = typeByNodeId.get(ref.node_id);
+            return {
+                ...ref,
+                ...(label ? { node_name: label } : {}),
+                ...(nodeType ? { node_type: nodeType } : {}),
+            };
+        });
+    };
+
+    const syncDatasetsFromSavedSpec = useCallback(
+        (spec: Record<string, unknown> | null | undefined) => {
+            const datasets = (spec as { dataflow?: { datasets?: unknown[] } } | undefined)?.dataflow
+                ?.datasets;
+            if (Array.isArray(datasets)) {
+                setDataflowDatasets(datasets);
+            }
+            notifyDatasetCatalogRefresh();
+        },
+        [setDataflowDatasets],
+    );
 
     const saveCurrentProject = useCallback(async (nameOverride?: string) => {
         if (viewerMode === "shared") {
@@ -547,7 +731,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", packages, workflowDescriptionRef.current);
+        // Read packages directly from the store (always up-to-date) rather than
+        // from the React state snapshot, which may lag behind the store when a
+        // package install/uninstall updates the store before React re-renders.
+        const currentPackages = getCurrentProjectPackagesList();
+        // The serialized datasets section matters only on the CREATE branch,
+        // where it seeds the new project's refs (dev/81). On an update the
+        // backend owns dataflow.datasets and ignores whatever is sent here —
+        // syncDatasetsFromSavedSpec re-aligns the mirror from the response.
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -555,12 +747,21 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
         const name = nameOverride || projectName || workflowNameRef.current;
 
-        if (projectId) {
-            const detail = await projectsApi.update(projectId, {
+        // Read the live id from the ref, not the closure: a save chained right
+        // after a create (serialized install saves) must take the update branch.
+        const existingId = projectIdRef.current;
+        if (existingId) {
+            const detail = await projectsApi.update(existingId, {
                 spec,
                 outputs: outputRefs,
                 name,
             });
+            syncDatasetsFromSavedSpec(detail.spec);
+            // The backend prunes attachments for deleted nodes/edges (and
+            // preserves the agent lockfile) on save, so reconcile the dock with
+            // the freshly-persisted spec — a just-deleted node's tile disappears
+            // without a reload. Mirrors the dataset-catalog refresh above.
+            notifyAgentDockRefresh();
             setProjectSavedAt(new Date());
             setProjectDirty(false);
             return detail;
@@ -570,6 +771,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 spec,
                 outputs: outputRefs,
             });
+            // Pin the ref synchronously so a save chained immediately after this
+            // create sees the new id and updates instead of creating a duplicate
+            // (setProjectId only reaches the ref on the next render).
+            projectIdRef.current = detail.id;
+            syncDatasetsFromSavedSpec(detail.spec);
             setProjectId(detail.id);
             setProjectName(detail.name);
             setProjectSavedAt(new Date());
@@ -584,11 +790,194 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             //     ``curio.builtin@1`` (and anything else in defaults) as
             //     installed in the new project — without this the user sees
             //     "Install" buttons for packages they "just got".
-            const seededPackages: string[] | undefined = detail?.spec?.dataflow?.packages;
+            const dataflowSpec = detail?.spec?.dataflow as
+                | { packages?: string[] }
+                | undefined;
+            const seededPackages = dataflowSpec?.packages;
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
-    }, [projectId, projectName, packages, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode]);
+    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
+
+    // Serialize project saves so concurrent callers (e.g. two producing nodes
+    // finishing back-to-back) can never run two creates in parallel and POST
+    // duplicate projects. Each request runs strictly after all prior ones; once
+    // the first create has set projectIdRef, every chained save takes the update
+    // branch. Because saveCurrentProject reads dataflowDatasetsRef/projectIdRef
+    // live (not from a closure), a save enqueued after a ref was staged persists
+    // that ref even if it rode in on an already-running chain.
+    const saveChainRef = useRef<Promise<any> | null>(null);
+    const requestProjectSave = useCallback((): Promise<any> => {
+        const prior = saveChainRef.current;
+        // Start immediately when idle (so the create/update fires synchronously);
+        // otherwise chain strictly after the previous save so two creates never run
+        // in parallel. ``prior`` is always a never-rejecting tail.
+        const next = prior ? prior.then(() => saveCurrentProject()) : saveCurrentProject();
+        // Track a caught tail for chaining + cleanup so a failed save can neither
+        // surface as an unhandled rejection nor wedge the chain. The caller still
+        // gets ``next`` (which may reject) and is expected to handle it.
+        const tail = next.then(
+            () => undefined,
+            () => undefined,
+        );
+        saveChainRef.current = tail;
+        tail.then(() => {
+            if (saveChainRef.current === tail) saveChainRef.current = null;
+        });
+        return next;
+    }, [saveCurrentProject]);
+
+    // Resolve the current project id, creating+saving the project when this is a
+    // brand-new dataflow that has never been persisted. Centralizes the rule that
+    // used to live only in the catalog drawer so the node-execution auto-install
+    // path can guarantee a persisted project without a manual save. Does NOT force
+    // a save when the project already exists (the catalog Install endpoint persists
+    // its own ref) — see persistDataflowForInstall for the always-save behavior.
+    // Concurrent callers share one create (so two rapid installs can't double-create)
+    // and all receive the same id, without triggering a redundant follow-up update.
+    const ensureProjectInFlightRef = useRef<Promise<string | null> | null>(null);
+    const ensureProjectId = useCallback(async (): Promise<string | null> => {
+        if (projectIdRef.current) return projectIdRef.current;
+        if (ensureProjectInFlightRef.current) return ensureProjectInFlightRef.current;
+        const inFlight = (async () => {
+            try {
+                const detail = await requestProjectSave();
+                return (detail as { id?: string } | undefined)?.id || projectIdRef.current || null;
+            } catch (err) {
+                showToast(
+                    (err as Error)?.message || "Save the dataflow before adding datasets.",
+                    "error",
+                );
+                return null;
+            } finally {
+                ensureProjectInFlightRef.current = null;
+            }
+        })();
+        ensureProjectInFlightRef.current = inFlight;
+        return inFlight;
+    }, [requestProjectSave, showToast]);
+
+    // Persist the dataflow after a producing node ran but the backend did NOT
+    // auto-install during execution (it only does so for deliberately-saved
+    // tabular/geo datasets or bundles — a raster/raw-artifact output returns no
+    // installedDataset payload). The dataset is instead installed at SAVE time
+    // from the node's output refs (_auto_install_computed_outputs), so this runs
+    // the exact same save the disk icon does — create-or-update + resync — making
+    // the dataset appear without a manual save. No dataset ref to stage here: the
+    // backend derives it from the saved output refs and returns it in detail.spec.
+    // Map a save's install-warnings onto friendly node labels and warn the user.
+    // Without this, a computed output that failed to install (e.g. its artifact
+    // was missing at save time) was swallowed server-side and the dataset just
+    // never appeared — the "Play All didn't generate all datasets" symptom.
+    //
+    // ``scopeNodeIds`` is the set of nodes THIS install-sync covered
+    // (FlowProvider.runInstallSyncNow passes installSyncPendingIdsRef's contents).
+    // It is load-bearing: buildOutputRefs rebuilds refs for EVERY toggle-enabled
+    // node on every install-save, and ProjectLoader repopulates outputsRef from
+    // the saved refs on load, so a save triggered by node C used to toast
+    // `Dataset for "A" couldn't be generated` about a node the user never
+    // touched, for a stale artifact from a previous sandbox session (#180).
+    // ``undefined`` means unscoped (surface everything), which keeps every
+    // caller that has no id set to offer on the old behavior.
+    const surfaceInstallWarnings = useCallback(
+        (
+            detail: { dataset_install_warnings?: DatasetInstallWarning[] } | undefined,
+            scopeNodeIds?: readonly string[],
+        ) => {
+            const all = detail?.dataset_install_warnings;
+            if (!all || all.length === 0) return;
+            const scope = scopeNodeIds ? new Set(scopeNodeIds) : null;
+            const warnings = scope ? all.filter((w) => scope.has(w.node_id)) : all;
+            const outOfScope = scope ? all.filter((w) => !scope.has(w.node_id)) : [];
+            // Filtered out, not discarded: these are real backend warnings, just
+            // not about anything this run touched. One formatted STRING (not an
+            // object arg) so the message survives console capture verbatim.
+            if (outOfScope.length > 0) {
+                console.warn(
+                    `[curio] ${outOfScope.length} dataset install warning(s) for ` +
+                        `nodes outside this install-sync (not toasted): ` +
+                        outOfScope
+                            .map((w) => `${w.node_id} (${w.filename}): ${w.reason}`)
+                            .join("; "),
+                );
+            }
+            if (warnings.length === 0) return;
+            const labelByNodeId = new Map<string, string>();
+            for (const node of reactFlow.getNodes()) {
+                const label = resolveNodeDisplayLabel(node.data).trim();
+                if (!label) continue;
+                if (typeof node.id === "string") labelByNodeId.set(node.id, label);
+                const dataNodeId = (node.data as { nodeId?: unknown })?.nodeId;
+                if (typeof dataNodeId === "string") labelByNodeId.set(dataNodeId, label);
+            }
+            const names = warnings.map((w) => labelByNodeId.get(w.node_id) || w.node_id);
+            const list = names.join(", ");
+            showToast(
+                warnings.length === 1
+                    ? `Dataset for "${list}" couldn't be generated. Re-run that node.`
+                    : `${warnings.length} datasets couldn't be generated (${list}). Re-run those nodes.`,
+                "warning",
+            );
+        },
+        [reactFlow, showToast],
+    );
+
+    // ``nodeIds`` scopes the warning toast to the producers this save was run
+    // for; omit it to surface every warning the response carries (see
+    // surfaceInstallWarnings).
+    const persistDataflowForInstall = useCallback(
+        async (nodeIds?: readonly string[]): Promise<void> => {
+            try {
+                const detail = await requestProjectSave();
+                surfaceInstallWarnings(detail, nodeIds);
+            } catch (err) {
+                showToast((err as Error)?.message || "Could not save the dataflow.", "error");
+                notifyDatasetCatalogRefresh();
+            }
+        },
+        [requestProjectSave, showToast, surfaceInstallWarnings],
+    );
+
+    // ── In-flight install placeholders ────────────────────────────────────────
+    // Upper bound on how long a placeholder can linger if its clear never fires
+    // (crashed/aborted run). Matches the client execution timeout ceiling.
+    const PENDING_INSTALL_TIMEOUT_MS = 600_000;
+
+    const endPendingInstall = useCallback((key: string): void => {
+        const timer = pendingInstallTimersRef.current[key];
+        if (timer !== undefined) {
+            clearTimeout(timer);
+            delete pendingInstallTimersRef.current[key];
+        }
+        if (!pendingInstallsRef.current.some((p) => p.key === key)) return;
+        setPendingInstalls((prev) => prev.filter((p) => p.key !== key));
+    }, []);
+
+    // Mark a dataset install as started so both surfaces can render an
+    // "Installing…" placeholder. Idempotent per key: a re-run for the same node
+    // replaces the entry and restarts its safety timer (no duplicate placeholder).
+    const beginPendingInstall = useCallback(
+        (entry: Omit<PendingInstall, "startedAt">): void => {
+            const existing = pendingInstallTimersRef.current[entry.key];
+            if (existing !== undefined) clearTimeout(existing);
+            pendingInstallTimersRef.current[entry.key] = setTimeout(
+                () => endPendingInstall(entry.key),
+                PENDING_INSTALL_TIMEOUT_MS,
+            );
+            const next: PendingInstall = { ...entry, startedAt: Date.now() };
+            setPendingInstalls((prev) => [...prev.filter((p) => p.key !== entry.key), next]);
+        },
+        [endPendingInstall],
+    );
+
+    // Drop every placeholder + timer when the dataflow is swapped/discarded so a
+    // pending install from the previous project can't leak into the next one.
+    useEffect(() => {
+        return () => {
+            Object.values(pendingInstallTimersRef.current).forEach(clearTimeout);
+            pendingInstallTimersRef.current = {};
+        };
+    }, []);
 
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
@@ -609,7 +998,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", packages, workflowDescriptionRef.current);
+        // Same as saveCurrentProject: read from store to avoid stale React state snapshot.
+        const currentPackages = getCurrentProjectPackagesList();
+        // Save-a-copy is a CREATE: the serialized datasets section seeds the new
+        // project's refs (dev/81) — read from the ref so the copy carries the
+        // latest installed datasets.
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -620,13 +1014,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             spec,
             outputs: outputRefs,
         });
+        syncDatasetsFromSavedSpec(detail.spec);
         setProjectId(detail.id);
         setProjectName(detail.name);
         setProjectSavedAt(new Date());
         setProjectDirty(false);
         setViewerMode("owner");
         return detail;
-    }, [packages, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
+    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
     const loadProject = useCallback(async (id: string) => {
         const result = await projectsApi.get(id);
@@ -675,15 +1070,24 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(false);
         setProjectSavedAt(null);
         setNodeExecStatus({});
+        setDataflowDatasets([]);
         setViewerMode("owner");
     }, []);
 
+    // Both marks return the SAME state object when the node is already in the
+    // target status. CodeEditor calls markNodeStale on every keystroke, and an
+    // unconditional spread changed the FlowContext value each time — re-rendering
+    // every context consumer on the canvas per keystroke (dev/70).
     const markNodeExecuted = useCallback((nodeId: string) => {
-        setNodeExecStatus((prev) => ({ ...prev, [nodeId]: "executed" }));
+        setNodeExecStatus((prev) =>
+            prev[nodeId] === "executed" ? prev : { ...prev, [nodeId]: "executed" },
+        );
     }, []);
 
     const markNodeStale = useCallback((nodeId: string) => {
-        setNodeExecStatus((prev) => ({ ...prev, [nodeId]: "stale" }));
+        setNodeExecStatus((prev) =>
+            prev[nodeId] === "stale" ? prev : { ...prev, [nodeId]: "stale" },
+        );
     }, []);
 
     // ---------------------------------------------------------------------------
@@ -703,6 +1107,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setPackages,
         addPackage,
         removePackage,
+        dataflowDatasets,
+        setDataflowDatasets,
+        pendingInstalls,
+        beginPendingInstall,
+        endPendingInstall,
 
         // Project state
         projectId,
@@ -724,10 +1133,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         acceptSuggestion,
         eraseWorkflowSuggestions,
         applyRemoveChanges,
+        applyReviewedRemovals,
 
         // Project operations
         saveCurrentProject,
         saveAsNewProject,
+        ensureProjectId,
+        persistDataflowForInstall,
         loadProject,
         loadSharedProject,
         discardProject,

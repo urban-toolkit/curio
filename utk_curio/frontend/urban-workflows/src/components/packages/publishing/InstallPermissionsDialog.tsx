@@ -1,5 +1,6 @@
 import React from "react";
 import type { PackagePayload, ResolveConflict } from "../../../api/packagesApi";
+import { describePackagePermission } from "../../../utils/packagePermissions";
 import styles from "./InstallPermissionsDialog.module.css";
 
 export interface InstallPermissionsDialogProps {
@@ -8,6 +9,13 @@ export interface InstallPermissionsDialogProps {
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  /**
+   * Label for the confirm button. Defaults to the per-dataflow wording used by
+   * the Node Catalog drawer; the /catalog/nodes page passes the all-projects
+   * wording, since that surface writes the user's defaults rather than one
+   * dataflow's lockfile.
+   */
+  confirmLabel?: string;
 }
 
 export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> = ({
@@ -16,6 +24,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
   busy,
   onCancel,
   onConfirm,
+  confirmLabel = "Add to project",
 }) => {
   const hasConflicts = conflicts.length > 0;
   const pythonDeps = Object.entries(pkg.dependencies.python);
@@ -24,7 +33,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
   return (
     <div className={styles.backdrop} role="dialog" aria-modal="true">
       <div className={styles.modal}>
-        <h2 className={styles.title}>Install &quot;{pkg.name}&quot;</h2>
+        <h2 className={styles.title}>Add &quot;{pkg.name}&quot;</h2>
         <p className={styles.subtitle}>
           {pkg.publisher} · v{pkg.version}
         </p>
@@ -33,12 +42,16 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
           <>
             <p className={styles.depsTitle}>Permissions requested</p>
             <ul className={styles.permList}>
-              {pkg.permissions.map((perm) => (
-                <li key={perm} className={styles.permItem}>
-                  <span className={styles.permIcon}>●</span>
-                  {perm}
-                </li>
-              ))}
+              {pkg.permissions.map((perm) => {
+                const meaning = describePackagePermission(perm);
+                return (
+                  <li key={perm} className={styles.permItem}>
+                    <span className={styles.permIcon}>●</span>
+                    {perm}
+                    {meaning ? ` — ${meaning}` : ""}
+                  </li>
+                );
+              })}
             </ul>
           </>
         )}
@@ -79,7 +92,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
               </div>
             ))}
             <p className={styles.conflictHint}>
-              Uninstall one of the conflicting packages before installing this one.
+              Remove one of the conflicting packages before adding this one.
             </p>
           </div>
         )}
@@ -92,7 +105,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
             <div className={styles.installProgressHint}>
               Installing package + pip-installing its Python deps. Heavy
               ML packages (torch, transformers) can take several minutes
-              on a cold env — keep this window open.
+              on a cold env, so keep this window open.
             </div>
           </div>
         )}
@@ -107,7 +120,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
             onClick={onConfirm}
             disabled={busy || hasConflicts}
           >
-            {busy ? "Installing…" : "Install"}
+            {busy ? "Adding…" : confirmLabel}
           </button>
         </div>
       </div>

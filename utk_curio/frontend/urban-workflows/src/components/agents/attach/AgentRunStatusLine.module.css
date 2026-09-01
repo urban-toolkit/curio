@@ -1,0 +1,88 @@
+/* Compact run-status line (memo dev/80) — left side of the chat status
+   strip. Muted .systemLine palette; the category tint colors only the dot. */
+
+.line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Tabular digits: the per-second elapsed must not make the line jitter. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Live dot: tinted via the category class (color) → currentColor fill. */
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: runStatusPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes runStatusPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+    opacity: 0.8;
+  }
+}
+
+.icon {
+  flex: none;
+  font-size: 10px;
+}
+
+.done .icon {
+  color: var(--curio-success-text);
+}
+
+.error {
+  color: var(--curio-danger-strong);
+}
+
+/* Follow-up marker: same soft-pill grammar as the session chip. */
+.reviewChip {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--curio-warning-bg);
+  background: var(--curio-warning-bg);
+  color: var(--curio-warning-text);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Visually hidden, still announced — the live region's phase text. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  overflow: hidden;
+  white-space: nowrap;
+}

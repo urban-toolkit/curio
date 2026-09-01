@@ -1,8 +1,7 @@
 import { getToken } from "../utils/authApi";
 
-export async function fetchData(fileName: string, vega: boolean = false) {
+export async function fetchData(fileName: string) {
     try {
-        // const url = `${process.env.BACKEND_URL}/get?fileName=${encodeURIComponent(fileName)}${vega ? '&vega=true' : ''}`;
         const url = `${process.env.BACKEND_URL}/get?fileName=${encodeURIComponent(fileName)}`;
         console.log(`Fetching ${url}`);
         const _token = getToken();
@@ -18,9 +17,6 @@ export async function fetchData(fileName: string, vega: boolean = false) {
         }
 
         const jsonData = await response.json();
-
-        if(vega)
-            return transformToVega(jsonData);
 
         console.log(`Fetched data`, jsonData);
 
@@ -64,33 +60,4 @@ export async function fetchPreviewData(fileName: string) {
         console.error("[fetchPreviewData] Error:", error instanceof Error ? error.message : String(error));
         throw error;
     }
-}
-
-/**
- * Transforms a pandas-style JSON (column-based) to Vega-Lite-ready JSON (row-based).
- *
- * @param data - The original pandas-style JSON data.
- * @returns The transformed Vega-Lite-ready JSON data.
- */
-export function transformToVega(
-    data: { data?: Record<string, any[]> }
-): Record<string, any>[] | typeof data {
-    if (data.data && typeof data.data === "object" && !Array.isArray(data.data)) {
-        const columns = Object.keys(data.data);
-        const numRows = data.data[columns[0]]?.length || 0;
-
-        const values: Record<string, any>[] = [];
-
-        for (let i = 0; i < numRows; i++) {
-            const row: Record<string, any> = {};
-            for (const col of columns) {
-                row[col] = data.data[col][i];
-            }
-            values.push(row);
-        }
-
-        return values;
-    }
-
-    return data;
 }

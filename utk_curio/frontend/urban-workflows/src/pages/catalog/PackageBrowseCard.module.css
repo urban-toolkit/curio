@@ -1,0 +1,88 @@
+/* Node-package browse card.
+ *
+ * Only what is specific to a package lives here. The card skeleton — .card,
+ * .cardBody, .cardTitle, .publisher, .cardDescription, .tagRow, .tag,
+ * .cardMeta, .cardActions and their parts — is the shared one in
+ * ../catalog/CatalogBrowseLayout.module.css, which the dataset card already
+ * used. This file used to restate all of it, and the two copies had already
+ * drifted (the shared .metaRight lays its children out as a row; this file's
+ * copy had lost that).
+ *
+ * Colours come from ../../styles/curioTokens.css.
+ */
+
+/* Declared here so `.cardActive.card_<category>` below is a valid compound
+   selector within this module. The shared `.cardActive` in
+   CatalogBrowseLayout.module.css sets the same raised shadow; both classes are
+   applied together and agree, because both read the one token. */
+.cardActive {
+  box-shadow: var(--curio-shadow-browse-card-raised);
+}
+
+/* Card colour = node category, matching the canvas node border and the filter
+   chip dots. Keys are `primaryCategory()`'s: data | computation | vis | package. */
+.strip_data        { background: var(--curio-category-data-fg); }
+.strip_computation { background: var(--curio-category-computation-fg); }
+.strip_vis         { background: var(--curio-category-vis-fg); }
+.strip_package     { background: var(--curio-category-package-fg); }
+
+.cardActive.card_data        { border-color: var(--curio-category-data-fg); }
+.cardActive.card_computation { border-color: var(--curio-category-computation-fg); }
+.cardActive.card_vis         { border-color: var(--curio-category-vis-fg); }
+.cardActive.card_package     { border-color: var(--curio-category-package-fg); }
+
+.tagUpdate {
+  background: var(--curio-role-update-bg);
+  color: var(--curio-role-update-fg);
+}
+
+/* Card actions. The dataset card offers a link ("View details"); a package card
+   offers a write, so it carries its own buttons rather than the shared link. */
+
+.installButton {
+  height: 28px;
+  border: 0;
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  padding: 0 16px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.installButton:hover:not(:disabled) {
+  background: var(--curio-top-bar-bg-hover);
+}
+
+.updateButton {
+  height: 28px;
+  border: 0;
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-role-update-fg);
+  color: var(--curio-text-primary);
+  padding: 0 16px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.updateButton:hover:not(:disabled) {
+  background: #e99a5a;
+}
+
+.installButton:disabled,
+.updateButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* "In defaults", when there is nothing left to do to this package. Same green
+   as every other installed/in-dataflow signal. */
+.installedHint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--curio-role-installed-fg);
+}

@@ -1,4 +1,4 @@
-import React, { Fragment, memo, useEffect, useSyncExternalStore } from "react";
+import React, { Fragment, memo, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faForwardStep } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
@@ -15,6 +15,8 @@ import {
     paletteDescriptorBootstrapKey,
     type ToolsMenuTooltipSide,
 } from "./toolsMenuPackagePalette";
+import { DatasetsPaletteDropdown } from "./datasetPalette";
+import { AgentsPaletteDropdown } from "./agentsPalette";
 import styles from "./ToolsMenu.module.css";
 
 const DraggableTool = memo(function DraggableTool({
@@ -40,6 +42,14 @@ const DraggableTool = memo(function DraggableTool({
         >
             <div
                 id={tutorialID}
+                // The tile is an icon and a drag source: nothing in it was text,
+                // so it had no accessible name at all and the hover tooltip was
+                // its only label. `title` matches how the dataset and agent drag
+                // handles are named (DatasetPaletteRows, AgentPaletteRow); the
+                // explicit aria-label wins the accname computation and keeps the
+                // name stable if the tooltip copy ever diverges.
+                aria-label={tooltip}
+                title={tooltip}
                 className={styles.optionStyle}
                 draggable
                 onDragStart={(event) => {
@@ -115,6 +125,25 @@ const ToolsMenu = memo(function ToolsMenu() {
     const coreGroups = groupPaletteTypes(coreTypes);
     const packageGroups = groupPalettePackages(packageTypes);
     const { playAllNodes } = useFlowContext();
+
+    // Every catalog trigger lives in the left rail and their panels open into
+    // the same strip to the right of it, so only one may be open at a time. A
+    // palette closes ONLY when its own trigger is clicked again (or another
+    // trigger takes the strip) - outside clicks and Escape deliberately leave
+    // it open.
+    const [activePalette, setActivePalette] = useState<
+        "datasets" | "packages" | "agents" | null
+    >(null);
+    const setDatasetsOpen = useCallback((value: boolean) => {
+        setActivePalette((prev) => (value ? "datasets" : prev === "datasets" ? null : prev));
+    }, []);
+    const setPackagesOpen = useCallback((value: boolean) => {
+        setActivePalette((prev) => (value ? "packages" : prev === "packages" ? null : prev));
+    }, []);
+    const setAgentsOpen = useCallback((value: boolean) => {
+        setActivePalette((prev) => (value ? "agents" : prev === "agents" ? null : prev));
+    }, []);
+
     return (
         <div id="tools-palette-dock" className={styles.paletteDock}>
             <div id="tools-menu" className={styles.builtinStack}>
@@ -127,11 +156,25 @@ const ToolsMenu = memo(function ToolsMenu() {
                         </Fragment>
                     ))}
                 </div>
-                <button className={styles.playAllButton} onClick={playAllNodes} title="Run all nodes">
-                    <FontAwesomeIcon icon={faForwardStep} />
-                </button>
+                <PackagesPaletteDropdown
+                    groups={packageGroups}
+                    open={activePalette === "packages"}
+                    setOpen={setPackagesOpen}
+                />
+                <DatasetsPaletteDropdown open={activePalette === "datasets"} setOpen={setDatasetsOpen} />
+                <AgentsPaletteDropdown open={activePalette === "agents"} setOpen={setAgentsOpen} />
+                <div className={styles.playAllRow}>
+                    <button
+                        type="button"
+                        className={styles.playAllButton}
+                        onClick={playAllNodes}
+                        title="Run all nodes"
+                        aria-label="Run all nodes"
+                    >
+                        <FontAwesomeIcon icon={faForwardStep} />
+                    </button>
+                </div>
             </div>
-            <PackagesPaletteDropdown groups={packageGroups} />
         </div>
     );
 });

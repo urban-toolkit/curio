@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-    DatasetsWindow,
-    PackageManagerWindow,
+    LibraryManagerWindow,
     TrillProvenanceWindow,
 } from "components/menus";
 import {
@@ -41,26 +40,27 @@ import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
+import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDrawerProvider";
+import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
+import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
+import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 
 export default function UpMenu({
     setDashBoardMode,
-    setDashboardOn,
     dashboardOn,
-    setAIMode,
 }: {
+    /** The single entry point for entering and leaving dashboard mode.
+     *  There used to be a second prop wired to the SAME handler, and this menu
+     *  called both, so every click ran the toggle twice (#192). */
     setDashBoardMode: (mode: boolean) => void;
-    setDashboardOn: (mode: boolean) => void;
     dashboardOn: boolean;
-    setAIMode: (value: boolean) => void;
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
     const [tutorialOpen, setTutorialOpen] = useState(false);
-    const [datasetsOpen, setDatasetsOpen] = useState(false);
-    const [packagesOpen, setPackagesOpen] = useState(false);
+    const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
-    const [aiModeOn, setAiModeOn] = useState(false);
 
     const menuBarRef = useRef<HTMLDivElement>(null);
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
@@ -100,6 +100,8 @@ export default function UpMenu({
     const { showToast } = useToastContext();
     const ensureWorkflowDeps = useEnsureWorkflowDeps();
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
+    const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
+    const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -111,15 +113,6 @@ export default function UpMenu({
 
     const openTrillProvenanceModal = () => {
         setTrillProvenanceOpen(true);
-        setActiveMenu(null);
-    };
-
-    const closeDatasetsModal = () => {
-        setDatasetsOpen(false);
-    };
-
-    const openDatasetsModal = () => {
-        setDatasetsOpen(true);
         setActiveMenu(null);
     };
 
@@ -151,12 +144,6 @@ export default function UpMenu({
             setAllMinimized(0);
         }
         setActiveMenu(null);
-    };
-
-    const toggleAI = () => {
-        const next = !aiModeOn;
-        setAiModeOn(next);
-        setAIMode(next);
     };
 
     const handleNewWorkflow = () => {
@@ -212,7 +199,7 @@ export default function UpMenu({
             edges,
             workflowNameRef.current,
             "",
-            packages,
+            getCurrentProjectPackagesList(),
         );
         const content = JSON.stringify(trillSpec, null, 2);
         const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
@@ -334,7 +321,7 @@ export default function UpMenu({
                 },
                 {
                     element: "#step-utk",
-                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON), run GPU compute, and render maps or plots — all in the browser.",
+                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON), run GPU compute, and render maps or plots - all in the browser.",
                 },
                 {
                     element: "#step-vega",
@@ -464,7 +451,6 @@ export default function UpMenu({
                                 className={styles.dropDownRow}
                                 onClick={() => {
                                     setDashBoardMode(!dashboardOn);
-                                    setDashboardOn(!dashboardOn);
                                     setActiveMenu(null);
                                 }}
                             >
@@ -515,16 +501,41 @@ export default function UpMenu({
                             <div
                                 className={styles.dropDownRow}
                                 onClick={() => {
-                                    setPackagesOpen(true);
+                                    openAgentCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faRobot} />
+                                <button className={styles.noStyleButton}>Agent Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onMouseEnter={() => {
+                                    if (projectId) {
+                                        prefetchDatasetCatalog({
+                                            dataflowId: projectId,
+                                            includeHub: true,
+                                            sort: "recent",
+                                        });
+                                    }
+                                }}
+                                onClick={() => {
+                                    openDatasetCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />
+                                <button className={styles.noStyleButton}>Data Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onClick={() => {
+                                    setLibrariesOpen(true);
                                     setActiveMenu(null);
                                 }}
                             >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faCubes} />
                                 <button className={styles.noStyleButton}>Installed libraries</button>
-                            </div>
-                            <div className={styles.dropDownRow} onClick={openDatasetsModal}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />
-                                <button className={styles.noStyleButton}>Datasets</button>
                             </div>
                         </div>
                     )}
@@ -563,14 +574,6 @@ export default function UpMenu({
                     )}
                 </div>
 
-                {/* Urbanite AI toggle */}
-                <button
-                    className={clsx(styles.button, aiModeOn && styles.aiIconActive)}
-                    onClick={toggleAI}
-                    title="Urbanite AI"
-                >
-                    <FontAwesomeIcon icon={faRobot} />
-                </button>
 
                 {/* Real-time collaboration side panel toggle. Only rendered
                     when --collab is on; the badge surfaces the live peer
@@ -601,8 +604,17 @@ export default function UpMenu({
                     </button>
                 )}
 
-                {/* Save status indicator */}
-                {(saving || projectDirty || projectSavedAt) && (
+                {/* Save status indicator.
+                    Always present on a dataflow you own, so its absence never
+                    has to be interpreted. It used to render only once the
+                    dataflow was dirty or had been saved at least once, which
+                    meant a brand-new dataflow showed nothing at all - the one
+                    moment the state is most worth stating, because nothing is
+                    on disk yet. A never-saved dataflow reads as unsaved
+                    (orange), the same as a dirty one; green means, and only
+                    means, "what you see is on disk".
+                    Hidden for a shared viewer, who has nothing to save. */}
+                {!isSharedView && (
                     <button
                         className={clsx(styles.button, styles.saveStatus)}
                         style={{ cursor: saving ? "default" : "pointer" }}
@@ -610,14 +622,22 @@ export default function UpMenu({
                         onClick={handleSave}
                         title={
                             saving          ? "Saving…"
-                            : projectDirty  ? "Unsaved changes — click to save"
-                            : `Saved at ${projectSavedAt!.toLocaleTimeString()} — click to save`
+                            : projectDirty  ? "Unsaved changes - click to save"
+                            : !projectSavedAt ? "Not saved yet - click to save"
+                            : `Saved at ${projectSavedAt.toLocaleTimeString()} - click to save`
+                        }
+                        data-curio-save-state={
+                            saving ? "saving"
+                            : projectDirty || !projectSavedAt ? "unsaved"
+                            : "saved"
                         }
                     >
                         <FontAwesomeIcon
                             icon={faFloppyDisk}
                             className={clsx(
-                                saving || projectDirty ? styles.unsavedIcon : styles.savedIcon,
+                                saving || projectDirty || !projectSavedAt
+                                    ? styles.unsavedIcon
+                                    : styles.savedIcon,
                                 saving && styles.savingPulse,
                             )}
                         />
@@ -677,10 +697,9 @@ export default function UpMenu({
                 closeModal={closeTrillProvenanceModal}
                 workflowName={workflowNameRef.current}
             />
-            <DatasetsWindow open={datasetsOpen} closeModal={closeDatasetsModal} />
-            <PackageManagerWindow
-                open={packagesOpen}
-                closeModal={() => setPackagesOpen(false)}
+            <LibraryManagerWindow
+                open={librariesOpen}
+                closeModal={() => setLibrariesOpen(false)}
             />
         </>
     );

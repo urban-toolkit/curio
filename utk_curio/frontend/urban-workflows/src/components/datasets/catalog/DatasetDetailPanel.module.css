@@ -1,0 +1,662 @@
+/* Dataset detail inspector — layout aligned with 02_dataset_detail.svg */
+
+.pageRoot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.modalRoot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: #f0f0f0;
+}
+
+.inspector {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  font-family: var(--curio-font-family, Rubik, Inter, system-ui, sans-serif);
+  color: #1e1f23;
+}
+
+/* No padding and no border of its own. `CatalogDetailHeader` - the shared
+ * header all three details views render - owns both, and it is the whole of
+ * this element's content. Padding here inset the shared header inside a second
+ * padded box, so the Data one alone sat narrower than its peers and started
+ * lower; the border drew a second rule under the header's own.
+ *
+ * Kept as an element because the tab strip below it belongs to the same
+ * flex-shrink:0 band. */
+.pageHeader {
+  flex-shrink: 0;
+  background: #fafafa;
+  padding: 0;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #888;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.breadcrumb strong {
+  color: #1e1f23;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* `.pageHeader` no longer pads, so this supplies its own inset. Page variant
+ * only - the modal has ModalShell's close button instead. */
+.backButton {
+  min-height: 28px;
+  margin: 12px 0 0 24px;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  background: transparent;
+  color: #555;
+  padding: 0 12px 0 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.headerMain {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 0 8px;
+}
+
+.titleBlock {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.datasetIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.icon_mint {
+  background: #dff2e1;
+  color: #2f8f4a;
+}
+
+.icon_sky {
+  background: #dce8ff;
+  color: #3b6fd4;
+}
+
+.icon_lilac {
+  background: #eadcfb;
+  color: #7a4bd1;
+}
+
+.inspectorHeader h1,
+.titleBlock h1 {
+  margin: 0 0 6px;
+  color: #1e1f23;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.inspectorMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #555;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.metaDot {
+  color: #d0d0d0;
+  font-weight: 400;
+}
+
+.formatChip,
+.installedBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  border-radius: 10px;
+  padding: 2px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.formatChip {
+  background: #e9eef3;
+  color: #415363;
+}
+
+/* Format identity, shared with every other surface that shows one. */
+.format_geojson { background: var(--curio-format-geojson-bg); color: var(--curio-format-geojson-on-tint); }
+.format_csv { background: var(--curio-format-csv-bg); color: var(--curio-format-csv-on-tint); }
+.format_json { background: var(--curio-format-json-bg); color: var(--curio-format-json-on-tint); }
+.format_parquet { background: var(--curio-format-parquet-bg); color: var(--curio-format-parquet-on-tint); }
+.format_geotiff { background: var(--curio-format-geotiff-bg); color: var(--curio-format-geotiff-on-tint); }
+.format_shp { background: var(--curio-format-shp-bg); color: var(--curio-format-shp-on-tint); }
+.format_bundle { background: var(--curio-format-bundle-bg); color: var(--curio-format-bundle-on-tint); }
+.format_osm { background: var(--curio-format-osm-bg); color: var(--curio-format-osm-on-tint); }
+
+.installedBadge {
+  background: #1e1f23;
+  color: #fff;
+}
+
+.inspectorActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+/* `.publishButton` and `.unpublishButton` are gone with the controls they
+ * styled: this panel is the details view and no longer decides publishing.
+ * The red `.unpublishButton` was also the one place in the catalogs that used a
+ * third colour - the vocabulary is dark for an action, light for a destructive
+ * one, and nothing else. */
+.exportButton {
+  min-height: 34px;
+  border-radius: 7px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  /* Export is an action, so it takes the action fill like every other action
+     in the catalogs. It was the odd one out: a grey outline on a panel whose
+     other buttons were solid dark. */
+  border: 0;
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+}
+
+.exportButton:hover:not(:disabled) {
+  background: var(--curio-top-bar-bg-hover);
+}
+
+.exportButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Its own inset now that `.pageHeader` does not pad: the tabs used to inherit
+ * the header band's 24px and would otherwise sit flush against the edge. */
+.inspectorTabs {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 36px;
+  margin-top: 4px;
+  padding: 0 24px;
+}
+
+.inspectorTabs button {
+  align-self: stretch;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #777;
+  padding: 0 2px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inspectorTabActive {
+  color: #1e1f23 !important;
+  font-weight: 700 !important;
+  border-bottom-color: #1e1f23 !important;
+}
+
+/* Three-column split body (schema | main content | info+lineage) */
+.inspectorBody {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(240px, 20.6%) minmax(0, 1fr) minmax(280px, 27.8%);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Focused tabs (Schema / Table Preview / Lineage) hide the schema column. */
+.inspectorBodyTwoCol {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 27.8%);
+}
+
+.schemaColumn,
+.centerColumn,
+.infoColumn {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.schemaColumn > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.centerColumn {
+  border-left: 1px solid #e5e5e5;
+  border-right: 1px solid #e5e5e5;
+  overflow-y: auto;
+}
+
+.inspectorBodyTwoCol .centerColumn {
+  border-left: 0;
+}
+
+/* Subtle, tiny scrollbars for the scrollable columns. */
+.centerColumn,
+.infoColumn {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(30, 31, 35, 0.18) transparent;
+}
+
+.centerColumn::-webkit-scrollbar,
+.infoColumn::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.centerColumn::-webkit-scrollbar-track,
+.infoColumn::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.centerColumn::-webkit-scrollbar-thumb,
+.infoColumn::-webkit-scrollbar-thumb {
+  background: rgba(30, 31, 35, 0.18);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.centerColumn:hover::-webkit-scrollbar-thumb,
+.infoColumn:hover::-webkit-scrollbar-thumb {
+  background: rgba(30, 31, 35, 0.28);
+  background-clip: padding-box;
+}
+
+.previewSection {
+  flex-shrink: 0;
+}
+
+.previewSubtab {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  background: #fafafa;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.previewSubtabActive {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1f23;
+  padding-bottom: 8px;
+  border-bottom: 3px solid #1e1f23;
+}
+
+/* Expanded lineage view (center column, Lineage tab) */
+.lineageSection {
+  flex: 1;
+  min-height: 180px;
+  background: #fff;
+  padding: 16px 20px 24px;
+}
+
+.lineageHeader h2 {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1f23;
+}
+
+.liveBadge {
+  border-radius: 9px;
+  background: #f2f2f4;
+  color: #85858f;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.lineageHeader p {
+  margin: 6px 0 0;
+  color: #777;
+  font-size: 11px;
+}
+
+/* Compact lineage summary + states (right sidebar) */
+.lineageSummary {
+  margin: 0 0 10px;
+  color: #1e1f23;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lineagePartialNote {
+  margin: 0 0 10px;
+  border-left: 2px solid #e3bf85;
+  color: #6b6b76;
+  padding: 2px 0 2px 8px;
+  font-size: 11px;
+}
+
+.lineageEmpty {
+  margin: 4px 0 8px;
+  color: #777;
+  font-size: 11px;
+}
+
+.lineageGroup {
+  margin: 0 0 10px;
+}
+
+.lineageGroupSummary {
+  cursor: pointer;
+  list-style-position: outside;
+  margin: 0 0 8px;
+  color: #999;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.statusPill {
+  align-self: center;
+  border-radius: 9px;
+  padding: 1px 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.statusStale {
+  border: 1px solid #e8d7ba;
+  color: #8a6a30;
+}
+
+.statusBroken {
+  border: 1px solid #e8cfcf;
+  color: #97595a;
+}
+
+.lineageLabel {
+  margin: 22px 0 6px;
+  color: #1e1f23;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lineageCard,
+.originCard,
+.consumedCard,
+.hubSourceCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid #f0f0f0;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 0;
+  overflow: hidden;
+}
+
+.lineageCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lineageCardBody strong,
+.originCard strong,
+.consumedCard strong,
+.hubSourceCard strong {
+  color: #1e1f23;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lineageNodeBadge {
+  align-self: flex-start;
+  border-radius: 7px;
+  background: #f2f2f4;
+  color: #85858f;
+  padding: 1px 7px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lineageFlowName,
+.originCard span,
+.consumedCard span,
+.hubSourceCard span {
+  color: #777;
+  font-size: 11px;
+}
+
+
+/* Right info column */
+.infoColumn {
+  overflow-y: auto;
+}
+
+.infoHeader {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  background: #fafafa;
+  border-bottom: 1px solid #ebebeb;
+  flex-shrink: 0;
+}
+
+.infoHeader h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1f23;
+}
+
+.infoSection {
+  padding: 16px 20px;
+  border-bottom: 1px solid #ebebeb;
+}
+
+.infoSectionLabel {
+  margin: 0 0 12px;
+  color: #999;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.infoRows {
+  margin: 0;
+}
+
+.infoRows > div {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(0, 1.2fr);
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f5f5;
+  font-size: 13px;
+}
+
+.infoRows > div:last-child {
+  border-bottom: 0;
+}
+
+.infoRows dt {
+  margin: 0;
+  color: #555;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.infoRows dd {
+  margin: 0;
+  color: #1e1f23;
+  font-weight: 400;
+  text-align: right;
+}
+
+.originCard > div:first-child,
+.consumedCard > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* hubSourceCard puts its name and caption straight in the row. */
+.hubSourceCard {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  row-gap: 2px;
+}
+
+.hubSourceCard strong {
+  color: #1e1f23;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.hubSourceCard span {
+  color: #777;
+  font-size: 11px;
+}
+
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 11px;
+  background: #f0f0f0;
+  color: #555;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.loading,
+.error {
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  color: #777;
+  font-size: 13px;
+}
+
+.error {
+  color: #9f3f3f;
+}
+
+@media (max-width: 1100px) {
+  .inspectorBody {
+    grid-template-columns: minmax(200px, 28%) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .inspectorBodyTwoCol {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .schemaColumn {
+    grid-row: 1 / span 2;
+  }
+
+  .infoColumn {
+    grid-column: 2;
+  }
+
+  .inspectorBodyTwoCol .infoColumn {
+    grid-column: 1;
+  }
+
+  .centerColumn {
+    border-right: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .headerMain {
+    flex-direction: column;
+  }
+
+  .inspectorBody {
+    display: block;
+    overflow: auto;
+  }
+
+  .schemaColumn,
+  .centerColumn,
+  .infoColumn {
+    min-height: 320px;
+    border: 0;
+    border-bottom: 1px solid #e5e5e5;
+  }
+}

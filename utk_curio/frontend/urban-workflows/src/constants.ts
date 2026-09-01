@@ -10,9 +10,14 @@ export const CURIO_UNIVERSAL_NODE_TYPE = "__curioUniversalNode" as const;
  * `NotebookConvertor` / `useNodeState` etc. keeps compiling unchanged —
  * but at runtime they emit canonical strings.
  *
- * Legacy trill files that still use the old enum string ("DATA_LOADING")
- * are normalized at load time by `aliasNormalize(trill)` (see
- * `TrillGenerator`).
+ * IMPORTANT: every value here is UNVERSIONED. Nodes dragged from the
+ * palette carry the versioned canonical id (`curio.builtin/merge-flow@1`,
+ * see `packagesClient.buildDescriptor`) and that form is what gets
+ * persisted into the trill spec. There is no load-time normalizer, so any
+ * comparison against these values must first strip the `@<major>` suffix
+ * via `unversionedNodeType` / `getUnversionedFlowNodeType`
+ * (`utils/flowNodeCanonicalType.ts`). Comparing a raw `data.nodeType`
+ * against one of these is a silent no-match — that was #169 and #159.
  */
 export enum NodeType {
   DATA_LOADING = "curio.builtin/data-loading",

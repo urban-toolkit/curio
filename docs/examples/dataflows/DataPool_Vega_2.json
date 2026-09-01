@@ -6,7 +6,7 @@
         "type": "curio.builtin/data-loading",
         "x": 275,
         "y": 314.5,
-        "content": "import geopandas as gpd\r\nimport pandas as pd\r\nfrom shapely.geometry import Point\r\n# Read the green roofs dataset\r\ngreen_roofs_df = pd.read_csv('./docs/examples/data/10-green_roofs.csv')\r\n\r\n# Create the dataset into geo dataframe using latitude and longitude columns\r\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\r\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\r\nchicago = gpd.read_file(\"./docs/examples/data/chicago.geojson\") \r\n\r\n# Joining the green roofs dataset with the chicago neighborhood geojson file\r\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\r\nreturn joined",
+        "content": "import geopandas as gpd\r\nimport pandas as pd\r\nfrom shapely.geometry import Point\r\n# Read the green roofs dataset\r\ngreen_roofs_path = curio_dataset_path(\"data.cityofchicago.green-roofs\")\r\ngreen_roofs_df = pd.read_csv(green_roofs_path)\r\n\r\n# Create the dataset into geo dataframe using latitude and longitude columns\r\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\r\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\r\nchicago_path = curio_dataset_path(\"data.urbanlab.chicago-boundary\")\r\nchicago = gpd.read_file(chicago_path) \r\n\r\n# Joining the green roofs dataset with the chicago neighborhood geojson file\r\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\r\nreturn joined",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

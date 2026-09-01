@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from .utils import allow_guest_login_env, auth_enabled_env, require_project_page
+from .utils import (
+    allow_guest_login_env,
+    auth_enabled_env,
+    require_project_page,
+    wait_for_projects_page,
+)
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -55,7 +60,7 @@ def test_guest_save_is_blocked(app_frontend: FrontendPage, page):
     guest_btn.click()
 
     page.wait_for_url("**/projects", timeout=30000)
-    page.get_by_role("heading", name="Projects").wait_for(timeout=10000)
+    wait_for_projects_page(page, timeout=10000)
 
     page.get_by_text("+ New Dataflow").click()
     page.wait_for_url("**/dataflow/**", timeout=15000)

@@ -28,9 +28,9 @@ import {
     faRightFromBracket,
 } from "@fortawesome/free-solid-svg-icons";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
-import NodeExplanation from "./NodeExplanation";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
 
 type NodeEditorProps = {
     outputId?: string;
@@ -48,7 +48,6 @@ type NodeEditorProps = {
     defaultValue: any;
     floatCode?: any;
     provenance?: boolean;
-    explanation?: boolean;
     customWidgetsCallback?: any;
     contentComponent?: any;
     disableWidgets?: boolean; // Added prop to freeze widget buttons
@@ -70,25 +69,44 @@ function NodeEditor({
     defaultValue,
     floatCode,
     provenance,
-    explanation,
     customWidgetsCallback,
     contentComponent,
     disableWidgets,
 }: NodeEditorProps) {
     const [userCode, setUserCode] = useState<string>(""); // python or grammar with marks unresolved
-    const [defaultCode, setDefaultCode] = useState<string>("");
+    // Seed from the prop so the editors receive the real content on their
+    // first render — an initial "" here would read as an external update to
+    // GrammarEditor (whose empty model is "{}", not ""). Stays undefined for
+    // nodes with no content (dev/70).
+    const [defaultCode, setDefaultCode] = useState<string | undefined>(defaultValue);
     const [markersDirty, setMarkersDirty] = useState<boolean>(false); // make WidgetsEditor update replacedCode
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<boolean>(false); // code has to rerun every time button is pressed (having changes or not)
     const [fullscreen, setFullscreen] = useState<string>("");
-    const [activeTab, setActiveTab] = useState("code");
+    // Not the literal "code": grammar-only kinds (autk-grammar, vis-vega declare
+    // hasCode:false) have no code pane, so hardcoding it left NO pane active on
+    // mount and the editor rendered inside a display:none tab (#157).
+    const [activeTab, setActiveTab] = useState<string>(
+        () => resolveInitialEditorTab({ code, grammar, widgets })
+    );
     const { dashboardOn } = useFlowContext();
     const effectiveTab = dashboardOn ? "output" : activeTab;
 
     const contentComponentBypass = useRef(false);
+    // Set while a *load* is priming the widgets, so the marker round-trip it
+    // triggers does not steal the active tab. Only the load path sets it; a play
+    // leaves it false and still focuses the output pane.
+    //
+    // Deliberately a flag rather than inferring "is this a run?" from
+    // `output.code === "exec"`: play sets exec and calls sendCode in the same
+    // tick, so a hasWidgets=false node's synchronous route reads the stale prop
+    // and would never focus its output pane again.
+    const primingWidgetsRef = useRef(false);
 
     const sendReplacedCode = (code: string) => {
-        if ((fullscreen == "" || fullscreen == undefined) && (outputId != undefined || contentComponent != undefined)) setActiveTab("output");
+        const priming = primingWidgetsRef.current;
+        primingWidgetsRef.current = false;
+        if (!priming && (fullscreen == "" || fullscreen == undefined) && (outputId != undefined || contentComponent != undefined)) setActiveTab("output");
         setReplacedCode(code);
         setReplacedCodeDirty((prev: boolean) => {
             return !prev;
@@ -113,7 +131,19 @@ function NodeEditor({
         });
     };
 
+    /** ``sendCodeToWidgets`` for the load path: resolve markers, keep the tab.
+     *
+     * CodeEditor and GrammarEditor call this from their ``defaultValue`` effect
+     * so a templated node's widgets exist before the first run. Switching tabs
+     * there would drop the user on the output pane of a node they just opened.
+     */
+    const primeWidgets = (code: string) => {
+        primingWidgetsRef.current = true;
+        sendCodeToWidgets(code);
+    };
+
     useEffect(() => {
+        // The play path deliberately gets the un-suppressed version.
         setSendCodeCallback(sendCodeToWidgets);
     }, []);
 
@@ -212,9 +242,7 @@ function NodeEditor({
                                                 replacedCodeDirty
                                             }
                                             replacedCode={replacedCode}
-                                            sendCodeToWidgets={
-                                                sendCodeToWidgets
-                                            }
+                                            sendCodeToWidgets={primeWidgets}
                                             setOutputCallback={
                                                 setOutputCallback
                                             }
@@ -258,9 +286,7 @@ function NodeEditor({
                                             }
                                             output={output}
                                             replacedCode={replacedCode}
-                                            sendCodeToWidgets={
-                                                sendCodeToWidgets
-                                            }
+                                            sendCodeToWidgets={primeWidgets}
                                             nodeId={data.nodeId}
                                             applyGrammar={applyGrammar}
                                             schema={schema}
@@ -268,16 +294,6 @@ function NodeEditor({
                                     </Tab.Pane>
                                 ) : null}
 
-                                {(explanation ?? (code || grammar)) ? (
-                                    <Tab.Pane eventKey="explanation" style={{ height: "100%" }}>
-                                        <NodeExplanation
-                                            node_type={nodeType}
-                                            code={data.code}
-                                            current_input={data.in}
-                                            current_output={data.out}
-                                        />
-                                    </Tab.Pane>
-                                ) : null}
 
                                 {provenance == undefined || provenance ? (
                                     <Tab.Pane
@@ -299,13 +315,29 @@ function NodeEditor({
                                         style={{ height: "100%", overflow: "hidden" }}
                                     >
                                         {outputId != undefined ? (
+                                            // Vega sizes its canvas in CSS px
+                                            // from the compiled spec, so a
+                                            // multi-view chart is taller than
+                                            // the pane and was simply cut off
+                                            // (#202). This div scrolls now;
+                                            // the parent Tab.Pane stays
+                                            // overflow:hidden so the node box
+                                            // itself cannot spill onto the
+                                            // canvas.
+                                            //
+                                            // `nowheel` is load-bearing, not
+                                            // decoration: without it React
+                                            // Flow's ZoomPane swallows the
+                                            // wheel event and zooms the canvas
+                                            // instead of scrolling the chart.
                                             <div
                                                 id={outputId}
-                                                className="nodrag"
+                                                className="nodrag nowheel"
                                                 style={{
                                                     textAlign: "center",
                                                     width: "100%",
                                                     height: "100%",
+                                                    overflow: "auto",
                                                 }}
                                             ></div>
                                         ) : (
@@ -392,22 +424,6 @@ function NodeEditor({
                                                 <FontAwesomeIcon
                                                     icon={faSpellCheck}
                                                 />
-                                            </Nav.Link>
-                                        </Nav.Item>
-                                    </OverlayTrigger>
-                                </Col>
-                            ) : null}
-
-                            {(explanation ?? (code || grammar)) ? (
-                                <Col>
-                                    <OverlayTrigger
-                                        placement="right"
-                                        delay={overlayTriggerProps}
-                                        overlay={<Tooltip>Explanation</Tooltip>}
-                                    >
-                                        <Nav.Item style={navItemStyle}>
-                                            <Nav.Link eventKey="explanation" style={navLinkStyle}>
-                                                <FontAwesomeIcon icon={faList} />
                                             </Nav.Link>
                                         </Nav.Item>
                                     </OverlayTrigger>

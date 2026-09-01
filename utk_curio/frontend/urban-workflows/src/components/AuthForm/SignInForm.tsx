@@ -71,7 +71,7 @@ export const SignInForm: React.FC = () => {
         {error && <p style={errorStyle}>{error}</p>}
 
         <button type="submit" style={submitBtnStyle} disabled={submitting}>
-          {submitting ? "Signing in..." : "Sign In"}
+          {submitting ? "Signing in..." : "Sign in"}
         </button>
       </form>
 
@@ -80,7 +80,7 @@ export const SignInForm: React.FC = () => {
       <p style={footerStyle}>
         Don't have an account?{" "}
         <Link to="/auth/signup" style={linkStyle}>
-          Create Account
+          Create account
         </Link>
       </p>
     </div>

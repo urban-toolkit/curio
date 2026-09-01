@@ -1,0 +1,82 @@
+# Compose override used only by the CI test workflow
+# (.github/workflows/docker-compose.yml).
+#
+# Two CI-specific adjustments to the image's default CMD:
+#
+# 1. --auth. The default CMD carries no auth flag, which resolves to
+#    CURIO_NO_AUTH=1 (see utk_curio/main.py). The e2e suite then skips every
+#    test that needs a real logged-in owner via require_user_auth() -- around
+#    26 of them, including the whole package roundtrip, data catalog and node
+#    catalog suites. This matches what the pytest-owned harness already does
+#    for itself (fixtures.py appends --auth for exactly this reason); only the
+#    --use-existing CI path was missing it.
+#
+# 2. umask 000. The e2e suite runs Playwright on the HOST (as the runner user
+#    `deploy`) against the containerized stack, and several tests clean up the
+#    per-user store directly on the bind-mounted workspace -- e.g.
+#    .curio/users/<id>/installed-libraries.json in test_library_manager_e2e's
+#    library_teardown. The container runs as root, so anything it creates
+#    mid-run is root-owned 755/644 and the host process cannot unlink inside
+#    it (PermissionError [Errno 13]). The workflow's pre-run
+#    `chmod -R a+rwx .curio` cannot cover paths that do not exist yet, so
+#    widen the container's creation mask instead. umask is inherited by the
+#    backend/sandbox/frontend children curio.py spawns. `exec` keeps python as
+#    PID 1 so `docker compose down` still signals it directly.
+#
+# 3. The sandbox is reachable from the host. The image default keeps the
+#    sandbox on 127.0.0.1 inside the container and publishes no port for it,
+#    because it executes arbitrary user code and only the backend needs to
+#    reach it. CI is the one context that genuinely needs more: Playwright
+#    runs on the HOST and test_alive.py / test_library_install_integration.py
+#    call the sandbox directly. So this overlay -- and only this overlay --
+#    binds it to 0.0.0.0 and publishes it to the host's loopback (never
+#    0.0.0.0, so it stays off the runner's network). CURIO_SANDBOX_TOKEN is
+#    pinned to a known value so the host-side pytest can authenticate; the
+#    workflow exports the same value into the pytest environment.
+#
+# Deliberately NOT docker-compose.deploy.yml: that overlay also passes
+# --no-allow-publish, which would disable the two catalog mutators that the
+# publish-catalog tests exercise. CI wants auth on and publish still allowed.
+services:
+  curio:
+    # Process-count cap for the isolation test suite.
+    #
+    # test_isolation_linux.py can provoke process exhaustion, and inside
+    # the container those tests run as root, which bypasses RLIMIT_NPROC.
+    # This runner shares a host with the live curio and curio-dev stacks,
+    # so bound the container rather than trusting the code under test.
+    #
+    # Deliberately NO mem_limit. Setting one (12g) coincided with
+    # test_node_execution[06-autark-what-if-shadow-study] timing out at
+    # 120s waiting for its data pool to render, a test that passes on
+    # main. That example parses city-scale PBFs and drives WebGPU, and a
+    # mem_limit without memswap_limit lets the container swap instead of
+    # allocating, which shows up as exactly that kind of slowdown. The
+    # risk a memory cap guarded is already covered: RLIMIT_AS bounds each
+    # child (child._apply_rlimits) and the fork bomb is opt-in.
+    pids_limit: 4096
+    environment:
+      - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+      # The host-side e2e suite drives this stack through /api/testing/*
+      # (stub-login, stub-project, reset-db) and through the scripted LLM
+      # provider. Both are gated on CURIO_TESTING as well as a dev env
+      # (backend/app/testing/routes.py, agents/testing_provider.py), and a
+      # container started without it answers 404 -- which surfaces as every
+      # e2e test erroring in the autouse e2e_clean_db fixture, not as one
+      # legible failure. pytest-owned stacks get the flag from
+      # backend/tests/conftest.py; a compose-owned stack has to be told.
+      - CURIO_TESTING=1
+      # Pin what CURIO_TESTING resolves against rather than leaning on the
+      # child process's cwd: the test DB then lands at /app/.curio/test/,
+      # which is the bind-mounted workspace the host-side suite already
+      # resolves for itself (test_db_paths).
+      - CURIO_LAUNCH_CWD=/app
+    ports:
+      - "127.0.0.1:${CURIO_PORT_2000:-2000}:2000"
+    command:
+      - sh
+      - -c
+      - >-
+        umask 000 && exec python curio.py start all --auth --with-examples
+        --backend-host 0.0.0.0 --backend-port 5002
+        --sandbox-host 0.0.0.0 --sandbox-port 2000

@@ -24,8 +24,32 @@ pygments>=2.20.0
 # without ENABLE_COLLAB=1 do not pay for the import).
 # ------------------------------------------------------------------------------
 flask-socketio==5.6.0
-python-socketio==5.16.0
+python-socketio==5.16.2
 python-engineio==4.13.2
+
+# Process supervision and node-execution isolation
+# ------------------------------------------------------------------------------
+# psutil was already imported by utk_curio/sandbox/server.py (descendant
+# cleanup and the parent watchdog) but declared nowhere, so both quietly
+# no-opped wherever it happened to be absent.
+psutil>=5.9
+# Syscall filtering for isolated node execution. Linux-only by nature: it
+# binds libseccomp, which has no Windows or macOS equivalent. The marker
+# keeps `pip install -r` working on a developer's Windows machine, where
+# isolation is unavailable anyway (see utk_curio/sandbox/isolation/mode.py).
+pyseccomp>=0.1.2; sys_platform == "linux"
+
+# Schema validation
+# ------------------------------------------------------------------------------
+# Validates node-package manifests against docs/schemas/node-package.v4.json and
+# dataflow specs against docs/schemas/trill.v1.json, in both the test suite and
+# scripts/validate_trill.py. Until now this was pulled in only as an altair
+# transitive and imported anyway - the same "used but declared nowhere" trap
+# psutil was in above, and altair asks only for jsonschema>=3.0, so a resolver
+# was free to land somewhere without Draft 2020-12. A floor rather than an exact
+# pin because altair carries its own constraint and the two must not fight;
+# 4.18 is where the referencing backend behind $ref/$defs settled.
+jsonschema>=4.18
 
 # Testing
 # ------------------------------------------------------------------------------
@@ -34,7 +58,3 @@ pytest-cov==7.1.0
 pytest-playwright==0.7.2
 pytest-flask==1.3.0
 allure-pytest==2.16.0
-
-# Code quality
-# ------------------------------------------------------------------------------
-black==26.3.1

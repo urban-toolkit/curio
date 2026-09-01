@@ -6,20 +6,29 @@ import {
   refreshPackageRegistry,
 } from "../../../api/packagesApi";
 import { useFlowContext } from "../../../providers/FlowProvider";
-import { setCurrentProjectPackages } from "../../../registry/projectPackagesStore";
+import { useToastContext } from "../../../providers/ToastProvider";
+import {
+  applyProjectLockfile,
+  setCurrentProjectPackages,
+} from "../../../registry/projectPackagesStore";
 import { draftFromInstalledPackagePayload } from "../../../utils/palettePackageFactoryDraft";
 import { toApiPayload } from "../../../pages/nodes/factoryDraftModel";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
 import { DrawerHeader } from "./DrawerHeader";
 import { DrawerTabs } from "./DrawerTabs";
+import { usePackageArchiveImport } from "./usePackageArchiveImport";
+import { PackageDetailModal } from "./PackageDetailModal";
 import { PackageSearchRow } from "./PackageSearchRow";
 import { PackageCard } from "./PackageCard";
-import { MyPackagesList } from "./MyPackagesList";
 import { EnvNote } from "./EnvNote";
 import { DrawerFooter } from "./DrawerFooter";
 import { DrawerTab, SortMode } from "./packageTypes";
 import { sortPackages, matchesSearch } from "./packageUtils";
+import { restartNotice } from "../../../services/packageRestartCopy";
+import shell from "./CatalogDrawerShell.module.css";
 import styles from "./NodeCatalogDrawer.module.css";
+import { modalStackDepth } from "../../ModalShell";
+import ConfirmDialog from "../../ConfirmDialog";
 
 
 export interface NodeCatalogDrawerProps {
@@ -38,24 +47,39 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const drawerRef = useRef<HTMLElement>(null);
 
   // The drawer is *per-project*: Install/Uninstall write to the current
-  // project's lockfile (see docs/CATALOG.md). When projectId is null
+  // project's lockfile (see docs/NODE-CATALOG.md). When projectId is null
   // (user landed on /dataflow/new and hasn't saved yet), Install auto-saves
   // the dataflow first so the user isn't forced to interrupt their flow.
   const { projectId, packages: projectPackages, saveCurrentProject } = useFlowContext();
+  const { showToast } = useToastContext();
 
   const [catalog, setCatalog] = useState<PackagePayload[]>([]);
   const [installed, setInstalled] = useState<PackagePayload[]>([]);
   const [tab, setTab] = useState<DrawerTab>("browse");
+  const [detailPkg, setDetailPkg] = useState<PackagePayload | null>(null);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("new");
   const [pinned, setPinned] = useState(false);
   const [busy, setBusy] = useState(false);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
   const [publishingPackageKey, setPublishingPackageKey] = useState<string | null>(null);
+  const [reloadingPackageKey, setReloadingPackageKey] = useState<string | null>(null);
   const [cardActionDir, setCardActionDir] = useState<string | null>(null);
   const [installCandidate, setInstallCandidate] = useState<PackagePayload | null>(null);
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // One slot for whichever confirmation is open (#197). The two destructive
+  // actions here are mutually exclusive from the user's point of view, and a
+  // single slot keeps the "what am I confirming" state next to the copy.
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    body: string;
+    confirmLabel: string;
+    run: () => Promise<void>;
+  } | null>(null);
+  // dev/92 B-2: the restart-honesty line after an install that changed
+  // shared Python libraries (backend-declared, never inferred here).
+  const [restartNoticeText, setRestartNoticeText] = useState<string | null>(null);
   const installedByDirRef = useRef<Map<string, PackagePayload>>(new Map());
   // When Install auto-saves a brand-new dataflow, the React state update
   // for `projectId` doesn't always make it into `confirmCatalogInstall`'s
@@ -75,9 +99,36 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   /** dirNames the current project has declared in its lockfile. Drives the
    * Install vs Uninstall affordance per card. */
+  /** The account's "all projects" packages, for the no-project fallback below. */
+  const [accountDefaults, setAccountDefaults] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!presented) return;
+    let cancelled = false;
+    packagesApi
+      .getDefaults()
+      .then((resp) => {
+        if (!cancelled) setAccountDefaults(new Set(resp.packages));
+      })
+      .catch(() => {
+        // The tab still works from the project lockfile; only the no-project
+        // fallback is lost, so this must not raise a banner.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [presented]);
+
   const projectInstalledDirs = useMemo(
-    () => new Set(projectPackages),
-    [projectPackages],
+    // A dataflow is created on its FIRST SAVE, so before that `projectPackages`
+    // is empty and this tab rendered "No packages added to this dataflow yet."
+    // - even though the account's defaults (curio.builtin, the examples, uhvi)
+    // are seeded into the dataflow the moment it is saved. They ARE in this
+    // dataflow, one save away. Its two peers do the same.
+    //
+    // Once there IS a project, its lockfile is the truth again: the account
+    // list would otherwise show packages the user removed from THIS dataflow.
+    () => new Set(projectId ? projectPackages : accountDefaults),
+    [projectId, projectPackages, accountDefaults],
   );
 
   /** dirNames in the user store (for the "Installed" tab listing + update detection). */
@@ -116,7 +167,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     installedByDirRef.current = new Map(mine.packages.map((p) => [p.dirName, p]));
     setCatalogPublishAllowed(cap.catalogPublish);
     if (projLock && Array.isArray(projLock.packages)) {
-      setCurrentProjectPackages(projLock.packages);
+      // memo dev/101: when the backend's lockfile differs from the mirror,
+      // the palette/registry must follow — not only the drawer's pill.
+      if (applyProjectLockfile(projLock.packages)) {
+        await refreshPackageRegistry();
+      }
     }
   // userStoreDirs intentionally omitted — it's derived from `installed` which we set here.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -144,21 +199,17 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   );
 
   useEffect(() => {
+    if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") onRequestClose();
+      // Defer to any open modal (see ModalShell's stack).
+      if (modalStackDepth() > 0) return;
+      // ...and to the pin. This used to close a pinned drawer, discarding the
+      // pin the user had just set - the Agent drawer already honoured it.
+      if (ev.key === "Escape" && !pinned) onRequestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onRequestClose]);
-
-  // Update candidates: project packages with a newer version available in the catalog.
-  const updateCandidates = useMemo(() => {
-    return installed.filter((row) => {
-      if (!projectInstalledDirs.has(row.dirName)) return false;
-      const catRow = catalogByDir.get(row.dirName);
-      return catRow != null && catRow.version !== row.version;
-    });
-  }, [installed, catalogByDir, projectInstalledDirs]);
+  }, [presented, pinned, onRequestClose]);
 
   const filteredCatalog = useMemo(() => {
     return sortPackages(
@@ -186,7 +237,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           const detail = await saveCurrentProject();
           savedProjectIdRef.current = (detail as { id?: string } | undefined)?.id ?? null;
         } catch (err) {
-          reportActionError("Couldn't save dataflow before install", err);
+          reportActionError("Couldn't save dataflow before adding", err);
           return;
         }
       } else {
@@ -221,48 +272,50 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       const result = await packagesApi.installToProject(
         effectiveProjectId, installCandidate.dirName,
       );
+      if (result.restartRecommended?.libs?.length) {
+        setRestartNoticeText(restartNotice(result.restartRecommended));
+      }
       // Keep the lockfile store in sync — palette filter reads this.
       setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
       await reload();
       setInstallCandidate(null);
       setConflictReport(null);
+      showToast(`Added ${installCandidate.name} to this dataflow.`, "success");
     } catch (err) {
-      reportActionError(`Couldn't install ${installCandidate.name}`, err);
+      reportActionError(`Couldn't add ${installCandidate.name}`, err);
     } finally {
       setBusy(false);
     }
-  }, [installCandidate, projectId, reload, reportActionError]);
+  }, [installCandidate, projectId, reload, reportActionError, showToast]);
+
+  // The shared pathway, which the Node Catalog PAGE header calls too, so the
+  // two surfaces cannot drift. `projectId` is the only real difference between
+  // them: the drawer runs inside a dataflow and drops the package into its
+  // lockfile as well, the page has no dataflow to drop it into.
+  const { importArchive } = usePackageArchiveImport({
+    projectId,
+    reload,
+    onError: reportActionError,
+    onInstalledToProject: setCurrentProjectPackages,
+  });
 
   const onPickArchive = useCallback(
     async (file: File) => {
+      // The drawer's own busy/error chrome; the shared hook owns the call.
       setBusy(true);
       setActionError(null);
       try {
-        // Sideload still goes through the user-store install path; if a
-        // project is open, drop the new package into its lockfile too so
-        // the palette picks it up.
-        const result = await packagesApi.uploadArchive(file, file.name);
-        if (projectId) {
-          const projResult = await packagesApi.installToProject(
-            projectId, result.package.dirName,
-          );
-          setCurrentProjectPackages(projResult.packages);
-        }
-        await refreshPackageRegistry();
-        await reload();
-      } catch (err) {
-        reportActionError(`Couldn't import ${file.name}`, err);
+        await importArchive(file);
       } finally {
         setBusy(false);
       }
     },
-    [projectId, reload, reportActionError],
+    [importArchive],
   );
 
-  const onUninstall = useCallback(async (pkg: PackagePayload) => {
+  const performUninstall = useCallback(async (pkg: PackagePayload) => {
     if (!projectId) return;
-    if (!window.confirm(`Remove ${pkg.name} (${pkg.dirName}) from this project?`)) return;
     setCardActionDir(pkg.dirName);
     setActionError(null);
     try {
@@ -270,34 +323,83 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
       await reload();
+      // The response says whether the prune actually fired; the UI used to read
+      // only `packages` and throw the rest away, so a removal that deleted the
+      // package from the account and pip-uninstalled its libraries from the
+      // shared interpreter reported the same sentence as one that only edited
+      // this dataflow's lockfile.
+      const pruned = result.pruned ?? [];
+      const fromDefaults = result.removedFromDefaults ?? [];
+      const extra = [
+        pruned.length ? "and from your account" : "",
+        fromDefaults.length ? "and from your defaults" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      showToast(
+        extra
+          ? `Removed ${pkg.name} from this dataflow ${extra}.`
+          : `Removed ${pkg.name} from this dataflow.`,
+        "success",
+      );
     } catch (err) {
-      reportActionError(`Couldn't uninstall ${pkg.name}`, err);
+      reportActionError(`Couldn't remove ${pkg.name}`, err);
     } finally {
       setCardActionDir(null);
     }
-  }, [projectId, reload, reportActionError]);
+  }, [projectId, reload, reportActionError, showToast]);
 
-  const onUnpublishFromCatalog = useCallback(
+  const onUninstall = useCallback((pkg: PackagePayload) => {
+    if (!projectId) return;
+    setConfirmAction({
+      title: `Remove ${pkg.name}?`,
+      // "from this dataflow", matching the button that opens this — the old
+      // copy said "from this project" and contradicted it.
+      //
+      // The second paragraph is the part that was missing entirely. Removal is
+      // not dataflow-scoped: `prune_unreferenced_packages` deletes the user's
+      // store copy, drops it from defaults, and pip-uninstalls its Python
+      // libraries from the interpreter Curio itself runs on — shared by every
+      // dataflow and every user of this instance. Whether it fires depends on
+      // the other dataflows' lockfiles, so the wording states the condition
+      // rather than guessing the outcome.
+      body:
+        `Remove ${pkg.name} (${pkg.dirName}) from this dataflow?` +
+        `\n\nIf no other dataflow uses it, it is also deleted from your account ` +
+        `and its Python libraries are uninstalled from the shared environment, ` +
+        `which affects every dataflow and everyone using this Curio.`,
+      confirmLabel: "Remove",
+      run: () => performUninstall(pkg),
+    });
+  }, [projectId, performUninstall]);
+
+  const performUnpublishFromCatalog = useCallback(
     async (pkg: PackagePayload) => {
-      if (
-        !window.confirm(
-          `Unpublish ${pkg.name} (${pkg.dirName}) from the dev catalog?\n\nThis removes the entry under packages/. Installed copies in projects are not removed.`,
-        )
-      ) {
-        return;
-      }
       setCardActionDir(pkg.dirName);
       setActionError(null);
       try {
         await packagesApi.unpublishFromCatalog(pkg.dirName);
         await reload();
+        showToast(`Unpublished ${pkg.name}.`, "success");
       } catch (err) {
         reportActionError(`Couldn't unpublish ${pkg.name}`, err);
       } finally {
         setCardActionDir(null);
       }
     },
-    [reload, reportActionError],
+    [reload, reportActionError, showToast],
+  );
+
+  const onUnpublishFromCatalog = useCallback(
+    (pkg: PackagePayload) => {
+      setConfirmAction({
+        title: `Unpublish ${pkg.name}?`,
+        body: `Unpublish ${pkg.name} from the Node Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`,
+        confirmLabel: "Unpublish",
+        run: () => performUnpublishFromCatalog(pkg),
+      });
+    },
+    [performUnpublishFromCatalog],
   );
 
   const onPublishToCatalog = useCallback(async (dirName: string) => {
@@ -312,56 +414,84 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         replace: true,
       });
       await reload();
+      showToast(`Published ${row.name}.`, "success");
     } catch (err) {
       reportActionError(`Couldn't publish ${row.name}`, err);
     } finally {
       setPublishingPackageKey(null);
     }
-  }, [reload, reportActionError]);
+  }, [reload, reportActionError, showToast]);
 
-  const myPackagesListProps = {
-    installed: filteredInstalled,
-    catalogByDir,
-    catalogPublishedDirs,
-    catalogPublishAllowed,
-    publishingPackageKey,
-    busy,
-    onUninstall: (p: PackagePayload) => void onUninstall(p),
-    onPublishToCatalog: (d: string) => void onPublishToCatalog(d),
-  };
+  /**
+   * Re-copy a package from the shared catalog over the user's installed copy.
+   *
+   * This is the authoring loop for a package you are editing under
+   * `packages/`. Install is a no-op once a copy exists in the user store
+   * (`_ensure_user_store_install`), so without an explicit reload your edits —
+   * including a rebuilt `scripts/behaviors.js` — stay invisible and the only
+   * workaround is uninstalling from every project and installing again.
+   *
+   * The page is reloaded afterwards rather than just refreshing the registry:
+   * `loadPackageBehaviorScripts` de-dupes injected bundles by package
+   * coordinate, so a custom-UI package's rebuilt bundle would be skipped for
+   * the rest of the session. A reload is the honest way to guarantee the new
+   * behavior code is the one running.
+   */
+  const onReloadFromCatalog = useCallback(
+    async (pkg: PackagePayload) => {
+      setReloadingPackageKey(pkg.dirName);
+      setActionError(null);
+      try {
+        await packagesApi.installFromCatalog(pkg.dirName, { replace: true });
+        window.location.reload();
+      } catch (err) {
+        reportActionError(`Couldn't reload ${pkg.name}`, err);
+        setReloadingPackageKey(null);
+      }
+    },
+    [reportActionError],
+  );
 
-  const tabLabel: Record<DrawerTab, string> = {
-    featured: "Browse",  // legacy: collapsed Featured into Browse
-    browse: "Browse",
-    installed: "Installed",
-    updates: "Installed",  // legacy: Updates badge shows on Installed
-  };
-
-  const unsavedBanner = !projectId ? (
-    <div className={styles.errorBanner} role="status">
-      <span className={styles.errorBannerText}>
-        This dataflow isn't saved yet — installing will save it first.
-      </span>
-    </div>
-  ) : null;
+  // Export an installed package as a .curio.zip. MyPackagesList has always
+  // rendered this control when handed a handler, but nothing ever passed one -
+  // so the drawer's export affordance was dead code and the palette accordion
+  // was the only way out. Same call the palette makes; failures surface as a
+  // toast because a download has no other visible failure state.
+  const onExportArchive = useCallback(
+    async (pkg: PackagePayload) => {
+      try {
+        await packagesApi.download(pkg.dirName);
+      } catch (err) {
+        reportActionError(`Couldn't export ${pkg.dirName}`, err);
+      }
+    },
+    [reportActionError],
+  );
 
   return (
     <>
       <div
-        className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
+        className={`${shell.overlayRoot} ${styles.overlayRoot} ${
+          presented ? shell.overlayRootPresented : ""
+        }`}
+        // The drawer stays mounted through its exit slide, and the panel below
+        // carries aria-modal="true" - so without this it advertises a modal
+        // dialog to assistive tech while sliding away. Its two siblings
+        // (DatasetCatalogDrawer, AgentCatalogDrawer) have always had it.
+        aria-hidden={!presented}
         data-curio-node-catalog-drawer="true"
       >
         <button
           type="button"
-          className={styles.scrim}
-          aria-label="Close node catalog drawer"
+          className={shell.scrim}
+          aria-label="Close Node Catalog drawer"
           onClick={() => {
             if (!pinned) onRequestClose();
           }}
         />
         <aside
           ref={drawerRef}
-          className={styles.drawer}
+          className={shell.drawer}
           role="dialog"
           aria-modal="true"
           aria-labelledby="node-catalog-drawer-title"
@@ -378,24 +508,35 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             search={search}
             sort={sort}
             onSearchChange={setSearch}
-            onSortChange={setSort}
+            onSortChange={(value) => setSort(value as SortMode)}
           />
 
           <DrawerTabs
-            tab={tab === "featured" || tab === "updates" ? "browse" : tab}
+            tab={tab}
             installedCount={projectInstalledDirs.size}
-            updateCount={updateCandidates.length}
             onChange={setTab}
           />
 
-          <div className={styles.scrollBody}>
-            {unsavedBanner}
-            {actionError ? (
-              <div className={styles.errorBanner} role="alert">
-                <span className={styles.errorBannerText}>{actionError}</span>
+          <div className={shell.scrollBody}>
+            {restartNoticeText ? (
+              <div className={styles.noticeBanner} role="status">
+                <span className={styles.errorBannerText}>{restartNoticeText}</span>
                 <button
                   type="button"
-                  className={styles.errorBannerDismiss}
+                  className={styles.noticeBannerDismiss}
+                  aria-label="Dismiss restart notice"
+                  onClick={() => setRestartNoticeText(null)}
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
+            {actionError ? (
+              <div className={shell.errorBanner} role="alert">
+                <span className={shell.errorBannerText}>{actionError}</span>
+                <button
+                  type="button"
+                  className={shell.errorBannerDismiss}
                   aria-label="Dismiss error"
                   onClick={() => setActionError(null)}
                 >
@@ -405,22 +546,44 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             ) : null}
             {tab === "installed" ? (
               filteredInstalled.length === 0 ? (
-                <div className={styles.empty}>
+                <div className={shell.empty}>
                   {projectInstalledDirs.size === 0
-                    ? "No packages installed in this project yet."
-                    : "No packages match the current filter."}
+                    ? "No packages added to this dataflow yet."
+                    : "No packages match the current filters."}
                 </div>
               ) : (
-                <MyPackagesList {...myPackagesListProps} />
+                /* The SAME card as the Browse tab next door, in the same card
+                   list. This tab rendered `MyPackagesList` - a compact
+                   dot-and-row list with its own actions - so one drawer showed
+                   its two tabs in two visual languages, and neither matched the
+                   Data or Agent drawer, which use one card in both of theirs. */
+                <div className={shell.cardList}>
+                  {filteredInstalled.map((pkg) => (
+                    <PackageCard
+                      key={pkg.dirName}
+                      pkg={pkg}
+                      isInstalled
+                      hasUpdate={
+                        catalogByDir.get(pkg.dirName) != null
+                        && catalogByDir.get(pkg.dirName)!.version !== pkg.version
+                      }
+                      catalogRow={catalogByDir.get(pkg.dirName)}
+                      busy={busy}
+                      cardActionDir={cardActionDir}
+                      onOpenDetails={setDetailPkg}
+                      onInstall={(p) => void onInstall(p)}
+                      onUninstall={(p) => onUninstall(p)}
+                      hasProject={Boolean(projectId)}
+                    />
+                  ))}
+                </div>
               )
             ) : (
               <>
-                <p className={styles.sectionLabel}>{tabLabel[tab]}</p>
-
                 {filteredCatalog.length === 0 ? (
-                  <div className={styles.empty}>No packages match the current filter.</div>
+                  <div className={shell.empty}>No packages match the current filters.</div>
                 ) : (
-                  <div className={styles.cardList}>
+                  <div className={shell.cardList}>
                     {filteredCatalog.map((pkg) => {
                       // "Installed" in the drawer means "in this project's
                       // lockfile" — the user-store presence is irrelevant
@@ -456,11 +619,12 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                           catalogRow={catalogRow}
                           busy={busy}
                           cardActionDir={cardActionDir}
-                          catalogPublishAllowed={catalogPublishAllowed}
-                          isPublished={catalogPublishedDirs.has(pkg.dirName)}
+                          // No publish/unpublish here: account-level decisions
+                          // live in the Node Catalog page's detail drawer.
+                          onOpenDetails={setDetailPkg}
                           onInstall={(p) => void onInstall(p)}
-                          onUninstall={projectId ? (p) => void onUninstall(p) : undefined}
-                          onUnpublish={hasLocalCopy ? (p) => void onUnpublishFromCatalog(p) : undefined}
+                          onUninstall={(p) => onUninstall(p)}
+                          hasProject={Boolean(projectId)}
                         />
                       );
                     })}
@@ -479,6 +643,13 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         </aside>
       </div>
 
+      {/* The card's "View details". The Node Catalog was the only one of the
+          three with no detail view anywhere; `PackageDetailModal` is that view,
+          and it shows the FULL node list where this drawer caps it. */}
+      {detailPkg ? (
+        <PackageDetailModal pkg={detailPkg} onClose={() => setDetailPkg(null)} />
+      ) : null}
+
       {installCandidate ? (
         <InstallPermissionsDialog
           pkg={installCandidate}
@@ -489,6 +660,22 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             setConflictReport(null);
           }}
           onConfirm={() => void confirmCatalogInstall()}
+        />
+      ) : null}
+
+      {confirmAction ? (
+        <ConfirmDialog
+          title={confirmAction.title}
+          body={confirmAction.body}
+          confirmLabel={confirmAction.confirmLabel}
+          destructive
+          layer="overlay"
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => {
+            const { run } = confirmAction;
+            setConfirmAction(null);
+            void run();
+          }}
         />
       ) : null}
     </>
