@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.users.models import User
 from utk_curio.backend.app.users.schemas import (
@@ -17,6 +19,9 @@ from utk_curio.backend.config import (
     CURIO_SHARED_GUEST_NAME,
     CURIO_SHARED_GUEST_USERNAME,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class AuthError(Exception):
@@ -92,6 +97,17 @@ def signup(data: SignUpIn) -> AuthOut:
         password_hash=security.hash_password(data.password),
         type="programmer",
     )
+    # A new account lands on an empty gallery otherwise: the examples were
+    # seeded to the shared guest only, and listing is a plain owner filter, so
+    # under ``--auth`` nobody with an account ever saw them (#200). Best-effort
+    # - a failed seed must never cost the user their sign-up, and
+    # ``list_projects`` back-fills on the next listing anyway.
+    from utk_curio.backend.app.projects.seed import ensure_user_examples_seeded
+
+    try:
+        ensure_user_examples_seeded(user)
+    except Exception:
+        logger.exception("Seeding examples at sign-up failed for %s", user.username)
     return _auth_out(user)
 
 

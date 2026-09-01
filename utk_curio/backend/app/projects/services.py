@@ -791,6 +791,15 @@ def load_shared_project(project_id: str) -> dict:
 def list_projects(
     user, scope: str = "mine", sort: str = "last_opened"
 ) -> List[ProjectSummary]:
+    # The examples are seeded per user at sign-up; this back-fills anyone who
+    # registered before that shipped, so the gallery is never empty under
+    # ``--auth`` (#200). Idempotent behind a marker file, so an example the user
+    # deleted on purpose is not resurrected on the next listing. Imported here
+    # rather than at module scope: ``seed`` imports this module for
+    # ``_is_shared_guest`` / ``_user_dir_key``.
+    from utk_curio.backend.app.projects.seed import ensure_user_examples_seeded
+
+    ensure_user_examples_seeded(user)
     projects = repo.list_for_user(user.id, scope=scope, sort=sort)
     ukey = _user_dir_key(user)
     summaries = []

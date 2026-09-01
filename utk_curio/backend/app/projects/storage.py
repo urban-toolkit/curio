@@ -88,6 +88,11 @@ def ensure_project_dir(user_key: str, project_id: str) -> Path:
     return d
 
 
+def user_dir(user_key: str) -> Path:
+    """The user's own root under ``.curio/users/``."""
+    return safe_join(_users_base(), _user_key_segment(user_key), field="user_key")
+
+
 # ---------------------------------------------------------------------------
 # Spec I/O
 # ---------------------------------------------------------------------------

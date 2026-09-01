@@ -57,6 +57,27 @@ def test_list_projects(client, user_and_token, tmp_curio):
     assert len(resp.get_json()) == 2
 
 
+def test_list_projects_serves_a_registered_users_examples(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    """#200 end to end at the route: the gallery is not empty under --auth.
+
+    Examples were seeded to the shared guest alone and listing is a plain owner
+    filter, so a signed-in account got `[]` here however the stack was started.
+    """
+    monkeypatch.setenv("CURIO_SEED_EXAMPLES", "1")
+    _, token = user_and_token
+
+    resp = client.get("/api/projects?scope=mine", headers=_auth(token))
+
+    assert resp.status_code == 200
+    names = {p["name"] for p in resp.get_json()}
+    assert names, "a registered user's gallery came back empty"
+    # Named, not just counted: the rows must be the curated examples rather
+    # than any project that happens to exist.
+    assert "Vega-Lite chained transforms" in names, sorted(names)
+
+
 def test_get_project(client, user_and_token, tmp_curio):
     _, token = user_and_token
     create = client.post(
