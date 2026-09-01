@@ -5,9 +5,12 @@ import re
 from typing import TYPE_CHECKING
 
 from .utils import (
+    _post_json,
     require_project_page,
+    require_user_auth,
     signup_and_enter_new_workflow,
     signup_e2e_user,
+    stub_db_login,
     wait_for_projects_page,
 )
 
@@ -72,3 +75,73 @@ def test_project_list_page(app_frontend: "FrontendPage", page):
     page.goto(f"{base}/projects")
     page.wait_for_load_state("domcontentloaded")
     wait_for_projects_page(page, timeout=10000)
+
+
+def _empty_spec(name: str) -> dict:
+    return {"dataflow": {"name": name, "nodes": [], "edges": []}}
+
+
+def test_projects_search_ignores_surrounding_whitespace(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """#231: a project name pasted with a trailing space found nothing.
+
+    The predicate used the raw input value as the needle
+    (``p.name.toLowerCase().includes(search.toLowerCase())``), so every space the
+    user did not mean to type became part of the string being searched for. The
+    reporter hit it by pasting a name; the Node Catalog beside it already trimmed,
+    which is what made the inconsistency visible.
+
+    Projects are seeded over the testing seam rather than through the UI: this is
+    a search test, not a project-creation one.
+    """
+    require_project_page()
+    require_user_auth()
+
+    stub_db_login(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Search User",
+        username="search_user",
+    )
+    for title in ("Street-level computer vision", "Weather analysis"):
+        _post_json(
+            f"{current_server}/api/testing/stub-project",
+            {"username": "search_user", "name": title, "spec": _empty_spec(title)},
+        )
+
+    page.goto(f"{app_frontend.base_url}/projects")
+    wait_for_projects_page(page, timeout=20000)
+    page.get_by_text("Street-level computer vision").first.wait_for(
+        state="visible", timeout=20000
+    )
+
+    box = page.get_by_placeholder("Search projects…")
+
+    # The reported case: the exact name plus one trailing space.
+    box.fill("Street-level computer vision ")
+    page.get_by_text("Street-level computer vision").first.wait_for(
+        state="visible", timeout=10000
+    )
+    assert page.get_by_text("Weather analysis").count() == 0, (
+        "the other project should have been filtered out"
+    )
+    assert page.get_by_text("No projects match the current filters.").count() == 0, (
+        "a padded query must not empty the list - this is #231"
+    )
+
+    # A leading space too, which no amount of haystack padding could ever absorb.
+    box.fill("  Street-level computer vision  ")
+    page.get_by_text("Street-level computer vision").first.wait_for(
+        state="visible", timeout=10000
+    )
+
+    # Whitespace alone is no query at all, so both projects come back - and the
+    # empty-state copy must not claim they were filtered out.
+    box.fill("   ")
+    page.get_by_text("Weather analysis").first.wait_for(state="visible", timeout=10000)
+    page.get_by_text("Street-level computer vision").first.wait_for(
+        state="visible", timeout=10000
+    )
+    assert page.get_by_text("No projects match the current filters.").count() == 0
