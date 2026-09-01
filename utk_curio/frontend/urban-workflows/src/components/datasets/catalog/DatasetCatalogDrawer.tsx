@@ -19,6 +19,7 @@ import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
 import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
 import styles from "./DatasetCatalogDrawer.module.css";
+import ConfirmDialog from "../../ConfirmDialog";
 
 export interface DatasetCatalogDrawerProps {
   presented: boolean;
@@ -63,6 +64,8 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     handleDatasetDragEnd,
     openDatasetDetails,
     closeDatasetDetails,
+    confirmAction,
+    dismissConfirm,
   } = useDatasetCatalogDrawer(presented);
 
   // In-flight installs without a real installed row yet → "Installing…" cards.
@@ -287,6 +290,21 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           liveOutputs={liveOutputs}
           fallbackDataset={detailFallback}
           onClose={closeDatasetDetails}
+        />
+      ) : null}
+
+      {confirmAction ? (
+        <ConfirmDialog
+          title={confirmAction.title}
+          body={confirmAction.body}
+          confirmLabel={confirmAction.confirmLabel}
+          destructive={confirmAction.destructive}
+          onCancel={dismissConfirm}
+          onConfirm={() => {
+            const { run } = confirmAction;
+            dismissConfirm();
+            void run();
+          }}
         />
       ) : null}
     </>

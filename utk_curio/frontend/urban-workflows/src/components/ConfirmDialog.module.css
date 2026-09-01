@@ -1,0 +1,126 @@
+/* Shared by ConfirmDialog and PromptDialog. ModalShell owns the box, the
+   backdrop and the close X; everything here is the content inside it. */
+
+.dialog {
+    padding: 24px;
+    font-family: var(--curio-font-family);
+    color: var(--curio-text-primary);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.title {
+    /* Right padding clears ModalShell's absolutely positioned close X. */
+    margin: 0 32px 12px 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--curio-text-primary);
+}
+
+.body {
+    font-size: var(--curio-font-size-md);
+    color: var(--curio-text-secondary);
+    line-height: 1.5;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.bodyText {
+    margin: 0 0 10px;
+}
+
+.bodyText:last-child {
+    margin-bottom: 0;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.fieldLabel {
+    font-size: var(--curio-font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: var(--curio-text-muted);
+}
+
+.input {
+    height: var(--curio-input-height);
+    padding: 0 12px;
+    border: 1px solid var(--curio-border-strong);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
+    font: inherit;
+    font-size: var(--curio-font-size-md);
+}
+
+.input:focus {
+    outline: 2px solid var(--curio-role-update-fg);
+    outline-offset: -1px;
+}
+
+.footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+.actionButton {
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
+    border: none;
+    padding: 0 20px;
+    height: var(--curio-input-height);
+    border-radius: var(--curio-radius-md);
+    font-weight: 600;
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--curio-font-size-lg);
+}
+
+.actionButton:hover:not(:disabled) {
+    background: #2c2d32;
+}
+
+.actionButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.destructive {
+    background: var(--curio-danger);
+    color: #fff;
+}
+
+.destructive:hover:not(:disabled) {
+    background: var(--curio-danger-strong);
+}
+
+.ghostButton {
+    background: var(--curio-card-bg);
+    border: 1px solid var(--curio-border-strong);
+    padding: 0 20px;
+    height: var(--curio-input-height);
+    border-radius: var(--curio-radius-md);
+    font-weight: 500;
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--curio-font-size-lg);
+    color: var(--curio-text-primary);
+}
+
+.ghostButton:hover:not(:disabled) {
+    background: var(--curio-page-bg);
+}
+
+.ghostButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

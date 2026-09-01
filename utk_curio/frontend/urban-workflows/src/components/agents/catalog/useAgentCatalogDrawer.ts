@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { agentsApi, AgentCard } from "../../../api/agentsApi";
 import { notifyAgentCatalogRefresh } from "../../../utils/agentCatalogEvents";
+import { useToastContext } from "../../../providers/ToastProvider";
 
 /**
  * Self-contained data hook for the Agent Catalog drawer. Owns the active
@@ -34,8 +35,10 @@ export interface AgentCatalogDrawerState {
   reload: () => Promise<void>;
   importAgent: (coord: string) => Promise<void>;
   removeImport: (coord: string) => Promise<void>;
-  install: (coord: string) => Promise<void>;
-  uninstall: (coord: string) => Promise<void>;
+  /** Takes the whole card, not just its coordinate, so the success toast can
+   *  name the agent the way the card does (#198). */
+  install: (card: AgentCard) => Promise<void>;
+  uninstall: (card: AgentCard) => Promise<void>;
   publish: (coord: string) => Promise<void>;
   unpublish: (coord: string) => Promise<void>;
 }
@@ -50,6 +53,7 @@ export function useAgentCatalogDrawer(
    *  test) needs no change. */
   onEnsureProject?: () => Promise<string | null>,
 ): AgentCatalogDrawerState {
+  const { showToast } = useToastContext();
   const [scope, setScope] = useState<AgentScope>("browse");
   const [cardsByScope, setCardsByScope] = useState<
     Partial<Record<AgentScope, AgentCard[]>>
@@ -140,7 +144,7 @@ export function useAgentCatalogDrawer(
   }, [presented, scope, refreshScope]);
 
   const run = useCallback(
-    async (coord: string, fn: () => Promise<unknown>) => {
+    async (coord: string, fn: () => Promise<unknown>, successMessage?: string) => {
       setBusyCoord(coord);
       setError(null);
       try {
@@ -153,13 +157,17 @@ export function useAgentCatalogDrawer(
         const actedOn = typeof result === "string" ? result : undefined;
         notifyAgentCatalogRefresh(); // keep the AGENTS palette in sync
         await refreshAll(actedOn); // every tab agrees immediately (dev/47)
+        // Only on the success path, and only once the refresh has landed, so
+        // the toast never contradicts what the cards show. Failures keep the
+        // drawer's own banner (a 5s toast is the wrong surface for them).
+        if (successMessage) showToast(successMessage, "success");
       } catch (e) {
         setError(e instanceof Error ? e.message : "Action failed");
       } finally {
         setBusyCoord(null);
       }
     },
-    [refreshAll],
+    [refreshAll, showToast],
   );
 
   /** The dataflow to act on, creating it if this one has never been saved.
@@ -197,18 +205,26 @@ export function useAgentCatalogDrawer(
     // been clicked, silently resolve without adding anything. Both peers create
     // the project on the click instead; this is that, through the shared
     // `ensureProjectId`.
-    install: (coord) =>
-      run(coord, async () => {
-        const id = await resolveProjectId();
-        await agentsApi.installToProject(id, coord);
-        return id;
-      }),
-    uninstall: (coord) =>
-      run(coord, async () => {
-        const id = await resolveProjectId();
-        await agentsApi.uninstallFromProject(id, coord);
-        return id;
-      }),
+    install: (card) =>
+      run(
+        card.dirName,
+        async () => {
+          const id = await resolveProjectId();
+          await agentsApi.installToProject(id, card.dirName);
+          return id;
+        },
+        `Added ${card.name} to this dataflow.`,
+      ),
+    uninstall: (card) =>
+      run(
+        card.dirName,
+        async () => {
+          const id = await resolveProjectId();
+          await agentsApi.uninstallFromProject(id, card.dirName);
+          return id;
+        },
+        `Removed ${card.name} from this dataflow.`,
+      ),
     publish: (coord) => run(coord, () => agentsApi.publish(coord)),
     unpublish: (coord) => run(coord, () => agentsApi.unpublish(coord)),
   };

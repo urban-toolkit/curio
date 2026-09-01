@@ -311,24 +311,22 @@ def test_add_package_propagates_to_palette(
     )["packages"]
     assert set(lock_after) == set(lock_before) | {PKG_DIR}, lock_after
 
-    # 9. Remove round-trip. Playwright's default dialog action is DISMISS, which
-    #    would make this a silent no-op, so handle it selectively.
-    def _accept_if_about_our_package(dialog_):
-        if PKG_DIR in dialog_.message:
-            dialog_.accept()
-        else:
-            dialog_.dismiss()
-            pytest.fail(f"unexpected confirm: {dialog_.message!r}")
-
-    page.once("dialog", _accept_if_about_our_package)
+    # 9. Remove round-trip. The confirmation is an in-app ConfirmDialog now
+    #    (#197), so it is driven by clicking its button; a `dialog` handler
+    #    would never fire and the click would look like a silent no-op. Its
+    #    body still has to name the package being removed.
     drawer = _open_drawer_from_menu(page)
     card = _card(drawer, PKG_DIR)
+    card.get_by_role("button", name="Remove from dataflow", exact=True).click()
+    confirm = page.get_by_role("dialog", name=f"Remove {PKG_NAME}?")
+    expect(confirm).to_be_visible(timeout=10000)
+    expect(confirm).to_contain_text(PKG_DIR)
     with page.expect_response(
         lambda r: "/api/packages/projects/" in r.url
         and r.request.method == "DELETE",
         timeout=30000,
     ):
-        card.get_by_role("button", name="Remove from dataflow", exact=True).click()
+        confirm.get_by_role("button", name="Remove", exact=True).click()
 
     expect(
         card.get_by_role("button", name="Add to dataflow", exact=True)

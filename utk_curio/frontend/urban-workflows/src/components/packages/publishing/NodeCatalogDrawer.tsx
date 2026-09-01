@@ -28,6 +28,7 @@ import shell from "./CatalogDrawerShell.module.css";
 import { UNSAVED_DATAFLOW_NOTICE } from "../../../constants/catalogCopy";
 import styles from "./NodeCatalogDrawer.module.css";
 import { modalStackDepth } from "../../ModalShell";
+import ConfirmDialog from "../../ConfirmDialog";
 
 
 export interface NodeCatalogDrawerProps {
@@ -66,6 +67,15 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const [installCandidate, setInstallCandidate] = useState<PackagePayload | null>(null);
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // One slot for whichever confirmation is open (#197). The two destructive
+  // actions here are mutually exclusive from the user's point of view, and a
+  // single slot keeps the "what am I confirming" state next to the copy.
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    body: string;
+    confirmLabel: string;
+    run: () => Promise<void>;
+  } | null>(null);
   // dev/92 B-2: the restart-honesty line after an install that changed
   // shared Python libraries (backend-declared, never inferred here).
   const [restartNoticeText, setRestartNoticeText] = useState<string | null>(null);
@@ -249,12 +259,13 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       await reload();
       setInstallCandidate(null);
       setConflictReport(null);
+      showToast(`Added ${installCandidate.name} to this dataflow.`, "success");
     } catch (err) {
       reportActionError(`Couldn't add ${installCandidate.name}`, err);
     } finally {
       setBusy(false);
     }
-  }, [installCandidate, projectId, reload, reportActionError]);
+  }, [installCandidate, projectId, reload, reportActionError, showToast]);
 
   const onPickArchive = useCallback(
     async (file: File) => {
@@ -282,9 +293,8 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     [projectId, reload, reportActionError],
   );
 
-  const onUninstall = useCallback(async (pkg: PackagePayload) => {
+  const performUninstall = useCallback(async (pkg: PackagePayload) => {
     if (!projectId) return;
-    if (!window.confirm(`Remove ${pkg.name} (${pkg.dirName}) from this project?`)) return;
     setCardActionDir(pkg.dirName);
     setActionError(null);
     try {
@@ -292,22 +302,28 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
       await reload();
+      showToast(`Removed ${pkg.name} from this dataflow.`, "success");
     } catch (err) {
       reportActionError(`Couldn't remove ${pkg.name}`, err);
     } finally {
       setCardActionDir(null);
     }
-  }, [projectId, reload, reportActionError]);
+  }, [projectId, reload, reportActionError, showToast]);
 
-  const onUnpublishFromCatalog = useCallback(
+  const onUninstall = useCallback((pkg: PackagePayload) => {
+    if (!projectId) return;
+    setConfirmAction({
+      title: `Remove ${pkg.name}?`,
+      // "from this dataflow", matching the button that opens this — the old
+      // copy said "from this project" and contradicted it.
+      body: `Remove ${pkg.name} (${pkg.dirName}) from this dataflow?`,
+      confirmLabel: "Remove",
+      run: () => performUninstall(pkg),
+    });
+  }, [projectId, performUninstall]);
+
+  const performUnpublishFromCatalog = useCallback(
     async (pkg: PackagePayload) => {
-      if (
-        !window.confirm(
-          `Unpublish ${pkg.name} from the Node Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`,
-        )
-      ) {
-        return;
-      }
       setCardActionDir(pkg.dirName);
       setActionError(null);
       try {
@@ -321,6 +337,18 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       }
     },
     [reload, reportActionError, showToast],
+  );
+
+  const onUnpublishFromCatalog = useCallback(
+    (pkg: PackagePayload) => {
+      setConfirmAction({
+        title: `Unpublish ${pkg.name}?`,
+        body: `Unpublish ${pkg.name} from the Node Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`,
+        confirmLabel: "Unpublish",
+        run: () => performUnpublishFromCatalog(pkg),
+      });
+    },
+    [performUnpublishFromCatalog],
   );
 
   const onPublishToCatalog = useCallback(async (dirName: string) => {
@@ -398,7 +426,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     busy,
     reloadingPackageKey,
     onExport: (p: PackagePayload) => void onExportArchive(p),
-    onUninstall: (p: PackagePayload) => void onUninstall(p),
+    onUninstall: (p: PackagePayload) => onUninstall(p),
     onPublishToCatalog: (d: string) => void onPublishToCatalog(d),
     onReloadFromCatalog: (p: PackagePayload) => void onReloadFromCatalog(p),
   };
@@ -550,8 +578,8 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                           catalogPublishAllowed={catalogPublishAllowed}
                           isPublished={catalogPublishedDirs.has(pkg.dirName)}
                           onInstall={(p) => void onInstall(p)}
-                          onUninstall={projectId ? (p) => void onUninstall(p) : undefined}
-                          onUnpublish={hasLocalCopy ? (p) => void onUnpublishFromCatalog(p) : undefined}
+                          onUninstall={projectId ? (p) => onUninstall(p) : undefined}
+                          onUnpublish={hasLocalCopy ? (p) => onUnpublishFromCatalog(p) : undefined}
                         />
                       );
                     })}
@@ -580,6 +608,21 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             setConflictReport(null);
           }}
           onConfirm={() => void confirmCatalogInstall()}
+        />
+      ) : null}
+
+      {confirmAction ? (
+        <ConfirmDialog
+          title={confirmAction.title}
+          body={confirmAction.body}
+          confirmLabel={confirmAction.confirmLabel}
+          destructive
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => {
+            const { run } = confirmAction;
+            setConfirmAction(null);
+            void run();
+          }}
         />
       ) : null}
     </>

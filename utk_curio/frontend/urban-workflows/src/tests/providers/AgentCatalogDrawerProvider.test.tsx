@@ -5,6 +5,10 @@ jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ projectId: "p1" }),
 }));
 
+jest.mock("../../providers/ToastProvider", () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
+
 jest.mock("../../api/agentsApi", () => ({
   agentsApi: {
     catalog: jest.fn(() => Promise.resolve({ agents: [] })),

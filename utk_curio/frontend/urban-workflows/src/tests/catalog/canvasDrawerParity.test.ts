@@ -32,6 +32,13 @@ const CANVAS_DRAWERS = [
   "components/agents/catalog/AgentCatalogDrawer.tsx",
 ];
 
+/** The data/lifecycle hooks behind two of the three drawers. A confirmation
+ *  that moved into a hook is just as native as one left in the component. */
+const DRAWER_HOOKS = [
+  "components/datasets/catalog/useDatasetCatalogDrawer.ts",
+  "components/agents/catalog/useAgentCatalogDrawer.ts",
+];
+
 const PROVIDERS = [
   "providers/NodeCatalogDrawerProvider.tsx",
   "providers/datasetCatalog/DatasetCatalogDrawerProvider.tsx",
@@ -51,6 +58,20 @@ describe("canvas catalog drawer parity", () => {
     expect(source).toContain('role="dialog"');
     expect(source).toContain('aria-modal="true"');
   });
+
+  // #197: every confirmation is an in-app ConfirmDialog now. A native
+  // window.confirm is unstyled, unthemed, un-dismissable by Escape-to-cancel
+  // parity with the rest of the app, and — the reason it kept regressing —
+  // invisible to Playwright unless the test registers a `dialog` handler.
+  test.each([...CANVAS_DRAWERS, ...DRAWER_HOOKS])(
+    "%s raises no native browser dialog",
+    (file) => {
+      const source = read(file);
+      expect(source).not.toContain("window.confirm");
+      expect(source).not.toContain("window.prompt");
+      expect(source).not.toContain("window.alert");
+    },
+  );
 
   test.each(PROVIDERS)(
     "%s unmounts the drawer rather than leaving it in the DOM",

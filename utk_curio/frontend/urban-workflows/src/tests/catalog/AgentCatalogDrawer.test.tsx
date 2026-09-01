@@ -16,10 +16,33 @@ jest.mock("../../api/agentsApi", () => ({
   },
 }));
 
+const mockShowToast = jest.fn();
+jest.mock("../../providers/ToastProvider", () => ({
+  useToastContext: () => ({ showToast: mockShowToast }),
+}));
+
 import { agentsApi } from "../../api/agentsApi";
 import { AgentCatalogDrawer } from "../../components/agents/catalog/AgentCatalogDrawer";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
+
+/** The ConfirmDialog ModalShell renders. `getByRole("dialog")` cannot be used:
+ *  the drawer itself carries role="dialog" too, so the query is ambiguous
+ *  whenever a confirmation is open. */
+function confirmModal(): HTMLElement {
+  const el = document.querySelector('[data-curio-modal-shell="true"]');
+  if (!el) throw new Error("no confirmation dialog is open");
+  return el as HTMLElement;
+}
+
+/** Clicks a card action and accepts the confirmation it now raises (#196,
+ *  #197). The card button and the dialog's confirm can share a label, so the
+ *  second click is scoped to the dialog. */
+async function clickAndConfirm(cardAction: string | RegExp, confirmLabel: string) {
+  fireEvent.click(screen.getByRole("button", { name: cardAction }));
+  const modal = await waitFor(confirmModal);
+  fireEvent.click(within(modal).getByRole("button", { name: confirmLabel }));
+}
 
 function card(id: string, over: Record<string, unknown> = {}) {
   return {
@@ -131,7 +154,7 @@ describe("AgentCatalogDrawer", () => {
       />,
     );
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
 
     await waitFor(() => expect(onEnsureProject).toHaveBeenCalledTimes(1));
     await waitFor(() =>
@@ -153,7 +176,7 @@ describe("AgentCatalogDrawer", () => {
       />,
     );
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/nothing was added/i));
     expect(api.installToProject).not.toHaveBeenCalled();
@@ -180,7 +203,7 @@ describe("AgentCatalogDrawer", () => {
       />,
     );
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument(),
@@ -219,7 +242,7 @@ describe("AgentCatalogDrawer", () => {
     });
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument(),
     );
@@ -245,7 +268,7 @@ describe("AgentCatalogDrawer", () => {
       />,
     );
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
 
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
@@ -273,7 +296,7 @@ describe("AgentCatalogDrawer", () => {
   it("clicking Add to dataflow calls the install endpoint", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
     );
@@ -298,7 +321,7 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.getByText("Node Content Builder (not installed)")).toBeInTheDocument();
     const btn = screen.getByRole("button", { name: "Add to dataflow (+1 required)" });
     expect(btn).toHaveAttribute("title", "Also adds Node Content Builder (required)");
-    fireEvent.click(btn);
+    await clickAndConfirm("Add to dataflow (+1 required)", "Add to dataflow");
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.dataflow-builder@1.0.0"),
     );
@@ -333,9 +356,7 @@ describe("AgentCatalogDrawer", () => {
     fireEvent.click(screen.getByText("In dataflow"));
     await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
     // Removal now confirms, as it does in the Node and Data drawers.
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
-    fireEvent.click(screen.getByRole("button", { name: "Remove from dataflow" }));
-    confirmSpy.mockRestore();
+    await clickAndConfirm("Remove from dataflow", "Remove");
     await waitFor(() =>
       expect(screen.getByText(/is required by Dataflow Builder/)).toBeInTheDocument(),
     );
@@ -450,7 +471,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     api.catalog.mockClear();
     api.listImports.mockClear();
     api.listProjectAgents.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
     await waitFor(() => expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"));
     await waitFor(() => {
       expect(api.catalog).toHaveBeenCalled();

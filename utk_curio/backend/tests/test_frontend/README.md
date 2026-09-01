@@ -384,11 +384,22 @@ Other things that surprise people here:
   aria-label.
 - Card roots carry `data-pkg-dir` / `data-dataset-id` / `data-agent-coord`.
   Prefer them over display copy, which has been renamed repeatedly.
-- **Adding an agent needs no permissions dialog.** It is a lockfile write with
-  no pip involved, so watch the install POST itself rather than a confirm step.
-  Removing one *does* confirm, and Playwright's default for a dialog is
-  **dismiss** - without `page.once("dialog", lambda d: d.accept())` the click
-  silently does nothing and later assertions fail for the wrong reason.
+- **Every catalog confirms an add and a remove, with an in-app dialog** (#196,
+  #197). `window.confirm` is gone from all three drawers, so `page.on("dialog",
+  ...)` never fires for them - a test still written that way clicks the card
+  button, silently does nothing, and fails later for the wrong reason. Use
+  `utils.accept_confirm_dialog(page, title=..., button=...)`, and note the
+  ordering: the card click only *opens* the dialog, so the request to wait on
+  is triggered by the confirm, not by the click. The Node catalog keeps its
+  richer `InstallPermissionsDialog` for adds (permissions + dependency
+  conflicts); Data and Agent use the plain ConfirmDialog.
+- **`get_by_role("dialog")` is ambiguous while a drawer is open.** The drawers
+  are themselves `role="dialog"`, so scope by accessible name -
+  `page.get_by_role("dialog", name="Remove Node Explainer?")` - which
+  ConfirmDialog wires from its heading via `aria-labelledby`.
+- **The unsaved-changes guards in `UpMenu` are still native**, so the tours'
+  blanket `page.on("dialog", lambda d: d.accept())` is still required for
+  File > New dataflow. Do not remove it.
 - **The agent palette's footer used to sit below the fold at 1280x720.** Its
   panel hung down from its own trigger, which is the third and lowest in the
   rail, so `Browse Agent Catalog +` (how the Node suite enters) was off screen.

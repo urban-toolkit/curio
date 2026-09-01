@@ -113,3 +113,38 @@ describe("publish wording is shared across both catalogs", () => {
     }
   });
 });
+
+describe("add/remove toasts are shared across all three catalogs (#198)", () => {
+  // Only the Data catalog reported an add or a remove; the Node and Agent
+  // catalogs completed in silence, which reads as "nothing happened" on a slow
+  // install. useDatasetCatalogDrawer's wording is the canonical one, so the
+  // other two adopt it verbatim rather than inventing a third phrasing.
+  const SOURCES: [string, string][] = [
+    ["data", "components/datasets/catalog/useDatasetCatalogDrawer.ts"],
+    ["node", "components/packages/publishing/NodeCatalogDrawer.tsx"],
+    ["agent", "components/agents/catalog/useAgentCatalogDrawer.ts"],
+  ];
+
+  test.each(SOURCES)("the %s catalog toasts both an add and a remove", (_kind, file) => {
+    const src = read(file);
+    // The interpolated expression differs per catalog (dataset.title, pkg.name,
+    // card.name), so match the template around it rather than the whole line.
+    expect(src).toMatch(/Added \$\{[^}]+\} to this dataflow\./);
+    expect(src).toMatch(/Removed \$\{[^}]+\} from this dataflow\./);
+  });
+
+  // showToast defaults to **error** (ToastProvider.tsx), so an omitted variant
+  // paints a successful add red. The three catalogs reach showToast by
+  // different routes, so the variant is asserted where each one applies it:
+  // Data and Agent behaviourally (useDatasetCatalogDrawer.import.test.ts,
+  // useAgentCatalogDrawer.test.ts), Node from source — it has no render
+  // harness, for the reasons NodeCatalogDrawerReload.test.tsx sets out.
+  test("the node catalog passes the success variant at the call site", () => {
+    const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
+    for (const verb of ["Added", "Removed"]) {
+      expect(src).toMatch(
+        new RegExp(`showToast\\(\\s*\`${verb} \\$\\{[^}]+\\} (to|from) this dataflow\\.\`,\\s*"success"`),
+      );
+    }
+  });
+});
