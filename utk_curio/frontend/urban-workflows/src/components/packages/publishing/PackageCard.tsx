@@ -175,11 +175,18 @@ export const PackageCard: React.FC<PackageCardProps> = ({
             <button
               type="button"
               className={styles.btnSecondary}
-              disabled={cardBusy || !hasProject}
+              /* Not gated on `hasProject`, matching its two peers. This branch
+                 IS reachable before the first save: `projectInstalledDirs`
+                 falls back to the account defaults when there is no project, so
+                 a default package renders Remove on an unsaved dataflow - and
+                 the gate then left a disabled control and nothing else, the
+                 same dead end as the Agent and Data cards (#190, #199).
+                 `performUninstall` saves the dataflow on the click now. */
+              disabled={cardBusy}
               title={
                 hasProject
                   ? `Remove ${pkg.name} from this project`
-                  : "Save this dataflow first. There is no project to remove it from yet."
+                  : `Remove ${pkg.name}; this saves the dataflow first`
               }
               onClick={() => onUninstall(pkg)}
             >

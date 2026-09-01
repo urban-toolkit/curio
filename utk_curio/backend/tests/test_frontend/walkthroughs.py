@@ -683,6 +683,96 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
 
 
 @walkthrough(
+    slug="agent-catalog-account-agent-on-an-unsaved-dataflow",
+    refs=[190, 199],
+    title="An agent you already have, on a dataflow you have not saved",
+    premise="Add an agent to every project, then open the Agent Catalog on a new dataflow.",
+    note="The sibling scene covers a fresh account, where every card offers Add. "
+         "An account that already holds the agent takes the other branch: "
+         "`inThisDataflow` counts it as present, so the card renders Remove - and "
+         "Remove was still gated on `hasProject`, which is null until the first "
+         "save. The result was a disabled control and nothing else, which is the "
+         "symptom #190 and #199 both report, reached through a different door. "
+         "Remove now creates the dataflow on the click, exactly as Add does.",
+    tests=["src/tests/catalog/AgentCatalogDrawer.test.tsx",
+           "test_frontend/test_walkthrough_baselines.py"],
+    clip_selector=AGENT_DRAWER_ROOT,
+    fit_reactflow=False,
+    max_diff_ratio=0.03,
+)
+def agent_catalog_account_agent_on_an_unsaved_dataflow(ctx: Ctx) -> None:
+    page = ctx.page
+
+    # Put the agent in the ACCOUNT first, through the UI. "Add to all projects"
+    # on the catalog page posts /api/agents/imports, which is what sets
+    # `imported` - the flag the drawer then reads to decide Add versus Remove.
+    ctx.say("Add an agent to every project", "An account-level decision, made on the catalog page.")
+    page.goto(f"{ctx.frontend}/catalog/agents")
+    page.wait_for_load_state("domcontentloaded")
+    browse_drawer = page.locator(BROWSE_DRAWER_ROOT)
+    browse_drawer.wait_for(state="visible", timeout=30000)
+
+    add_to_all = browse_drawer.get_by_role("button", name="Add to all projects")
+    if add_to_all.count():
+        ctx.click(add_to_all.first)
+        browse_drawer.get_by_role(
+            "button", name="Remove from all projects"
+        ).first.wait_for(state="visible", timeout=30000)
+    coord = page.locator("article[data-agent-coord]").first.get_attribute(
+        "data-agent-coord"
+    )
+    assert coord, "no agent card to read a coordinate from"
+
+    # Now a dataflow that has never been saved.
+    ctx.say("A brand-new dataflow", "Nothing has saved it yet.")
+    page.goto(f"{ctx.frontend}/dataflow/new")
+    page.wait_for_url("**/dataflow/new", timeout=20000)
+    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    disk = page.locator("[data-curio-save-state]")
+    disk.wait_for(state="visible", timeout=15000)
+    assert disk.get_attribute("data-curio-save-state") == "unsaved", (
+        f"the save indicator reads "
+        f"{disk.get_attribute('data-curio-save-state')!r} on a dataflow that "
+        f"has never been saved"
+    )
+
+    dialog = open_agent_drawer(ctx)
+    card = dialog.locator(f'article[data-agent-coord="{coord}"]')
+    card.wait_for(state="visible", timeout=30000)
+
+    # THE POINT: the account already holds it, so this card shows Remove - and
+    # that control has to be usable. It was disabled, with a tooltip telling the
+    # user to go and save first, on a surface whose Add button saves for them.
+    remove = card.get_by_role("button", name="Remove from project", exact=True)
+    remove.wait_for(state="visible", timeout=30000)
+    assert remove.is_enabled(), (
+        "Remove from project is disabled on an unsaved dataflow, so an agent "
+        "the account already holds offers no usable control at all - the drawer "
+        "is still gating on a project id instead of creating one on the click"
+    )
+    ctx.focus(remove, hold=1200)
+    ctx.capture("remove-enabled-on-unsaved-dataflow")
+
+    ctx.say("Remove it", "The dataflow is saved first, then the agent comes out.")
+    ctx.click(remove)
+    accept_confirm_dialog(page, title=re.compile(r"^Remove "), button="Remove")
+
+    # The save really happened, and the card flipped to the other branch.
+    page.wait_for_url(lambda url: "/dataflow/new" not in url, timeout=30000)
+    card.get_by_role("button", name=re.compile(r"^Add to project")).first.wait_for(
+        state="visible", timeout=30000
+    )
+    page.wait_for_function(
+        "() => document.querySelector('[data-curio-save-state]')"
+        "?.getAttribute('data-curio-save-state') === 'saved'",
+        timeout=20000,
+    )
+    ctx.capture("removed-and-saved")
+    ctx.say("Removed, and the dataflow saved itself",
+            "The same one-click save the Add path already did.")
+
+
+@walkthrough(
     slug="agent-catalog-action-labels-fit",
     refs=[191],
     title="Agent action labels fit their button",

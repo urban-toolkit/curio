@@ -315,11 +315,32 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   );
 
   const performUninstall = useCallback(async (pkg: PackagePayload) => {
-    if (!projectId) return;
+    // Resolve the dataflow at click time rather than refusing without one, the
+    // way `onInstall` above already does. `if (!projectId) return` made this a
+    // silent no-op on an unsaved dataflow - the button reported nothing and did
+    // nothing - which is the same dead end the Agent and Data cards had.
+    let effectiveProjectId = projectId ?? savedProjectIdRef.current;
+    if (!effectiveProjectId) {
+      try {
+        const detail = await saveCurrentProject();
+        effectiveProjectId = (detail as { id?: string } | undefined)?.id ?? null;
+        savedProjectIdRef.current = effectiveProjectId;
+      } catch (err) {
+        reportActionError("Couldn't save dataflow before removing", err);
+        return;
+      }
+    }
+    if (!effectiveProjectId) {
+      reportActionError(
+        `Couldn't remove ${pkg.name}`,
+        new Error("the dataflow could not be saved, so there is nothing to remove it from"),
+      );
+      return;
+    }
     setCardActionDir(pkg.dirName);
     setActionError(null);
     try {
-      const result = await packagesApi.uninstallFromProject(projectId, pkg.dirName);
+      const result = await packagesApi.uninstallFromProject(effectiveProjectId, pkg.dirName);
       setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
       await reload();
@@ -347,10 +368,12 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     } finally {
       setCardActionDir(null);
     }
-  }, [projectId, reload, reportActionError, showToast]);
+  }, [projectId, reload, reportActionError, saveCurrentProject, showToast]);
 
   const onUninstall = useCallback((pkg: PackagePayload) => {
-    if (!projectId) return;
+    // No `if (!projectId) return` here either: the confirmation is worth
+    // showing on an unsaved dataflow, because confirming it now saves and
+    // then removes rather than doing nothing.
     setConfirmAction({
       title: `Remove ${pkg.name}?`,
       // "from this dataflow", matching the button that opens this — the old

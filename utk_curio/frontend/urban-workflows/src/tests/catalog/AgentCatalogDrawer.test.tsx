@@ -145,6 +145,20 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.getByRole("button", { name: "Add to project" })).toBeEnabled();
   });
 
+  it("Remove from project stays enabled on a dataflow that was never saved", async () => {
+    // The other branch of the same decision, and the half that stayed broken.
+    // `inThisDataflow` counts an agent already in the ACCOUNT as present, so on
+    // an unsaved dataflow that card renders Remove rather than Add - and Remove
+    // was still gated on `hasProject`. The card then offered a disabled control
+    // and nothing else, which is the dead end #190 and #199 describe.
+    api.catalog.mockResolvedValue({
+      agents: [card("agent.node-explainer", { imported: true })],
+    } as any);
+    render(<AgentCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Remove from project" })).toBeEnabled();
+  });
+
   it("shows no unsaved-dataflow banner", async () => {
     // The banner is gone from all three catalogs. It only ever appeared on an
     // unsaved dataflow, so it read as a state the other two surfaces did not

@@ -486,15 +486,18 @@ const AgentRow: React.FC<{
           <button
             type="button"
             className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
-            disabled={busy || !hasProject}
-            /* The only one of the three Remove buttons with no tooltip, in
-               either state - so the disabled case in an unsaved dataflow said
-               nothing at all about why it was disabled. Same wording as its
-               peers, from the same two branches. */
+            /* Not gated on `hasProject`. An agent already in the account takes
+               this branch even before the first save, so gating here left the
+               card showing a disabled control and nothing else - the same dead
+               end #190 and #199 report, reached through the other branch. The
+               handler already creates the dataflow on the click (`uninstall` ->
+               `resolveProjectId`), exactly as Add does; only this attribute
+               still said otherwise. */
+            disabled={busy}
             title={
               hasProject
                 ? `Remove ${card.name} from this project`
-                : "Save this dataflow first. There is no project to remove it from yet."
+                : `Remove ${card.name}; this saves the dataflow first`
             }
             onClick={() => onRequestUninstall(card)}
           >
