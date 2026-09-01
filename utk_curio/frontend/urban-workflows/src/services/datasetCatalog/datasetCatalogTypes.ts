@@ -495,6 +495,21 @@ export function isUserOwnedDataset(dataset: DatasetCatalogItem): boolean {
   return false;
 }
 
+/**
+ * Did this dataset come from the catalog everyone on this Curio shares?
+ *
+ * The positive counterpart to {@link isUserOwnedDataset}, and deliberately not
+ * its negation. Publish must fail CLOSED - never offer to publish unless the
+ * thing is provably the user's - while Delete must fail OPEN, because hiding it
+ * on a row we simply cannot classify would take away a working action. So
+ * Delete asks "do we KNOW this came from the catalog", which a `data.*` store
+ * folder or a still-`hub` origin answers.
+ */
+export function isSharedCatalogDataset(dataset: DatasetCatalogItem): boolean {
+  if (dataset.origin === "hub") return true;
+  return String(dataset.dirName ?? "").startsWith("data.");
+}
+
 /** Live node output in the current session that is not yet in the user dataset store. */
 export function isProjectSessionDataset(dataset: DatasetCatalogItem): boolean {
   return dataset.origin === "computed" && dataset.installed !== true;

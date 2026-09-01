@@ -88,17 +88,31 @@ describe("DatasetCard - Delete gating", () => {
     expect(button("Delete")).toBeNull();
   });
 
+  // These two now name the store folder, because that is what decides. The
+  // fixture's default is a CATALOG folder (`data.urbanlab.demo@1`), so leaving
+  // it implicit described a catalog dataset while claiming to describe the
+  // user's own - the ambiguity the old `origin !== "hub"` guard fell into.
   it("offers Delete on the owner's computed row", () => {
     renderCard({
-      dataset: dataset({ origin: "computed", producerNodeId: "node-1" }),
+      dataset: dataset({
+        origin: "computed",
+        producerNodeId: "node-1",
+        dirName: "computed.flow-1.node-1@1",
+      }),
       onDelete: jest.fn(),
     });
     expect(button("Delete")).toBeTruthy();
   });
 
-  it("offers Delete on an imported row that has a producer node", () => {
+  it("offers Delete on the owner's computed row once it reads as imported", () => {
+    // Installing a dataset into a dataflow flips its origin to "imported"; the
+    // owner's own asset keeps its `computed.*` folder and stays deletable.
     renderCard({
-      dataset: dataset({ origin: "imported", producerNodeId: "node-1" }),
+      dataset: dataset({
+        origin: "imported",
+        producerNodeId: "node-1",
+        dirName: "computed.flow-1.node-1@1",
+      }),
       onDelete: jest.fn(),
     });
     expect(button("Delete")).toBeTruthy();
@@ -181,5 +195,46 @@ describe("DatasetCard - publish affordances", () => {
       isPublished: true,
     });
     expect(button("Publish…")).toBeNull();
+  });
+});
+
+describe("DatasetCard - Delete is for the user's own assets only", () => {
+  // Deleting removes an account-level dataset from the Data Catalog. Offering
+  // it for something the installation shipped makes no sense, and the backend
+  // 403s it - so the affordance must not be there in the first place.
+  it("offers Delete for a dataset the user's own node computed", () => {
+    renderCard({
+      dataset: dataset({
+        origin: "computed",
+        producerNodeId: "n1",
+        dirName: "computed.flow-1.n1@1",
+      }),
+      onDelete: jest.fn(),
+    });
+    expect(button("Delete")).toBeTruthy();
+  });
+
+  it("hides Delete for a catalog dataset", () => {
+    renderCard({
+      dataset: dataset({ origin: "hub", producerNodeId: "n1" }),
+      onDelete: jest.fn(),
+    });
+    expect(button("Delete")).toBeNull();
+  });
+
+  it("hides Delete for a catalog dataset the user merely INSTALLED", () => {
+    // The hole the old `origin !== "hub"` guard left: installing flips origin
+    // to "imported" while the `data.*` store folder stays, so a published
+    // computed dataset slipped through and offered a Delete the backend 403s.
+    renderCard({
+      dataset: dataset({
+        origin: "imported",
+        installed: true,
+        producerNodeId: "n1",
+        dirName: "data.urbanlab.demo@1",
+      }),
+      onDelete: jest.fn(),
+    });
+    expect(button("Delete")).toBeNull();
   });
 });

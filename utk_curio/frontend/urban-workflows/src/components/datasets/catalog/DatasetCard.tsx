@@ -12,7 +12,10 @@ import {
   CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
 import { CatalogPublishPill, shouldShowPublishPill } from "../../packages/CatalogPublishPill";
-import { isUserOwnedDataset } from "../../../services/datasetCatalog";
+import {
+  isSharedCatalogDataset,
+  isUserOwnedDataset,
+} from "../../../services/datasetCatalog";
 import {
   datasetCountCompact as datasetCount,
   relativeTimeOrEmpty as relativeTime,
@@ -80,13 +83,17 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   // Delete permanently removes an account-level computed dataset from the Data
   // Catalog (distinct from Uninstall, which only detaches it from this project).
   const isComputedAsset = dataset.origin === "computed" || Boolean(dataset.producerNodeId);
-  // Never offer Delete on a pure hub row: hub rows now carry producerNodeId, so
-  // a viewer browsing someone else's published dataset would otherwise see a
-  // Delete button that the backend (correctly) 403s. The owner sees their own
-  // asset as the merged origin="computed" row (account copy wins the dedup), so
-  // their Delete affordance is unaffected. The backend publisher check is the
-  // real gate; this just hides an action the user cannot perform.
-  const showDelete = onDelete != null && isComputedAsset && dataset.origin !== "hub";
+  // Never offer Delete on something that came from the shared catalog: those
+  // rows carry producerNodeId, so `isComputedAsset` alone would light up a
+  // Delete button the backend (correctly) 403s.
+  //
+  // `origin !== "hub"` used to be the guard and did not hold: INSTALLING a
+  // catalog dataset flips its origin from "hub" to "imported" while it keeps
+  // its `data.*` store folder, so a published-computed dataset the user merely
+  // installed slipped past and offered Delete. The store folder is the durable
+  // signal - the same one publish now uses.
+  const showDelete =
+    onDelete != null && isComputedAsset && !isSharedCatalogDataset(dataset);
   const showPublishPill = shouldShowPublishPill({
     isPublished,
     allowPublish: publishAllowed,
