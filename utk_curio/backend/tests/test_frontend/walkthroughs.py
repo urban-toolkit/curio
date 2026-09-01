@@ -26,12 +26,18 @@ from __future__ import annotations
 import json
 import os
 import re
+import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
 from playwright.sync_api import expect
 
-from .utils import REPO_ROOT, accept_confirm_dialog
+from .utils import (
+    REPO_ROOT,
+    accept_confirm_dialog,
+    signup_e2e_user,
+    wait_for_projects_page,
+)
 
 EXAMPLES_DIR = os.path.join(REPO_ROOT, "docs", "examples")
 
@@ -854,3 +860,68 @@ def catalog_add_reports_success(ctx: Ctx) -> None:
     ctx.say("It says so now",
             "The same sentence the Data catalog has always used.")
     ctx.capture("add-toast")
+
+
+# ---------------------------------------------------------------------------
+# Examples for registered accounts (#200)
+# ---------------------------------------------------------------------------
+
+#: A couple of the curated examples, by the ``dataflow.name`` the seeder uses as
+#: the project title. Named rather than counted, so adding a twelfth example
+#: does not break the scene and a gallery full of something else still fails.
+EXAMPLE_TITLES = [
+    "Vega-Lite chained transforms",
+    "Vega-Lite spatial density",
+]
+
+
+@walkthrough(
+    slug="examples-are-seeded-for-a-new-account",
+    refs=[200],
+    title="A new account arrives to a gallery of examples",
+    premise="Create an account and read what is waiting on the projects page.",
+    note="The examples were seeded to exactly one user - the shared guest - "
+         "and project listing is a plain owner filter, so under `--auth` every "
+         "account signed in to an empty gallery; `--deploy` carried the same "
+         "defect. Each account now gets its own copies, seeded at sign-up and "
+         "back-filled on first listing for anyone who registered earlier.",
+    tests=["tests/test_projects/test_example_seed_for_registered_users.py",
+           "tests/test_projects/test_routes.py",
+           "test_frontend/test_examples_for_registered_users_e2e.py"],
+    fit_reactflow=False,
+)
+def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
+    """Needs a stack started with ``--with-examples``.
+
+    The runner has already stub-logged-in a walkthrough user on a canvas; this
+    scene deliberately leaves that session and signs up a brand new account,
+    because "what a new account sees" is the whole claim.
+    """
+    page = ctx.page
+
+    ctx.say("Create an account", "The reporter's own path: sign up, then look.")
+    username = f"examples_{uuid.uuid4().hex[:10]}"
+    signup_e2e_user(page, ctx.frontend, name="New User", username=username)
+    wait_for_projects_page(page, timeout=30000)
+    ctx.beat(900)
+
+    missing = [
+        title
+        for title in EXAMPLE_TITLES
+        if page.get_by_text(title, exact=True).count() == 0
+    ]
+    if missing:
+        # Distinguish the two ways this scene can fail: a stack booted without
+        # the flag has nothing to show and is a harness problem, not the bug.
+        raise AssertionError(
+            f"the gallery is missing {missing}. If every example is absent, the "
+            "stack was started without --with-examples (set "
+            "CURIO_E2E_WITH_EXAMPLES=1); if only some are, the seed is at fault."
+        )
+
+    for title in EXAMPLE_TITLES:
+        ctx.focus(page.get_by_text(title, exact=True).first, hold=900)
+
+    ctx.say("Eleven example dataflows, owned by this account",
+            "Not the guest's copies - this account's own, ready to open.")
+    ctx.capture("examples-gallery")
