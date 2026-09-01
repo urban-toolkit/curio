@@ -92,8 +92,18 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   // its `data.*` store folder, so a published-computed dataset the user merely
   // installed slipped past and offered Delete. The store folder is the durable
   // signal - the same one publish now uses.
+  // A file the user uploaded is an account-level asset just as much as a node
+  // output is, and the one they are most likely to want rid of on purpose. It
+  // used to have no Delete at all: the only way to remove it was to remove it
+  // from the last dataflow using it, which deleted it as a side effect of a
+  // differently-named action.
+  const isOwnUpload =
+    String(dataset.dirName ?? "").startsWith("imported.") ||
+    dataset.origin === "imported";
   const showDelete =
-    onDelete != null && isComputedAsset && !isSharedCatalogDataset(dataset);
+    onDelete != null &&
+    (isComputedAsset || isOwnUpload) &&
+    !isSharedCatalogDataset(dataset);
   const showPublishPill = shouldShowPublishPill({
     isPublished,
     allowPublish: publishAllowed,

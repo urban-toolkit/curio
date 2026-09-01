@@ -118,12 +118,18 @@ describe("DatasetCard - Delete gating", () => {
     expect(button("Delete")).toBeTruthy();
   });
 
-  it("hides Delete on a plain imported row with no producer", () => {
+  it("offers Delete on an upload, which has no producer node", () => {
+    // Inverted deliberately: an uploaded file is the user's own account-level
+    // asset and now has an explicit Delete. It previously had none at all.
     renderCard({
-      dataset: dataset({ origin: "imported", producerNodeId: null }),
+      dataset: dataset({
+        origin: "imported",
+        producerNodeId: null,
+        dirName: "imported.my-upload@1",
+      }),
       onDelete: jest.fn(),
     });
-    expect(button("Delete")).toBeNull();
+    expect(button("Delete")).toBeTruthy();
   });
 
   it("hides Delete when no handler is supplied", () => {

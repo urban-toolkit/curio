@@ -270,3 +270,86 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
     expect(
         own.get_by_role("button", name=re.compile(r"^Publish"))
     ).to_have_count(1, timeout=10000)
+
+
+def test_uploading_a_file_then_deleting_it_warns_about_every_dataflow(
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path
+):
+    """An uploaded file can be deleted on purpose, and says what that reaches.
+
+    It used to have no Delete at all. The only way to be rid of an upload was to
+    remove it from the last dataflow using it, at which point the backend
+    deleted the account copy as a side effect of an action called "Remove from
+    dataflow" - a deletion the user never asked for by name.
+
+    So: upload one, delete it, and check the dialog is honest about the scope.
+    Delete removes the dataset AND strips its references from every dataflow
+    that holds one, archived projects included (``delete_dataset`` step 2).
+    """
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend.base_url, current_server, "confirm_upload_delete")
+
+    source = tmp_path / "my-observations.csv"
+    source.write_text("station,reading\nalpha,1\nbeta,2\n", encoding="utf-8")
+
+    drawer = _open_data_drawer(page)
+    import_button = drawer.get_by_role("button", name="Import dataset")
+    expect(import_button).to_be_visible(timeout=30000)
+
+    with page.expect_response(
+        lambda r: r.url.endswith("/api/datasets/import")
+        and r.request.method == "POST"
+        and r.ok,
+        timeout=120000,
+    ) as imported:
+        with page.expect_file_chooser() as chooser:
+            import_button.click()
+        chooser.value.set_files(str(source))
+    dataset_id = imported.value.json()["id"]
+
+    card = drawer.locator(f'article[data-dataset-id="{dataset_id}"]')
+    expect(card).to_have_count(1, timeout=30000)
+
+    # THE POINT, part one: an upload now offers Delete. It carries no producer
+    # node, which is exactly why it used to fall outside the affordance.
+    delete = card.get_by_role("button", name="Delete", exact=True)
+    expect(delete).to_be_visible(timeout=20000)
+
+    # ...and Publish, because an upload is the user's own (unlike the catalog
+    # rows around it, which offer neither).
+    expect(card.get_by_role("button", name=re.compile(r"^Publish"))).to_have_count(1)
+
+    # THE POINT, part two: the dialog states the every-dataflow scope.
+    delete.click()
+    modal = _modal(page, re.compile(r"^Delete "))
+    expect(modal).to_contain_text("every dataflow that uses it")
+    expect(modal).to_contain_text("not just this one")
+    save_workflow_test_screenshot(
+        page, "upload-delete-confirm",
+        test_name="test_uploading_a_file_then_deleting_it_warns_about_every_dataflow",
+        fit_reactflow=False,
+    )
+
+    # Cancelling leaves it alone.
+    modal.get_by_role("button", name="Cancel", exact=True).click()
+    expect(modal).to_have_count(0, timeout=10000)
+    expect(
+        drawer.locator(f'article[data-dataset-id="{dataset_id}"]')
+    ).to_have_count(1, timeout=10000)
+
+    # Confirming really deletes it, and the card goes.
+    drawer.locator(f'article[data-dataset-id="{dataset_id}"]').get_by_role(
+        "button", name="Delete", exact=True
+    ).click()
+    with page.expect_response(
+        lambda r: "/api/datasets/" in r.url and r.request.method == "DELETE",
+        timeout=60000,
+    ):
+        _modal(page, re.compile(r"^Delete ")).get_by_role(
+            "button", name="Delete forever", exact=True
+        ).click()
+
+    expect(
+        drawer.locator(f'article[data-dataset-id="{dataset_id}"]')
+    ).to_have_count(0, timeout=30000)

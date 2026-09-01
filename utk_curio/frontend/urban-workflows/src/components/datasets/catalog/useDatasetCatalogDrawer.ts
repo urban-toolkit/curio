@@ -485,7 +485,15 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`,
       // complete the moment it appears rather than filling in under the user.
       setConfirmAction({
         title: `Delete ${title}?`,
-        body: `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just removed from this dataflow. ${permanentDeletionNotice()}${usageNote}`,
+        // The every-dataflow scope is stated unconditionally. It used to depend
+        // on `usageNote`, which is empty whenever the usage lookup returns
+        // nothing or fails — so the case where the user knows least about the
+        // blast radius was the case that said least about it.
+        body:
+          `Delete ${title} from your Data Catalog?\n\n` +
+          `This deletes the dataset itself, and removes it from every dataflow ` +
+          `that uses it, not just this one. ${permanentDeletionNotice()}` +
+          usageNote,
         confirmLabel: "Delete forever",
         destructive: true,
         run: () => performDelete(dataset),
