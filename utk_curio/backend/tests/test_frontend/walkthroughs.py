@@ -201,6 +201,10 @@ class Walkthrough:
     #: table cannot demonstrate itself without the right one. So each scene says
     #: what it needs, and says nothing when it needs nothing.
     example: str | None = None
+    #: Needs the stack seeded with the example dataflows. The scene then carries
+    #: the ``examples`` marker, so an ordinary run skips it honestly instead of
+    #: asserting against an empty gallery and blaming the seed.
+    needs_examples: bool = False
 
     @property
     def stem(self) -> str:
@@ -948,6 +952,7 @@ EXAMPLE_TITLES = [
 
 @walkthrough(
     slug="examples-are-seeded-for-a-new-account",
+    needs_examples=True,
     refs=[200],
     title="A new account arrives to a gallery of examples",
     premise="Create an account and read what is waiting on the projects page.",
@@ -1002,8 +1007,8 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
         # the flag has nothing to show and is a harness problem, not the bug.
         raise AssertionError(
             f"the gallery is missing {missing}. If every example is absent, the "
-            "stack was started without --with-examples (set "
-            "CURIO_E2E_WITH_EXAMPLES=1); if only some are, the seed is at fault."
+            "stack was started without --with-examples (pass --with-examples to "
+            "pytest); if only some are, the seed is at fault."
         )
 
     for title in EXAMPLE_TITLES:

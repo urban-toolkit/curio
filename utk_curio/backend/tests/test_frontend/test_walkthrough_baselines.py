@@ -34,7 +34,19 @@ from .utils import (
 from .walkthroughs import PROVENANCE_EXAMPLE, TOAST_REGION, load_example_spec
 
 
-@pytest.mark.parametrize("walk", WALKTHROUGHS, ids=lambda w: w.slug)
+def _walkthrough_params():
+    """``WALKTHROUGHS`` as pytest params, carrying each scene's own marks.
+
+    A scene that declares ``needs_examples`` gets the ``examples`` marker, so an
+    ordinary run deselects it rather than driving it against an empty gallery and
+    reporting the seed as broken.
+    """
+    return [
+        pytest.param(w, marks=[pytest.mark.examples] if w.needs_examples else [])
+        for w in WALKTHROUGHS
+    ]
+
+@pytest.mark.parametrize("walk", _walkthrough_params(), ids=lambda w: w.slug)
 def test_walkthrough_baseline(walk, app_frontend, current_server, page):
     require_project_page()
     require_user_auth()
