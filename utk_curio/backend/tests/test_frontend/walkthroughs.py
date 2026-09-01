@@ -546,6 +546,11 @@ def _viewport_transform(page) -> str:
 
 AGENT_DRAWER_ROOT = '[data-curio-agent-catalog-drawer="true"]'
 
+#: The catalog PAGES' detail drawer (/catalog/data, /catalog/nodes,
+#: /catalog/agents). Distinct from the canvas drawers above: the account-level
+#: actions live here, not on a card and not in the canvas.
+BROWSE_DRAWER_ROOT = '[data-curio-browse-drawer="true"]'
+
 
 def open_agent_drawer(ctx: Ctx):
     """Data menu -> Agent Catalog, returning the drawer dialog."""
@@ -676,31 +681,42 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
 @walkthrough(
     slug="agent-catalog-action-labels-fit",
     refs=[191],
-    title="Agent card buttons fit their column",
-    premise="Read the actions on an imported agent's card.",
-    note="The action column is pinned at 140px so the card body cannot "
-         "collapse, and the shared secondary button is a fixed 30px single "
-         "line - so \"Remove from all projects\" wrapped to two lines inside it "
-         "and spilled out. The label's type size comes down instead.",
+    title="Agent action labels fit their button",
+    premise="Read the account-level actions on an agent, where the longest label lives.",
+    note="The reported overflow was on the agent drawer's card column, pinned at "
+         "140px, where \"Remove from all projects\" wrapped inside a 30px box and "
+         "spilled out. That control has since moved: account-level actions are "
+         "decisions about an item, not about one dataflow, so they live on the "
+         "Agent Catalog page's detail drawer now. This scene follows the label - "
+         "the claim is unchanged, only its address.",
     tests=["src/tests/styles/agentDrawerButtonGeometry.test.ts",
            "test_frontend/test_walkthrough_baselines.py"],
-    clip_selector=AGENT_DRAWER_ROOT,
+    clip_selector=BROWSE_DRAWER_ROOT,
     fit_reactflow=False,
     max_diff_ratio=0.02,
 )
 def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
-    dialog = open_agent_drawer(ctx)
+    page = ctx.page
 
-    # "Remove from all projects" only exists on a card in My imports, and a fresh
-    # account has none - so import one first, through the UI rather than the API.
-    ctx.say("Import an agent", "My imports is where the longest label lives.")
-    import_button = dialog.get_by_role("button", name="Import", exact=True).first
-    import_button.wait_for(state="visible", timeout=20000)
-    ctx.click(import_button)
+    ctx.say("The Agent Catalog page", "Where the account-level actions live.")
+    page.goto(f"{ctx.frontend}/catalog/agents")
+    page.wait_for_load_state("domcontentloaded")
 
-    ctx.click(dialog.get_by_role("button", name="My imports"))
-    remove = dialog.get_by_role("button", name="Remove from all projects").first
-    remove.wait_for(state="visible", timeout=20000)
+    # The page auto-selects the first card so the drawer arrives populated.
+    drawer = page.locator(BROWSE_DRAWER_ROOT)
+    drawer.wait_for(state="visible", timeout=30000)
+
+    # "Remove from all projects" is the longest label in the product, and it
+    # only renders once the agent is in the account. Whether it already is
+    # depends on leftover per-user state, so reach the state rather than assume
+    # it: `primaryAction` toggles on `agent.imported`.
+    add = drawer.get_by_role("button", name="Add to all projects")
+    if add.count():
+        ctx.say("Add it to every project", "That is what puts the long label on screen.")
+        ctx.click(add.first)
+
+    remove = drawer.get_by_role("button", name="Remove from all projects").first
+    remove.wait_for(state="visible", timeout=30000)
     ctx.focus(remove, hold=1200)
 
     box = fits_on_one_line(remove)
@@ -714,9 +730,9 @@ def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
         f"{box['scrollW']}px wide in a {box['clientW']}px box"
     )
 
-    # Every button in the column, not just the reported one.
-    for name in ("Remove from all projects", "Add to project"):
-        button = dialog.get_by_role("button", name=name).first
+    # Every button in the drawer's action bar, not just the reported one.
+    for name in ("Remove from all projects", "Add to all projects", "View details"):
+        button = drawer.get_by_role("button", name=name).first
         if not button.count():
             continue
         metrics = fits_on_one_line(button)
@@ -726,7 +742,7 @@ def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
 
     ctx.capture("labels-fit")
     ctx.say("Every label inside its button",
-            "The row height is unchanged; the type came down instead.")
+            "The longest one in the product, on the surface that now owns it.")
 
 
 # ---------------------------------------------------------------------------
