@@ -25,7 +25,6 @@ import {
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
-import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
@@ -324,7 +323,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         body: alsoDeletes
           ? `Remove ${title} from this dataflow?
 
-No other dataflow uses it, so the uploaded file is also deleted from your Data Catalog. ${permanentDeletionNotice()}`
+No other dataflow uses it, so the uploaded file is also deleted from your Data Catalog.`
           : `Remove ${title} from this dataflow?
 
 The dataset stays in your Data Catalog and in any other dataflow using it.`,
@@ -492,7 +491,7 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`,
         body:
           `Delete ${title} from your Data Catalog?\n\n` +
           `This deletes the dataset itself, and removes it from every dataflow ` +
-          `that uses it, not just this one. ${permanentDeletionNotice()}` +
+          `that uses it, not just this one.` +
           usageNote,
         confirmLabel: "Delete forever",
         destructive: true,
