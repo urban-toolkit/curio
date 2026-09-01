@@ -44,6 +44,13 @@ import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDr
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
+import {
+    looksLikeJsonFile,
+    parseDataflowFile,
+    loadFailedMessage,
+    NOT_JSON_FILE_MESSAGE,
+    UNREADABLE_FILE_MESSAGE,
+} from "../../../utils/dataflowImport";
 
 export default function UpMenu({
     setDashBoardMode,
@@ -213,37 +220,59 @@ export default function UpMenu({
         setActiveMenu(null);
     };
 
+    // Every failure here used to be a console.error, so picking a malformed file
+    // left the canvas unchanged with nothing on screen to say why (#238). The
+    // three failures are told apart deliberately: reporting a wrong-shaped
+    // dataflow as "invalid JSON" sends people hunting for a syntax error that
+    // is not there.
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
 
-        if (file && file.type === "application/json") {
-            const reader = new FileReader();
-
-            reader.onload = (event: ProgressEvent<FileReader>) => {
-                try {
-                    const jsonContent = JSON.parse(event.target?.result as string);
-                    loadTrill(jsonContent);
-                    // Importing a workflow file is a deliberate user action, so
-                    // warn + auto-install its Python deps the same way opening
-                    // your own project does.
-                    ensureWorkflowDeps(jsonContent);
-                } catch (err) {
-                    console.error("Invalid JSON file:", err);
-                } finally {
-                    setActiveMenu(null);
-                }
-            };
-
-            reader.onerror = (event: ProgressEvent<FileReader>) => {
-                console.error("Error reading file:", event.target?.error);
-                setActiveMenu(null);
-            };
-
-            reader.readAsText(file);
-        } else {
-            console.error("Please select a valid .json file.");
+        if (!file) {
             setActiveMenu(null);
+            return;
         }
+
+        if (!looksLikeJsonFile(file)) {
+            showToast(NOT_JSON_FILE_MESSAGE, "error");
+            setActiveMenu(null);
+            return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onload = (event: ProgressEvent<FileReader>) => {
+            try {
+                const parsed = parseDataflowFile(event.target?.result as string);
+                if (!parsed.ok) {
+                    showToast(parsed.message, "error");
+                    return;
+                }
+                try {
+                    loadTrill(parsed.spec);
+                } catch (err) {
+                    // A spec can carry the right shape and still throw while it
+                    // is replayed, on a node type this build does not know.
+                    console.error("Failed to load dataflow:", err);
+                    showToast(loadFailedMessage(err), "error");
+                    return;
+                }
+                // Importing a workflow file is a deliberate user action, so
+                // warn + auto-install its Python deps the same way opening
+                // your own project does.
+                ensureWorkflowDeps(parsed.spec);
+            } finally {
+                setActiveMenu(null);
+            }
+        };
+
+        reader.onerror = (event: ProgressEvent<FileReader>) => {
+            console.error("Error reading file:", event.target?.error);
+            showToast(UNREADABLE_FILE_MESSAGE, "error");
+            setActiveMenu(null);
+        };
+
+        reader.readAsText(file);
     };
 
     const exportAsJupyterNotebook = () => {
