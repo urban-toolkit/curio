@@ -25,15 +25,18 @@
   color: #1e1f23;
 }
 
+/* No padding and no border of its own. `CatalogDetailHeader` - the shared
+ * header all three details views render - owns both, and it is the whole of
+ * this element's content. Padding here inset the shared header inside a second
+ * padded box, so the Data one alone sat narrower than its peers and started
+ * lower; the border drew a second rule under the header's own.
+ *
+ * Kept as an element because the tab strip below it belongs to the same
+ * flex-shrink:0 band. */
 .pageHeader {
   flex-shrink: 0;
   background: #fafafa;
-  border-bottom: 1px solid #e5e5e5;
-  padding: 16px 24px 0;
-}
-
-.modalRoot .pageHeader {
-  padding-top: 48px;
+  padding: 0;
 }
 
 .breadcrumb {
@@ -55,9 +58,11 @@
   letter-spacing: 0;
 }
 
+/* `.pageHeader` no longer pads, so this supplies its own inset. Page variant
+ * only - the modal has ModalShell's close button instead. */
 .backButton {
   min-height: 28px;
-  margin: 8px 0 0;
+  margin: 12px 0 0 24px;
   border: 1px solid #e5e5e5;
   border-radius: 6px;
   background: transparent;
@@ -175,50 +180,44 @@
   padding-top: 4px;
 }
 
-.publishButton,
-.exportButton,
-.unpublishButton {
+/* `.publishButton` and `.unpublishButton` are gone with the controls they
+ * styled: this panel is the details view and no longer decides publishing.
+ * The red `.unpublishButton` was also the one place in the catalogs that used a
+ * third colour - the vocabulary is dark for an action, light for a destructive
+ * one, and nothing else. */
+.exportButton {
   min-height: 34px;
   border-radius: 7px;
   padding: 0 14px;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-}
-
-.publishButton {
+  /* Export is an action, so it takes the action fill like every other action
+     in the catalogs. It was the odd one out: a grey outline on a panel whose
+     other buttons were solid dark. */
   border: 0;
-  background: #1e1f23;
-  color: #fff;
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
 }
 
-.exportButton {
-  border: 1px solid #e5e5e5;
-  background: transparent;
-  color: #555;
-  font-weight: 600;
+.exportButton:hover:not(:disabled) {
+  background: var(--curio-top-bar-bg-hover);
 }
 
-.unpublishButton {
-  border: 1px solid #e7c9c2;
-  background: #fff6f4;
-  color: #9f3f3f;
-  font-weight: 600;
-}
-
-.publishButton:disabled,
-.exportButton:disabled,
-.unpublishButton:disabled {
+.exportButton:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
+/* Its own inset now that `.pageHeader` does not pad: the tabs used to inherit
+ * the header band's 24px and would otherwise sit flush against the edge. */
 .inspectorTabs {
   display: flex;
   align-items: center;
   gap: 18px;
   min-height: 36px;
   margin-top: 4px;
+  padding: 0 24px;
 }
 
 .inspectorTabs button {
