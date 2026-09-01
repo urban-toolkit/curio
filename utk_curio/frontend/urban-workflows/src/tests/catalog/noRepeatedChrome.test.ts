@@ -96,3 +96,75 @@ describe("the unsaved-dataflow banner is gone from every catalog", () => {
     );
   });
 });
+
+describe("every catalog card root carries its identity attribute", () => {
+  // `test_frontend/README.md` tells e2e authors to key on these rather than on
+  // display copy, "which has been renamed repeatedly". Two of the six card
+  // components did not actually have one, so a browse-page card could only be
+  // addressed by its title — which is exactly what the README warns against.
+  const CARDS: [string, string, string][] = [
+    ["data browse", "pages/dataHub/DataCatalogBrowseCard.tsx", "data-dataset-id"],
+    ["agent browse", "pages/agents/AgentCatalogBrowseCard.tsx", "data-agent-coord"],
+    ["node browse", "pages/catalog/PackageBrowseCard.tsx", "data-pkg-dir"],
+    ["node drawer", "components/packages/publishing/PackageCard.tsx", "data-pkg-dir"],
+    ["agent drawer", "components/agents/catalog/AgentCatalogDrawer.tsx", "data-agent-coord"],
+  ];
+
+  test.each(CARDS)("the %s card exposes %s", (_kind, file, attr) => {
+    expect(read(file)).toContain(attr);
+  });
+});
+
+describe("the Node catalog offers only tabs that do something", () => {
+  // "Featured" and "Updates" were rendered, clickable, and inert: the drawer
+  // collapsed both onto "browse" before handing the state to the strip, and
+  // its list never depended on `tab`. Updates even carried an accent count, so
+  // it advertised work it would not do.
+  test("the tab strip is Browse all / In dataflow", () => {
+    const src = read("components/packages/publishing/DrawerTabs.tsx");
+    expect(src).toContain("Browse all");
+    expect(src).toContain("In dataflow");
+    expect(src).not.toContain(">Featured<");
+    expect(src).not.toContain(">Updates<");
+    expect(src).not.toContain("updateCount");
+  });
+
+  test("the tab type admits no dead members", () => {
+    const src = read("components/packages/publishing/packageTypes.ts");
+    expect(src).toContain('export type DrawerTab = "browse" | "installed";');
+  });
+
+  test("the drawer no longer collapses two tabs onto a third", () => {
+    const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
+    expect(src).not.toContain('tab === "featured"');
+    expect(src).not.toContain('tab === "updates"');
+    // The per-card "update available" line is computed separately and stays.
+    expect(read("components/packages/publishing/MyPackagesList.tsx")).toContain(
+      "update available",
+    );
+  });
+});
+
+describe("Escape dismisses every catalog drawer, and every one honours its pin", () => {
+  // Escape closed the Node and Agent drawers and did nothing in the Data
+  // drawer, which had no handler at all. And the Node drawer ignored its own
+  // pin, so Escape discarded a pin the user had just set.
+  const ESCAPE_OWNERS: [string, string][] = [
+    ["data", "components/datasets/catalog/DatasetCatalogDrawer.tsx"],
+    ["node", "components/packages/publishing/NodeCatalogDrawer.tsx"],
+    ["agent", "providers/AgentCatalogDrawerProvider.tsx"],
+  ];
+
+  test.each(ESCAPE_OWNERS)("the %s drawer closes on Escape", (_kind, file) => {
+    expect(read(file)).toMatch(/key === "Escape"/);
+  });
+
+  test.each(ESCAPE_OWNERS)("the %s drawer's Escape respects the pin", (_kind, file) => {
+    expect(read(file)).toMatch(/key === "Escape" && !pinned/);
+  });
+
+  test.each(ESCAPE_OWNERS)("the %s drawer stands down for an open modal", (_kind, file) => {
+    // ModalShell registers every dialog; a confirmation on top owns Escape.
+    expect(read(file)).toContain("modalStackDepth() > 0");
+  });
+});

@@ -50,6 +50,11 @@ export function DataCatalogBrowseCard({
         selected ? styles.cardActive : "",
         styles[`card_${dataset.format}`] || "",
       ].join(" ")}
+      // The cross-surface identity attribute the drawer card and the tools
+      // palette already carry, and which test_frontend/README.md says every
+      // card root has. This one did not, so nothing could address a browse
+      // card except by its display copy.
+      data-dataset-id={dataset.id}
       role="button"
       tabIndex={0}
       onClick={onSelect}

@@ -80,6 +80,8 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         selected ? styles.cardActive : "",
         stripClass(cardStyles, "card", cat),
       ].join(" ")}
+      // Same cross-surface identity attribute the drawer's PackageCard carries.
+      data-pkg-dir={pkg.dirName}
       role="button"
       tabIndex={0}
       onClick={onSelect}

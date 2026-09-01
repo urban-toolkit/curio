@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileImport } from "@fortawesome/free-solid-svg-icons";
 import { DrawerFooter } from "../../packages/publishing/DrawerFooter";
@@ -18,6 +18,7 @@ import { PackageSearchRow } from "components/packages/publishing/PackageSearchRo
 import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
 import styles from "./DatasetCatalogDrawer.module.css";
 import ConfirmDialog from "../../ConfirmDialog";
+import { modalStackDepth } from "../../ModalShell";
 
 export interface DatasetCatalogDrawerProps {
   presented: boolean;
@@ -65,6 +66,23 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     confirmAction,
     dismissConfirm,
   } = useDatasetCatalogDrawer(presented);
+
+  // Escape dismisses this drawer, as it does the Node and Agent ones. It was
+  // the only one of the three without a handler, so a user who had learned the
+  // gesture on either peer pressed it here and nothing happened.
+  //
+  // Two conditions, both shared with the Agent drawer: a modal rendered on top
+  // (the add/remove confirmation, the dataset detail) owns Escape while it is
+  // open, and a pinned drawer is being deliberately kept open.
+  useEffect(() => {
+    if (!presented) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (modalStackDepth() > 0) return;
+      if (ev.key === "Escape" && !pinned) onRequestClose?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [presented, pinned, onRequestClose]);
 
   // In-flight installs without a real installed row yet → "Installing…" cards.
   // Match against genuinely-installed items only (an un-installed hub/computed row

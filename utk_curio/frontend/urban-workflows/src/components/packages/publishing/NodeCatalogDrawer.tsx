@@ -170,23 +170,17 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   );
 
   useEffect(() => {
+    if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
       // Defer to any open modal (see ModalShell's stack).
       if (modalStackDepth() > 0) return;
-      if (ev.key === "Escape") onRequestClose();
+      // ...and to the pin. This used to close a pinned drawer, discarding the
+      // pin the user had just set - the Agent drawer already honoured it.
+      if (ev.key === "Escape" && !pinned) onRequestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onRequestClose]);
-
-  // Update candidates: project packages with a newer version available in the catalog.
-  const updateCandidates = useMemo(() => {
-    return installed.filter((row) => {
-      if (!projectInstalledDirs.has(row.dirName)) return false;
-      const catRow = catalogByDir.get(row.dirName);
-      return catRow != null && catRow.version !== row.version;
-    });
-  }, [installed, catalogByDir, projectInstalledDirs]);
+  }, [presented, pinned, onRequestClose]);
 
   const filteredCatalog = useMemo(() => {
     return sortPackages(
@@ -474,9 +468,8 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           />
 
           <DrawerTabs
-            tab={tab === "featured" || tab === "updates" ? "browse" : tab}
+            tab={tab}
             installedCount={projectInstalledDirs.size}
-            updateCount={updateCandidates.length}
             onChange={setTab}
           />
 
