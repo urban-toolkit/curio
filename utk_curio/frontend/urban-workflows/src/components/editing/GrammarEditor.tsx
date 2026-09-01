@@ -145,7 +145,13 @@ export default function GrammarEditor({
             output.code == "exec" &&
             applyGrammar != undefined
         ) {
-            applyGrammar(replacedCode);
+            // Catch, don't float (#201). An escaped rejection reaches
+            // `window` as `unhandledrejection`, which webpack-dev-server's
+            // runtime-error overlay listens for - so one throw inside the
+            // grammar took the whole screen in development.
+            void Promise.resolve(applyGrammar(replacedCode)).catch((err) => {
+                console.error("[GrammarEditor] applyGrammar failed:", err);
+            });
         }
         replacedCodeDirtyBypass.current = true;
     }, [replacedCodeDirty]);

@@ -494,8 +494,7 @@ export function MainCanvas() {
             ))}
             {!dashboardOn && <ToolsMenu />}
             {!dashboardOn && <UpMenu
-                setDashBoardMode={(value) => handleDashboardToggle(value)}
-                setDashboardOn={handleDashboardToggle}
+                setDashBoardMode={handleDashboardToggle}
                 dashboardOn={dashboardOn}
             />}
             {!dashboardOn && <CollaborationSidePanel />}

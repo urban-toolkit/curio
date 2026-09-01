@@ -925,3 +925,119 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
     ctx.say("Eleven example dataflows, owned by this account",
             "Not the guest's copies - this account's own, ready to open.")
     ctx.capture("examples-gallery")
+
+
+# ---------------------------------------------------------------------------
+# Robustness (#192, #201)
+# ---------------------------------------------------------------------------
+
+def open_view_menu_dashboard(ctx: Ctx) -> None:
+    """View -> Dashboard. ``force`` because the canvas chrome overlaps the bar."""
+    page = ctx.page
+    ctx.click(top_menu(page, "View"), force=True)
+    ctx.click(page.get_by_text("Dashboard", exact=True).first)
+
+
+@walkthrough(
+    slug="dashboard-mode-refuses-a-blank-screen",
+    refs=[192],
+    title="Dashboard Mode says what it needs",
+    premise="Enter Dashboard Mode with nothing pinned, then with one node pinned.",
+    note="Entering with nothing pinned hid every node and every edge, and "
+         "`{!dashboardOn && <UpMenu>}` took the top bar with them - so the "
+         "screen went blank with only the dashboard panel's close button left. "
+         "The menu also ran the toggle twice per click, because MainCanvas "
+         "passed the same handler to two props and UpMenu called both.",
+    tests=["src/tests/providers/dashboardModeGuard.test.tsx"],
+)
+def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
+    page = ctx.page
+
+    ctx.say("Dashboard Mode, with nothing pinned",
+            "This used to empty the screen with no way back but one ✕.")
+    open_view_menu_dashboard(ctx)
+
+    toast = page.locator(TOAST_REGION).get_by_text(
+        "Pin at least one node to the dashboard first.", exact=True
+    )
+    toast.first.wait_for(state="visible", timeout=15000)
+    ctx.focus(toast.first, hold=1600)
+
+    # The canvas is untouched: still here, still showing its nodes.
+    nodes = page.locator(".react-flow__node")
+    assert nodes.count() > 0, "the canvas emptied despite the refusal"
+    expect(page.locator("#tools-menu")).to_be_visible()
+    ctx.capture("refused-with-nothing-pinned")
+
+    ctx.say("Pin one node", "Now the mode has something to show.")
+    pin = page.locator(".react-flow__node").first.get_by_role(
+        "button", name="Pin to dashboard"
+    )
+    pin.wait_for(state="visible", timeout=15000)
+    ctx.click(pin.first)
+    ctx.beat(700)
+
+    ctx.say("And it opens", "One pinned node, laid out on its own.")
+    open_view_menu_dashboard(ctx)
+    page.wait_for_timeout(1200)
+    ctx.capture("entered-with-one-pin")
+
+
+@walkthrough(
+    slug="autark-without-webgpu-says-so",
+    refs=[201],
+    title="An Autark node on a browser without WebGPU",
+    premise="Run an Autark node where WebGPU is unavailable, and read the node.",
+    note="Nothing asked whether the browser had WebGPU. The library swallows "
+         "its own init failure and carries on until the layer loader reaches "
+         "`this._renderer.device.createShaderModule`, throwing a TypeError - "
+         "and with no error boundary anywhere, that throw unmounted the whole "
+         "React root and left a blank page. The node now checks first, says "
+         "what is missing and what to do about it, and the canvas survives.",
+    tests=["src/tests/adapters/node/autkGrammarWebgpuFallback.test.tsx",
+           "src/tests/components/errorBoundary.test.tsx"],
+    max_diff_ratio=0.05,
+)
+def autark_without_webgpu_says_so(ctx: Ctx) -> None:
+    page = ctx.page
+
+    # Take WebGPU away in the page itself. `add_init_script` would need to run
+    # before navigation and the runner has already navigated, so the property is
+    # redefined in place - the probe reads it at run time, not at load time.
+    page.evaluate(
+        "() => Object.defineProperty(navigator, 'gpu',"
+        " { configurable: true, value: undefined })"
+    )
+    ctx.say("A browser with no WebGPU",
+            "Firefox and Safari today; Chrome on a blocklisted driver.")
+
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    autark = page.locator('.react-flow__node:has-text("Autark")').first
+    if not autark.count():
+        raise AssertionError(
+            "this dataflow has no Autark node, so the scene has nothing to run; "
+            "point it at an example that includes one"
+        )
+    autark.scroll_into_view_if_needed()
+    ctx.focus(autark, hold=1000)
+
+    ctx.say("Run it", "The old failure was a TypeError from inside the shader loader.")
+    play = autark.get_by_role("button", name="Play").first
+    if play.count():
+        ctx.click(play)
+
+    fallback = autark.locator('[role="alert"]')
+    fallback.first.wait_for(state="visible", timeout=45000)
+    ctx.focus(fallback.first, hold=1800)
+    ctx.say("It says what is missing, and what to do",
+            "Named cause, named remedy - and the canvas is still here.")
+    ctx.capture("webgpu-fallback")
+
+    # THE POINT: the app is alive. Before, the root had unmounted.
+    assert page.locator(".react-flow__node").count() > 1, (
+        "the canvas lost its nodes, so the throw was not contained"
+    )
+    expect(page.locator("#tools-menu")).to_be_visible()
+    assert not errors, f"an uncaught page error escaped: {errors}"

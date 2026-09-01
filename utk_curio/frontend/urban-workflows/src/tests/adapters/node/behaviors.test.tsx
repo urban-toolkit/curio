@@ -94,6 +94,7 @@ import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
 import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
 import { useDataPoolBehavior } from '../../../adapters/node/dataPoolBehavior';
 import { useAutkGrammarBehavior, attachMapInteractionZoomFix } from '../../../adapters/node/autkGrammarBehavior';
+import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
@@ -346,6 +347,24 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   });
 
   describe('useAutkGrammarBehavior', () => {
+    // Autark refuses to run without a WebGPU adapter now (#201), and jsdom has
+    // no `navigator.gpu` at all - so without this every case in here would take
+    // the refusal path and assert nothing about the grammar. The dedicated
+    // coverage for the refusal itself is
+    // `autkGrammarWebgpuFallback.test.tsx`.
+    beforeEach(() => {
+      __resetWebGpuSupportCache();
+      Object.defineProperty(navigator, 'gpu', {
+        configurable: true,
+        value: { requestAdapter: jest.fn().mockResolvedValue({ name: 'fake' }) },
+      });
+    });
+
+    afterEach(() => {
+      __resetWebGpuSupportCache();
+      Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
+    });
+
     test('returns applyGrammar, contentComponent, and default spec', async () => {
       const result = await callBehavior(useAutkGrammarBehavior);
       assertValidBehaviorResult(result.current);
