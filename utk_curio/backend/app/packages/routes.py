@@ -1185,6 +1185,22 @@ def get_defaults_route():
     return jsonify({"packages": sorted(defaults_io.load_defaults(user_key))}), 200
 
 
+@packages_bp.route("/defaults/<path:dir_name>", methods=["DELETE"])
+@require_auth
+def uninstall_from_defaults_route(dir_name: str):
+    """Stop seeding a package into new projects.
+
+    Detach only -- existing projects and the user store are untouched. Every
+    write derives its user key from ``g.user``, so a caller can only ever edit
+    their own defaults.
+    """
+    try:
+        payload = packages_services.uninstall_from_defaults(g.user, dir_name)
+    except packages_services.PackageServiceError as exc:
+        return _packages_error(exc)
+    return jsonify(payload), 200
+
+
 @packages_bp.route("/defaults", methods=["POST"])
 @require_auth
 def install_to_defaults_route():

@@ -7,7 +7,6 @@
 
 import { loadInstalledPackages } from './packagesClient';
 import { getToken } from '../utils/authApi';
-import { getCurrentProjectPackages } from './projectPackagesStore';
 
 function notifyTemplatesAfterPackageRefresh(): void {
   const w = window as unknown as { curio?: { fetchStarters?: () => void | Promise<void> } };
@@ -22,9 +21,9 @@ function notifyTemplatesAfterPackageRefresh(): void {
  * package default bodies appear in ``StarterProvider`` (required for
  * {@link usePackageNodeBehavior} injection on new kinds).
  *
- * The palette is intersected with the current project's lockfile (via
- * ``projectPackagesStore``) when a project is loaded; on the projects-list /
- * catalog routes the store is empty and every installed package shows.
+ * Registers every installed package. The per-dataflow scope is applied when the
+ * palette is read (``getPaletteNodeTypes``), so this does not need re-running
+ * when the open dataflow changes -- only when the INSTALLED set does.
  */
 export function refreshPackageRegistry(): Promise<void> {
   // Nothing to fetch without a session. ``/api/packages`` is ``@require_auth``
@@ -35,7 +34,7 @@ export function refreshPackageRegistry(): Promise<void> {
   // after sign-in anyway: ``UserProvider.applyUser`` refreshes as soon as a
   // user resolves, and ``ToolsMenu`` refreshes again when ``user.id`` appears.
   if (!getToken()) return Promise.resolve();
-  return loadInstalledPackages(getCurrentProjectPackages()).then(() => {
+  return loadInstalledPackages().then(() => {
     notifyTemplatesAfterPackageRefresh();
   });
 }

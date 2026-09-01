@@ -32,8 +32,10 @@ export interface PackageCardProps {
   /** When set, this card's Publish pill shows a busy state. */
   onInstall: (pkg: PackagePayload) => void;
   onUninstall?: (pkg: PackagePayload) => void;
-  /** False in a dataflow that has not been saved yet: there is no project to
-   *  remove from, so the control shows disabled rather than vanishing. */
+  /** False in a dataflow that has not been saved yet. Only wording now: the
+   *  control stays enabled and its click saves the dataflow before removing,
+   *  because a package the account defaults seeded into a new dataflow has to
+   *  be removable from it (#220). */
   hasProject?: boolean;
   onOpenDetails?: (pkg: PackagePayload) => void;
   /** Supplied on the /catalog page surface; when omitted, the Publish pill is hidden. */
@@ -175,11 +177,11 @@ export const PackageCard: React.FC<PackageCardProps> = ({
             <button
               type="button"
               className={styles.btnSecondary}
-              disabled={cardBusy || !hasProject}
+              disabled={cardBusy}
               title={
                 hasProject
                   ? `Remove ${pkg.name} from this project`
-                  : "Save this dataflow first. There is no project to remove it from yet."
+                  : `Remove ${pkg.name} from this dataflow (saves the dataflow first)`
               }
               onClick={() => onUninstall(pkg)}
             >

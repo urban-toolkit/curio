@@ -358,16 +358,49 @@ class TestHttpEndpoints:
         proj_ids = {p["id"] for p in body["projects"] if p["ok"]}
         assert alice_project in proj_ids
 
-    def test_no_delete_defaults_endpoint(self, client, user_and_token):
-        """The plan deliberately omits this endpoint. The app's global error
-        handler wraps the Werkzeug NotFound as a 500, so accept anything
-        non-2xx — the only point is that no route matches."""
+    def test_delete_defaults_detaches_without_touching_projects(
+        self, client, user_and_token, alice_project,
+    ):
+        """Added for #220. This endpoint used to be deliberately absent.
+
+        The omission left "add to all projects" irreversible for a package:
+        datasets have had ``DELETE /api/datasets/defaults/<id>`` throughout, so
+        the two catalogs disagreed about whether that decision could be undone.
+
+        Detach only, matching the dataset route: the package stays in the
+        lockfiles of projects that already have it, and in the user store. Only
+        the seeding of FUTURE projects stops.
+        """
+        _, token = user_and_token
+        client.post(
+            "/api/packages/defaults",
+            json={"dirName": UHVI_DIR},
+            headers=_auth(token),
+        )
+
+        resp = client.delete(
+            f"/api/packages/defaults/{UHVI_DIR}",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert UHVI_DIR not in resp.get_json()["packages"]
+
+        # The project the POST patched keeps it: removing a default is not a
+        # retroactive uninstall.
+        proj = client.get(
+            f"/api/packages/projects/{alice_project}", headers=_auth(token)
+        )
+        assert UHVI_DIR in proj.get_json()["packages"]
+
+    def test_delete_defaults_is_idempotent(self, client, user_and_token):
+        """A second removal (a double click, a retry) is not an error."""
         _, token = user_and_token
         resp = client.delete(
             f"/api/packages/defaults/{UHVI_DIR}",
             headers=_auth(token),
         )
-        assert resp.status_code >= 400
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert UHVI_DIR not in resp.get_json()["packages"]
 
 
 class TestRestartHonestyOnCatalogInstall:

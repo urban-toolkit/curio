@@ -99,25 +99,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   /** dirNames the current project has declared in its lockfile. Drives the
    * Install vs Uninstall affordance per card. */
-  /** The account's "all projects" packages, for the no-project fallback below. */
-  const [accountDefaults, setAccountDefaults] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    if (!presented) return;
-    let cancelled = false;
-    packagesApi
-      .getDefaults()
-      .then((resp) => {
-        if (!cancelled) setAccountDefaults(new Set(resp.packages));
-      })
-      .catch(() => {
-        // The tab still works from the project lockfile; only the no-project
-        // fallback is lost, so this must not raise a banner.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [presented]);
-
   const projectInstalledDirs = useMemo(
     // A dataflow is created on its FIRST SAVE, so before that `projectPackages`
     // is empty and this tab rendered "No packages added to this dataflow yet."
@@ -125,10 +106,13 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     // are seeded into the dataflow the moment it is saved. They ARE in this
     // dataflow, one save away. Its two peers do the same.
     //
-    // Once there IS a project, its lockfile is the truth again: the account
-    // list would otherwise show packages the user removed from THIS dataflow.
-    () => new Set(projectId ? projectPackages : accountDefaults),
-    [projectId, projectPackages, accountDefaults],
+    // This used to fetch the defaults itself and swap them in when there was no
+    // project, which made the drawer a SECOND source of truth that could
+    // disagree with the palette. ``ProjectLoader`` now seeds the unsaved
+    // dataflow's scope from the same defaults, so both read the one store and
+    // this can just follow the lockfile in every case.
+    () => new Set(projectPackages),
+    [projectPackages],
   );
 
   /** dirNames in the user store (for the "Installed" tab listing + update detection). */
@@ -226,22 +210,41 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     [installed, projectInstalledDirs, search],
   );
 
+  /**
+   * The dataflow's id, saving it first if it does not have one yet.
+   *
+   * A dataflow is created on its FIRST SAVE, so every lockfile write from this
+   * drawer has to cope with not having an id. Install already auto-saved;
+   * Remove and Import bailed on ``if (!projectId) return``, which is why an
+   * imported package could not be removed until the dataflow happened to be
+   * saved (#220). Mirrors ``useDatasetCatalogDrawer``'s ``ensureProjectId``.
+   *
+   * Returns ``null`` when the save is refused — guests and shared viewers
+   * cannot save — having already reported it, so callers just return.
+   */
+  const ensureSavedProjectId = useCallback(
+    async (failureLabel: string): Promise<string | null> => {
+      if (projectId) {
+        savedProjectIdRef.current = projectId;
+        return projectId;
+      }
+      try {
+        const detail = await saveCurrentProject();
+        const id = (detail as { id?: string } | undefined)?.id ?? null;
+        savedProjectIdRef.current = id;
+        return id;
+      } catch (err) {
+        reportActionError(failureLabel, err);
+        return null;
+      }
+    },
+    [projectId, saveCurrentProject, reportActionError],
+  );
+
   const onInstall = useCallback(
     async (pkg: PackagePayload) => {
-      // Auto-save on first install so the user doesn't hit a dead-end
-      // banner. saveCurrentProject throws for guests and shared viewers —
-      // surface that as an actionable error rather than letting it fail
-      // silently inside the install flow below.
-      if (!projectId) {
-        try {
-          const detail = await saveCurrentProject();
-          savedProjectIdRef.current = (detail as { id?: string } | undefined)?.id ?? null;
-        } catch (err) {
-          reportActionError("Couldn't save dataflow before adding", err);
-          return;
-        }
-      } else {
-        savedProjectIdRef.current = projectId;
+      if ((await ensureSavedProjectId("Couldn't save dataflow before adding")) === null) {
+        return;
       }
       setInstallCandidate(pkg);
       try {
@@ -294,7 +297,10 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   // them: the drawer runs inside a dataflow and drops the package into its
   // lockfile as well, the page has no dataflow to drop it into.
   const { importArchive } = usePackageArchiveImport({
-    projectId,
+    // ``savedProjectIdRef`` carries the id minted by an auto-save that has not
+    // re-rendered yet, so an import into a previously-unsaved dataflow still
+    // names a project to install into.
+    projectId: projectId ?? savedProjectIdRef.current,
     reload,
     onError: reportActionError,
     onInstalledToProject: setCurrentProjectPackages,
@@ -302,6 +308,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   const onPickArchive = useCallback(
     async (file: File) => {
+      // Save first, so the import lands in THIS dataflow's lockfile and not
+      // only in the account store. Importing into an unsaved dataflow used to
+      // put the package on every dataflow's palette and none of their
+      // lockfiles, which is the "imported packages are not scoped to a project"
+      // half of #220.
+      if ((await ensureSavedProjectId("Couldn't save dataflow before importing")) === null) {
+        return;
+      }
       // The drawer's own busy/error chrome; the shared hook owns the call.
       setBusy(true);
       setActionError(null);
@@ -311,15 +325,20 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         setBusy(false);
       }
     },
-    [importArchive],
+    [ensureSavedProjectId, importArchive],
   );
 
   const performUninstall = useCallback(async (pkg: PackagePayload) => {
-    if (!projectId) return;
+    // Removing from a dataflow that has never been saved is a real request, not
+    // a no-op: the package is in the palette because the account defaults put it
+    // there, and taking it out has to be recorded somewhere. Save first, exactly
+    // as adding does.
+    const id = await ensureSavedProjectId("Couldn't save dataflow before removing");
+    if (!id) return;
     setCardActionDir(pkg.dirName);
     setActionError(null);
     try {
-      const result = await packagesApi.uninstallFromProject(projectId, pkg.dirName);
+      const result = await packagesApi.uninstallFromProject(id, pkg.dirName);
       setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
       await reload();
@@ -347,10 +366,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     } finally {
       setCardActionDir(null);
     }
-  }, [projectId, reload, reportActionError, showToast]);
+  }, [ensureSavedProjectId, reload, reportActionError, showToast]);
 
   const onUninstall = useCallback((pkg: PackagePayload) => {
-    if (!projectId) return;
+    // No `projectId` guard: an unsaved dataflow saves itself on confirm (see
+    // performUninstall). Guarding here is what hid the action entirely.
     setConfirmAction({
       title: `Remove ${pkg.name}?`,
       // "from this dataflow", matching the button that opens this — the old
@@ -371,7 +391,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       confirmLabel: "Remove",
       run: () => performUninstall(pkg),
     });
-  }, [projectId, performUninstall]);
+  }, [performUninstall]);
 
   const performUnpublishFromCatalog = useCallback(
     async (pkg: PackagePayload) => {

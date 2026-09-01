@@ -798,14 +798,27 @@ describe("the three palettes are one design", () => {
 // ── The node drawer knows what a new dataflow will contain ──────────────────
 
 describe("the Node drawer's In project tab in an unsaved dataflow", () => {
-  test("falls back to the account defaults", () => {
+  test("shows the account defaults, seeded into the scope by the loader", () => {
     // `projectPackages` is empty until the first save, so this read "No
     // packages added to this dataflow yet" while the account's defaults
     // (curio.builtin, the examples, uhvi) were seeded into it the moment it
     // saved. Its two peers already did this.
+    //
+    // The guarantee is unchanged; where it is implemented moved (#204). The
+    // drawer used to fetch the defaults itself and swap them in when there was
+    // no project, which made it a SECOND source of truth that could disagree
+    // with the palette beside it. ProjectLoader now seeds the unsaved
+    // dataflow's scope from the same defaults, so both read one store.
+    const loader = read("components/ProjectLoader.tsx");
+    expect(loader).toContain("setUnsavedDataflow");
+    expect(loader).toMatch(/packagesApi\s*\.getDefaults\(\)/);
+  });
+
+  test("the drawer has no defaults source of its own", () => {
+    // The half that made the two surfaces able to disagree.
     const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
-    expect(src).toMatch(/packagesApi\s*\.getDefaults\(\)/);
-    expect(src).toContain("projectId ? projectPackages : accountDefaults");
+    expect(src).not.toContain("accountDefaults");
+    expect(src).toContain("new Set(projectPackages)");
   });
 
   test("the count comes from the same set as the list", () => {
@@ -957,7 +970,18 @@ describe("Remove from project is in all three drawers", () => {
     // dataflow had no way back out on two of the three surfaces - and the card
     // changed shape depending on whether you had saved.
     const src = read(rel);
-    expect(src).toMatch(/!hasProject/);
+    expect(src).toContain("hasProject");
+  });
+
+  test("the package card's Remove also WORKS without a project", () => {
+    // Visible was only half of it. The Node card rendered the control disabled
+    // ("Save this dataflow first"), which is the same dead end one step later:
+    // a package the account defaults put into a new dataflow still could not be
+    // taken out of it (#220). Clicking now saves the dataflow first, so the
+    // only thing that disables it is an action already in flight.
+    const src = read("components/packages/publishing/PackageCard.tsx");
+    expect(src).toContain("disabled={cardBusy}");
+    expect(src).not.toContain("Save this dataflow first");
   });
 
   test("the drawers pass the handler unconditionally", () => {
@@ -1023,12 +1047,28 @@ describe("the drawer cards' Add and Remove both carry tooltips", () => {
     ["agent", "components/agents/catalog/AgentCatalogDrawer.tsx"],
   ];
 
-  test.each(CARDS)("the %s card's Remove explains both of its states", (_k, rel) => {
-    // The Agent one had no `title` at all, in either state - so the disabled
-    // case in an unsaved dataflow said nothing about why it was disabled.
-    const src = read(rel);
+  // The package card is not in this list any more: its Remove no longer HAS a
+  // disabled state to explain (#220), so the sentence below would be a claim
+  // about a state that cannot occur. Its own wording is pinned right after.
+  const DISABLED_WITHOUT_A_PROJECT: [string, string][] = CARDS.filter(
+    ([k]) => k !== "package",
+  );
+
+  test.each(DISABLED_WITHOUT_A_PROJECT)(
+    "the %s card's Remove explains both of its states",
+    (_k, rel) => {
+      // The Agent one had no `title` at all, in either state - so the disabled
+      // case in an unsaved dataflow said nothing about why it was disabled.
+      const src = read(rel);
+      expect(src).toContain("from this project`");
+      expect(src).toContain("There is no project to remove it from yet.");
+    },
+  );
+
+  test("the package card's Remove explains that it will save first", () => {
+    const src = read("components/packages/publishing/PackageCard.tsx");
     expect(src).toContain("from this project`");
-    expect(src).toContain("There is no project to remove it from yet.");
+    expect(src).toContain("saves the dataflow first");
   });
 
   test.each(CARDS)("the %s card's Add has one too", (_k, rel) => {

@@ -871,6 +871,28 @@ def uninstall_from_project(
 # Install — global (catalog page)
 # ---------------------------------------------------------------------------
 
+def uninstall_from_defaults(user, dir_name: str) -> dict:
+    """Stop seeding *dir_name* into new projects.
+
+    The mirror of :func:`install_to_defaults`, and the twin of
+    ``datasets.application.mutations.remove_dataset_from_defaults``. Detach
+    only: existing projects keep the package in their lockfiles and the user
+    store copy stays, because "stop adding this to NEW dataflows" and "take it
+    out of the ones I already have" are different decisions and only the first
+    one was asked for. Removing it from one dataflow is
+    ``DELETE /projects/<id>/<dir_name>``.
+
+    Idempotent: removing something that is not in the defaults is a no-op, so a
+    double click (or a retry) reports the same list rather than an error.
+    """
+    if not PACKAGE_DIR_RE.match(dir_name):
+        raise PackageServiceError(f"invalid dirName: {dir_name!r}")
+
+    user_key = _user_key_from_user(user)
+    defaults_io.remove_from_defaults(user_key, dir_name)
+    return {"packages": sorted(defaults_io.load_defaults(user_key))}
+
+
 def install_to_defaults(user, dir_name: str) -> dict:
     """Add *dir_name* to defaults + every user's project lockfile + user store.
 

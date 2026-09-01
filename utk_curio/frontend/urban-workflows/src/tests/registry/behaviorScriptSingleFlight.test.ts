@@ -64,7 +64,7 @@ describe('behavior bundle loading', () => {
   });
 
   it('fetches the bundle once when two refreshes overlap', async () => {
-    await Promise.all([loadInstalledPackages(null), loadInstalledPackages(null)]);
+    await Promise.all([loadInstalledPackages(), loadInstalledPackages()]);
     expect(fetchCalls).toBe(1);
     expect(
       document.head.querySelectorAll('script[data-curio-package="acme.widgets@1"]'),
@@ -72,8 +72,8 @@ describe('behavior bundle loading', () => {
   });
 
   it('does not refetch on a later refresh, once the marker is in the DOM', async () => {
-    await loadInstalledPackages(null);
-    await loadInstalledPackages(null);
+    await loadInstalledPackages();
+    await loadInstalledPackages();
     expect(fetchCalls).toBe(1);
   });
 
@@ -89,8 +89,8 @@ describe('behavior bundle loading', () => {
         return { ok: true, status: 200, text: async () => '/* bundle */' };
       });
 
-    await loadInstalledPackages(null);
-    await loadInstalledPackages(null);
+    await loadInstalledPackages();
+    await loadInstalledPackages();
     expect(fetchCalls).toBe(2);
     expect(
       document.head.querySelectorAll('script[data-curio-package="acme.widgets@1"]'),
