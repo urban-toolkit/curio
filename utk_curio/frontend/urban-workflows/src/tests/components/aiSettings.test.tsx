@@ -647,3 +647,33 @@ describe("AI Settings: the saved key belongs to one provider", () => {
     expect(savedMarkers().remove).toBeNull();
   });
 });
+
+describe("AI Settings: refetching after the first answer", () => {
+  it("drops the curated explanation once a live list arrives", async () => {
+    // Fetch with no key, paste one, Refresh. The old note would otherwise sit
+    // over a list that is now genuinely from the endpoint.
+    mockModels = {
+      models: ["claude-sonnet-5"],
+      listable: false,
+      source: "curated",
+      curated: ["claude-sonnet-5"],
+      warning: "Add an API key above to ask this provider what it serves.",
+    };
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    fireEvent.click(screen.getByRole("button", { name: /Fetch models/i }));
+    await screen.findByText(/Showing known models/i);
+
+    mockModels = {
+      models: ["claude-opus-5"],
+      listable: true,
+      source: "live",
+      curated: [],
+      warning: null,
+    };
+    fireEvent.click(screen.getByRole("button", { name: /Refresh models/i }));
+    await waitFor(() =>
+      expect(screen.queryByText(/Showing known models/i)).toBeNull(),
+    );
+  });
+});

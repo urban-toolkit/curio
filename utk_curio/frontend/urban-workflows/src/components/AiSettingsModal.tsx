@@ -138,6 +138,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const loadModels = async () => {
     setLoadingModels(true);
     setModelsError(null);
+    // Cleared alongside the error: Refresh after adding a key would otherwise
+    // leave "Showing known models" standing over a list that is now live.
+    setModelsNote(null);
     try {
       const apiType =
         uiMode === "anthropic" ? "anthropic"
