@@ -1168,7 +1168,7 @@ def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
 
         # Every chip on one card resolves to the same background, so none of
         # them is carrying a colour the others are not.
-        backgrounds = card.locator("span[class*='tag']").evaluate_all(
+        backgrounds = card.locator("[data-curio-tag-chip]").evaluate_all(
             "els => els.map(e => getComputedStyle(e).backgroundColor)"
         )
         assert backgrounds, f"the {kind} card rendered no tag chips"
@@ -1208,7 +1208,12 @@ def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
     # Resolved from the spec rather than `[id^=vega].first`: that picked
     # whichever mount happened to be first in DOM order, which is not
     # necessarily a node whose editor has mounted its output pane.
-    node_id = first_node_of_type(MULTI_VIEW_EXAMPLE, "vis-vega")
+    # The example has nine vis-vega nodes and only some are the stacked ones;
+    # the first is a single small view, which fits its pane and demonstrates
+    # nothing. Pick the node whose spec is actually a vconcat.
+    node_id = first_node_of_type(
+        MULTI_VIEW_EXAMPLE, "vis-vega", containing="vconcat",
+    )
     node = page.locator(f'.react-flow__node[data-id="{node_id}"]')
     node.wait_for(state="visible", timeout=45000)
     node.scroll_into_view_if_needed()

@@ -198,6 +198,22 @@ def _seeded_marker(ukey: str) -> Path:
     return storage.user_dir(ukey) / "examples.seeded"
 
 
+def _marker_owner(marker: Path) -> str | None:
+    """The username the marker was written for, or ``None``.
+
+    ``None`` covers both "no marker" and "a marker from before this recorded an
+    owner", and both mean the same thing to the caller: it cannot be trusted to
+    describe whoever holds this id now.
+    """
+    try:
+        for line in marker.read_text(encoding="utf-8").splitlines():
+            if line.startswith("user="):
+                return line[len("user="):].strip() or None
+    except OSError:
+        return None
+    return None
+
+
 def ensure_user_examples_seeded(user) -> int:
     """Give ``user`` their copy of the examples, once, on first listing.
 
@@ -210,6 +226,16 @@ def ensure_user_examples_seeded(user) -> int:
     The marker is what keeps it a back-fill rather than a reset: an example the
     user deliberately deleted must stay deleted, and without a marker every
     listing would resurrect it. Pruning is never enabled here.
+
+    **The marker names the account, not the id slot.** It lives on disk under
+    ``.curio/users/<id>/`` while the id it is keyed to lives in the database,
+    and those two can come apart: truncate or restore the database against an
+    existing ``.curio`` directory and sqlite hands the next signup a rowid that
+    has been used before. A marker that said only "seeded" then belonged to
+    whoever came first, and the new occupant of that id silently got an empty
+    gallery - which is exactly what the e2e harness produces, since it
+    truncates ``user`` between tests. Recording the username and requiring it
+    to match costs one line and makes the marker mean what it says.
     """
     # Read at call time, not import time, so the launcher's value is honoured
     # and a test can flip it. Default off, matching ``config.CURIO_SEED_EXAMPLES``:
@@ -218,7 +244,8 @@ def ensure_user_examples_seeded(user) -> int:
         return 0
     ukey = _user_dir_key(user)
     marker = _seeded_marker(ukey)
-    if marker.exists():
+    owner = str(getattr(user, "username", "") or "")
+    if marker.exists() and _marker_owner(marker) == owner:
         return 0
     try:
         seeded = seed_example_projects(user, prune=False)
@@ -229,7 +256,7 @@ def ensure_user_examples_seeded(user) -> int:
     # reason to retry the whole walk on every listing.
     try:
         marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(str(seeded), encoding="utf-8")
+        marker.write_text(f"user={owner}\ncount={seeded}\n", encoding="utf-8")
     except OSError:
         logger.exception("Could not write the examples marker at %s", marker)
     return seeded

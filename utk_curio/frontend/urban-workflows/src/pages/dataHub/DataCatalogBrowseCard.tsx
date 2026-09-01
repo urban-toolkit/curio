@@ -92,7 +92,7 @@ export function DataCatalogBrowseCard({
         </p>
         <div className={styles.tagRow}>
           {tags.map((tag) => (
-            <span key={tag} className={styles.tag}>
+            <span key={tag} className={styles.tag} data-curio-tag-chip="true">
               {tag}
             </span>
           ))}

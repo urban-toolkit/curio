@@ -112,12 +112,12 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
           {pkg.description || "\u00a0"}
         </p>
         <div className={browseStyles.tagRow}>
-          <span className={browseStyles.tag}>
+          <span className={browseStyles.tag} data-curio-tag-chip="true">
             {pkg.templates.length} node{pkg.templates.length === 1 ? "" : "s"}
           </span>
-          <span className={browseStyles.tag}>{cat}</span>
+          <span className={browseStyles.tag} data-curio-tag-chip="true">{cat}</span>
           {(pkg.channel ?? "stable") !== "stable" ? (
-            <span className={browseStyles.tag}>{pkg.channel}</span>
+            <span className={browseStyles.tag} data-curio-tag-chip="true">{pkg.channel}</span>
           ) : null}
           {hasUpdate && catalogRow ? (
             <span className={`${browseStyles.tag} ${styles.tagUpdate}`}>
