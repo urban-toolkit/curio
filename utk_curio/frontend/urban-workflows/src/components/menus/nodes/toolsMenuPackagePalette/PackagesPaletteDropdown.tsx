@@ -6,6 +6,7 @@ import {
     faCube,
 } from "@fortawesome/free-solid-svg-icons";
 import { packagesApi } from "../../../../api/packagesApi";
+import { PaletteDragHint } from "../PaletteDragHint";
 import type { PackagePayload } from "../../../../api/packagesApi";
 import { subscribeToRegistry } from "../../../../registry";
 import { usePackagePalette } from "../../../../providers/PackagePaletteContext";
@@ -268,11 +269,12 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({
                         )}
                     </div>
                     <div className={packageStyles.packagePaletteFooter}>
+                        <PaletteDragHint item="node" />
                         <button
                             type="button"
                             className={packageStyles.packageGetPackagesBtn}
                             title="Browse and install node packages"
-                            aria-label="Browse Node Catalog - open Node Catalog drawer"
+                            aria-label="Browse Node Catalog: open the Node Catalog drawer"
                             onClick={() => {
                                 openNodeCatalogDrawer();
                             }}

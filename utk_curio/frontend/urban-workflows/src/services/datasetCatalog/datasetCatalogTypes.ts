@@ -158,6 +158,9 @@ export interface DatasetCatalogItem {
   schema?: DatasetSchema | null;
   loaderSnippet?: DatasetLoaderSnippet | null;
   installed?: boolean;
+  /** In the user's account-level "all projects" list. Independent of
+   *  `installed`, which is one dataflow's spec refs. */
+  inAllProjects?: boolean;
   /** True when the producer node has been re-executed since the dataset was last installed. */
   needsReinstall?: boolean;
   /** True when a computed dataset (origin="computed") has been published to the Data Catalog.
@@ -444,6 +447,24 @@ export function isDatasetComputed(
  * datasets still count here (the bug in #140 was excluding them). Ephemeral
  * live outputs and merely-browsable hub entries have ``installed`` falsy and
  * are excluded. */
+/**
+ * In the palette / drawer for THIS dataflow.
+ *
+ * `installed` is derived from one dataflow's spec refs, so it is false for
+ * everything until the dataflow exists - and a dataflow is created on its first
+ * save. That left both surfaces empty in a brand-new dataflow even for datasets
+ * the user had just added to every project. `inAllProjects` is the account-level
+ * answer, and `save_project` seeds those into the dataflow the moment it exists,
+ * so counting them here previews a state one save away rather than inventing one.
+ */
+export function isInThisDataflow(
+  dataset: DatasetCatalogItem,
+  hasProject: boolean,
+): boolean {
+  if (isUserInstalledDataset(dataset)) return true;
+  return !hasProject && dataset.inAllProjects === true;
+}
+
 export function isUserInstalledDataset(dataset: DatasetCatalogItem): boolean {
   return dataset.installed === true;
 }

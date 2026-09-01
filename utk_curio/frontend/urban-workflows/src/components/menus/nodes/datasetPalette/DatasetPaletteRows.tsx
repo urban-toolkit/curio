@@ -210,7 +210,7 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
             className={rowStyles.groupCaretButton}
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
-            aria-label={`${open ? "Collapse" : "Expand"} ${group.title} - OSM PBF import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
+            aria-label={`${open ? "Collapse" : "Expand"} ${group.title}: OSM PBF import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
           >
             <FontAwesomeIcon
               icon={open ? faChevronUp : faChevronDown}
