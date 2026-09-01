@@ -31,7 +31,7 @@ from .utils import (
     save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
 )
-from .walkthroughs import PROVENANCE_EXAMPLE, load_example_spec
+from .walkthroughs import PROVENANCE_EXAMPLE, TOAST_REGION, load_example_spec
 
 
 @pytest.mark.parametrize("walk", WALKTHROUGHS, ids=lambda w: w.slug)
@@ -61,9 +61,18 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
     else:
         page.wait_for_selector("#tools-menu", timeout=45000)
 
+    # A stray toast is timing noise in most baselines, so they are swept before
+    # every capture — but NOT when the toast IS the subject.
+    # `catalog-add-reports-success` clips to the toast region, so sweeping first
+    # photographed an empty box and the capture timed out waiting for that box
+    # to become visible. The scene was unsatisfiable as written, and nobody
+    # could see it while the scene was still dying in setup.
+    subject_is_a_toast = walk.clip_selector == TOAST_REGION
+
     def snapshot(label: str) -> None:
         """One committed PNG per pinned step of the journey."""
-        dismiss_toasts(page)
+        if not subject_is_a_toast:
+            dismiss_toasts(page)
         save_workflow_test_screenshot(
             page,
             walk.stem,
@@ -84,8 +93,9 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
     walk.run(ctx)
 
     # Toasts are timed, so one still fading would make the diff depend on how
-    # fast the machine got here.
-    dismiss_toasts(page)
+    # fast the machine got here — except where the toast is what we came for.
+    if not subject_is_a_toast:
+        dismiss_toasts(page)
     save_workflow_test_screenshot(
         page,
         walk.stem,
