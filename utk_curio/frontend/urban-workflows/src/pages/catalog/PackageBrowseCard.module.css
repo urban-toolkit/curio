@@ -31,11 +31,6 @@
 .cardActive.card_vis         { border-color: var(--curio-category-vis-fg); }
 .cardActive.card_package     { border-color: var(--curio-category-package-fg); }
 
-.tagAccent_data        { background: var(--curio-category-data-bg); color: var(--curio-category-data-on-tint); }
-.tagAccent_computation { background: var(--curio-category-computation-bg); color: var(--curio-category-computation-on-tint); }
-.tagAccent_vis         { background: var(--curio-category-vis-bg); color: var(--curio-category-vis-on-tint); }
-.tagAccent_package     { background: var(--curio-category-package-bg); color: var(--curio-category-package-on-tint); }
-
 .tagUpdate {
   background: var(--curio-role-update-bg);
   color: var(--curio-role-update-fg);

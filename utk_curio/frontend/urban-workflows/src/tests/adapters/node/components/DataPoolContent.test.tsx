@@ -63,6 +63,34 @@ describe('DataPoolContent', () => {
     expect((scroller as HTMLElement).style.overflow).toBe('auto');
   });
 
+  test('the content area owns horizontal scroll too (#203)', () => {
+    // Commit 0b5edea4 ("fixes #156") gave this div `overflow: auto` for the
+    // VERTICAL axis and the x axis was never addressed. It could not have
+    // worked anyway while MUI's TableContainer was absorbing the x overflow -
+    // see the assertion below.
+    const { container } = render(<DataPoolContent {...defaultProps} />);
+    const scroller = container.querySelector('[data-curio-datapool-scroll="true"]') as HTMLElement;
+    // `overflow`, not `overflowY`: one declaration owns both axes.
+    expect(scroller.style.overflow).toBe('auto');
+    expect(scroller.style.overflowY).toBe('');
+    expect(scroller.style.overflowX).toBe('');
+    // minWidth:0 is what lets this box shrink below its content inside the
+    // flex column, so there is something to scroll in the first place.
+    expect(scroller.style.minWidth).toBe('0px');
+  });
+
+  test('the inner table container no longer steals the x overflow (#203)', () => {
+    // MUI's TableContainer defaults to `overflowX: auto`. It receives no
+    // height, so its box was as tall as the content (~3000px for 100 rows)
+    // while the visible node body is ~250px - its horizontal scrollbar was
+    // painted at the bottom of that box, reachable only after scrolling to the
+    // last row. Turning the default off is the load-bearing line.
+    const { container } = render(<DataPoolContent {...defaultProps} />);
+    const inner = container.querySelector('.MuiTableContainer-root') as HTMLElement;
+    if (!inner) return; // no rows rendered in this fixture; the assertion below covers it
+    expect(getComputedStyle(inner).overflowX).not.toBe('auto');
+  });
+
   test('the tab strip scrolls sideways instead of wrapping', () => {
     // Many tables must not steal height from the table below: the strip stays one
     // row tall and scrolls horizontally.

@@ -15,6 +15,28 @@ describe('ContentTable', () => {
     expect(container.querySelectorAll('td')).toHaveLength(0);
   });
 
+  test('the Simple View scroller owns both axes (#203)', () => {
+    // Identical defect to the Data Pool's: `overflowY` only, so wide frames
+    // had no way to reach their right-hand columns.
+    const { container } = render(<ContentTable tableData={[{ a: 1, b: 2 }]} />);
+    const scroller = container.firstElementChild as HTMLElement;
+
+    expect(scroller).toHaveClass('nowheel');
+    expect(scroller.style.overflow).toBe('auto');
+    expect(scroller.style.overflowY).toBe('');
+  });
+
+  test('the table overflows rather than crushing its columns (#203)', () => {
+    const { container } = render(<ContentTable tableData={[{ a: 1, b: 2 }]} />);
+    const table = container.querySelector('table') as HTMLElement;
+    const mui = container.querySelector('.MuiTableContainer-root') as HTMLElement;
+
+    expect(getComputedStyle(table).minWidth).toBe('max-content');
+    // MUI's default would otherwise absorb the x overflow before the scroller
+    // above ever sees it.
+    expect(getComputedStyle(mui).overflowX).toBe('visible');
+  });
+
   test('renders column headers from object keys', () => {
     const data = [
       { name: 'Alice', age: 30 },

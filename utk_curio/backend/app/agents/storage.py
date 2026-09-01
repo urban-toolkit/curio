@@ -99,6 +99,43 @@ def write_definition(
     return target
 
 
+def read_definition_bundle(user_key: str, dir_name: str) -> dict | None:
+    """The full on-disk definition: its manifest and every prompt asset.
+
+    The inverse of :func:`write_definition`, and the thing the product had no
+    way to do at all. There was an import path for agents
+    (``POST /api/agents/imports/upload``) with no export on the other side, so a
+    definition could go into a Curio and never come back out, and the "View
+    details" screen could describe an agent's prompts only by not showing them.
+
+    Returns ``{"manifest": {...}, "prompts": {"prompts/x.txt": "..."}}`` with
+    prompt keys relative to the definition directory - the exact shape
+    ``write_definition`` and ``upload_import`` consume, so the two round-trip.
+    ``None`` when there is no such definition.
+    """
+    target = agent_definition_dir(user_key, dir_name)
+    manifest_path = target / "manifest.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    prompts: dict[str, str] = {}
+    for path in sorted(target.rglob("*")):
+        if not path.is_file() or path.name == "manifest.json":
+            continue
+        # Skip anything that is not text we could hand back to an import.
+        if path.suffix.lower() not in {".txt", ".md"}:
+            continue
+        try:
+            prompts[path.relative_to(target).as_posix()] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+    return {"manifest": manifest, "prompts": prompts}
+
+
 def load_installed_agent_definition(user_key: str, dir_name: str) -> AgentManifest | None:
     """Load one installed definition by dir name, or ``None`` if absent."""
     target = agent_definition_dir(user_key, dir_name)

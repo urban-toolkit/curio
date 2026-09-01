@@ -280,7 +280,7 @@ export const AgentBuilderStrip: React.FC<{
               disabled={reviewBusy || solving}
               onClick={() => void review(onApplyProposal, installReview.proposalId)}
             >
-              {reviewBusy ? "Adding…" : "Add to dataflow"}
+              {reviewBusy ? "Adding…" : "Add to project"}
             </button>
           ) : null}
           {onDismissProposal ? (

@@ -597,6 +597,96 @@ class CatalogMutations:
         installed_item["installed"] = True
         return installed_item
 
+    # ------------------------------------------------------------------
+    # Account-level defaults ("Add to all projects")
+    # ------------------------------------------------------------------
+
+    def install_dataset_to_defaults(self, dataset_id: str) -> dict[str, Any]:
+        """Add *dataset_id* to every project the user has, present and future.
+
+        The dataset twin of ``packages.services.install_to_defaults``, and
+        deliberately the same two-part shape, because "all your projects,
+        present and future" is two different mechanisms wearing one label:
+
+        * **Present** - an eager one-shot walk that installs the dataset into
+          each existing project right now. Opening an old project does not
+          consult defaults, so nothing but this walk can put the dataset there.
+        * **Future** - the id joins the user's default-datasets list, which
+          ``projects.services.save_project`` seeds into each new project's spec.
+
+        Best-effort per project, like its package peer: one project with a
+        malformed spec must not abort the other nineteen. Returns
+        ``{"datasets": [...], "projects": [{"id", "ok", "error?"}]}``.
+        """
+        if self.user is None:
+            raise DatasetCatalogError("Authorization required", 401)
+        from utk_curio.backend.app.datasets import defaults as dataset_defaults
+        from utk_curio.backend.app.projects import repositories as projects_repo
+
+        user_key = self._paths._user_key()
+        dataset_defaults.add_to_dataset_defaults(user_key, dataset_id)
+
+        results: list[dict[str, Any]] = []
+        for project in projects_repo.list_for_user(self.user.id, scope="mine"):
+            try:
+                # install_dataset is idempotent: it replaces any existing ref
+                # for this id rather than appending a duplicate.
+                self.install_dataset(project.id, dataset_id)
+                results.append({"id": project.id, "ok": True})
+            except Exception as exc:  # noqa: BLE001 - per-project failure is OK
+                logger.warning(
+                    "install_dataset_to_defaults: failed to patch project %s: %s",
+                    project.id, exc,
+                )
+                results.append({"id": project.id, "ok": False, "error": str(exc)})
+
+        return {
+            "datasets": sorted(dataset_defaults.load_dataset_defaults(user_key)),
+            "projects": results,
+        }
+
+    def remove_dataset_from_defaults(self, dataset_id: str) -> dict[str, Any]:
+        """Stop seeding *dataset_id* into new projects, and detach it from the
+        existing ones.
+
+        The mirror of :meth:`install_dataset_to_defaults`, and the reason the
+        dataset list is user-managed in both directions where the package list
+        is not: a package can be an invisible transitive requirement, so
+        removing it by hand could break a node. A dataset is a file the user
+        chose, and nothing else silently depends on it.
+
+        Uninstall is per-project detach only - it never deletes the dataset
+        itself, which stays in the account catalog.
+        """
+        if self.user is None:
+            raise DatasetCatalogError("Authorization required", 401)
+        from utk_curio.backend.app.datasets import defaults as dataset_defaults
+        from utk_curio.backend.app.projects import repositories as projects_repo
+
+        user_key = self._paths._user_key()
+        dataset_defaults.remove_from_dataset_defaults(user_key, dataset_id)
+
+        results: list[dict[str, Any]] = []
+        for project in projects_repo.list_for_user(self.user.id, scope="mine"):
+            try:
+                # Detach only. Left to its default this would delete the
+                # user's uploaded file the moment the last project let go of it.
+                self.uninstall_dataset(
+                    project.id, dataset_id, delete_orphaned_import=False,
+                )
+                results.append({"id": project.id, "ok": True})
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "remove_dataset_from_defaults: failed to patch project %s: %s",
+                    project.id, exc,
+                )
+                results.append({"id": project.id, "ok": False, "error": str(exc)})
+
+        return {
+            "datasets": sorted(dataset_defaults.load_dataset_defaults(user_key)),
+            "projects": results,
+        }
+
     def _osm_group_member_ids(self, dataflow_id: str | None, group_id: str) -> list[str]:
         result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
         return [
@@ -614,14 +704,37 @@ class CatalogMutations:
         # Return the group item so the response reflects the "all installed" state.
         return self._owner.get_dataset(group_id, dataflow_id=dataflow_id)
 
-    def uninstall_dataset(self, dataflow_id: str, dataset_id: str) -> dict[str, Any]:
+    def uninstall_dataset(
+        self,
+        dataflow_id: str,
+        dataset_id: str,
+        *,
+        delete_orphaned_import: bool = True,
+    ) -> dict[str, Any]:
+        """Detach *dataset_id* from one dataflow.
+
+        ``delete_orphaned_import`` controls the side effect below: when this was
+        the LAST reference to an ``imported.*`` dataset, its account-store folder
+        is deleted too, so "Remove from dataflow" on your own upload really does
+        remove it rather than leaving an orphan nothing can reach.
+
+        "Remove from all projects" passes ``False``. It walks every project and
+        would otherwise hit exactly that last-reference case and silently delete
+        the user's file - the opposite of what a detach-from-projects action
+        promises, and the same accidental deletion the per-dataflow flow was
+        criticised for.
+        """
         # An OSM group id uninstalls every member layer.
         if is_osm_group_id(dataset_id):
             member_ids = self._osm_group_member_ids(dataflow_id, dataset_id)
             removed = False
             for member_id in member_ids:
                 try:
-                    self.uninstall_dataset(dataflow_id, member_id)
+                    self.uninstall_dataset(
+                        dataflow_id,
+                        member_id,
+                        delete_orphaned_import=delete_orphaned_import,
+                    )
                     removed = True
                 except DatasetCatalogError:
                     # A layer that wasn't installed is fine during a group uninstall.
@@ -661,7 +774,8 @@ class CatalogMutations:
         # no OTHER dataflow (or node binding) still references the dataset — a
         # dataset shared by another project must survive.
         if (
-            removed_ref
+            delete_orphaned_import
+            and removed_ref
             and self.user is not None
             and removed_ref.get("origin") not in ("computed", "source_node")
         ):

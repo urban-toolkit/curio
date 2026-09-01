@@ -20,12 +20,13 @@ import {
   datasetCatalogApi,
   datasetDisplayTitle,
   isOsmGroupId,
+  isInThisDataflow,
   notifyDatasetCatalogRefresh,
+  useDatasetImport,
   useDatasetCatalog,
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
-import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
@@ -43,7 +44,6 @@ export interface DatasetConfirmAction {
 
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const importInFlightRef = useRef(false);
   const { projectId, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
   const { showToast } = useToastContext();
   const [tab, setTab] = useState<DrawerTab>("browse");
@@ -126,24 +126,26 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     };
 
     let list = visibleItems;
-    if (tab === "featured") {
-      list = list.filter((item) => item.origin === "hub" || item.installed).slice(0, 6);
-    } else if (tab === "installed") {
+    if (tab === "installed") {
       // Only genuinely-installed datasets — matches the palette's
       // isUserInstalledDataset (installed === true). The old `origin !== "hub"`
       // proxy also showed never-installed and just-uninstalled computed/imported
       // rows, so an uninstalled dataset lingered here until a page refresh
       // flipped its origin back to "hub".
-      list = list.filter((item) => item.installed === true);
+      // `isInThisDataflow`, not a bare `installed === true`: a dataflow is
+      // created on its first save, so before that nothing is installed and this
+      // tab rendered empty even for datasets the user had just added to every
+      // project. Those ARE in this dataflow, one save away.
+      list = list.filter((item) => isInThisDataflow(item, Boolean(projectId)));
     } else if (tab === "computed") {
       list = list.filter((item) => item.origin === "computed" || Boolean(item.producerNodeId));
     }
     return list.filter(matchesSearch);
-  }, [catalogItems, tab, debouncedSearch]);
+  }, [catalogItems, tab, debouncedSearch, projectId]);
 
   const installedCount = useMemo(
-    () => catalogItems.filter((item) => item.installed === true).length,
-    [catalogItems],
+    () => catalogItems.filter((item) => isInThisDataflow(item, Boolean(projectId))).length,
+    [catalogItems, projectId],
   );
 
   const computedCount = useMemo(
@@ -240,7 +242,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         body: isGroup
           ? `Add all ${layerCount} layers from ${title} to this dataflow?`
           : `Add ${title} to this dataflow?`,
-        confirmLabel: "Add to dataflow",
+        confirmLabel: "Add to project",
         destructive: false,
         run: () => performInstall(dataset),
       });
@@ -248,7 +250,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     [performInstall],
   );
 
-  const onUninstall = useCallback(
+  const performUninstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
       const id = await ensureProjectId();
       if (!id) return;
@@ -284,6 +286,56 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       }
     },
     [ensureProjectId, setDataflowDatasets, showToast],
+  );
+
+  /** Would removing this from the dataflow also delete it from the account?
+   *
+   *  The backend deletes an ``imported.*`` upload's store folder once no other
+   *  dataflow references it (``_remove_orphaned_imported_store_dir``), archived
+   *  projects included. Computed and source-node datasets are never deleted
+   *  this way. Usage is read BEFORE the removal, so the current dataflow is
+   *  still counted - one user means this one and nothing else.
+   */
+  const uninstallAlsoDeletes = useCallback(
+    async (dataset: DatasetCatalogItem): Promise<boolean> => {
+      const dirName = String(dataset.dirName ?? "");
+      if (!dirName.startsWith("imported.")) return false;
+      if (dataset.origin === "computed" || dataset.origin === "source_node") return false;
+      try {
+        const usage = await datasetCatalogApi.datasetUsage(dataset.id);
+        return usage.length <= 1;
+      } catch {
+        // If usage cannot be resolved the backend keeps the folder, so the
+        // honest answer is "no deletion" rather than a warning that may be
+        // false. The removal itself is unaffected either way.
+        return false;
+      }
+    },
+    [],
+  );
+
+  // #197 gave the other two catalogs a confirmation for this and left the Data
+  // drawer performing it on a single click - the one of the three that can
+  // permanently delete a file from the account while doing it.
+  const onUninstall = useCallback(
+    async (dataset: DatasetCatalogItem) => {
+      const title = datasetDisplayTitle(dataset);
+      const alsoDeletes = await uninstallAlsoDeletes(dataset);
+      setConfirmAction({
+        title: `Remove ${title}?`,
+        body: alsoDeletes
+          ? `Remove ${title} from this dataflow?
+
+No other dataflow uses it, so the uploaded file is also deleted from your Data Catalog.`
+          : `Remove ${title} from this dataflow?
+
+The dataset stays in your Data Catalog and in any other dataflow using it.`,
+        confirmLabel: alsoDeletes ? "Remove and delete" : "Remove",
+        destructive: true,
+        run: () => performUninstall(dataset),
+      });
+    },
+    [performUninstall, uninstallAlsoDeletes],
   );
 
   const onPublish = useCallback(
@@ -435,7 +487,15 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       // complete the moment it appears rather than filling in under the user.
       setConfirmAction({
         title: `Delete ${title}?`,
-        body: `Delete ${title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just removed from this dataflow. ${permanentDeletionNotice()}${usageNote}`,
+        // The every-dataflow scope is stated unconditionally. It used to depend
+        // on `usageNote`, which is empty whenever the usage lookup returns
+        // nothing or fails — so the case where the user knows least about the
+        // blast radius was the case that said least about it.
+        body:
+          `Delete ${title} from your Data Catalog?\n\n` +
+          `This deletes the dataset itself, and removes it from every dataflow ` +
+          `that uses it, not just this one.` +
+          usageNote,
         confirmLabel: "Delete forever",
         destructive: true,
         run: () => performDelete(dataset),
@@ -444,39 +504,28 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     [performDelete],
   );
 
+  // The shared pathway, which the Data Catalog PAGE header calls too. It used
+  // to live inline here; the page then grew its own copy, and two surfaces
+  // doing the same register-plus-notify-plus-count began drifting apart.
+  const { importFile: runDatasetImport } = useDatasetImport({
+    importDataset: catalog.importDataset,
+    showToast,
+    onBegin: (key, label) => beginPendingInstall({ key, label }),
+    onEnd: (key) => endPendingInstall(key),
+  });
+
   const onPickImport = useCallback(
     async (file: File) => {
-      if (importInFlightRef.current) return;
-      importInFlightRef.current = true;
+      // Only the drawer paints a busy row; the shared hook owns the in-flight
+      // guard and the placeholder.
       setBusyId("import");
-      // No catalog row exists yet for a brand-new import, so the placeholder is the
-      // only in-list feedback until it lands.
-      beginPendingInstall({ key: "import", label: file.name });
       try {
-        const imported = await catalog.importDataset(file);
-        // Register-only: importing adds standalone account-level catalog items;
-        // they are NOT attached to the open dataflow, so we do not touch
-        // dataflowDatasets. A node/dataflow link is created only on explicit
-        // install. Fan out so the imported dataset(s) appear immediately across
-        // catalog surfaces (palette provider + dropdown hold separate caches).
-        notifyDatasetCatalogRefresh();
-        // An OSM PBF registers one dataset per layer; report the count.
-        const count = imported?.importedDatasetCount ?? 1;
-        showToast(
-          count > 1
-            ? `Registered ${count} datasets from ${file.name} in the Data Catalog.`
-            : `Registered ${file.name} in the Data Catalog.`,
-          "success",
-        );
-      } catch (err) {
-        showToast((err as Error)?.message || "Could not import dataset.", "error");
+        await runDatasetImport(file);
       } finally {
-        endPendingInstall("import");
-        importInFlightRef.current = false;
         setBusyId(null);
       }
     },
-    [catalog, showToast, beginPendingInstall, endPendingInstall],
+    [runDatasetImport],
   );
 
   const handleDatasetDragStart = useCallback(

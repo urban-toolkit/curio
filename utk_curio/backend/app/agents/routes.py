@@ -204,7 +204,7 @@ def import_agent():
     if not isinstance(coord, str):
         return _error("body must include 'coord'")
     try:
-        payload = agents_services.import_agent(_user_dir_key(g.user), coord)
+        payload = agents_services.import_agent(_user_dir_key(g.user), coord, user=g.user)
     except AgentServiceError as exc:
         return _svc_error(exc)
     except ValueError as exc:
@@ -231,10 +231,29 @@ def upload_import():
 @agents_bp.route("/imports/<coord>", methods=["DELETE"])
 @require_auth
 def remove_import(coord: str):
-    return jsonify(agents_services.remove_import(_user_dir_key(g.user), coord)), 200
+    return jsonify(agents_services.remove_import(_user_dir_key(g.user), coord, user=g.user)), 200
 
 
 # ── Publish to the Global Catalog (imported-only) ────────────────────────────
+@agents_bp.route("/definitions/<coord>", methods=["GET"])
+@require_auth
+def read_definition(coord: str):
+    """One agent's full definition: its manifest and its prompt texts.
+
+    Powers two things the Agent Catalog could not do: show an agent's prompts on
+    its details screen, and export it. Agents had an import with no export - a
+    definition could go into a Curio and never come back out - and this returns
+    exactly the shape ``POST /api/agents/imports/upload`` consumes, so the two
+    round-trip.
+    """
+    from utk_curio.backend.app.agents import storage as agents_storage
+
+    bundle = agents_storage.read_definition_bundle(_user_dir_key(g.user), coord)
+    if bundle is None:
+        return jsonify({"error": f"no agent definition {coord}"}), 404
+    return jsonify(bundle), 200
+
+
 @agents_bp.route("/publications", methods=["POST"])
 @require_auth
 def publish_agent():

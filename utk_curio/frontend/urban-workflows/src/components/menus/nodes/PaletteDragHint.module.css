@@ -1,0 +1,13 @@
+/*
+ * Sits in the palette footer, above the "Browse … Catalog +" button, on the
+ * dark panel all three palettes share.
+ */
+.hint {
+  margin: 0 0 8px;
+  font-family: var(--curio-font-family);
+  font-size: 11px;
+  line-height: 1.4;
+  /* Quiet against the dark panel: it is a standing instruction, not news, and
+     must not compete with the rows above it or the catalog button below. */
+  color: rgba(255, 255, 255, 0.55);
+}

@@ -10,7 +10,7 @@ const BACKEND_URL = process.env.BACKEND_URL || "";
  * The three scopes, named here as the drawer tabs name them:
  *  - Browse all  (catalog) → ``catalog()`` (the built-in definitions)
  *  - My imports  (account) → ``listImports()`` + ``import``/``removeImport``
- *  - In dataflow (project) → ``listProjectAgents()`` + ``install``/``uninstall``
+ *  - In project → ``listProjectAgents()`` + ``install``/``uninstall``
  *
  * Import (account) and Install (project) are separate commands; neither chains.
  */
@@ -717,6 +717,20 @@ export const agentsApi = {
   /** Unpublish an owned definition (owner only). */
   unpublish(coord: string): Promise<{ coord: string; published: boolean }> {
     return apiFetch(`/api/agents/publications/${coordParam(coord)}`, { method: "DELETE" });
+  },
+
+  /**
+   * One agent's full definition: manifest plus every prompt text.
+   *
+   * Agents had an import (`uploadImport`) with no export on the other side, so
+   * a definition could go into a Curio and never come back out - and the
+   * details screen could describe an agent's prompts only by not showing them.
+   * Returns the exact shape `uploadImport` consumes, so the two round-trip.
+   */
+  readDefinition(
+    coord: string,
+  ): Promise<{ manifest: Record<string, unknown>; prompts: Record<string, string> }> {
+    return apiFetch(`/api/agents/definitions/${coordParam(coord)}`);
   },
 
   /** List the project's private attachments. */

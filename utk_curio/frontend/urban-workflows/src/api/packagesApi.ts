@@ -126,6 +126,18 @@ export interface PackagePayload {
   readme?: string;
   /** When the manifest's package is read-only (e.g. ``curio.builtin@1``). */
   readOnly?: boolean;
+  /**
+   * Catalog endpoint only - whether THIS user published it, and may therefore
+   * withdraw it. The peer of `AgentCard.publishable`.
+   *
+   * The UI used to gate Unpublish on `readOnly !== true`, which is not the same
+   * question: `readOnly` is an author's opt-in that almost no manifest sets, so
+   * the gate matched nearly every package and offered Unpublish on ones that
+   * shipped with the deployment. Computed by the backend from the publisher
+   * record, and enforced there too - the unpublish route now 403s a
+   * non-publisher rather than trusting this flag.
+   */
+  publishable?: boolean;
 }
 
 /** Partial-update body for `PATCH /api/packages/<dirName>` (metadata editor). */
@@ -268,14 +280,12 @@ async function uploadArchive(
  * than the click handler - we hand it straight to ``URL.createObjectURL``
  * and revoke immediately after.
  */
-export function triggerBlobDownload(blob: Blob, filename: string): void {
-  const objUrl = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = objUrl;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(objUrl);
-}
+// The implementation moved to a leaf module: this file's import graph reaches
+// the whole node-package registry, and components that only wanted to save
+// bytes as a file were dragging that in. Re-exported so existing callers here
+// are unchanged.
+export { triggerBlobDownload } from "../utils/triggerBlobDownload";
+import { triggerBlobDownload } from "../utils/triggerBlobDownload";
 
 /** Download an already-installed package as a ``.curio.zip`` archive. */
 async function downloadArchive(dirName: string): Promise<void> {

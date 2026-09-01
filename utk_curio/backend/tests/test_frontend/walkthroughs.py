@@ -35,6 +35,7 @@ from playwright.sync_api import expect
 from .utils import (
     REPO_ROOT,
     accept_confirm_dialog,
+    play_node,
     signup_e2e_user,
     wait_for_projects_page,
 )
@@ -72,8 +73,14 @@ class SilentNarrator:
     would be a baseline of the wrong screen.
     """
 
-    def __init__(self, page) -> None:
+    def __init__(self, page, *, beat_cap: float | None = 150) -> None:
         self.page = page
+        #: Longest a single beat may last, in ms. The baseline pass caps them
+        #: hard - it only needs the app to settle before a capture, and every
+        #: extra millisecond is dead time in CI. A recording passes ``None`` to
+        #: honour the full beat, so the video moves at a watchable pace without
+        #: any narration to supply one.
+        self.beat_cap = beat_cap
 
     def chapter(self, kicker: str, title: str, sub: str = "", hold: float | None = None) -> None:
         return None
@@ -82,16 +89,20 @@ class SilentNarrator:
         return None
 
     def beat(self, ms: float = 700) -> None:
-        # Kept, and deliberately short: journeys use beats to let the app settle
-        # (a drawer transition, a re-render), not only for pacing.
-        self.page.wait_for_timeout(min(ms, 150))
+        # Beats are how a journey lets the app settle (a drawer transition, a
+        # re-render), not only how it paces itself.
+        self.page.wait_for_timeout(ms if self.beat_cap is None else min(ms, self.beat_cap))
 
     def focus(self, locator, *, hold: float = 900, ring: bool = True):
         try:
             locator.wait_for(state="visible", timeout=10000)
         except Exception:
             return None
-        return locator.bounding_box()
+        box = locator.bounding_box()
+        # No ring and no cursor - but a recording still pauses on the subject,
+        # which is the only pacing left once the captions are gone.
+        self.beat(hold)
+        return box
 
     def click(self, locator, *, force: bool = False, dispatch: bool = False,
               hold: float = 700, ring: bool = True) -> None:
@@ -100,6 +111,9 @@ class SilentNarrator:
         else:
             locator.click(force=force)
         self.beat(hold)
+
+    def focus_hold(self, ms: float) -> None:
+        self.beat(ms)
 
     def type_into(self, locator, text: str, *, delay: float = 55) -> None:
         locator.click()
@@ -176,6 +190,16 @@ class Walkthrough:
     #: to a restored 1.5px border or a button that grew one line, so the small
     #: visual fixes tighten it hard.
     max_diff_ratio: float = 0.20
+    #: The example dataflow to open the journey on, by filename under
+    #: ``docs/examples``. ``None`` means an EMPTY dataflow.
+    #:
+    #: It used to default to one particular example, so every recording opened
+    #: on "Vega-Lite chained transforms" whether or not the journey had anything
+    #: to do with it - which reads as if that dataflow were part of the subject.
+    #: A catalog scene needs no dataflow at all; one about a chart or a wide
+    #: table cannot demonstrate itself without the right one. So each scene says
+    #: what it needs, and says nothing when it needs nothing.
+    example: str | None = None
 
     @property
     def stem(self) -> str:
@@ -190,6 +214,33 @@ def load_example_spec(name: str) -> dict:
     """One of the curated example dataflows, as a project spec."""
     with open(os.path.join(EXAMPLES_DIR, name), encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def first_node_of_type(example: str, node_type: str, *, containing: str = "") -> str:
+    """The id of the first node of *node_type* in an example dataflow.
+
+    Nodes are addressed in the DOM by React Flow's ``data-id``; their Curio type
+    is not on the element, so a scene that needs "the Autark node" resolves its
+    id from the spec it was opened on rather than guessing from display text.
+
+    ``containing`` narrows further by a substring of the node's authored spec
+    (its ``content``). Type alone is often too coarse: 07-autark-gpu-shader has
+    four ``autk-grammar`` nodes and only one of them declares a ``map``, so the
+    WebGPU guard - which fires only for map/plot/compute specs - would never be
+    reached on the first match.
+    """
+    spec = load_example_spec(example)
+    for node in spec.get("dataflow", {}).get("nodes", []):
+        if node_type not in str(node.get("type") or node.get("nodeType") or ""):
+            continue
+        if containing and containing not in str(node.get("content") or ""):
+            continue
+        return str(node["id"])
+    raise AssertionError(
+        f"{example} contains no {node_type} node"
+        + (f" whose spec contains {containing!r}" if containing else "")
+        + ", so this walkthrough is pointed at the wrong example"
+    )
 
 
 def top_menu(page, label: str):
@@ -294,6 +345,7 @@ PROVENANCE_EXAMPLE = "01-vega-lite-chained-transforms.json"
 
 @walkthrough(
     slug="provenance-graph-of-a-loaded-dataflow",
+    example=PROVENANCE_EXAMPLE,
     refs=[186],
     title="Loaded dataflows get a real provenance graph",
     premise="Open a saved dataflow, then read its version history.",
@@ -357,6 +409,7 @@ def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="provenance-graph-navigation",
+    example=PROVENANCE_EXAMPLE,
     refs=[187],
     title="The provenance graph pans and zooms",
     premise="Drag the version graph to reach a node below the fold.",
@@ -399,6 +452,7 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="provenance-reverting-to-a-previous-version",
+    example=PROVENANCE_EXAMPLE,
     refs=[195],
     title="Reverting a dataflow to an earlier version",
     premise="Step back through the version graph and watch the canvas follow.",
@@ -581,10 +635,10 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
         "what the confirmation and the save indicator already say"
     )
 
-    add = dialog.get_by_role("button", name="Add to dataflow").first
+    add = dialog.get_by_role("button", name="Add to project").first
     add.wait_for(state="visible", timeout=15000)
     assert add.is_enabled(), (
-        "Add to dataflow is disabled on an unsaved dataflow - the drawer is "
+        "Add to project is disabled on an unsaved dataflow - the drawer is "
         "still gating on a project id instead of creating one on the click"
     )
     ctx.capture("add-enabled")
@@ -594,10 +648,10 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
 
     # Adding confirms first now (#196), the way all three catalogs do.
     accept_confirm_dialog(
-        ctx.page, title=re.compile(r"^Add "), button="Add to dataflow"
+        ctx.page, title=re.compile(r"^Add "), button="Add to project"
     )
 
-    installed = dialog.get_by_role("button", name="Remove from dataflow").first
+    installed = dialog.get_by_role("button", name="Remove from project").first
     installed.wait_for(state="visible", timeout=30000)
 
     # The save really happened: the route carries a project id now.
@@ -625,7 +679,7 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
     premise="Read the actions on an imported agent's card.",
     note="The action column is pinned at 140px so the card body cannot "
          "collapse, and the shared secondary button is a fixed 30px single "
-         "line - so \"Remove from my account\" wrapped to two lines inside it "
+         "line - so \"Remove from all projects\" wrapped to two lines inside it "
          "and spilled out. The label's type size comes down instead.",
     tests=["src/tests/styles/agentDrawerButtonGeometry.test.ts",
            "test_frontend/test_walkthrough_baselines.py"],
@@ -636,7 +690,7 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
 def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     dialog = open_agent_drawer(ctx)
 
-    # "Remove from my account" only exists on a card in My imports, and a fresh
+    # "Remove from all projects" only exists on a card in My imports, and a fresh
     # account has none - so import one first, through the UI rather than the API.
     ctx.say("Import an agent", "My imports is where the longest label lives.")
     import_button = dialog.get_by_role("button", name="Import", exact=True).first
@@ -644,7 +698,7 @@ def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     ctx.click(import_button)
 
     ctx.click(dialog.get_by_role("button", name="My imports"))
-    remove = dialog.get_by_role("button", name="Remove from my account").first
+    remove = dialog.get_by_role("button", name="Remove from all projects").first
     remove.wait_for(state="visible", timeout=20000)
     ctx.focus(remove, hold=1200)
 
@@ -660,7 +714,7 @@ def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     )
 
     # Every button in the column, not just the reported one.
-    for name in ("Remove from my account", "Add to dataflow"):
+    for name in ("Remove from all projects", "Add to project"):
         button = dialog.get_by_role("button", name=name).first
         if not button.count():
             continue
@@ -738,7 +792,7 @@ def catalog_add_is_confirmed(ctx: Ctx) -> None:
     ctx.say("The Data Catalog", "Adding a dataset used to commit on one click.")
     drawer = open_data_drawer(ctx)
 
-    add = drawer.get_by_role("button", name="Add to dataflow", exact=True).first
+    add = drawer.get_by_role("button", name="Add to project", exact=True).first
     add.wait_for(state="visible", timeout=20000)
     ctx.click(add)
 
@@ -751,7 +805,7 @@ def catalog_add_is_confirmed(ctx: Ctx) -> None:
     ctx.click(modal.get_by_role("button", name="Cancel", exact=True))
     expect(modal).to_have_count(0, timeout=10000)
     expect(
-        drawer.get_by_role("button", name="Add to dataflow", exact=True).first
+        drawer.get_by_role("button", name="Add to project", exact=True).first
     ).to_be_visible(timeout=10000)
 
     close = drawer.get_by_role("button", name="Close Data Catalog drawer")
@@ -762,7 +816,7 @@ def catalog_add_is_confirmed(ctx: Ctx) -> None:
     ctx.say("The Agent Catalog", "The same question, and it discloses more.")
     agent_drawer = open_agent_drawer(ctx)
     agent_add = agent_drawer.get_by_role(
-        "button", name=re.compile(r"^Add to dataflow")
+        "button", name=re.compile(r"^Add to project")
     ).first
     agent_add.wait_for(state="visible", timeout=20000)
     ctx.click(agent_add)
@@ -799,12 +853,12 @@ def catalog_remove_is_an_app_dialog(ctx: Ctx) -> None:
     drawer = open_agent_drawer(ctx)
 
     # Put one in the dataflow first, so there is something to remove.
-    add = drawer.get_by_role("button", name=re.compile(r"^Add to dataflow")).first
+    add = drawer.get_by_role("button", name=re.compile(r"^Add to project")).first
     add.wait_for(state="visible", timeout=20000)
     ctx.click(add)
-    accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to dataflow")
+    accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to project")
 
-    remove = drawer.get_by_role("button", name="Remove from dataflow", exact=True).first
+    remove = drawer.get_by_role("button", name="Remove from project", exact=True).first
     remove.wait_for(state="visible", timeout=30000)
 
     ctx.say("Remove it again", "This is where the browser's own box used to appear.")
@@ -819,7 +873,7 @@ def catalog_remove_is_an_app_dialog(ctx: Ctx) -> None:
     ctx.click(modal.get_by_role("button", name="Remove", exact=True))
     expect(modal).to_have_count(0, timeout=10000)
     expect(
-        drawer.get_by_role("button", name=re.compile(r"^Add to dataflow")).first
+        drawer.get_by_role("button", name=re.compile(r"^Add to project")).first
     ).to_be_visible(timeout=30000)
     ctx.say("Removed", "And the drawer behind it never went anywhere.")
 
@@ -845,12 +899,12 @@ def catalog_add_reports_success(ctx: Ctx) -> None:
     page = ctx.page
 
     drawer = open_agent_drawer(ctx)
-    add = drawer.get_by_role("button", name=re.compile(r"^Add to dataflow")).first
+    add = drawer.get_by_role("button", name=re.compile(r"^Add to project")).first
     add.wait_for(state="visible", timeout=20000)
 
     ctx.say("Add an agent", "The Agent catalog used to finish in silence.")
     ctx.click(add)
-    accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to dataflow")
+    accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to project")
 
     toast = page.locator(TOAST_REGION).get_by_text(
         re.compile(r"^Added .+ to this dataflow\.$")
@@ -900,6 +954,13 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
     page = ctx.page
 
     ctx.say("Create an account", "The reporter's own path: sign up, then look.")
+    # The runner has already stub-logged-in a walkthrough user, and the app
+    # redirects an authenticated visitor away from /auth/signup - so the form
+    # never appears and the scene would read the WRONG account's gallery. Drop
+    # the session first; the token is the `session_token` cookie (utils/authApi).
+    page.context.clear_cookies()
+    page.evaluate("() => { try { localStorage.clear(); } catch (e) {} }")
+
     username = f"examples_{uuid.uuid4().hex[:10]}"
     signup_e2e_user(page, ctx.frontend, name="New User", username=username)
     wait_for_projects_page(page, timeout=30000)
@@ -931,15 +992,22 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
 # Robustness (#192, #201)
 # ---------------------------------------------------------------------------
 
+#: The lightest curated example that actually contains Autark nodes. The
+#: default (a Vega-Lite dataflow) has none, so the scene would have nothing to
+#: run and would fail for a reason unrelated to the fix.
+AUTARK_EXAMPLE = "07-autark-gpu-shader.json"
+
+
 def open_view_menu_dashboard(ctx: Ctx) -> None:
     """View -> Dashboard. ``force`` because the canvas chrome overlaps the bar."""
     page = ctx.page
     ctx.click(top_menu(page, "View"), force=True)
-    ctx.click(page.get_by_text("Dashboard", exact=True).first)
+    ctx.click(page.get_by_text("Dashboard Mode", exact=True).first)
 
 
 @walkthrough(
     slug="dashboard-mode-refuses-a-blank-screen",
+    example=PROVENANCE_EXAMPLE,
     refs=[192],
     title="Dashboard Mode says what it needs",
     premise="Enter Dashboard Mode with nothing pinned, then with one node pinned.",
@@ -996,6 +1064,7 @@ def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
          "what is missing and what to do about it, and the canvas survives.",
     tests=["src/tests/adapters/node/autkGrammarWebgpuFallback.test.tsx",
            "src/tests/components/errorBoundary.test.tsx"],
+    example=AUTARK_EXAMPLE,
     max_diff_ratio=0.05,
 )
 def autark_without_webgpu_says_so(ctx: Ctx) -> None:
@@ -1014,19 +1083,21 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     errors: list[str] = []
     page.on("pageerror", lambda e: errors.append(str(e)))
 
-    autark = page.locator('.react-flow__node:has-text("Autark")').first
-    if not autark.count():
-        raise AssertionError(
-            "this dataflow has no Autark node, so the scene has nothing to run; "
-            "point it at an example that includes one"
-        )
+    # Resolved from the spec: a node's Curio type is not on the DOM element,
+    # only React Flow's data-id, so display text would be a guess.
+    # Must be a node whose spec declares a map/plot/compute - those are the
+    # only ones that need a GPU, and so the only ones the guard fires for.
+    node_id = first_node_of_type(AUTARK_EXAMPLE, "autk-grammar", containing='"map"')
+    autark = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    autark.wait_for(state="visible", timeout=45000)
     autark.scroll_into_view_if_needed()
     ctx.focus(autark, hold=1000)
 
     ctx.say("Run it", "The old failure was a TypeError from inside the shader loader.")
-    play = autark.get_by_role("button", name="Play").first
-    if play.count():
-        ctx.click(play)
+    # The play control is a FontAwesome <svg>, not a named button, and React
+    # Flow's transformed viewport can swallow a real click - `play_node` is the
+    # helper that already deals with both.
+    play_node(page, node_id)
 
     fallback = autark.locator('[role="alert"]')
     fallback.first.wait_for(state="visible", timeout=45000)
@@ -1041,3 +1112,218 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     )
     expect(page.locator("#tools-menu")).to_be_visible()
     assert not errors, f"an uncaught page error escaped: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# Layout and data shape (#193, #202, #203)
+# ---------------------------------------------------------------------------
+
+MULTI_VIEW_EXAMPLE = "05-vega-lite-multi-view-drilldown.json"
+
+#: A Data Pool without Autark alongside it, so the scene needs no WebGPU.
+DATA_POOL_EXAMPLE = "02-vega-lite-spatial-density.json"
+
+
+@walkthrough(
+    slug="catalog-tag-chips-are-plain",
+    refs=[193],
+    title="Tag chips read the same everywhere",
+    premise="Compare the tag chips on a catalog card and in its detail drawer.",
+    note="Four policies at once: the Data card tinted the LAST chip by file "
+         "format - positional, not semantic, so a `2023` chip turned green "
+         "because the file was GeoJSON; the Agent card tinted the last chip by "
+         "category; the Package card tinted every chip; the detail drawer "
+         "tinted none. All chips are plain now. Nothing is lost - the coloured "
+         "card strip and the tinted avatar already carry format and category.",
+    tests=["src/tests/catalog/tagChipsArePlain.test.ts",
+           "src/tests/catalog/datasetFormatStyles.test.ts"],
+    fit_reactflow=False,
+    max_diff_ratio=0.02,
+)
+def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
+    """The tints lived on the BROWSE PAGE cards, not the canvas drawer cards.
+
+    `/catalog/data`, `/catalog/agents` and `/catalog/nodes` render
+    `DataCatalogBrowseCard` / `AgentCatalogBrowseCard` / `PackageBrowseCard`,
+    and those three were the ones with three different tinting policies. The
+    canvas drawer uses `DatasetCard`, which never tinted - so a scene that
+    opened the drawer was looking at the one surface the bug was not on.
+    """
+    page = ctx.page
+
+    for kind, route, card_sel in (
+        ("Data", "/catalog/data", "article[data-dataset-id]"),
+        ("Agent", "/catalog/agents", "article[data-agent-coord]"),
+        ("Node", "/catalog/nodes", "article[data-pkg-dir]"),
+    ):
+        ctx.say(f"The {kind} catalog",
+                "Chips here used to take a colour from the format or category.")
+        page.goto(f"{ctx.frontend}{route}")
+        page.wait_for_load_state("domcontentloaded")
+
+        card = page.locator(card_sel).first
+        card.wait_for(state="visible", timeout=30000)
+        card.scroll_into_view_if_needed()
+        ctx.focus(card, hold=1200)
+
+        # Every chip on one card resolves to the same background, so none of
+        # them is carrying a colour the others are not.
+        backgrounds = card.locator("[data-curio-tag-chip]").evaluate_all(
+            "els => els.map(e => getComputedStyle(e).backgroundColor)"
+        )
+        assert backgrounds, f"the {kind} card rendered no tag chips"
+        assert len(set(backgrounds)) == 1, (
+            f"the chips on one {kind} card still differ in colour: "
+            f"{sorted(set(backgrounds))}"
+        )
+        ctx.capture(f"plain-chips-{kind.lower()}")
+
+    ctx.say("Every chip the same grey, on all three",
+            "The coloured strip and the avatar are what carry the category.")
+
+
+@walkthrough(
+    slug="multi-view-vega-chart-is-reachable",
+    refs=[202],
+    title="A multi-view chart is not cut off",
+    premise="Open a Vega-Lite chart with stacked sub-views and scroll to the bottom one.",
+    note="Two independent defects, either alone enough to clip. The output "
+         "container could not scroll - the pane is overflow:hidden and the "
+         "mount div was height:100% with default overflow and no `nowheel`. "
+         "And `width`/`height: \"container\"` was injected unconditionally, "
+         "which vega-lite discards for vconcat/hconcat/facet/repeat, leaving "
+         "`autosize: pad` - so ~750px of chart was authoritative inside a "
+         "~292px pane and the ResizeObserver could not help.",
+    tests=["src/tests/hook/vegaSpecSizing.test.ts",
+           "src/tests/components/nodeEditorOutputScroll.test.tsx"],
+    example=MULTI_VIEW_EXAMPLE,
+    max_diff_ratio=0.05,
+)
+def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
+    page = ctx.page
+
+    ctx.say("A chart with stacked views",
+            "Two sub-views, 650x400 and 650x300, in a ~292px pane.")
+
+    # Resolved from the spec rather than `[id^=vega].first`: that picked
+    # whichever mount happened to be first in DOM order, which is not
+    # necessarily a node whose editor has mounted its output pane.
+    # The example has nine vis-vega nodes and only some are the stacked ones;
+    # the first is a single small view, which fits its pane and demonstrates
+    # nothing. Pick the node whose spec is actually a vconcat.
+    node_id = first_node_of_type(
+        MULTI_VIEW_EXAMPLE, "vis-vega", containing="vconcat",
+    )
+    node = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    node.wait_for(state="visible", timeout=45000)
+    node.scroll_into_view_if_needed()
+
+    # RUN it. The mount div exists from first render, so the scene could scroll
+    # an EMPTY container and still pass every assertion below - which is what it
+    # did: the recording showed a scrollbar moving over blank space and no
+    # chart. A clipped chart is the whole subject, so there has to be one.
+    ctx.say("Run it", "The chart is drawn from the node's own output.")
+    play_node(page, node_id)
+
+    mount = page.locator(f'#vega{node_id}')
+    mount.wait_for(state="attached", timeout=45000)
+
+    # Vega renders to a <canvas> inside the mount; wait for it, and for it to
+    # be taller than the pane, or there is nothing to demonstrate.
+    page.wait_for_function(
+        "(id) => { const el = document.getElementById(id);"
+        " const c = el && el.querySelector('canvas');"
+        " return !!c && c.getBoundingClientRect().height > 0; }",
+        arg=f"vega{node_id}",
+        timeout=180000,
+    )
+    ctx.focus(node, hold=1400)
+
+    metrics = mount.evaluate(
+        "el => ({ id: el.id, scrollH: el.scrollHeight, clientH: el.clientHeight,"
+        " overflow: getComputedStyle(el).overflow,"
+        " inlineStyle: el.getAttribute('style'),"
+        " cls: el.getAttribute('class'),"
+        " nowheel: el.classList.contains('nowheel') })"
+    )
+    # Report the whole measurement on failure: if this ever disagrees with
+    # `nodeEditorOutputScroll.test.tsx` - which pins the same div at the unit
+    # layer - the difference is what tells you which of the two is wrong.
+    assert metrics["overflow"] == "auto", (
+        f"the chart container does not scroll: {metrics}"
+    )
+    # `nowheel` is what stops React Flow zooming the canvas instead.
+    assert metrics["nowheel"], "the container scrolls but the wheel zooms the canvas"
+
+    # The claim only means something if the chart is actually taller than its
+    # pane - otherwise there is nothing being clipped and nothing to scroll to.
+    assert metrics["scrollH"] > metrics["clientH"] + 8, (
+        f"the chart fits inside its pane ({metrics['scrollH']}px of content in "
+        f"{metrics['clientH']}px), so this scene cannot show #202 - the node "
+        f"probably rendered a single small view instead of the stacked ones"
+    )
+    ctx.capture("chart-clipped-at-the-fold")
+
+    ctx.say("Scroll down to the second view",
+            "It was there all along; there was simply no way to reach it.")
+    mount.evaluate("el => el.scrollTo({ top: el.scrollHeight })")
+    page.wait_for_timeout(900)
+    assert mount.evaluate("el => el.scrollTop") > 0, (
+        "the container reports overflow but would not scroll"
+    )
+    ctx.capture("scrolled-to-bottom-view")
+
+
+@walkthrough(
+    slug="data-pool-scrolls-sideways",
+    refs=[203],
+    title="A wide table can be read to its last column",
+    premise="Open a Data Pool on a wide frame and scroll it right.",
+    note="There WAS an x-overflow owner - MUI TableContainer's default "
+         "`overflowX: auto` - but on the wrong element: it takes no height, so "
+         "its box was as tall as the rows (~3000px) and its scrollbar was "
+         "painted at the bottom of that, reachable only after scrolling to the "
+         "last row. It also absorbed the overflow, so the node's own scroller "
+         "never got one. Nothing set a min-width on the table either, so the "
+         "browser crushed the columns instead of overflowing.",
+    tests=["src/tests/components/tables/TabularPreviewTable.test.tsx",
+           "src/tests/adapters/node/components/DataPoolContent.test.tsx"],
+    example=DATA_POOL_EXAMPLE,
+    max_diff_ratio=0.05,
+)
+def data_pool_scrolls_sideways(ctx: Ctx) -> None:
+    page = ctx.page
+
+    # The scroller only exists once the pool has rendered a table, so the node
+    # has to have RUN. Locating by the scroller attribute alone therefore found
+    # nothing and looked like "no Data Pool in this dataflow".
+    node_id = first_node_of_type(DATA_POOL_EXAMPLE, "data-pool")
+    pool = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    pool.wait_for(state="visible", timeout=45000)
+    pool.scroll_into_view_if_needed()
+
+    ctx.say("Run the pool", "It needs a table before there is anything to scroll.")
+    play_node(page, node_id)
+
+    scroller = pool.locator('[data-curio-datapool-scroll="true"]').first
+    scroller.wait_for(state="visible", timeout=120000)
+    ctx.focus(pool, hold=1200)
+    metrics = scroller.evaluate(
+        "el => ({ scrollW: el.scrollWidth, clientW: el.clientWidth,"
+        " overflow: getComputedStyle(el).overflow })"
+    )
+    assert metrics["overflow"] == "auto", (
+        f"the content area does not own both axes: overflow is {metrics['overflow']!r}"
+    )
+
+    ctx.say("Scroll right", "The last column used to be unreachable.")
+    scroller.evaluate("el => el.scrollTo({ left: el.scrollWidth })")
+    page.wait_for_timeout(900)
+
+    moved = scroller.evaluate("el => el.scrollLeft")
+    assert moved > 0 or metrics["scrollW"] <= metrics["clientW"], (
+        "the table overflows but the content area would not scroll to it"
+    )
+    ctx.say("The right-hand columns, in place",
+            "One scroller owns both axes now.")
+    ctx.capture("scrolled-right")

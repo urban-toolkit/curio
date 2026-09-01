@@ -66,8 +66,20 @@ describe("DatasetCard delete affordance", () => {
     expect(deleteButton()).toBeNull();
   });
 
-  test("hides Delete on a plain imported row", () => {
+  test("offers Delete on a plain imported row — an upload the user owns", () => {
+    // Deliberately inverted. An uploaded file is an account-level asset just
+    // like a node output, and it was the one thing with no way to delete it on
+    // purpose: it went only as a side effect of removing it from the last
+    // dataflow that used it.
     renderCard(card({ origin: "imported" } as never), { isInstalled: true });
+    expect(deleteButton()).not.toBeNull();
+  });
+
+  test("still hides Delete on a catalog row the user installed", () => {
+    renderCard(
+      card({ origin: "imported", dirName: "data.urbanlab.demo@1" } as never),
+      { isInstalled: true },
+    );
     expect(deleteButton()).toBeNull();
   });
 
@@ -78,16 +90,16 @@ describe("DatasetCard delete affordance", () => {
 });
 
 describe("DatasetCard primary action copy", () => {
-  test("an unadded dataset offers Add to dataflow", () => {
+  test("an unadded dataset offers Add to project", () => {
     renderCard(card());
-    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to project" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
   });
 
-  test("an added dataset offers Remove from dataflow", () => {
+  test("an added dataset offers Remove from project", () => {
     renderCard(card(), { isInstalled: true, onUninstall: jest.fn() });
     expect(
-      screen.getByRole("button", { name: "Remove from dataflow" }),
+      screen.getByRole("button", { name: "Remove from project" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Uninstall" })).toBeNull();
   });

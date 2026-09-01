@@ -388,7 +388,14 @@ def _h264_ffmpeg() -> str | None:
     Only a system ffmpeg qualifies. Playwright ships its own build, but it is
     compiled down to what recording needs — vp8/webm, no libx264, no mp4 muxer —
     so pointing the transcode at it just fails with "Unrecognized option".
+
+    ``CURIO_TOUR_MP4=0`` turns the transcode off outright and keeps the webm
+    Playwright already wrote. Stated as a switch rather than left to depend on
+    whether ffmpeg happens to be installed, so "webm only" is a decision the
+    caller makes and not an accident of the machine.
     """
+    if os.environ.get("CURIO_TOUR_MP4", "1").strip().lower() in ("0", "false", "no", "off"):
+        return None
     return shutil.which("ffmpeg")
 
 
@@ -416,8 +423,8 @@ def finalize_video(page, *, stem: str = "curio-feature-tour") -> dict[str, str]:
     ffmpeg = _h264_ffmpeg()
     if not ffmpeg:
         print(
-            "[tour] no system ffmpeg on PATH; leaving the recording as webm "
-            "(install ffmpeg to also get an mp4)",
+            "[tour] writing webm only (CURIO_TOUR_MP4=0, or no system ffmpeg "
+            "on PATH)",
             file=sys.stderr,
         )
         return written

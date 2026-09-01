@@ -16,6 +16,16 @@ export interface ConfirmDialogProps {
   /** Paints the confirm button as a destructive action and moves the initial
    *  focus to Cancel, so a stray Enter cannot delete anything. */
   destructive?: boolean;
+  /**
+   * Paint override for a confirmation that is cautious but not destructive.
+   *
+   * `destructive` bundled two things: the red confirm button AND moving initial
+   * focus to Cancel. Unpublish wants the second and not the first - it removes
+   * a listing, it destroys nothing, and it is undone by publishing again - but
+   * red is also outside the catalogs' two-colour vocabulary (dark = action,
+   * light = destructive), where it read as a third, louder category.
+   */
+  tone?: "danger" | "plain";
   busy?: boolean;
   /** ``"overlay"`` stacks the dialog above a catalog drawer.
    *
@@ -50,6 +60,7 @@ export default function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   destructive = false,
+  tone,
   busy = false,
   layer = "default",
   onConfirm,
@@ -91,7 +102,11 @@ export default function ConfirmDialog({
           </button>
           <button
             type="button"
-            className={`${styles.actionButton}${destructive ? ` ${styles.destructive}` : ""}`}
+            className={`${styles.actionButton}${
+              (tone ?? (destructive ? "danger" : "plain")) === "danger"
+                ? ` ${styles.destructive}`
+                : ""
+            }`}
             onClick={onConfirm}
             disabled={busy}
             autoFocus={!destructive}

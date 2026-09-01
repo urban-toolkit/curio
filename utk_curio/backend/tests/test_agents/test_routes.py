@@ -1534,14 +1534,74 @@ class TestMyImportsInstalledState:
         card = next(c for c in cards if c["dirName"] == self.COORD)
         assert card["installedInProject"] is True
 
-    def test_imported_but_not_installed_shows_not_installed(self, client, user_and_token, tmp_curio, alice_project):
+    def test_importing_now_installs_into_existing_projects(self, client, user_and_token, tmp_curio, alice_project):
+        """Importing reaches every project the user already has.
+
+        This asserted the opposite: an import recorded a coordinate and touched
+        no project lockfile. That was reported as a bug, and it was one - the
+        Agent Catalog labelled an imported agent "In all projects" while the
+        canvas agents palette, which reads the PROJECT lockfile
+        (``listProjectAgents`` -> ``dataflow.agents``), showed it in none of
+        them. Two surfaces describing two different things under one label.
+
+        The catalog's claim is the one that was kept, so the import now does the
+        same eager per-project walk ``packages.services.install_to_defaults``
+        does, and ``save_project`` seeds new projects the same way. Nothing
+        consults the account list when a project is opened, so only the walk can
+        make the label true.
+        """
         _, token = user_and_token
         client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth(token))
         cards = client.get(
             f"/api/agents/imports?projectId={alice_project}", headers=_auth(token)
         ).get_json()["agents"]
         card = next(c for c in cards if c["dirName"] == self.COORD)
-        assert card["installedInProject"] is False
+        assert card["installedInProject"] is True
+
+    def test_removing_the_import_takes_it_out_of_projects_again(self, client, user_and_token, tmp_curio, alice_project):
+        """The inverse walk, or "Remove from all projects" would leave the agent
+        in every project it had been pushed into."""
+        _, token = user_and_token
+        client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth(token))
+        client.delete(f"/api/agents/imports/{self.COORD}", headers=_auth(token))
+        cards = client.get(
+            f"/api/agents/imports?projectId={alice_project}", headers=_auth(token)
+        ).get_json()["agents"]
+        assert all(c["dirName"] != self.COORD for c in cards) or next(
+            c for c in cards if c["dirName"] == self.COORD
+        )["installedInProject"] is False
+
+    def test_a_project_created_afterwards_gets_imported_agents(self, client, user_and_token, tmp_curio):
+        """The "future" half. Without the seed in `save_project`, an agent the
+        user imported would be missing from every project made later."""
+        _, token = user_and_token
+        client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth(token))
+        created = client.post(
+            "/api/projects",
+            json={"name": "Made after the import", "spec": {"dataflow": {"nodes": [], "edges": []}}},
+            headers=_auth(token),
+        )
+        assert created.status_code in (200, 201), created.get_data(as_text=True)
+        new_id = created.get_json()["id"]
+        cards = client.get(
+            f"/api/agents/imports?projectId={new_id}", headers=_auth(token)
+        ).get_json()["agents"]
+        card = next(c for c in cards if c["dirName"] == self.COORD)
+        assert card["installedInProject"] is True
+
+        # And through the endpoint the CANVAS actually reads. The agents palette
+        # calls `listProjectAgents` -> GET /api/agents/projects/<id>, which is
+        # the project lockfile; the listing above is the account view with a
+        # project marker on it. Asserting only the account view would pass while
+        # the left bar in a new dataflow stayed empty, which is exactly the
+        # symptom that was reported.
+        palette = client.get(
+            f"/api/agents/projects/{new_id}", headers=_auth(token)
+        ).get_json()["agents"]
+        assert any(c["dirName"] == self.COORD for c in palette), (
+            f"a new project's agent lockfile should carry the account's imports; "
+            f"got {[c['dirName'] for c in palette]}"
+        )
 
     def test_without_project_id_behaves_as_before(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token

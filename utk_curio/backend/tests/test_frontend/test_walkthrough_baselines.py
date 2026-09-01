@@ -47,7 +47,7 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
         name="Walkthrough",
         username=f"walk_{walk.slug.replace(chr(45), chr(95))[:24]}",
         project_name=walk.title[:40],
-        project_spec=load_example_spec(PROVENANCE_EXAMPLE),
+        project_spec=load_example_spec(walk.example) if walk.example else None,
     )
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)

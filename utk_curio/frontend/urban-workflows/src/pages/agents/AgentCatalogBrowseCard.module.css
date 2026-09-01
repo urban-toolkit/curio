@@ -31,27 +31,3 @@
 .cardActive.card_evaluate { border-color: var(--curio-category-agent-evaluate-fg); }
 .cardActive.card_package  { border-color: var(--curio-category-agent-package-fg); }
 
-.tagAccent_node {
-    background: var(--curio-category-agent-node-bg);
-    color: var(--curio-category-agent-node-on-tint);
-}
-
-.tagAccent_canvas {
-    background: var(--curio-category-agent-canvas-bg);
-    color: var(--curio-category-agent-canvas-on-tint);
-}
-
-.tagAccent_data {
-    background: var(--curio-category-agent-data-bg);
-    color: var(--curio-category-agent-data-on-tint);
-}
-
-.tagAccent_evaluate {
-    background: var(--curio-category-agent-evaluate-bg);
-    color: var(--curio-category-agent-evaluate-on-tint);
-}
-
-.tagAccent_package {
-    background: var(--curio-category-agent-package-bg);
-    color: var(--curio-category-agent-package-on-tint);
-}

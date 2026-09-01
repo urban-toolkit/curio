@@ -88,15 +88,26 @@ describe("the agent browse page reports only what it can know", () => {
 });
 
 describe("the account-scope CTA says what the click does", () => {
-  it("adds to the account, not to every project", () => {
-    // The Node Catalog page says "Add to all projects" because installing
-    // there really does reach every project. An agent import does not - it
-    // makes the agent available to install - so borrowing that label would
-    // overstate it.
+  it("uses one all-projects wording, shared with the Node Catalog", () => {
+    // This deliberately read "Add to my account" while the Node Catalog page
+    // read "Add to all projects", because the two writes are not identical: a
+    // node install really does reach every project, whereas an agent import
+    // makes the agent AVAILABLE to every project - it is not attached to any
+    // one of them until you add it there.
+    //
+    // One vocabulary across the three catalogs was judged worth more than that
+    // distinction, so both now read "Add to all projects"; the page intro
+    // carries the nuance ("makes it available to all your projects") instead of
+    // the button. The drawer's per-row button separately said a bare "Import"
+    // for this same call, which made three names for one operation - and put
+    // an unrelated "Import agent" (upload your own definition) in the same
+    // panel.
     const drawer = read(DRAWER);
-    expect(drawer).toContain("Add to my account");
-    expect(drawer).toContain("Remove from my account");
-    expect(drawer).not.toContain("Add to all projects");
+    expect(drawer).toContain("Add to all projects");
+    expect(drawer).toContain("Remove from all projects");
+    // The retired names. None of them may come back.
+    expect(drawer).not.toContain("Add to my account");
+    expect(drawer).not.toContain("Remove from my account");
     expect(drawer).not.toContain("Add to dataflow");
   });
 

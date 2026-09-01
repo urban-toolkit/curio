@@ -88,6 +88,12 @@ class DatasetCatalogService:
     def uninstall_dataset(self, *args: Any, **kwargs: Any) -> Any:
         return self._mutations.uninstall_dataset(*args, **kwargs)
 
+    def install_dataset_to_defaults(self, *args: Any, **kwargs: Any) -> Any:
+        return self._mutations.install_dataset_to_defaults(*args, **kwargs)
+
+    def remove_dataset_from_defaults(self, *args: Any, **kwargs: Any) -> Any:
+        return self._mutations.remove_dataset_from_defaults(*args, **kwargs)
+
     def unpublish_dataset(self, *args: Any, **kwargs: Any) -> Any:
         return self._mutations.unpublish_dataset(*args, **kwargs)
 

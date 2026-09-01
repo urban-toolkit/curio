@@ -71,6 +71,7 @@ import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
 import { NodeCatalogDrawerProvider } from "./providers/NodeCatalogDrawerProvider";
 import { AgentCatalogDrawerProvider } from "./providers/AgentCatalogDrawerProvider";
+import { listenForPeerDatasetCatalogRefresh } from "./services/datasetCatalog";
 import { DatasetCatalogDrawerProvider } from "./providers/datasetCatalog";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
@@ -234,6 +235,12 @@ const App: React.FC = () => {
 window.addEventListener("unhandledrejection", (event) => {
   console.error("[curio] unhandled promise rejection:", event.reason);
 });
+
+// Catalog mutations in ANOTHER tab must invalidate this one's cache. Without
+// this the broadcast has no listener and the cross-tab half is inert: adding a
+// dataset to all projects from `/catalog` in one tab left a dataflow open in
+// another serving a listing cached from before the mutation.
+listenForPeerDatasetCatalogRefresh();
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 

@@ -315,13 +315,29 @@ function NodeEditor({
                                         style={{ height: "100%", overflow: "hidden" }}
                                     >
                                         {outputId != undefined ? (
+                                            // Vega sizes its canvas in CSS px
+                                            // from the compiled spec, so a
+                                            // multi-view chart is taller than
+                                            // the pane and was simply cut off
+                                            // (#202). This div scrolls now;
+                                            // the parent Tab.Pane stays
+                                            // overflow:hidden so the node box
+                                            // itself cannot spill onto the
+                                            // canvas.
+                                            //
+                                            // `nowheel` is load-bearing, not
+                                            // decoration: without it React
+                                            // Flow's ZoomPane swallows the
+                                            // wheel event and zooms the canvas
+                                            // instead of scrolling the chart.
                                             <div
                                                 id={outputId}
-                                                className="nodrag"
+                                                className="nodrag nowheel"
                                                 style={{
                                                     textAlign: "center",
                                                     width: "100%",
                                                     height: "100%",
+                                                    overflow: "auto",
                                                 }}
                                             ></div>
                                         ) : (

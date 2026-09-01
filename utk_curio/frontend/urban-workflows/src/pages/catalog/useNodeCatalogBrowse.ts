@@ -14,6 +14,7 @@ import type { SortMode } from "../../components/packages/publishing/packageTypes
 import { draftFromInstalledPackagePayload } from "../../utils/palettePackageFactoryDraft";
 import { toApiPayload } from "../nodes/factoryDraftModel";
 import { useToastContext } from "../../providers/ToastProvider";
+import { usePackageArchiveImport } from "../../components/packages/publishing/usePackageArchiveImport";
 import type { NodeCatalogFilterTab } from "./nodeCatalogBrowseTypes";
 
 export function useNodeCatalogBrowse() {
@@ -94,11 +95,9 @@ export function useNodeCatalogBrowse() {
     let b = bySearch;
     if (filter === "installed") {
       b = b.filter((p) => defaults.has(p.dirName));
-    } else if (filter === "updates") {
-      b = b.filter((p) => updateCandidateDirs.has(p.dirName));
     }
     return b;
-  }, [bySearch, filter, defaults, updateCandidateDirs]);
+  }, [bySearch, filter, defaults]);
 
   const categoryCounts = useMemo(() => {
     const m = new Map<string, number>();
@@ -217,6 +216,39 @@ export function useNodeCatalogBrowse() {
     [installedByDir, reload, reportError, showToast],
   );
 
+  /**
+   * Sideload a `.curio.zip` from the catalog PAGE's header, through the SAME
+   * hook the Node Catalog drawer's footer uses. This was briefly a second copy
+   * of the drawer's logic; it is now one pathway with one difference, expressed
+   * as data: no `projectId`, because the page has no dataflow to install into.
+   */
+  const { importing, importArchive: onImportArchive } = usePackageArchiveImport({
+    reload,
+    onError: reportError,
+    onImported: (pkg) => showToast(`Imported ${pkg?.name ?? "package"}.`, "success"),
+  });
+
+  /** The inverse of `onPublish`, which the page had no way to reach. Publishing
+   *  was a one-way door on this surface: the card offered Publish, and once
+   *  taken there was no Unpublish anywhere on the page to undo it. */
+  const onUnpublish = useCallback(
+    async (dirName: string) => {
+      const row = installedByDir.get(dirName) ?? catalogByDir.get(dirName);
+      setPublishingPackageKey(dirName);
+      setActionError(null);
+      try {
+        await packagesApi.unpublishFromCatalog(dirName);
+        await reload();
+        showToast(`Unpublished ${row?.name ?? dirName}.`, "success");
+      } catch (err) {
+        reportError(`Couldn't unpublish ${row?.name ?? dirName}`, err);
+      } finally {
+        setPublishingPackageKey(null);
+      }
+    },
+    [installedByDir, catalogByDir, reload, reportError, showToast],
+  );
+
   const dismissInstallSummary = useCallback(() => setLastInstallSummary(null), []);
   const dismissActionError = useCallback(() => setActionError(null), []);
   const cancelInstall = useCallback(() => {
@@ -269,8 +301,11 @@ export function useNodeCatalogBrowse() {
     updatesCount,
     selectedHasUpdate,
     onInstall,
+    importing,
+    onImportArchive,
     confirmInstall,
     onPublish,
+    onUnpublish,
     cancelInstall,
   };
 }

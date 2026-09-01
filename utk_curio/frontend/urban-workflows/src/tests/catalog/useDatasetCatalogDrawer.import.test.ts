@@ -355,6 +355,8 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
     // complete the moment it appears (#177 copy, now in the modal).
     const confirmMessage = String(result.current.confirmAction?.body ?? "");
     expect(usageSpy).toHaveBeenCalledWith(dataset.id);
+    // The every-dataflow scope is stated whether or not usage resolved.
+    expect(confirmMessage).toContain("every dataflow that uses it");
     expect(confirmMessage).toContain("used in 3 dataflows");
     expect(confirmMessage).toContain("consumed by 2 nodes");
     // The old wording keyed on consumerNodeCount is gone.
@@ -379,9 +381,11 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
       await result.current.onDelete(dataset as never);
     });
 
-    expect(String(result.current.confirmAction?.body ?? "")).toContain(
-      "referenced by 5 nodes",
-    );
+    const body = String(result.current.confirmAction?.body ?? "");
+    expect(body).toContain("referenced by 5 nodes");
+    // ...and the scope sentence survives the fallback path, which is the case
+    // where the user knows least about the blast radius.
+    expect(body).toContain("every dataflow that uses it");
 
     usageSpy.mockRestore();
     deleteSpy.mockRestore();

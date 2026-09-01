@@ -240,7 +240,7 @@ def test_add_dataset_propagates_to_palette(
     expect(_card(drawer, DATASET_ID)).to_have_count(1, timeout=15000)
 
     _card(drawer, DATASET_ID).get_by_role(
-        "button", name="Add to dataflow", exact=True
+        "button", name="Add to project", exact=True
     ).click()
     with page.expect_response(
         lambda r: "/datasets/install" in r.url
@@ -251,7 +251,7 @@ def test_add_dataset_propagates_to_palette(
         # The Data catalog confirms an add now (#196), so the card click only
         # opens the dialog - the POST follows the confirm.
         accept_confirm_dialog(
-            page, title=re.compile(r"^Add "), button="Add to dataflow"
+            page, title=re.compile(r"^Add "), button="Add to project"
         )
 
     # Re-resolve, never reuse a handle: installing flips origin hub -> imported,
@@ -259,7 +259,7 @@ def test_add_dataset_propagates_to_palette(
     # updatedAt so the card moves under the default "recent" sort.
     expect(
         _card(drawer, DATASET_ID).get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=20000)
 
@@ -283,12 +283,12 @@ def test_add_dataset_propagates_to_palette(
         timeout=30000,
     ):
         _card(drawer, DATASET_ID).get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         ).click()
 
     expect(
         _card(drawer, DATASET_ID).get_by_role(
-            "button", name="Add to dataflow", exact=True
+            "button", name="Add to project", exact=True
         )
     ).to_be_visible(timeout=20000)
     drawer.locator("header").get_by_role(
@@ -392,10 +392,10 @@ beta,2
     expect(card).to_have_count(1, timeout=20000)
     # ...offering Add, which is the proof it was NOT auto-attached.
     expect(
-        card.get_by_role("button", name="Add to dataflow", exact=True)
+        card.get_by_role("button", name="Add to project", exact=True)
     ).to_be_visible(timeout=20000)
     expect(
-        card.get_by_role("button", name="Remove from dataflow", exact=True)
+        card.get_by_role("button", name="Remove from project", exact=True)
     ).to_have_count(0)
 
     # 2. And the dataflow itself is untouched: nothing in the palette.
@@ -411,7 +411,7 @@ beta,2
     #    same path a hub one does.
     drawer = _open_drawer_from_menu(page)
     _card(drawer, dataset_id).get_by_role(
-        "button", name="Add to dataflow", exact=True
+        "button", name="Add to project", exact=True
     ).click()
     with page.expect_response(
         lambda r: "/datasets/install" in r.url
@@ -422,12 +422,12 @@ beta,2
         # The Data catalog confirms an add now (#196), so the card click only
         # opens the dialog - the POST follows the confirm.
         accept_confirm_dialog(
-            page, title=re.compile(r"^Add "), button="Add to dataflow"
+            page, title=re.compile(r"^Add "), button="Add to project"
         )
 
     expect(
         _card(drawer, dataset_id).get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=20000)
     drawer.locator("header").get_by_role(

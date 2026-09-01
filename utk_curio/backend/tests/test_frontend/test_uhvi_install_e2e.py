@@ -108,7 +108,7 @@ def test_the_uhvi_package_installs_without_a_geopandas_conflict(
     # The resolve probe fires on click and posts every installed package plus
     # this candidate - and curio.builtin@1 is always among them, which is what
     # made the conflict unavoidable.
-    card.get_by_role("button", name="Add to dataflow", exact=True).click()
+    card.get_by_role("button", name="Add to project", exact=True).click()
 
     # The install dialog, picked out by its own heading. It used to be selected
     # by negation - "the dialog that is NOT the catalog" - which held only while
@@ -140,7 +140,7 @@ def test_the_uhvi_package_installs_without_a_geopandas_conflict(
     #    `confirmLabel` default, and `hasConflicts` is the only thing that would
     #    disable it here (`busy` stays false until it is clicked).
     install_button = install_dialog.get_by_role(
-        "button", name="Add to dataflow", exact=True
+        "button", name="Add to project", exact=True
     )
     expect(install_button).to_be_visible(timeout=10000)
     expect(install_button).to_be_enabled(timeout=10000)
@@ -161,7 +161,7 @@ def test_the_uhvi_package_installs_without_a_geopandas_conflict(
 
     expect(
         drawer.locator(f'article[data-pkg-dir="{PKG_DIR}"]').get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=120000)
 
