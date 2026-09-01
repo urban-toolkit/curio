@@ -59,8 +59,8 @@ const SCOPES: { key: AgentScope; label: string }[] = [
 ];
 
 const SUBTITLE: Record<AgentScope, string> = {
-  browse: "Agents available to this dataflow.",
-  installed: "Agents added to this dataflow.",
+  browse: "Agents available in this project.",
+  installed: "Agents added to this project.",
 };
 
 /**
@@ -112,11 +112,11 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
   const requestUninstall = useCallback(
     (card: AgentCard) => {
       setConfirmAction({
-        title: `Remove ${card.name} from this dataflow?`,
+        title: `Remove ${card.name} from this project?`,
         confirmLabel: "Remove",
         destructive: true,
         body:
-          `Remove ${card.name} from this dataflow?
+          `Remove ${card.name} from this project?
 
 ` +
           `The agent stays in your account and in your other projects. Add it ` +
@@ -137,7 +137,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         body: (
           <>
             <p>
-              Add {card.name} ({card.dirName}) to this dataflow?
+              Add {card.name} ({card.dirName}) to this project?
             </p>
             {/* dev/106: the same hard dependencies the card lists, restated
                 here so they are disclosed before the click commits. */}
@@ -149,7 +149,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
                     <li key={r.id}>
                       {r.name}
                       {r.installedInProject
-                        ? " (already in this dataflow)"
+                        ? " (already in this project)"
                         : r.visible
                           ? " (not installed)"
                           : " (unavailable)"}
@@ -283,7 +283,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
             {c.cards.length > 0
               ? "No agents match the current filters."
               : c.scope === "installed"
-                ? "No agents added to this dataflow yet."
+                ? "No agents added to this project yet."
                 : "No agents match the current filters."}
           </div>
         ) : (

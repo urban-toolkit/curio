@@ -146,7 +146,7 @@ def test_removing_a_dataset_from_the_dataflow_asks_first(
     # THE POINT: a dialog, where there used to be none.
     remove.click()
     modal = _modal(page, re.compile(r"^Remove "))
-    expect(modal).to_contain_text("from this dataflow?")
+    expect(modal).to_contain_text("from this project?")
     save_workflow_test_screenshot(
         page, "data-remove-confirm",
         test_name="test_removing_a_dataset_from_the_dataflow_asks_first",

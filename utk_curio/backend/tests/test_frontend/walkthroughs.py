@@ -1018,7 +1018,7 @@ def catalog_add_reports_success(ctx: Ctx) -> None:
     accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to project")
 
     toast = page.locator(TOAST_REGION).get_by_text(
-        re.compile(r"^Added .+ to this dataflow\.$")
+        re.compile(r"^Added .+ to this project\.$")
     )
     toast.first.wait_for(state="visible", timeout=30000)
     ctx.focus(toast.first, hold=1500)
