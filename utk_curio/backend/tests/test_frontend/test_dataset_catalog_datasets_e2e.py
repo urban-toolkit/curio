@@ -53,6 +53,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+import re
 from playwright.sync_api import expect
 
 from utk_curio.backend.tests.dataset_catalog_coverage import (
@@ -64,6 +65,7 @@ from utk_curio.backend.tests.dataset_catalog_coverage import (
 )
 
 from .utils import (
+    accept_confirm_dialog,
     assert_vega_canvas_rendered,
     canvas_node_type,
     connect_nodes,
@@ -162,11 +164,16 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     # extra card and would break any exact count.
     expect(card).to_have_count(1, timeout=15000)
 
+    card.get_by_role("button", name="Add to dataflow", exact=True).click()
     with page.expect_response(
         lambda r: "/datasets/install" in r.url and r.request.method == "POST" and r.ok,
         timeout=60000,
     ):
-        card.get_by_role("button", name="Add to dataflow", exact=True).click()
+        # The Data catalog confirms an add now (#196), so the card click only
+        # opens the dialog - the POST follows the confirm.
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to dataflow"
+        )
 
     # Re-resolve rather than reuse the handle: the install flips origin
     # hub -> imported, which changes the React key so the card is replaced.

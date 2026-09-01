@@ -35,6 +35,7 @@ import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    accept_confirm_dialog,
     api_json,
     open_tools_palette,
     require_project_page,
@@ -252,8 +253,9 @@ def test_add_agent_propagates_to_palette(
     card = _card(drawer, AGENT_COORD)
     expect(card).to_have_count(1, timeout=15000)
 
-    # 3. No permissions dialog for an agent - the install is a lockfile write,
-    #    so watch the POST itself rather than a confirm step.
+    # 3. Adding confirms first (#196), as the Data and Node catalogs do, so the
+    #    card click only opens the dialog - the POST follows the confirm.
+    card.get_by_role("button", name="Add to dataflow").click()
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.url.endswith("/install")
@@ -261,7 +263,9 @@ def test_add_agent_propagates_to_palette(
         and r.ok,
         timeout=30000,
     ):
-        card.get_by_role("button", name="Add to dataflow").click()
+        accept_confirm_dialog(
+            page, title=f"Add {AGENT_NAME}?", button="Add to dataflow"
+        )
 
     # 4. The card flips. Never target a busy label; wait for the settled state.
     expect(
@@ -284,21 +288,20 @@ def test_add_agent_propagates_to_palette(
     )
 
     # 7. The round trip back. Removal confirms, as it does in the Node and Data
-    #    drawers, and Playwright's default for a dialog is DISMISS - so without
-    #    this handler the click would silently do nothing and the assertions
-    #    below would fail for the wrong reason.
+    #    drawers - an in-app ConfirmDialog now (#197), not a native one, so it
+    #    is driven by clicking its button rather than by a `dialog` handler.
     drawer = _open_drawer_from_menu(page)
     card = _card(drawer, AGENT_COORD)
     expect(card).to_have_count(1, timeout=20000)
 
-    page.once("dialog", lambda dialog: dialog.accept())
+    card.get_by_role("button", name="Remove from dataflow", exact=True).click()
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.request.method == "DELETE"
         and r.ok,
         timeout=30000,
     ):
-        card.get_by_role("button", name="Remove from dataflow", exact=True).click()
+        accept_confirm_dialog(page, title=f"Remove {AGENT_NAME}?", button="Remove")
 
     expect(
         card.get_by_role("button", name=re.compile(r"^Add to dataflow"))
@@ -348,6 +351,7 @@ def test_requires_agents_closure_is_disclosed_and_installed(
     # Disclosed before the click: the card names what else the install adds.
     expect(card.get_by_text(re.compile("Requires", re.I))).to_be_visible()
 
+    card.get_by_role("button", name=re.compile(r"^Add to dataflow")).click()
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.url.endswith("/install")
@@ -355,7 +359,10 @@ def test_requires_agents_closure_is_disclosed_and_installed(
         and r.ok,
         timeout=30000,
     ):
-        card.get_by_role("button", name=re.compile(r"^Add to dataflow")).click()
+        # The confirmation lists the closure it is about to pull in (dev/106).
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to dataflow"
+        )
 
     expect(
         card.get_by_role("button", name="Remove from dataflow", exact=True)

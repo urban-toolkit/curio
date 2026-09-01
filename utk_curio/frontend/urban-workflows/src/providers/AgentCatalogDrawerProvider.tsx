@@ -61,7 +61,7 @@ export function AgentCatalogDrawerProvider({ children }: { children: React.React
   // DEC-042: the roster header carries the Pin only — pinned blocks the
   // backdrop/Escape dismissals (programmatic close still works).
   const [pinned, setPinned] = useState(false);
-  const { projectId } = useFlowContext();
+  const { projectId, ensureProjectId } = useFlowContext();
   const preOpenFocusRef = useRef<HTMLElement | null>(null);
   const exitTimerRef = useRef<number | null>(null);
   const exitSettledRef = useRef(false);
@@ -146,6 +146,7 @@ export function AgentCatalogDrawerProvider({ children }: { children: React.React
         <AgentCatalogDrawer
           presented={presented}
           projectId={projectId ?? null}
+          onEnsureProject={ensureProjectId}
           pinned={pinned}
           onPinToggle={() => setPinned((v) => !v)}
           onRequestClose={closeAgentCatalogDrawer}

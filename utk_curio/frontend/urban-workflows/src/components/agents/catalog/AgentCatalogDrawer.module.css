@@ -106,3 +106,21 @@ button.installBtn {
     line-height: 1.25;
     white-space: normal;
 }
+
+/* Fit the label to the button rather than the button to the label.
+   `article.agentCard` pins this column at 140px on purpose (see above), and the
+   shared `.btnSecondary` is a fixed 30px single line - so "Remove from my
+   account" at 12px wrapped to two lines inside a box nailed to one, and spilled
+   out of it. The row keeps its height; the type comes down instead, with the
+   horizontal padding trimmed to buy back the last few pixels.
+
+   `nowrap` is the guard, not the fix: if a longer label ever appears here it
+   will visibly ellipsize rather than silently overflow again, and the geometry
+   test fails on the measurement. */
+button.secondaryBtn {
+    font-size: 10px;
+    padding: 0 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

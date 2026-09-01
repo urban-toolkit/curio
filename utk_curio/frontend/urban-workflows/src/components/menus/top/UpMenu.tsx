@@ -604,8 +604,17 @@ export default function UpMenu({
                     </button>
                 )}
 
-                {/* Save status indicator */}
-                {(saving || projectDirty || projectSavedAt) && (
+                {/* Save status indicator.
+                    Always present on a dataflow you own, so its absence never
+                    has to be interpreted. It used to render only once the
+                    dataflow was dirty or had been saved at least once, which
+                    meant a brand-new dataflow showed nothing at all - the one
+                    moment the state is most worth stating, because nothing is
+                    on disk yet. A never-saved dataflow reads as unsaved
+                    (orange), the same as a dirty one; green means, and only
+                    means, "what you see is on disk".
+                    Hidden for a shared viewer, who has nothing to save. */}
+                {!isSharedView && (
                     <button
                         className={clsx(styles.button, styles.saveStatus)}
                         style={{ cursor: saving ? "default" : "pointer" }}
@@ -614,13 +623,21 @@ export default function UpMenu({
                         title={
                             saving          ? "Saving…"
                             : projectDirty  ? "Unsaved changes - click to save"
-                            : `Saved at ${projectSavedAt!.toLocaleTimeString()} - click to save`
+                            : !projectSavedAt ? "Not saved yet - click to save"
+                            : `Saved at ${projectSavedAt.toLocaleTimeString()} - click to save`
+                        }
+                        data-curio-save-state={
+                            saving ? "saving"
+                            : projectDirty || !projectSavedAt ? "unsaved"
+                            : "saved"
                         }
                     >
                         <FontAwesomeIcon
                             icon={faFloppyDisk}
                             className={clsx(
-                                saving || projectDirty ? styles.unsavedIcon : styles.savedIcon,
+                                saving || projectDirty || !projectSavedAt
+                                    ? styles.unsavedIcon
+                                    : styles.savedIcon,
                                 saving && styles.savingPulse,
                             )}
                         />

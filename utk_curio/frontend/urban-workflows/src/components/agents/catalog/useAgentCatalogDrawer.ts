@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { agentsApi, AgentCard } from "../../../api/agentsApi";
 import { notifyAgentCatalogRefresh } from "../../../utils/agentCatalogEvents";
+import { useToastContext } from "../../../providers/ToastProvider";
 
 /**
  * Self-contained data hook for the Agent Catalog drawer. Owns the active
@@ -34,8 +35,10 @@ export interface AgentCatalogDrawerState {
   reload: () => Promise<void>;
   importAgent: (coord: string) => Promise<void>;
   removeImport: (coord: string) => Promise<void>;
-  install: (coord: string) => Promise<void>;
-  uninstall: (coord: string) => Promise<void>;
+  /** Takes the whole card, not just its coordinate, so the success toast can
+   *  name the agent the way the card does (#198). */
+  install: (card: AgentCard) => Promise<void>;
+  uninstall: (card: AgentCard) => Promise<void>;
   publish: (coord: string) => Promise<void>;
   unpublish: (coord: string) => Promise<void>;
 }
@@ -43,7 +46,14 @@ export interface AgentCatalogDrawerState {
 export function useAgentCatalogDrawer(
   presented: boolean,
   projectId: string | null,
+  /** Creates and saves the dataflow when it has never been persisted, and
+   *  answers with its id. ``FlowProvider.ensureProjectId``; the Data catalog
+   *  drawer takes the same dependency, and the Node catalog does the save by
+   *  hand. Optional so a caller with a project already open (and every existing
+   *  test) needs no change. */
+  onEnsureProject?: () => Promise<string | null>,
 ): AgentCatalogDrawerState {
+  const { showToast } = useToastContext();
   const [scope, setScope] = useState<AgentScope>("browse");
   const [cardsByScope, setCardsByScope] = useState<
     Partial<Record<AgentScope, AgentCard[]>>
@@ -57,24 +67,43 @@ export function useAgentCatalogDrawer(
     installed: 0,
   });
 
+  /** The dataflow this drawer just created, before the prop catches up.
+   *
+   * `projectId` arrives from FlowProvider, so on the render where an install
+   * creates the dataflow it is still null. Refetching against null asks for an
+   * unscoped listing, every card comes back `installedInProject: false`, and the
+   * agent that was just added still offers "Add to dataflow". Reading the id
+   * through this ref closes that window; the prop takes over on the next render.
+   */
+  const createdProjectIdRef = useRef<string | null>(null);
+  const activeProjectId = () => projectId ?? createdProjectIdRef.current;
+
   // A project switch invalidates every scope's cache (installed state is
   // per-project; My imports marks installs against the open project too).
   useEffect(() => {
+    if (projectId) createdProjectIdRef.current = null;
     setCardsByScope({});
   }, [projectId]);
 
   const fetchScope = useCallback(
-    async (s: AgentScope) => {
+    async (s: AgentScope, idOverride?: string) => {
       const seq = ++seqRef.current[s];
+      const id = idOverride ?? activeProjectId();
       let resp: { agents: AgentCard[] };
       if (s === "browse") {
-        resp = await agentsApi.catalog(projectId ?? undefined);
+        resp = await agentsApi.catalog(id ?? undefined);
       } else if (s === "imports") {
-        resp = await agentsApi.listImports(projectId ?? undefined);
+        resp = await agentsApi.listImports(id ?? undefined);
       } else {
-        resp = projectId ? await agentsApi.listProjectAgents(projectId) : { agents: [] };
+        resp = id ? await agentsApi.listProjectAgents(id) : { agents: [] };
       }
       if (seqRef.current[s] !== seq) return; // out-of-order response — dropped
+      // An unscoped listing cannot know `installedInProject`, so publishing one
+      // over a scoped listing silently un-marks every installed agent. That is
+      // what left a just-added agent still offering "Add to dataflow" after the
+      // drawer auto-saved the dataflow: the save re-rendered mid-flight and a
+      // fetch that started before the id existed landed last.
+      if (!id && activeProjectId()) return;
       setCardsByScope((prev) => ({ ...prev, [s]: resp.agents }));
     },
     [projectId],
@@ -96,9 +125,11 @@ export function useAgentCatalogDrawer(
     [fetchScope],
   );
 
-  const refreshAll = useCallback(async () => {
+  const refreshAll = useCallback(async (idOverride?: string) => {
     setError(null);
-    const results = await Promise.allSettled(ALL_SCOPES.map((s) => fetchScope(s)));
+    const results = await Promise.allSettled(
+      ALL_SCOPES.map((s) => fetchScope(s, idOverride)),
+    );
     const failed = results.find(
       (r): r is PromiseRejectedResult => r.status === "rejected",
     );
@@ -113,21 +144,46 @@ export function useAgentCatalogDrawer(
   }, [presented, scope, refreshScope]);
 
   const run = useCallback(
-    async (coord: string, fn: () => Promise<unknown>) => {
+    async (coord: string, fn: () => Promise<unknown>, successMessage?: string) => {
       setBusyCoord(coord);
       setError(null);
       try {
-        await fn();
+        // A per-project action answers with the id of the dataflow it acted on,
+        // which may be one it had to create - the prop will not carry it until
+        // the next render, and the refresh below cannot wait for that. The
+        // account-scope actions answer with their own payloads; only a string
+        // is a dataflow id.
+        const result = await fn();
+        const actedOn = typeof result === "string" ? result : undefined;
         notifyAgentCatalogRefresh(); // keep the AGENTS palette in sync
-        await refreshAll(); // every tab agrees immediately (dev/47)
+        await refreshAll(actedOn); // every tab agrees immediately (dev/47)
+        // Only on the success path, and only once the refresh has landed, so
+        // the toast never contradicts what the cards show. Failures keep the
+        // drawer's own banner (a 5s toast is the wrong surface for them).
+        if (successMessage) showToast(successMessage, "success");
       } catch (e) {
         setError(e instanceof Error ? e.message : "Action failed");
       } finally {
         setBusyCoord(null);
       }
     },
-    [refreshAll],
+    [refreshAll, showToast],
   );
+
+  /** The dataflow to act on, creating it if this one has never been saved.
+   *
+   * Throws rather than returning null so `run`'s catch surfaces it in the
+   * drawer's banner - the previous `Promise.resolve()` no-op reported success
+   * for an add that never happened.
+   */
+  const resolveProjectId = useCallback(async (): Promise<string> => {
+    const known = activeProjectId();
+    if (known) return known;
+    const created = onEnsureProject ? await onEnsureProject() : null;
+    if (!created) throw new Error("Couldn't save this dataflow, so nothing was added to it.");
+    createdProjectIdRef.current = created;
+    return created;
+  }, [projectId, onEnsureProject]);
 
   const cards = cardsByScope[scope] ?? [];
   // First-ever fetch for this scope only — cached tabs render instantly.
@@ -143,10 +199,32 @@ export function useAgentCatalogDrawer(
     reload: refreshAll,
     importAgent: (coord) => run(coord, () => agentsApi.import(coord)),
     removeImport: (coord) => run(coord, () => agentsApi.removeImport(coord)),
-    install: (coord) =>
-      run(coord, () => (projectId ? agentsApi.installToProject(projectId, coord) : Promise.resolve())),
-    uninstall: (coord) =>
-      run(coord, () => (projectId ? agentsApi.uninstallFromProject(projectId, coord) : Promise.resolve())),
+    // Resolve the dataflow at click time rather than gating on one that already
+    // exists. A never-saved dataflow is `projectId === null`, which used to
+    // leave the Add button permanently disabled (#190, #199) - and, if it had
+    // been clicked, silently resolve without adding anything. Both peers create
+    // the project on the click instead; this is that, through the shared
+    // `ensureProjectId`.
+    install: (card) =>
+      run(
+        card.dirName,
+        async () => {
+          const id = await resolveProjectId();
+          await agentsApi.installToProject(id, card.dirName);
+          return id;
+        },
+        `Added ${card.name} to this dataflow.`,
+      ),
+    uninstall: (card) =>
+      run(
+        card.dirName,
+        async () => {
+          const id = await resolveProjectId();
+          await agentsApi.uninstallFromProject(id, card.dirName);
+          return id;
+        },
+        `Removed ${card.name} from this dataflow.`,
+      ),
     publish: (coord) => run(coord, () => agentsApi.publish(coord)),
     unpublish: (coord) => run(coord, () => agentsApi.unpublish(coord)),
   };

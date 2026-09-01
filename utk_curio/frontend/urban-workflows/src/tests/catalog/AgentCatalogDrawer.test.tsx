@@ -16,10 +16,33 @@ jest.mock("../../api/agentsApi", () => ({
   },
 }));
 
+const mockShowToast = jest.fn();
+jest.mock("../../providers/ToastProvider", () => ({
+  useToastContext: () => ({ showToast: mockShowToast }),
+}));
+
 import { agentsApi } from "../../api/agentsApi";
 import { AgentCatalogDrawer } from "../../components/agents/catalog/AgentCatalogDrawer";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
+
+/** The ConfirmDialog ModalShell renders. `getByRole("dialog")` cannot be used:
+ *  the drawer itself carries role="dialog" too, so the query is ambiguous
+ *  whenever a confirmation is open. */
+function confirmModal(): HTMLElement {
+  const el = document.querySelector('[data-curio-modal-shell="true"]');
+  if (!el) throw new Error("no confirmation dialog is open");
+  return el as HTMLElement;
+}
+
+/** Clicks a card action and accepts the confirmation it now raises (#196,
+ *  #197). The card button and the dialog's confirm can share a label, so the
+ *  second click is scoped to the dialog. */
+async function clickAndConfirm(cardAction: string | RegExp, confirmLabel: string) {
+  fireEvent.click(screen.getByRole("button", { name: cardAction }));
+  const modal = await waitFor(confirmModal);
+  fireEvent.click(within(modal).getByRole("button", { name: confirmLabel }));
+}
 
 function card(id: string, over: Record<string, unknown> = {}) {
   return {
@@ -95,10 +118,164 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
-  it("Add to dataflow disabled without a project", async () => {
+  // ── issue 199 / 190: a never-saved dataflow ────────────────────────────────
+  //
+  // This used to assert the opposite - that Add is DISABLED without a project -
+  // which is the bug both issues report. A dataflow that has not been saved is
+  // `projectId === null`, and that is the ordinary state of one you just
+  // created, so the drawer was unusable until you happened to save. Both peer
+  // catalogs create the dataflow on the click instead: the Data drawer awaits
+  // `ensureProjectId`, the Node drawer saves by hand. This one now does the
+  // same, through the shared helper.
+
+  it("Add to dataflow stays enabled on a dataflow that was never saved", async () => {
     render(<AgentCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeEnabled();
+  });
+
+  it("shows no unsaved-dataflow banner", async () => {
+    // The banner is gone from all three catalogs. It only ever appeared on an
+    // unsaved dataflow, so it read as a state the other two surfaces did not
+    // have, and the add explains itself: the confirmation says what will
+    // happen and the save indicator shows that it did.
+    render(<AgentCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    expect(screen.queryByText(/isn.{0,6}t saved yet/i)).not.toBeInTheDocument();
+  });
+
+  it("saves the dataflow, then installs into the id that comes back", async () => {
+    const onEnsureProject = jest.fn().mockResolvedValue("created-1");
+    render(
+      <AgentCatalogDrawer
+        presented
+        projectId={null}
+        onEnsureProject={onEnsureProject}
+        pinned={false}
+        onPinToggle={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+
+    await waitFor(() => expect(onEnsureProject).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(api.installToProject).toHaveBeenCalledWith("created-1", "agent.node-explainer@1.0.0"),
+    );
+  });
+
+  it("reports a failed save instead of silently adding nothing", async () => {
+    // The old code answered `Promise.resolve()` when there was no project, so
+    // `run` reported success for an add that never happened.
+    const onEnsureProject = jest.fn().mockResolvedValue(null);
+    render(
+      <AgentCatalogDrawer
+        presented
+        projectId={null}
+        onEnsureProject={onEnsureProject}
+        pinned={false}
+        onPinToggle={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/nothing was added/i));
+    expect(api.installToProject).not.toHaveBeenCalled();
+  });
+
+  it("shows the agent as added straight after the auto-save", async () => {
+    // The refresh that follows an install must be scoped to the dataflow, or
+    // `installedInProject` comes back false for everything and the agent you
+    // just added still offers "Add to dataflow". The prop cannot carry the new
+    // id yet - the save is what created it - so the id has to be threaded
+    // through from the action itself.
+    api.catalog.mockImplementation((projectId?: string) =>
+      Promise.resolve({
+        agents: [card("agent.node-explainer", { installedInProject: Boolean(projectId) })],
+      }) as any,
+    );
+    render(
+      <AgentCatalogDrawer
+        presented
+        projectId={null}
+        onEnsureProject={jest.fn().mockResolvedValue("created-1")}
+        pinned={false}
+        onPinToggle={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument(),
+    );
+    expect(api.catalog).toHaveBeenLastCalledWith("created-1");
+  });
+
+  it("never publishes an unscoped listing over a scoped one", async () => {
+    // The race this closes: a listing requested before the dataflow existed can
+    // answer AFTER the one that knows about it. It cannot know
+    // `installedInProject`, so publishing it silently un-marks every installed
+    // agent - the same wrong screen as the bug above, by a slower route.
+    let releaseUnscoped: (value: unknown) => void = () => {};
+    const unscoped = new Promise((resolve) => {
+      releaseUnscoped = resolve;
+    });
+    api.catalog.mockImplementation(((projectId?: string) => {
+      const agents = [card("agent.node-explainer", { installedInProject: Boolean(projectId) })];
+      // The unscoped call is held open until the scoped one has landed.
+      return projectId ? Promise.resolve({ agents }) : unscoped.then(() => ({ agents }));
+    }) as any);
+
+    render(
+      <AgentCatalogDrawer
+        presented
+        projectId={null}
+        onEnsureProject={jest.fn().mockResolvedValue("created-1")}
+        pinned={false}
+        onPinToggle={jest.fn()}
+      />,
+    );
+    // Let the held listing answer once, so there is a card to click.
+    await act(async () => {
+      releaseUnscoped(null);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument(),
+    );
+
+    // Any further unscoped answer must be dropped, not rendered.
+    await act(async () => {
+      releaseUnscoped(null);
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add to dataflow" })).toBeNull();
+  });
+
+  it("uses the open dataflow directly when there is one", async () => {
+    const onEnsureProject = jest.fn();
+    render(
+      <AgentCatalogDrawer
+        presented
+        projectId="p1"
+        onEnsureProject={onEnsureProject}
+        pinned={false}
+        onPinToggle={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+
+    await waitFor(() =>
+      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
+    );
+    expect(onEnsureProject).not.toHaveBeenCalled();
   });
 
   it("shows Publish only for a publishable My imports card and publishes on click", async () => {
@@ -121,7 +298,7 @@ describe("AgentCatalogDrawer", () => {
   it("clicking Add to dataflow calls the install endpoint", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
     );
@@ -146,7 +323,7 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.getByText("Node Content Builder (not installed)")).toBeInTheDocument();
     const btn = screen.getByRole("button", { name: "Add to dataflow (+1 required)" });
     expect(btn).toHaveAttribute("title", "Also adds Node Content Builder (required)");
-    fireEvent.click(btn);
+    await clickAndConfirm("Add to dataflow (+1 required)", "Add to dataflow");
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.dataflow-builder@1.0.0"),
     );
@@ -181,9 +358,7 @@ describe("AgentCatalogDrawer", () => {
     fireEvent.click(screen.getByText("In dataflow"));
     await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
     // Removal now confirms, as it does in the Node and Data drawers.
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
-    fireEvent.click(screen.getByRole("button", { name: "Remove from dataflow" }));
-    confirmSpy.mockRestore();
+    await clickAndConfirm("Remove from dataflow", "Remove");
     await waitFor(() =>
       expect(screen.getByText(/is required by Dataflow Builder/)).toBeInTheDocument(),
     );
@@ -298,7 +473,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     api.catalog.mockClear();
     api.listImports.mockClear();
     api.listProjectAgents.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    await clickAndConfirm("Add to dataflow", "Add to dataflow");
     await waitFor(() => expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"));
     await waitFor(() => {
       expect(api.catalog).toHaveBeenCalled();

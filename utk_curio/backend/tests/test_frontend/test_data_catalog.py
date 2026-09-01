@@ -30,9 +30,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+import re
 from playwright.sync_api import expect
 
 from .utils import (
+    accept_confirm_dialog,
     api_json,
     open_tools_palette,
     require_project_page,
@@ -237,15 +239,20 @@ def test_add_dataset_propagates_to_palette(
     drawer = _drawer(page)
     expect(_card(drawer, DATASET_ID)).to_have_count(1, timeout=15000)
 
+    _card(drawer, DATASET_ID).get_by_role(
+        "button", name="Add to dataflow", exact=True
+    ).click()
     with page.expect_response(
         lambda r: "/datasets/install" in r.url
         and r.request.method == "POST"
         and r.ok,
         timeout=30000,
     ):
-        _card(drawer, DATASET_ID).get_by_role(
-            "button", name="Add to dataflow", exact=True
-        ).click()
+        # The Data catalog confirms an add now (#196), so the card click only
+        # opens the dialog - the POST follows the confirm.
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to dataflow"
+        )
 
     # Re-resolve, never reuse a handle: installing flips origin hub -> imported,
     # which changes the React key so the node is replaced outright, and it patches
@@ -403,15 +410,20 @@ beta,2
     # 3. An explicit Add is what attaches it - and an imported dataset takes the
     #    same path a hub one does.
     drawer = _open_drawer_from_menu(page)
+    _card(drawer, dataset_id).get_by_role(
+        "button", name="Add to dataflow", exact=True
+    ).click()
     with page.expect_response(
         lambda r: "/datasets/install" in r.url
         and r.request.method == "POST"
         and r.ok,
         timeout=30000,
     ):
-        _card(drawer, dataset_id).get_by_role(
-            "button", name="Add to dataflow", exact=True
-        ).click()
+        # The Data catalog confirms an add now (#196), so the card click only
+        # opens the dialog - the POST follows the confirm.
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to dataflow"
+        )
 
     expect(
         _card(drawer, dataset_id).get_by_role(

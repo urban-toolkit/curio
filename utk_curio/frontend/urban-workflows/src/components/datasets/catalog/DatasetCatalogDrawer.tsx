@@ -13,11 +13,11 @@ import { DatasetCard } from "./DatasetCard";
 import { DatasetInstallingCard } from "./DatasetInstallingCard";
 import { DatasetDetailModal } from "./DatasetDetailModal";
 import { InstalledDatasetsList } from "./InstalledDatasetsList";
-import { TAB_LABEL } from "./datasetCatalogDrawerTypes";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
 import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
 import styles from "./DatasetCatalogDrawer.module.css";
+import ConfirmDialog from "../../ConfirmDialog";
 
 export interface DatasetCatalogDrawerProps {
   presented: boolean;
@@ -62,6 +62,8 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     handleDatasetDragEnd,
     openDatasetDetails,
     closeDatasetDetails,
+    confirmAction,
+    dismissConfirm,
   } = useDatasetCatalogDrawer(presented);
 
   // In-flight installs without a real installed row yet → "Installing…" cards.
@@ -204,7 +206,6 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
               )
             ) : (
               <>
-                {!catalog.error ? <p className={shell.sectionLabel}>{TAB_LABEL[tab]}</p> : null}
                 {!catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
                   <div className={shell.empty}>
                     {tab === "computed"
@@ -278,6 +279,22 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           liveOutputs={liveOutputs}
           fallbackDataset={detailFallback}
           onClose={closeDatasetDetails}
+        />
+      ) : null}
+
+      {confirmAction ? (
+        <ConfirmDialog
+          title={confirmAction.title}
+          body={confirmAction.body}
+          confirmLabel={confirmAction.confirmLabel}
+          destructive={confirmAction.destructive}
+          layer="overlay"
+          onCancel={dismissConfirm}
+          onConfirm={() => {
+            const { run } = confirmAction;
+            dismissConfirm();
+            void run();
+          }}
         />
       ) : null}
     </>
