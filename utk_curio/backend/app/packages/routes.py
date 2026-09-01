@@ -49,6 +49,7 @@ from utk_curio.backend.app.packages.installer import (
     remove_packageage_from_catalog_dir,
     uninstall_packageage,
 )
+from utk_curio.backend.app.packages import publisher_record
 from utk_curio.backend.app.packages.catalog_family import (
     CatalogReleaseTriple,
     catalog_release_collision_groups,
@@ -358,6 +359,13 @@ def list_catalog_packageages():
             continue
         payload = _manifest_to_payload(manifest, package_mtime_path=entry)
         payload["installed"] = manifest.dir_name in installed_coords
+        # Whether THIS user may withdraw it, which is the same question as
+        # "is this the user's own package". The agent catalog has carried a
+        # `publishable` flag from the start; packages had nothing, so the UI
+        # fell back to `readOnly !== true` and offered Unpublish on everything.
+        payload["publishable"] = publisher_record.is_publisher(
+            root, manifest.dir_name, user_key,
+        )
         out.append(payload)
 
     out.sort(
@@ -488,12 +496,35 @@ def unpublish_from_catalog(dir_name: str):
     if not PACKAGE_DIR_RE.match(dir_name):
         return _error("dir_name must match <packageId>@<major>")
 
+    catalog = _catalog_root()
+    # Existence BEFORE authorization, so a package that is simply not there
+    # reports 404 rather than "not yours" - a removed package has no publisher
+    # record either, and the ownership gate fails closed, so checking that
+    # first turned every 404 into a confusing 403.
+    if not (catalog / dir_name).is_dir():
+        return _error(f"catalog has no package {dir_name}", 404)
+
+    # Only the publisher may withdraw it. This route was gated by the env flag
+    # alone, so any authenticated user could remove any package from the shared
+    # catalog - including the ones that ship with the deployment. Fails closed
+    # for unrecorded packages, which is every package published before the
+    # record existed. Mirrors the dataset rule in
+    # `CatalogMutations._assert_is_publisher`.
+    if not publisher_record.is_publisher(catalog, dir_name, _user_dir_key(g.user)):
+        return jsonify({
+            "error": (
+                "Only the account that published this package can remove it "
+                "from the shared catalog."
+            ),
+        }), 403
+
     try:
-        removed = remove_packageage_from_catalog_dir(_catalog_root(), dir_name)
+        removed = remove_packageage_from_catalog_dir(catalog, dir_name)
     except InstallerError as exc:
         return _error(str(exc))
     if not removed:
         return _error(f"catalog has no package {dir_name}", 404)
+    publisher_record.forget_publisher(catalog, dir_name)
     return "", 204
 
 
@@ -814,6 +845,10 @@ def factory_publish_catalog():
     except InstallerError as exc:
         return _error(str(exc))
     catalog_path = catalog / result.manifest.dir_name
+    # Who published it. Without this the catalog is a global tree with no
+    # recorded owner, so nothing could tell a package the user authored from one
+    # that shipped with the deployment - see packages/publisher_record.py.
+    publisher_record.record_publisher(catalog, result.manifest.dir_name, user_key)
     return jsonify({
         "package": _manifest_to_payload(result.manifest, package_mtime_path=catalog_path),
         "integrity": result.integrity,
