@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
 from playwright.sync_api import expect
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
     REPO_ROOT,
@@ -966,11 +967,20 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
     wait_for_projects_page(page, timeout=30000)
     ctx.beat(900)
 
-    missing = [
-        title
-        for title in EXAMPLE_TITLES
-        if page.get_by_text(title, exact=True).count() == 0
-    ]
+    # Wait for each title rather than counting once. Seeding eleven dataflows
+    # and their datasets happens on the signup request, and the gallery fetches
+    # them after the route renders, so a bare `count()` a beat later is a race
+    # the scene loses on a cold store - it read zero while the seed was still
+    # landing. The sibling e2e (`test_examples_for_registered_users_e2e`) has
+    # always waited; this scene was the one asserting on a snapshot in time.
+    missing = []
+    for title in EXAMPLE_TITLES:
+        try:
+            page.get_by_text(title, exact=True).first.wait_for(
+                state="visible", timeout=30000,
+            )
+        except PlaywrightTimeoutError:
+            missing.append(title)
     if missing:
         # Distinguish the two ways this scene can fail: a stack booted without
         # the flag has nothing to show and is a harness problem, not the bug.
