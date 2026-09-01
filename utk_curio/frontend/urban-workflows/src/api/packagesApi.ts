@@ -202,11 +202,27 @@ export interface ResolveResponse {
   conflicts: ResolveConflict[];
 }
 
+/** A declared python dep that is installed at a satisfying version but will
+ *  not import — typically a wheel whose native extension fails to load. */
+export interface WorkflowDepImportFailure {
+  /** Package dirName that declares the dep. */
+  package: string;
+  /** Distribution name of the library. */
+  dep: string;
+  /** Last line of the import error, e.g. a DLL load failure. */
+  error: string;
+}
+
 /** Response from `POST /api/packages/workflow-deps/check`. */
 export interface WorkflowDepsCheckResponse {
   /** Declared dependency packages (dirNames) that aren't installed yet, or
    *  are installed but missing one of their declared python deps. */
   packages: string[];
+  /** Deps that are present and version-satisfying but unimportable. Reinstalling
+   *  does NOT fix these — pip reports "already satisfied" and does nothing — so
+   *  they are reported for the user to repair, never auto-installed. Optional:
+   *  an older backend omits it. */
+  broken?: WorkflowDepImportFailure[];
 }
 
 /** Response from `POST /api/packages/workflow-deps/install`. */

@@ -1032,11 +1032,18 @@ def check_workflow_deps():
     it depends on there; loading it should install any that aren't present.
     A package is "needed" if it isn't in the user's store, OR it is but some
     of its declared python deps aren't actually installed (e.g. a lib was
-    pip-uninstalled out from under it). Response::
+    pip-uninstalled out from under it).
 
-        {"packages": ["<dirName>", ...]}   # need installing, sorted
+    Separately, a dep can be installed at a satisfying version and still not
+    import - a wheel whose native extension fails to load records a perfectly
+    good version. Reinstalling does not fix that (pip reports "already
+    satisfied" and does nothing), so those are reported apart from ``packages``
+    and the client warns instead of installing. Response::
+
+        {"packages": ["<dirName>", ...],   # need installing, sorted
+         "broken": [{"package": "<dirName>", "dep": "<lib>", "error": "..."}]}
     """
-    from utk_curio.backend.app.packages.pip_runner import is_satisfied
+    from utk_curio.backend.app.packages.pip_runner import import_failure, is_satisfied
 
     user_key = _user_dir_key(g.user)
     body = request.get_json(silent=True) or {}
@@ -1058,14 +1065,25 @@ def check_workflow_deps():
             for dn in wanted if dn in in_store
         }
     need: set[str] = set()
+    broken: list[dict[str, str]] = []
     for dir_name in wanted:
         if dir_name not in in_store:
             need.add(dir_name)
             continue
         # Installed in the store - flag only if a declared dep went missing.
-        if any(not is_satisfied(n, s) for n, s in declared[dir_name].items()):
+        missing = [n for n, spec in declared[dir_name].items() if not is_satisfied(n, spec)]
+        if missing:
             need.add(dir_name)
-    return jsonify({"packages": sorted(need)}), 200
+        # Version-satisfied but unimportable is a different problem with a
+        # different remedy, so it is probed only for the deps pip considers
+        # done - and reported, not reinstalled.
+        for dep in declared[dir_name]:
+            if dep in missing:
+                continue
+            reason = import_failure(dep)
+            if reason:
+                broken.append({"package": dir_name, "dep": dep, "error": reason})
+    return jsonify({"packages": sorted(need), "broken": broken}), 200
 
 
 @packages_bp.route("/workflow-deps/install", methods=["POST"])

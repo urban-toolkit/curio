@@ -14,9 +14,10 @@ Design choices:
   upgrade, not the current contract.
 - **Uses ``sys.executable -m pip``** so the install lands in whichever
   interpreter the Curio backend is running under (conda env or venv).
-- **Idempotent.** Already-importable + version-matching deps are
-  detected with ``importlib.metadata`` and skipped — repeat installs of
-  the same package are essentially no-ops.
+- **Idempotent.** Deps already present at a matching version are detected
+  with ``importlib.metadata`` and skipped — repeat installs of the same
+  package are essentially no-ops. Note that metadata presence is not
+  importability: see :func:`import_failure`.
 - **Never touches Curio's core ``pyproject`` deps.** Uninstall walks
   package manifests, but base-install libraries (``flask``,
   ``geopandas``, ``shapely`` …) aren't listed in any package manifest,
@@ -36,6 +37,10 @@ from importlib.metadata import PackageNotFoundError, version as installed_versio
 from typing import Callable, Iterable, Mapping, Optional
 
 log = logging.getLogger(__name__)
+
+#: Hard cap on one import probe. Generous enough for a slow cold import of a
+#: large library, short enough that a hung extension cannot stall a page load.
+_IMPORT_PROBE_TIMEOUT = 60
 
 # Hard cap on a single pip invocation. Torch on a cold conda env without
 # a wheel cache can take ~10 minutes on a moderate connection — 30 minutes
@@ -162,6 +167,112 @@ def _is_satisfied(name: str, spec: str) -> bool:
         return True  # unparseable — let pip be the authority
 
 
+#: Top-level modules a distribution ships that are never the import people mean.
+#: ``pythermalcomfort`` maps to ``['pythermalcomfort', 'tests']``; probing
+#: ``tests`` would be meaningless and, worse, could pass while the real module
+#: is broken.
+_NON_LIBRARY_MODULES = frozenset({"tests", "test", "docs", "doc", "examples", "example"})
+
+#: Probing costs a subprocess, and a broken install does not heal on its own, so
+#: the verdict is memoised per (distribution, version). An install bumps or adds
+#: a version, which changes the key; ``forget_import_probes`` covers a
+#: same-version repair (``--force-reinstall``).
+_import_probe_cache: dict[tuple[str, str], Optional[str]] = {}
+
+
+def forget_import_probes() -> None:
+    """Drop memoised import verdicts, after anything that may have repaired one."""
+    _import_probe_cache.clear()
+
+
+def _module_for_distribution(name: str) -> str:
+    """The top-level module *name* is imported as.
+
+    A distribution's name is not its module: ``pillow`` imports as ``PIL``,
+    ``scikit-learn`` as ``sklearn``. ``packages_distributions()`` carries the
+    real mapping, so use it and fall back to the PEP 503-ish normalisation only
+    when the distribution is not installed (where the probe will fail anyway).
+    """
+    try:
+        from importlib.metadata import packages_distributions
+    except ImportError:  # pragma: no cover - Python < 3.10
+        return name.replace("-", "_")
+
+    try:
+        mapping = packages_distributions()
+    except Exception:  # pragma: no cover - defensive; probe falls back
+        return name.replace("-", "_")
+
+    candidates = [mod for mod, dists in mapping.items() if name in dists]
+    if not candidates:
+        return name.replace("-", "_")
+    normalized = name.replace("-", "_").lower()
+    for mod in candidates:
+        if mod.lower() == normalized:
+            return mod
+    real = [m for m in candidates if m.lower() not in _NON_LIBRARY_MODULES]
+    return sorted(real or candidates)[0]
+
+
+def import_failure(name: str) -> Optional[str]:
+    """Why importing *name* fails, or ``None`` if it imports cleanly.
+
+    Metadata presence is not importability. A wheel whose native extension
+    cannot load — the common case for GDAL/CUDA-backed builds — records a
+    perfectly good version while ``import`` raises, so a version check alone
+    reports it satisfied and the failure only surfaces later, as a raw
+    ``ImportError`` from whichever node happens to run first.
+
+    Probed in a SUBPROCESS, deliberately: importing an arbitrary library into
+    the backend process to test it would load torch-sized dependencies into a
+    long-lived server, and a segfaulting extension would take the server with
+    it rather than being reported.
+
+    Uses ``sys.executable``, matching :func:`install_python_deps` — the probe
+    asks about the interpreter the installs land in.
+    """
+    try:
+        ver = installed_version(name)
+    except PackageNotFoundError:
+        return f"{name} is not installed"
+
+    key = (name, ver)
+    if key in _import_probe_cache:
+        return _import_probe_cache[key]
+
+    module = _module_for_distribution(name)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", f"import {module}"],
+            capture_output=True,
+            text=True,
+            timeout=_IMPORT_PROBE_TIMEOUT,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        # Best-effort: an unusable probe must not invent a broken dependency.
+        log.warning("import probe for %s failed to run: %s", name, exc)
+        return None
+
+    if proc.returncode == 0:
+        _import_probe_cache[key] = None
+        return None
+
+    tail = (proc.stderr or "").strip().splitlines()
+    reason = tail[-1] if tail else f"import {module} failed"
+    _import_probe_cache[key] = reason
+    return reason
+
+
+def import_failures(deps: Iterable[str]) -> dict[str, str]:
+    """``{distribution: reason}`` for every dep in *deps* that cannot be imported."""
+    broken: dict[str, str] = {}
+    for name in deps:
+        reason = import_failure(name)
+        if reason:
+            broken[name] = reason
+    return broken
+
+
 def is_satisfied(name: str, spec: str) -> bool:
     """Public wrapper over :func:`_is_satisfied` for callers outside this
     module (e.g. the ``/api/packages/workflow-deps/check`` route)."""
@@ -173,7 +284,14 @@ def install_python_deps(
     *,
     on_line: Optional[Callable[[str], None]] = None,
 ) -> InstallReport:
-    """Pip-install every dep in *deps* that isn't already importable.
+    """Pip-install every dep in *deps* that isn't already present at a
+    satisfying version.
+
+    "Present" means ``importlib.metadata`` knows it and the version matches -
+    NOT that it imports. A wheel whose native extension is broken is skipped
+    here, correctly: pip would report "already satisfied" and change nothing.
+    :func:`import_failure` is what notices that case, and the workflow-deps
+    check reports it rather than pretending an install would repair it.
 
     If *on_line* is supplied, pip's stdout+stderr are streamed live: each
     line is passed to the callback as it arrives, and nothing is buffered.
@@ -241,6 +359,9 @@ def install_python_deps(
             raise PipInstallError(
                 f"pip install failed (exit {rc}): {tail.strip()}"
             )
+        # pip ran: a repair may have landed without the version changing, which
+        # the (name, version) memo key would otherwise hide.
+        forget_import_probes()
         return InstallReport(installed=to_install, skipped=skipped)
 
     # Buffered path (API consumers): capture, surface tail on failure.
@@ -259,6 +380,7 @@ def install_python_deps(
         raise PipInstallError(
             f"pip install failed (exit {proc.returncode}): {tail.strip()}"
         )
+    forget_import_probes()
     return InstallReport(installed=to_install, skipped=skipped)
 
 
