@@ -73,6 +73,7 @@ export default function UpMenu({
         projectDirty,
         projectSavedAt,
         cleanCanvas,
+        markDirty,
         renameDataflow,
         saveCurrentProject,
         saveAsNewProject,
@@ -238,6 +239,11 @@ export default function UpMenu({
                 try {
                     const jsonContent = JSON.parse(event.target?.result as string);
                     loadTrill(jsonContent);
+                    // Importing REPLACES the canvas, so it does diverge from what
+                    // is on disk. The edge replay inside loadParsedTrill no longer
+                    // says so on its own (#229) - and never did for an edgeless
+                    // import - so say it here, where the intent is known.
+                    markDirty();
                     // Importing a workflow file is a deliberate user action, so
                     // warn + auto-install its Python deps the same way opening
                     // your own project does.

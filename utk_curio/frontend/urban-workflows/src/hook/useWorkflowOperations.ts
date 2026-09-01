@@ -153,7 +153,20 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed">>({});
     const [viewerMode, setViewerMode] = useState<"owner" | "shared">("owner");
 
+    // True only while ``loadParsedTrill`` replays a persisted dataflow onto the
+    // canvas. That replay drives the very same ``onConnect`` a user drag does -
+    // once per edge - and onConnect marks the project dirty, so a dataflow with
+    // even one edge came back from disk already reading "Unsaved changes" and
+    // the 30s auto-save below then rewrote it for nothing (#229).
+    //
+    // A ref, not state: the replay runs inside a ``setNodes`` updater and has to
+    // read this synchronously. Deliberately NOT a timer or a settle window - it
+    // is opened and closed around the synchronous replay loop alone, so an edit
+    // made a millisecond after the load still marks the dataflow dirty.
+    const hydratingRef = useRef(false);
+
     const markDirty = useCallback(() => {
+        if (hydratingRef.current) return;
         setProjectDirty(true);
     }, []);
 
@@ -336,24 +349,36 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
         console.log("loadParsedTrill second");
         setNodes((prevNodes: any) => {
-            // skipValidation=true: these edges come from a saved/imported trill and
-            // were validated when created. Re-validating on load races the async
-            // node-descriptor registry and would drop valid edges + toast mid-render.
-            if (merge) {
-                for (const edge of loaded_edges) {
-                    if (!currentEdgeIds.has(edge.id)) {
-                        onConnect(edge, prevNodes, undefined, workflowName, false, true);
+            // Replaying persisted edges must not dirty the project: ``onConnect``
+            // marks dirty because a user connecting two nodes IS an edit, and this
+            // loop is the same call (#229). Opened and closed INSIDE the updater,
+            // because React may run it long after loadParsedTrill returned (and
+            // twice under StrictMode) - so the window is scoped to exactly the
+            // replay. ``finally`` so a malformed spec throwing inside onConnect
+            // cannot leave dirty-tracking wedged off for the rest of the session.
+            hydratingRef.current = true;
+            try {
+                // skipValidation=true: these edges come from a saved/imported trill and
+                // were validated when created. Re-validating on load races the async
+                // node-descriptor registry and would drop valid edges + toast mid-render.
+                if (merge) {
+                    for (const edge of loaded_edges) {
+                        if (!currentEdgeIds.has(edge.id)) {
+                            onConnect(edge, prevNodes, undefined, workflowName, false, true);
+                        }
+                    }
+                } else {
+                    // Accumulate the spec edges connected so far and hand them to
+                    // onConnect, so merge-handle resolution sees the earlier edges
+                    // of this load (in_N occupancy) instead of an empty list.
+                    const connectedSoFar: any[] = [];
+                    for (const edge of loaded_edges) {
+                        onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true);
+                        connectedSoFar.push(edge);
                     }
                 }
-            } else {
-                // Accumulate the spec edges connected so far and hand them to
-                // onConnect, so merge-handle resolution sees the earlier edges
-                // of this load (in_N occupancy) instead of an empty list.
-                const connectedSoFar: any[] = [];
-                for (const edge of loaded_edges) {
-                    onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true);
-                    connectedSoFar.push(edge);
-                }
+            } finally {
+                hydratingRef.current = false;
             }
 
             if (!merge) {

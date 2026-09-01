@@ -64,6 +64,7 @@ export function useCode(): IUseCode {
         applyNewPropagation,
         applyNewOutput,
         loadParsedTrill,
+        markDirty,
         defaultSaveOutputDataset,
     } = useFlowContext();
     const { loadNodeProvenance } = useProvenanceContext();
@@ -246,6 +247,12 @@ export function useCode(): IUseCode {
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
             TrillGenerator.loadDataflowProvenance(savedProv);
+            // Reverting puts a DIFFERENT graph on the canvas than the one on
+            // disk, so it is an edit. The edge replay inside loadParsedTrill no
+            // longer says so (#229), and this branch is the only place the
+            // revert is still distinguishable from opening a project - both
+            // reach loadParsedTrill identically from there down.
+            markDirty();
         } else if(suggestionType == undefined) {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
             if (trill.nodeProvenance) loadNodeProvenance(trill.nodeProvenance);

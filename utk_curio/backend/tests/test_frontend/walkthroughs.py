@@ -1493,3 +1493,66 @@ def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
     ctx.focus(heading, hold=1200)
     ctx.say("The canvas title followed", "Both stores hold one name now.")
     ctx.capture("canvas-follows-a-list-rename")
+
+
+@walkthrough(
+    slug="a-loaded-dataflow-is-not-dirty",
+    example=PROVENANCE_EXAMPLE,
+    refs=[229],
+    title="Opening a saved dataflow leaves nothing to save",
+    premise="Open a dataflow you already saved and read the save indicator.",
+    note="`loadParsedTrill` replays every persisted edge through the same "
+         "`onConnect` a user drag goes through, and onConnect marks the project "
+         "dirty - rightly, for a real connection. So any dataflow with even one "
+         "edge came back from disk reading 'Unsaved changes', and the 30s "
+         "auto-save then rewrote it for nothing, which is what made the disk "
+         "turn green a while after opening.",
+    tests=["src/tests/hook/useWorkflowOperations.dirtyOnLoad.test.ts",
+           "src/tests/components/loadPathsMarkDirty.test.ts",
+           "test_frontend/test_project_dirty_guard.py"],
+    clip_selector="[data-curio-save-state]",
+    max_diff_ratio=0.02,
+)
+def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
+    """Two captures, clipped to the disk: the subject is one glyph's colour.
+
+    At the suite's default 0.20 an amber disk and a green one are the same
+    picture, so a single wide shot could document the fix without ever being
+    able to police it. The pair is what makes the two states legible in review.
+
+    The runner has already entered `/dataflow/<id>` through the real
+    ProjectLoader path, so this scene only has to read the result.
+    """
+    page = ctx.page
+
+    # The edge is what the replay processes; before it renders, the bug has not
+    # had its chance to happen.
+    page.locator(".react-flow__edge").first.wait_for(state="visible", timeout=45000)
+
+    disk = page.locator("[data-curio-save-state]")
+    state = disk.get_attribute("data-curio-save-state")
+    assert state == "saved", (
+        f"a freshly loaded dataflow reads {state!r} with no edits made - #229"
+    )
+
+    ctx.say("Just opened, nothing edited", "The disk is green: what you see is on disk.")
+    ctx.focus(disk, hold=1200)
+    ctx.capture("loaded")
+
+    ctx.say("Now move something", "A real edit still has to register.")
+    node = page.locator(".react-flow__node").first
+    box = node.bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + 10)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] / 2 + 120, box["y"] + 90, steps=12)
+    page.mouse.up()
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-curio-save-state]')"
+        "?.getAttribute('data-curio-save-state') === 'unsaved'",
+        timeout=15000,
+    )
+    ctx.focus(disk, hold=1200)
+    ctx.say("Amber, as it should be",
+            "The guard covers the load's own replay, not the user's edits.")
+    ctx.capture("after-an-edit")
