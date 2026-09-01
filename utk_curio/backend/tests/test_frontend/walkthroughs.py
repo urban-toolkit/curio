@@ -198,20 +198,30 @@ def load_example_spec(name: str) -> dict:
         return json.load(fh)
 
 
-def first_node_of_type(example: str, node_type: str) -> str:
+def first_node_of_type(example: str, node_type: str, *, containing: str = "") -> str:
     """The id of the first node of *node_type* in an example dataflow.
 
     Nodes are addressed in the DOM by React Flow's ``data-id``; their Curio type
     is not on the element, so a scene that needs "the Autark node" resolves its
     id from the spec it was opened on rather than guessing from display text.
+
+    ``containing`` narrows further by a substring of the node's authored spec
+    (its ``content``). Type alone is often too coarse: 07-autark-gpu-shader has
+    four ``autk-grammar`` nodes and only one of them declares a ``map``, so the
+    WebGPU guard - which fires only for map/plot/compute specs - would never be
+    reached on the first match.
     """
     spec = load_example_spec(example)
     for node in spec.get("dataflow", {}).get("nodes", []):
-        if node_type in str(node.get("type") or node.get("nodeType") or ""):
-            return str(node["id"])
+        if node_type not in str(node.get("type") or node.get("nodeType") or ""):
+            continue
+        if containing and containing not in str(node.get("content") or ""):
+            continue
+        return str(node["id"])
     raise AssertionError(
-        f"{example} contains no {node_type} node, so this walkthrough is "
-        f"pointed at the wrong example"
+        f"{example} contains no {node_type} node"
+        + (f" whose spec contains {containing!r}" if containing else "")
+        + ", so this walkthrough is pointed at the wrong example"
     )
 
 
@@ -923,6 +933,13 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
     page = ctx.page
 
     ctx.say("Create an account", "The reporter's own path: sign up, then look.")
+    # The runner has already stub-logged-in a walkthrough user, and the app
+    # redirects an authenticated visitor away from /auth/signup - so the form
+    # never appears and the scene would read the WRONG account's gallery. Drop
+    # the session first; the token is the `session_token` cookie (utils/authApi).
+    page.context.clear_cookies()
+    page.evaluate("() => { try { localStorage.clear(); } catch (e) {} }")
+
     username = f"examples_{uuid.uuid4().hex[:10]}"
     signup_e2e_user(page, ctx.frontend, name="New User", username=username)
     wait_for_projects_page(page, timeout=30000)
@@ -964,7 +981,7 @@ def open_view_menu_dashboard(ctx: Ctx) -> None:
     """View -> Dashboard. ``force`` because the canvas chrome overlaps the bar."""
     page = ctx.page
     ctx.click(top_menu(page, "View"), force=True)
-    ctx.click(page.get_by_text("Dashboard", exact=True).first)
+    ctx.click(page.get_by_text("Dashboard Mode", exact=True).first)
 
 
 @walkthrough(
@@ -1046,7 +1063,9 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
 
     # Resolved from the spec: a node's Curio type is not on the DOM element,
     # only React Flow's data-id, so display text would be a guess.
-    node_id = first_node_of_type(AUTARK_EXAMPLE, "autk-grammar")
+    # Must be a node whose spec declares a map/plot/compute - those are the
+    # only ones that need a GPU, and so the only ones the guard fires for.
+    node_id = first_node_of_type(AUTARK_EXAMPLE, "autk-grammar", containing='"map"')
     autark = page.locator(f'.react-flow__node[data-id="{node_id}"]')
     autark.wait_for(state="visible", timeout=45000)
     autark.scroll_into_view_if_needed()
@@ -1100,29 +1119,45 @@ DATA_POOL_EXAMPLE = "02-vega-lite-spatial-density.json"
     max_diff_ratio=0.02,
 )
 def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
+    """The tints lived on the BROWSE PAGE cards, not the canvas drawer cards.
+
+    `/catalog/data`, `/catalog/agents` and `/catalog/nodes` render
+    `DataCatalogBrowseCard` / `AgentCatalogBrowseCard` / `PackageBrowseCard`,
+    and those three were the ones with three different tinting policies. The
+    canvas drawer uses `DatasetCard`, which never tinted - so a scene that
+    opened the drawer was looking at the one surface the bug was not on.
+    """
     page = ctx.page
 
-    ctx.say("The Data Catalog", "The chips used to take a colour from the file format.")
-    drawer = open_data_drawer(ctx)
+    for kind, route, card_sel in (
+        ("Data", "/catalog/data", "article[data-dataset-id]"),
+        ("Agent", "/catalog/agents", "article[data-agent-coord]"),
+        ("Node", "/catalog/nodes", "article[data-pkg-dir]"),
+    ):
+        ctx.say(f"The {kind} catalog",
+                "Chips here used to take a colour from the format or category.")
+        page.goto(f"{ctx.frontend}{route}")
+        page.wait_for_load_state("domcontentloaded")
 
-    card = drawer.locator("article[data-dataset-id]").first
-    card.wait_for(state="visible", timeout=20000)
-    card.scroll_into_view_if_needed()
-    ctx.focus(card, hold=1500)
+        card = page.locator(card_sel).first
+        card.wait_for(state="visible", timeout=30000)
+        card.scroll_into_view_if_needed()
+        ctx.focus(card, hold=1200)
 
-    # Every chip on the card resolves to the same background, so none of them
-    # is carrying a colour the others are not.
-    backgrounds = card.locator("span[class*='tag']").evaluate_all(
-        "els => els.map(e => getComputedStyle(e).backgroundColor)"
-    )
-    assert backgrounds, "the card rendered no tag chips"
-    assert len(set(backgrounds)) == 1, (
-        f"the chips on one card still differ in colour: {sorted(set(backgrounds))}"
-    )
+        # Every chip on one card resolves to the same background, so none of
+        # them is carrying a colour the others are not.
+        backgrounds = card.locator("span[class*='tag']").evaluate_all(
+            "els => els.map(e => getComputedStyle(e).backgroundColor)"
+        )
+        assert backgrounds, f"the {kind} card rendered no tag chips"
+        assert len(set(backgrounds)) == 1, (
+            f"the chips on one {kind} card still differ in colour: "
+            f"{sorted(set(backgrounds))}"
+        )
+        ctx.capture(f"plain-chips-{kind.lower()}")
 
-    ctx.say("Every chip the same grey",
-            "The strip above the card is what tells you the format.")
-    ctx.capture("plain-chips")
+    ctx.say("Every chip the same grey, on all three",
+            "The coloured strip and the avatar are what carry the category.")
 
 
 @walkthrough(
@@ -1148,19 +1183,30 @@ def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
     ctx.say("A chart with stacked views",
             "Two sub-views, 650x400 and 650x300, in a ~292px pane.")
 
-    # The Vega mount is the only div carrying an id of this shape.
-    mount = page.locator('[id^="vega"]').first
+    # Resolved from the spec rather than `[id^=vega].first`: that picked
+    # whichever mount happened to be first in DOM order, which is not
+    # necessarily a node whose editor has mounted its output pane.
+    node_id = first_node_of_type(MULTI_VIEW_EXAMPLE, "vis-vega")
+    node = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    node.wait_for(state="visible", timeout=45000)
+    node.scroll_into_view_if_needed()
+
+    mount = page.locator(f'#vega{node_id}')
     mount.wait_for(state="attached", timeout=45000)
-    mount.scroll_into_view_if_needed()
-    ctx.focus(mount, hold=1400)
+    ctx.focus(node, hold=1400)
 
     metrics = mount.evaluate(
-        "el => ({ scrollH: el.scrollHeight, clientH: el.clientHeight,"
+        "el => ({ id: el.id, scrollH: el.scrollHeight, clientH: el.clientHeight,"
         " overflow: getComputedStyle(el).overflow,"
+        " inlineStyle: el.getAttribute('style'),"
+        " cls: el.getAttribute('class'),"
         " nowheel: el.classList.contains('nowheel') })"
     )
+    # Report the whole measurement on failure: if this ever disagrees with
+    # `nodeEditorOutputScroll.test.tsx` - which pins the same div at the unit
+    # layer - the difference is what tells you which of the two is wrong.
     assert metrics["overflow"] == "auto", (
-        f"the chart container does not scroll: overflow is {metrics['overflow']!r}"
+        f"the chart container does not scroll: {metrics}"
     )
     # `nowheel` is what stops React Flow zooming the canvas instead.
     assert metrics["nowheel"], "the container scrolls but the wheel zooms the canvas"
@@ -1192,16 +1238,20 @@ def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
 def data_pool_scrolls_sideways(ctx: Ctx) -> None:
     page = ctx.page
 
-    pool = page.locator('.react-flow__node:has([data-curio-datapool-scroll="true"])').first
-    if not pool.count():
-        raise AssertionError(
-            "this dataflow has no Data Pool node, so the scene has nothing to "
-            "scroll; point it at an example that includes one"
-        )
+    # The scroller only exists once the pool has rendered a table, so the node
+    # has to have RUN. Locating by the scroller attribute alone therefore found
+    # nothing and looked like "no Data Pool in this dataflow".
+    node_id = first_node_of_type(DATA_POOL_EXAMPLE, "data-pool")
+    pool = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    pool.wait_for(state="visible", timeout=45000)
     pool.scroll_into_view_if_needed()
-    ctx.focus(pool, hold=1200)
+
+    ctx.say("Run the pool", "It needs a table before there is anything to scroll.")
+    play_node(page, node_id)
 
     scroller = pool.locator('[data-curio-datapool-scroll="true"]').first
+    scroller.wait_for(state="visible", timeout=120000)
+    ctx.focus(pool, hold=1200)
     metrics = scroller.evaluate(
         "el => ({ scrollW: el.scrollWidth, clientW: el.clientWidth,"
         " overflow: getComputedStyle(el).overflow })"
