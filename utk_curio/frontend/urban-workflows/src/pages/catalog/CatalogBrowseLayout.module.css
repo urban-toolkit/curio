@@ -342,7 +342,6 @@
 .chipDot_vis          { background: var(--curio-category-vis-fg); }
 .chipDot_package      { background: var(--curio-category-package-fg); }
 
-
 .filterSpacer { flex: 1; }
 
 .sortSelect {
@@ -556,15 +555,6 @@
   display: inline-flex;
   align-items: center;
 }
-
-.tagAccent_geojson { background: var(--curio-format-geojson-bg); color: var(--curio-format-geojson-on-tint); }
-.tagAccent_csv { background: var(--curio-format-csv-bg); color: var(--curio-format-csv-on-tint); }
-.tagAccent_json { background: var(--curio-format-json-bg); color: var(--curio-format-json-on-tint); }
-.tagAccent_parquet { background: var(--curio-format-parquet-bg); color: var(--curio-format-parquet-on-tint); }
-.tagAccent_geotiff { background: var(--curio-format-geotiff-bg); color: var(--curio-format-geotiff-on-tint); }
-.tagAccent_shp { background: var(--curio-format-shp-bg); color: var(--curio-format-shp-on-tint); }
-.tagAccent_bundle { background: var(--curio-format-bundle-bg); color: var(--curio-format-bundle-on-tint); }
-.tagAccent_osm { background: var(--curio-format-osm-bg); color: var(--curio-format-osm-on-tint); }
 
 /* Meta row */
 .cardMeta {
@@ -886,8 +876,6 @@
   align-items: center;
 }
 
-
-
 /* Publisher row */
 .drawerPublisher {
   padding: 0 20px 6px;
@@ -1024,7 +1012,6 @@
 }
 
 .addToPaletteBtn:hover { background: var(--curio-top-bar-bg-hover); }
-
 
 .drawerPillRow {
   display: flex;

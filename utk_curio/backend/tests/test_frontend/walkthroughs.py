@@ -35,6 +35,7 @@ from playwright.sync_api import expect
 from .utils import (
     REPO_ROOT,
     accept_confirm_dialog,
+    play_node,
     signup_e2e_user,
     wait_for_projects_page,
 )
@@ -176,6 +177,11 @@ class Walkthrough:
     #: to a restored 1.5px border or a button that grew one line, so the small
     #: visual fixes tighten it hard.
     max_diff_ratio: float = 0.20
+    #: The example dataflow to open the journey on, by filename under
+    #: ``docs/examples``. Defaults to ``PROVENANCE_EXAMPLE`` -- a scene about a
+    #: multi-view chart or a wide table cannot demonstrate itself on a spec that
+    #: contains neither.
+    example: str | None = None
 
     @property
     def stem(self) -> str:
@@ -190,6 +196,23 @@ def load_example_spec(name: str) -> dict:
     """One of the curated example dataflows, as a project spec."""
     with open(os.path.join(EXAMPLES_DIR, name), encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def first_node_of_type(example: str, node_type: str) -> str:
+    """The id of the first node of *node_type* in an example dataflow.
+
+    Nodes are addressed in the DOM by React Flow's ``data-id``; their Curio type
+    is not on the element, so a scene that needs "the Autark node" resolves its
+    id from the spec it was opened on rather than guessing from display text.
+    """
+    spec = load_example_spec(example)
+    for node in spec.get("dataflow", {}).get("nodes", []):
+        if node_type in str(node.get("type") or node.get("nodeType") or ""):
+            return str(node["id"])
+    raise AssertionError(
+        f"{example} contains no {node_type} node, so this walkthrough is "
+        f"pointed at the wrong example"
+    )
 
 
 def top_menu(page, label: str):
@@ -931,6 +954,12 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
 # Robustness (#192, #201)
 # ---------------------------------------------------------------------------
 
+#: The lightest curated example that actually contains Autark nodes. The
+#: default (a Vega-Lite dataflow) has none, so the scene would have nothing to
+#: run and would fail for a reason unrelated to the fix.
+AUTARK_EXAMPLE = "07-autark-gpu-shader.json"
+
+
 def open_view_menu_dashboard(ctx: Ctx) -> None:
     """View -> Dashboard. ``force`` because the canvas chrome overlaps the bar."""
     page = ctx.page
@@ -996,6 +1025,7 @@ def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
          "what is missing and what to do about it, and the canvas survives.",
     tests=["src/tests/adapters/node/autkGrammarWebgpuFallback.test.tsx",
            "src/tests/components/errorBoundary.test.tsx"],
+    example=AUTARK_EXAMPLE,
     max_diff_ratio=0.05,
 )
 def autark_without_webgpu_says_so(ctx: Ctx) -> None:
@@ -1014,19 +1044,19 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     errors: list[str] = []
     page.on("pageerror", lambda e: errors.append(str(e)))
 
-    autark = page.locator('.react-flow__node:has-text("Autark")').first
-    if not autark.count():
-        raise AssertionError(
-            "this dataflow has no Autark node, so the scene has nothing to run; "
-            "point it at an example that includes one"
-        )
+    # Resolved from the spec: a node's Curio type is not on the DOM element,
+    # only React Flow's data-id, so display text would be a guess.
+    node_id = first_node_of_type(AUTARK_EXAMPLE, "autk-grammar")
+    autark = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    autark.wait_for(state="visible", timeout=45000)
     autark.scroll_into_view_if_needed()
     ctx.focus(autark, hold=1000)
 
     ctx.say("Run it", "The old failure was a TypeError from inside the shader loader.")
-    play = autark.get_by_role("button", name="Play").first
-    if play.count():
-        ctx.click(play)
+    # The play control is a FontAwesome <svg>, not a named button, and React
+    # Flow's transformed viewport can swallow a real click - `play_node` is the
+    # helper that already deals with both.
+    play_node(page, node_id)
 
     fallback = autark.locator('[role="alert"]')
     fallback.first.wait_for(state="visible", timeout=45000)
@@ -1041,3 +1071,153 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     )
     expect(page.locator("#tools-menu")).to_be_visible()
     assert not errors, f"an uncaught page error escaped: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# Layout and data shape (#193, #202, #203)
+# ---------------------------------------------------------------------------
+
+MULTI_VIEW_EXAMPLE = "05-vega-lite-multi-view-drilldown.json"
+
+#: A Data Pool without Autark alongside it, so the scene needs no WebGPU.
+DATA_POOL_EXAMPLE = "02-vega-lite-spatial-density.json"
+
+
+@walkthrough(
+    slug="catalog-tag-chips-are-plain",
+    refs=[193],
+    title="Tag chips read the same everywhere",
+    premise="Compare the tag chips on a catalog card and in its detail drawer.",
+    note="Four policies at once: the Data card tinted the LAST chip by file "
+         "format - positional, not semantic, so a `2023` chip turned green "
+         "because the file was GeoJSON; the Agent card tinted the last chip by "
+         "category; the Package card tinted every chip; the detail drawer "
+         "tinted none. All chips are plain now. Nothing is lost - the coloured "
+         "card strip and the tinted avatar already carry format and category.",
+    tests=["src/tests/catalog/tagChipsArePlain.test.ts",
+           "src/tests/catalog/datasetFormatStyles.test.ts"],
+    fit_reactflow=False,
+    max_diff_ratio=0.02,
+)
+def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
+    page = ctx.page
+
+    ctx.say("The Data Catalog", "The chips used to take a colour from the file format.")
+    drawer = open_data_drawer(ctx)
+
+    card = drawer.locator("article[data-dataset-id]").first
+    card.wait_for(state="visible", timeout=20000)
+    card.scroll_into_view_if_needed()
+    ctx.focus(card, hold=1500)
+
+    # Every chip on the card resolves to the same background, so none of them
+    # is carrying a colour the others are not.
+    backgrounds = card.locator("span[class*='tag']").evaluate_all(
+        "els => els.map(e => getComputedStyle(e).backgroundColor)"
+    )
+    assert backgrounds, "the card rendered no tag chips"
+    assert len(set(backgrounds)) == 1, (
+        f"the chips on one card still differ in colour: {sorted(set(backgrounds))}"
+    )
+
+    ctx.say("Every chip the same grey",
+            "The strip above the card is what tells you the format.")
+    ctx.capture("plain-chips")
+
+
+@walkthrough(
+    slug="multi-view-vega-chart-is-reachable",
+    refs=[202],
+    title="A multi-view chart is not cut off",
+    premise="Open a Vega-Lite chart with stacked sub-views and scroll to the bottom one.",
+    note="Two independent defects, either alone enough to clip. The output "
+         "container could not scroll - the pane is overflow:hidden and the "
+         "mount div was height:100% with default overflow and no `nowheel`. "
+         "And `width`/`height: \"container\"` was injected unconditionally, "
+         "which vega-lite discards for vconcat/hconcat/facet/repeat, leaving "
+         "`autosize: pad` - so ~750px of chart was authoritative inside a "
+         "~292px pane and the ResizeObserver could not help.",
+    tests=["src/tests/hook/vegaSpecSizing.test.ts",
+           "src/tests/components/nodeEditorOutputScroll.test.tsx"],
+    example=MULTI_VIEW_EXAMPLE,
+    max_diff_ratio=0.05,
+)
+def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
+    page = ctx.page
+
+    ctx.say("A chart with stacked views",
+            "Two sub-views, 650x400 and 650x300, in a ~292px pane.")
+
+    # The Vega mount is the only div carrying an id of this shape.
+    mount = page.locator('[id^="vega"]').first
+    mount.wait_for(state="attached", timeout=45000)
+    mount.scroll_into_view_if_needed()
+    ctx.focus(mount, hold=1400)
+
+    metrics = mount.evaluate(
+        "el => ({ scrollH: el.scrollHeight, clientH: el.clientHeight,"
+        " overflow: getComputedStyle(el).overflow,"
+        " nowheel: el.classList.contains('nowheel') })"
+    )
+    assert metrics["overflow"] == "auto", (
+        f"the chart container does not scroll: overflow is {metrics['overflow']!r}"
+    )
+    # `nowheel` is what stops React Flow zooming the canvas instead.
+    assert metrics["nowheel"], "the container scrolls but the wheel zooms the canvas"
+
+    ctx.say("Scroll down to the second view",
+            "It was there all along; there was simply no way to reach it.")
+    mount.evaluate("el => el.scrollTo({ top: el.scrollHeight })")
+    page.wait_for_timeout(900)
+    ctx.capture("scrolled-to-bottom-view")
+
+
+@walkthrough(
+    slug="data-pool-scrolls-sideways",
+    refs=[203],
+    title="A wide table can be read to its last column",
+    premise="Open a Data Pool on a wide frame and scroll it right.",
+    note="There WAS an x-overflow owner - MUI TableContainer's default "
+         "`overflowX: auto` - but on the wrong element: it takes no height, so "
+         "its box was as tall as the rows (~3000px) and its scrollbar was "
+         "painted at the bottom of that, reachable only after scrolling to the "
+         "last row. It also absorbed the overflow, so the node's own scroller "
+         "never got one. Nothing set a min-width on the table either, so the "
+         "browser crushed the columns instead of overflowing.",
+    tests=["src/tests/components/tables/TabularPreviewTable.test.tsx",
+           "src/tests/adapters/node/components/DataPoolContent.test.tsx"],
+    example=DATA_POOL_EXAMPLE,
+    max_diff_ratio=0.05,
+)
+def data_pool_scrolls_sideways(ctx: Ctx) -> None:
+    page = ctx.page
+
+    pool = page.locator('.react-flow__node:has([data-curio-datapool-scroll="true"])').first
+    if not pool.count():
+        raise AssertionError(
+            "this dataflow has no Data Pool node, so the scene has nothing to "
+            "scroll; point it at an example that includes one"
+        )
+    pool.scroll_into_view_if_needed()
+    ctx.focus(pool, hold=1200)
+
+    scroller = pool.locator('[data-curio-datapool-scroll="true"]').first
+    metrics = scroller.evaluate(
+        "el => ({ scrollW: el.scrollWidth, clientW: el.clientWidth,"
+        " overflow: getComputedStyle(el).overflow })"
+    )
+    assert metrics["overflow"] == "auto", (
+        f"the content area does not own both axes: overflow is {metrics['overflow']!r}"
+    )
+
+    ctx.say("Scroll right", "The last column used to be unreachable.")
+    scroller.evaluate("el => el.scrollTo({ left: el.scrollWidth })")
+    page.wait_for_timeout(900)
+
+    moved = scroller.evaluate("el => el.scrollLeft")
+    assert moved > 0 or metrics["scrollW"] <= metrics["clientW"], (
+        "the table overflows but the content area would not scroll to it"
+    )
+    ctx.say("The right-hand columns, in place",
+            "One scroller owns both axes now.")
+    ctx.capture("scrolled-right")

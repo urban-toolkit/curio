@@ -118,12 +118,19 @@ function resolveInput(_x) {
   return _resolveInput.apply(this, arguments);
 }
 /*
- * A `dataframe` payload is column-oriented, the shape pandas'
- * `DataFrame.to_dict()` produces:
+ * A `dataframe` payload is column-oriented. Two encodings of that reach this
+ * node, and both must work:
  *
- *   { "population": { "0": 2746, "1": 8804 }, "name": { "0": "Chicago", ... } }
+ *   array   { "population": [2746, 8804],        "name": ["Chicago", ...] }
+ *   row map { "population": { "0": 2746, ... },  "name": { "0": "Chicago" } }
  *
- * Row keys are strings and every column carries the same set of them.
+ * The array form is what Curio actually produces: the sandbox serialises with
+ * `to_dict(orient='list')` (sandbox/util/parsers.py). This node used to require
+ * the row-map form and *explicitly reject* arrays, so `asFrame` returned null
+ * for every real Curio DataFrame, `setFrame(null)` ran, and the node rendered
+ * "Connect a DataFrame upstream and run that node." with nothing thrown and
+ * nothing to debug (#194). The row-map form is kept because `to_dict()` with no
+ * orient produces it, and hand-written specs use it.
  */
 function _resolveInput() {
   _resolveInput = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(input) {
@@ -172,18 +179,33 @@ function _resolveInput() {
 }
 function asFrame(payload) {
   var frame = (payload === null || payload === void 0 ? void 0 : payload.dataType) === 'dataframe' ? payload.data : payload;
+  // `Array.isArray` on the FRAME itself still rejects: a row-oriented list of
+  // records is a different shape and is genuinely unsupported here.
   if (!frame || _typeof(frame) !== 'object' || Array.isArray(frame)) return null;
   var columns = Object.keys(frame);
   if (columns.length === 0) return null;
-  // Every value must itself be a row map, otherwise this is some other shape.
+  // Each column may be an array or a row map; both are objects.
   var looksRight = columns.every(function (c) {
-    return frame[c] && _typeof(frame[c]) === 'object' && !Array.isArray(frame[c]);
+    return frame[c] && _typeof(frame[c]) === 'object';
   });
   return looksRight ? frame : null;
 }
+
+/** One cell, whichever encoding the column uses.
+ *
+ * Mirrors `utils/tabularPreview.ts`, which has always handled both. */
+function cell(column, key) {
+  return Array.isArray(column) ? column[Number(key)] : column[key];
+}
 function rowKeys(frame) {
   var first = Object.keys(frame)[0];
-  return first ? Object.keys(frame[first]) : [];
+  if (!first) return [];
+  var column = frame[first];
+  // An array's row keys are its indices, as strings, so everything downstream
+  // keeps working with string keys regardless of encoding.
+  return Array.isArray(column) ? column.map(function (_, i) {
+    return String(i);
+  }) : Object.keys(column);
 }
 
 /** Columns whose values are numbers — the only ones worth thresholding. */
@@ -347,7 +369,7 @@ var useColumnFilterBehavior = function useColumnFilterBehavior(data, nodeState) 
     if (!Number.isFinite(limit)) return null;
     var compare = COMPARE[operator];
     return rowKeys(frame).filter(function (key) {
-      var value = frame[column][key];
+      var value = cell(frame[column], key);
       return typeof value === 'number' && compare(value, limit);
     });
   }, [frame, column, operator, threshold]);
@@ -358,23 +380,34 @@ var useColumnFilterBehavior = function useColumnFilterBehavior(data, nodeState) 
       // Rebuild the column-oriented frame with only the matching row keys, so
       // downstream nodes receive the same shape they would from pandas.
       var filtered = {};
-      for (var _i = 0, _Object$keys = Object.keys(frame); _i < _Object$keys.length; _i++) {
+      var _loop = function _loop() {
         var name = _Object$keys[_i];
         var source = frame[name];
-        var kept = {};
-        var _iterator = _createForOfIteratorHelper(matching),
-          _step;
-        try {
-          for (_iterator.s(); !(_step = _iterator.n()).done;) {
-            var key = _step.value;
-            kept[key] = source[key];
+        // Preserve the input's encoding, so the downstream payload stays
+        // byte-compatible with what `parseOutput` produced upstream.
+        if (Array.isArray(source)) {
+          filtered[name] = matching.map(function (key) {
+            return cell(source, key);
+          });
+        } else {
+          var kept = {};
+          var _iterator = _createForOfIteratorHelper(matching),
+            _step;
+          try {
+            for (_iterator.s(); !(_step = _iterator.n()).done;) {
+              var key = _step.value;
+              kept[key] = source[key];
+            }
+          } catch (err) {
+            _iterator.e(err);
+          } finally {
+            _iterator.f();
           }
-        } catch (err) {
-          _iterator.e(err);
-        } finally {
-          _iterator.f();
+          filtered[name] = kept;
         }
-        filtered[name] = kept;
+      };
+      for (var _i = 0, _Object$keys = Object.keys(frame); _i < _Object$keys.length; _i++) {
+        _loop();
       }
       data.outputCallback(data.nodeId, {
         data: filtered,

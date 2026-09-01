@@ -46,7 +46,6 @@ export function AgentCatalogBrowseCard({
   const tags = [agent.category, ...agent.hooks.map((h) => `hook: ${h}`)]
     .filter(Boolean)
     .slice(0, 3) as string[];
-  const lastTagIdx = tags.length - 1;
   const showPublishPill = shouldShowPublishPill({
     isPublished: agent.published,
     allowPublish: catalogPublishAllowed,
@@ -96,13 +95,8 @@ export function AgentCatalogBrowseCard({
           {agent.purpose || " "}
         </p>
         <div className={styles.tagRow}>
-          {tags.map((tag, i) => (
-            <span
-              key={tag}
-              className={`${styles.tag} ${
-                i === lastTagIdx ? (cardStyles[`tagAccent_${categoryKey}`] ?? "") : ""
-              }`}
-            >
+          {tags.map((tag) => (
+            <span key={tag} className={styles.tag}>
               {tag}
             </span>
           ))}

@@ -45,11 +45,14 @@ interface Surface {
  */
 const SURFACES: Surface[] = [
   {
-    // Hub browse card (strip header, active border, tag accent), format
-    // filter-rail dot, and browse drawer format badge. Not the card's action
-    // link: that reads as text and takes the text colour.
+    // Hub browse card (strip header, active border), format filter-rail dot,
+    // and browse drawer format badge. Not the card's action link: that reads
+    // as text and takes the text colour. And no longer the tag: chips are
+    // plain everywhere since #193, because the tint was positional (the LAST
+    // chip took the format's colour, so a "2023" chip turned green because the
+    // file was GeoJSON) and the coloured strip already carries the format.
     file: "pages/catalog/CatalogBrowseLayout.module.css",
-    prefixes: ["strip", "card", "tagAccent", "dot", "dfmt"],
+    prefixes: ["strip", "card", "dot", "dfmt"],
   },
   {
     // List/row view format badge.

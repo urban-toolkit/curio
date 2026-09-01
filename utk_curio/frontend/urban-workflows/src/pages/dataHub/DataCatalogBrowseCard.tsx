@@ -36,7 +36,6 @@ export function DataCatalogBrowseCard({
   const fresh = isFresh(dataset.updatedAt);
   const left = metaLeft(dataset);
   const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 3) : [dataset.format];
-  const lastTagIdx = tags.length - 1;
   const published = isDatasetPublishedToCatalog(dataset);
   const showPublishPill = shouldShowPublishPill({
     isPublished: published,
@@ -87,11 +86,8 @@ export function DataCatalogBrowseCard({
           {dataset.description || "\u00a0"}
         </p>
         <div className={styles.tagRow}>
-          {tags.map((tag, i) => (
-            <span
-              key={tag}
-              className={`${styles.tag} ${i === lastTagIdx ? styles[`tagAccent_${dataset.format}`] || "" : ""}`}
-            >
+          {tags.map((tag) => (
+            <span key={tag} className={styles.tag}>
               {tag}
             </span>
           ))}

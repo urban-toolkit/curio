@@ -132,7 +132,7 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
             name="Walkthrough",
             username=f"walkvid_{walk.slug.replace(chr(45), chr(95))[:24]}",
             project_name=walk.title[:40],
-            project_spec=load_example_spec(PROVENANCE_EXAMPLE),
+            project_spec=load_example_spec(walk.example or PROVENANCE_EXAMPLE),
         )
         require_owner_view(page)
         page.wait_for_selector(".react-flow__node", timeout=45000)

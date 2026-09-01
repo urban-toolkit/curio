@@ -113,11 +113,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
           <span className={browseStyles.tag}>
             {pkg.templates.length} node{pkg.templates.length === 1 ? "" : "s"}
           </span>
-          <span
-            className={`${browseStyles.tag} ${stripClass(cardStyles, "tagAccent", cat)}`}
-          >
-            {cat}
-          </span>
+          <span className={browseStyles.tag}>{cat}</span>
           {(pkg.channel ?? "stable") !== "stable" ? (
             <span className={browseStyles.tag}>{pkg.channel}</span>
           ) : null}
