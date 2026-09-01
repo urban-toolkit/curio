@@ -97,24 +97,35 @@ describe("AgentCatalogDrawer", () => {
     expect(root).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("renders the three tabs and the browse cards", async () => {
+  it("renders the two tabs and the browse cards", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     expect(screen.getByText("Browse all")).toBeInTheDocument();
-    expect(screen.getByText("My imports")).toBeInTheDocument();
-    expect(screen.getByText("In dataflow")).toBeInTheDocument();
+    expect(screen.getByText("In project")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to project" })).toBeInTheDocument();
   });
 
-  it("switching to My imports fetches and offers Remove from my account", async () => {
+  it("offers only per-project actions, and never reads the account import list", async () => {
+    // The drawer had a third scope, "My imports", listing the ACCOUNT's
+    // imported definitions inside a per-dataflow panel. Its cards carried four
+    // account-level controls - a publish pill, an Unpublish, "Remove from all
+    // projects" and "Add to all projects" - none of which are about the
+    // dataflow this drawer is open on.
+    //
+    // It was also the surface reporting built-ins like "Dataflow builder" as
+    // the user's own imports, because its row button was the one thing in the
+    // product that wrote them into the account list.
+    //
+    // All of it moved to the Agent Catalog PAGE, the surface that has no
+    // project and can only speak about the account. This drawer adds straight
+    // to the open project.
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("My imports"));
-    await waitFor(() => expect(api.listImports).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
-    // Not "Delete": the call drops the registry entry and leaves the
-    // definition on disk, so the drawer says what the browse page says.
-    expect(screen.getByRole("button", { name: "Remove from my account" })).toBeInTheDocument();
+    expect(screen.queryByText("My imports")).toBeNull();
+    expect(api.listImports).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Remove from all projects" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to all projects" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Unpublish$/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
@@ -128,10 +139,10 @@ describe("AgentCatalogDrawer", () => {
   // `ensureProjectId`, the Node drawer saves by hand. This one now does the
   // same, through the shared helper.
 
-  it("Add to dataflow stays enabled on a dataflow that was never saved", async () => {
+  it("Add to project stays enabled on a dataflow that was never saved", async () => {
     render(<AgentCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Add to project" })).toBeEnabled();
   });
 
   it("shows no unsaved-dataflow banner", async () => {
@@ -156,7 +167,7 @@ describe("AgentCatalogDrawer", () => {
       />,
     );
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+    await clickAndConfirm("Add to project", "Add to project");
 
     await waitFor(() => expect(onEnsureProject).toHaveBeenCalledTimes(1));
     await waitFor(() =>
@@ -178,7 +189,7 @@ describe("AgentCatalogDrawer", () => {
       />,
     );
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+    await clickAndConfirm("Add to project", "Add to project");
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/nothing was added/i));
     expect(api.installToProject).not.toHaveBeenCalled();
@@ -187,7 +198,7 @@ describe("AgentCatalogDrawer", () => {
   it("shows the agent as added straight after the auto-save", async () => {
     // The refresh that follows an install must be scoped to the dataflow, or
     // `installedInProject` comes back false for everything and the agent you
-    // just added still offers "Add to dataflow". The prop cannot carry the new
+    // just added still offers "Add to project". The prop cannot carry the new
     // id yet - the save is what created it - so the id has to be threaded
     // through from the action itself.
     api.catalog.mockImplementation((projectId?: string) =>
@@ -205,10 +216,14 @@ describe("AgentCatalogDrawer", () => {
       />,
     );
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+    await clickAndConfirm("Add to project", "Add to project");
 
+    // The card offers nothing once the agent is in: there is no "Remove from
+    // project" any more, because an agent reaches a dataflow by being in the
+    // account and `save_project` seeds it into every one. So the tell that the
+    // add landed is that Add is gone.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument(),
+      expect(screen.queryByRole("button", { name: /^Add to project/ })).toBeNull(),
     );
     expect(api.catalog).toHaveBeenLastCalledWith("created-1");
   });
@@ -244,9 +259,13 @@ describe("AgentCatalogDrawer", () => {
     });
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
 
-    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+    await clickAndConfirm("Add to project", "Add to project");
+    // The card offers nothing once the agent is in: there is no "Remove from
+    // project" any more, because an agent reaches a dataflow by being in the
+    // account and `save_project` seeds it into every one. So the tell that the
+    // add landed is that Add is gone.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument(),
+      expect(screen.queryByRole("button", { name: /^Add to project/ })).toBeNull(),
     );
 
     // Any further unscoped answer must be dropped, not rendered.
@@ -254,8 +273,13 @@ describe("AgentCatalogDrawer", () => {
       releaseUnscoped(null);
       await Promise.resolve();
     });
-    expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Add to dataflow" })).toBeNull();
+    // The card offers nothing once the agent is in: there is no "Remove from
+    // project" any more, because an agent reaches a dataflow by being in the
+    // account and `save_project` seeds it into every one. Removing it from a
+    // single dataflow put the catalog's "In all projects" in permanent
+    // disagreement with that dataflow.
+    expect(screen.queryByRole("button", { name: /^Add to project/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to project" })).toBeNull();
   });
 
   it("uses the open dataflow directly when there is one", async () => {
@@ -270,7 +294,7 @@ describe("AgentCatalogDrawer", () => {
       />,
     );
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+    await clickAndConfirm("Add to project", "Add to project");
 
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
@@ -278,31 +302,27 @@ describe("AgentCatalogDrawer", () => {
     expect(onEnsureProject).not.toHaveBeenCalled();
   });
 
-  it("shows Publish only for a publishable My imports card and publishes on click", async () => {
-    api.listImports.mockResolvedValue({
+  it("shows no Publish control on any card, publishable or not", async () => {
+    // Publishing puts an agent into the catalog everyone on this Curio shares -
+    // a decision about the agent, not about the dataflow this drawer is open on
+    // - so it lives on the Agent Catalog page's detail drawer, gated there on
+    // the same `publishable` flag.
+    api.catalog.mockResolvedValue({
       agents: [
-        card("agent.my-custom", { scope: "imports", imported: true, publishable: true }),
-        card("agent.node-explainer", { scope: "imports", imported: true, publishable: false }),
+        card("agent.my-custom", { publishable: true }),
+        card("agent.node-explainer", { publishable: false }),
       ],
     } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    fireEvent.click(screen.getByText("My imports"));
     await waitFor(() => expect(screen.getByText("my-custom")).toBeInTheDocument());
-    // Exactly one Publish control — the built-in card (publishable:false) shows none.
-    const publishBtns = screen.getAllByRole("button", { name: /publish/i });
-    expect(publishBtns).toHaveLength(1);
-    // Publishing is the only deployment-wide write in the product, so it asks
-    // first now - the click opens the dialog, the dialog does the publish.
-    fireEvent.click(publishBtns[0]);
-    const modal = await waitFor(confirmModal);
-    fireEvent.click(within(modal).getByRole("button", { name: "Publish" }));
-    await waitFor(() => expect(api.publish).toHaveBeenCalledWith("agent.my-custom@1.0.0"));
+    expect(screen.queryAllByRole("button", { name: /^publish$/i })).toHaveLength(0);
+    expect(api.publish).not.toHaveBeenCalled();
   });
 
-  it("clicking Add to dataflow calls the install endpoint", async () => {
+  it("clicking Add to project calls the install endpoint", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+    await clickAndConfirm("Add to project", "Add to project");
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
     );
@@ -325,15 +345,15 @@ describe("AgentCatalogDrawer", () => {
     await waitFor(() => expect(screen.getByText("Dataflow Builder")).toBeInTheDocument());
     expect(screen.getByText(/Requires:/)).toBeInTheDocument();
     expect(screen.getByText("Node Content Builder (not installed)")).toBeInTheDocument();
-    const btn = screen.getByRole("button", { name: "Add to dataflow (+1 required)" });
+    const btn = screen.getByRole("button", { name: "Add to project (+1 required)" });
     expect(btn).toHaveAttribute("title", "Also adds Node Content Builder (required)");
-    await clickAndConfirm("Add to dataflow (+1 required)", "Add to dataflow");
+    await clickAndConfirm("Add to project (+1 required)", "Add to project");
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.dataflow-builder@1.0.0"),
     );
   });
 
-  it("a satisfied dependency renders a check and a plain Add to dataflow", async () => {
+  it("a satisfied dependency renders a check and a plain Add to project", async () => {
     api.catalog.mockResolvedValue({
       agents: [
         card("agent.dataflow-builder", {
@@ -348,25 +368,14 @@ describe("AgentCatalogDrawer", () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("Dataflow Builder")).toBeInTheDocument());
     expect(screen.getByText("Node Content Builder ✓")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to project" })).toBeInTheDocument();
   });
 
-  it("a 409 from uninstalling a required dependency surfaces verbatim (dev/106)", async () => {
-    api.listProjectAgents.mockResolvedValue({
-      agents: [card("agent.node-content-builder", { scope: "installed", installedInProject: true })],
-    } as any);
-    api.uninstallFromProject.mockRejectedValue(
-      new Error("agent.node-content-builder@1.0.0 is required by Dataflow Builder (agent.dataflow-builder@1.0.0) — uninstall that agent first"),
-    );
-    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    fireEvent.click(screen.getByText("In dataflow"));
-    await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
-    // Removal now confirms, as it does in the Node and Data drawers.
-    await clickAndConfirm("Remove from dataflow", "Remove");
-    await waitFor(() =>
-      expect(screen.getByText(/is required by Dataflow Builder/)).toBeInTheDocument(),
-    );
-  });
+  // The "409 from uninstalling a required dependency" case left with the
+  // control: this drawer has no uninstall any more. The backend guard is intact
+  // and covered where it lives, in
+  // test_agents/test_routes.py::test_uninstalling_a_required_dependency_409s_naming_the_dependent.
+
 
   it("header carries the Pin and a Close, like the other catalog drawers", async () => {
     const onPinToggle = jest.fn();
@@ -399,9 +408,9 @@ describe("AgentCatalogDrawer", () => {
     } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    for (const tab of ["My imports", "In dataflow"]) {
+    for (const tab of ["In project"]) {
       fireEvent.click(screen.getByText(tab));
-      await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+      await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
       // Scoped to the card: the drawer header keeps its own AI Settings
       // button, which is the provider, not a per-agent policy.
       const row = screen.getByText("chat-agent").closest("article")!;
@@ -439,49 +448,53 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
   it("a previously visited tab renders its cache instantly — no Loading reset", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("My imports"));
-    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("In project"));
+    await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     fireEvent.click(screen.getByText("Browse all"));
     // Cached rows are visible immediately; no Loading… flash, no blanking.
     expect(screen.getByText("node-explainer")).toBeInTheDocument();
     expect(screen.queryByText("Loading…")).toBeNull();
   });
 
-  it("an imported AND installed agent shows Remove from dataflow on My imports", async () => {
-    api.listImports.mockResolvedValue({
+  it("an installed agent offers no action at all, not even Add", async () => {
+    api.listProjectAgents.mockResolvedValue({
       agents: [
         card("agent.node-content-builder", {
-          scope: "imports",
-          imported: true,
+          scope: "installed",
           installedInProject: true,
         }),
       ],
     } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("My imports"));
+    fireEvent.click(screen.getByText("In project"));
     await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Remove from dataflow" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Add to dataflow" })).toBeNull();
+    // The card offers nothing once the agent is in: there is no "Remove from
+    // project" any more, because an agent reaches a dataflow by being in the
+    // account and `save_project` seeds it into every one. Removing it from a
+    // single dataflow put the catalog's "In all projects" in permanent
+    // disagreement with that dataflow.
+    expect(screen.queryByRole("button", { name: /^Add to project/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to project" })).toBeNull();
   });
 
-  it("My imports is fetched with the open project's id (lockfile truth)", async () => {
+  it("the project scope is fetched with the open project's id (lockfile truth)", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    fireEvent.click(screen.getByText("My imports"));
-    await waitFor(() => expect(api.listImports).toHaveBeenCalledWith("p1"));
+    fireEvent.click(screen.getByText("In project"));
+    await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalledWith("p1"));
   });
 
   it("a lifecycle action refreshes every scope so all tabs agree", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     api.catalog.mockClear();
-    api.listImports.mockClear();
     api.listProjectAgents.mockClear();
-    await clickAndConfirm("Add to dataflow", "Add to dataflow");
+    api.listProjectAgents.mockClear();
+    await clickAndConfirm("Add to project", "Add to project");
     await waitFor(() => expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"));
     await waitFor(() => {
       expect(api.catalog).toHaveBeenCalled();
-      expect(api.listImports).toHaveBeenCalled();
+      expect(api.listProjectAgents).toHaveBeenCalled();
       expect(api.listProjectAgents).toHaveBeenCalled();
     });
   });
@@ -489,8 +502,8 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
   it("a refresh error keeps the cached rows (banner over content)", async () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
-    api.listImports.mockRejectedValue(new Error("network down"));
-    fireEvent.click(screen.getByText("My imports"));
+    api.listProjectAgents.mockRejectedValue(new Error("network down"));
+    fireEvent.click(screen.getByText("In project"));
     // First visit fails → error banner; switch back: Global cache intact.
     await waitFor(() => expect(screen.getByText("network down")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Browse all"));
@@ -543,8 +556,8 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     const input = screen.getByPlaceholderText("Search agents, publishers, tags…");
     fireEvent.change(input, { target: { value: "chat" } });
-    fireEvent.click(screen.getByText("My imports"));
-    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("In project"));
+    await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     expect(input).toHaveValue("chat");
   });
 
@@ -569,8 +582,13 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
       (el) => el.querySelector("svg")?.getAttribute("data-icon"),
     );
     expect(glyphs).toEqual(["circle-nodes", "database"]);
-    // Decorative - hidden from the accessibility tree.
-    avatars.forEach((el) => expect(el).toHaveAttribute("aria-hidden"));
+    // No longer decorative: the square opens the agent's details, so it is a
+    // real button with a real name, and the GLYPH inside it is what is hidden.
+    avatars.forEach((el) => {
+      expect(el.tagName).toBe("BUTTON");
+      expect(el).toHaveAttribute("aria-label", expect.stringContaining("details"));
+      expect(el.querySelector("svg")).toHaveAttribute("aria-hidden");
+    });
   });
 
   it("out-of-order responses are dropped (race guard)", async () => {
@@ -583,8 +601,8 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
       .mockImplementationOnce(() => slow as any)
       .mockResolvedValue({ agents: [card("agent.fresh-agent")] } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    fireEvent.click(screen.getByText("My imports"));
-    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("In project"));
+    await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     fireEvent.click(screen.getByText("Browse all"));
     await waitFor(() => expect(screen.getByText("fresh-agent")).toBeInTheDocument());
     // The slow FIRST response lands late: it must be dropped, not repainted.

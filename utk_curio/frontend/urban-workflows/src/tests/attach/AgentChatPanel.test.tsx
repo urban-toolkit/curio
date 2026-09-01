@@ -530,7 +530,7 @@ describe("AgentChatPanel package-install review (memo dev/84)", () => {
     expect(screen.getByText("network.fetch")).toBeInTheDocument();
     expect(screen.getByText("python · rasterio")).toBeInTheDocument();
     expect(onApplyProposal).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to project" }));
     await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("pk1"));
     await waitFor(() =>
       expect(screen.queryByText('Add "Weather Analysis"')).toBeNull(),
@@ -577,7 +577,7 @@ describe("AgentChatPanel package-install review (memo dev/84)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("p1"));
-    expect(screen.queryByRole("button", { name: "Add to dataflow" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to project" })).toBeNull();
     expect(packagesApi.catalog).not.toHaveBeenCalled();
   });
 });

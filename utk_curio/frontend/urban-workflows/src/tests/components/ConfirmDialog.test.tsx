@@ -141,14 +141,14 @@ describe("ConfirmDialog", () => {
     render(
       <ConfirmDialog
         title="Add it?"
-        confirmLabel="Add to dataflow"
+        confirmLabel="Add to project"
         onConfirm={jest.fn()}
         onCancel={jest.fn()}
       />,
     );
 
     expect(document.activeElement).toBe(
-      within(dialog()).getByRole("button", { name: "Add to dataflow" }),
+      within(dialog()).getByRole("button", { name: "Add to project" }),
     );
   });
 

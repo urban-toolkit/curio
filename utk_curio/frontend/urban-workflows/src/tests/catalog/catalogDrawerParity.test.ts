@@ -98,7 +98,10 @@ describe("publish wording is shared across both catalogs", () => {
       "pages/catalog/useNodeCatalogBrowse.ts",
       "components/packages/publishing/NodeCatalogDrawer.tsx",
       "pages/dataHub/DataCatalogBrowse.tsx",
-      "components/datasets/catalog/DatasetDetailPanel.tsx",
+      // `DatasetDetailPanel` used to be on this list. It no longer publishes:
+      // it is the DETAILS view, and it carried a second, ungated publish
+      // control beside the drawer's gated one - which is how an unpublishable
+      // dataset ended up offering Unpublish. One decision, one place.
     ].map(read);
 
     // Every publish path reports success the same way.

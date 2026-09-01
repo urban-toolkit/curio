@@ -43,7 +43,7 @@ describe("no catalog repeats its own tab label as a heading", () => {
     expect(src).not.toMatch(/sectionLabel\}>\{tabLabel\[/);
     // And no drawer should reach for the shared shell's section-heading style
     // at all — the only headings left are the per-list ones ("Your datasets ·
-    // 3 in dataflow"), which say something the tab strip does not.
+    // 3 in project"), which say something the tab strip does not.
     expect(src).not.toContain("shell.sectionLabel");
   });
 
@@ -53,13 +53,13 @@ describe("no catalog repeats its own tab label as a heading", () => {
   });
 
   test("the per-list headings survive — they carry a count, not a repeat", () => {
-    // "Your datasets · N in dataflow" is not a restatement of the tab; it adds
+    // "Your datasets · N in project" is not a restatement of the tab; it adds
     // the count. Removing the tab-label headings must not have taken it too.
     expect(read("components/datasets/catalog/InstalledDatasetsList.tsx")).toContain(
-      "in dataflow",
+      "in project",
     );
     expect(read("components/packages/publishing/MyPackagesList.tsx")).toContain(
-      "in dataflow",
+      "in project",
     );
   });
 });
@@ -120,10 +120,10 @@ describe("the Node catalog offers only tabs that do something", () => {
   // collapsed both onto "browse" before handing the state to the strip, and
   // its list never depended on `tab`. Updates even carried an accent count, so
   // it advertised work it would not do.
-  test("the tab strip is Browse all / In dataflow", () => {
+  test("the tab strip is Browse all / In project", () => {
     const src = read("components/packages/publishing/DrawerTabs.tsx");
     expect(src).toContain("Browse all");
-    expect(src).toContain("In dataflow");
+    expect(src).toContain("In project");
     expect(src).not.toContain(">Featured<");
     expect(src).not.toContain(">Updates<");
     expect(src).not.toContain("updateCount");
@@ -273,7 +273,7 @@ describe("one button vocabulary across the catalogs", () => {
 
   test("the main-page catalogs use the same two treatments", () => {
     // The Agent browse drawer used the DARK `.addToPaletteBtn` for both "Add to
-    // my account" and "Remove from my account", so two opposite actions were
+    // my account" and "Remove from all projects", so two opposite actions were
     // the same black button in the same place.
     const browse = read("pages/catalog/CatalogBrowseLayout.module.css");
     expect(rule(browse, ".addToPaletteBtn")).toContain(
@@ -286,27 +286,44 @@ describe("one button vocabulary across the catalogs", () => {
     expect(destructive).toContain("height: 42px");
 
     const drawer = read("pages/agents/AgentCatalogBrowseDrawer.tsx");
-    const at = drawer.indexOf("Remove from my account");
+    const at = drawer.indexOf("Remove from all projects");
     expect(at).toBeGreaterThan(-1);
     expect(drawer.slice(Math.max(0, at - 300), at)).toContain("destructiveBtn");
   });
 
   test("Delete comes last on the dataset card", () => {
-    // The most final action sits furthest from the first one.
+    // The most final action sits furthest from the first one. This used to
+    // measure Delete against the publish pill; the pill has left the card
+    // entirely (publishing is an account-level decision and lives in the Data
+    // Catalog page's detail drawer), so the remaining pair is the one that
+    // matters: detach from this project, then destroy.
     const src = read("components/datasets/catalog/DatasetCard.tsx");
-    const publish = src.indexOf("showPublishPill ?");
+    const uninstall = src.indexOf("showUninstall ?");
     const del = src.indexOf("showDelete ?");
-    expect(publish).toBeGreaterThan(-1);
-    expect(del).toBeGreaterThan(publish);
+    expect(uninstall).toBeGreaterThan(-1);
+    expect(del).toBeGreaterThan(uninstall);
+    // And no publish control came back onto the card.
+    expect(src).not.toContain("CatalogPublishPill");
   });
 
-  test("the Published state stays quiet, and is not a button", () => {
-    const badge = rule(read(PILL_STYLES), ".badgeHub");
-    expect(badge).toContain("color: var(--curio-text-muted)");
-    expect(badge).toContain("cursor: default");
-    // Same box as its neighbours so the column does not jump when it swaps in.
-    expect(badge).toContain("min-width: 96px");
-    expect(badge).toContain("height: 30px");
+  test("there is no Published badge left to be quiet about", () => {
+    // This used to assert the badge's geometry. The badge is gone: eight of the
+    // pill's thirteen call sites pass no `onUnpublish`, so it painted
+    // "✓ Published" on nearly every card in the product, and on the standalone
+    // catalog pages it was every card without exception - those pages ARE the
+    // published catalog. A label true of everything on screen distinguishes
+    // nothing. The state is carried by the Unpublish action, for the people who
+    // can actually take it.
+    // Structure, not mentions: the note above the component records what left.
+    const pill = read("components/packages/CatalogPublishPill.tsx");
+    expect(pill).not.toContain("badgeCls");
+    expect(pill).not.toContain('role="status"');
+    // The two labels it renders, and no third.
+    expect(pill).toContain('{busy ? "…" : "Publish"}');
+    expect(pill).toContain('{busy ? "…" : "Unpublish"}');
+    const styles = read(PILL_STYLES);
+    expect(styles).not.toContain(".badgeHub");
+    expect(styles).not.toContain(".badgeDock");
   });
 
   test("the dark rail keeps a light treatment, where a black fill would vanish", () => {

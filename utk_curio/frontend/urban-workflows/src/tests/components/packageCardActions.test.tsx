@@ -46,16 +46,16 @@ const button = (name: string) => screen.queryByRole("button", { name });
 beforeEach(() => jest.clearAllMocks());
 
 describe("PackageCard - primary action", () => {
-  it("offers Add to dataflow when not installed", () => {
+  it("offers Add to project when not installed", () => {
     renderCard();
-    expect(button("Add to dataflow")).toBeTruthy();
-    expect(button("Remove from dataflow")).toBeNull();
+    expect(button("Add to project")).toBeTruthy();
+    expect(button("Remove from project")).toBeNull();
   });
 
-  it("offers Remove from dataflow once installed", () => {
+  it("offers Remove from project once installed", () => {
     renderCard({ isInstalled: true, onUninstall: jest.fn() });
-    expect(button("Remove from dataflow")).toBeTruthy();
-    expect(button("Add to dataflow")).toBeNull();
+    expect(button("Remove from project")).toBeTruthy();
+    expect(button("Add to project")).toBeNull();
   });
 
   it("offers Update when installed with a newer catalog version", () => {
@@ -66,7 +66,7 @@ describe("PackageCard - primary action", () => {
       onUninstall: jest.fn(),
     });
     expect(button("Update")).toBeTruthy();
-    expect(button("Add to dataflow")).toBeNull();
+    expect(button("Add to project")).toBeNull();
   });
 
   it("passes the catalog row to onInstall when updating, not the stale local one", () => {
@@ -80,7 +80,7 @@ describe("PackageCard - primary action", () => {
 
   it("disables its actions while the drawer is busy", () => {
     renderCard({ busy: true });
-    expect(button("Add to dataflow")!.hasAttribute("disabled")).toBe(true);
+    expect(button("Add to project")!.hasAttribute("disabled")).toBe(true);
   });
 });
 
@@ -92,7 +92,7 @@ describe("PackageCard - curio.builtin", () => {
     readOnly: true,
   });
 
-  it("offers no buttons at all", () => {
+  it("offers no ACTION buttons at all", () => {
     render(
       <PackageCard
         {...base}
@@ -105,65 +105,41 @@ describe("PackageCard - curio.builtin", () => {
       />,
     );
     // Not uninstallable (the backend refuses) and not authorable (readOnly), so
-    // every affordance must be suppressed.
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    // every ACTION must be suppressed. The details square is not an action -
+    // it is how you read what the package contains, it is on every drawer card
+    // in every catalog, and with no handler supplied it renders disabled.
+    const actions = screen
+      .queryAllByRole("button")
+      .filter((el) => !/details$/i.test(el.getAttribute("aria-label") ?? ""));
+    expect(actions).toHaveLength(0);
   });
 });
 
-describe("PackageCard - author actions", () => {
-  it("hides Unpublish on a read-only package even when publishing is allowed", () => {
-    renderCard({
-      pkg: pkg({ readOnly: true }),
-      isInstalled: true,
-      // Published, so only readOnly can be what suppresses Unpublish here.
-      isPublished: true,
-      catalogPublishAllowed: true,
-      onUninstall: jest.fn(),
-      onUnpublish: jest.fn(),
-    });
-    expect(button("Unpublish")).toBeNull();
-    // Uninstall is a lockfile operation, so readOnly does not gate it.
-    expect(button("Remove from dataflow")).toBeTruthy();
+describe("PackageCard - no publish control", () => {
+  // The card carried Publish / Unpublish, gated on `readOnly !== true`. Both
+  // the control and the gate were wrong here:
+  //
+  //   * the PLACE - publishing puts a package into the catalog everyone on this
+  //     Curio shares, which is a decision about the package, not about the
+  //     dataflow this card sits in. It lives on the Node Catalog page's detail
+  //     drawer now.
+  //   * the GATE - `readOnly` is an author's manifest opt-in that almost no
+  //     package sets, so `readOnly !== true` matched nearly everything and put
+  //     Unpublish on packages that shipped with the deployment. The drawer gates
+  //     on `publishable`, which the backend computes from the publisher record
+  //     and enforces on the route as well.
+  it("offers no Publish, whatever the package", () => {
+    renderCard({ isInstalled: true, onUninstall: jest.fn() });
+    expect(button("Publish")).toBeNull();
   });
 
-  it("shows Unpublish on a published authorable package when publishing is allowed", () => {
-    renderCard({
-      isInstalled: true,
-      isPublished: true,
-      catalogPublishAllowed: true,
-      onUninstall: jest.fn(),
-      onUnpublish: jest.fn(),
-    });
-    expect(button("Unpublish")).toBeTruthy();
-  });
-
-  it("hides Unpublish on a package that was never published", () => {
-    // Nothing to remove from the catalog — offering Unpublish here invited a
-    // call the backend would reject.
-    renderCard({
-      isInstalled: true,
-      isPublished: false,
-      catalogPublishAllowed: true,
-      onUninstall: jest.fn(),
-      onUnpublish: jest.fn(),
-    });
+  it("offers no Unpublish, even on a published authorable package", () => {
+    renderCard({ isInstalled: true, onUninstall: jest.fn() });
     expect(button("Unpublish")).toBeNull();
   });
 
-  it("hides Unpublish when the server forbids catalog writes", () => {
-    renderCard({
-      isInstalled: true,
-      isPublished: true,
-      catalogPublishAllowed: false,
-      onUninstall: jest.fn(),
-      onUnpublish: jest.fn(),
-    });
-    expect(button("Unpublish")).toBeNull();
-  });
-
-  it("hides Remove from dataflow when no handler is supplied", () => {
-    // The drawer omits onUninstall for an unsaved dataflow (no project id yet).
-    renderCard({ isInstalled: true });
-    expect(button("Remove from dataflow")).toBeNull();
+  it("still offers the action that IS about this project", () => {
+    renderCard({ isInstalled: true, onUninstall: jest.fn() });
+    expect(button("Remove from project")).toBeTruthy();
   });
 });

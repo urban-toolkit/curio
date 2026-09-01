@@ -53,29 +53,29 @@ const button = (name: string) => screen.queryByRole("button", { name });
 beforeEach(() => jest.clearAllMocks());
 
 describe("DatasetCard - primary action", () => {
-  it("offers Add to dataflow when not installed", () => {
+  it("offers Add to project when not installed", () => {
     renderCard();
-    expect(button("Add to dataflow")).toBeTruthy();
-    expect(button("Remove from dataflow")).toBeNull();
+    expect(button("Add to project")).toBeTruthy();
+    expect(button("Remove from project")).toBeNull();
   });
 
-  it("offers Remove from dataflow once installed", () => {
+  it("offers Remove from project once installed", () => {
     renderCard({ isInstalled: true, onUninstall: jest.fn() });
-    expect(button("Remove from dataflow")).toBeTruthy();
-    expect(button("Add to dataflow")).toBeNull();
+    expect(button("Remove from project")).toBeTruthy();
+    expect(button("Add to project")).toBeNull();
   });
 
   it("passes the dataset through to onInstall", () => {
     const onInstall = jest.fn();
     const item = dataset();
     render(<DatasetCard {...base} dataset={item} onInstall={onInstall} />);
-    fireEvent.click(button("Add to dataflow")!);
+    fireEvent.click(button("Add to project")!);
     expect(onInstall).toHaveBeenCalledWith(item);
   });
 
   it("disables its actions while the drawer is busy", () => {
     renderCard({ busy: true });
-    expect(button("Add to dataflow")!.hasAttribute("disabled")).toBe(true);
+    expect(button("Add to project")!.hasAttribute("disabled")).toBe(true);
   });
 });
 
@@ -138,68 +138,40 @@ describe("DatasetCard - Delete gating", () => {
   });
 });
 
-describe("DatasetCard - publish affordances", () => {
-  // The default fixture is a CATALOG dataset (`data.urbanlab.demo@1`), i.e.
-  // something the installation shipped. Publishing means "put this into the
-  // catalog everyone on this Curio shares" - it is already there, and the
-  // backend has no guard, so the button would write a duplicate.
+describe("DatasetCard - no publish affordance at all", () => {
+  // The card used to carry Publish / Unpublish, gated on whether the dataset
+  // was the user's own. The gate was right and the PLACE was wrong: publishing
+  // puts an item into the catalog everyone on this Curio shares, which is a
+  // decision about the item and not about the project this card sits in. It now
+  // lives in the Data Catalog page's detail drawer, next to the account-level
+  // add/remove, where the ownership gate still applies.
+  //
+  // On a card it also sat in a scrolling grid, one stray click from a browse
+  // gesture, and it was the thing the user asked three times to have removed.
   const ownUpload = { dirName: "imported.my-upload@1", origin: "imported" as const };
-  const ownOutput = { dirName: "computed.flow-1.n2@1", origin: "computed" as const };
 
-  it("offers Publish for the user's own upload", () => {
-    renderCard({
-      dataset: dataset(ownUpload),
-      onPublish: jest.fn(),
-      publishAllowed: true,
-    });
-    // Sentence case, so the ACTION does not read as a status chip.
-    expect(button("Publish")).toBeTruthy();
-  });
-
-  it("offers Publish for an output the user's own node computed", () => {
-    renderCard({
-      dataset: dataset(ownOutput),
-      onPublish: jest.fn(),
-      publishAllowed: true,
-    });
-    expect(button("Publish")).toBeTruthy();
-  });
-
-  it("hides Publish for a dataset that came from the shared catalog", () => {
-    // The reported confusion: every dataset offered to publish itself back
-    // into the catalog it was installed from.
-    renderCard({ onPublish: jest.fn(), publishAllowed: true });
+  it("offers no Publish, even for the user's own upload", () => {
+    renderCard({ dataset: dataset(ownUpload) });
     expect(button("Publish")).toBeNull();
   });
 
-  it("still hides Publish for a catalog dataset that has been installed", () => {
-    // Installing flips `origin` from "hub" to "imported", so origin alone
-    // cannot tell an install from an upload - the store folder can.
-    renderCard({
-      dataset: dataset({ origin: "imported", installed: true }),
-      onPublish: jest.fn(),
-      publishAllowed: true,
-    });
-    expect(button("Publish")).toBeNull();
+  it("offers no Unpublish, even for the user's own published upload", () => {
+    renderCard({ dataset: dataset(ownUpload) });
+    expect(button("Unpublish")).toBeNull();
   });
 
-  it("hides Publish when the server forbids it", () => {
-    renderCard({
-      dataset: dataset(ownUpload),
-      onPublish: jest.fn(),
-      publishAllowed: false,
-    });
-    expect(button("Publish")).toBeNull();
+  it("still offers the actions that ARE about this project", () => {
+    // Removing the publish control must not have taken the per-project ones.
+    renderCard({ dataset: dataset(ownUpload), isInstalled: true, onUninstall: jest.fn() });
+    expect(button("Remove from project")).toBeTruthy();
   });
 
-  it("does not offer Publish again once published", () => {
-    renderCard({
-      dataset: dataset(ownUpload),
-      onPublish: jest.fn(),
-      publishAllowed: true,
-      isPublished: true,
-    });
-    expect(button("Publish")).toBeNull();
+  it("offers the one way into the item's details, under the square", () => {
+    renderCard({ dataset: dataset(ownUpload), onOpenDetails: jest.fn() });
+    // Hidden from the a11y tree: the avatar above it already carries the same
+    // accessible name for the same action, and two controls with one name is a
+    // strict-mode ambiguity. So query the text, not the role.
+    expect(screen.getByText("View details")).toBeTruthy();
   });
 });
 

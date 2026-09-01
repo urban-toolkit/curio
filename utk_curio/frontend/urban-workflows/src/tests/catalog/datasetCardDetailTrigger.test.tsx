@@ -71,11 +71,14 @@ describe("dataset card detail trigger", () => {
     expect(onOpenDetails).toHaveBeenCalledWith(dataset);
   });
 
-  test("the row header is presentational", () => {
+  test("the format is still stated, and states nothing twice", () => {
     renderCard();
-    // It carries the format badge, which stays visible...
-    expect(screen.getByText("GeoJSON")).toBeInTheDocument();
-    // ...but the kind label is no longer an interactive fallback name.
+    // The card body was brought onto the Agent drawer's shape - a title and ONE
+    // meta line - so the `CatalogItemRowHeader` strip and its format badge are
+    // gone. The format itself is not: it moved into the meta line, which is why
+    // this now matches a substring rather than a whole element.
+    expect(screen.getByText(/GeoJSON/)).toBeInTheDocument();
+    // And the kind label is still not an interactive fallback name.
     expect(screen.queryByRole("button", { name: "Dataset" })).toBeNull();
   });
 });
