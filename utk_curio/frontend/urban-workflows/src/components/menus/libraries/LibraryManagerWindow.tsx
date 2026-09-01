@@ -9,8 +9,9 @@ import { packagesApi } from "../../../api/packagesApi";
  * Two populations sit side-by-side in a single flat list:
  *
  * - **Standalone** libraries the user adds here (pip-installed into
- *   Curio's interpreter — JS install is not yet supported but the data
- *   model already accepts the ``kind`` discriminator).
+ *   Curio's interpreter). Python only: the ``kind`` picker still offers
+ *   JavaScript because package-declared JS libraries are listed below, but
+ *   adding one is refused in the UI rather than at the 501 (#239).
  * - **From packages** — libraries declared by an installed node
  *   package's ``manifest.dependencies.{python,js}``. Read-only here;
  *   uninstall the parent package from /catalog to drop them.
@@ -49,6 +50,10 @@ type Status =
 // would flash too fast to register. 800 ms is short enough to not feel
 // laggy but long enough that the user actually sees the install motion.
 const MIN_PROGRESS_MS = 800;
+
+// Referenced by the disabled spec input's aria-describedby, so a screen reader
+// reaching a dead control is told why it is dead.
+const JS_NOTE_ID = "installed-libraries-js-note";
 
 function splitSpec(spec: string): { name: string; version: string } {
   const m = spec.match(/^([^=<>~!@]+)([=<>~!].*|@.*)?$/);
@@ -142,6 +147,10 @@ export default function LibraryManagerWindow({
   const handleAdd = useCallback(async () => {
     const spec = newSpec.trim();
     if (!spec) return;
+    // The backend answers 501 for js, so submitting could only ever produce a
+    // red "Failed" row for an operation this dialog invited (#239). The Add
+    // button is disabled too; this guard is what stops Enter in the input.
+    if (newKind === "js") return;
     setStatus(newKind, spec, { kind: "installing", spec, libKind: newKind });
     setError(null);
     setNewSpec(""); // clear input so the user can queue another while pip runs
@@ -193,6 +202,11 @@ export default function LibraryManagerWindow({
 
   if (!open) return null;
 
+  // JS is offered in the picker because package-declared JS libraries are
+  // listed below and the column has to mean something; what is withdrawn is
+  // only the ability to *add* one here.
+  const jsSelected = newKind === "js";
+
   const renderStatusCell = (kind: Kind, fullSpec: string) => {
     const s = statuses[statusKey(kind, fullSpec)];
     if (!s) return null;
@@ -241,7 +255,9 @@ export default function LibraryManagerWindow({
       <div className={styles.container}>
         <h2 id="installed-libraries-title" className={styles.title}>Installed libraries</h2>
         <p className={styles.subtitle}>
-          Python and JavaScript libraries available to Curio, either added directly here or pulled in by installed node packages.
+          Python and JavaScript libraries available to Curio. Python libraries
+          can be added here directly; JavaScript ones arrive with the node
+          packages that declare them.
         </p>
 
         <div className={styles.addRow}>
@@ -257,19 +273,34 @@ export default function LibraryManagerWindow({
           <input
             className={styles.input}
             type="text"
-            placeholder={newKind === "python" ? "e.g. numpy or scikit-learn==1.4.0" : "e.g. lodash@^4.17 (coming soon)"}
+            placeholder={
+              jsSelected
+                ? "Added through a node package"
+                : "e.g. numpy or scikit-learn==1.4.0"
+            }
             value={newSpec}
             onChange={(e) => setNewSpec(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
+            disabled={jsSelected}
+            aria-describedby={jsSelected ? JS_NOTE_ID : undefined}
           />
           <button
             className={styles.addButton}
             onClick={() => void handleAdd()}
-            disabled={!newSpec.trim()}
+            disabled={jsSelected || !newSpec.trim()}
           >
             Add
           </button>
         </div>
+
+        {jsSelected && (
+          <p id={JS_NOTE_ID} className={styles.kindNote}>
+            Curio cannot install JavaScript libraries directly. Declare the
+            dependency in a node package, under
+            {" "}<code>dependencies.js</code> in its <code>manifest.json</code>,
+            and installing that package brings the library with it.
+          </p>
+        )}
 
         {error && (
           <div className={styles.logError}>
