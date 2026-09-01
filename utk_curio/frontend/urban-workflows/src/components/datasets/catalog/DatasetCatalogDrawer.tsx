@@ -1,18 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faFileImport } from "@fortawesome/free-solid-svg-icons";
 import { DrawerFooter } from "../../packages/publishing/DrawerFooter";
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import {
   DATASET_IMPORT_ACCEPT,
   DatasetSortMode,
+  isInThisDataflow,
   pendingInstallsNotYetListed,
 } from "../../../services/datasetCatalog";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetInstallingCard } from "./DatasetInstallingCard";
 import { DatasetDetailModal } from "./DatasetDetailModal";
-import { InstalledDatasetsList } from "./InstalledDatasetsList";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
 import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
@@ -157,13 +156,6 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           <nav className={tabStyles.tabs} aria-label="Data Catalog sections">
             <button
               type="button"
-              className={`${tabStyles.tab} ${tab === "featured" ? tabStyles.tabActive : ""}`}
-              onClick={() => startUiTransition(() => setTab("featured"))}
-            >
-              Featured
-            </button>
-            <button
-              type="button"
               className={`${tabStyles.tab} ${tab === "browse" ? tabStyles.tabActive : ""}`}
               onClick={() => startUiTransition(() => setTab("browse"))}
             >
@@ -174,7 +166,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
               className={`${tabStyles.tab} ${tab === "installed" ? tabStyles.tabActive : ""}`}
               onClick={() => startUiTransition(() => setTab("installed"))}
             >
-              In dataflow
+              In project
               {tabInstalledCount > 0 ? (
                 <span className={`${tabStyles.tabBadge} ${tabStyles.tabBadgeDark}`}>
                   {tabInstalledCount}
@@ -206,28 +198,19 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 ))}
               </div>
             ) : null}
-            {tab === "installed" ? (
-              !catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
-                <div className={shell.empty}>No datasets added to this dataflow yet.</div>
-              ) : (
-                <InstalledDatasetsList
-                  datasets={items}
-                  installing={installingRows}
-                  busy={busyId != null || publishingId != null}
-                  publishingId={publishingId}
-                  onUninstall={projectId ? (dataset) => void onUninstall(dataset) : undefined}
-                  onPublish={(datasetId) => void onPublish(datasetId)}
-                  onDragStart={handleDatasetDragStart}
-                  onDragEnd={handleDatasetDragEnd}
-                  refreshing={false}
-                />
-              )
-            ) : (
+            {/* One card for every tab. "In project" rendered
+                `InstalledDatasetsList` - a separate compact row list with its
+                own actions - so this drawer showed its tabs in two visual
+                languages, and neither matched the Agent drawer. The Node drawer
+                had the same split and lost it for the same reason. */}
+            {(
               <>
                 {!catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
                   <div className={shell.empty}>
-                    {tab === "computed"
-                      ? "No computed datasets yet. Run a dataflow node that outputs a table - it is saved to your Data Catalog and can be added to a dataflow from here."
+                    {tab === "installed"
+                      ? "No datasets added to this dataflow yet."
+                      : tab === "computed"
+                      ? "No computed datasets yet. Run a dataflow node that outputs a table. It is saved to your Data Catalog and can be added to a dataflow from here."
                       : "No datasets match the current filters."}
                   </div>
                 ) : null}
@@ -242,30 +225,35 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                     // origin is NOT a proxy for installed - only ``source_node``
                     // datasets (a data-loading node's own output in this flow)
                     // are installed by nature.
+                    // `isInThisDataflow`, the same predicate the "In project"
+                    // tab filters on. A bare `dataset.installed` disagreed with
+                    // it: before the first save nothing is `installed`, so a
+                    // dataset listed under "In project" - because it is in all
+                    // projects, and so in this one the moment it saves - was
+                    // handed a card offering "Add to project". Listed as in,
+                    // told it was out.
                     const isInstalled =
-                      dataset.installed === true || dataset.origin === "source_node";
-                    const isPublished = dataset.origin === "hub" || dataset.publishedToHub === true;
+                      isInThisDataflow(dataset, Boolean(projectId))
+                      || dataset.origin === "source_node";
                     return (
                       <DatasetCard
                         key={`${dataset.origin}:${dataset.id}`}
                         dataset={dataset}
                         isInstalled={isInstalled}
-                        isPublished={isPublished}
                         busy={busyId === dataset.id || publishingId === dataset.id}
-                        publishingId={publishingId}
                         onDragStart={(event) => handleDatasetDragStart(dataset, event)}
                         onDragEnd={handleDatasetDragEnd}
                         onInstall={(row) => void onInstall(row)}
-                        onUninstall={
-                          projectId
-                            ? (row) => void onUninstall(row)
-                            : undefined
-                        }
-                        onUnpublish={
-                          isPublished && isInstalled ? (row) => void onUnpublish(row) : undefined
-                        }
+                        onUninstall={(row) => void onUninstall(row)}
+                        // Passed unconditionally: the button shows disabled in
+                        // an unsaved dataflow rather than disappearing, so a
+                        // card under "In project" always has the control that
+                        // takes it back out. Its two peers do the same.
+                        hasProject={Boolean(projectId)}
+                        // No publish/unpublish here: those are account-level
+                        // decisions and they live in the Data Catalog page's
+                        // detail drawer with the rest of them.
                         onDelete={(row) => void onDelete(row)}
-                        onPublish={(datasetId) => void onPublish(datasetId)}
                         onOpenDetails={openDatasetDetails}
                       />
                     );
@@ -278,12 +266,9 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           <DrawerFooter
             busy={busyId === "import"}
             accept={DATASET_IMPORT_ACCEPT}
-            label={
-              <>
-                <FontAwesomeIcon icon={faFileImport} />{" "}
-                {busyId === "import" ? "Importing..." : "Import dataset"}
-              </>
-            }
+            /* Text only: `DrawerFooter` renders the shared icon itself, so
+               every drawer's import wears the same one. */
+            label={busyId === "import" ? "Importing…" : "Import dataset"}
             onSideload={(file) => void onPickImport(file)}
           />
         </aside>

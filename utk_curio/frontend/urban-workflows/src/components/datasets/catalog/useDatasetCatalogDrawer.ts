@@ -20,7 +20,9 @@ import {
   datasetCatalogApi,
   datasetDisplayTitle,
   isOsmGroupId,
+  isInThisDataflow,
   notifyDatasetCatalogRefresh,
+  useDatasetImport,
   useDatasetCatalog,
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
@@ -42,7 +44,6 @@ export interface DatasetConfirmAction {
 
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const importInFlightRef = useRef(false);
   const { projectId, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
   const { showToast } = useToastContext();
   const [tab, setTab] = useState<DrawerTab>("browse");
@@ -125,24 +126,26 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     };
 
     let list = visibleItems;
-    if (tab === "featured") {
-      list = list.filter((item) => item.origin === "hub" || item.installed).slice(0, 6);
-    } else if (tab === "installed") {
+    if (tab === "installed") {
       // Only genuinely-installed datasets — matches the palette's
       // isUserInstalledDataset (installed === true). The old `origin !== "hub"`
       // proxy also showed never-installed and just-uninstalled computed/imported
       // rows, so an uninstalled dataset lingered here until a page refresh
       // flipped its origin back to "hub".
-      list = list.filter((item) => item.installed === true);
+      // `isInThisDataflow`, not a bare `installed === true`: a dataflow is
+      // created on its first save, so before that nothing is installed and this
+      // tab rendered empty even for datasets the user had just added to every
+      // project. Those ARE in this dataflow, one save away.
+      list = list.filter((item) => isInThisDataflow(item, Boolean(projectId)));
     } else if (tab === "computed") {
       list = list.filter((item) => item.origin === "computed" || Boolean(item.producerNodeId));
     }
     return list.filter(matchesSearch);
-  }, [catalogItems, tab, debouncedSearch]);
+  }, [catalogItems, tab, debouncedSearch, projectId]);
 
   const installedCount = useMemo(
-    () => catalogItems.filter((item) => item.installed === true).length,
-    [catalogItems],
+    () => catalogItems.filter((item) => isInThisDataflow(item, Boolean(projectId))).length,
+    [catalogItems, projectId],
   );
 
   const computedCount = useMemo(
@@ -239,7 +242,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         body: isGroup
           ? `Add all ${layerCount} layers from ${title} to this dataflow?`
           : `Add ${title} to this dataflow?`,
-        confirmLabel: "Add to dataflow",
+        confirmLabel: "Add to project",
         destructive: false,
         run: () => performInstall(dataset),
       });
@@ -501,39 +504,28 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`,
     [performDelete],
   );
 
+  // The shared pathway, which the Data Catalog PAGE header calls too. It used
+  // to live inline here; the page then grew its own copy, and two surfaces
+  // doing the same register-plus-notify-plus-count began drifting apart.
+  const { importFile: runDatasetImport } = useDatasetImport({
+    importDataset: catalog.importDataset,
+    showToast,
+    onBegin: (key, label) => beginPendingInstall({ key, label }),
+    onEnd: (key) => endPendingInstall(key),
+  });
+
   const onPickImport = useCallback(
     async (file: File) => {
-      if (importInFlightRef.current) return;
-      importInFlightRef.current = true;
+      // Only the drawer paints a busy row; the shared hook owns the in-flight
+      // guard and the placeholder.
       setBusyId("import");
-      // No catalog row exists yet for a brand-new import, so the placeholder is the
-      // only in-list feedback until it lands.
-      beginPendingInstall({ key: "import", label: file.name });
       try {
-        const imported = await catalog.importDataset(file);
-        // Register-only: importing adds standalone account-level catalog items;
-        // they are NOT attached to the open dataflow, so we do not touch
-        // dataflowDatasets. A node/dataflow link is created only on explicit
-        // install. Fan out so the imported dataset(s) appear immediately across
-        // catalog surfaces (palette provider + dropdown hold separate caches).
-        notifyDatasetCatalogRefresh();
-        // An OSM PBF registers one dataset per layer; report the count.
-        const count = imported?.importedDatasetCount ?? 1;
-        showToast(
-          count > 1
-            ? `Registered ${count} datasets from ${file.name} in the Data Catalog.`
-            : `Registered ${file.name} in the Data Catalog.`,
-          "success",
-        );
-      } catch (err) {
-        showToast((err as Error)?.message || "Could not import dataset.", "error");
+        await runDatasetImport(file);
       } finally {
-        endPendingInstall("import");
-        importInFlightRef.current = false;
         setBusyId(null);
       }
     },
-    [catalog, showToast, beginPendingInstall, endPendingInstall],
+    [runDatasetImport],
   );
 
   const handleDatasetDragStart = useCallback(

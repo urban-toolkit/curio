@@ -7,11 +7,8 @@ import {
   datasetListSourceCaption,
 } from "../../../services/datasetCatalog";
 import {
-  CatalogFormatBadge,
-  CatalogItemRowHeader,
   CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
-import { CatalogPublishPill, shouldShowPublishPill } from "../../packages/CatalogPublishPill";
 import {
   isSharedCatalogDataset,
   isUserOwnedDataset,
@@ -43,18 +40,16 @@ function formatAvatarClass(format: DatasetCatalogItem["format"]): string {
 export interface DatasetCardProps {
   dataset: DatasetCatalogItem;
   isInstalled: boolean;
-  isPublished: boolean;
   busy: boolean;
-  publishAllowed?: boolean;
-  publishingId?: string | null;
   draggable?: boolean;
   onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
   onDragEnd?: () => void;
   onInstall: (dataset: DatasetCatalogItem) => void;
   onUninstall?: (dataset: DatasetCatalogItem) => void;
-  onUnpublish?: (dataset: DatasetCatalogItem) => void;
+  /** False in a dataflow that has not been saved yet: there is no project to
+   *  remove from, so the control shows disabled rather than vanishing. */
+  hasProject?: boolean;
   onDelete?: (dataset: DatasetCatalogItem) => void;
-  onPublish?: (datasetId: string) => void;
   onOpenDetails?: (dataset: DatasetCatalogItem) => void;
 }
 
@@ -63,23 +58,18 @@ export interface DatasetCardProps {
 export const DatasetCard: React.FC<DatasetCardProps> = ({
   dataset,
   isInstalled,
-  isPublished,
   busy,
-  publishAllowed = true,
-  publishingId = null,
   draggable = true,
   onDragStart,
   onDragEnd,
   onInstall,
   onUninstall,
-  onUnpublish,
+  hasProject = true,
   onDelete,
-  onPublish,
   onOpenDetails,
 }) => {
   const cardBusy = busy;
   const showUninstall = isInstalled && onUninstall != null;
-  const showUnpublish = isPublished && isInstalled && onUnpublish != null;
   // Delete permanently removes an account-level computed dataset from the Data
   // Catalog (distinct from Uninstall, which only detaches it from this project).
   const isComputedAsset = dataset.origin === "computed" || Boolean(dataset.producerNodeId);
@@ -104,15 +94,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
     onDelete != null &&
     (isComputedAsset || isOwnUpload) &&
     !isSharedCatalogDataset(dataset);
-  const showPublishPill = shouldShowPublishPill({
-    isPublished,
-    allowPublish: publishAllowed,
-    // Only the user's own. A dataset that came from the shared catalog is
-    // already there, and the backend has no guard, so republishing it would
-    // write a duplicate. Both peers gate this the same way - packages on
-    // `readOnly`, agents on the backend's `publishable`.
-    canPublish: onPublish != null && isUserOwnedDataset(dataset),
-  });
 
   const count = datasetCount(dataset);
   const time = relativeTime(dataset.updatedAt);
@@ -123,7 +104,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   const title = datasetDisplayTitle(dataset);
   const detailsLabel = `View ${title} (${DATASET_FORMAT_LABEL[dataset.format]}) details`;
 
-  const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [sourceCaption];
 
   return (
     <article
@@ -135,59 +115,64 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
-      {/* Format avatar */}
-      <button
-        type="button"
-        className={`${styles.cardAvatar} ${formatAvatarClass(dataset.format)} ${styles.cardAvatarButton}`}
-        title={detailsLabel}
-        aria-label={detailsLabel}
-        onClick={() => onOpenDetails?.(dataset)}
-      >
-        <CatalogKindIcon
-          className={`${styles.cardIcon} ${formatAvatarClass(dataset.format)} `}
-          kind="dataset"
-          size="md"
+      {/* Format avatar, and the way in directly beneath it. */}
+      <div className={styles.cardAvatarCol}>
+        <button
+          type="button"
+          className={`${styles.cardAvatar} ${formatAvatarClass(dataset.format)} ${styles.cardAvatarButton}`}
           title={detailsLabel}
-        />
-      </button>
+          aria-label={detailsLabel}
+          onClick={() => onOpenDetails?.(dataset)}
+        >
+          <CatalogKindIcon
+            className={`${styles.cardIcon} ${formatAvatarClass(dataset.format)} `}
+            kind="dataset"
+            size="md"
+            title={detailsLabel}
+          />
+        </button>
+        {onOpenDetails ? (
+          <button
+            type="button"
+            className={styles.avatarDetailsLink}
+            /* The avatar already carries `detailsLabel` as its accessible name;
+               this one is hidden from the a11y tree so the card does not expose
+               two controls with the same name for the same action. */
+            aria-hidden
+            tabIndex={-1}
+            onClick={() => onOpenDetails(dataset)}
+          >
+            View details
+          </button>
+        ) : null}
+      </div>
 
       {/* Body */}
+      {/* The Agent drawer's card body, the baseline all three now share: a
+          title and ONE meta line. This carried a `CatalogItemRowHeader` strip
+          and a tag row on top of its meta row - three rows of chrome around one
+          dataset name.
+
+          Nothing informative was dropped, only re-sited: the format, the row
+          count, the update time and the source all read as meta text. The
+          connection badge stays a badge, because - like the package card's
+          update chip - it is live state rather than description. */}
       <div className={styles.cardBody}>
-        {/* Presentational, like every other CatalogItemRowHeader caller
-            (InstalledDatasetsList, PackageCard). Making it a second button
-            named `detailsLabel` gave one card two controls with the same
-            accessible name, which is both a duplicate way into the same modal
-            and a strict-mode ambiguity for anything selecting by that name.
-            The format avatar above is the one way in. */}
-        <CatalogItemRowHeader
-          kind="dataset"
-          badge={
-            <CatalogFormatBadge
-              label={DATASET_FORMAT_LABEL[dataset.format]}
-              formatKey={dataset.format}
-            />
-          }
-        />
         <h3 className={styles.cardTitle}>{title}</h3>
 
         <div className={styles.cardMetaRow}>
           <span className={styles.cardMetaText}>
-            {datasetSubtitle(dataset)}
+            {[
+              DATASET_FORMAT_LABEL[dataset.format],
+              version,
+              datasetSubtitle(dataset),
+              metaParts,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
-          {metaParts ? <span className={styles.cardMetaText}>{metaParts}</span> : null}
           <DatasetConnectionBadge dataset={dataset} className={styles.connBadge} />
         </div>
-
-        {tags.length > 0 ? (
-          <div className={styles.tagRow}>
-            {version ? <span className={styles.versionBadge}>{version}</span> : null}
-            {tags.map((tag) => (
-              <span key={tag} className={styles.tag}>
-                {tag}
-              </span>
-            ))}
-          </div>
-        ) : null}
       </div>
 
       {/* Actions */}
@@ -197,53 +182,39 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
             type="button"
             className={styles.btnInstall}
             disabled={cardBusy}
+            /* Its Remove twin has had a tooltip in both states since this pair
+               was evened up; Add had none on either the Data or the Node card,
+               while the Agent card had one. Three buttons, two conventions. */
+            title={`Add ${dataset.title} to this project`}
             onClick={() => onInstall(dataset)}
           >
-            Add to dataflow
+            Add to project
           </button>
         ) : null}
 
-        {(showUninstall || showUnpublish || showDelete || showPublishPill) && (
+        {/* Publishing is not a card action on any surface. It is an
+            account-level decision about one item, and it belongs where the
+            other decisions about that item are: the Data Catalog page's detail
+            drawer. On a card it competed with the card's identity and put a
+            deployment-wide write one click from a browse gesture. */}
+        {(showUninstall || showDelete) && (
           // Order is the vocabulary made visible: actions first (dark), then
           // the destructive ones (light), with Delete last of all so the most
           // final thing on the card is the furthest from the first thing.
           <div className={styles.cardSecondaryActions}>
-            {showPublishPill ? (
-              <CatalogPublishPill
-                variant="hub"
-                dirName={dataset.id}
-                published={isPublished}
-                allowPublish={publishAllowed}
-                busy={publishingId === dataset.id}
-                onPublish={onPublish ?? (() => {})}
-                // Without these the pill falls back to the PACKAGE copy, so a
-                // dataset offered "Publish this installed package into the
-                // shared catalog (packages/)". The browse page already passes
-                // the dataset wording; the canvas surfaces did not.
-                publishedTitle="Listed in the Data Catalog"
-                publishActionTitle="Publish this dataset into the shared catalog (datasets/)"
-              />
-            ) : null}
             {showUninstall ? (
               <button
                 type="button"
                 className={styles.btnSecondary}
-                disabled={cardBusy}
-                title={`Remove ${dataset.title} from this dataflow`}
+                disabled={cardBusy || !hasProject}
+                title={
+                  hasProject
+                    ? `Remove ${dataset.title} from this project`
+                    : "Save this dataflow first. There is no project to remove it from yet."
+                }
                 onClick={() => onUninstall(dataset)}
               >
-                Remove from dataflow
-              </button>
-            ) : null}
-            {showUnpublish ? (
-              <button
-                type="button"
-                className={styles.btnSecondary}
-                disabled={cardBusy}
-                title={`Remove ${dataset.title} from the Data Catalog`}
-                onClick={() => onUnpublish(dataset)}
-              >
-                Unpublish
+                Remove from project
               </button>
             ) : null}
             {showDelete ? (

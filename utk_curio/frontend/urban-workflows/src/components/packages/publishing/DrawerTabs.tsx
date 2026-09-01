@@ -8,7 +8,7 @@ export interface DrawerTabsProps {
   onChange: (tab: DrawerTab) => void;
 }
 
-/** Tab strip for the Node Catalog drawer: Browse all / In dataflow.
+/** Tab strip for the Node Catalog drawer: Browse all / In project.
  *
  * There were two more, and neither did anything. "Featured" and "Updates" were
  * rendered and clickable, but the drawer collapsed both onto "browse" before
@@ -42,7 +42,7 @@ export const DrawerTabs: React.FC<DrawerTabsProps> = ({
       aria-pressed={tab === "installed"}
       onClick={() => onChange("installed")}
     >
-      In dataflow
+      In project
       {installedCount > 0 ? (
         <span className={`${styles.tabBadge} ${styles.tabBadgeDark}`}>{installedCount}</span>
       ) : null}

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
+import { faFileImport, faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../api/agentsApi";
 
 /**
@@ -11,7 +11,7 @@ import type { AgentCard } from "../../../api/agentsApi";
  */
 const AiSettingsModal = React.lazy(() => import("../../AiSettingsModal"));
 import { AgentImportModal } from "./AgentImportModal";
-import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
+import { AgentDetailModal } from "./AgentDetailModal";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import footerStyles from "../../packages/publishing/DrawerFooter.module.css";
@@ -46,7 +46,7 @@ export interface AgentCatalogDrawerProps {
 }
 
 // Slot names come from the shared vocabulary (datasetCatalogDrawerTypes'
-// TAB_LABEL): "Browse all" and "In dataflow" mean the same thing in every
+// TAB_LABEL): "Browse all" and "In project" mean the same thing in every
 // catalog, and the third is this kind's own.
 //
 // No "featured" slot: both peers declare one, but the Node drawer maps it onto
@@ -55,22 +55,24 @@ export interface AgentCatalogDrawerProps {
 // ones.
 const SCOPES: { key: AgentScope; label: string }[] = [
   { key: "browse", label: "Browse all" },
-  { key: "imports", label: "My imports" },
-  { key: "installed", label: "In dataflow" },
+  { key: "installed", label: "In project" },
 ];
 
 const SUBTITLE: Record<AgentScope, string> = {
   browse: "Agents available to this dataflow.",
-  imports: "Your own agent definitions. Publish one to the Agent Catalog, or add it here.",
   installed: "Agents added to this dataflow.",
 };
 
 /**
- * Three-scope Agent Catalog drawer (the Agents Roster). Reuses the shared
- * catalog chrome — DrawerTabs tab styling, PackageSearchRow (search + sort),
- * the PackageCard row grid with a category-tinted avatar, and the
- * CatalogPublishPill — so agents match the Data / Node catalog drawers
- * (dev/68). Data + lifecycle live in ``useAgentCatalogDrawer``.
+ * Two-scope Agent Catalog drawer (the Agents Roster): Browse all, In project.
+ * Reuses the shared catalog chrome — DrawerTabs tab styling, PackageSearchRow
+ * (search + sort), and the PackageCard row grid with a category-tinted avatar —
+ * so agents match the Data / Node catalog drawers (dev/68). Data + lifecycle
+ * live in ``useAgentCatalogDrawer``.
+ *
+ * It no longer carries a publish control: publishing is a decision about an
+ * agent rather than about this dataflow, so it lives on the Agent Catalog
+ * page's detail drawer, which is the surface that has no project.
  *
  * Per DEC-042 (dev/21) the static dark roster header carries the **Pin button
  * only** — no Close, no agent identity, no agent-cycling controls. Dismissal is
@@ -92,6 +94,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   // Upload-import (dev/36), opened from the footer's Import package button.
   const [importOpen, setImportOpen] = useState(false);
+  const [detailCard, setDetailCard] = useState<AgentCard | null>(null);
   // Search/sort are pure view state over the hook's per-scope cache (dev/68) —
   // client-side like the Node Catalog drawer, persisting across scope tabs.
   const [search, setSearch] = useState("");
@@ -106,12 +109,30 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
     run: () => Promise<void>;
   } | null>(null);
 
+  const requestUninstall = useCallback(
+    (card: AgentCard) => {
+      setConfirmAction({
+        title: `Remove ${card.name} from this dataflow?`,
+        confirmLabel: "Remove",
+        destructive: true,
+        body:
+          `Remove ${card.name} from this dataflow?
+
+` +
+          `The agent stays in your account and in your other projects. Add it ` +
+          `back here any time.`,
+        run: () => c.uninstall(card),
+      });
+    },
+    [c],
+  );
+
   const requestInstall = useCallback(
     (card: AgentCard) => {
       const requires = card.requiresAgents ?? [];
       setConfirmAction({
         title: `Add ${card.name}?`,
-        confirmLabel: "Add to dataflow",
+        confirmLabel: "Add to project",
         destructive: false,
         body: (
           <>
@@ -140,39 +161,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
           </>
         ),
         run: () => c.install(card),
-      });
-    },
-    [c],
-  );
-
-  const requestUninstall = useCallback(
-    (card: AgentCard) => {
-      setConfirmAction({
-        title: `Remove ${card.name}?`,
-        confirmLabel: "Remove",
-        destructive: true,
-        // Both peers confirm this one (NodeCatalogDrawer.onUninstall,
-        // useDatasetCatalogDrawer.onUnpublish): it is a lockfile write the
-        // user cannot undo with a second click, and any agent attached from
-        // this dataflow goes with it.
-        body: `Remove ${card.name} (${card.dirName}) from this dataflow?`,
-        run: () => c.uninstall(card),
-      });
-    },
-    [c],
-  );
-
-  // Unpublishing is a deployment-wide write, and both peers confirm it.
-  const requestUnpublish = useCallback(
-    (card: AgentCard) => {
-      setConfirmAction({
-        title: `Unpublish ${card.name}?`,
-        confirmLabel: "Unpublish",
-        destructive: true,
-        body: `Unpublish ${card.name} from the Agent Catalog?
-
-This removes the catalog listing. Copies already added to dataflows are not removed.`,
-        run: () => c.unpublish(card.dirName),
       });
     },
     [c],
@@ -269,6 +257,14 @@ This removes the catalog listing. Copies already added to dataflows are not remo
             onClick={() => c.setScope(s.key)}
           >
             {s.label}
+            {/* The same badge the Data and Node drawers put on this tab. This
+                one had none, so the three drawers reported the dataflow's
+                contents in two different ways. */}
+            {s.key === "installed" && c.installedCount > 0 ? (
+              <span className={`${tabStyles.tabBadge} ${tabStyles.tabBadgeDark}`}>
+                {c.installedCount}
+              </span>
+            ) : null}
           </button>
         ))}
       </nav>
@@ -301,12 +297,19 @@ This removes the catalog listing. Copies already added to dataflows are not remo
                 hasProject={!!projectId}
                 onRequestInstall={requestInstall}
                 onRequestUninstall={requestUninstall}
-                onRequestUnpublish={requestUnpublish}
+                onOpenDetails={setDetailCard}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* The card's "View details". The modal already existed and the browse
+          page used it; the canvas drawer never opened it, so from the canvas an
+          agent's capabilities and prompts were unreadable. */}
+      {detailCard ? (
+        <AgentDetailModal agent={detailCard} onClose={() => setDetailCard(null)} />
+      ) : null}
 
       {/* The shared footer's geometry, but its own control: DrawerFooter wraps
           a single-archive file input, and an agent import is a manifest plus
@@ -320,7 +323,10 @@ This removes the catalog listing. Copies already added to dataflows are not remo
           aria-haspopup="dialog"
           onClick={() => setImportOpen(true)}
         >
-          Import agent
+          {/* The same glyph `DrawerFooter` renders for its two callers. This
+              footer reuses that stylesheet but not the component, so it has to
+              say so itself. */}
+          <FontAwesomeIcon icon={faFileImport} aria-hidden /> Import agent
         </button>
       </footer>
 
@@ -329,8 +335,10 @@ This removes the catalog listing. Copies already added to dataflows are not remo
           onClose={() => setImportOpen(false)}
           onImported={() => {
             setImportOpen(false);
-            // The new definition lives in My imports, so show that tab.
-            c.setScope("imports");
+            // There is no "My imports" tab to send the user to any more. The
+            // uploaded definition is an account-level thing and shows up under
+            // "Browse all" like every other agent this account can reach.
+            c.setScope("browse");
             void c.reload();
           }}
         />
@@ -373,12 +381,22 @@ const AgentRow: React.FC<{
   hasProject: boolean;
   onRequestInstall: (card: AgentCard) => void;
   onRequestUninstall: (card: AgentCard) => void;
-  onRequestUnpublish: (card: AgentCard) => void;
+  onOpenDetails: (card: AgentCard) => void;
 }> = ({
   card, scope, state, hasProject,
-  onRequestInstall, onRequestUninstall, onRequestUnpublish,
+  onRequestInstall, onRequestUninstall, onOpenDetails,
 }) => {
   const busy = state.busyCoord === card.dirName;
+  /** In the dataflow this drawer is open on.
+   *
+   *  `installedInProject` alone is false for EVERYTHING until the dataflow is
+   *  saved, because it is derived from the project lockfile and there is no
+   *  project yet. An agent already in the account is in this dataflow one save
+   *  away - `save_project` seeds them - so counting it here is what stops the
+   *  same agent appearing under "In project" and, simultaneously, under
+   *  "Browse all" offering to add it. */
+  const inThisDataflow =
+    card.installedInProject === true || (!hasProject && card.imported === true);
   // The shared catalog card grid: 72px avatar | body | action. There is no
   // accent stripe - it was dropped from every catalog card because the
   // avatar tint already carries the category, and PackageCard.module.css no
@@ -392,8 +410,29 @@ const AgentRow: React.FC<{
     // which is what lets an install be asserted end to end without reading a
     // hashed CSS class. data-pkg-dir and data-dataset-id do the same job.
     <article className={`${cardStyles.card} ${styles.agentCard}`} data-agent-coord={card.dirName}>
-      <div className={`${cardStyles.cardAvatar} ${avatarClass}`} aria-hidden>
-        <FontAwesomeIcon icon={agentCategoryIcon(card.category)} className={styles.avatarIcon} />
+      {/* The square, and the way into the agent's details beneath it - the same
+          position on every drawer card. */}
+      <div className={cardStyles.cardAvatarCol}>
+        <button
+          type="button"
+          className={`${cardStyles.cardAvatar} ${cardStyles.cardAvatarButton} ${avatarClass}`}
+          title={`View ${card.name} details`}
+          aria-label={`View ${card.name} details`}
+          onClick={() => onOpenDetails(card)}
+        >
+          <FontAwesomeIcon
+            icon={agentCategoryIcon(card.category)}
+            className={styles.avatarIcon}
+            aria-hidden
+          />
+        </button>
+        <button
+          type="button"
+          className={cardStyles.avatarDetailsLink}
+          onClick={() => onOpenDetails(card)}
+        >
+          View details
+        </button>
       </div>
 
       <div className={cardStyles.cardBody}>
@@ -428,22 +467,38 @@ const AgentRow: React.FC<{
       </div>
 
       <div className={cardStyles.cardAction}>
-        {/* Per-scope action controls:
-            Browse all  -> Add to dataflow (or Remove from dataflow if in)
-            My imports  -> Add to dataflow + Publish pill + Remove from account
-            In dataflow -> Remove from dataflow
+        {/* One control, and which one is decided by `inThisDataflow`: in, so
+            Remove; not in, so Add. Never both, and never Add for something the
+            dataflow already has.
 
-            There is no per-agent settings cog. Curio no longer offers a
-            surface for capping runs or spend, so the three policy scopes it
-            used to open have nothing left to edit. */}
-        {scope === "installed" || card.installedInProject ? (
+            That last case was the bug. Before the first save a dataflow has no
+            project, so `installedInProject` is false for EVERYTHING - and an
+            agent already in the account appeared under "In project" while
+            simultaneously appearing under "Browse all" offering to add it. The
+            same agent, twice, saying two different things. `inThisDataflow`
+            counts an account agent as present, because `save_project` seeds
+            the account's agents into the dataflow the moment it exists.
+
+            There is no per-agent settings cog. Curio no longer offers a surface
+            for capping runs or spend, so the three policy scopes it used to
+            open have nothing left to edit. */}
+        {inThisDataflow ? (
           <button
             type="button"
             className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
             disabled={busy || !hasProject}
+            /* The only one of the three Remove buttons with no tooltip, in
+               either state - so the disabled case in an unsaved dataflow said
+               nothing at all about why it was disabled. Same wording as its
+               peers, from the same two branches. */
+            title={
+              hasProject
+                ? `Remove ${card.name} from this project`
+                : "Save this dataflow first. There is no project to remove it from yet."
+            }
             onClick={() => onRequestUninstall(card)}
           >
-            Remove from dataflow
+            Remove from project
           </button>
         ) : (
           <button
@@ -457,62 +512,12 @@ const AgentRow: React.FC<{
           </button>
         )}
 
-        {scope === "imports" ? (
-          <>
-            {/* Publish to the shared catalog. The pill only shows for eligible (owned,
-                store-backed) definitions — built-ins report publishable=false,
-                so no dead button appears. */}
-            <CatalogPublishPill
-              dirName={card.dirName}
-              published={card.published}
-              allowPublish={card.publishable}
-              busy={busy}
-              onPublish={() => state.publish(card.dirName)}
-              variant="hub"
-              publishedTitle="Listed in the Agent Catalog"
-              publishActionTitle="Publish this agent into the shared catalog (agents/)"
-              itemLabel={card.name}
-              catalogLabel="the Agent Catalog"
-            />
-            {/* Unpublish. The hook and the API have always had it, and the
-                browse page offers it - the drawer did not, so from the canvas
-                an agent could be published and never taken back. Its two peers
-                both offer the inverse of publish beside the pill. */}
-            {card.published ? (
-              <button
-                type="button"
-                className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
-                disabled={busy}
-                onClick={() => onRequestUnpublish(card)}
-              >
-                Unpublish
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
-              disabled={busy}
-              onClick={() => state.removeImport(card.dirName)}
-            >
-              {/* Not "Delete": `services.remove_import` drops the registry
-                  entry and leaves the definition on disk, so the old label
-                  promised a destruction that never happened. This is the same
-                  call the browse page makes, under the same name. */}
-              Remove from my account
-            </button>
-          </>
-        ) : null}
-
-        {scope === "browse" && !card.imported ? (
-          <button
-            type="button"
-            className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
-            disabled={busy}
-            onClick={() => state.importAgent(card.dirName)}
-          >
-            Import
-          </button>
-        ) : null}
+        {/* No publish, unpublish, or all-projects control on a card.
+            Those are account-level decisions about one agent, and they live in
+            the Agent Catalog page's detail drawer with the rest of them - a
+            card here offers the per-PROJECT action and a way in, nothing more.
+            The card previously carried four of them at once: the publish pill,
+            an Unpublish, "Remove from all projects" and "Add to all projects". */}
       </div>
     </article>
   );
