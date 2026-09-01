@@ -35,6 +35,7 @@ from playwright.sync_api import expect
 from .utils import (
     REPO_ROOT,
     accept_confirm_dialog,
+    api_json,
     play_node,
     signup_e2e_user,
     wait_for_projects_page,
@@ -1401,3 +1402,94 @@ def data_catalog_chips_cover_every_format(ctx: Ctx) -> None:
             f"are being computed after the format filter instead of before it"
         )
     ctx.capture("parquet-selected")
+
+
+# ---------------------------------------------------------------------------
+# Dataflow identity
+# ---------------------------------------------------------------------------
+
+@walkthrough(
+    slug="renaming-a-dataflow-renames-it-everywhere",
+    example=PROVENANCE_EXAMPLE,
+    refs=[230],
+    title="A renamed dataflow is renamed on the projects page too",
+    premise="Rename a dataflow on the canvas, save it, then go and look at the list.",
+    note="The name is stored twice - the project row the Projects list renders, "
+         "and `spec.dataflow.name` the canvas title renders. Committing the "
+         "title wrote only the second, and the save sent `projectName`, which "
+         "only loading ever set - so the save re-sent the name the dataflow was "
+         "opened under. The reverse direction was broken too: a name-only PUT, "
+         "which is what the list's own rename sends, never reached the spec.",
+    tests=["src/tests/hook/useWorkflowOperations.rename.test.ts",
+           "src/tests/components/upMenuRename.test.ts",
+           "tests/test_projects/test_routes.py",
+           "test_frontend/test_project_save_load.py"],
+    fit_reactflow=False,
+    max_diff_ratio=0.03,
+)
+def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
+    """Three captures because the bug spans two pages and two directions.
+
+    A canvas-only shot cannot show the symptom at all - the canvas was the one
+    surface that always looked right.
+    """
+    page = ctx.page
+
+    ctx.say("Rename it on the canvas", "Click the title, type, press Enter.")
+    title = page.locator("h1").first
+    title.wait_for(state="visible", timeout=30000)
+    ctx.click(title)
+
+    box = page.locator("input[type='text']").last
+    box.wait_for(state="visible", timeout=10000)
+    box.fill("Renamed Dataflow")
+    box.press("Enter")
+
+    disk = page.locator("[data-curio-save-state]")
+    state = disk.get_attribute("data-curio-save-state")
+    assert state == "unsaved", (
+        f"the rename left the indicator reading {state!r}; a rename diverges "
+        f"from disk and has to say so, or the user is told their edit is saved"
+    )
+    ctx.focus(disk, hold=900)
+    ctx.say("Unsaved, as it should be", "The rename is an edit like any other.")
+    ctx.capture("renamed-on-canvas")
+
+    ctx.say("Save it", "")
+    ctx.click(disk)
+    page.wait_for_function(
+        "() => document.querySelector('[data-curio-save-state]')"
+        "?.getAttribute('data-curio-save-state') === 'saved'",
+        timeout=30000,
+    )
+
+    ctx.say("Now the projects page", "This is where the old name used to survive.")
+    page.goto(f"{ctx.frontend}/projects")
+    page.get_by_text("Renamed Dataflow").first.wait_for(state="visible", timeout=30000)
+    ctx.focus(page.get_by_text("Renamed Dataflow").first, hold=1200)
+    ctx.capture("renamed-in-the-list")
+
+    ctx.say("And back the other way",
+            "Renaming from the list has to reach the canvas title too.")
+    # Straight through the API: the subject is what the canvas reads back, not
+    # the context menu that gets there. The token is the `session_token` cookie
+    # the app itself authenticates with (utils/authApi), read off the live
+    # context rather than threaded through Ctx, which the video runner shares.
+    token = next(
+        c["value"] for c in page.context.cookies() if c["name"] == "session_token"
+    )
+    listed = api_json(f"{ctx.backend}/api/projects", token)
+    target = next(p for p in listed if p["name"] == "Renamed Dataflow")
+    api_json(
+        f"{ctx.backend}/api/projects/{target['id']}",
+        token,
+        method="PUT",
+        payload={"name": "Renamed From The List"},
+    )
+
+    page.goto(f"{ctx.frontend}/dataflow/{target['id']}")
+    heading = page.locator("h1").filter(has_text="Renamed From The List")
+    heading.wait_for(state="visible", timeout=30000)
+    ctx.focus(heading, hold=1200)
+    ctx.say("The canvas title followed", "Both stores hold one name now.")
+    ctx.capture("canvas-follows-a-list-rename")

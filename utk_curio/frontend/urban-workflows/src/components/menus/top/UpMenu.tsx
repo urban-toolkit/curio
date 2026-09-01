@@ -73,6 +73,7 @@ export default function UpMenu({
         projectDirty,
         projectSavedAt,
         cleanCanvas,
+        renameDataflow,
         saveCurrentProject,
         saveAsNewProject,
         discardProject,
@@ -120,13 +121,27 @@ export default function UpMenu({
         setWorkflowName(e.target.value);
     };
 
-    const handleNameBlur = () => {
+    // Commit through ``renameDataflow`` so the project row's name - what the
+    // Projects list and the details drawer render - moves with the canvas title
+    // (#230). Committing used to only close the editor, which left the rename
+    // living in ``workflowName`` alone. ``handleNameChange`` is untouched, so
+    // typing still updates the visible title live.
+    const commitName = () => {
+        if (!renameDataflow(workflowName)) {
+            // A blank entry is not a rename. Put the dataflow's own name back
+            // rather than leaving the title empty.
+            setWorkflowName(projectName || workflowNameRef.current || "Untitled dataflow");
+        }
         setIsEditing(false);
+    };
+
+    const handleNameBlur = () => {
+        commitName();
     };
 
     const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
-            setIsEditing(false);
+            commitName();
         }
     };
 

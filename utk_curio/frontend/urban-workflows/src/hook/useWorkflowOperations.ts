@@ -722,6 +722,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         [setDataflowDatasets],
     );
 
+    // The dataflow's name is stored twice: in ``spec.dataflow.name``, which the
+    // canvas title renders, and in the project row's ``name``, which the Projects
+    // list renders. #230: the canvas rename wrote only ``workflowName`` (the spec
+    // side), while ``saveCurrentProject`` sends ``projectName`` - so the save
+    // faithfully re-sent the name the dataflow was loaded under and the Projects
+    // card never moved. One entry point keeps both in step.
+    //
+    // Deliberately NOT solved by flipping the ``||`` precedence below:
+    // ``loadParsedTrill`` also calls ``setWorkflowName``, so preferring the canvas
+    // name there would make File -> Load into an open project silently rename it.
+    //
+    // Returns false for a blank entry so the caller can restore the old title.
+    const renameDataflow = useCallback((rawName: string): boolean => {
+        const next = rawName.trim();
+        if (!next) return false;
+        setWorkflowName(next);
+        setProjectName(next);
+        // A rename diverges from disk like any other edit. Nothing said so before,
+        // which went unnoticed only because the phantom dirty flag of #229 was
+        // masking it.
+        markDirty();
+        return true;
+    }, [setWorkflowName, markDirty]);
+
     const saveCurrentProject = useCallback(async (nameOverride?: string) => {
         if (viewerMode === "shared") {
             throw new Error("Shared dataflows are read-only; use Save a copy");
@@ -757,6 +781,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 name,
             });
             syncDatasetsFromSavedSpec(detail.spec);
+            // Re-pin the client's copy of the name to what the server actually
+            // stored. The create branch already did this, so only the update path
+            // could drift out of date - and it also self-heals a project that
+            // diverged before #230 was fixed.
+            setProjectName(detail.name);
             // The backend prunes attachments for deleted nodes/edges (and
             // preserves the agent lockfile) on save, so reconcile the dock with
             // the freshly-persisted spec — a just-deleted node's tile disappears
@@ -1136,6 +1165,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         applyReviewedRemovals,
 
         // Project operations
+        renameDataflow,
         saveCurrentProject,
         saveAsNewProject,
         ensureProjectId,
