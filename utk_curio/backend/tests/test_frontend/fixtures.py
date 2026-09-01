@@ -324,6 +324,11 @@ def curio_servers(session_app, request):
             "python", "curio.py", "start",
             "--backend-port", str(backend_port),
             "--sandbox-port", str(sandbox_port),
+            # Passed explicitly, like its two peers. ``env["PORT"]`` above does
+            # NOT reach webpack: ``start_frontend`` takes the port from
+            # ``--frontend-port`` (default 8080), so without this the readiness
+            # gate waits on a port nothing was ever told to listen on.
+            "--frontend-port", str(frontend_port),
             *extra_args,
         ],
         cwd=REPO_ROOT,

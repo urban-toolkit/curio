@@ -405,14 +405,23 @@ def session_app():
     ``config._resolve_database_uri``.
     """
     application = create_app()
+    # Defaults are the production ports, so CI and a plain ``pytest`` run are
+    # unchanged. They are overridable because two checkouts of this repo cannot
+    # otherwise run their suites at the same time -- the second one's servers
+    # collide with the first one's on every port.
+    #
+    # BACKEND_PORT must agree with the frontend's ``BACKEND_URL``, which
+    # dotenv-webpack bakes into the bundle at BUILD time: changing it means
+    # editing ``utk_curio/frontend/urban-workflows/.env`` and rebuilding, not
+    # just exporting a variable.
+    backend_port = int(os.environ.get("BACKEND_PORT") or 5002)
     application.config.update(
         {
             "TESTING": True,
-            "LIVESERVER_PORT": 5002,
-            # Use 5002 so frontend (dotenv .env / default) finds the backend
-            "BACKEND_PORT": 5002,
-            "SANDBOX_PORT": 2000,
-            "FRONTEND_PORT": 8080,
+            "LIVESERVER_PORT": backend_port,
+            "BACKEND_PORT": backend_port,
+            "SANDBOX_PORT": int(os.environ.get("SANDBOX_PORT") or 2000),
+            "FRONTEND_PORT": int(os.environ.get("FRONTEND_PORT") or 8080),
         }
     )
     return application
