@@ -325,11 +325,34 @@ def pytest_addoption(parser):
         default=False,
         help="enable longrundecorated tests",
     )
+    parser.addoption(
+        "--videos",
+        action="store_true",
+        dest="videos",
+        default=False,
+        help="record the walkthrough screencasts (slow; needs a browser)",
+    )
 
 
 def pytest_configure(config):
+    """Exclude the opt-in marks unless their flag was passed.
+
+    Composed rather than assigned. This used to be a bare
+    ``setattr(config.option, "markexpr", "not externalapi")``, which discarded
+    any ``-m`` the caller gave; with a second opt-in mark it would also have
+    dropped whichever exclusion was written last.
+    """
+    config.addinivalue_line("markers", "video: records a screencast; needs --videos")
+    excluded = []
     if not config.option.longrun:
-        setattr(config.option, "markexpr", "not externalapi")
+        excluded.append("not externalapi")
+    if not config.option.videos:
+        excluded.append("not video")
+    if not excluded:
+        return
+    existing = getattr(config.option, "markexpr", "") or ""
+    parts = ([f"({existing})"] if existing else []) + excluded
+    setattr(config.option, "markexpr", " and ".join(parts))
 
 
 @pytest.fixture(scope="session")

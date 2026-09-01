@@ -767,6 +767,23 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             const target = nodes.find(
                 (node: any) => node.id === connection.target
             ) as Node;
+            const sourceNode = nodes.find(
+                (node: any) => node.id === connection.source
+            ) as Node | undefined;
+
+            // Projects saved before #186 was fixed contain provenance versions whose
+            // edges name nodes that version does not hold. Clicking one replays those
+            // edges through here with an empty node list, and the cycle checks below
+            // dereference `target` - which is how a click in the provenance graph took
+            // the whole canvas down with an uncaught TypeError (#195). React Flow
+            // cannot render an edge with a missing endpoint anyway, so drop it.
+            if (!target || !sourceNode) {
+                console.warn(
+                    `[FlowProvider] onConnect: dropping edge ${connection.source} -> ` +
+                    `${connection.target}; endpoint not on the canvas`,
+                );
+                return;
+            }
             const hasCycle = (node: Node, visited = new Set()) => {
                 if (visited.has(node.id)) return false;
 

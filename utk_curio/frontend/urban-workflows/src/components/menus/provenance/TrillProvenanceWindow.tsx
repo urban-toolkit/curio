@@ -157,6 +157,17 @@ function TrillProvenanceGraph({ open }: { open: boolean }) {
             nodesConnectable={false}
             elementsSelectable={false}
             zoomOnDoubleClick={false}
+            // ModalShell puts `nowheel nodrag nopan` on the dialog element, and React
+            // Flow matches those by ancestor (`event.target.closest('.nopan')`), so
+            // with the defaults every pan and wheel-zoom inside this modal is refused
+            // and only the <Controls> buttons work (#187). Naming classes nothing in
+            // here carries hands the gestures back - the same trick NodeProvenance
+            // already uses for a React Flow nested inside the canvas.
+            noPanClassName="inner-nopan"
+            noWheelClassName="inner-nowheel"
+            // The default floor of 0.5 clamps fitView, so a long version chain still
+            // could not be framed inside the modal.
+            minZoom={0.1}
             fitView
             fitViewOptions={{ padding: 0.25 }}
             style={{ background: "#e8e8e8" }}
