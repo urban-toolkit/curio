@@ -21,6 +21,14 @@ return df
 
 Hit **Run**. The Python `return` outputs `df` for the next node.
 
+The dataset above is written inline because it is three lines long. A
+`Data Loading` node has no file picker of its own: to work from a CSV or
+GeoJSON, import it through **Data ⏷ → Data Catalog** and drag the dataset onto
+the canvas, which creates a `Data Loading` node already wired to it. See
+[DATA-CATALOG.md](DATA-CATALOG.md#3-using-a-dataset-in-a-dataflow). If you want
+the node itself to prompt for a path when it runs, declare a file widget in the
+code with the marker `[!! path$FILE !!]`.
+
 Next, drag a `Vega-Lite` node onto the canvas and connect its input handle to the output of the `Data Loading` node. Switch to the `Grammar` view and enter the following Vega-Lite specification:
 
 ```json

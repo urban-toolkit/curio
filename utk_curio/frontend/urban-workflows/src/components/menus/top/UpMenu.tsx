@@ -333,8 +333,19 @@ export default function UpMenu({
                     intro: "Welcome to Curio, a framework for urban analytics. Let's take a quick tour to help you get started.",
                 },
                 {
+                    // #240: this step used to promise a file picker the node
+                    // has never shipped. The uploader it described was
+                    // commented out of WidgetsEditor and has now been deleted,
+                    // so the copy names the two routes that do exist, and the
+                    // Data Catalog step below follows immediately because it is
+                    // the answer to the question this one raises.
                     element: "#step-loading",
-                    intro: "This is a Data Loading Node. Here, you can create an array for basic datasets or import data from a file. Once loaded, add your code to convert the data into a DataFrame for further analysis.",
+                    intro: "This is a Data Loading Node. Write Python here to build a small dataset inline, or to read one already available to your dataflow. The node holds code, not a file picker: to bring a file in, use the Data Catalog (next step), or add a file widget to the code with the marker [!! path$FILE !!].",
+                },
+                {
+                    // The tour never mentioned the Data Catalog, which is how a
+                    // file actually gets into a dataflow.
+                    intro: "Files live in the Data Catalog, not inside a node. Open Data → Data Catalog, import a CSV or GeoJSON, then drag the dataset onto the canvas: Curio creates a Data Loading Node already wired to it.",
                 },
                 {
                     element: "#step-analysis",

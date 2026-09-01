@@ -542,7 +542,6 @@ export function MainCanvas() {
             </ReactFlow>
             {!isSharedView ? <AgentDockOverlay /> : null}
             </div>
-            <input hidden type="file" name="file" id="file" />
 
         </div> : loadingAnimation() }
         <VersionBadge />
