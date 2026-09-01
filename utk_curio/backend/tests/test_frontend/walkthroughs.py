@@ -1327,3 +1327,77 @@ def data_pool_scrolls_sideways(ctx: Ctx) -> None:
     ctx.say("The right-hand columns, in place",
             "One scroller owns both axes now.")
     ctx.capture("scrolled-right")
+
+
+# ---------------------------------------------------------------------------
+# Data Catalog
+# ---------------------------------------------------------------------------
+
+@walkthrough(
+    slug="data-catalog-chips-cover-every-format",
+    refs=[232],
+    title="The quick filters offer every format that has data",
+    premise="Open the Data Catalog and compare the chips against the format rail.",
+    note="The page filtered by format twice from two different sources: a rail "
+         "derived from the live facet counts, and a chip row hardcoded to "
+         "`['geojson','csv','json']`. So the chips advertised JSON with zero "
+         "datasets while hiding the Parquet and GeoTIFF rows the rail beside "
+         "them was counting. Both surfaces derive from the same counts now - "
+         "and five formats had no chip-dot CSS rule at all, so a derived row "
+         "would have drawn them as invisible dots.",
+    tests=["src/tests/pages/dataHubQuickFormatFilters.test.ts",
+           "src/tests/catalog/datasetFormatStyles.test.ts",
+           "test_frontend/test_data_catalog.py"],
+    fit_reactflow=False,
+    clip_selector='[class*="filterBar"]',
+    max_diff_ratio=0.02,
+)
+def data_catalog_chips_cover_every_format(ctx: Ctx) -> None:
+    """Clipped to the filter bar: the subject is the chips and their 8px dots.
+
+    At the suite's default 0.20 a chip appearing or a dot going transparent is
+    far too small a fraction of a full page to fail, so the capture would have
+    documented the fix without ever being able to police it.
+    """
+    page = ctx.page
+
+    ctx.say("The Data Catalog",
+            "The rail counts every format. The chips above the cards did not.")
+    page.goto(f"{ctx.frontend}/catalog/data")
+    page.wait_for_load_state("domcontentloaded")
+
+    bar = page.locator('[class*="filterBar"]').first
+    bar.wait_for(state="visible", timeout=30000)
+    # Gate on a derived chip rather than a sleep: the row renders off the facets,
+    # so it is empty until the first listing lands.
+    chip = lambda label: bar.get_by_role("button", name=label, exact=True)
+    chip("GeoJSON").wait_for(state="visible", timeout=30000)
+
+    named = bar.get_by_role("button").evaluate_all(
+        "els => els.map(e => e.textContent.trim())"
+    )
+    for populated in ("Parquet", "GeoTIFF"):
+        assert populated in named, (
+            f"{populated} holds datasets but is missing from the chip row: {named}"
+        )
+    assert "JSON" not in named, (
+        f"JSON holds no datasets and must not be offered: {named}"
+    )
+
+    ctx.focus(bar, hold=1400)
+    ctx.say("Parquet and GeoTIFF, offered at last",
+            "And JSON, which has nothing, is gone.")
+    ctx.capture("populated-formats")
+
+    ctx.say("Pick one", "The row must not collapse to the format you chose.")
+    ctx.click(chip("Parquet"))
+    page.wait_for_timeout(700)
+    still = bar.get_by_role("button").evaluate_all(
+        "els => els.map(e => e.textContent.trim())"
+    )
+    for other in ("GeoJSON", "CSV", "GeoTIFF"):
+        assert other in still, (
+            f"selecting Parquet removed the {other} chip ({still}) - the facets "
+            f"are being computed after the format filter instead of before it"
+        )
+    ctx.capture("parquet-selected")

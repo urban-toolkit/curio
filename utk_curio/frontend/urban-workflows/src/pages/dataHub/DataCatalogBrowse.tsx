@@ -23,7 +23,7 @@ import { DatasetDetailModal } from "../../components/datasets/catalog/DatasetDet
 import {
   FORMAT_FILTERS,
   ORIGIN_FILTERS,
-  QUICK_FORMAT_FILTERS,
+  quickFormatFilters,
 } from "./dataHubBrowseConstants";
 import { CatalogHeaderImport } from "../catalog/CatalogHeaderImport";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
@@ -90,6 +90,15 @@ export const DataCatalogBrowse: React.FC = () => {
   const catalogFacetDatasetTotal = useMemo(
     () => Object.values(catalog.facets.format).reduce((sum, n) => sum + n, 0),
     [catalog.facets.format],
+  );
+
+  // The chip row is the format rail's non-empty subset, read off the very same
+  // facet counts the rail renders - never a second, hand-maintained list (#232).
+  // `format` is a dependency so the active chip stays pinned when a search
+  // zeroes its count.
+  const quickFormats = useMemo(
+    () => quickFormatFilters(catalog.facets.format, format),
+    [catalog.facets.format, format],
   );
 
   // How many of the listed datasets are in the account's "all projects" list.
@@ -345,14 +354,19 @@ export const DataCatalogBrowse: React.FC = () => {
           >
             In all projects
           </button>
-          {QUICK_FORMAT_FILTERS.map((key) => (
+          {quickFormats.map((key) => (
             <button
               key={key}
               className={`${styles.chip} ${format === key ? styles.chipActive : ""}`}
               type="button"
               onClick={() => setFormat((prev) => (prev === key ? "" : key))}
             >
-              <span className={`${styles.chipDot} ${styles[`chipDot_${key}`] || ""}`} />
+              {/* `?? chipDotDefault`, the fallback the Node catalog's chips already
+                  use: a derived row can carry any format, and a missing rule used to
+                  resolve to "" - an invisible dot rather than a wrong-coloured one. */}
+              <span
+                className={`${styles.chipDot} ${styles[`chipDot_${key}`] ?? styles.chipDotDefault}`}
+              />
               {DATASET_FORMAT_LABEL[key]}
             </button>
           ))}

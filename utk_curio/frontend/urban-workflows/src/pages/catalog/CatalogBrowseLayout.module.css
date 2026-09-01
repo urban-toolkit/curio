@@ -332,9 +332,18 @@
   flex-shrink: 0;
 }
 
+/* One rule per DatasetFormat, from the same tokens the rail's .dot_* block uses.
+   Only three formats had one while the chip row was a hardcoded three (#232); the
+   row derives from the facets now, so any format can reach it - and a missing rule
+   resolves to "", i.e. an invisible dot rather than a wrong-coloured one. */
 .chipDot_geojson { background: var(--curio-format-geojson-fg); }
 .chipDot_csv     { background: var(--curio-format-csv-fg); }
 .chipDot_json    { background: var(--curio-format-json-fg); }
+.chipDot_parquet { background: var(--curio-format-parquet-fg); }
+.chipDot_geotiff { background: var(--curio-format-geotiff-fg); }
+.chipDot_shp     { background: var(--curio-format-shp-fg); }
+.chipDot_bundle  { background: var(--curio-format-bundle-fg); }
+.chipDot_osm     { background: var(--curio-format-osm-fg); }
 .chipDotDefault { background: var(--curio-text-muted); }
 /* Node Catalog category chips (primaryCategory) */
 .chipDot_data         { background: var(--curio-category-data-fg); }

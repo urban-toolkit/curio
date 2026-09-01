@@ -438,3 +438,69 @@ beta,2
         page.locator(f'#datasets-palette [data-dataset-id="{dataset_id}"]')
     ).to_have_count(1, timeout=20000)
 
+
+
+def test_quick_filters_cover_every_populated_format(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """#232: the /catalog/data quick-filter chips were a hardcoded three.
+
+    The page renders format filters twice - a sidebar rail derived from the live
+    ``facets.format`` counts, and a chip row above the cards that was a literal
+    ``["geojson", "csv", "json"]``. So the chips advertised JSON with zero
+    datasets while hiding Parquet and GeoTIFF, both of which the rail beside them
+    was counting off the shipped ``datasets/`` folder.
+
+    Chips are located by accessible NAME, never by index: the set is derived from
+    the catalog now, so a positional locator would silently follow the data.
+    """
+    require_project_page()
+    require_user_auth()
+
+    _enter_dataflow(
+        page, app_frontend, current_server,
+        username="quickfilters", project="Quick Filters",
+    )
+    page.goto(f"{app_frontend.base_url}/catalog/data")
+    page.wait_for_load_state("domcontentloaded")
+
+    bar = page.locator('[class*="filterBar"]').first
+    expect(bar).to_be_visible(timeout=20000)
+    # Gate on a derived chip, not a timeout: the row renders from the facets, so
+    # it is empty until the first listing lands.
+    expect(bar.get_by_role("button", name="GeoJSON", exact=True)).to_have_count(
+        1, timeout=20000
+    )
+
+    for populated in ("GeoJSON", "CSV", "Parquet", "GeoTIFF"):
+        expect(
+            bar.get_by_role("button", name=populated, exact=True)
+        ).to_have_count(1), f"{populated} has datasets but no quick-filter chip"
+
+    # The other half of the report: JSON was offered while holding nothing.
+    expect(bar.get_by_role("button", name="JSON", exact=True)).to_have_count(0)
+
+    # Every dot must actually be painted. A format-keyed class that has no CSS
+    # rule resolves to "" and renders an invisible 8px dot - jest cannot catch
+    # that at all, because CSS modules are mapped to identity-obj-proxy there.
+    for populated in ("GeoJSON", "CSV", "Parquet", "GeoTIFF"):
+        chip = bar.get_by_role("button", name=populated, exact=True)
+        colour = chip.locator('[class*="chipDot"]').first.evaluate(
+            "el => getComputedStyle(el).backgroundColor"
+        )
+        assert colour not in ("rgba(0, 0, 0, 0)", "transparent"), (
+            f"the {populated} chip's dot is transparent ({colour!r}) - its "
+            f".chipDot_* rule is missing"
+        )
+
+    # Selecting a format must not collapse the row. The facets are computed
+    # BEFORE the format filter is applied (listing.py), and this is what pins
+    # that ordering: move the facet call below the filter and this fails.
+    bar.get_by_role("button", name="Parquet", exact=True).click()
+    for still_there in ("GeoJSON", "CSV", "GeoTIFF"):
+        expect(
+            bar.get_by_role("button", name=still_there, exact=True)
+        ).to_have_count(1, timeout=10000), (
+            f"selecting Parquet removed the {still_there} chip; the facets are "
+            f"being computed after the format filter"
+        )
