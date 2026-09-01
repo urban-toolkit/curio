@@ -1356,11 +1356,23 @@ def data_pool_scrolls_sideways(ctx: Ctx) -> None:
            "src/tests/catalog/datasetFormatStyles.test.ts",
            "test_frontend/test_data_catalog.py"],
     fit_reactflow=False,
-    clip_selector='[data-curio-catalog-filter-bar="true"]',
+    # Clipped to ONE chip, not the whole bar. The row reflects live catalog
+    # contents and the hub is shared, so a scene publishing a dataset of a new
+    # format adds a chip, wraps the bar onto a second line, and a whole-row
+    # baseline then fails on entirely correct behaviour - which is what
+    # happened. A single chip cannot reflow, so this stays a true regression
+    # signal: Parquet is one of the two formats the hardcoded list could never
+    # show, and its dot is one of the five that had no CSS rule.
+    clip_selector='[data-curio-format-chip="parquet"]',
     max_diff_ratio=0.02,
 )
 def data_catalog_chips_cover_every_format(ctx: Ctx) -> None:
-    """Clipped to the filter bar: the subject is the chips and their 8px dots.
+    """The assertions carry the whole-row contract; the PNG carries one chip.
+
+    Split that way on purpose. The chip SET is data-dependent, so it is asserted
+    against the live facet counts rather than photographed; the chip's
+    APPEARANCE - the coloured dot five formats had no CSS rule for - is what a
+    PNG is actually good for, and one chip cannot reflow.
 
     At the suite's default 0.20 a chip appearing or a dot going transparent is
     far too small a fraction of a full page to fail, so the capture would have
@@ -1371,7 +1383,9 @@ def data_catalog_chips_cover_every_format(ctx: Ctx) -> None:
     ctx.say("The Data Catalog",
             "The rail counts every format. The chips above the cards did not.")
     page.goto(f"{ctx.frontend}/catalog/data")
-    page.wait_for_load_state("domcontentloaded")
+    # See test_data_catalog: the chips come from the catalog listing, so the
+    # scene has nothing to look at until that request lands.
+    page.wait_for_load_state("networkidle")
 
     # By data attribute, not class: CSS Modules hashes every class name, so a
     # `[class*=...]` selector matches nothing in a real build.
@@ -1385,18 +1399,31 @@ def data_catalog_chips_cover_every_format(ctx: Ctx) -> None:
     offered = bar.locator("[data-curio-format-chip]").evaluate_all(
         "els => els.map(e => e.getAttribute('data-curio-format-chip'))"
     )
+    # The contract, not the fixture. "JSON must be absent" holds only on a
+    # pristine catalog: the hub is shared, so another scene publishing a JSON
+    # dataset would make that assertion fail on correct behaviour. Compare the
+    # chips against the same facet counts the page derives them from instead.
+    token = next(
+        c["value"] for c in page.context.cookies() if c["name"] == "session_token"
+    )
+    facets = api_json(f"{ctx.backend}/api/datasets/catalog", token)["facets"]["format"]
+    rail = ("geojson", "csv", "json", "parquet", "geotiff", "shp")
+    expected = [f for f in rail if facets.get(f, 0) > 0]
+    assert offered == expected, (
+        f"chips {offered} do not match the populated formats {expected} "
+        f"(facet counts: {facets})"
+    )
+    # The shipped catalog must actually exercise the bug, or the check above
+    # could pass vacuously: these two are what the hardcoded list always hid.
     for populated in ("parquet", "geotiff"):
         assert populated in offered, (
             f"{populated} holds datasets but is missing from the chip row: {offered}"
         )
-    assert "json" not in offered, (
-        f"JSON holds no datasets and must not be offered: {offered}"
-    )
 
     ctx.focus(bar, hold=1400)
     ctx.say("Parquet and GeoTIFF, offered at last",
             "And JSON, which has nothing, is gone.")
-    ctx.capture("populated-formats")
+    ctx.capture("parquet-chip")
 
     ctx.say("Pick one", "The row must not collapse to the format you chose.")
     ctx.click(chip("parquet"))
@@ -1409,7 +1436,7 @@ def data_catalog_chips_cover_every_format(ctx: Ctx) -> None:
             f"selecting Parquet removed the {other} chip ({still}) - the facets "
             f"are being computed after the format filter instead of before it"
         )
-    ctx.capture("parquet-selected")
+    ctx.capture("parquet-chip-selected")
 
 
 # ---------------------------------------------------------------------------
