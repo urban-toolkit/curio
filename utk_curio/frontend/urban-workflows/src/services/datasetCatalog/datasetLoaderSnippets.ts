@@ -22,6 +22,44 @@ function datasetPath(dataset: DatasetLike): string {
  */
 const SAFE_DATASET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$/;
 
+/**
+ * Every dataset id a piece of node code references through
+ * ``curio_dataset_path("<id>")``.
+ *
+ * The reader half of the contract the generators above write, kept beside them
+ * so the grammar has one home. Both quote styles are accepted because users
+ * edit the generated code, matching ``_DATASET_PATH_CALL_RE`` in
+ * ``backend/app/api/routes.py``.
+ *
+ * This exists because a node can reference a dataset two ways and only one was
+ * ever looked at (#205). Dragging a dataset onto the canvas writes bindings
+ * (``datasetSource`` / ``datasetRefs``); typing or editing the loader call
+ * writes nothing but the code. "Which nodes use this dataset" only knew about
+ * the bindings, so a hand-authored loader -- exactly what the reporter built --
+ * counted as using nothing.
+ */
+export function datasetIdsInCode(code: unknown): string[] {
+  if (typeof code !== "string" || !code) return [];
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  // Fresh matcher per call: a module-level /g regex carries lastIndex between
+  // calls, so sharing one would make results depend on call order.
+  //
+  // The  backreference is load-bearing: it requires the closing quote to
+  // match the opening one, so `curio_dataset_path("x')` is not a reference.
+  const re = /curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)/g;
+  for (const match of code.matchAll(re)) {
+    const id = match[2];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    // Same bound as the backend's MAX_EXEC_DATASET_IDS: generated or
+    // pathological code must not turn a highlight into a long scan.
+    if (ids.length >= 32) break;
+  }
+  return ids;
+}
+
 function safeDatasetId(datasetId: string | null | undefined): string | null {
   if (!datasetId || !SAFE_DATASET_ID_RE.test(datasetId)) return null;
   return datasetId;
