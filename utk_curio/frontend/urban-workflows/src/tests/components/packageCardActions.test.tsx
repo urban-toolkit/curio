@@ -99,9 +99,6 @@ describe("PackageCard - curio.builtin", () => {
         pkg={builtin}
         isInstalled
         onUninstall={jest.fn()}
-        onUnpublish={jest.fn()}
-        onPublish={jest.fn()}
-        catalogPublishAllowed
       />,
     );
     // Not uninstallable (the backend refuses) and not authorable (readOnly), so
