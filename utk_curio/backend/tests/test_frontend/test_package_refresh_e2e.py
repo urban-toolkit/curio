@@ -46,12 +46,9 @@ PKG_DIR = "curio.example-ui@1"
 #: something the fix never touched and pass either way.
 PKG_FILE = "scripts/behaviors.js"
 NODE_DRAWER = '[data-curio-node-catalog-drawer="true"]'
-#: A fresh account per run. Per-user package stores live on disk under
-#: ``.curio/users/<id>/`` and outlive the database, so a fixed username
-#: inherits whatever the last run left in that store - including, for this
-#: test, a deliberately perturbed file. The first assertion below then fails
-#: describing the previous run rather than this one. Same hazard the recheck
-#: logged as F6; a unique name sidesteps it until that is fixed properly.
+#: A fresh account per run. Not load-bearing since ``reset-db`` began clearing
+#: the per-user tree, but it keeps a failure message about *this* run rather
+#: than about whatever account last held the id.
 USERNAME = f"pkg_refresh_{uuid.uuid4().hex[:10]}"
 
 
@@ -107,11 +104,10 @@ def test_an_upgrade_reaches_a_package_that_is_already_installed(
     require_owner_view(page)
     page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
 
-    # Start from a store that definitely does not hold this package. A unique
-    # username is not enough: the store is keyed by user ID, and the harness
-    # truncates the ``user`` table between tests, so SQLite reissues low ids and
-    # this account inherits whatever the previous occupant of its id left behind
-    # — which, for this test, is a file it damaged on purpose. See F6.
+    # State the starting point rather than assume it. ``reset-db`` clears the
+    # per-user tree now, so this is belt and braces — but this test plants a
+    # perturbed file on purpose, and inheriting one would fail the first
+    # assertion below while describing a run that already finished.
     _package_store(current_server, username=USERNAME, dirName=PKG_DIR, action="reset")
 
     _install_from_the_node_catalog(page)
