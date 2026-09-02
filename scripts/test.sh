@@ -14,6 +14,9 @@
 #                        calling the sandbox directly will get 401s)
 #   --headed            Open a visible browser window during E2E tests
 #   --videos            Also record the per-issue fix screencasts (slow)
+#   --no-examples       Skip the tests that need the example dataflows seeded
+#                       (on by default; the stack this script boots already
+#                        starts with --with-examples)
 #   --workflows A,B     Run only the named workflow files (e.g. Vega.json,Regression.json)
 #   --backend-only      Run only backend unit tests
 #   --sandbox-only      Run only sandbox unit tests
@@ -27,6 +30,10 @@ set -uo pipefail
 USE_EXISTING=0
 HEADED=0
 VIDEOS=0
+# On by default: the stack below boots with --with-examples either way, and
+# CI's compose stack does too, so the examples tests may as well run where
+# they can. --no-examples is for a quick local pass that skips the seeding.
+EXAMPLES=1
 E2E_WORKFLOWS=""
 ALLURE_DIR=""
 SUITE="all"   # all | backend | sandbox | jest | e2e | unit
@@ -36,6 +43,7 @@ while [[ $# -gt 0 ]]; do
     --use-existing)  USE_EXISTING=1;       shift ;;
     --headed)        HEADED=1;             shift ;;
     --videos)        VIDEOS=1;             shift ;;
+    --no-examples)   EXAMPLES=0;           shift ;;
     --workflows)     E2E_WORKFLOWS="$2";   shift 2 ;;
     --backend-only)  SUITE="backend";      shift ;;
     --sandbox-only)  SUITE="sandbox";      shift ;;
@@ -44,7 +52,7 @@ while [[ $# -gt 0 ]]; do
     --unit-only)     SUITE="unit";         shift ;;
     --allure-dir)    ALLURE_DIR="$2";      shift 2 ;;
     --help|-h)
-      sed -n '2,20p' "$0"
+      sed -n '2,26p' "$0"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -305,6 +313,7 @@ if [[ $RUN_E2E -eq 1 ]]; then
   PYTEST_ARGS="-v"
   [[ $HEADED -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --headed"
   [[ $VIDEOS -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --videos"
+  [[ $EXAMPLES -eq 1 ]]  && PYTEST_ARGS="$PYTEST_ARGS --with-examples"
   [[ -n "$ALLURE_DIR" ]] && PYTEST_ARGS="$PYTEST_ARGS --alluredir=$ALLURE_DIR"
 
   E2E_ENV="PYTHONUNBUFFERED=1 CURIO_E2E_USE_EXISTING=1 PYTHONPATH=$REPO_ROOT"

@@ -295,7 +295,11 @@ def curio_servers(session_app, request):
     # configuration never tested. Opt-in rather than always-on because seeding
     # eleven dataflows (and provisioning the datasets they reference) costs
     # real time on every boot, and only the tests that read the gallery need it.
-    if env.get("CURIO_E2E_WITH_EXAMPLES", "0") in ("1", "true", "yes", "on"):
+    # A pytest flag, not another CURIO_* env var: --longrun and --videos already
+    # set the convention (see tests/conftest.py), and the env var this replaced
+    # was never exported by scripts/test.sh or CI - so the one suite written to
+    # catch #200 skipped in every ordinary run.
+    if request.config.getoption("examples", default=False):
         extra_args.append("--with-examples")
     # Replay the whole e2e suite against isolated node execution by setting
     # CURIO_E2E_ISOLATION=fork. Off by default, and deliberately so: the

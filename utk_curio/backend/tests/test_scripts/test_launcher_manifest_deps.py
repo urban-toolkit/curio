@@ -21,6 +21,7 @@ import json
 import pytest
 
 from utk_curio import main as launcher
+from utk_curio.backend.app.common.user_storage import users_base
 
 BASE_TEMPLATE = {
     "id": "demo-node",
@@ -105,7 +106,19 @@ def installed(monkeypatch):
 
 
 def _user_store(launch_cwd, user: str = "1"):
-    store = launch_cwd / ".curio" / "users" / user / "packages"
+    """The store the boot walk will actually read, created.
+
+    ``users_base()`` rather than a literal: under ``CURIO_TESTING`` — which the
+    root conftest sets for this suite — the tree is ``.curio/test/users/``. A
+    literal ``.curio/users`` here builds packages the walk never sees, and the
+    negative tests in this file then pass against an empty store while proving
+    nothing about the routing they claim to pin.
+    """
+    base = users_base()
+    assert base.is_relative_to(launch_cwd.resolve()), (
+        f"store root {base} escaped the tmp workspace {launch_cwd}"
+    )
+    store = base / user / "packages"
     store.mkdir(parents=True, exist_ok=True)
     return store
 

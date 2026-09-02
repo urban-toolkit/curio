@@ -104,7 +104,7 @@ describe("useAgentCatalogDrawer", () => {
     });
     // The exact copy the Data catalog established, so all three agree.
     expect(mockShowToast).toHaveBeenCalledWith(
-      "Added agent.node-explainer to this dataflow.",
+      "Added agent.node-explainer to this project.",
       "success",
     );
 
@@ -113,7 +113,7 @@ describe("useAgentCatalogDrawer", () => {
       await result.current.uninstall(card("agent.node-explainer"));
     });
     expect(mockShowToast).toHaveBeenCalledWith(
-      "Removed agent.node-explainer from this dataflow.",
+      "Removed agent.node-explainer from this project.",
       "success",
     );
   });

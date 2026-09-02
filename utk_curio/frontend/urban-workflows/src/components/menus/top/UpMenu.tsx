@@ -44,6 +44,7 @@ import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDr
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
+import ConfirmDialog from "../../ConfirmDialog";
 
 export default function UpMenu({
     setDashBoardMode,
@@ -61,6 +62,21 @@ export default function UpMenu({
     const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    /** The "you have unsaved changes" guard, as one dialog instead of three
+     *  `window.confirm` calls (#197).
+     *
+     *  Three call sites asked the same question in two wordings, and all three
+     *  asked it through the browser: unstyled, unthemed, outside the app's modal
+     *  stack, and carrying the origin line. They are the last native dialogs in
+     *  the product now that the catalogs have been converted.
+     *
+     *  Holding the pending action rather than a boolean is what lets one dialog
+     *  serve all three: each site hands over what to run if the user confirms. */
+    const [pendingLeave, setPendingLeave] = useState<{
+        body: string;
+        run: () => void;
+    } | null>(null);
+
 
     const menuBarRef = useRef<HTMLDivElement>(null);
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
@@ -81,6 +97,15 @@ export default function UpMenu({
         nodes,
         edges,
     } = useFlowContext();
+
+    /** Run *action* now, or ask first when there is unsaved work to lose. */
+    const leaveWithGuard = (body: string, action: () => void) => {
+        if (!projectDirty) {
+            action();
+            return;
+        }
+        setPendingLeave({ body, run: action });
+    };
 
     const collab = useCollab();
     // Mirror the ``isSharedView`` gate in MainCanvas: when collab is on,
@@ -147,13 +172,15 @@ export default function UpMenu({
     };
 
     const handleNewWorkflow = () => {
-        if (projectDirty && !window.confirm("You have unsaved changes. Continue?")) {
-            return;
-        }
-        discardProject();
-        cleanCanvas();
-        setActiveMenu(null);
-        navigate("/dataflow/new");
+        leaveWithGuard(
+            "Starting a new dataflow discards the changes you have not saved.",
+            () => {
+                discardProject();
+                cleanCanvas();
+                setActiveMenu(null);
+                navigate("/dataflow/new");
+            },
+        );
     };
 
     const handleSave = async () => {
@@ -369,8 +396,10 @@ export default function UpMenu({
                     src={logo}
                     alt="Curio logo"
                     onClick={() => {
-                        if (projectDirty && !window.confirm("You have unsaved changes. Leaving will lose your work.")) return;
-                        navigate("/projects");
+                        leaveWithGuard(
+                            "Leaving this dataflow discards the changes you have not saved.",
+                            () => navigate("/projects"),
+                        );
                     }}
                 />
 
@@ -426,9 +455,13 @@ export default function UpMenu({
                                     <div
                                         className={styles.dropDownRow}
                                         onClick={() => {
-                                            if (projectDirty && !window.confirm("You have unsaved changes. Leaving will lose your work.")) return;
-                                            navigate("/projects");
-                                            setActiveMenu(null);
+                                            leaveWithGuard(
+                                                "Leaving this dataflow discards the changes you have not saved.",
+                                                () => {
+                                                    navigate("/projects");
+                                                    setActiveMenu(null);
+                                                },
+                                            );
                                         }}
                                     >
                                         <FontAwesomeIcon className={styles.dropDownIcon} icon={faFolderOpen} />
@@ -701,6 +734,21 @@ export default function UpMenu({
                 open={librariesOpen}
                 closeModal={() => setLibrariesOpen(false)}
             />
+            {pendingLeave ? (
+                <ConfirmDialog
+                    title="Discard unsaved changes?"
+                    body={pendingLeave.body}
+                    confirmLabel="Discard and continue"
+                    cancelLabel="Stay here"
+                    destructive
+                    onConfirm={() => {
+                        const run = pendingLeave.run;
+                        setPendingLeave(null);
+                        run();
+                    }}
+                    onCancel={() => setPendingLeave(null)}
+                />
+            ) : null}
         </>
     );
 }
