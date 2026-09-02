@@ -777,6 +777,56 @@ export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => vo
     };
 }
 
+// Table names a data spec is contractually asking autk-db to create.
+//
+// The point is to tell a load that came back SHORT apart from one that came back
+// empty. autk-db's `loadOsm` walks `autoLoadLayers.layers` sequentially and lets
+// a per-layer failure propagate, so a throw partway leaves the earlier tables
+// registered and the later ones absent. Both loaders below used to publish
+// whatever `getLayerTables()` happened to hold, which surfaces downstream as an
+// opaque "Table <last layer> not found" from a node two hops away, with the node
+// that actually failed showing "Done" (#248).
+//
+// Naming mirrors autk-db's own, which derives a layer table as
+// `outputTableName || `${osmInputTableName}_${layer}``.
+export function requestedLayerTables(dataSources: any[]): string[] {
+    const names: string[] = [];
+    for (const source of dataSources ?? []) {
+        const { type, ...rest } = (source ?? {}) as any;
+        if (type === 'osm') {
+            // Per-layer tables only. `${outputTableName}` and
+            // `${outputTableName}_boundaries` are excluded deliberately:
+            // `autoLoadLayers.dropOsmTable` drops those once the layers have been
+            // split out, so expecting them would fail every spec that sets it.
+            const layers = rest?.autoLoadLayers?.layers;
+            if (rest?.outputTableName && Array.isArray(layers)) {
+                for (const layer of layers) names.push(`${rest.outputTableName}_${layer}`);
+            }
+        } else if (type === 'geojson' || type === 'csv' || type === 'json') {
+            if (rest?.outputTableName) names.push(rest.outputTableName);
+        }
+        // `join` is skipped on purpose: its MODIFY_ROOT/CREATE_TABLE output
+        // rewrites a table another source already created rather than adding a
+        // layer of its own, so expecting one would report a phantom miss.
+    }
+    return Array.from(new Set(names));
+}
+
+// Message for a load that produced layers, but not the ones the spec asked for.
+// Shared by both loaders so the two paths report a short load identically.
+//
+// `errors` is what makes this safe to throw on rather than merely warn about:
+// autk-db propagates rather than swallows, so a table missing *because the load
+// broke* always arrives with a caught reason, while a sparse-but-successful
+// query area does not (`loadOsmLayer` creates the table even at zero features,
+// and autk-db counts rows on it immediately after). Missing with no recorded
+// error is therefore a warning, not a failure.
+function missingLayerMessage(missing: string[], errors: string[]): string {
+    return `autk data load produced ${missing.length} fewer table(s) than the spec asked for`
+        + ` - missing: ${missing.join(', ')}`
+        + (errors.length > 0 ? ` (${errors.join('; ')})` : '');
+}
+
 // Compile a grammar `data` section into autk-db JavaScript to run in the backend
 // Node.js sandbox. The single top-level `import` is rewritten to `await import()`
 // by execute_js_code; the rest is the body of the async function the sandbox
@@ -796,6 +846,10 @@ const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;
 const DEFAULT_WORKSPACE_COORDINATE_FORMAT = __autkDbMod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
 if (typeof AutkDb !== 'function') throw new Error('@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');
 const __sources = ${JSON.stringify(dataSources)};
+// Computed host-side by requestedLayerTables so the naming rules live in ONE
+// place rather than being restated inside this emitted string.
+const __expectedTables = ${JSON.stringify(requestedLayerTables(dataSources))};
+const __loadErrors = [];
 const db = new AutkDb();
 await db.init();
 for (const source of __sources) {
@@ -820,8 +874,35 @@ for (const source of __sources) {
     else if (type === 'join' && typeof db.spatialQuery === 'function') await db.spatialQuery(rest);
     else console.log('[autk-grammar] unsupported data source type "' + type + '" - skipped');
   } catch (e) {
+    // Recorded, not discarded: this reason is the only account of WHY a layer is
+    // missing, and the contract check below attaches it to the thrown error.
+    __loadErrors.push(type + ': ' + ((e && e.message) || String(e)));
     console.log('[autk-grammar] data load failed for source type "' + type + '": ' + (e && e.message));
   }
+}
+let __tables = [];
+try {
+  __tables = db.getLayerTables ? db.getLayerTables() : [];
+} catch (e) {
+  // A partially-loaded DB can throw here rather than return [] - treat it as
+  // "no usable tables" and let the contract check report it.
+  __loadErrors.push('getLayerTables: ' + ((e && e.message) || String(e)));
+}
+const __have = new Set(__tables.map((t) => t.name));
+const __missing = __expectedTables.filter((n) => !__have.has(n));
+if (__missing.length > 0) {
+  const __detail = 'missing: ' + __missing.join(', ')
+    + (__loadErrors.length > 0 ? ' (' + __loadErrors.join('; ') + ')' : '');
+  if (__loadErrors.length > 0) {
+    // Mirrors missingLayerMessage() host-side. Throwing is the whole point: it
+    // turns a silent short load into a failed execution, which both reports the
+    // real reason on THIS node and lets runDataInBackend's existing retry take a
+    // second attempt at what is usually a transient PBF/stream hiccup.
+    throw new Error('autk data load produced ' + __missing.length
+      + ' fewer table(s) than the spec asked for - ' + __detail);
+  }
+  console.log('[autk-grammar] ' + __detail
+    + ' - no load error recorded, treating as a genuinely empty query area');
 }
 const __epsg = String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\\d+)/)?.[1] ?? '3395';
 // Tag each layer with the CRS its coordinates are ACTUALLY in. autk-db 2.0.1
@@ -868,7 +949,7 @@ const __buildingHeight = (props) => {
   return top > base ? null : base + 6;
 };
 const __out = [];
-for (const t of (db.getLayerTables ? db.getLayerTables() : [])) {
+for (const t of __tables) {
   const geojson = await db.getLayer(t.name);
   let type = t.type ?? 'polygons';
   if (type === 'buildings' && Array.isArray(geojson?.features)) {
@@ -1142,6 +1223,29 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     const usable = layers.filter(
         (l): l is { name: string; type: string; geojson: FeatureCollection } => l != null,
     );
+    // Same contract check as the sandbox emit: a load that came back short is a
+    // failure, not a success with fewer layers. Without this, the caller's
+    // "backend failed, fall back in-browser" path would quietly publish the same
+    // short layer array the backend path just refused to.
+    //
+    // Diffed against `usable` - what a consumer actually receives. A layer that
+    // was never created and one that exists but could not be exported are the
+    // same loss downstream: the array comes back short either way. An empty
+    // layer is NOT caught by this, because getLayer returns an empty
+    // FeatureCollection for it and it stays in `usable`; only a getLayer that
+    // throws counts, and that is a defect rather than sparse data.
+    const requested = requestedLayerTables(spec?.data ?? []);
+    if (requested.length > 0) {
+        const have = new Set(usable.map((l) => l.name));
+        const missing = requested.filter((n) => !have.has(n));
+        if (missing.length > 0) {
+            if (loadErrors.length > 0) {
+                throw new Error(missingLayerMessage(missing, loadErrors));
+            }
+            console.warn(`[autk-grammar] ${missingLayerMessage(missing, [])} - no load `
+                + `error recorded, treating as a genuinely empty query area`);
+        }
+    }
     // A load that asked for sources but produced no usable layer AND hit errors
     // is a real failure (e.g. every PBF range fetch 404'd) — throw an ATTRIBUTED
     // error so the node reports the reason, instead of crashing later with an

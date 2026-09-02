@@ -27,6 +27,44 @@ _SKIP_NO_AUTK_DB = unittest.skipUnless(
 )
 
 
+# The contract check compileDataSpecToAutkDbJs() now emits after its load loop
+# (#248). Kept as a literal mirror, like the data-section test above: the Jest
+# suite covers the host-side decision, but only running it in the real Node
+# subprocess proves the GENERATED code parses and behaves there.
+_CONTRACT_CHECK_JS = (
+    "import * as __autkDbMod from '@urban-toolkit/autk-db';\n"
+    "const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;\n"
+    "const __sources = [{{ type: 'geojson', geojsonObject: {{ type: 'FeatureCollection', "
+    "features: [{{ type: 'Feature', geometry: {{ type: 'Point', coordinates: [-87.63, 41.88] }}, "
+    "properties: {{ name: 'a' }} }}] }}, outputTableName: 'probe_pts' }}];\n"
+    "const __expectedTables = ['probe_pts', 'probe_missing'];\n"
+    "const __loadErrors = {load_errors};\n"
+    "const db = new AutkDb();\n"
+    "await db.init();\n"
+    "for (const source of __sources) {{ const {{ type, ...rest }} = source; "
+    "if (type === 'geojson') await db.loadGeojson(rest); }}\n"
+    "let __tables = [];\n"
+    "try {{ __tables = db.getLayerTables ? db.getLayerTables() : []; }}\n"
+    "catch (e) {{ __loadErrors.push('getLayerTables: ' + ((e && e.message) || String(e))); }}\n"
+    "const __have = new Set(__tables.map((t) => t.name));\n"
+    "const __missing = __expectedTables.filter((n) => !__have.has(n));\n"
+    "if (__missing.length > 0) {{\n"
+    "  const __detail = 'missing: ' + __missing.join(', ')\n"
+    "    + (__loadErrors.length > 0 ? ' (' + __loadErrors.join('; ') + ')' : '');\n"
+    "  if (__loadErrors.length > 0) {{\n"
+    "    throw new Error('autk data load produced ' + __missing.length\n"
+    "      + ' fewer table(s) than the spec asked for - ' + __detail);\n"
+    "  }}\n"
+    "  console.log('[autk-grammar] ' + __detail\n"
+    "    + ' - no load error recorded, treating as a genuinely empty query area');\n"
+    "}}\n"
+    "const __out = [];\n"
+    "for (const t of __tables) {{ const geojson = await db.getLayer(t.name); "
+    "__out.push({{ name: t.name, type: t.type ?? 'polygons', geojson }}); }}\n"
+    "return __out;"
+)
+
+
 class TestSandbox(unittest.TestCase):
 
     @classmethod
@@ -176,6 +214,58 @@ class TestSandbox(unittest.TestCase):
         self.assertEqual(layer['name'], 'probe_pts')
         self.assertEqual(layer['geojson']['type'], 'FeatureCollection')
         self.assertEqual(len(layer['geojson']['features']), 1)
+
+    @_SKIP_NO_NODE
+    @_SKIP_NO_AUTK_DB
+    def test_exec_js_autk_short_load_fails_the_node(self):
+        """A data load that comes back SHORT fails, naming the missing table.
+
+        This is #248: autk-db's loadOsm walks autoLoadLayers.layers in order and
+        lets a per-layer failure propagate, so a throw partway leaves the earlier
+        tables registered and the later ones absent. The emit used to publish
+        whatever getLayerTables() held, so the node that failed reported "Done"
+        and a consumer two hops downstream died on "Table table_osm_roads not
+        found". Failing here is also what makes the loss reachable by
+        runDataInBackend's retry: `success: false` returns an empty output.path,
+        the one shape that retry has always keyed on.
+        """
+        from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
+        _worker_init()
+
+        result = execute_js_code(
+            _CONTRACT_CHECK_JS.format(load_errors="['osm: undici assert(!this.paused)']"),
+            '', 'AUTK_GRAMMAR', '', launch_dir=_REPO_ROOT, session_id=None,
+        )
+        self.assertIn('probe_missing', result['stderr'])
+        self.assertIn('fewer table(s) than the spec asked for', result['stderr'])
+        # The recorded reason travels with the failure - it is the only account
+        # of WHY the layer is missing, and used to be discarded to a console.log.
+        self.assertIn('undici', result['stderr'])
+        # No artifact: the short layer array must not reach a downstream node,
+        # and an empty path is what triggers the caller's retry.
+        self.assertEqual(result['output']['path'], '')
+
+    @_SKIP_NO_NODE
+    @_SKIP_NO_AUTK_DB
+    def test_exec_js_autk_empty_area_still_succeeds(self):
+        """Missing tables with NO recorded error is a sparse area, not a failure.
+
+        The other half of the predicate. autk-db creates a layer table even at
+        zero features, so a missing table always coincides with a caught reason
+        when the load actually broke - which is what lets the check above throw
+        without turning a genuinely empty query area into a red node.
+        """
+        from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
+        from utk_curio.sandbox.util.parsers import load_from_duckdb
+        _worker_init()
+
+        result = execute_js_code(
+            _CONTRACT_CHECK_JS.format(load_errors='[]'),
+            '', 'AUTK_GRAMMAR', '', launch_dir=_REPO_ROOT, session_id=None,
+        )
+        self.assertEqual(result['stderr'], '', msg=result.get('stderr'))
+        layers = load_from_duckdb(result['output']['path'], session_id=None)
+        self.assertEqual([l['name'] for l in layers], ['probe_pts'])
 
 
 class TestProjDataDir(unittest.TestCase):
