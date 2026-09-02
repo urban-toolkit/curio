@@ -79,6 +79,13 @@
   --curio-radius-pill: 9999px;
   --curio-top-bar-height: 65px;
   --curio-input-height: 38px;
+  /* Bottom gutter every full-page shell reserves for the fixed VersionBadge.
+     The badge is `position: fixed` in the bottom-right corner, so without a
+     gutter a panel whose height chain reaches the viewport - the catalog
+     details drawer, most visibly - paints its own content underneath it
+     (#236). Reserved by the shell rather than padded onto each panel: one
+     rule covers every catalog, both drawers and the projects page. */
+  --curio-version-badge-reserve: 30px;
 
   /* ── Effects ───────────────────────────────────────────────────────── */
   --curio-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -282,6 +289,12 @@
   /* Base tier, for a modal opened from a page rather than over the canvas
      overlays. ModalShell used to hard-code 499/500 here while using the scale
      for its overlay tier, so half of one component sat outside the scale. */
+  /* The version badge is page furniture, not an overlay: it sits below every
+     modal and drawer, and its gutter (--curio-version-badge-reserve) is what
+     keeps content from reaching it in the first place. It used to hard-code a
+     bare 9999, which put it under the drawer band but above all page content -
+     so it painted over the catalog drawer (#236). */
+  --curio-z-version-badge: 400;
   --curio-z-modal-base-backdrop: 499;
   --curio-z-modal-base: 500;
   --curio-z-node-drawer: 10040;

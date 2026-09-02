@@ -170,15 +170,50 @@ def seed_examples_flag():
 
 def test_example_dep_package_ids_derived_from_lockfiles():
     """The example-dep package set is derived from the bundled examples'
-    ``dataflow.packages`` lockfiles — example 09 declares curio.weather, and
-    heavy packages (curio.streetvision) stay out because no example's
-    lockfile declares them."""
+    ``dataflow.packages`` lockfiles — example 09 declares curio.weather, so
+    curio.weather is provisioned."""
     from utk_curio.backend.app.packages.seed import example_dep_package_ids
 
     ids = example_dep_package_ids()
     assert "curio.weather" in ids
-    assert "curio.streetvision" not in ids
     assert "curio.builtin" not in ids  # always-installed, never an example dep
+
+
+def test_install_on_demand_packages_are_excluded_even_when_declared():
+    """A heavy package stays out of the boot install *explicitly*.
+
+    It used to stay out by accident: nothing pip-installed curio.streetvision
+    because no example declared it, and example 10 was left with an empty
+    lockfile to keep it that way. That silence is what broke #233 - with
+    nothing declaring the dependency, and the example's node types written
+    unversioned, the backend's backfill had no way to name the package the
+    dataflow needed, so its nodes rendered "Loading node…" forever.
+
+    Example 10 now declares it, and the exclusion is stated here instead. This
+    asserts the declaration exists AND that it still does not reach the
+    launcher's pip walk - the whole point of separating the two.
+    """
+    import json
+    from pathlib import Path
+
+    from utk_curio.backend.app.packages.seed import (
+        INSTALL_ON_DEMAND_PACKAGE_IDS,
+        example_dep_package_ids,
+    )
+
+    repo_root = Path(__file__).resolve().parents[4]
+    example = repo_root / "docs" / "examples" / "10-street-vision-cv-analysis.json"
+    declared = json.loads(example.read_text(encoding="utf-8"))["dataflow"]["packages"]
+    assert "curio.streetvision@1" in declared, (
+        "example 10 must declare the package its nodes need, or nothing can "
+        "resolve them (#233)"
+    )
+
+    assert "curio.streetvision" in INSTALL_ON_DEMAND_PACKAGE_IDS
+    assert "curio.streetvision" not in example_dep_package_ids(), (
+        "declaring a heavy package must not put it in the boot install - that "
+        "is a ~3 GB torch download on every --with-examples start"
+    )
 
 
 def test_examples_flag_seeds_weather(tmp_curio, real_fixtures_root, seed_examples_flag):

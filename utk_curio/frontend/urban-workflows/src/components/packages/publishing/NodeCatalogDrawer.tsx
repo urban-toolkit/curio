@@ -37,12 +37,16 @@ export interface NodeCatalogDrawerProps {
   onRequestClose: () => void;
   /** Called once the exit transition finishes (or immediately when motion is reduced). */
   onExitComplete: () => void;
+  /** Seeds the search box on open, so a caller that already knows which
+   *  package the user needs can land them on it (#233). */
+  initialSearch?: string;
 }
 
 export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   presented,
   onRequestClose,
   onExitComplete,
+  initialSearch = "",
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
 
@@ -57,7 +61,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const [installed, setInstalled] = useState<PackagePayload[]>([]);
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [detailPkg, setDetailPkg] = useState<PackagePayload | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [sort, setSort] = useState<SortMode>("new");
   const [pinned, setPinned] = useState(false);
   const [busy, setBusy] = useState(false);

@@ -207,6 +207,12 @@ export interface WorkflowDepsCheckResponse {
   /** Declared dependency packages (dirNames) that aren't installed yet, or
    *  are installed but missing one of their declared python deps. */
   packages: string[];
+  /** The subset of `packages` that must NOT be installed without being asked
+   *  - too expensive to pull in as a side effect of opening a dataflow. They
+   *  are still reported as missing, because the canvas has to be able to name
+   *  them; installing them is the user's call, from the catalog (#233).
+   *  Absent on an older backend, which is why every read defaults it. */
+  deferred?: string[];
 }
 
 /** Response from `POST /api/packages/workflow-deps/install`. */

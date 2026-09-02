@@ -1034,9 +1034,18 @@ def check_workflow_deps():
     of its declared python deps aren't actually installed (e.g. a lib was
     pip-uninstalled out from under it). Response::
 
-        {"packages": ["<dirName>", ...]}   # need installing, sorted
+        {"packages": ["<dirName>", ...],   # need installing, sorted
+         "deferred": ["<dirName>", ...]}   # ...but not without being asked
+
+    ``deferred`` is the subset of ``packages`` whose package id is in
+    ``seed.INSTALL_ON_DEMAND_PACKAGE_IDS`` — too expensive to pull in as a side
+    effect of opening a dataflow (``curio.streetvision`` is ~3 GB of torch).
+    It is an ADDITIVE key: a caller that ignores it behaves exactly as before,
+    and ``packages`` still lists everything that is missing, because the UI
+    needs to be able to SAY what is missing even when it must not install it.
     """
     from utk_curio.backend.app.packages.pip_runner import is_satisfied
+    from utk_curio.backend.app.packages.seed import INSTALL_ON_DEMAND_PACKAGE_IDS
 
     user_key = _user_dir_key(g.user)
     body = request.get_json(silent=True) or {}
@@ -1065,7 +1074,14 @@ def check_workflow_deps():
         # Installed in the store - flag only if a declared dep went missing.
         if any(not is_satisfied(n, s) for n, s in declared[dir_name].items()):
             need.add(dir_name)
-    return jsonify({"packages": sorted(need)}), 200
+    deferred = {
+        dn for dn in need
+        if dn.rsplit("@", 1)[0] in INSTALL_ON_DEMAND_PACKAGE_IDS
+    }
+    return jsonify({
+        "packages": sorted(need),
+        "deferred": sorted(deferred),
+    }), 200
 
 
 @packages_bp.route("/workflow-deps/install", methods=["POST"])

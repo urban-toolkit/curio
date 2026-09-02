@@ -79,6 +79,23 @@ def _catalog_root() -> Path:
 
 BUILTIN_PACKAGE_ID = "curio.builtin"
 
+#: Packages we will not provision without being asked.
+#:
+#: A lockfile says what a dataflow NEEDS. This says what we are willing to
+#: install as a side effect of booting with ``--with-examples`` or of opening a
+#: dataflow that declares it. The two used to be the same list, which forced a
+#: choice between a torch download on every boot and an example whose lockfile
+#: lied about its own dependencies — and #233 is what the second one cost:
+#: ``curio.streetvision`` went undeclared, so nothing could resolve the
+#: example's node types and its three nodes sat on "Loading node…" forever with
+#: nothing to say why.
+#:
+#: Membership is about install COST, not trust: ``curio.streetvision`` pulls
+#: torch + transformers + ultralytics, roughly 3 GB on a cold environment. That
+#: is a decision a user should make deliberately, in the catalog, where the
+#: size is stated — not something a project-open request does to them.
+INSTALL_ON_DEMAND_PACKAGE_IDS = frozenset({"curio.streetvision"})
+
 
 def example_dep_package_ids() -> tuple[str, ...]:
     """Package IDs the seeded example dataflows declare as dependencies.
@@ -89,12 +106,12 @@ def example_dep_package_ids() -> tuple[str, ...]:
     (copy into the user store) provision exactly the packages the examples
     depend on, with no hardcoded allowlist to keep in sync.
 
-    A heavy package (e.g. ``curio.streetvision`` → torch/transformers) stays
-    out of every ``--with-examples`` / ``--deploy`` boot simply by not being
-    declared in any example's lockfile; users install it from the catalog
-    drawer when they want it. Shared source of truth: the launcher's catalog
-    dep walk (``utk_curio/main.py::install_manifest_dependencies``) calls
-    this too.
+    Minus :data:`INSTALL_ON_DEMAND_PACKAGE_IDS`. An example may declare a heavy
+    package — it has to, or nothing downstream can tell what its nodes need —
+    without that declaration turning into a multi-gigabyte pip run on every
+    ``--with-examples`` / ``--deploy`` boot. Shared source of truth: the
+    launcher's catalog dep walk
+    (``utk_curio/main.py::install_manifest_dependencies``) calls this too.
     """
     repo_root = Path(__file__).resolve().parents[4]
     examples_dir = repo_root / "docs" / "examples"
@@ -112,7 +129,7 @@ def example_dep_package_ids() -> tuple[str, ...]:
             for dir_name in declared:
                 if isinstance(dir_name, str) and "@" in dir_name:
                     ids.add(dir_name.split("@", 1)[0])
-    return tuple(sorted(ids))
+    return tuple(sorted(ids - INSTALL_ON_DEMAND_PACKAGE_IDS))
 
 
 def _latest_package_dir(catalog_root: Path, package_id: str) -> Path | None:
