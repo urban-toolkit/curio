@@ -2117,18 +2117,17 @@ def _handle_plan_reply(
     return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
 
 
-def _tool_correction_message(tool: str | None, errors: list[str]) -> dict:
+def _tool_correction_message(errors: list[str]) -> dict:
     """The corrective round's feedback for a tool request (#245) — the
     ``_plan_correction_message`` twin: precise, model-actionable, and explicit
     that the invalid block never reached the user."""
     listed = "\n".join(f"- {e}" for e in errors[:10])
-    named = f"{tool} " if tool else ""
     return {
         "role": "user",
         "content": (
-            f"[tool validation] Your {named}tool request block was invalid and "
-            "was NOT shown to the user. Fix exactly these problems and resend "
-            "the COMPLETE corrected block (same fence syntax):\n" + listed
+            "[tool validation] Your tool request block was invalid and was NOT "
+            "shown to the user. Fix exactly these problems and resend the "
+            "COMPLETE corrected block (same fence syntax):\n" + listed
         ),
     }
 
@@ -2199,7 +2198,6 @@ def _handle_tool_reply(
         "put the tool request in a ```curio.v1 fenced block as the VERY LAST "
         "thing in your reply (not ```json, and with no text after it)"
     )
-    tool: str | None = None
 
     _, tail_body = content.split_tail(reply)
     errors = content.tool_tail_diagnosis(tail_body)
@@ -2227,7 +2225,6 @@ def _handle_tool_reply(
         else:
             if not _claimed(raw):
                 return "none", parts, None, None
-            tool = _requested_tool_of(raw)
             request, request_errors = content.parse_tool_request_verbose(raw)
             if request is not None:
                 return "request", parts, stripped, request
@@ -7118,7 +7115,7 @@ def run_attachment(
                         rounds_used += 1
                         messages_work.append({"role": "assistant", "content": reply})
                         messages_work.append(
-                            _tool_correction_message(_requested_tool_of(req), payload)
+                            _tool_correction_message(payload)
                         )
                         continue
                 if req is None:
@@ -7503,7 +7500,7 @@ def stream_attachment(
                                 {"role": "assistant", "content": result["reply"]}
                             )
                             messages_work.append(
-                                _tool_correction_message(_requested_tool_of(req), payload)
+                                _tool_correction_message(payload)
                             )
                             continue
                         # A held request tail is NOT released at the cap: see
