@@ -74,7 +74,9 @@ def _enter_dataflow(page, app_frontend, current_server, *, username):
         project_name="ImportErrors",
     )
     require_owner_view(page)
-    page.wait_for_selector(".react-flow", timeout=30000)
+    # 60s, matching ``upload_workflow``: 30s is enough in isolation but not
+    # when this file runs behind the rest of the suite on a loaded machine.
+    page.wait_for_selector(".react-flow", timeout=60000)
 
 
 def _pick_file(page, path):
