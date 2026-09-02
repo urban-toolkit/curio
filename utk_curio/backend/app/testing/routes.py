@@ -406,3 +406,124 @@ def agent_script_reset():
         return denied
     testing_provider.reset()
     return jsonify({"pending": testing_provider.pending()}), 200
+
+
+@testing_bp.route("/package-store", methods=["POST"])
+def package_store():
+    """Read or perturb one file in a user's package store.
+
+    For the #194 delivery regression. A fix can ship inside a package at an
+    unchanged version, and the question that test asks is whether an existing
+    install picks it up — which means the test has to make a store copy stale
+    and then read it back. Neither is possible from the pytest process when the
+    stack runs in a container, because it does not share that filesystem. So it
+    happens here, in the process that does, for the same reason ``dataset-paths``
+    resolves paths here rather than in the harness.
+
+    Body (JSON):
+      * ``username`` – required; whose store to act on.
+      * ``dirName``  – required; ``<packageId>@<major>``, validated.
+      * ``action``   – ``"hash"`` reads, ``"stale"`` perturbs.
+      * ``path``     – file inside the package, POSIX-relative.
+                       Defaults to ``manifest.json``.
+
+    ``hash`` answers ``{"sha256": "...", "catalog_sha256": "..."}`` so a caller
+    can compare the store copy against the catalog it came from in one call.
+    ``stale`` appends a marker byte to the file and drops the package's
+    seed-state record, then answers the same shape — after which the two hashes
+    differ by construction.
+    """
+    import hashlib
+
+    from utk_curio.backend.app.packages import seed_state
+    from utk_curio.backend.app.packages.seed import _catalog_root
+    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE, package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    body = request.get_json(silent=True) or {}
+    username = (body.get("username") or "").strip()
+    dir_name = (body.get("dirName") or "").strip()
+    action = (body.get("action") or "hash").strip()
+    rel = (body.get("path") or "manifest.json").strip()
+
+    if not username or not dir_name:
+        return jsonify({"error": "username and dirName are required"}), 400
+    if not PACKAGE_DIR_RE.match(dir_name):
+        return jsonify({"error": f"invalid dirName: {dir_name!r}"}), 400
+    if action not in ("hash", "stale", "reset"):
+        return jsonify({"error": "action must be 'hash', 'stale' or 'reset'"}), 400
+    # Narrow the writable surface by hand: this route can only ever touch a
+    # file INSIDE one validated package directory.
+    if not rel or rel.startswith("/") or ".." in rel.split("/"):
+        return jsonify({"error": f"invalid path: {rel!r}"}), 400
+
+    user = user_repo.user_by_identifier(username)
+    if user is None:
+        return jsonify({"error": f"no such user: {username}"}), 404
+
+    try:
+        store_root = package_dir(_user_dir_key(user), dir_name)
+    except Exception as exc:  # noqa: BLE001 — traversal guard etc.
+        return jsonify({"error": str(exc)}), 400
+
+    if action == "reset":
+        # Drop the store copy so the next install is a true first install.
+        #
+        # A test cannot get this by using a fresh username. The store is keyed
+        # by user ID, and the e2e harness truncates the ``user`` table between
+        # tests, so SQLite reissues low ids and a brand-new account inherits
+        # whatever the last occupant of that id left on disk — including, for
+        # this test, a deliberately damaged file. That is the hazard the recheck
+        # logged as F6; until it is fixed at the source, a test that needs a
+        # known starting state has to say so explicitly.
+        import shutil
+
+        if store_root.is_dir():
+            shutil.rmtree(store_root, ignore_errors=True)
+        seed_state.clear(_user_dir_key(user), dir_name)
+        return jsonify({"reset": dir_name, "present": store_root.is_dir()}), 200
+
+    target = store_root / rel
+    if not target.is_file():
+        return jsonify({"error": f"not in the store: {dir_name}/{rel}"}), 404
+
+    if action == "stale":
+        from utk_curio.backend.app.packages.installer import (
+            refresh_packageage_integrity,
+        )
+
+        # A marker byte rather than a rewrite: the file stays valid for anything
+        # that only parses it, so the ONLY thing this changes is the hash.
+        with open(target, "ab") as fh:
+            fh.write(b"\n// stale-marker\n")
+        # ...and then rewrite the store copy's own integrity.json to match.
+        #
+        # This is what makes it an UPGRADE rather than a corruption, and the
+        # distinction is the whole point. A real upgrade leaves the user's copy
+        # internally consistent — its files and its integrity map agree, they
+        # are simply an older pair than the catalog's. Perturbing the file alone
+        # leaves the store's map still quoting the original hash, so it matches
+        # the catalog's map and the refresh correctly declines to act: the copy
+        # is damaged, not out of date, and repairing damage is a different job
+        # (`_package_is_healthy`). Skipping this step made the first version of
+        # this endpoint simulate the wrong thing entirely.
+        refresh_packageage_integrity(store_root)
+        seed_state.clear(_user_dir_key(user), dir_name)
+
+    def _sha256(path):
+        h = hashlib.sha256()
+        h.update(path.read_bytes())
+        return h.hexdigest()
+
+    catalog_file = _catalog_root() / dir_name / rel
+    return (
+        jsonify(
+            {
+                "sha256": _sha256(target),
+                "catalog_sha256": _sha256(catalog_file) if catalog_file.is_file() else None,
+                "path": rel,
+                "dirName": dir_name,
+            }
+        ),
+        200,
+    )
