@@ -274,7 +274,7 @@ Anthropic Claude:
 ```bash
 GUEST_LLM_API_TYPE=anthropic
 GUEST_LLM_API_KEY=sk-ant-...
-GUEST_LLM_MODEL=claude-haiku-4-5-20251001
+GUEST_LLM_MODEL=claude-haiku-4-5
 ```
 
 If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for guest users rather than failing silently.

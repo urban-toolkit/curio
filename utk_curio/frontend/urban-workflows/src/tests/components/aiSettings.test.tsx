@@ -677,3 +677,20 @@ describe("AI Settings: refetching after the first answer", () => {
     );
   });
 });
+
+describe("AI Settings: the model suggestions are canonical ids", () => {
+  it("offers no date-suffixed model as a placeholder", async () => {
+    // The Anthropic placeholder read `claude-haiku-4-5-20251001` while the
+    // backend's curated list offered the bare `claude-haiku-4-5`, so the same
+    // model appeared under two spellings on one screen. A constructed
+    // `-YYYYMMDD` variant is also not guaranteed to resolve at the provider.
+    const suffixed = /-20\d{6}/;
+    for (const tab of ["OpenAI", "Anthropic", "Gemini"]) {
+      const { unmount } = render(<AiSettingsModal isOpen onClose={jest.fn()} />);
+      fireEvent.click(screen.getByRole("button", { name: tab }));
+      const box = screen.getByLabelText("Model") as HTMLInputElement;
+      expect(box.placeholder).not.toMatch(suffixed);
+      unmount();
+    }
+  });
+});

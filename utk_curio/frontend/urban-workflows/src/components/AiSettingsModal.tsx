@@ -20,6 +20,11 @@ interface ProviderInfo {
   baseUrlPlaceholder?: string;
 }
 
+// `model` here is only the placeholder: the suggestion shown when the box is
+// empty, never a value that gets saved. Ids are the canonical ones, without a
+// date suffix - a constructed `-YYYYMMDD` variant is not guaranteed to resolve,
+// and the Anthropic entry used to carry one while `model_catalog.py` listed the
+// bare id, so one screen offered the same model under two spellings.
 const PROVIDER_INFO: Record<UiMode, ProviderInfo> = {
   openai: {
     model: "gpt-4o-mini",
@@ -28,7 +33,7 @@ const PROVIDER_INFO: Record<UiMode, ProviderInfo> = {
     showBaseUrl: false,
   },
   anthropic: {
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-haiku-4-5",
     keyLink: "https://console.anthropic.com/keys",
     keyLinkLabel: "Get your Anthropic key",
     showBaseUrl: false,
