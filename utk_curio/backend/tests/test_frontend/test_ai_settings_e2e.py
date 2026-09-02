@@ -79,6 +79,20 @@ def _fetch_models(page):
     page.get_by_role("button", name=re.compile(r"^(Fetch|Refresh) models")).click()
 
 
+def _wait_for_model_menu(page, timeout: float = 20000):
+    """Wait until the Model control is actually the menu, not still the box.
+
+    Both render under the same ``#ai-settings-model`` id, so ``to_be_visible``
+    is satisfied by the free-text input that is already on screen and tells you
+    nothing about whether the fetch has landed. Reading the option groups
+    without this gate is a race the test loses on a slow machine.
+    """
+    page.wait_for_function(
+        "() => document.querySelector('#ai-settings-model')?.tagName === 'SELECT'",
+        timeout=timeout,
+    )
+
+
 # ---------------------------------------------------------------------------
 # #241 - there is always a model to pick
 # ---------------------------------------------------------------------------
@@ -99,11 +113,8 @@ def test_anthropic_is_no_longer_declared_unlistable(ai_settings):
 
     # No key is configured, so the backend answers from the curated list
     # without opening a socket to Anthropic.
+    _wait_for_model_menu(page)
     model = page.locator(MODEL)
-    expect(model).to_be_visible(timeout=15000)
-    assert model.evaluate("el => el.tagName") == "SELECT", (
-        "with a curated list available the Model field should become a menu"
-    )
     options = model.locator("option").all_inner_texts()
     assert any("claude" in o for o in options), f"no curated models offered: {options}"
 
@@ -142,8 +153,8 @@ def test_curated_suggestions_sit_in_their_own_group(ai_settings, page):
     page.route("**/api/agents/provider-models", _stub)
     _fetch_models(ai_settings)
 
+    _wait_for_model_menu(ai_settings)
     model = ai_settings.locator(MODEL)
-    expect(model).to_be_visible(timeout=15000)
     labels = model.locator("optgroup").evaluate_all(
         "els => els.map(e => e.getAttribute('label'))"
     )
