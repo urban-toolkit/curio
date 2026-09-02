@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo } from "react";
 import type { NodeCategory, NodePackageMeta } from "../../../registry/types";
+import { BUILTIN_PACKAGE_ID } from "../../../registry/packageKeys";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../constants/nodeCategoryShortLabels";
 import { NODE_CATEGORY_KEY } from "../../../constants/nodeCategoryPalette";
 import { formatForkOfSubtitle } from "../../../utils/forkPackageLineage";
@@ -21,6 +22,18 @@ export interface PackageMetaHeaderProps {
 /**
  * Category + PACKAGE pills for the canvas node title bar (right of the kind label).
  * PACKAGE shows `packageId@major` in a tooltip and focuses that package in the left palette.
+ *
+ * The PACKAGE pill is withheld for ``curio.builtin`` (#218). The report says it
+ * appears on "nodes that do not come from a package", which is not quite what
+ * is happening -- every palette node comes from a package now, built-ins
+ * included, so ``source === 'package'`` is true for all of them and the pill
+ * rendered everywhere.
+ *
+ * The rule is about what the button DOES, not what built-ins are: its whole
+ * effect is ``setActivePackageKey`` + ``setPaletteDockRevealCoord``, and the
+ * Packages palette lists only third-party packages (``ToolsMenu`` filters the
+ * builtin into the separate Built-in rail). So on a built-in node the pill is
+ * an affordance for an action that cannot happen.
  */
 export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMetaHeaderProps) {
   const { setActivePackageKey, setPaletteDockRevealCoord } = usePackagePalette();
@@ -45,6 +58,10 @@ export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMe
 
   const packageBadgeClick = useHeaderIconDragClick(focusPackageInPalette);
 
+  // Not `pkg.readOnly`: that marks a package the user may not edit, which is a
+  // different question and is also true of packages the pill works fine for.
+  const revealable = pkg.packageId !== BUILTIN_PACKAGE_ID;
+
   return (
     <div className={styles.pills} style={suggestionActive ? { pointerEvents: "none" } : undefined}>
       {/* Coloured by category, like the node's own left border. It used to be
@@ -58,15 +75,17 @@ export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMe
       >
         {NODE_CATEGORY_SHORT_LABEL[category]}
       </span>
-      <button
-        type="button"
-        className={styles.packageBadge}
-        title={packageTooltip}
-        aria-label={`Open package ${coord} in Packages palette`}
-        {...packageBadgeClick}
-      >
-        PACKAGE
-      </button>
+      {revealable ? (
+        <button
+          type="button"
+          className={styles.packageBadge}
+          title={packageTooltip}
+          aria-label={`Open package ${coord} in Packages palette`}
+          {...packageBadgeClick}
+        >
+          PACKAGE
+        </button>
+      ) : null}
     </div>
   );
 }
