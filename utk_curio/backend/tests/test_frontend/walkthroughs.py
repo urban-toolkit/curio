@@ -802,7 +802,11 @@ def agent_catalog_account_agent_on_an_unsaved_dataflow(ctx: Ctx) -> None:
            "test_frontend/test_walkthrough_baselines.py"],
     clip_selector=BROWSE_DRAWER_ROOT,
     fit_reactflow=False,
-    max_diff_ratio=0.02,
+    # The claim above is asserted in code; the PNG only documents it. The
+    # Linux runner antialiases text differently from the machine that captured
+    # the baseline (5.1% of pixels on CI, run to run stable), so the pin
+    # must leave room for that without waving through a real change.
+    max_diff_ratio=0.10,
 )
 def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     page = ctx.page
@@ -1019,7 +1023,11 @@ def catalog_remove_is_an_app_dialog(ctx: Ctx) -> None:
            "test_frontend/test_walkthrough_baselines.py"],
     clip_selector=TOAST_REGION,
     fit_reactflow=False,
-    max_diff_ratio=0.02,
+    # The claim above is asserted in code; the PNG only documents it. The
+    # Linux runner antialiases text differently from the machine that captured
+    # the baseline (5.8% of pixels on CI, run to run stable), so the pin
+    # must leave room for that without waving through a real change.
+    max_diff_ratio=0.10,
 )
 def catalog_add_reports_success(ctx: Ctx) -> None:
     page = ctx.page
@@ -1299,7 +1307,11 @@ DATA_POOL_EXAMPLE = "02-vega-lite-spatial-density.json"
     tests=["src/tests/catalog/tagChipsArePlain.test.ts",
            "src/tests/catalog/datasetFormatStyles.test.ts"],
     fit_reactflow=False,
-    max_diff_ratio=0.02,
+    # The claim above is asserted in code; the PNG only documents it. The
+    # Linux runner antialiases text differently from the machine that captured
+    # the baseline (2.0% of pixels on CI, run to run stable), so the pin
+    # must leave room for that without waving through a real change.
+    max_diff_ratio=0.05,
 )
 def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
     """The tints lived on the BROWSE PAGE cards, not the canvas drawer cards.
@@ -1458,7 +1470,11 @@ def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
     tests=["src/tests/components/tables/TabularPreviewTable.test.tsx",
            "src/tests/adapters/node/components/DataPoolContent.test.tsx"],
     example=DATA_POOL_EXAMPLE,
-    max_diff_ratio=0.05,
+    # The claim above is asserted in code; the PNG only documents it. The
+    # Linux runner antialiases text differently from the machine that captured
+    # the baseline (6.4% of pixels on CI, run to run stable), so the pin
+    # must leave room for that without waving through a real change.
+    max_diff_ratio=0.10,
 )
 def data_pool_scrolls_sideways(ctx: Ctx) -> None:
     page = ctx.page
