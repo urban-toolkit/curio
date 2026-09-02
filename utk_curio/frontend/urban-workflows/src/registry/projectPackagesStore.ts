@@ -52,7 +52,18 @@ let _state: ProjectPackages = {
 };
 
 export function setCurrentProject(projectId: string, packages: Iterable<string>): void {
-  _state = { kind: 'dataflow', projectId, packages: new Set(packages) };
+  const next = new Set(packages);
+  // ``ProjectLoader`` pins the id with an EMPTY set before the spec loads, so
+  // the palette knows it is in a dataflow while the lockfile is still in
+  // flight. With the filter applied on READ, that empty set is immediately
+  // visible as "only the builtin package" -- so re-pinning a dataflow already
+  // in the store (a remount, a navigation back onto the same canvas) would
+  // blank its palette until the load finished. Keep what is known instead.
+  if (next.size === 0 && _state.projectId === projectId && _state.packages.size > 0) {
+    _state = { kind: 'dataflow', projectId, packages: _state.packages };
+  } else {
+    _state = { kind: 'dataflow', projectId, packages: next };
+  }
   _notify();
 }
 

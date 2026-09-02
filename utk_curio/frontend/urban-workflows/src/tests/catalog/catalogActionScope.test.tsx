@@ -818,7 +818,10 @@ describe("the Node drawer's In project tab in an unsaved dataflow", () => {
     // The half that made the two surfaces able to disagree.
     const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
     expect(src).not.toContain("accountDefaults");
-    expect(src).toContain("new Set(projectPackages)");
+    // The lockfile mirror, plus the builtin package -- which is in every
+    // dataflow by construction, so its absence could only ever mean "the
+    // lockfile has not arrived yet".
+    expect(src).toContain("new Set([...projectPackages, BUILTIN_PACKAGE_DIR])");
   });
 
   test("the count comes from the same set as the list", () => {

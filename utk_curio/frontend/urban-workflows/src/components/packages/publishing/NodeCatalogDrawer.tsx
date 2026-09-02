@@ -6,6 +6,7 @@ import {
   refreshPackageRegistry,
 } from "../../../api/packagesApi";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { BUILTIN_PACKAGE_ID } from "../../../registry/packageKeys";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   applyProjectLockfile,
@@ -38,6 +39,8 @@ export interface NodeCatalogDrawerProps {
   /** Called once the exit transition finishes (or immediately when motion is reduced). */
   onExitComplete: () => void;
 }
+
+const BUILTIN_PACKAGE_DIR = `${BUILTIN_PACKAGE_ID}@1`;
 
 export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   presented,
@@ -111,7 +114,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     // disagree with the palette. ``ProjectLoader`` now seeds the unsaved
     // dataflow's scope from the same defaults, so both read the one store and
     // this can just follow the lockfile in every case.
-    () => new Set(projectPackages),
+    //
+    // The builtin package is added unconditionally, as the palette filter also
+    // treats it (``inDataflowScope``). It is in every dataflow by construction
+    // -- the backend seeds it and refuses to uninstall it -- so the only state
+    // its absence here can represent is "the lockfile has not arrived yet",
+    // which used to render an "Add to project" button for something already
+    // present and un-removable.
+    () => new Set([...projectPackages, BUILTIN_PACKAGE_DIR]),
     [projectPackages],
   );
 
