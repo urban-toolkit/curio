@@ -93,13 +93,28 @@ def sandbox_auth_header() -> dict:
     return {'X-Curio-Sandbox-Token': token} if token else {}
 
 
+def sandbox_base_url() -> str:
+    """``http://host:port`` for the sandbox these tests should talk to.
+
+    ``CURIO_E2E_SANDBOX_PORT`` is the documented knob (README, and what
+    ``e2e_existing_servers`` waits on), so it wins; ``FLASK_SANDBOX_PORT`` is
+    honoured as a fallback because ``main.py`` exports it for the stack it
+    started. Reading only the latter is what made every ``test_node_execution``
+    case on a non-default-port stack die on a 401 from :2000/exec - 28 failures
+    that read exactly like the bug under investigation in #248.
+    """
+    host = (os.environ.get('CURIO_E2E_SANDBOX_HOST')
+            or os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1'))
+    port = (os.environ.get('CURIO_E2E_SANDBOX_PORT')
+            or os.environ.get('FLASK_SANDBOX_PORT', '2000'))
+    return f'http://{host}:{int(port)}'
+
+
 def load_artifact_as_dict(artifact_id: str) -> dict:
     """Fetch a stored artifact from the sandbox and return its parsed representation."""
     import requests as _req
-    sandbox_host = os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1')
-    sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
     resp = _req.get(
-        f'http://{sandbox_host}:{sandbox_port}/get',
+        f'{sandbox_base_url()}/get',
         params={'fileName': artifact_id},
         headers=sandbox_auth_header(),
         timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
@@ -623,9 +638,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     """
     import requests as _req
 
-    sandbox_host = os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1')
-    sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
-    sandbox_url = f'http://{sandbox_host}:{sandbox_port}'
+    sandbox_url = sandbox_base_url()
 
     from .workflow_spec import PY_CODE_TYPES
 
