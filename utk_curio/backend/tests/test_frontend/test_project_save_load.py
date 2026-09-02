@@ -184,6 +184,11 @@ def test_rename_then_save_updates_the_projects_card(
         },
     )
     pid = created["id"]
+    # Counted before, because "renaming must not fork" is a DELTA. Asserting a
+    # total instead only holds on an account that owns nothing else - and a
+    # stack booted with --with-examples (which is how CI runs) seeds eleven
+    # example dataflows, so a total would fail on correct behaviour.
+    before_count = len(api_json(f"{current_server}/api/projects", token))
 
     page.goto(f"{app_frontend.base_url}/dataflow/{pid}")
     page.wait_for_load_state("domcontentloaded")
@@ -213,10 +218,18 @@ def test_rename_then_save_updates_the_projects_card(
     )
 
     listed = api_json(f"{current_server}/api/projects", token)
-    assert len(listed) == 1, (
-        f"renaming must move the dataflow, not fork it; got {len(listed)} projects: "
-        f"{[p['name'] for p in listed]}"
+    names = [p["name"] for p in listed]
+    assert len(listed) == before_count, (
+        f"renaming must move the dataflow, not fork it; the project count went "
+        f"from {before_count} to {len(listed)}: {names}"
     )
+    assert "After Rename" in names, names
+    assert "Before Rename" not in names, (
+        f"the old name is still a project, so the rename forked: {names}"
+    )
+    # And it is the SAME project, not a replacement that happens to be named right.
+    renamed = next(p for p in listed if p["id"] == pid)
+    assert renamed["name"] == "After Rename"
 
 
 def test_renaming_from_the_projects_list_reaches_the_canvas_title(

@@ -115,8 +115,8 @@ def test_check_reports_an_installed_but_unimportable_dep_as_broken(
         lambda uk, dn: {"flask": ""},
     )
     monkeypatch.setattr(
-        packages_routes_pip, "import_failure",
-        lambda name: "ImportError: DLL load failed while importing _base",
+        packages_routes_pip, "import_failures",
+        lambda deps: {d: "ImportError: DLL load failed while importing _base" for d in deps},
     )
     resp = _check(client, token, ["curio.weather@1"])
     assert resp.status_code == 200
@@ -148,19 +148,21 @@ def test_check_does_not_probe_a_dep_it_already_flagged_for_install(
         packages_services, "_read_python_deps",
         lambda uk, dn: {"zzz_not_a_real_package_qq": ">=1"},
     )
-    probed: list[str] = []
+    probed: list[set] = []
 
-    def _spy(name):
-        probed.append(name)
-        return "should not be consulted"
+    def _spy(deps):
+        probed.append(set(deps))
+        return {d: "should not be consulted" for d in deps}
 
-    monkeypatch.setattr(packages_routes_pip, "import_failure", _spy)
+    monkeypatch.setattr(packages_routes_pip, "import_failures", _spy)
     resp = _check(client, token, ["curio.weather@1"])
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["packages"] == ["curio.weather@1"]
     assert body["broken"] == []
-    assert probed == []
+    # The probe is still called once (batched), but with nothing in it - the dep
+    # pip will install anyway must not also be reported as unrepairable.
+    assert probed == [set()], probed
 
 
 def test_check_reports_nothing_broken_when_every_dep_imports(

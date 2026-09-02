@@ -364,13 +364,56 @@ class TestImportFailure:
 
 class TestImportFailures:
     def test_maps_only_the_broken_ones(self, monkeypatch):
+        # Patched at `_run_probe`, the subprocess seam. `import_failure` is now a
+        # wrapper OVER `import_failures`, so patching it would test nothing.
         pip_runner.forget_import_probes()
         monkeypatch.setattr(
-            pip_runner,
-            "import_failure",
-            lambda name: "boom" if name == "bad" else None,
+            pip_runner, "_run_probe", lambda mapping: {"flask": "boom"},
         )
-        assert pip_runner.import_failures(["flask", "bad"]) == {"bad": "boom"}
+        assert pip_runner.import_failures(["flask"]) == {"flask": "boom"}
+
+    def test_probes_every_dep_in_a_single_subprocess(self, monkeypatch):
+        # The point of batching: three deps used to pay three interpreter starts
+        # (4.7s for curio.weather); now they share one.
+        pip_runner.forget_import_probes()
+        calls: list[dict] = []
+
+        def _spy(mapping):
+            calls.append(dict(mapping))
+            return {}
+
+        monkeypatch.setattr(pip_runner, "_run_probe", _spy)
+        pip_runner.import_failures(["flask", "pytest"])
+        assert len(calls) == 1, f"expected one batched probe, got {len(calls)}"
+        assert set(calls[0]) == {"flask", "pytest"}
+
+    def test_falls_back_to_one_at_a_time_when_the_batch_gives_no_answer(
+        self, monkeypatch
+    ):
+        # A module that segfaults its interpreter takes the whole batch's output
+        # with it. Retrying singly keeps one bad module from hiding every other
+        # verdict in the set.
+        pip_runner.forget_import_probes()
+        seen: list[dict] = []
+
+        def _fake(mapping):
+            seen.append(dict(mapping))
+            if len(mapping) > 1:
+                return None                      # the batch "crashed"
+            name = next(iter(mapping))
+            return {name: "boom"} if name == "pytest" else {}
+
+        monkeypatch.setattr(pip_runner, "_run_probe", _fake)
+        out = pip_runner.import_failures(["flask", "pytest"])
+        assert out == {"pytest": "boom"}
+        assert len(seen) == 3, "one batch attempt, then one probe per dep"
+
+    def test_no_answer_reports_nothing_and_caches_nothing(self, monkeypatch):
+        # None must mean "no verdict", never "all fine".
+        pip_runner.forget_import_probes()
+        monkeypatch.setattr(pip_runner, "_run_probe", lambda mapping: None)
+        assert pip_runner.import_failures(["flask"]) == {}
+        assert not pip_runner._import_probe_cache
 
     def test_is_empty_for_a_healthy_set(self):
         pip_runner.forget_import_probes()

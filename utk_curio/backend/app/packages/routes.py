@@ -1043,7 +1043,7 @@ def check_workflow_deps():
         {"packages": ["<dirName>", ...],   # need installing, sorted
          "broken": [{"package": "<dirName>", "dep": "<lib>", "error": "..."}]}
     """
-    from utk_curio.backend.app.packages.pip_runner import import_failure, is_satisfied
+    from utk_curio.backend.app.packages.pip_runner import import_failures, is_satisfied
 
     user_key = _user_dir_key(g.user)
     body = request.get_json(silent=True) or {}
@@ -1065,24 +1065,29 @@ def check_workflow_deps():
             for dn in wanted if dn in in_store
         }
     need: set[str] = set()
-    broken: list[dict[str, str]] = []
+    # (package, dep) for every dep pip already considers done. Version-satisfied
+    # but unimportable is a different problem with a different remedy, so those
+    # are probed - and reported, not reinstalled.
+    probe: list[tuple[str, str]] = []
     for dir_name in wanted:
         if dir_name not in in_store:
             need.add(dir_name)
             continue
         # Installed in the store - flag only if a declared dep went missing.
-        missing = [n for n, spec in declared[dir_name].items() if not is_satisfied(n, spec)]
+        missing = {n for n, spec in declared[dir_name].items() if not is_satisfied(n, spec)}
         if missing:
             need.add(dir_name)
-        # Version-satisfied but unimportable is a different problem with a
-        # different remedy, so it is probed only for the deps pip considers
-        # done - and reported, not reinstalled.
-        for dep in declared[dir_name]:
-            if dep in missing:
-                continue
-            reason = import_failure(dep)
-            if reason:
-                broken.append({"package": dir_name, "dep": dep, "error": reason})
+        probe += [(dir_name, dep) for dep in declared[dir_name] if dep not in missing]
+
+    # ONE probe for the whole request: each dep otherwise pays its own
+    # interpreter start, which cost 4.7s for curio.weather's three libraries on
+    # the first load of a dataflow that declares it.
+    failures = import_failures({dep for _, dep in probe})
+    broken = [
+        {"package": pkg, "dep": dep, "error": failures[dep]}
+        for pkg, dep in probe
+        if dep in failures
+    ]
     return jsonify({"packages": sorted(need), "broken": broken}), 200
 
 

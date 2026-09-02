@@ -28,6 +28,7 @@ Design choices:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import subprocess
@@ -214,63 +215,130 @@ def _module_for_distribution(name: str) -> str:
     return sorted(real or candidates)[0]
 
 
-def import_failure(name: str) -> Optional[str]:
-    """Why importing *name* fails, or ``None`` if it imports cleanly.
+#: Imports every requested module in ONE interpreter and reports each verdict.
+#: Reads the ``{distribution: module}`` map on stdin so no name has to survive
+#: shell quoting, and writes ``{distribution: reason}`` for the failures.
+#: ``BaseException`` because a broken extension is not restricted to raising
+#: ``Exception`` — some abort with ``SystemExit`` on import.
+_PROBE_SRC = """
+import importlib, json, sys
+mapping = json.load(sys.stdin)
+out = {}
+for dist, module in mapping.items():
+    try:
+        importlib.import_module(module)
+    except BaseException as exc:
+        out[dist] = "{}: {}".format(type(exc).__name__, exc)
+print(json.dumps(out))
+"""
+
+
+def _run_probe(mapping: Mapping[str, str]) -> Optional[dict[str, str]]:
+    """Verdicts for *mapping* from one subprocess, or None if it could not run.
+
+    None means "no answer", never "all fine" — the caller falls back rather than
+    reporting a clean bill of health it did not earn.
+    """
+    if not mapping:
+        return {}
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", _PROBE_SRC],
+            input=json.dumps(mapping),
+            capture_output=True,
+            text=True,
+            timeout=min(300, _IMPORT_PROBE_TIMEOUT * len(mapping)),
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        log.warning("import probe for %s failed to run: %s", sorted(mapping), exc)
+        return None
+    # A module that hard-crashes the interpreter (segfault in a native
+    # extension) takes the whole batch's output with it, so a non-zero exit or
+    # unparseable stdout is treated as "no answer" and retried one at a time.
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        return None
+    try:
+        parsed = json.loads(proc.stdout)
+    except ValueError:
+        return None
+    return {k: v for k, v in parsed.items() if isinstance(v, str)}
+
+
+def import_failures(deps: Iterable[str]) -> dict[str, str]:
+    """``{distribution: reason}`` for every dep in *deps* that cannot be imported.
 
     Metadata presence is not importability. A wheel whose native extension
     cannot load — the common case for GDAL/CUDA-backed builds — records a
-    perfectly good version while ``import`` raises, so a version check alone
-    reports it satisfied and the failure only surfaces later, as a raw
-    ``ImportError`` from whichever node happens to run first.
+    perfectly good version, so a version check alone reports it satisfied and
+    the failure only surfaces later, as a raw ``ImportError`` from whichever
+    node happens to run first.
 
     Probed in a SUBPROCESS, deliberately: importing an arbitrary library into
     the backend process to test it would load torch-sized dependencies into a
-    long-lived server, and a segfaulting extension would take the server with
-    it rather than being reported.
+    long-lived server, and a segfaulting extension would take the server with it
+    rather than being reported.
+
+    **One subprocess for the whole set.** Probing per dep cost 4.7 s for
+    ``curio.weather``'s three libraries (pythermalcomfort 1.9 + rasterio 1.0 +
+    rasterstats 1.8) because each paid its own interpreter start and re-imported
+    the shared GDAL stack; batched they overlap. The verdict is memoised per
+    ``(distribution, version)``, so the cost is paid once per backend process —
+    but it is paid on a dataflow load, which is why it is worth batching.
 
     Uses ``sys.executable``, matching :func:`install_python_deps` — the probe
     asks about the interpreter the installs land in.
     """
-    try:
-        ver = installed_version(name)
-    except PackageNotFoundError:
-        return f"{name} is not installed"
+    failures: dict[str, str] = {}
+    to_probe: dict[str, str] = {}     # distribution -> module
+    versions: dict[str, str] = {}
 
-    key = (name, ver)
-    if key in _import_probe_cache:
-        return _import_probe_cache[key]
-
-    module = _module_for_distribution(name)
-    try:
-        proc = subprocess.run(
-            [sys.executable, "-c", f"import {module}"],
-            capture_output=True,
-            text=True,
-            timeout=_IMPORT_PROBE_TIMEOUT,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        # Best-effort: an unusable probe must not invent a broken dependency.
-        log.warning("import probe for %s failed to run: %s", name, exc)
-        return None
-
-    if proc.returncode == 0:
-        _import_probe_cache[key] = None
-        return None
-
-    tail = (proc.stderr or "").strip().splitlines()
-    reason = tail[-1] if tail else f"import {module} failed"
-    _import_probe_cache[key] = reason
-    return reason
-
-
-def import_failures(deps: Iterable[str]) -> dict[str, str]:
-    """``{distribution: reason}`` for every dep in *deps* that cannot be imported."""
-    broken: dict[str, str] = {}
     for name in deps:
-        reason = import_failure(name)
+        try:
+            ver = installed_version(name)
+        except PackageNotFoundError:
+            failures[name] = f"{name} is not installed"
+            continue
+        key = (name, ver)
+        if key in _import_probe_cache:
+            cached = _import_probe_cache[key]
+            if cached:
+                failures[name] = cached
+            continue
+        versions[name] = ver
+        to_probe[name] = _module_for_distribution(name)
+
+    if not to_probe:
+        return failures
+
+    verdicts = _run_probe(to_probe)
+    if verdicts is None:
+        # The batch gave no answer. Retry singly so one hard-crashing module
+        # cannot hide the verdict for every other dep in the set.
+        for name, module in to_probe.items():
+            one = _run_probe({name: module})
+            if one is None:
+                continue          # still no answer: report nothing, cache nothing
+            reason = one.get(name)
+            _import_probe_cache[(name, versions[name])] = reason
+            if reason:
+                failures[name] = reason
+        return failures
+
+    for name in to_probe:
+        reason = verdicts.get(name)
+        _import_probe_cache[(name, versions[name])] = reason
         if reason:
-            broken[name] = reason
-    return broken
+            failures[name] = reason
+    return failures
+
+
+def import_failure(name: str) -> Optional[str]:
+    """Why importing *name* fails, or ``None`` if it imports cleanly.
+
+    Convenience wrapper over :func:`import_failures`; prefer that when checking
+    more than one dep, so they share a single interpreter start.
+    """
+    return import_failures([name]).get(name)
 
 
 def is_satisfied(name: str, spec: str) -> bool:
