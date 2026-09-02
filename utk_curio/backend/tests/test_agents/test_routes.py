@@ -2717,6 +2717,18 @@ class TestNodeCreate:
             f'"params": {{"nodeType": "{node_type}", "content": "{content}"{extra}}}}}}}\n```'
         )
 
+    def _create_tail_json(self, **params):
+        """The same block built with json.dumps (#245) — ``_create_tail`` is an
+        f-string and cannot express a multi-line source body."""
+        import json as _json
+
+        params.setdefault("nodeType", "curio.builtin/computation-analysis")
+        return (
+            "```curio.v1\n"
+            + _json.dumps({"toolRequest": {"tool": "node.create", "params": params}})
+            + "\n```"
+        )
+
     def _setup(self, client, user, token, project_id, monkeypatch, replies=None):
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -2824,6 +2836,60 @@ class TestNodeCreate:
         assert inserted["content"] == "print('new')"
         # Apply is deterministic — no quota consumed.
         assert ledger.aggregates(_user_dir_key(user))["runs"] == runs_before
+
+    def test_large_content_node_create_mints_and_applies(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """Issue #245 — the reported bug, end to end.
+
+        A node body past the old 1KB params cap was refused by the tail parser
+        and the whole reply failed open, so the raw request JSON became the
+        chat message and no node ever reached the canvas. The mints have always
+        accepted content up to PROPOSAL_CONTENT_MAX_CHARS; only the parser
+        disagreed.
+        """
+        user, token = user_and_token
+        source = (
+            "import pandas as pd\n\n\n"
+            "def summarise(path, column):\n"
+            '    """Load a CSV and return the mean of one numeric column."""\n'
+            "    df = pd.read_csv(path)\n"
+            "    if column not in df.columns:\n"
+            '        raise ValueError(f"column {column} missing")\n'
+            '    series = pd.to_numeric(df[column], errors="coerce").dropna()\n'
+            '    return {"mean": float(series.mean()), "count": int(series.size)}\n'
+        ) * 40  # ~14KB: a realistic node, far past the old cap
+        assert len(source) > 4096
+        # extract_node_content trims the boundary, as it has always done.
+        stored = source.strip()
+        tail = self._create_tail_json(content=source, title="CSV mean", goal="summarise a column")
+        att_id, _ = self._setup(
+            client, token=token, user=user, project_id=alice_project, monkeypatch=monkeypatch,
+            replies=[tail, "Proposed a CSV summariser — review it above."],
+        )
+        r = self._run(client, token, alice_project, att_id)
+        assert r.status_code == 200
+        body = r.get_json()
+
+        proposal = self._proposal_from_run(r)
+        assert proposal["tool"] == "node.create"
+        assert proposal["status"] == "pending"
+        # The leak: none of the machine block may survive as chat prose.
+        assert "curio.v1" not in body["reply"]
+        assert "toolRequest" not in body["reply"]
+        assert "nodeType" not in body["reply"]
+        assert "import pandas" not in body["reply"]
+
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200
+        created = resp.get_json()["createdNode"]
+        assert created["content"] == stored  # whole body, not truncated
+        nodes = self._spec_nodes(user, alice_project)
+        assert len(nodes) == 2
+        assert next(n for n in nodes if n["id"] == created["id"])["content"] == stored
+
         # The transcript logged the result card.
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
