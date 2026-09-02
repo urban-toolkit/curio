@@ -28,9 +28,11 @@ export const CatalogBrowseDrawerShell: React.FC<CatalogBrowseDrawerShellProps> =
 
   return (
     <div className={styles.browseDrawerColumn}>
-      {/* CSS-module class names are hashed in a production build, so a test
-          cannot target this panel by class. Every catalog shares this shell,
-          so one hook covers all of them. */}
+      {/* The identity attribute the catalog PAGES' detail drawer was missing.
+          Its three canvas peers each carry one (`data-curio-agent-catalog-drawer`
+          and friends), but this shared shell had only hashed module classes - and
+          `aside` matches the filter sidebar too, so a test had no honest way to
+          address the drawer. Same job as `data-agent-coord` on the cards. */}
       <aside className={styles.browseDrawer} data-curio-browse-drawer="true">
         {children}
       </aside>

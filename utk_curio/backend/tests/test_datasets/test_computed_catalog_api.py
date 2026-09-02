@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 
+from utk_curio.backend.app.common.user_storage import users_base
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
@@ -21,11 +22,10 @@ def test_save_installs_to_user_store_not_project_data(client, user_and_token):
 
     save_project_with_output(client, token, project_id, "persist_me.csv", node_id="node-save")
 
-    launch = Path(os.environ["CURIO_LAUNCH_CWD"])
-    proj_data = launch / ".curio" / "users" / "1" / "projects" / project_id / "data"
+    proj_data = users_base() / "1" / "projects" / project_id / "data"
     assert not (proj_data / "persist_me.csv").exists()
 
-    user_datasets = launch / ".curio" / "users" / "1" / "datasets"
+    user_datasets = users_base() / "1" / "datasets"
     installed = list(user_datasets.rglob("persist_me.csv"))
     assert installed, "save should persist the output into the account dataset store"
 
@@ -147,8 +147,7 @@ def test_install_computed_dataset_copies_to_user_store(client, user_and_token):
     assert body.get("producerNodeId") == "node-compute"
 
     # The file should exist in the user store
-    launch_cwd = Path(os.environ["CURIO_LAUNCH_CWD"])
-    user_store = launch_cwd / ".curio" / "users"
+    user_store = users_base()
     copied = list(user_store.rglob("analysis.csv"))
     assert copied, "compute install should copy payload into user dataset store"
 
@@ -595,9 +594,7 @@ def test_saved_computed_dataset_dir_survives_save_off(
     project_id = create_project(client, token, name="Dir lifecycle")
     node_id = "node-dir"
     dir_name = f"{computed_dataset_id(node_id, project_id)}@1"
-    dataset_dir = (
-        Path(os.environ["CURIO_LAUNCH_CWD"]) / ".curio" / "users" / "1" / "datasets" / dir_name
-    )
+    dataset_dir = users_base() / "1" / "datasets" / dir_name
 
     shared = Path(os.environ["CURIO_SHARED_DATA"])
     (shared / "dir_me.csv").write_text("c\n1\n", encoding="utf-8")
@@ -801,8 +798,7 @@ def test_install_computed_dataset_carries_decode_sidecar(client, user_and_token)
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
 
-    launch_cwd = Path(os.environ["CURIO_LAUNCH_CWD"])
-    user_store = launch_cwd / ".curio" / "users"
+    user_store = users_base()
     sidecars = list(user_store.rglob("withobj.parquet.decode.json"))
     assert sidecars, "manual install should copy the decode sidecar into the user store"
 

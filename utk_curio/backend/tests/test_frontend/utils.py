@@ -93,13 +93,28 @@ def sandbox_auth_header() -> dict:
     return {'X-Curio-Sandbox-Token': token} if token else {}
 
 
+def sandbox_base_url() -> str:
+    """``http://host:port`` for the sandbox these tests should talk to.
+
+    ``CURIO_E2E_SANDBOX_PORT`` is the documented knob (README, and what
+    ``e2e_existing_servers`` waits on), so it wins; ``FLASK_SANDBOX_PORT`` is
+    honoured as a fallback because ``main.py`` exports it for the stack it
+    started. Reading only the latter is what made every ``test_node_execution``
+    case on a non-default-port stack die on a 401 from :2000/exec - 28 failures
+    that read exactly like the bug under investigation in #248.
+    """
+    host = (os.environ.get('CURIO_E2E_SANDBOX_HOST')
+            or os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1'))
+    port = (os.environ.get('CURIO_E2E_SANDBOX_PORT')
+            or os.environ.get('FLASK_SANDBOX_PORT', '2000'))
+    return f'http://{host}:{int(port)}'
+
+
 def load_artifact_as_dict(artifact_id: str) -> dict:
     """Fetch a stored artifact from the sandbox and return its parsed representation."""
     import requests as _req
-    sandbox_host = os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1')
-    sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
     resp = _req.get(
-        f'http://{sandbox_host}:{sandbox_port}/get',
+        f'{sandbox_base_url()}/get',
         params={'fileName': artifact_id},
         headers=sandbox_auth_header(),
         timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
@@ -623,9 +638,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     """
     import requests as _req
 
-    sandbox_host = os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1')
-    sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
-    sandbox_url = f'http://{sandbox_host}:{sandbox_port}'
+    sandbox_url = sandbox_base_url()
 
     from .workflow_spec import PY_CODE_TYPES
 
@@ -1771,6 +1784,93 @@ def canvas_node_type(page, node_id: str) -> str | None:
 def node_locator(page, node_id: str):
     """Return a Playwright ``Locator`` for a ReactFlow node element."""
     return page.locator(f'.react-flow__node[data-id="{node_id}"]')
+
+
+def enable_save_output(page, node_id: str) -> None:
+    """Turn on one node's save-output toggle, so running it leaves a dataset.
+
+    The database-icon switch beside the play button, and it is **off by
+    default** (``CURIO_DEFAULT_SAVE_NODE_OUTPUT``, documented in
+    ``docs/DATA-CATALOG.md``). With it off a run writes a parquet under
+    ``.curio/data/`` and stops there: ``routes.py`` gates the auto-install on
+    ``save_output_dataset``, so no ``computed.<dataflow>.<node>@1`` is ever
+    installed into the account store.
+
+    A test that runs a producing node and then looks for its dataset in a
+    catalog therefore has to flip this first. Three catalog tests did not, and
+    passed anyway for years because the per-user store outlived ``reset-db`` and
+    held 37 ``computed.*`` rows from earlier runs - a ``computed.``-prefixed
+    card was always there to find, just never this test's.
+
+    Clicks the label rather than the input: the checkbox is visually hidden by
+    ``SaveOutputToggle.module.css``, so ``check()`` fails actionability. Scoped
+    inside the node because the id is built from Curio's ``data.nodeId``, which
+    a caller holding React Flow's ``data-id`` cannot assume it has.
+    """
+    node = node_locator(page, node_id)
+    box = node.locator('input[id^="save-output-"]').first
+    box.wait_for(state="attached", timeout=15000)
+    if box.is_checked():
+        return
+    node.locator('label:has(input[id^="save-output-"])').first.click()
+    expect(box).to_be_checked(timeout=10000)
+
+
+def save_dataflow(page, *, timeout: float = 30000) -> None:
+    """Save the open dataflow through the File menu, and wait for the write.
+
+    Gates on the write itself rather than on the File menu closing: the menu can
+    close before the PUT is answered, and a test that then reads the server sees
+    the pre-save spec.
+    """
+    file_btn = page.get_by_role("button", name=re.compile("File"))
+    file_btn.wait_for(state="visible", timeout=15000)
+    file_btn.click(force=True)
+    save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
+    save_btn.wait_for(state="visible", timeout=10000)
+    with page.expect_response(
+        lambda r: "/api/projects" in r.url
+        and r.request.method in ("POST", "PUT")
+        and r.ok,
+        timeout=timeout,
+    ):
+        save_btn.click()
+    save_btn.wait_for(state="hidden", timeout=timeout)
+
+
+def frame_node(page, node_id: str, *, zoom: float = 0.9,
+               settle_ms: float = 1000) -> None:
+    """Pan and zoom the canvas so one node fills the frame.
+
+    For scenes whose subject is *inside* a node. The baseline harness fits the
+    viewport to the whole dataflow, which is right for a scene about the graph
+    and wrong for one about a chart: at fit zoom a 525x350 node is a ~90x60
+    thumbnail, and a screenshot of it cannot show what the scene claims. The
+    `05-vega-lite-multi-view-drilldown` example has 28 nodes, so its captures
+    were two near-identical canvas wallpapers.
+
+    Keeps the full 1280x720 frame rather than clipping to the node, so the
+    surrounding canvas still reads as context.
+
+    ``window.__curio_reactFlow`` is the instance ``MainCanvas.tsx`` exposes for
+    exactly this; ``setCenter`` takes flow coordinates, hence the node's own
+    position plus half its measured size.
+    """
+    page.evaluate(
+        """({ nodeId, zoom }) => {
+            const rf = window.__curio_reactFlow;
+            if (!rf) return;
+            const node = rf.getNodes().find((n) => n.id === nodeId);
+            if (!node) return;
+            const w = node.width || node.measured?.width || 525;
+            const h = node.height || node.measured?.height || 350;
+            rf.setCenter(node.position.x + w / 2, node.position.y + h / 2, {
+                zoom, duration: 700,
+            });
+        }""",
+        {"nodeId": node_id, "zoom": zoom},
+    )
+    page.wait_for_timeout(settle_ms)
 
 
 def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,

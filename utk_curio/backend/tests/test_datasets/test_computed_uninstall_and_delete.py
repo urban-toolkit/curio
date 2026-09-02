@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 
+from utk_curio.backend.app.common.user_storage import users_base
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
@@ -16,9 +17,7 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
 
 def _account_dir(node_id: str, project_id: str) -> Path:
     dir_name = f"{computed_dataset_id(node_id, project_id)}@1"
-    return (
-        Path(os.environ["CURIO_LAUNCH_CWD"]) / ".curio" / "users" / "1" / "datasets" / dir_name
-    )
+    return users_base() / "1" / "datasets" / dir_name
 
 
 def _dataflow_dataset_ids(client, token, project_id):

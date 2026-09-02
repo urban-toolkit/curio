@@ -43,7 +43,6 @@ const renderCard = (props: Partial<React.ComponentProps<typeof DatasetCard>> = {
     <DatasetCard
       dataset={dataset}
       isInstalled={false}
-      isPublished={false}
       busy={false}
       onInstall={() => undefined}
       onOpenDetails={() => undefined}

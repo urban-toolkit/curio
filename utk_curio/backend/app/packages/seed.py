@@ -221,6 +221,88 @@ def _package_is_healthy(dest: Path) -> bool:
     return True
 
 
+def _integrity_map(package_root: Path) -> dict[str, str] | None:
+    """The ``sha256`` map from a package's ``integrity.json``, or ``None``.
+
+    ``None`` means "cannot say" - absent, unreadable or malformed - and every
+    caller treats that as "leave it alone" rather than guessing.
+    """
+    path = package_root / "integrity.json"
+    if not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    listed = raw.get("sha256") if isinstance(raw, dict) else None
+    return listed if isinstance(listed, dict) else None
+
+
+#: Computed catalog hashes, keyed by ``(package path, max mtime)``. Hashing a
+#: package tree is the one expensive part of the staleness check, and the answer
+#: cannot change while its newest mtime does not — so a boot that opens several
+#: dataflows walks each package once, not once per open.
+_CATALOG_CONTENT: dict[tuple[str, float], dict[str, str]] = {}
+
+
+def _catalog_content_map(src: Path, fixture_mtime: float) -> dict[str, str] | None:
+    """SHA-256 of every file in the CATALOG copy, computed rather than declared.
+
+    Not ``integrity.json``: a package's committed map can disagree with the
+    files committed beside it. ``ai.urbanlab.uhvi@1`` does today — its map
+    quotes a hash for ``sources/uhvi-load.py`` that the file has not had for
+    some time, presumably an edit that never re-ran the integrity refresh.
+    Trusting it would mark every faithful install of that package permanently
+    stale and re-copy it on every pass, which is precisely the per-request
+    destruction memo dev/93 D1 removed.
+    """
+    key = (str(src), fixture_mtime)
+    cached = _CATALOG_CONTENT.get(key)
+    if cached is not None:
+        return cached
+    try:
+        from utk_curio.backend.app.packages.installer import _build_integrity
+
+        computed = _build_integrity(src)
+    except Exception:  # noqa: BLE001 — a catalog we cannot hash is not "stale"
+        log.warning("Could not hash catalog package %s", src, exc_info=True)
+        return None
+    _CATALOG_CONTENT.clear()  # one package's worth of memo is all that is useful
+    _CATALOG_CONTENT[key] = computed
+    return computed
+
+
+def _store_copy_is_stale(src: Path, dest: Path, fixture_mtime: float) -> bool:
+    """True when the catalog has moved on from the user's copy (#194).
+
+    A fix can ship inside a package at an unchanged version - the catalog under
+    ``<repo_root>/packages`` moves, the coordinate does not - and installing is
+    copy-once, so the user keeps whatever they first copied. That is how the
+    Column Filter fix failed to reach anyone who already had
+    ``curio.example-ui@1``: same ``@1``, same version, older bytes.
+
+    Content, not mtime. ``should_seed`` compares fixture mtimes, which is right
+    for a dev fixture the author is editing, but git rewrites mtimes on
+    checkout - so an mtime rule re-copies on every clone and still misses a
+    change that happens to preserve them.
+
+    The two sides are deliberately asymmetric. The catalog is **computed**, for
+    the reason in :func:`_catalog_content_map`. The store's own
+    ``integrity.json`` is **trusted**, because the installer writes it from the
+    tree it just staged, so it describes that copy exactly and costs nothing to
+    read - and a copy whose files drifted from its own map is damaged rather
+    than out of date, which is a different problem with a different owner
+    (:func:`_package_is_healthy`).
+
+    Conservative on doubt: if either side cannot be read, nothing is touched.
+    """
+    catalog = _catalog_content_map(src, fixture_mtime)
+    installed = _integrity_map(dest)
+    if catalog is None or installed is None:
+        return False
+    return catalog != installed
+
+
 def _sweep_seed_staging(dest_base: Path) -> None:
     """Remove staging trees left by a swap that was killed mid-flight.
 
@@ -330,7 +412,10 @@ def _seed_dev_packageages_locked(*, user_key: str) -> list[str]:
     # this lock, so its hold is exactly the store work: health checks, swaps,
     # state markers. The fixture rglob and the docs/examples scan are not
     # store work and would only lengthen every reader's wait.
-    plan = _plan_seed(src_root)
+    installed_names = frozenset(
+        p.name for p in dest_base.iterdir() if p.is_dir() and PACKAGE_DIR_RE.match(p.name)
+    ) if dest_base.is_dir() else frozenset()
+    plan = _plan_seed(src_root, installed_names)
     with package_seed_lock(user_key):
         return _seed_locked(user_key, dest_base, plan)
 
@@ -350,7 +435,7 @@ class _SeedPlan:
         self.candidates = candidates
 
 
-def _plan_seed(src_root: Path) -> _SeedPlan:
+def _plan_seed(src_root: Path, installed_names: frozenset[str] = frozenset()) -> _SeedPlan:
     # The built-in package ships with every Curio install. We seed exactly the
     # latest installed major and clean up any older `curio.builtin@<X>` copies
     # the user may still have from a previous version. Tombstones don't apply
@@ -370,6 +455,12 @@ def _plan_seed(src_root: Path) -> _SeedPlan:
             pkg_dir = _latest_package_dir(src_root, pid)
             if pkg_dir is not None:
                 keep_names.add(pkg_dir.name)
+
+    # Packages the user ALREADY has are candidates too, so an upgrade can reach
+    # them (#194). They are only ever refreshed in place - never installed - and
+    # a package the user uninstalled is not in the store, so it cannot come back
+    # through this door.
+    keep_names |= set(installed_names)
 
     candidates: list[tuple[Path, float]] = []
     for src in sorted(src_root.iterdir()):
@@ -415,6 +506,20 @@ def _seed_locked(user_key: str, dest_base: Path, plan: _SeedPlan) -> list[str]:
         is_builtin = src.name == keep_builtin_name
         if force:
             do_seed, reason = True, "forced-by-env"
+        elif dest.exists() and not is_builtin:
+            # A package the store already holds. The only question here is
+            # whether an upgrade moved the catalog underneath it (#194): the
+            # mtime rules below are for deciding whether to INSTALL something,
+            # and ``untracked-existing-copy`` in particular declines to touch a
+            # copy that arrived through the catalog drawer rather than the
+            # seeder — which is every package this branch sees.
+            #
+            # Nothing else can happen to it here. It is never removed, and a
+            # package the user uninstalled is absent from the store, so it is
+            # not a candidate at all and cannot be resurrected.
+            stale = _store_copy_is_stale(src, dest, fixture_mtime)
+            do_seed = stale
+            reason = "catalog-content-advanced" if stale else "content-identical"
         elif is_builtin and not dest.exists():
             # The user cannot opt out of the default node kinds, so a
             # tombstone must never suppress the built-in. (Nothing can

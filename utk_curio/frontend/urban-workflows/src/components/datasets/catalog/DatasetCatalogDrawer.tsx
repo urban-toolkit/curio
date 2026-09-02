@@ -134,7 +134,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             kind="dataset"
             title="Data Catalog"
             titleId="dataset-catalog-title"
-            subtitle="Datasets available to this dataflow."
+            subtitle="Datasets available in this project."
             closeAriaLabel="Close Data Catalog drawer"
           />
 
@@ -208,7 +208,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 {!catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
                   <div className={shell.empty}>
                     {tab === "installed"
-                      ? "No datasets added to this dataflow yet."
+                      ? "No datasets added to this project yet."
                       : tab === "computed"
                       ? "No computed datasets yet. Run a dataflow node that outputs a table. It is saved to your Data Catalog and can be added to a dataflow from here."
                       : "No datasets match the current filters."}

@@ -714,3 +714,73 @@ def test_fixture_catalog_reads_happen_before_the_lock_is_taken(
         f"catalog reads ran INSIDE the seed lock: "
         f"{[k for k, v in held_during.items() if v]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# An upgrade reaches a package the user already installed (#194).
+#
+# A fix can ship inside a package at an unchanged version — the catalog under
+# <repo_root>/packages moves, the coordinate does not. Installing is copy-once,
+# so before this the user kept whatever they first copied, indefinitely. These
+# two tests pin the rule and its limit: a stale copy refreshes, a copy the user
+# deliberately removed does not come back.
+# ---------------------------------------------------------------------------
+
+def _probe_file(user_key: str, dir_name: str, rel: str = "manifest.json") -> Path:
+    return user_packageages_dir(user_key) / dir_name / rel
+
+
+def test_a_stale_installed_package_is_refreshed_from_the_catalog(
+    tmp_curio, real_fixtures_root,
+):
+    """The #194 delivery bug, at the unit layer."""
+    dir_name = "ai.urbanlab.uhvi@1"
+    install_packageage_from_directory("guest", real_fixtures_root / dir_name)
+    assert dir_name in _installed_names()
+
+    probe = _probe_file("guest", dir_name)
+    catalog_bytes = (real_fixtures_root / dir_name / "manifest.json").read_bytes()
+    assert probe.read_bytes() == catalog_bytes, "install did not copy faithfully"
+
+    # Diverge the store copy the way an UPGRADE diverges it, which means leaving
+    # it internally consistent: an older copy's files and its own
+    # ``integrity.json`` agree with each other, they are simply an older pair
+    # than the catalog's. Editing the file alone would leave the store's map
+    # still quoting the original hash — a damaged copy, not an out-of-date one,
+    # and the refresh is right to decline that. Getting this wrong made an
+    # earlier version of this test pass for the wrong reason.
+    from utk_curio.backend.app.packages.installer import refresh_packageage_integrity
+
+    probe.write_bytes(catalog_bytes + b"\n")
+    refresh_packageage_integrity(probe.parent)
+    seed_state.clear("guest", dir_name)
+    assert probe.read_bytes() != catalog_bytes
+
+    seed_dev_packageages(user_key="guest")
+
+    assert probe.read_bytes() == catalog_bytes, (
+        "a stale installed package was not refreshed, so a fix shipped inside "
+        "a package at an unchanged version never reaches an existing install"
+    )
+
+
+def test_an_uninstalled_package_is_not_resurrected_by_the_refresh(
+    tmp_curio, real_fixtures_root,
+):
+    """The limit that matters: refreshing must not undo an uninstall.
+
+    The refresh only ever looks at packages the store already holds, so a
+    tombstoned one is not a candidate — but that is the property worth pinning,
+    because the obvious implementation (widen the seed plan to the whole
+    catalog) would resurrect it.
+    """
+    dir_name = "ai.urbanlab.uhvi@1"
+    install_packageage_from_directory("guest", real_fixtures_root / dir_name)
+    uninstall_packageage("guest", dir_name)
+    assert dir_name not in _installed_names()
+
+    seed_dev_packageages(user_key="guest")
+
+    assert dir_name not in _installed_names(), (
+        "the refresh brought back a package the user uninstalled"
+    )
