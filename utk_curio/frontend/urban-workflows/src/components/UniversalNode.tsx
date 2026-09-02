@@ -7,6 +7,8 @@ import DescriptionModal from './DescriptionModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
+import { isRegistryReady, subscribeToRegistryReady } from '../registry/packageRegistryBootstrap';
+import { UnresolvedNode } from './UnresolvedNode';
 import { behaviorDataView } from "../utils/behaviorDataView";
 import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvasTemplateConfig';
 import { useNodeState } from '../hook/useNodeState';
@@ -31,6 +33,13 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 // render a placeholder until the registry catches up — `useSyncExternalStore`
 // subscribes to registry mutations so the body remounts as soon as its
 // descriptor lands.
+//
+// That wait is only right while the registry might still deliver. Once it has
+// settled, a missing descriptor means no installed package provides this type,
+// and continuing to say "Loading node…" is a lie the user cannot see past —
+// which is exactly what the streetvision example showed, permanently (#233).
+// `UnresolvedNode` tells the two apart, and renders handles either way so the
+// edges touching it can still be drawn.
 const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }: { data: any; isConnectable: boolean }) {
   // The snapshot must be stable when the descriptor exists so React doesn't
   // tear-and-rebuild on every keystroke; return the descriptor itself (or
@@ -39,20 +48,18 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
     subscribeToRegistry,
     () => tryGetNodeDescriptor(data.nodeType) ?? null,
   );
+  const registryReady = useSyncExternalStore(
+    subscribeToRegistryReady,
+    isRegistryReady,
+    () => false,
+  );
   if (!descriptor) {
     return (
-      <div
-        style={{
-          padding: '8px 12px', minWidth: 180, minHeight: 50,
-          border: '1px dashed #b8b8b8', borderRadius: 6,
-          background: '#fafafa', color: '#64748b', fontSize: 11,
-          fontFamily: '"Roboto","Helvetica","Arial",sans-serif',
-        }}
-        title={`Waiting on descriptor for ${data.nodeType}`}
-      >
-        <strong style={{ color: '#334155', fontSize: 12 }}>Loading node…</strong>
-        <div style={{ marginTop: 4, opacity: 0.7 }}>{data.nodeType}</div>
-      </div>
+      <UnresolvedNode
+        nodeId={data.nodeId}
+        nodeType={data.nodeType}
+        registryReady={registryReady}
+      />
     );
   }
   return <UniversalNodeBody key={data.nodeType} data={data} isConnectable={isConnectable} />;

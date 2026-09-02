@@ -14,8 +14,15 @@ import { NodeCatalogDrawer } from "../components/packages/publishing";
 /** Panel slide duration — keep in sync with `.drawer` in NodeCatalogDrawer.module.css */
 const DRAWER_MOTION_MS = 300;
 
+type OpenNodeCatalogDrawerOptions = {
+  /** Seed the drawer's search box, so a caller can land the user on one
+   *  package instead of the whole catalog. Used by the missing-package node
+   *  card, which knows exactly which package it needs (#233). */
+  search?: string;
+};
+
 type NodeCatalogDrawerContextValue = {
-  openNodeCatalogDrawer: () => void;
+  openNodeCatalogDrawer: (options?: OpenNodeCatalogDrawerOptions) => void;
   closeNodeCatalogDrawer: () => void;
   isNodeCatalogDrawerOpen: boolean;
 };
@@ -41,6 +48,7 @@ export function NodeCatalogDrawerProvider({ children }: { children: React.ReactN
 
   const [mounted, setMounted] = useState(false);
   const [presented, setPresented] = useState(false);
+  const [initialSearch, setInitialSearch] = useState("");
   const preOpenFocusRef = useRef<HTMLElement | null>(null);
   const exitTimerRef = useRef<number | null>(null);
   const exitSettledRef = useRef(false);
@@ -72,9 +80,10 @@ export function NodeCatalogDrawerProvider({ children }: { children: React.ReactN
     );
   }, [clearExitTimer, finishClose, prefersReducedMotion]);
 
-  const openNodeCatalogDrawer = useCallback(() => {
+  const openNodeCatalogDrawer = useCallback((options?: OpenNodeCatalogDrawerOptions) => {
     clearExitTimer();
     exitSettledRef.current = false;
+    setInitialSearch(options?.search ?? "");
     preOpenFocusRef.current = document.activeElement as HTMLElement | null;
     setMounted(true);
     setPresented(false);
@@ -110,6 +119,7 @@ export function NodeCatalogDrawerProvider({ children }: { children: React.ReactN
   const drawer = mounted
     ? createPortal(
         <NodeCatalogDrawer
+          initialSearch={initialSearch}
           presented={presented}
           onRequestClose={closeNodeCatalogDrawer}
           onExitComplete={finishClose}
