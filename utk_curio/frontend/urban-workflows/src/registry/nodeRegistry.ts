@@ -221,4 +221,18 @@ export function getPaletteNodeTypes(): NodeDescriptor[] {
 // so with the filter on the read side a scope change has to pulse the same
 // listeners a registration does - otherwise switching dataflow would leave the
 // previous palette painted until something else happened to touch the registry.
-subscribeProjectPackages(() => pulseRegistryListeners());
+//
+// Only when the scope actually CHANGES, though. The store is written on paths
+// that re-apply the same set (a drawer reload, a lockfile refetch that agrees
+// with what is already there), and pulsing on those re-rendered the packages
+// palette for no visible reason - which unmounted anything anchored inside it,
+// including the package metadata modal opened from a palette row.
+let lastScopeSignature: string | null = null;
+subscribeProjectPackages(() => {
+  const scope = getCurrentProjectPackages();
+  // Sorted so a set rebuilt in a different order is still the same scope.
+  const signature = scope === null ? "*" : Array.from(scope).sort().join(",");
+  if (signature === lastScopeSignature) return;
+  lastScopeSignature = signature;
+  pulseRegistryListeners();
+});

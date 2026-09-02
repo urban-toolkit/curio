@@ -10,6 +10,7 @@ import { BUILTIN_PACKAGE_ID } from "../../../registry/packageKeys";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   applyProjectLockfile,
+  getPackagesRevision,
   setCurrentProjectPackages,
 } from "../../../registry/projectPackagesStore";
 import { draftFromInstalledPackagePayload } from "../../../utils/palettePackageFactoryDraft";
@@ -142,6 +143,10 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     // remount ProjectLoader (e.g. installing via /catalog and coming back).
     // The pull is best-effort: 404 / network error just leaves the existing
     // store untouched.
+    // Captured BEFORE the fetch below: if a local write lands while these are
+    // in flight, the lockfile we get back is older than what the store already
+    // knows and applying it would undo that write (see applyProjectLockfile).
+    const lockfileReadAt = getPackagesRevision();
     const promises: [
       ReturnType<typeof packagesApi.catalog>,
       ReturnType<typeof packagesApi.listInstalled>,
@@ -163,7 +168,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     if (projLock && Array.isArray(projLock.packages)) {
       // memo dev/101: when the backend's lockfile differs from the mirror,
       // the palette/registry must follow — not only the drawer's pill.
-      if (applyProjectLockfile(projLock.packages)) {
+      if (applyProjectLockfile(projLock.packages, lockfileReadAt)) {
         await refreshPackageRegistry();
       }
     }

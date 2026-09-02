@@ -51,6 +51,13 @@ let _state: ProjectPackages = {
   packages: new Set(),
 };
 
+/**
+ * Bumped by every LOCAL write below, never by a server read that is applied
+ * through {@link applyProjectLockfile}. That asymmetry is the whole point: it
+ * lets a read tell whether the world moved under it while it was in flight.
+ */
+let _revision = 0;
+
 export function setCurrentProject(projectId: string, packages: Iterable<string>): void {
   const next = new Set(packages);
   // ``ProjectLoader`` pins the id with an EMPTY set before the spec loads, so
@@ -64,6 +71,7 @@ export function setCurrentProject(projectId: string, packages: Iterable<string>)
   } else {
     _state = { kind: 'dataflow', projectId, packages: next };
   }
+  _revision += 1;
   _notify();
 }
 
@@ -76,6 +84,7 @@ export function setCurrentProject(projectId: string, packages: Iterable<string>)
  */
 export function setUnsavedDataflow(packages: Iterable<string>): void {
   _state = { kind: 'dataflow', projectId: undefined, packages: new Set(packages) };
+  _revision += 1;
   _notify();
 }
 
@@ -84,11 +93,13 @@ export function setCurrentProjectPackages(packages: Iterable<string>): void {
   // defaults arriving for an unsaved dataflow. Keeps the current kind: calling
   // this before a dataflow is open must not silently open one.
   _state = { kind: _state.kind, projectId: _state.projectId, packages: new Set(packages) };
+  _revision += 1;
   _notify();
 }
 
 export function clearCurrentProject(): void {
   _state = { kind: 'none', projectId: undefined, packages: new Set() };
+  _revision += 1;
   _notify();
 }
 
@@ -128,6 +139,17 @@ function _notify(): void {
 }
 
 /**
+ * A counter of LOCAL writes to this store.
+ *
+ * Capture it before starting a server read, hand it back to
+ * {@link applyProjectLockfile}, and a read that lost a race to a newer local
+ * write is refused instead of undoing it. See that function for why.
+ */
+export function getPackagesRevision(): number {
+  return _revision;
+}
+
+/**
  * Apply the backend's lockfile for the current project (memo dev/101).
  *
  * The drawer re-reads ``GET /api/packages/projects/<id>`` on every reload
@@ -136,8 +158,24 @@ function _notify(): void {
  * ``refreshPackageRegistry`` — a package that arrived server-side (a Package
  * Builder Apply in another tab, a clobbered-then-healed lockfile) must reach
  * the palette AND resolve its nodes, not only flip the drawer's pill.
+ *
+ * *seenRevision* is {@link getPackagesRevision} as read BEFORE the fetch that
+ * produced *packages*. If a local write landed while that request was in
+ * flight, this read is older than what the store already knows and is dropped.
+ *
+ * Without that guard a server read could silently undo a local write: install
+ * a package (the store gains it) and the reload that follows refetches the
+ * lockfile, which — if the read raced the write — comes back without it and
+ * removes it again. The palette then drops a package that IS installed, and
+ * anything anchored to its row in the palette (the package metadata modal is
+ * rendered inside its accordion) unmounts underneath the user. The write's own
+ * response is always newer than a read that overlapped it, so it wins.
  */
-export function applyProjectLockfile(packages: Iterable<string>): boolean {
+export function applyProjectLockfile(
+  packages: Iterable<string>,
+  seenRevision: number,
+): boolean {
+  if (seenRevision !== _revision) return false;
   const next = new Set(packages);
   const current = _state.packages;
   const changed =

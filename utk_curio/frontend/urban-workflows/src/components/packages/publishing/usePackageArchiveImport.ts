@@ -57,6 +57,11 @@ export function usePackageArchiveImport({
           onInstalledToProject?.(projResult.packages);
         }
         await refreshPackageRegistry();
+        // ``reload`` refetches the project lockfile. That read can race the
+        // install above and come back without the package just added — which
+        // used to remove it again. ``applyProjectLockfile`` now refuses a read
+        // older than the store's latest local write, so the order here is safe
+        // without this call having to know about it.
         await reload();
         onImported?.(result.package);
         return result;

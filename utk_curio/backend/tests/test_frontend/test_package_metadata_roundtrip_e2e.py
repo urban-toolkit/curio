@@ -327,7 +327,14 @@ def _open_metadata_modal(page, anchor):
     # The modal fetches GET /api/packages before it renders any input, showing a
     # "Loading..." body until then. Gating on a field rather than the heading
     # avoids filling a form that is about to be replaced by the load.
-    expect(page.locator("#pkg-meta-publisher")).to_be_visible(timeout=15000)
+    try:
+        expect(page.locator("#pkg-meta-publisher")).to_be_visible(timeout=15000)
+    except AssertionError:
+        shell = page.locator('[data-curio-modal-shell="true"]')
+        raise AssertionError(
+            "metadata modal never rendered its body; modal says: "
+            + repr(shell.inner_text() if shell.count() else "<no modal>")
+        ) from None
 
 
 def _installed_package(current_server: str, token: str, dir_name: str) -> dict:
