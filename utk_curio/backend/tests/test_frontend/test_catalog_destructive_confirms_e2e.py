@@ -39,6 +39,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    enable_save_output,
     run_node_and_wait,
     save_workflow_test_screenshot,
     set_node_code,
@@ -56,9 +57,10 @@ BROWSE_DRAWER = '[data-curio-browse-drawer="true"]'
 LOADING_TILE = "#step-loading"
 LOADING_TYPE = "curio.builtin/data-loading"
 
-#: A node body that outputs a frame, so running it leaves a ``computed.`` dataset
-#: behind. Shared by the two publish tests, which differ only in where they then
-#: look for the Publish action.
+#: A node body that outputs a frame, so running it with save-output on leaves a
+#: ``computed.`` dataset behind - the toggle is the half that registers it, see
+#: ``enable_save_output``. Shared by the two publish tests, which differ only in
+#: where they then look for the Publish action.
 OWN_DATASET_CODE = (
     "import pandas as pd\n"
     "df = pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})\n"
@@ -256,6 +258,9 @@ def test_publishing_is_not_a_canvas_drawer_action(
     # 2. Produce a dataset of the user's own: run a node that outputs a frame.
     loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=(220, 200))
     set_node_code(page, loading, OWN_DATASET_CODE)
+    # Saving the output is opt-in per node and off by default, so a plain run
+    # leaves a parquet and no catalog row. See ``enable_save_output``.
+    enable_save_output(page, loading)
     run_node_and_wait(page, loading, node_type=LOADING_TYPE)
 
     # 3. THE POINT: not even that one offers Publish here. Name the computed row
@@ -297,6 +302,9 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
     # Something of the user's own, so there is a Publish to find.
     loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=(220, 200))
     set_node_code(page, loading, OWN_DATASET_CODE)
+    # Saving the output is opt-in per node and off by default, so a plain run
+    # leaves a parquet and no catalog row. See ``enable_save_output``.
+    enable_save_output(page, loading)
     run_node_and_wait(page, loading, node_type=LOADING_TYPE)
 
     page.goto(f"{app_frontend.base_url}/catalog/data")
@@ -446,6 +454,9 @@ def test_the_catalog_pages_use_one_button_vocabulary(
     # Produce something of the user's own, so a Publish action exists to look at.
     loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=(220, 200))
     set_node_code(page, loading, OWN_DATASET_CODE)
+    # Saving the output is opt-in per node and off by default, so a plain run
+    # leaves a parquet and no catalog row. See ``enable_save_output``.
+    enable_save_output(page, loading)
     run_node_and_wait(page, loading, node_type=LOADING_TYPE)
 
     page.goto(f"{app_frontend.base_url}/catalog/data")

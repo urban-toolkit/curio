@@ -1773,6 +1773,58 @@ def node_locator(page, node_id: str):
     return page.locator(f'.react-flow__node[data-id="{node_id}"]')
 
 
+def enable_save_output(page, node_id: str) -> None:
+    """Turn on one node's save-output toggle, so running it leaves a dataset.
+
+    The database-icon switch beside the play button, and it is **off by
+    default** (``CURIO_DEFAULT_SAVE_NODE_OUTPUT``, documented in
+    ``docs/DATA-CATALOG.md``). With it off a run writes a parquet under
+    ``.curio/data/`` and stops there: ``routes.py`` gates the auto-install on
+    ``save_output_dataset``, so no ``computed.<dataflow>.<node>@1`` is ever
+    installed into the account store.
+
+    A test that runs a producing node and then looks for its dataset in a
+    catalog therefore has to flip this first. Three catalog tests did not, and
+    passed anyway for years because the per-user store outlived ``reset-db`` and
+    held 37 ``computed.*`` rows from earlier runs - a ``computed.``-prefixed
+    card was always there to find, just never this test's.
+
+    Clicks the label rather than the input: the checkbox is visually hidden by
+    ``SaveOutputToggle.module.css``, so ``check()`` fails actionability. Scoped
+    inside the node because the id is built from Curio's ``data.nodeId``, which
+    a caller holding React Flow's ``data-id`` cannot assume it has.
+    """
+    node = node_locator(page, node_id)
+    box = node.locator('input[id^="save-output-"]').first
+    box.wait_for(state="attached", timeout=15000)
+    if box.is_checked():
+        return
+    node.locator('label:has(input[id^="save-output-"])').first.click()
+    expect(box).to_be_checked(timeout=10000)
+
+
+def save_dataflow(page, *, timeout: float = 30000) -> None:
+    """Save the open dataflow through the File menu, and wait for the write.
+
+    Gates on the write itself rather than on the File menu closing: the menu can
+    close before the PUT is answered, and a test that then reads the server sees
+    the pre-save spec.
+    """
+    file_btn = page.get_by_role("button", name=re.compile("File"))
+    file_btn.wait_for(state="visible", timeout=15000)
+    file_btn.click(force=True)
+    save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
+    save_btn.wait_for(state="visible", timeout=10000)
+    with page.expect_response(
+        lambda r: "/api/projects" in r.url
+        and r.request.method in ("POST", "PUT")
+        and r.ok,
+        timeout=timeout,
+    ):
+        save_btn.click()
+    save_btn.wait_for(state="hidden", timeout=timeout)
+
+
 def frame_node(page, node_id: str, *, zoom: float = 0.9,
                settle_ms: float = 1000) -> None:
     """Pan and zoom the canvas so one node fills the frame.
