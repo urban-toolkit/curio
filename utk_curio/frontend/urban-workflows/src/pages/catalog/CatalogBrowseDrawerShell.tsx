@@ -28,7 +28,12 @@ export const CatalogBrowseDrawerShell: React.FC<CatalogBrowseDrawerShellProps> =
 
   return (
     <div className={styles.browseDrawerColumn}>
-      <aside className={styles.browseDrawer}>{children}</aside>
+      {/* CSS-module class names are hashed in a production build, so a test
+          cannot target this panel by class. Every catalog shares this shell,
+          so one hook covers all of them. */}
+      <aside className={styles.browseDrawer} data-curio-browse-drawer="true">
+        {children}
+      </aside>
     </div>
   );
 };
