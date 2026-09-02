@@ -254,7 +254,7 @@ export function useAgentCatalogDrawer(
           await agentsApi.installToProject(id, card.dirName);
           return id;
         },
-        `Added ${card.name} to this dataflow.`,
+        `Added ${card.name} to this project.`,
       ),
     uninstall: (card) =>
       run(
@@ -264,7 +264,7 @@ export function useAgentCatalogDrawer(
           await agentsApi.uninstallFromProject(id, card.dirName);
           return id;
         },
-        `Removed ${card.name} from this dataflow.`,
+        `Removed ${card.name} from this project.`,
       ),
     publish: (coord) => run(coord, () => agentsApi.publish(coord)),
     unpublish: (coord) => run(coord, () => agentsApi.unpublish(coord)),

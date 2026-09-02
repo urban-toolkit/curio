@@ -332,6 +332,17 @@ def pytest_addoption(parser):
         default=False,
         help="record the walkthrough screencasts (slow; needs a browser)",
     )
+    parser.addoption(
+        "--with-examples",
+        action="store_true",
+        dest="examples",
+        default=False,
+        help=(
+            "run the tests that need a stack seeded with the example dataflows "
+            "(the e2e harness then boots with --with-examples, which costs real "
+            "time; scripts/test.sh passes this by default)"
+        ),
+    )
 
 
 def pytest_configure(config):
@@ -343,11 +354,17 @@ def pytest_configure(config):
     dropped whichever exclusion was written last.
     """
     config.addinivalue_line("markers", "video: records a screencast; needs --videos")
+    config.addinivalue_line(
+        "markers",
+        "examples: needs a stack seeded with the examples; needs --with-examples",
+    )
     excluded = []
     if not config.option.longrun:
         excluded.append("not externalapi")
     if not config.option.videos:
         excluded.append("not video")
+    if not config.option.examples:
+        excluded.append("not examples")
     if not excluded:
         return
     existing = getattr(config.option, "markexpr", "") or ""

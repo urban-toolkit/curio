@@ -49,6 +49,9 @@ type CreateCodeNodeOptions = {
     appearance?: { backgroundColor?: string };
     // dev/89: optional display title (post-it header et al.).
     title?: string;
+    // #237: persisted per-node comments (canonical shape metadata.comments).
+    // Opaque here - utils/nodeComments owns the mapping to live IComment.
+    comments?: unknown[];
 };
 
 interface IUseCode {
@@ -166,6 +169,11 @@ export function useCode(): IUseCode {
             // fall back at render, never here).
             if(node.metadata != undefined && node.metadata.appearance != undefined)
                 nodeMeta.appearance = node.metadata.appearance;
+
+            // #237: comments round-trip through the canvas node's data, which
+            // is what NodeContainer renders and what TrillGenerator re-reads.
+            if(node.metadata != undefined && Array.isArray(node.metadata.comments))
+                nodeMeta.comments = node.metadata.comments;
 
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
@@ -292,6 +300,7 @@ export function useCode(): IUseCode {
             saveOutputDataset = undefined,
             appearance = undefined,
             title = undefined,
+            comments = undefined,
         } = options;
 
         const node: Node = {
@@ -332,6 +341,7 @@ export function useCode(): IUseCode {
                 datasetSource,
                 appearance,
                 title,
+                comments,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset

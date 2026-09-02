@@ -29,12 +29,16 @@ const pkg = (over: Partial<PackagePayload> = {}): PackagePayload =>
     ...over,
   } as unknown as PackagePayload);
 
+// No publish props here: publishing is not a card action on any surface any
+// more (29a4e902 moved it to the catalog pages' detail drawer), so
+// `PackageCardProps` no longer declares onPublish/onUnpublish/
+// catalogPublishAllowed. They lingered in this file and only tsc could see
+// it - jest does not typecheck.
 const base = {
   isInstalled: false,
   hasUpdate: false,
   catalogRow: undefined,
   busy: false,
-  catalogPublishAllowed: false,
   onInstall: jest.fn(),
 };
 

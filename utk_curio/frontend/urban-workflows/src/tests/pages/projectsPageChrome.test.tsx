@@ -47,6 +47,9 @@ const mockList = jest.fn();
 jest.mock('../../providers/UserProvider', () => ({
   useUserContext: () => ({ user: { name: 'Test User' }, signout: jest.fn(), enableUserAuth: true }),
 }));
+jest.mock('../../providers/ToastProvider', () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
 jest.mock('../../api/projectsApi', () => ({
   projectsApi: {
     list: (...args: unknown[]) => mockList(...args),

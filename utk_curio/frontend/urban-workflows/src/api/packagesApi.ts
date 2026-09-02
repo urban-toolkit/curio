@@ -223,6 +223,12 @@ export interface WorkflowDepsCheckResponse {
    *  they are reported for the user to repair, never auto-installed. Optional:
    *  an older backend omits it. */
   broken?: WorkflowDepImportFailure[];
+  /** The subset of `packages` that must NOT be installed without being asked
+   *  - too expensive to pull in as a side effect of opening a dataflow. They
+   *  are still reported as missing, because the canvas has to be able to name
+   *  them; installing them is the user's call, from the catalog (#233).
+   *  Absent on an older backend, which is why every read defaults it. */
+  deferred?: string[];
 }
 
 /** Response from `POST /api/packages/workflow-deps/install`. */

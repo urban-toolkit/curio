@@ -13,9 +13,11 @@ interface DataflowSpec {
 /**
  * Returns a fire-and-forget `ensureWorkflowDeps(spec)` that installs the
  * catalog packages a dataflow declares it depends on (`dataflow.packages`)
- * but the user hasn't installed yet. Installing a package provisions both
- * its nodes and its declared python libraries — a dataflow depends on
- * packages, and the libraries follow. Non-blocking: the canvas stays usable
+ * but the user hasn't installed yet - except the ones the backend marks
+ * `deferred`, which are too expensive to install unasked (see
+ * `packages/seed.py::INSTALL_ON_DEMAND_PACKAGE_IDS`). Installing a package
+ * provisions both its nodes and its declared python libraries — a dataflow
+ * depends on packages, and the libraries follow. Non-blocking: the canvas stays usable
  * while pip runs; nodes executed before it finishes fail with a normal
  * ModuleNotFoundError and succeed on re-run.
  *
@@ -45,7 +47,13 @@ export function useEnsureWorkflowDeps() {
         let broken: WorkflowDepImportFailure[];
         try {
           const probe = await packagesApi.checkWorkflowDeps(packages);
-          needed = probe.packages;
+          // Anything the backend defers is missing but must not be installed
+          // as a side effect of opening a dataflow - `curio.streetvision` is
+          // ~3 GB of torch, and the example that needs it says so in its own
+          // setup notes. The canvas names it on the node instead, with an
+          // Install button, so the user makes that call knowingly (#233).
+          const deferred = new Set(probe.deferred ?? []);
+          needed = probe.packages.filter((dirName) => !deferred.has(dirName));
           broken = probe.broken ?? [];
         } catch (err) {
           console.error("Workflow dependency check failed:", err);

@@ -22,6 +22,9 @@ import { render, act } from '@testing-library/react';
 jest.mock('../../providers/UserProvider', () => ({
   useUserContext: () => ({ user: { name: 'Test User' }, signout: jest.fn(), enableUserAuth: false }),
 }));
+jest.mock('../../providers/ToastProvider', () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
 jest.mock('../../api/projectsApi', () => ({
   projectsApi: {
     list: jest.fn().mockResolvedValue([

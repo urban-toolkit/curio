@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+from utk_curio.backend.app.common.user_storage import users_base
 
 
 def _auth(token):
@@ -324,7 +325,7 @@ def test_install_hub_dataset_copies_to_user_store(client, user_and_token, tmp_pa
     assert body["path"]
     assert "datasets/data.urbanlab.chicago-community-areas@1" in body["path"]
 
-    user_store = tmp_path / ".curio" / "users"
+    user_store = users_base()
     copied = list(user_store.rglob("community-areas.geojson"))
     assert copied, "hub install should copy payload into the user dataset store"
 

@@ -1041,9 +1041,18 @@ def check_workflow_deps():
     and the client warns instead of installing. Response::
 
         {"packages": ["<dirName>", ...],   # need installing, sorted
+         "deferred": ["<dirName>", ...],   # ...but not without being asked
          "broken": [{"package": "<dirName>", "dep": "<lib>", "error": "..."}]}
+
+    ``deferred`` is the subset of ``packages`` whose package id is in
+    ``seed.INSTALL_ON_DEMAND_PACKAGE_IDS`` — too expensive to pull in as a side
+    effect of opening a dataflow (``curio.streetvision`` is ~3 GB of torch).
+    It is an ADDITIVE key: a caller that ignores it behaves exactly as before,
+    and ``packages`` still lists everything that is missing, because the UI
+    needs to be able to SAY what is missing even when it must not install it.
     """
     from utk_curio.backend.app.packages.pip_runner import import_failures, is_satisfied
+    from utk_curio.backend.app.packages.seed import INSTALL_ON_DEMAND_PACKAGE_IDS
 
     user_key = _user_dir_key(g.user)
     body = request.get_json(silent=True) or {}
@@ -1088,7 +1097,15 @@ def check_workflow_deps():
         for pkg, dep in probe
         if dep in failures
     ]
-    return jsonify({"packages": sorted(need), "broken": broken}), 200
+    deferred = {
+        dn for dn in need
+        if dn.rsplit("@", 1)[0] in INSTALL_ON_DEMAND_PACKAGE_IDS
+    }
+    return jsonify({
+        "packages": sorted(need),
+        "deferred": sorted(deferred),
+        "broken": broken,
+    }), 200
 
 
 @packages_bp.route("/workflow-deps/install", methods=["POST"])

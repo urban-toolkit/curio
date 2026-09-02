@@ -16,6 +16,7 @@ import {
 import AppSectionTabs from "../../components/layout/AppSectionTabs";
 import { GlobalPageHeader } from "../../components/layout/GlobalPageHeader";
 import VersionBadge from "../../components/VersionBadge";
+import { useToastContext } from "../../providers/ToastProvider";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { CatalogBrowseDrawerBody } from "../catalog/CatalogBrowseDrawerBody";
 import { CatalogBrowseDrawerShell } from "../catalog/CatalogBrowseDrawerShell";
@@ -69,6 +70,7 @@ function edgeCount(project: ProjectSummary): number {
 
 const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
+  const { showToast } = useToastContext();
   // Every scope is held at once so the rail can show counts and switching
   // filters does not wait on a round trip.
   const [byTab, setByTab] = useState<Record<FilterTab, ProjectSummary[]>>({
@@ -205,11 +207,19 @@ const ProjectsList: React.FC = () => {
         await projectsApi.create({ name, spec: trillSpec as unknown as Record<string, unknown>, outputs: [] });
         loadProjects();
       } catch (err) {
+        // Was console-only: picking a file and getting no response at all
+        // reads as a broken button, and a malformed .ipynb is the common case.
         console.error("Failed to import Jupyter notebook:", err);
+        showToast(
+          `Could not import ${file.name}. It may not be a valid notebook.`,
+          "error",
+        );
       }
     };
-    reader.onerror = (event: ProgressEvent<FileReader>) =>
+    reader.onerror = (event: ProgressEvent<FileReader>) => {
       console.error("Error reading notebook file:", event.target?.error);
+      showToast(`Could not read ${file.name}.`, "error");
+    };
     reader.readAsText(file);
   };
 

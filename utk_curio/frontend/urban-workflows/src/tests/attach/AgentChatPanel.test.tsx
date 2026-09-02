@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 
 // The dev/52 builder strip imports useFlowContext; mocking the provider keeps
 // FlowProvider's heavy module graph (vega etc.) out of this presentational
@@ -196,14 +196,41 @@ describe("AgentChatPanel", () => {
     expect(onRetryHistory).toHaveBeenCalled();
   });
 
-  it("clear conversation confirms first", async () => {
+  // This used to spy on `window.confirm`. The panel raises the app's own
+  // ConfirmDialog now (#197), so the assertion is that a dialog appears and
+  // that confirming it is what runs the clear - not that the browser was asked.
+  it("clear conversation asks in the app's own dialog", async () => {
     const onClearConversation = jest.fn().mockResolvedValue(undefined);
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmSpy = jest.spyOn(window, "confirm");
     renderPanel({ onClearConversation });
     fireEvent.click(screen.getByRole("button", { name: "Clear conversation" }));
-    expect(confirmSpy).toHaveBeenCalled();
+
+    const modal = await waitFor(() => {
+      const el = document.querySelector('[data-curio-modal-shell="true"]');
+      if (!el) throw new Error("no confirmation dialog is open");
+      return el as HTMLElement;
+    });
+    expect(onClearConversation).not.toHaveBeenCalled();
+    fireEvent.click(within(modal).getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(onClearConversation).toHaveBeenCalledTimes(1));
+    expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it("cancelling the clear leaves the transcript alone", async () => {
+    const onClearConversation = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ onClearConversation });
+    fireEvent.click(screen.getByRole("button", { name: "Clear conversation" }));
+    const modal = await waitFor(() => {
+      const el = document.querySelector('[data-curio-modal-shell="true"]');
+      if (!el) throw new Error("no confirmation dialog is open");
+      return el as HTMLElement;
+    });
+    fireEvent.click(within(modal).getByRole("button", { name: "Keep it" }));
+    await waitFor(() =>
+      expect(document.querySelector('[data-curio-modal-shell="true"]')).toBeNull(),
+    );
+    expect(onClearConversation).not.toHaveBeenCalled();
   });
 
   it("header cycling (DEC-042): shows idx/total and walks prev/next", () => {

@@ -7,7 +7,7 @@ an empty gallery. ``--deploy`` carried the identical defect.
 The reason nothing caught it is visible in ``fixtures.py``: the harness launched
 with ``--auth`` but never ``--with-examples``, so the one configuration where
 the gallery is empty was the one configuration never exercised. This module
-turns the flag on (``CURIO_E2E_WITH_EXAMPLES``) and walks the reporter's path -
+turns the flag on (``--with-examples``) and walks the reporter's path -
 create an account, land on /projects, read what is there.
 
 Cheaper coverage that already exists, and what this adds on top of it:
@@ -27,7 +27,6 @@ individually correct.
 """
 from __future__ import annotations
 
-import os
 import uuid
 from typing import TYPE_CHECKING
 
@@ -45,13 +44,12 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("CURIO_E2E_WITH_EXAMPLES", "0") not in ("1", "true", "yes", "on"),
-    reason=(
-        "needs a stack started with --with-examples; set CURIO_E2E_WITH_EXAMPLES=1 "
-        "(seeding eleven dataflows costs real boot time, so it is opt-in)"
-    ),
-)
+#: Needs a stack seeded with the examples, which is what ``--with-examples``
+#: arranges - the harness passes the flag through to ``curio.py start`` and
+#: ``scripts/test.sh`` turns it on by default. Opt-in because seeding eleven
+#: dataflows costs real boot time, a marker rather than an env var because that
+#: is how ``--longrun`` and ``--videos`` already work.
+pytestmark = pytest.mark.examples
 
 #: A handful of the curated examples, by the ``dataflow.name`` the seeder uses
 #: as the project title. Named rather than counted so adding a twelfth example
@@ -95,7 +93,7 @@ def test_a_new_account_lands_on_a_gallery_of_examples(
 
 
 def test_each_account_gets_its_own_copy(
-    app_frontend: "FrontendPage", frontend_server: str, page, context
+    app_frontend: "FrontendPage", frontend_server: str, page, browser
 ):
     """Two accounts, two disjoint sets of project ids.
 
@@ -124,11 +122,17 @@ def test_each_account_gets_its_own_copy(
 
     first = ids_for_a_new_account(page)
 
-    second_page = context.new_page()
+    # A second CONTEXT, not a second tab. Cookies are per-context, so a new page
+    # on the same one arrives already signed in as the first account - and the
+    # app redirects an authenticated visitor away from /auth/signup, so the form
+    # never appears and the signup helper times out looking for it. Two accounts
+    # means two browsers, which is what the docstring above claims this does.
+    second_context = browser.new_context()
     try:
+        second_page = second_context.new_page()
         second = ids_for_a_new_account(second_page)
     finally:
-        second_page.close()
+        second_context.close()
 
     assert first, "the first account's gallery was empty"
     assert second, "the second account's gallery was empty"

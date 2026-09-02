@@ -59,8 +59,8 @@ const SCOPES: { key: AgentScope; label: string }[] = [
 ];
 
 const SUBTITLE: Record<AgentScope, string> = {
-  browse: "Agents available to this dataflow.",
-  installed: "Agents added to this dataflow.",
+  browse: "Agents available in this project.",
+  installed: "Agents added to this project.",
 };
 
 /**
@@ -112,13 +112,13 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
   const requestUninstall = useCallback(
     (card: AgentCard) => {
       setConfirmAction({
-        title: `Remove ${card.name} from this dataflow?`,
+        title: `Remove ${card.name} from this project?`,
         confirmLabel: "Remove",
         destructive: true,
+        // No lead line repeating the title: the dialog already asks
+        // "Remove <name> from this project?" above this, and printing it twice
+        // pushes the one sentence a reader needs down the box.
         body:
-          `Remove ${card.name} from this dataflow?
-
-` +
           `The agent stays in your account and in your other projects. Add it ` +
           `back here any time.`,
         run: () => c.uninstall(card),
@@ -137,7 +137,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         body: (
           <>
             <p>
-              Add {card.name} ({card.dirName}) to this dataflow?
+              Add {card.name} ({card.dirName}) to this project?
             </p>
             {/* dev/106: the same hard dependencies the card lists, restated
                 here so they are disclosed before the click commits. */}
@@ -149,7 +149,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
                     <li key={r.id}>
                       {r.name}
                       {r.installedInProject
-                        ? " (already in this dataflow)"
+                        ? " (already in this project)"
                         : r.visible
                           ? " (not installed)"
                           : " (unavailable)"}
@@ -283,7 +283,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
             {c.cards.length > 0
               ? "No agents match the current filters."
               : c.scope === "installed"
-                ? "No agents added to this dataflow yet."
+                ? "No agents added to this project yet."
                 : "No agents match the current filters."}
           </div>
         ) : (
@@ -486,15 +486,18 @@ const AgentRow: React.FC<{
           <button
             type="button"
             className={`${cardStyles.btnSecondary} ${styles.secondaryBtn}`}
-            disabled={busy || !hasProject}
-            /* The only one of the three Remove buttons with no tooltip, in
-               either state - so the disabled case in an unsaved dataflow said
-               nothing at all about why it was disabled. Same wording as its
-               peers, from the same two branches. */
+            /* Not gated on `hasProject`. An agent already in the account takes
+               this branch even before the first save, so gating here left the
+               card showing a disabled control and nothing else - the same dead
+               end #190 and #199 report, reached through the other branch. The
+               handler already creates the dataflow on the click (`uninstall` ->
+               `resolveProjectId`), exactly as Add does; only this attribute
+               still said otherwise. */
+            disabled={busy}
             title={
               hasProject
                 ? `Remove ${card.name} from this project`
-                : "Save this dataflow first. There is no project to remove it from yet."
+                : `Remove ${card.name}; this saves the dataflow first`
             }
             onClick={() => onRequestUninstall(card)}
           >
