@@ -219,6 +219,11 @@
           "items": { "type": "integer" },
           "description": "Indices into the dataflow task's keyword list, bound by the LLM keyword prompt. INTEGERS, not strings or free text. Empty on the overwhelming majority of real nodes."
         },
+        "comments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/comment" },
+          "description": "Per-node discussion, so a comment survives a save and a reload. Emitted only when non-empty (#237); before that fix comments lived in component state alone and were lost on a save AND on any remount. Two things are deliberately not persisted per comment: the author's avatar (it may be a full data URL, which would bloat the spec) and 'canDelete' (a per-viewer permission, derived on read)."
+        },
         "appearance": {
           "type": "object",
           "description": "Per-node visual appearance, so a recolored node keeps its color across a save.",
@@ -255,6 +260,35 @@
           "type": "number",
           "deprecated": true,
           "description": "DEPRECATED height fallback, fourth and last. Never written."
+        }
+      }
+    },
+    "comment": {
+      "type": "object",
+      "description": "One comment on a node, as written by the canvas from utils/nodeComments' persisted shape.",
+      "required": ["id", "text"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique within the node. A uuid: the original writer used 'comments.length + 1', which collided as soon as a comment was deleted, so delete and resolve could act on the wrong row."
+        },
+        "text": { "type": "string", "description": "The comment body." },
+        "author": {
+          "type": "string",
+          "description": "Username of the author - the stable identity, and what the reader compares to decide whether the current viewer may delete it. Empty string when unknown."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Display name at the time of writing. Falls back to 'author' on read, then to 'Unknown'."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO 8601 timestamp. Empty on a comment restored from a spec written before this field existed."
+        },
+        "resolved": {
+          "type": "boolean",
+          "description": "Whether the comment is marked resolved. Read as a strict 'true' check, so an absent value means unresolved."
         }
       }
     },

@@ -22,6 +22,9 @@ import { render, act } from '@testing-library/react';
 jest.mock('../../providers/UserProvider', () => ({
   useUserContext: () => ({ user: { name: 'Test User' }, signout: jest.fn(), enableUserAuth: false }),
 }));
+jest.mock('../../providers/ToastProvider', () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
 jest.mock('../../api/projectsApi', () => ({
   projectsApi: {
     list: jest.fn().mockResolvedValue([
@@ -49,8 +52,6 @@ jest.mock('../../NotebookConvertor', () => ({ notebookToTrill: jest.fn() }));
 jest.mock('../../components/DataflowThumbnail', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../components/AiSettingsModal', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../components/VersionBadge', () => ({ __esModule: true, default: () => null }));
-// ProjectsList reports a failed notebook import through the toast provider
-// (#238), which the app supplies at the router root (index.tsx).
 jest.mock('react-router-dom', () => ({
   useNavigate: () => jest.fn(),
   Link: ({ children }: any) => <a>{children}</a>,
@@ -59,7 +60,6 @@ jest.mock('react-router-dom', () => ({
 }));
 
 import ProjectsList from '../../pages/projects/ProjectsList';
-import { ToastProvider } from '../../providers/ToastProvider';
 
 const LAYOUT_CSS = fs.readFileSync(
   path.resolve(__dirname, '../../pages/projects/ProjectsBrowseLayout.module.css'),
@@ -85,11 +85,7 @@ function rule(selector: string, css: string = LAYOUT_CSS): string {
 async function renderSettled() {
   let utils: ReturnType<typeof render>;
   await act(async () => {
-    utils = render(
-      <ToastProvider>
-        <ProjectsList />
-      </ToastProvider>,
-    );
+    utils = render(<ProjectsList />);
   });
   return utils!;
 }

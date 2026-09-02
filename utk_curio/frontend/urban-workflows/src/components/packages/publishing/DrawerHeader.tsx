@@ -32,7 +32,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
   kind = "package",
   title = "Node Catalog",
   titleId = "node-catalog-drawer-title",
-  subtitle = "Node packages available to this dataflow.",
+  subtitle = "Node packages available in this project.",
   closeAriaLabel = "Close Node Catalog drawer",
   actions,
 }) => (

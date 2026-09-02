@@ -66,6 +66,7 @@ from .utils import (
     open_tools_palette,
     require_project_page,
     require_user_auth,
+    save_dataflow,
     save_workflow_test_screenshot,
     require_owner_view,
     stub_login_and_enter_workflow,
@@ -228,25 +229,6 @@ def _close_details_and_drawer(page):
     _close_drawer(page)
 
 
-def _save_dataflow(page):
-    file_btn = page.get_by_role("button", name=re.compile("File"))
-    file_btn.wait_for(state="visible", timeout=15000)
-    file_btn.click(force=True)
-    save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
-    save_btn.wait_for(state="visible", timeout=10000)
-    # Gate on the write itself, not on the menu closing. The File menu can close
-    # before the PUT is answered, and a test that then reads the server sees the
-    # pre-save spec - which showed up as an intermittent nodeCount of 0 here.
-    with page.expect_response(
-        lambda r: "/api/projects" in r.url
-        and r.request.method in ("POST", "PUT")
-        and r.ok,
-        timeout=30000,
-    ):
-        save_btn.click()
-    save_btn.wait_for(state="hidden", timeout=30000)
-
-
 def test_wiring_a_consumer_grows_dataset_lineage(
     app_frontend: "FrontendPage",
     current_server: str,
@@ -362,7 +344,7 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     # 6. AFTER, ON THE SERVER. The backend resolves consumers from the saved spec
     #    with its own copy of the carrier rule; this is the assertion that the
     #    two implementations agree about the graph the user just drew.
-    _save_dataflow(page)
+    save_dataflow(page)
 
     # First what the save persisted, then what the backend derives from it. Split
     # in two so a failure says which half broke: the spec write (no edge, or the

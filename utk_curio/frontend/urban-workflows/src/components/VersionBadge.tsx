@@ -67,7 +67,11 @@ const VersionBadge: React.FC = () => {
         // the badge used to opt out of pointer events entirely.
         pointerEvents: "none",
         userSelect: "none",
-        zIndex: 9999,
+        // On the layering scale (curioTokens.css), not a bare literal. The
+        // badge is page furniture: below every drawer and modal, above the
+        // page background. The full-page shells reserve
+        // --curio-version-badge-reserve so nothing reaches under it (#236).
+        zIndex: "var(--curio-z-version-badge)" as unknown as number,
         fontFamily: "monospace",
       }}
     >

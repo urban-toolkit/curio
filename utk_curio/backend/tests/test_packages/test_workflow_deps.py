@@ -49,6 +49,35 @@ def test_check_flags_declared_package_not_in_store(client, user_and_token, tmp_c
     assert resp.get_json()["packages"] == ["curio.weather@1"]
 
 
+def test_check_defers_install_on_demand_packages(client, user_and_token, tmp_curio):
+    """A heavy package is reported missing, but flagged not-to-be-installed.
+
+    Both halves matter and they used to be in tension (#233). The canvas has to
+    be able to SAY which package a node needs - saying nothing is what left
+    three nodes on "Loading node…" with no explanation. But opening a dataflow
+    must not start a ~3 GB torch download on the user's behalf, so the same
+    response marks it deferred and the auto-installer skips it.
+    """
+    _, token = user_and_token
+    resp = _check(client, token, ["curio.streetvision@1", "curio.weather@1"])
+    assert resp.status_code == 200
+    body = resp.get_json()
+    # Still reported as missing: the UI needs to name it.
+    assert "curio.streetvision@1" in body["packages"]
+    assert "curio.weather@1" in body["packages"]
+    # ...but only the heavy one is held back.
+    assert body["deferred"] == ["curio.streetvision@1"]
+
+
+def test_check_reports_no_deferrals_for_ordinary_packages(
+    client, user_and_token, tmp_curio
+):
+    """The key is always present, so a caller never has to feature-detect."""
+    _, token = user_and_token
+    resp = _check(client, token, ["curio.weather@1"])
+    assert resp.get_json()["deferred"] == []
+
+
 def test_check_skips_invalid_dirnames(client, user_and_token, tmp_curio):
     _, token = user_and_token
     resp = _check(client, token, ["not a dirname", "curio.weather@1"])

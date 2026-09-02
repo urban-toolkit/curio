@@ -206,7 +206,7 @@ describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
     // dataflowDatasets got the real per-layer refs (so a later save won't drop them).
     expect(mockSetDataflowDatasets).toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
-      "Added 2 layers from back_bay to this dataflow.",
+      "Added 2 layers from back_bay to this project.",
       "success",
     );
 

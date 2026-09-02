@@ -16,6 +16,7 @@ import {
 import AppSectionTabs from "../../components/layout/AppSectionTabs";
 import { GlobalPageHeader } from "../../components/layout/GlobalPageHeader";
 import VersionBadge from "../../components/VersionBadge";
+import { useToastContext } from "../../providers/ToastProvider";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { CatalogBrowseDrawerBody } from "../catalog/CatalogBrowseDrawerBody";
 import { CatalogBrowseDrawerShell } from "../catalog/CatalogBrowseDrawerShell";
@@ -23,7 +24,6 @@ import shellStyles from "../catalog/CatalogMasterPage.module.css";
 import styles from "./ProjectsBrowseLayout.module.css";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import PromptDialog from "../../components/PromptDialog";
-import { useToastContext } from "../../providers/ToastProvider";
 import { UNREADABLE_FILE_MESSAGE } from "../../utils/dataflowImport";
 
 type ViewMode = "grid" | "list";
@@ -219,6 +219,8 @@ const ProjectsList: React.FC = () => {
         await projectsApi.create({ name, spec: trillSpec as unknown as Record<string, unknown>, outputs: [] });
         loadProjects();
       } catch (err) {
+        // Was console-only: picking a file and getting no response at all
+        // reads as a broken button, and a malformed .ipynb is the common case.
         console.error("Failed to import Jupyter notebook:", err);
         showToast(
           (err as Error)?.message ||

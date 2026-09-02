@@ -1,4 +1,4 @@
-import React, { ReactNode, useState, useEffect, useRef } from "react";
+import React, { ReactNode, useState, useEffect, useMemo, useRef } from "react";
 import CSS from "csstype";
 import { Dropdown, Spinner } from "react-bootstrap";
 
@@ -14,6 +14,8 @@ import {
     faCircleDot,
 } from "@fortawesome/free-solid-svg-icons";
 import { useToastContext } from "../providers/ToastProvider";
+import { useUserContext } from "../providers/UserProvider";
+import { commentsFromMetadata, commentsToMetadata } from "../utils/nodeComments";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { CATEGORY_FALLBACK_FG, categoryFg } from "../constants/nodeCategoryPalette";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
@@ -96,7 +98,6 @@ export const NodeContainer = ({
     nodeHeight,
     noContent,
     setTemplateConfig,
-    disableComments = false,
     handleType,
     styles = {},
     disablePlay = false,
@@ -118,7 +119,6 @@ export const NodeContainer = ({
     nodeHeight?: number;
     noContent?: boolean;
     setTemplateConfig?: any;
-    disableComments?: boolean;
     styles?: CSS.Properties;
     handleType?: string;
     disablePlay?: boolean;
@@ -162,9 +162,44 @@ export const NodeContainer = ({
     const { getStarters, deleteStarter, fetchStarters } = useStarterContext();
     const { createCodeNode, loadTrill } = useCode();
     const [showComments, setShowComments] = useState(false);
+    const { user: currentUser } = useUserContext();
     const [saveAsOpen, setSaveAsOpen] = useState(false);
     const [configOpen, setConfigOpen] = useState(false);
-    const [comments, setComments] = useState<IComment[]>([]);
+    // Derived from node data rather than held in local state (#237). Comments
+    // used to live in a `useState` that nothing ever wrote back, so they were
+    // lost on save and on every remount - reopening the project was the path
+    // the reporter took. (A dashboard-mode toggle was NOT: it re-renders this
+    // component but never unmounts it, so the old local state survived that.)
+    // Reading through `data` makes the canvas node the single source of truth,
+    // so there is no second copy to fall out of step with the saved spec.
+    const viewer = useMemo(
+        () =>
+            currentUser
+                ? {
+                      username: currentUser.username,
+                      name: currentUser.name,
+                      photo: currentUser.profile_image,
+                  }
+                : null,
+        [currentUser],
+    );
+    const comments = useMemo<IComment[]>(
+        () => commentsFromMetadata(data.comments, viewer),
+        [data.comments, viewer],
+    );
+
+    /** Write the whole list back to the node and mark the project dirty.
+     *  Reads live node data first, for the same reason the resize handler
+     *  does: the captured `data` prop can be stale and would clobber fields
+     *  that changed under it. */
+    const commitComments = (next: IComment[]) => {
+        const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
+        updateDataNode(nodeId, {
+            ...liveData,
+            comments: commentsToMetadata(next),
+        });
+        markDirty();
+    };
     const [pinnedToDashboard, setPinnedToDashboard] = useState<boolean>(!!dashboardPins[nodeId]);
     const [expectedInputType, setExpectedInputType] = useState(data.in);
     const [expectedOutputType, setExpectedOutputType] = useState(data.out);
@@ -350,18 +385,17 @@ export const NodeContainer = ({
         };
     }, [dashboardOn, dashboardLocked]);
 
-    const deleteComment = (commentId: number) => {
-        setComments(comments.filter((comment) => comment.id !== commentId));
+    const deleteComment = (commentId: string) => {
+        commitComments(comments.filter((comment) => comment.id !== commentId));
     };
 
-    const toggleResolveComment = (commentId: number) => {
-        setComments(
-            comments.map((comment) => {
-                if (comment.id === commentId) {
-                    comment.resolved = !comment.resolved;
-                }
-                return comment;
-            })
+    const toggleResolveComment = (commentId: string) => {
+        commitComments(
+            comments.map((comment) =>
+                comment.id === commentId
+                    ? { ...comment, resolved: !comment.resolved }
+                    : comment,
+            ),
         );
     };
 
@@ -381,7 +415,7 @@ export const NodeContainer = ({
     };
 
     const addComment = (comment: IComment) => {
-        setComments([...comments, comment]);
+        commitComments([...comments, comment]);
     };
 
     useEffect(() => {

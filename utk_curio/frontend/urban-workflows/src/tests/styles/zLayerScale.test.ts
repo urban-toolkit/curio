@@ -29,6 +29,9 @@ describe("overlay / layering scale (curioTokens.css)", () => {
   it("defines every tier in the scale", () => {
     expect(Object.keys(layers).sort()).toEqual(
       [
+        // Page furniture: the fixed version badge, below everything that can
+        // open over a page. It used to hard-code a bare 9999 (#236).
+        "version-badge",
         // Base tier: a modal opened from a page, with no canvas overlays under
         // it. ModalShell used to hard-code 499/500 for this while reading the
         // scale for its overlay tier, so half the component sat outside it.
@@ -44,6 +47,17 @@ describe("overlay / layering scale (curioTokens.css)", () => {
         "toast",
       ].sort(),
     );
+  });
+
+  it("keeps the version badge below every tier that can open over a page", () => {
+    // The badge is decoration in a corner; anything the user deliberately
+    // opened outranks it. #236 was the badge painting OVER the catalog
+    // drawer's own content, which a bare 9999 made inevitable.
+    for (const tier of Object.entries(layers)) {
+      const [name, z] = tier;
+      if (name === "version-badge") continue;
+      expect(layers["version-badge"]).toBeLessThan(z);
+    }
   });
 
   it("keeps the base modal tier below the whole overlay band", () => {

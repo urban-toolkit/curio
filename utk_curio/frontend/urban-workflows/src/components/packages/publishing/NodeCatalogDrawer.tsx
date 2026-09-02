@@ -37,12 +37,16 @@ export interface NodeCatalogDrawerProps {
   onRequestClose: () => void;
   /** Called once the exit transition finishes (or immediately when motion is reduced). */
   onExitComplete: () => void;
+  /** Seeds the search box on open, so a caller that already knows which
+   *  package the user needs can land them on it (#233). */
+  initialSearch?: string;
 }
 
 export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   presented,
   onRequestClose,
   onExitComplete,
+  initialSearch = "",
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
 
@@ -57,7 +61,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const [installed, setInstalled] = useState<PackagePayload[]>([]);
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [detailPkg, setDetailPkg] = useState<PackagePayload | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [sort, setSort] = useState<SortMode>("new");
   const [pinned, setPinned] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -120,7 +124,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   const projectInstalledDirs = useMemo(
     // A dataflow is created on its FIRST SAVE, so before that `projectPackages`
-    // is empty and this tab rendered "No packages added to this dataflow yet."
+    // is empty and this tab rendered "No packages added to this project yet."
     // - even though the account's defaults (curio.builtin, the examples, uhvi)
     // are seeded into the dataflow the moment it is saved. They ARE in this
     // dataflow, one save away. Its two peers do the same.
@@ -281,7 +285,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       await reload();
       setInstallCandidate(null);
       setConflictReport(null);
-      showToast(`Added ${installCandidate.name} to this dataflow.`, "success");
+      showToast(`Added ${installCandidate.name} to this project.`, "success");
     } catch (err) {
       reportActionError(`Couldn't add ${installCandidate.name}`, err);
     } finally {
@@ -315,11 +319,32 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   );
 
   const performUninstall = useCallback(async (pkg: PackagePayload) => {
-    if (!projectId) return;
+    // Resolve the dataflow at click time rather than refusing without one, the
+    // way `onInstall` above already does. `if (!projectId) return` made this a
+    // silent no-op on an unsaved dataflow - the button reported nothing and did
+    // nothing - which is the same dead end the Agent and Data cards had.
+    let effectiveProjectId = projectId ?? savedProjectIdRef.current;
+    if (!effectiveProjectId) {
+      try {
+        const detail = await saveCurrentProject();
+        effectiveProjectId = (detail as { id?: string } | undefined)?.id ?? null;
+        savedProjectIdRef.current = effectiveProjectId;
+      } catch (err) {
+        reportActionError("Couldn't save dataflow before removing", err);
+        return;
+      }
+    }
+    if (!effectiveProjectId) {
+      reportActionError(
+        `Couldn't remove ${pkg.name}`,
+        new Error("the dataflow could not be saved, so there is nothing to remove it from"),
+      );
+      return;
+    }
     setCardActionDir(pkg.dirName);
     setActionError(null);
     try {
-      const result = await packagesApi.uninstallFromProject(projectId, pkg.dirName);
+      const result = await packagesApi.uninstallFromProject(effectiveProjectId, pkg.dirName);
       setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
       await reload();
@@ -338,8 +363,8 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         .join(" ");
       showToast(
         extra
-          ? `Removed ${pkg.name} from this dataflow ${extra}.`
-          : `Removed ${pkg.name} from this dataflow.`,
+          ? `Removed ${pkg.name} from this project ${extra}.`
+          : `Removed ${pkg.name} from this project.`,
         "success",
       );
     } catch (err) {
@@ -347,10 +372,12 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     } finally {
       setCardActionDir(null);
     }
-  }, [projectId, reload, reportActionError, showToast]);
+  }, [projectId, reload, reportActionError, saveCurrentProject, showToast]);
 
   const onUninstall = useCallback((pkg: PackagePayload) => {
-    if (!projectId) return;
+    // No `if (!projectId) return` here either: the confirmation is worth
+    // showing on an unsaved dataflow, because confirming it now saves and
+    // then removes rather than doing nothing.
     setConfirmAction({
       title: `Remove ${pkg.name}?`,
       // "from this dataflow", matching the button that opens this — the old
@@ -364,7 +391,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       // the other dataflows' lockfiles, so the wording states the condition
       // rather than guessing the outcome.
       body:
-        `Remove ${pkg.name} (${pkg.dirName}) from this dataflow?` +
+        `Remove ${pkg.name} (${pkg.dirName}) from this project?` +
         `\n\nIf no other dataflow uses it, it is also deleted from your account ` +
         `and its Python libraries are uninstalled from the shared environment, ` +
         `which affects every dataflow and everyone using this Curio.`,
@@ -548,7 +575,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
               filteredInstalled.length === 0 ? (
                 <div className={shell.empty}>
                   {projectInstalledDirs.size === 0
-                    ? "No packages added to this dataflow yet."
+                    ? "No packages added to this project yet."
                     : "No packages match the current filters."}
                 </div>
               ) : (
