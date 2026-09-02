@@ -688,6 +688,70 @@ def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     return errors
 
 
+def tool_tail_diagnosis(tail_body: str | None) -> list[str] | None:
+    """Classify a terminal tail body as a toolRequest attempt (#245).
+
+    The ``plan_tail_diagnosis`` twin, and the same three-way contract:
+    ``None`` — not a request attempt, so generic fail-open applies untouched;
+    ``[]`` — a valid request; ``[errors]`` — a request attempt with correctable
+    problems, JSON breakage included, which is exactly what the corrective
+    round feeds back.
+    """
+    if not isinstance(tail_body, str) or '"toolRequest"' not in tail_body:
+        return None
+    try:
+        payload = json.loads(tail_body)
+    except (ValueError, TypeError) as exc:
+        return [f"the block is not valid JSON: {exc}"]
+    if not isinstance(payload, dict) or "toolRequest" not in payload:
+        return None
+    _, errors = parse_tool_request_verbose(payload["toolRequest"])
+    return errors
+
+
+def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
+    """Fence-agnostic toolRequest recognition (#245) — the dev/56 treatment
+    plans already get, applied to tool requests.
+
+    Consulted only after the terminal curio.v1 paths found nothing. Live
+    models put the block in a ```json fence, or follow it with a closing
+    sentence, either of which demotes a perfectly good request to inert text —
+    and for a mutate tool that text is a whole source file rendered as chat.
+
+    Scans every fenced block for a request payload: ``{"toolRequest": …}`` or
+    the bare ``{"tool": …, "params": {…}}`` object. Returns
+    ``(reply_with_the_block_stripped, payload)`` where payload is the raw
+    request dict, the unparseable block body (``str`` — so the JSON error still
+    feeds back), or ``None`` when the reply carries no request attempt. The
+    caller owns the grant check: this is grammar, not authority.
+    """
+    if not isinstance(reply, str) or "```" not in reply:
+        return reply, None
+    for match in reversed(list(_FENCE_RE.finditer(reply))):
+        body = match.group(1)
+        marked = '"toolRequest"' in body
+        if not marked and '"tool"' not in body:
+            continue
+        if len(body.encode("utf-8")) > PLAN_TAIL_MAX_BYTES:
+            continue
+        stripped = (reply[: match.start()] + reply[match.end():]).strip()
+        try:
+            payload = json.loads(body)
+        except (ValueError, TypeError):
+            if marked:
+                return stripped, body  # a request-ish block with broken JSON
+            continue  # a broken unmarked block is too ambiguous to claim
+        if not isinstance(payload, dict):
+            continue
+        if isinstance(payload.get("toolRequest"), dict):
+            return stripped, payload["toolRequest"]
+        # The wrapper-less form: a bare request object. Claimed only on the
+        # full shape, so a chatty JSON block never parses as one by accident.
+        if isinstance(payload.get("tool"), str) and isinstance(payload.get("params"), dict):
+            return stripped, payload
+    return reply, None
+
+
 def _parse_delegate_request(raw: object) -> dict | None:
     if not isinstance(raw, dict):
         return None

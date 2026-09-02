@@ -5228,6 +5228,210 @@ class TestPlanToolRequestForm:
         assert content_mod.parse_parts(_json.dumps(big)) is None
 
 
+class TestToolRequestRecovery:
+    """#245 — a tool request the parser could not take must never fold into the
+    chat as raw JSON.
+
+    Plans got fence-agnostic recognition (dev/56) and correction rounds
+    (dev/54); tool requests never did, so a node.create in a ```json fence, or
+    one followed by a closing sentence, or one whose params were correctable,
+    was demoted to inert text — and for a mutate tool that text is a whole
+    source file rendered under an Apply button that never existed.
+    """
+
+    def _helper(self):
+        return TestNodeCreate()
+
+    def _json_fence(self, content="print('recovered')", trailing="Click Apply above."):
+        import json as _json
+
+        block = _json.dumps({"toolRequest": {"tool": "node.create", "params": {
+            "nodeType": "curio.builtin/computation-analysis", "content": content}}})
+        return f"Here is the node.\n\n```json\n{block}\n```\n\n{trailing}"
+
+    def _run(self, client, user, token, project, monkeypatch, replies):
+        helper = self._helper()
+        att_id, calls = helper._setup(
+            client, user=user, token=token, project_id=project,
+            monkeypatch=monkeypatch, replies=replies,
+        )
+        return helper._run(client, token, project, att_id), calls, att_id, helper
+
+    def test_json_fence_request_mints_and_strips_the_block(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        r, calls, _, _ = self._run(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._json_fence(), "Proposed."],
+        )
+        body = r.get_json()
+        assert any(p["type"] == "proposal" for p in body["content"])
+        # The block is stripped; the model's own prose survives.
+        assert "toolRequest" not in body["reply"]
+        assert "```" not in body["reply"]
+        assert "Click Apply above." in body["reply"]
+
+    def test_non_terminal_curio_fence_is_recovered(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # extract_content deliberately refuses a non-terminal block (dev/90
+        # A10's conservative boundary); recovery claims it at the runtime layer.
+        import json as _json
+
+        user, token = user_and_token
+        block = _json.dumps({"toolRequest": {"tool": "node.create", "params": {
+            "nodeType": "curio.builtin/computation-analysis", "content": "print(1)"}}})
+        reply = f"Adding it.\n\n```curio.v1\n{block}\n```\n\nDone."
+        r, _, _, _ = self._run(client, user, token, alice_project, monkeypatch,
+                               replies=[reply, "Proposed."])
+        body = r.get_json()
+        assert any(p["type"] == "proposal" for p in body["content"])
+        assert "toolRequest" not in body["reply"]
+
+    def test_large_content_survives_recovery(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Both halves of #245 at once: a wrong fence AND a body past the old cap.
+        user, token = user_and_token
+        source = "import pandas as pd\n# analysis\n" * 400
+        r, _, att_id, helper = self._run(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._json_fence(content=source), "Proposed."],
+        )
+        proposal = helper._proposal_from_run(r)
+        assert proposal["tool"] == "node.create"
+        assert "import pandas" not in r.get_json()["reply"]
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.get_json()["createdNode"]["content"] == source.strip()
+
+    def test_broken_json_request_corrects_then_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        broken = ('Attempt one.\n\n```curio.v1\n'
+                  '{"toolRequest": {"tool": "node.create", "params": {oops}\n```')
+        helper = self._helper()
+        r, calls, _, _ = self._run(
+            client, user, token, alice_project, monkeypatch,
+            replies=[broken, helper._create_tail_json(content="print('fixed')"), "Proposed."],
+        )
+        assert len(calls) >= 2
+        # `calls` aliases the live message list, so scan the whole conversation
+        # rather than indexing a snapshot that no longer exists.
+        feedback = "\n".join(m["content"] for m in calls[-1] if isinstance(m.get("content"), str))
+        assert "[tool validation]" in feedback
+        assert "not valid JSON" in feedback
+        body = r.get_json()
+        assert any(p["type"] == "proposal" for p in body["content"])
+        # The invalid attempt never reaches the user — not its prose, not its JSON.
+        assert "Attempt one." not in body["reply"]
+        assert "toolRequest" not in body["reply"]
+
+    def test_oversized_content_corrects_instead_of_leaking(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Past PROPOSAL_CONTENT_MAX_CHARS the parser and the mint agree, so the
+        # model gets a correctable refusal naming the real field.
+        from utk_curio.backend.app.agents import content as content_mod
+
+        user, token = user_and_token
+        helper = self._helper()
+        r, calls, _, _ = self._run(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                helper._create_tail_json(
+                    content="x" * (content_mod.PROPOSAL_CONTENT_MAX_CHARS + 1)),
+                helper._create_tail_json(content="print('small enough')"),
+                "Proposed.",
+            ],
+        )
+        feedback = "\n".join(m["content"] for m in calls[-1] if isinstance(m.get("content"), str))
+        assert "[tool validation]" in feedback
+        assert "params.content is" in feedback  # the error names the real field
+        body = r.get_json()
+        assert any(p["type"] == "proposal" for p in body["content"])
+        assert "x" * 200 not in body["reply"]
+
+    def test_persistent_failure_contains_the_raw_json(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """The deliberate inverse of the plan cap, which asserts
+        ``"curio.v1" in body["reply"]``.
+
+        A plan tail is a spec the user can read, so dev/54 releases it at the
+        cap. A mutate request's params are an entire source file — releasing
+        that IS the #245 bug, so the block drops and the card explains instead.
+        """
+        user, token = user_and_token
+        broken = ('```curio.v1\n{"toolRequest": {"tool": "node.create", '
+                  '"params": {oops}\n```')
+        r, calls, _, _ = self._run(client, user, token, alice_project, monkeypatch,
+                                   replies=[broken])
+        body = r.get_json()
+        assert len(calls) == 4  # the shared MAX_TOOL_ROUNDS budget, then the cap
+        assert all(p["type"] != "proposal" for p in body["content"])
+        card = next(p for p in body["content"] if p["type"] == "card")
+        assert card["title"] == "Proposal not created"
+        assert "not valid JSON" in card["lines"][0]
+        assert "curio.v1" not in body["reply"]
+        assert "toolRequest" not in body["reply"]
+
+    def test_echoed_syntax_does_not_burn_a_round(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The tail instruction's own literal template is valid JSON. Correcting
+        # a model that merely quoted it would spend the budget on nothing.
+        user, token = user_and_token
+        echoed = ('To create a node I would send:\n\n```json\n'
+                  '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n```')
+        r, calls, _, _ = self._run(client, user, token, alice_project, monkeypatch,
+                                   replies=[echoed])
+        assert len(calls) == 1
+        assert "<tool id>" in r.get_json()["reply"]  # fail-open, untouched
+
+    def test_ungranted_tool_is_not_claimed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # A request naming a tool this run does not hold stays the model's text.
+        import json as _json
+
+        user, token = user_and_token
+        block = _json.dumps({"toolRequest": {"tool": "package.install",
+                                             "params": {"dirName": "x@1"}}})
+        r, calls, _, _ = self._run(client, user, token, alice_project, monkeypatch,
+                                   replies=[f"Consider:\n\n```json\n{block}\n```"])
+        assert len(calls) == 1
+        assert "package.install" in r.get_json()["reply"]
+
+    def test_stream_holds_the_raw_request_tail(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        import json as _json
+
+        user, token = user_and_token
+        helper = self._helper()
+        att_id, _ = helper._setup(client, user=user, token=token, project_id=alice_project,
+                                  monkeypatch=monkeypatch, replies=["ignored"])
+        script = [
+            '```curio.v1\n{"toolRequest": {"tool": "node.create", "params": {oops}\n```',
+            helper._create_tail_json(content="print('fixed')"),
+            "Proposed.",
+        ]
+        calls = []
+
+        def _fake_stream(config, messages, **kwargs):
+            calls.append(messages)
+            reply = script[min(len(calls) - 1, len(script) - 1)]
+            for i in range(0, len(reply), 9):
+                yield reply[i:i + 9]
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "build it"}, headers=_auth(token),
+        )
+        events = []
+        for block in r.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            if "event" in lines:
+                events.append((lines["event"], _json.loads(lines["data"])))
+        kinds = [k for k, _ in events]
+        assert "tool_revision" in kinds
+        # The invalid tail never streamed as text.
+        text = "".join(p.get("text", "") for k, p in events if k == "delta")
+        assert "curio.v1" not in text and "toolRequest" not in text
+        done = events[-1][1]
+        assert any(p["type"] == "proposal" for p in done["content"])
+
+
 class TestFenceAgnosticPlanRecognition:
     """dev/56 — the user's exact scenario: a valid plan in a ```json fence
     with prose after it must mint; the runtime meets the model where it
