@@ -36,14 +36,17 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from .utils import (
     REPO_ROOT,
     accept_confirm_dialog,
+    assert_vega_canvas_rendered,
     close_tools_palette,
     connect_nodes,
     drag_to_canvas,
+    frame_node,
     node_locator,
     open_tools_palette,
     play_node,
     run_node_and_wait,
     set_node_code,
+    wait_for_node_done,
     signup_e2e_user,
     wait_for_projects_page,
 )
@@ -193,6 +196,11 @@ class Walkthrough:
     clip_selector: str | None = None
     #: ``False`` for pages with no canvas -- the helper otherwise spends its
     #: whole timeout waiting for a ``.react-flow__node`` that never arrives.
+    #:
+    #: Also ``False`` for a scene that aims its own camera: the helper fitViews
+    #: immediately before every capture, so a ``frame_node`` call is undone
+    #: between the framing and the screenshot and the image comes out as the
+    #: whole dataflow regardless.
     fit_reactflow: bool = True
     #: Fraction of pixels allowed to differ. The helper's 0.20 default is blind
     #: to a restored 1.5px border or a button that grew one line, so the small
@@ -1165,10 +1173,26 @@ def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
     expect(page.locator("#tools-menu")).to_be_visible()
     ctx.capture("refused-with-nothing-pinned")
 
-    ctx.say("Pin one node", "Now the mode has something to show.")
-    pin = page.locator(".react-flow__node").first.get_by_role(
-        "button", name="Pin to dashboard"
-    )
+    # RUN a node that renders, and pin that one. `.react-flow__node.first` is
+    # the Data Loading node, which has no visual output and, unrun, no output
+    # at all - so Dashboard Mode laid out an empty tile and the capture was a
+    # flat grey box that would still be a flat grey box if the mode broke.
+    # `play_node` runs the not-yet-successful ancestors too, so playing the
+    # chart at the tail runs the chain behind it.
+    ctx.say("Run the chart", "Dashboard Mode needs something to lay out.")
+    node_id = first_node_of_type(PROVENANCE_EXAMPLE, "vis-vega")
+    node = node_locator(page, node_id)
+    node.wait_for(state="visible", timeout=45000)
+    node.scroll_into_view_if_needed()
+    # Not `run_node_and_wait`: that returns the output text and so waits for
+    # `[data-curio-node-output]`, the code node's text pane, which a chart node
+    # does not have. Wait on the status attribute, then on drawn marks.
+    play_node(page, node_id)
+    wait_for_node_done(page, node_id, node_type="vis-vega", timeout_ms=180000)
+    assert_vega_canvas_rendered(page, node_id, timeout=60000)
+
+    ctx.say("Pin it", "Now the mode has something to show.")
+    pin = node.get_by_role("button", name="Pin to dashboard")
     pin.wait_for(state="visible", timeout=15000)
     ctx.click(pin.first)
     ctx.beat(700)
@@ -1176,6 +1200,15 @@ def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
     ctx.say("And it opens", "One pinned node, laid out on its own.")
     open_view_menu_dashboard(ctx)
     page.wait_for_timeout(1200)
+    # The pinned node is the subject, so prove the chart came with it rather
+    # than photographing whatever the panel put on screen. Scoped to the Vega
+    # mount (`"vega" + nodeId`, the convention useVega.ts owns) - a bare
+    # `canvas` locator finds Monaco's hidden decorationsOverviewRuler first.
+    dash_canvas = page.locator(f"#vega{node_id} canvas").first
+    dash_canvas.wait_for(state="visible", timeout=45000)
+    assert dash_canvas.evaluate("c => c.width > 0 && c.height > 0"), (
+        "Dashboard Mode laid out the pinned node but its chart drew nothing"
+    )
     ctx.capture("entered-with-one-pin")
 
 
@@ -1325,6 +1358,10 @@ def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
     tests=["src/tests/hook/vegaSpecSizing.test.ts",
            "src/tests/components/nodeEditorOutputScroll.test.tsx"],
     example=MULTI_VIEW_EXAMPLE,
+    # The scene frames the chart node itself (see `frame_node` below); leaving
+    # this True would have the capture helper fitView the whole 28-node
+    # dataflow again immediately before each screenshot and undo it.
+    fit_reactflow=False,
     max_diff_ratio=0.05,
 )
 def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
@@ -1365,6 +1402,10 @@ def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
         arg=f"vega{node_id}",
         timeout=180000,
     )
+    # Frame the node before capturing. The subject is a chart inside a 525x350
+    # node; at the harness's fit zoom this example's 28 nodes make it a ~90x60
+    # thumbnail, and both captures came out as the same canvas wallpaper.
+    frame_node(page, node_id, zoom=1.1)
     ctx.focus(node, hold=1400)
 
     metrics = mount.evaluate(

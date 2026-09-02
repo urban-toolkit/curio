@@ -1773,6 +1773,41 @@ def node_locator(page, node_id: str):
     return page.locator(f'.react-flow__node[data-id="{node_id}"]')
 
 
+def frame_node(page, node_id: str, *, zoom: float = 0.9,
+               settle_ms: float = 1000) -> None:
+    """Pan and zoom the canvas so one node fills the frame.
+
+    For scenes whose subject is *inside* a node. The baseline harness fits the
+    viewport to the whole dataflow, which is right for a scene about the graph
+    and wrong for one about a chart: at fit zoom a 525x350 node is a ~90x60
+    thumbnail, and a screenshot of it cannot show what the scene claims. The
+    `05-vega-lite-multi-view-drilldown` example has 28 nodes, so its captures
+    were two near-identical canvas wallpapers.
+
+    Keeps the full 1280x720 frame rather than clipping to the node, so the
+    surrounding canvas still reads as context.
+
+    ``window.__curio_reactFlow`` is the instance ``MainCanvas.tsx`` exposes for
+    exactly this; ``setCenter`` takes flow coordinates, hence the node's own
+    position plus half its measured size.
+    """
+    page.evaluate(
+        """({ nodeId, zoom }) => {
+            const rf = window.__curio_reactFlow;
+            if (!rf) return;
+            const node = rf.getNodes().find((n) => n.id === nodeId);
+            if (!node) return;
+            const w = node.width || node.measured?.width || 525;
+            const h = node.height || node.measured?.height || 350;
+            rf.setCenter(node.position.x + w / 2, node.position.y + h / 2, {
+                zoom, duration: 700,
+            });
+        }""",
+        {"nodeId": node_id, "zoom": zoom},
+    )
+    page.wait_for_timeout(settle_ms)
+
+
 def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
                    timeout: float = 15000) -> str:
     """Drag *source* onto the canvas and return the id of the node it created.

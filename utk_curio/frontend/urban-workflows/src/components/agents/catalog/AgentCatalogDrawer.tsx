@@ -115,10 +115,10 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         title: `Remove ${card.name} from this project?`,
         confirmLabel: "Remove",
         destructive: true,
+        // No lead line repeating the title: the dialog already asks
+        // "Remove <name> from this project?" above this, and printing it twice
+        // pushes the one sentence a reader needs down the box.
         body:
-          `Remove ${card.name} from this project?
-
-` +
           `The agent stays in your account and in your other projects. Add it ` +
           `back here any time.`,
         run: () => c.uninstall(card),
