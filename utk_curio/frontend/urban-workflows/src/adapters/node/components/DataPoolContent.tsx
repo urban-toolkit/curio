@@ -4,6 +4,8 @@ import { TabularPreviewTable } from '../../../components/tables/TabularPreviewTa
 import { fetchPreviewData } from '../../../services/api';
 import { sandboxArtifactId } from '../../../utils/flowOutputRef';
 import { rowsFromParseOutput } from '../../../utils/tabularPreview';
+import { NodeEmptyState } from '../../../components/nodes/NodeEmptyState';
+import { resolveNodeEmptyReason } from '../../../utils/nodeEmptyState';
 
 interface DataPoolContentProps {
   activeTab: string;
@@ -11,6 +13,15 @@ interface DataPoolContentProps {
   tabData: any[];
   tableData: Record<string, unknown>[];
   data?: any;
+  /**
+   * Is anything wired into this pool's input?
+   *
+   * Only the behavior can see the graph, so it is passed down. Defaults to
+   * FALSE, which is the honest reading when a caller has not said: an
+   * unconnected pool is the commonest way to arrive at an empty body, and
+   * claiming otherwise would send the user to run a node that does not exist.
+   */
+  connected?: boolean;
 }
 
 const ContentComponent = ({
@@ -95,7 +106,7 @@ const ContentComponent = ({
   );
 };
 
-export default function DataPoolContent({ activeTab, onSelectTab, tabData, tableData, data = { nodeId: '', input: '' } }: DataPoolContentProps) {
+export default function DataPoolContent({ activeTab, onSelectTab, tabData, tableData, data = { nodeId: '', input: '' }, connected = false }: DataPoolContentProps) {
   const wrappers: any[] = (() => {
     if (!data.input || typeof data.input !== "object") return [];
     if (data.input.dataType === "outputs" && Array.isArray(data.input.data)) return data.input.data;
@@ -152,11 +163,7 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
               </Nav.Item>
             );
           })
-        ) : (
-          <Nav.Item>
-            <Nav.Link eventKey="0">No Data</Nav.Link>
-          </Nav.Item>
-        )}
+        ) : null}
       </Nav>
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {hasData ? (
@@ -166,7 +173,22 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
             data={{ ...data, input: activeTabInput }}
           />
         ) : (
-          <div style={{ padding: '10px', textAlign: 'center' }}>No data available.</div>
+          // "No data available." was true but not useful: it named the state
+          // and not the cause, so an unconnected pool and one whose upstream had
+          // not run said the same thing (#224). The fake "No Data" TAB above it
+          // is gone for the same reason — it looked like a tab you could open.
+          <NodeEmptyState
+            reason={
+              resolveNodeEmptyReason({
+                connected,
+                hasInput: data?.input != null && data.input !== '',
+                // A pool only ever renders tables, so anything that reached it
+                // and produced no tab is a payload it cannot show.
+                tabular: true,
+                rowCount: 0,
+              }) ?? 'no-rows'
+            }
+          />
         )}
       </div>
     </div>

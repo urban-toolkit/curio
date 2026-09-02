@@ -33,10 +33,21 @@ describe('DataPoolContent', () => {
     expect(screen.getByText('Tab 2')).toBeInTheDocument();
   });
 
-  test('shows "No data available" when tabData is empty', () => {
+  test('says which kind of empty it is when tabData is empty', () => {
+    // Was "No data available." plus a fake "No Data" TAB. The message named the
+    // state but not the cause, so an unconnected pool and one whose upstream
+    // had not run said the same thing; the tab looked like something you could
+    // open (#224). Default props leave `connected` false, which is the
+    // commonest way to arrive here.
     render(<DataPoolContent {...defaultProps} tabData={[]} />);
-    expect(screen.getByText('No data available.')).toBeInTheDocument();
-    expect(screen.getByText('No Data')).toBeInTheDocument();
+    expect(screen.getByText('No data yet')).toBeInTheDocument();
+    expect(screen.getByText("Connect a node to this one's input.")).toBeInTheDocument();
+    expect(screen.queryByText('No Data')).toBeNull();
+  });
+
+  test('points at the upstream node once one is connected', () => {
+    render(<DataPoolContent {...defaultProps} tabData={[]} connected />);
+    expect(screen.getByText('Run the node feeding this one.')).toBeInTheDocument();
   });
 
   test('renders ContentTable with provided tableData', () => {
@@ -105,7 +116,7 @@ describe('DataPoolContent', () => {
 
   test('renders with non-array tabData gracefully', () => {
     render(<DataPoolContent {...defaultProps} tabData={null as any} />);
-    expect(screen.getByText('No data available.')).toBeInTheDocument();
+    expect(screen.getByText('No data yet')).toBeInTheDocument();
   });
 
   test('keeps the output table when preview resolves with no rows', async () => {

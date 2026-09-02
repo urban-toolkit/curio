@@ -219,12 +219,16 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
     });
 
-    test('returns no contentComponent for non-tabular input (text/value mode)', async () => {
+    test('explains itself instead of rendering nothing (text/value mode)', async () => {
+      // It used to return `undefined` here, so UniversalNode rendered an empty
+      // box and a node with an unshowable payload looked identical to a broken
+      // one (#224). Every branch now requires actual content, and the fallback
+      // says which kind of empty this is.
       const result = await callBehavior(useSimpleVisBehavior, {
         input: { dataType: 'value', data: 42 } as any,
       });
       assertValidBehaviorResult(result.current);
-      expect(result.current.contentComponent).toBeUndefined();
+      expect(result.current.contentComponent).toBeDefined();
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
     });
   });
