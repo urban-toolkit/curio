@@ -72,6 +72,21 @@ beforeEach(() => {
   mockTryGetNodeDescriptor.mockReturnValue(descriptor());
 });
 
+describe("NodeTemplateConfigModal - capability labels", () => {
+  test("the checkboxes are named for what they do, not for their field", () => {
+    // They rendered as `hasCode` / `hasWidgets` / `hasGrammar` (#219). The
+    // input is wrapped in its label, so the visible text WAS the accessible
+    // name: the internal identifier was what a screen reader read out too.
+    renderModal();
+    for (const label of ["Code", "Widgets", "Grammar"]) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    }
+    for (const field of ["hasCode", "hasWidgets", "hasGrammar"]) {
+      expect(screen.queryByLabelText(field)).toBeNull();
+    }
+  });
+});
+
 describe("NodeTemplateConfigModal - seeding", () => {
   test("seeds every field from the descriptor", () => {
     renderModal();
@@ -81,8 +96,8 @@ describe("NodeTemplateConfigModal - seeding", () => {
     );
     expect(screen.getByLabelText("Editor mode")).toHaveValue("code");
     expect(screen.getByLabelText("Engine")).toHaveValue("python");
-    expect(screen.getByLabelText("hasCode")).toBeChecked();
-    expect(screen.getByLabelText("hasGrammar")).not.toBeChecked();
+    expect(screen.getByLabelText("Code")).toBeChecked();
+    expect(screen.getByLabelText("Grammar")).not.toBeChecked();
   });
 
   test("a stored config wins over the descriptor", () => {
@@ -129,9 +144,9 @@ describe("NodeTemplateConfigModal - editor mode cascade", () => {
     });
 
     expect(screen.getByLabelText("Engine")).toHaveValue("javascript");
-    expect(screen.getByLabelText("hasGrammar")).toBeChecked();
-    expect(screen.getByLabelText("hasCode")).not.toBeChecked();
-    expect(screen.getByLabelText("hasWidgets")).not.toBeChecked();
+    expect(screen.getByLabelText("Grammar")).toBeChecked();
+    expect(screen.getByLabelText("Code")).not.toBeChecked();
+    expect(screen.getByLabelText("Widgets")).not.toBeChecked();
 
     save();
     expect(onSave).toHaveBeenCalledWith(
@@ -150,9 +165,9 @@ describe("NodeTemplateConfigModal - editor mode cascade", () => {
     fireEvent.change(screen.getByLabelText("Editor mode"), {
       target: { value: "widgets" },
     });
-    expect(screen.getByLabelText("hasCode")).toBeChecked();
-    expect(screen.getByLabelText("hasWidgets")).toBeChecked();
-    expect(screen.getByLabelText("hasGrammar")).not.toBeChecked();
+    expect(screen.getByLabelText("Code")).toBeChecked();
+    expect(screen.getByLabelText("Widgets")).toBeChecked();
+    expect(screen.getByLabelText("Grammar")).not.toBeChecked();
 
     save();
     expect(onSave).toHaveBeenCalledWith(
@@ -169,9 +184,9 @@ describe("NodeTemplateConfigModal - editor mode cascade", () => {
       target: { value: "none" },
     });
 
-    expect(screen.getByLabelText("hasCode")).not.toBeChecked();
-    expect(screen.getByLabelText("hasWidgets")).not.toBeChecked();
-    expect(screen.getByLabelText("hasGrammar")).not.toBeChecked();
+    expect(screen.getByLabelText("Code")).not.toBeChecked();
+    expect(screen.getByLabelText("Widgets")).not.toBeChecked();
+    expect(screen.getByLabelText("Grammar")).not.toBeChecked();
   });
 
   test("switching back to code restores python", () => {
@@ -183,67 +198,107 @@ describe("NodeTemplateConfigModal - editor mode cascade", () => {
       target: { value: "code" },
     });
     expect(screen.getByLabelText("Engine")).toHaveValue("python");
-    expect(screen.getByLabelText("hasCode")).toBeChecked();
-    expect(screen.getByLabelText("hasGrammar")).not.toBeChecked();
+    expect(screen.getByLabelText("Code")).toBeChecked();
+    expect(screen.getByLabelText("Grammar")).not.toBeChecked();
   });
 });
 
 describe("NodeTemplateConfigModal - port editor", () => {
+  // Ports are edited as one <select> per TYPE now, not one comma-separated text
+  // field per port (#219). Queries go through the aria-labels rather than
+  // positional getAllByRole, so a layout change does not silently retarget them.
+  // Accessible names carry the section title, because "Port 1 type 1" on its
+  // own names one control in the Input editor and another in the Output one.
+  const typeSelect = (title: string, port: number, type: number) =>
+    within(portSection(title)).getByLabelText(`${title} port ${port} type ${type}`);
+  const cardinalitySelect = (title: string, port: number) =>
+    within(portSection(title)).getByLabelText(`${title} port ${port} cardinality`);
+
   test("adds, edits and removes rows, and saves what is on screen", () => {
     const { onSave } = renderModal();
     const inputs = portSection("Input ports");
 
-    expect(within(inputs).getAllByRole("combobox")).toHaveLength(1);
-    fireEvent.change(within(inputs).getAllByRole("textbox")[0], {
-      target: { value: "DATAFRAME" },
-    });
-    fireEvent.change(within(inputs).getAllByRole("combobox")[0], {
-      target: { value: "1" },
-    });
+    fireEvent.change(typeSelect("Input ports", 1, 1), { target: { value: "DATAFRAME" } });
+    fireEvent.change(cardinalitySelect("Input ports", 1), { target: { value: "1" } });
 
-    fireEvent.click(within(inputs).getByRole("button", { name: "+ Add port" }));
-    expect(within(inputs).getAllByRole("combobox")).toHaveLength(2);
-    fireEvent.change(within(inputs).getAllByRole("textbox")[1], {
-      target: { value: "JSON" },
-    });
-    fireEvent.change(within(inputs).getAllByRole("combobox")[1], {
-      target: { value: "[0,1]" },
-    });
+    fireEvent.click(within(inputs).getByLabelText("Add Input ports port"));
+    fireEvent.change(typeSelect("Input ports", 2, 1), { target: { value: "JSON" } });
+    fireEvent.change(cardinalitySelect("Input ports", 2), { target: { value: "[0,1]" } });
 
     save();
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         inputPorts: [
-          expect.objectContaining({ types: "DATAFRAME", cardinality: "1" }),
-          expect.objectContaining({ types: "JSON", cardinality: "[0,1]" }),
+          expect.objectContaining({ types: ["DATAFRAME"], cardinality: "1" }),
+          expect.objectContaining({ types: ["JSON"], cardinality: "[0,1]" }),
         ],
       }),
     );
+  });
+
+  test("a port can carry several types, each on its own row", () => {
+    // The half the free-text field made easy to get wrong: the separator was
+    // stated only in a placeholder, and an unrecognised value was dropped in
+    // silence on the way into the registry.
+    const { onSave } = renderModal();
+    const inputs = portSection("Input ports");
+
+    fireEvent.change(typeSelect("Input ports", 1, 1), { target: { value: "DATAFRAME" } });
+    fireEvent.click(within(inputs).getByLabelText("Add Input ports port 1 type"));
+    fireEvent.change(typeSelect("Input ports", 1, 2), { target: { value: "GEODATAFRAME" } });
+
+    save();
+    expect(onSave.mock.calls[0][0].inputPorts[0].types).toEqual([
+      "DATAFRAME",
+      "GEODATAFRAME",
+    ]);
+  });
+
+  test("only the declarable types are offered", () => {
+    // The vocabulary is closed: ConnectionValidator compares these values
+    // directly, so anything outside the enum could never match a port.
+    renderModal();
+    const options = within(portSection("Input ports"))
+      .getByLabelText("Input ports port 1 type 1")
+      .querySelectorAll("option");
+    expect(Array.from(options).map((o) => o.getAttribute("value"))).toEqual([
+      "DATAFRAME",
+      "GEODATAFRAME",
+      "VALUE",
+      "LIST",
+      "JSON",
+      "RASTER",
+    ]);
+  });
+
+  test("the last type of a port cannot be removed", () => {
+    // A port with no types accepts nothing. Removing the PORT says that.
+    renderModal();
+    const inputs = portSection("Input ports");
+    expect(
+      within(inputs).getByLabelText("Remove Input ports port 1 type 1"),
+    ).toBeDisabled();
   });
 
   test("the row remove button drops only that row", () => {
     const { onSave } = renderModal();
     const inputs = portSection("Input ports");
 
-    fireEvent.click(within(inputs).getByRole("button", { name: "+ Add port" }));
-    fireEvent.change(within(inputs).getAllByRole("textbox")[1], {
-      target: { value: "KEEP_ME" },
-    });
-    // Remove row 0; the appended row must survive with its edit intact.
-    fireEvent.click(within(inputs).getAllByRole("button", { name: "✕" })[0]);
+    fireEvent.click(within(inputs).getByLabelText("Add Input ports port"));
+    fireEvent.change(typeSelect("Input ports", 2, 1), { target: { value: "RASTER" } });
+    // Remove port 1; the appended one must survive with its edit intact.
+    fireEvent.click(within(inputs).getByLabelText("Remove Input ports port 1"));
 
     save();
     const config = onSave.mock.calls[0][0];
     expect(config.inputPorts).toHaveLength(1);
-    expect(config.inputPorts[0].types).toBe("KEEP_ME");
+    expect(config.inputPorts[0].types).toEqual(["RASTER"]);
   });
 
   test("input and output sections are independent", () => {
     const { onSave } = renderModal();
     fireEvent.click(
-      within(portSection("Output ports")).getByRole("button", {
-        name: "+ Add port",
-      }),
+      within(portSection("Output ports")).getByLabelText("Add Output ports port"),
     );
 
     save();
@@ -260,8 +315,24 @@ describe("NodeTemplateConfigModal - port editor", () => {
     mockTryGetNodeDescriptor.mockReturnValue(descriptor({ outputPorts: [] }));
     renderModal();
     expect(
-      within(portSection("Output ports")).getAllByRole("combobox"),
-    ).toHaveLength(1);
+      within(portSection("Output ports")).getByLabelText("Output ports port 1 type 1"),
+    ).toHaveValue("JSON");
+  });
+
+  test("a legacy comma string opens as one row per type", () => {
+    // A canvas node whose packageTemplateConfig was stored before this change
+    // still carries "DATAFRAME,GEODATAFRAME" in a single field.
+    mockTryGetNodeDescriptor.mockReturnValue(descriptor());
+    renderModal({
+      storedConfig: {
+        inputPorts: [
+          { id: "legacy", types: "DATAFRAME,GEODATAFRAME" as unknown as string[], cardinality: "1" },
+        ],
+      } as never,
+    });
+    const inputs = portSection("Input ports");
+    expect(typeSelect("Input ports", 1, 1)).toHaveValue("DATAFRAME");
+    expect(typeSelect("Input ports", 1, 2)).toHaveValue("GEODATAFRAME");
   });
 });
 

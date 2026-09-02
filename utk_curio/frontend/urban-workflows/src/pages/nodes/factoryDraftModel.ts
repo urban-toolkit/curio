@@ -5,6 +5,8 @@
  * the canvas palette Save / Factory hydrate flow.
  */
 
+import { normalizePortTypes } from "../../constants/supportedPortTypes";
+
 export type Category = "data" | "computation" | "vis_grammar" | "vis_simple" | "flow";
 export type Engine = "python" | "javascript";
 /** Wizard / manifest editor mode (maps to manifest `editor`). */
@@ -12,7 +14,15 @@ export type Editor = "code" | "widgets" | "grammar" | "none";
 
 export interface PortDraft {
   id: string;
-  types: string;
+  /**
+   * One entry per declared type.
+   *
+   * Was a comma-separated STRING, which had to be split on the way out and
+   * joined on the way in. Both halves were lossy and silent: a typo survived
+   * the editor and was dropped by ``asSupportedTypes``, so a port quietly lost
+   * a type (#219). Readers tolerate the old string via ``normalizePortTypes``.
+   */
+  types: string[];
   cardinality: string;
 }
 
@@ -97,7 +107,7 @@ export function makeTemplate(templateId: string = "demo-template"): TemplateDraf
     hasWidgets: false,
     hasGrammar: false,
     inputPorts: [],
-    outputPorts: [{ id: factoryUiMakeId(), types: "JSON", cardinality: "1" }],
+    outputPorts: [{ id: factoryUiMakeId(), types: ["JSON"], cardinality: "1" }],
     behavior: "code",
     sourceFilename: `${templateId}.py`,
     sourceCode: STARTER_CODE,
@@ -123,13 +133,6 @@ export function makeDraft(): Draft {
     readme: "",
     licenseText: "",
   };
-}
-
-function splitTypes(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
 }
 
 export function depsToMap(entries: { pkg: string; range: string }[]): Record<string, string> {
@@ -178,11 +181,11 @@ export function toApiPayload(d: Draft): {
         hasWidgets: k.hasWidgets,
         hasGrammar: k.hasGrammar,
         inputPorts: k.inputPorts.map((p) => ({
-          types: splitTypes(p.types),
+          types: normalizePortTypes(p.types),
           cardinality: p.cardinality,
         })),
         outputPorts: k.outputPorts.map((p) => ({
-          types: splitTypes(p.types),
+          types: normalizePortTypes(p.types),
           cardinality: p.cardinality,
         })),
       };

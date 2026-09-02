@@ -154,6 +154,10 @@ export function NodeTemplateConfigModal({
           </div>
         </div>
 
+        {/* The visible text is the accessible name here (the input is wrapped
+            in its label), so these read as the internal field names to a
+            screen reader too until they say something (#219). */}
+        <p className={styles.sectionTitle}>Capabilities</p>
         <div className={styles.checkGrid}>
           <label className={styles.checkRow}>
             <input
@@ -161,7 +165,7 @@ export function NodeTemplateConfigModal({
               checked={config.hasCode}
               onChange={(e) => patch({ hasCode: e.target.checked })}
             />
-            hasCode
+            Code
           </label>
           <label className={styles.checkRow}>
             <input
@@ -169,7 +173,7 @@ export function NodeTemplateConfigModal({
               checked={config.hasWidgets}
               onChange={(e) => patch({ hasWidgets: e.target.checked })}
             />
-            hasWidgets
+            Widgets
           </label>
           <label className={styles.checkRow}>
             <input
@@ -177,7 +181,7 @@ export function NodeTemplateConfigModal({
               checked={config.hasGrammar}
               onChange={(e) => patch({ hasGrammar: e.target.checked })}
             />
-            hasGrammar
+            Grammar
           </label>
         </div>
 

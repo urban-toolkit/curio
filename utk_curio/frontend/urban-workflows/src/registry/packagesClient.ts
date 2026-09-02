@@ -24,6 +24,7 @@ import { faCube } from '@fortawesome/free-solid-svg-icons';
 
 import { SupportedType } from '../constants';
 import { BUILTIN_PACKAGE_ID } from './packageKeys';
+import { isSupportedPortType } from '../constants/supportedPortTypes';
 import {
   inputOnly,
   outputOnly,
@@ -125,9 +126,17 @@ function asCategory(raw: string): NodeCategory {
 
 export { BUILTIN_PACKAGE_ID } from './packageKeys';
 
+/**
+ * Keep only the types the runtime can actually match.
+ *
+ * Shares its predicate with the settings dialog's dropdown, so the set a node
+ * author can PICK and the set that survives the trip into the registry are one
+ * list. They used to be two independent derivations of the same enum, and the
+ * dialog's field was free text, so a typo passed the editor and was dropped
+ * here in silence (#219).
+ */
 function asSupportedTypes(raw: string[]): SupportedType[] {
-  const known = new Set(Object.values(SupportedType));
-  return raw.filter((t) => known.has(t as SupportedType)) as SupportedType[];
+  return raw.filter(isSupportedPortType);
 }
 
 function asPortDef(p: { types: string[]; cardinality?: string }): PortDef {
