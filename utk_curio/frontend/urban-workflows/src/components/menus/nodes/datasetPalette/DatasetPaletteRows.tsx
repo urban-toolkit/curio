@@ -29,6 +29,8 @@ import { useReactFlow } from "reactflow";
 import { isNodeLinkedToAnyDataset } from "../../../../services/datasetCatalog";
 import { focusLinkedNodes } from "../../../../utils/focusDatasetNodes";
 import { useToastContext } from "../../../../providers/ToastProvider";
+import { CopyButton } from "../../../CopyButton";
+import { datasetReferenceCode } from "../../../../services/datasetCatalog";
 
 
 function formatAbbreviation(dataset: DatasetCatalogItem): string {
@@ -114,6 +116,15 @@ export const DatasetRow = memo(function DatasetRow({
             <DatasetConnectionBadge dataset={dataset} className={rowStyles.connBadge} />
           </div>
         </button>
+        {/* The rail sits beside the code editor, so this is where someone
+            writing a node needs the reference. It is outside the meta button
+            because that button selects the dataset's nodes on the canvas
+            (#206). */}
+        <CopyButton
+          value={datasetReferenceCode(dataset)}
+          label="Copy dataset reference"
+          className={rowStyles.copyButton}
+        />
       </div>
     </OverlayTrigger>
   );

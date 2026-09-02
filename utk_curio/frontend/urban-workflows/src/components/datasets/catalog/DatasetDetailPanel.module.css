@@ -660,3 +660,34 @@
     border-bottom: 1px solid #e5e5e5;
   }
 }
+
+/* "Use in a node": the reference to paste, and where the bytes live (#206). */
+.referenceRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.referenceCode {
+    flex: 1 1 auto;
+    /* A reference is one token and can be long; scroll it rather than wrap a
+       string the reader is about to copy. */
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: 6px 8px;
+    border-radius: var(--curio-radius-sm);
+    background: var(--curio-page-bg);
+    font-family: 'Source Code Pro', Consolas, 'Courier New', monospace;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-primary);
+}
+
+.referenceLocation {
+    margin: 6px 0 0;
+    /* Informational: the machine-specific location, which is exactly what
+       should NOT be pasted into a node. */
+    overflow-wrap: anywhere;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-muted);
+}

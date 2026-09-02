@@ -8,3 +8,4 @@ export * from "./useDatasetImport";
 export * from "./datasetPaletteGrouping";
 export * from "./pendingInstallView";
 export * from "./producerLinkage";
+export * from "./datasetReference";

@@ -1,0 +1,43 @@
+/* Copy-to-clipboard, shared by the dataset surfaces (#206). */
+.root {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-sm);
+    background: var(--curio-card-bg);
+    color: var(--curio-text-secondary);
+    cursor: pointer;
+    font-size: var(--curio-font-size-sm);
+    line-height: 1;
+}
+
+.root:hover {
+    background: var(--curio-page-bg);
+    color: var(--curio-text-primary);
+}
+
+/* Square, for a dense palette row or a card's meta strip. */
+.icon {
+    padding: 4px 6px;
+}
+
+/* Icon plus text, for a details panel where there is room to name the action. */
+.labelled {
+    padding: 6px 10px;
+}
+
+.text {
+    white-space: nowrap;
+}
+
+/* Confirmation reads as success rather than as another neutral control. */
+.root[data-copy-status="copied"] {
+    color: var(--curio-success-text);
+    border-color: var(--curio-success-text);
+}
+
+.root[data-copy-status="failed"] {
+    color: var(--curio-danger-text);
+    border-color: var(--curio-danger-text);
+}
