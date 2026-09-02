@@ -102,6 +102,23 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
     os.environ["FLASK_SANDBOX_HOST"] = sandbox_host
     os.environ["FLASK_SANDBOX_PORT"] = str(sandbox_port)
+    # The frontend bundle needs the backend's address baked in at BUILD time
+    # (webpack substitutes ``process.env.BACKEND_URL`` through dotenv-webpack).
+    # Derive it from the same --backend-host/--backend-port the backend itself
+    # is started with, so the two cannot disagree.
+    #
+    # This used to come only from a hand-maintained
+    # ``frontend/urban-workflows/.env``, which meant every port change was two
+    # edits and a rebuild, and forgetting either produced a UI that silently
+    # talked to whichever OTHER Curio owned the default port. dotenv-webpack is
+    # configured with ``systemvars: true``, and a real environment variable wins
+    # over the file, so setting it here is enough. An explicit BACKEND_URL from
+    # the caller still wins over both.
+    #
+    # 127.0.0.1 is normalized to localhost because the browser's origin is
+    # localhost by default, and the two are distinct origins to CORS.
+    browser_host = "localhost" if backend_host in ("127.0.0.1", "0.0.0.0") else backend_host
+    os.environ.setdefault("BACKEND_URL", f"http://{browser_host}:{backend_port}")
     # Shared secret proving to the sandbox that a caller is this backend. The
     # sandbox runs arbitrary user code, so its /exec, /execJs, /get and
     # /install routes require it (utk_curio/sandbox/app/auth.py). Minted per
@@ -329,8 +346,34 @@ def check_install_build(dir, force_rebuild=False):
 
     # Check if dist/build directory exists (depending on your setup)
     build_dir = "dist" if os.path.exists("dist") else "build"
+    # ``BACKEND_URL`` is substituted into the bundle at BUILD time, so an
+    # existing build is only reusable if it was built for the backend we are
+    # about to start. Without this, changing --backend-port reused the old
+    # bundle and the UI kept calling the previous port -- which, when another
+    # Curio owns it, means a session quietly driving someone else's backend.
+    # The stamp records what the current build was made for.
+    stamp_path = os.path.join(build_dir, ".curio-backend-url")
+    wanted_url = os.environ.get("BACKEND_URL", "")
+    built_url = None
+    if os.path.exists(stamp_path):
+        try:
+            with open(stamp_path, encoding="utf-8") as fh:
+                built_url = fh.read().strip()
+        except OSError:
+            built_url = None
+
     if not os.path.exists(build_dir):
-        log_info(f"[Frontend] {build_dir} directory not found. Running npm run build...", COLOR_FRONTEND, 0)
+        reason = f"{build_dir} directory not found"
+    elif built_url != wanted_url:
+        reason = (
+            f"built for {built_url or 'an unrecorded backend'}, "
+            f"need {wanted_url or 'the .env default'}"
+        )
+    else:
+        reason = None
+
+    if reason is not None:
+        log_info(f"[Frontend] Running npm run build ({reason})...", COLOR_FRONTEND, 0)
         try:
             subprocess.run(["npm", "run", "build"], check=True, shell=shell_required)
         except subprocess.CalledProcessError as e:
@@ -339,8 +382,22 @@ def check_install_build(dir, force_rebuild=False):
         except Exception as e:
             log_error(f"[Frontend] Failed to run 'npm run build': {e}")
             clean_shutdown()
+        else:
+            # Written after a successful build only, so a failed one does not
+            # leave a stamp claiming the bundle matches.
+            try:
+                os.makedirs(build_dir, exist_ok=True)
+                with open(stamp_path, "w", encoding="utf-8") as fh:
+                    fh.write(wanted_url)
+            except OSError as exc:
+                log_info(
+                    f"[Frontend] Could not record the built backend URL ({exc}); "
+                    f"the next start will rebuild.",
+                    COLOR_FRONTEND,
+                    0,
+                )
     else:
-        log_info(f"[Frontend] {build_dir} directory exists. Skipping npm run build.", COLOR_FRONTEND, 0)
+        log_info(f"[Frontend] {build_dir} is current for {wanted_url}. Skipping npm run build.", COLOR_FRONTEND, 0)
 
 def force_rebuild_frontend():
     log_info(f"[Frontend] Force rebuild requested.", COLOR_FRONTEND, 0)
