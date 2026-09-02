@@ -21,6 +21,7 @@ import { packageKeyFromCanonicalNodeType } from "../registry/packageKeys";
 import { NodeType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { DEFAULT_DELETE_KEY_CODES } from "./canvasKeyBindings";
+import { useRunSelectedNodeShortcut } from "../hook/useRunSelectedNodeShortcut";
 import UniversalNode from "./UniversalNode";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { useCode } from "../hook/useCode";
@@ -165,6 +166,11 @@ export function MainCanvas() {
         dashboardPins,
         viewerMode,
     } = useFlowContext();
+
+    // Ctrl/Cmd+Enter on a selected node. Gated on !dashboardOn to match the
+    // play button, which styles.tsx hides in dashboard mode -- a shortcut for a
+    // control that is not on screen is a surprise (#223).
+    useRunSelectedNodeShortcut(!dashboardOn);
 
     // When real-time collaboration is on, a peer opening the owner's URL
     // lands in ``viewerMode === "shared"`` (loadSharedProject was the only

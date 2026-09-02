@@ -72,6 +72,7 @@ import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
 import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
 import { nodeRunStatus } from "../utils/nodeRunStatus";
+import { RUN_NODE_SHORTCUT_LABEL } from "./canvasKeyBindings";
 import { hasNodeDescription } from "../utils/nodeDescription";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
@@ -744,6 +745,11 @@ export const NodeContainer = ({
                                         <FontAwesomeIcon
                                             className={"nowheel nodrag"}
                                             icon={faCirclePlay}
+                                            // The shortcut is only useful if it
+                                            // is discoverable, and the play
+                                            // button is where someone looks for
+                                            // "how do I run this" (#223).
+                                            title={`Run this node (${RUN_NODE_SHORTCUT_LABEL})`}
                                             style={{
                                                 cursor: "pointer",
                                                 fontSize: "27px",

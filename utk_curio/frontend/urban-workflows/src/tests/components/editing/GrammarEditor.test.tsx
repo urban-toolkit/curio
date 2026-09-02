@@ -54,6 +54,13 @@ jest.mock("@monaco-editor/react", () => {
     return { __esModule: true, default: MockEditor, __editors: editors };
 });
 
+// The editor reads playNodesUpTo for the Ctrl/Cmd+Enter binding (#223), and
+// FlowProvider pulls in the registry -> adapters -> vega chain, which does not
+// load under jsdom. Same stub pattern the other suites that touch it use.
+jest.mock("../../../providers/FlowProvider", () => ({
+    useFlowContext: () => ({ playNodesUpTo: jest.fn() }),
+}));
+
 jest.mock("../../../providers/CollaborationProvider", () => ({
     useCollab: () => ({
         enabled: false,
