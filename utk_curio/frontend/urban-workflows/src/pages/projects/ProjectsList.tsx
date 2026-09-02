@@ -3,6 +3,8 @@ import CSS from "csstype";
 import { useNavigate } from "react-router-dom";
 import { permanentDeletionNotice } from "../../services/retentionCopy";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
+import { useToastContext } from "../../providers/ToastProvider";
+import { projectActions, type ProjectActionId } from "./projectActions";
 import { notebookToTrill } from "../../NotebookConvertor";
 import DataflowThumbnail from "../../components/DataflowThumbnail";
 import {
@@ -90,7 +92,11 @@ const ProjectsList: React.FC = () => {
   // #197: the rename prompt and the delete confirmation are app modals now,
   // each holding the project it was opened for.
   const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
+  const { showToast } = useToastContext();
   const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
+  // The project an action is currently running against. A purge can take a
+  // while, and the buttons were re-clickable throughout.
+  const [busyId, setBusyId] = useState<string | null>(null);
   const importNotebookRef = useRef<HTMLInputElement>(null);
 
   const loadProjects = useCallback(async () => {
@@ -171,24 +177,66 @@ const ProjectsList: React.FC = () => {
   };
 
   const handleArchive = async (project: ProjectSummary) => {
+    setBusyId(project.id);
     try {
       await projectsApi.delete(project.id);
       loadProjects();
+      showToast(`Archived "${project.name}".`, "success");
     } catch (err) {
-      console.error("Archive failed:", err);
+      // Was a bare console.error, so a failed archive looked exactly like a
+      // successful one to anyone not holding the devtools open.
+      showToast((err as Error)?.message || "Couldn't archive that dataflow.", "error");
+    } finally {
+      setBusyId(null);
     }
   };
 
   const performDeleteForever = async (project: ProjectSummary) => {
+    setBusyId(project.id);
     try {
       await projectsApi.delete(project.id, { purge: true });
       loadProjects();
+      showToast(`Deleted "${project.name}".`, "success");
     } catch (err) {
-      console.error("Delete failed:", err);
+      showToast((err as Error)?.message || "Couldn't delete that dataflow.", "error");
+    } finally {
+      setBusyId(null);
     }
   };
 
   const handleDeleteForever = (project: ProjectSummary) => setDeleteTarget(project);
+
+  /**
+   * Run one action from {@link projectActions}, whichever surface asked.
+   *
+   * The single dispatch is what keeps the drawer and the context menu in step:
+   * they render the same list and call the same thing, so an action cannot
+   * behave differently depending on where it was clicked (#221).
+   */
+  const runProjectAction = (id: ProjectActionId, project: ProjectSummary) => {
+    switch (id) {
+      case "open":
+        openProject(project.id);
+        return;
+      case "rename":
+        handleRename(project);
+        return;
+      case "duplicate":
+        void handleDuplicate(project);
+        return;
+      case "archive":
+        void handleArchive(project);
+        return;
+      case "delete":
+        handleDeleteForever(project);
+        return;
+      case "restore":
+        // Not offered yet: there is no restore route. Listed in the action
+        // union so adding one is a compile error here rather than a silent
+        // no-op on whichever surface forgot it.
+        return;
+    }
+  };
 
   const handleNotebookImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -438,43 +486,29 @@ const ProjectsList: React.FC = () => {
                 </button>
               }
               secondaryAction={
-                <>
-                  <div className={styles.detailButtonRow}>
-                    <button
-                      className={styles.secondaryButton}
-                      type="button"
-                      onClick={() => handleRename(selected)}
-                    >
-                      Rename
-                    </button>
-                    <button
-                      className={styles.secondaryButton}
-                      type="button"
-                      onClick={() => handleDuplicate(selected)}
-                    >
-                      Duplicate
-                    </button>
-                  </div>
-                  <div className={styles.detailButtonRow}>
-                    {selected.archived_at ? (
+                // Rendered from ``projectActions`` — the same list the context
+                // menu below uses, so the two surfaces cannot disagree about
+                // what may be done to a project again (#221). "Open" is the
+                // primary action above, so it is dropped here.
+                <div className={styles.detailButtonRow}>
+                  {projectActions({ archived: Boolean(selected.archived_at) })
+                    .filter((action) => action.id !== "open")
+                    .map((action) => (
                       <button
-                        className={joined(styles.secondaryButton, styles.dangerButton)}
+                        key={action.id}
+                        className={
+                          action.destructive
+                            ? joined(styles.secondaryButton, styles.dangerButton)
+                            : styles.secondaryButton
+                        }
                         type="button"
-                        onClick={() => handleDeleteForever(selected)}
+                        disabled={busyId === selected.id}
+                        onClick={() => runProjectAction(action.id, selected)}
                       >
-                        Delete forever
+                        {action.label}
                       </button>
-                    ) : (
-                      <button
-                        className={styles.secondaryButton}
-                        type="button"
-                        onClick={() => handleArchive(selected)}
-                      >
-                        Archive
-                      </button>
-                    )}
-                  </div>
-                </>
+                    ))}
+                </div>
               }
             />
           )}
@@ -495,21 +529,30 @@ const ProjectsList: React.FC = () => {
             boxShadow: "var(--curio-shadow-context-menu)",
           }}
         >
-          <div style={ctxItemStyle} onClick={() => openProject(contextMenu.project.id)}>
-            Open
-          </div>
-          <div style={ctxItemStyle} onClick={() => { handleRename(contextMenu.project); setContextMenu(null); }}>
-            Rename
-          </div>
-          <div style={ctxItemStyle} onClick={() => { handleDuplicate(contextMenu.project); setContextMenu(null); }}>
-            Duplicate
-          </div>
-          <div style={ctxItemStyle} onClick={() => { handleArchive(contextMenu.project); setContextMenu(null); }}>
-            Archive
-          </div>
-          <div style={{ ...ctxItemStyle, color: "var(--curio-danger)" }} onClick={() => { handleDeleteForever(contextMenu.project); setContextMenu(null); }}>
-            Delete forever
-          </div>
+          {/* The same list the detail drawer renders. It used to hardcode five
+              items with no reference to ``archived_at``, so it offered Archive
+              on an already-archived project and disagreed with the drawer about
+              Delete forever (#221). Real buttons, not clickable divs: these are
+              actions and were unreachable by keyboard. */}
+          {projectActions({ archived: Boolean(contextMenu.project.archived_at) }).map(
+            (action) => (
+              <button
+                key={action.id}
+                type="button"
+                style={
+                  action.destructive
+                    ? { ...ctxItemStyle, color: "var(--curio-danger)" }
+                    : ctxItemStyle
+                }
+                onClick={() => {
+                  runProjectAction(action.id, contextMenu.project);
+                  setContextMenu(null);
+                }}
+              >
+                {action.label}
+              </button>
+            ),
+          )}
         </div>
       )}
       {renameTarget ? (
@@ -555,6 +598,14 @@ export default ProjectsList;
 /* ---- Styles ---- */
 
 const ctxItemStyle: CSS.Properties = {
+  // These are <button>s now rather than clickable <div>s, so the browser's own
+  // button chrome has to be reset for the row to look as it did. Worth the
+  // extra lines: the divs were unreachable by keyboard and announced as nothing.
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  background: "none",
+  border: "none",
   padding: "8px 16px",
   color: "var(--curio-text-on-dark)",
   fontSize: "var(--curio-font-size-md)",
