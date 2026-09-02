@@ -3,15 +3,16 @@
 Covers two issues that live in the same panel:
 
 - **#241** - the Model field said "This provider does not publish a model list"
-  for Anthropic and Gemini. Nobody had asked them. It now asks, and falls back
-  to a curated list when it cannot, so there is always something to pick.
+  for Anthropic and Gemini. Nobody had asked them. It now asks, and when it
+  cannot it replays what that endpoint last reported, labelled as a replay.
 - **#242** - the account holds one API key, but the panel showed "saved" on
   every provider tab, and saving from a different tab quietly kept the previous
   provider's key under the new provider's name.
 
 Nothing here reaches a provider. The #241 cases use the no-key short circuit
-(the backend answers from the curated list without opening a socket) and one
-stubbed response; the #242 cases only exercise ``PATCH /api/auth/me``.
+(the backend refuses without opening a socket) and stubbed responses for the
+shapes that would otherwise need a live key; the #242 cases only exercise
+``PATCH /api/auth/me``.
 
 Run::
 
@@ -99,7 +100,13 @@ def _wait_for_model_menu(page, timeout: float = 20000):
 
 
 def test_anthropic_is_no_longer_declared_unlistable(ai_settings):
-    """The exact copy from the issue must be gone, and something offered."""
+    """The exact copy from the issue must be gone, and the reason must be real.
+
+    A fresh account has no key and nothing recorded for Anthropic, so there is
+    genuinely nothing to offer - and saying so is the point. The old panel
+    claimed the *provider* published no list, which was untrue; the honest
+    answer names the missing key, which the user can act on.
+    """
     page = ai_settings
     _tab(page, "Anthropic").click()
 
@@ -109,43 +116,71 @@ def test_anthropic_is_no_longer_declared_unlistable(ai_settings):
         timeout=30000,
     ) as listed:
         _fetch_models(page)
-    assert listed.value.ok, f"listing answered HTTP {listed.value.status}"
-
-    # No key is configured, so the backend answers from the curated list
-    # without opening a socket to Anthropic.
-    _wait_for_model_menu(page)
-    model = page.locator(MODEL)
-    options = model.locator("option").all_inner_texts()
-    assert any("claude" in o for o in options), f"no curated models offered: {options}"
 
     body = page.locator('[role="dialog"]').inner_text()
     assert "does not publish a model list" not in body, (
         "the panel still makes the claim #241 was filed about"
     )
+    assert re.search(r"API key", body, re.I), (
+        f"the reason should name what is missing, got: {body[-400:]!r}"
+    )
+    # Nothing was ever recorded for this endpoint, so the route says so rather
+    # than inventing suggestions.
+    assert listed.value.status == 400, (
+        f"expected the honest cold-start 400, got {listed.value.status}"
+    )
+    # And configuring is still possible: the field never stops being free text.
+    assert page.locator(MODEL).evaluate("el => el.tagName") == "INPUT"
 
 
-def test_it_says_why_it_is_offering_known_models(ai_settings):
-    page = ai_settings
-    _tab(page, "Anthropic").click()
-    _fetch_models(page)
+def test_a_replay_is_labelled_as_one(ai_settings, page):
+    """A recording must never read as the present tense.
 
-    note = page.get_by_text(re.compile("Showing known models", re.I))
-    expect(note).to_be_visible(timeout=15000)
-    # And the reason, so the user knows a live list is one key away.
-    expect(page.get_by_text(re.compile("API key", re.I)).first).to_be_visible()
-
-
-def test_curated_suggestions_sit_in_their_own_group(ai_settings, page):
-    """A suggestion must not read as something the endpoint reported."""
+    Reaching the replay path for real needs a prior successful listing, which
+    needs a live provider key, so the response is stubbed. What is under test is
+    the panel's honesty about *which* source answered, which is exactly what a
+    stub can establish.
+    """
     def _stub(route):
         route.fulfill(
             status=200,
             content_type="application/json",
             body=json.dumps({
-                "models": ["endpoint-only-model", "gpt-4o-mini"],
+                "models": ["claude-sonnet-5", "claude-haiku-4-5"],
+                "listable": False,
+                "source": "remembered",
+                "remembered": ["claude-sonnet-5", "claude-haiku-4-5"],
+                "rememberedAt": "2026-09-01T12:00:00+00:00",
+                "warning": "Add an API key above to ask this provider what it serves.",
+            }),
+        )
+
+    page.route("**/api/agents/provider-models", _stub)
+    _tab(ai_settings, "Anthropic").click()
+    _fetch_models(ai_settings)
+
+    _wait_for_model_menu(ai_settings)
+    label = ai_settings.locator(f"{MODEL} optgroup").first.get_attribute("label")
+    assert label and "Last reported" in label, f"unlabelled replay: {label!r}"
+    assert "2026" in label, f"a replay must say when it was true: {label!r}"
+
+    # The reason the live call did not happen sits beside it, actionable.
+    expect(
+        ai_settings.get_by_text(re.compile("Add an API key above", re.I))
+    ).to_be_visible()
+
+
+def test_a_live_listing_is_not_labelled_as_a_replay(ai_settings, page):
+    def _stub(route):
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({
+                "models": ["endpoint-model-a", "endpoint-model-b"],
                 "listable": True,
-                "source": "live+curated",
-                "curated": ["gpt-4o-mini"],
+                "source": "live",
+                "remembered": [],
+                "rememberedAt": None,
                 "warning": None,
             }),
         )
@@ -154,15 +189,13 @@ def test_curated_suggestions_sit_in_their_own_group(ai_settings, page):
     _fetch_models(ai_settings)
 
     _wait_for_model_menu(ai_settings)
-    model = ai_settings.locator(MODEL)
-    labels = model.locator("optgroup").evaluate_all(
-        "els => els.map(e => e.getAttribute('label'))"
-    )
-    assert labels == ["From this endpoint", "Known models for this provider"], labels
+    label = ai_settings.locator(f"{MODEL} optgroup").first.get_attribute("label")
+    assert label == "From this endpoint", f"live list mislabelled: {label!r}"
+    assert ai_settings.get_by_text(re.compile("Last reported", re.I)).count() == 0
 
 
 def test_the_model_field_is_free_text_until_asked(ai_settings):
-    """Fetch stays the trigger: the curated list is a convenience, not a gate."""
+    """Fetch stays the trigger: suggestions are a convenience, not a gate."""
     model = ai_settings.locator(MODEL)
     assert model.evaluate("el => el.tagName") == "INPUT"
     _tab(ai_settings, "Anthropic").click()

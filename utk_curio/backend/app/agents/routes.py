@@ -135,24 +135,34 @@ def list_provider_models():
     retyping a secret. A blank ``apiKey`` in particular means "use the saved
     one", matching the panel's own "blank means keep" rule.
 
-    **Hybrid, per #241.** Two sources answer this, in that order of authority:
+    **Hybrid, per #241 - and both halves come from the API.** Two sources:
 
-    - *Live*: what the endpoint reports. Now asked of Anthropic and Gemini too,
+    - *Live*: what the endpoint reports now. Asked of Anthropic and Gemini too,
       not only OpenAI-compatible endpoints. The old code never asked them and
       reported ``listable: false``, which read as "this provider publishes no
       model list" - a claim that was not true.
-    - *Curated*: a short per-provider fallback (``agents/model_catalog.py``),
-      appended after anything live and returned on its own when the live call
-      cannot happen. It is a suggestion list, never an allowlist: the Model
-      field stays free text and a saved model is never rejected here.
+    - *Remembered*: what this endpoint reported the last time it was asked
+      (``agents/model_catalog.py``), recorded per user on every success. Serves
+      as the fallback when a live listing cannot happen, labelled with when it
+      was seen.
 
-    A live failure is therefore a 200 with ``source: "curated"`` and the reason
-    in ``warning`` whenever a curated list exists, because "here is a shorter
-    list and why" beats an error and an empty box. Only a provider with no
-    curated list of its own - a custom endpoint, where there is no such thing as
-    a model it probably serves - still answers 400.
+    Nothing here is authored by hand. The first cut of this route carried a
+    literal table of model ids, which drifts silently the moment a provider
+    ships or retires one, and could never say anything about a custom endpoint.
+    A recording of what an endpoint said about itself has neither problem.
+
+    Suggestions are never an allowlist: the Model field stays free text, a live
+    listing always wins, and a model typed by hand is always accepted. So a live
+    failure is a 200 with ``source: "remembered"`` and the reason in ``warning``
+    when something was remembered, because "here is what it said last time, and
+    why we could not ask now" beats an error and an empty box. With nothing
+    remembered - a new account that has not pasted a key - the reason *is* the
+    answer and this is a 400.
     """
-    from utk_curio.backend.app.agents.model_catalog import curated_for
+    from utk_curio.backend.app.agents.model_catalog import (
+        remember_models,
+        remembered_models,
+    )
     from utk_curio.backend.app.agents.provider_config import (
         resolve_provider_config,
     )
@@ -181,7 +191,7 @@ def list_provider_models():
             api_key = api_key or (resolved.api_key or "")
 
     api_type = api_type or "openai_compatible"
-    curated = curated_for(api_type, base_url)
+    user_key = _user_dir_key(g.user)
 
     try:
         live = fetch_models(
@@ -189,31 +199,35 @@ def list_provider_models():
                 api_key=api_key, api_type=api_type, base_url=base_url, model="",
             )
         )
-        warning = None
     except ModelListingUnavailable as exc:
-        if not curated:
-            # Nothing to fall back to, so the reason IS the answer. 400 rather
-            # than 500: the user is mid-edit and the message tells them which
-            # field is wrong.
+        remembered, seen_at = remembered_models(user_key, api_type, base_url)
+        if not remembered:
+            # Nothing was ever recorded for this endpoint, so the reason IS the
+            # answer. 400 rather than 500: the user is mid-edit and the message
+            # tells them which field to fill in.
             return _error(str(exc), 400)
-        live, warning = [], str(exc)
+        return jsonify({
+            "models": remembered,
+            "listable": False,
+            "source": "remembered",
+            "remembered": remembered,
+            "rememberedAt": seen_at,
+            "warning": str(exc),
+        }), 200
 
-    seen = set(live)
-    merged = list(live) + [m for m in curated if m not in seen]
-    source = (
-        "live+curated" if live and len(merged) > len(live)
-        else "live" if live
-        else "curated" if merged
-        else "none"
-    )
+    # A live answer supersedes the recording, and becomes the next one. Writing
+    # is best-effort inside remember_models: a store that cannot be written must
+    # not turn a working listing into an error.
+    remember_models(user_key, api_type, base_url, live)
     return jsonify({
-        "models": merged,
-        # Kept for callers written against the old shape. It now means what it
+        "models": live,
+        # Kept for callers written against the older shape. It means what it
         # says: the endpoint itself answered.
-        "listable": bool(live),
-        "source": source,
-        "curated": curated,
-        "warning": warning,
+        "listable": True,
+        "source": "live",
+        "remembered": [],
+        "rememberedAt": None,
+        "warning": None,
     }), 200
 
 

@@ -633,11 +633,11 @@ export const agentsApi = {
    * the account's saved provider server-side, so an already-configured user can
    * refresh without retyping their key.
    *
-   * Hybrid since #241. `models` is what the endpoint reported, topped up with
-   * a short curated list for that provider; `source` says which of the two
-   * answered, `curated` is the subset the panel groups separately, and
-   * `warning` carries the reason a live listing did not happen. `listable`
-   * means the endpoint itself answered, and is kept for older callers. */
+   * Hybrid since #241, with both halves coming from the API. `source` is
+   * `"live"` when the endpoint answered just now, or `"remembered"` when it
+   * could not and Curio is replaying what it last reported - `rememberedAt`
+   * says when that was, and `warning` why the live call did not happen.
+   * `listable` means the endpoint itself answered; kept for older callers. */
   providerModels(input?: {
     apiType?: string;
     baseUrl?: string;
@@ -645,8 +645,9 @@ export const agentsApi = {
   }): Promise<{
     models: string[];
     listable: boolean;
-    source?: "live" | "curated" | "live+curated" | "none";
-    curated?: string[];
+    source?: "live" | "remembered";
+    remembered?: string[];
+    rememberedAt?: string | null;
     warning?: string | null;
   }> {
     return apiFetch("/api/agents/provider-models", {

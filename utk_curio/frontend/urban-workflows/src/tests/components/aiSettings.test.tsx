@@ -45,7 +45,8 @@ let mockModels: {
   models: string[];
   listable: boolean;
   source?: string;
-  curated?: string[];
+  remembered?: string[];
+  rememberedAt?: string | null;
   warning?: string | null;
 } = {
   models: [],
@@ -356,33 +357,37 @@ describe("AI Settings: choosing a model from the endpoint", () => {
 
 /**
  * #241 asked whether Curio should discover models dynamically, ship a fixed
- * list, or do both. It does both.
+ * list, or do both. It does both - and both halves come from the API.
  *
- * Two things this suite has to keep honest. The panel must never claim a
- * provider "does not publish a model list" - that was the old copy for
- * Anthropic and Gemini, and it was untrue: nobody had asked them. And a
- * curated suggestion must stay visibly distinct from what an endpoint actually
- * reported, because confusing the two is how a model the endpoint does not have
- * gets saved, which surfaces much later as a failed agent run.
+ * The fallback is a *recording*: what this endpoint reported the last time it
+ * could be asked, kept per account. Nothing is authored, so nothing drifts and
+ * nobody maintains it. Two things this suite has to keep honest. The panel must
+ * never claim a provider "does not publish a model list" - that was the old
+ * copy for Anthropic and Gemini, and it was untrue: nobody had asked them. And
+ * a replay must never read as the present tense, because saving a model the
+ * endpoint no longer has surfaces much later as a failed agent run.
  *
  * The guard tests above still apply and are load-bearing: the field is free
  * text until Fetch is pressed, and one provider's list is never offered for
  * another.
  */
-describe("AI Settings: the curated fallback", () => {
+describe("AI Settings: replaying the last listing", () => {
+  const REMEMBERED = {
+    models: ["claude-sonnet-5", "claude-haiku-4-5"],
+    listable: false,
+    source: "remembered",
+    remembered: ["claude-sonnet-5", "claude-haiku-4-5"],
+    rememberedAt: "2026-09-01T12:00:00+00:00",
+    warning: "Add an API key above to ask this provider what it serves.",
+  };
+
   const fetchModels = async () => {
     fireEvent.click(screen.getByRole("button", { name: /Fetch models/i }));
     await waitFor(() => expect(agentsApi.providerModels).toHaveBeenCalled());
   };
 
-  it("offers known models when the endpoint could not be asked", async () => {
-    mockModels = {
-      models: ["claude-sonnet-5", "claude-haiku-4-5"],
-      listable: false,
-      source: "curated",
-      curated: ["claude-sonnet-5", "claude-haiku-4-5"],
-      warning: "Add an API key above to ask this provider what it serves.",
-    };
+  it("offers what the endpoint last reported when it cannot be asked now", async () => {
+    mockModels = { ...REMEMBERED };
     open();
     fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
     await fetchModels();
@@ -396,67 +401,36 @@ describe("AI Settings: the curated fallback", () => {
 
   it("never says a provider publishes no model list", async () => {
     // The old copy. It was wrong, and it was a dead end for the user.
-    mockModels = {
-      models: ["claude-sonnet-5"],
-      listable: false,
-      source: "curated",
-      curated: ["claude-sonnet-5"],
-      warning: "Could not list models: 401",
-    };
+    mockModels = { ...REMEMBERED, warning: "Could not list models: 401" };
     const { baseElement } = open();
     fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
     await fetchModels();
     expect(baseElement.textContent).not.toMatch(/does not publish a model list/i);
   });
 
-  it("says why it is offering a curated list rather than a live one", async () => {
-    mockModels = {
-      models: ["claude-sonnet-5"],
-      listable: false,
-      source: "curated",
-      curated: ["claude-sonnet-5"],
-      warning: "Add an API key above to ask this provider what it serves.",
-    };
+  it("says these are a replay, and when they were true", async () => {
+    // Presenting a recording as the present tense is the failure mode here.
+    mockModels = { ...REMEMBERED };
     open();
     fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
     await fetchModels();
-    expect(await screen.findByText(/Add an API key above/)).toBeInTheDocument();
-    expect(screen.getByText(/Showing known models/i)).toBeInTheDocument();
-  });
 
-  it("keeps curated suggestions in their own group, after the live ones", async () => {
-    // A suggestion read as "what this endpoint serves" is how the wrong model
-    // gets saved.
-    mockModels = {
-      models: ["endpoint-model", "gpt-4o-mini"],
-      listable: true,
-      source: "live+curated",
-      curated: ["gpt-4o-mini"],
-      warning: null,
-    };
-    open();
-    await fetchModels();
+    expect(await screen.findByText(/Add an API key above/)).toBeInTheDocument();
+    expect(screen.getByText(/last reported/i)).toBeInTheDocument();
 
     const select = (await screen.findByLabelText("Model")) as HTMLSelectElement;
-    const groups = Array.from(select.querySelectorAll("optgroup"));
-    expect(groups.map((g) => g.getAttribute("label"))).toEqual([
-      "From this endpoint",
-      "Known models for this provider",
-    ]);
-    expect(
-      Array.from(groups[0].querySelectorAll("option")).map((o) => o.value),
-    ).toEqual(["endpoint-model"]);
-    expect(
-      Array.from(groups[1].querySelectorAll("option")).map((o) => o.value),
-    ).toEqual(["gpt-4o-mini"]);
+    const label = select.querySelector("optgroup")!.getAttribute("label")!;
+    expect(label).toMatch(/Last reported by this endpoint/i);
+    expect(label).toMatch(/2026/);
   });
 
-  it("draws no curated group when everything came from the endpoint", async () => {
+  it("labels a live list as current, with no date", async () => {
     mockModels = {
-      models: ["gemma4"],
+      models: ["gemma4", "llama4-nim"],
       listable: true,
       source: "live",
-      curated: [],
+      remembered: [],
+      rememberedAt: null,
       warning: null,
     };
     open();
@@ -464,21 +438,28 @@ describe("AI Settings: the curated fallback", () => {
 
     const select = (await screen.findByLabelText("Model")) as HTMLSelectElement;
     expect(
-      Array.from(select.querySelectorAll("optgroup")).map((g) =>
-        g.getAttribute("label"),
-      ),
-    ).toEqual(["From this endpoint"]);
+      select.querySelector("optgroup")!.getAttribute("label"),
+    ).toBe("From this endpoint");
+    expect(screen.queryByText(/last reported/i)).toBeNull();
   });
 
-  it("drops the curated list when the provider changes", async () => {
-    // A suggestion for Anthropic offered on the OpenAI tab is worse than none.
-    mockModels = {
-      models: ["claude-sonnet-5"],
-      listable: false,
-      source: "curated",
-      curated: ["claude-sonnet-5"],
-      warning: "no key",
-    };
+  it("survives a replay with no usable timestamp", async () => {
+    // An older store entry may carry models but no seenAt. Worth showing the
+    // models; not worth an "Invalid Date" in the label.
+    mockModels = { ...REMEMBERED, rememberedAt: null };
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    await fetchModels();
+
+    const select = (await screen.findByLabelText("Model")) as HTMLSelectElement;
+    const label = select.querySelector("optgroup")!.getAttribute("label")!;
+    expect(label).toMatch(/Last reported by this endpoint/i);
+    expect(label).not.toMatch(/Invalid Date/);
+  });
+
+  it("drops the replay when the provider changes", async () => {
+    // One provider's models offered for another is worse than none.
+    mockModels = { ...REMEMBERED };
     open();
     fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
     await fetchModels();
@@ -486,15 +467,16 @@ describe("AI Settings: the curated fallback", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
     expect(screen.getByLabelText("Model")).toHaveProperty("tagName", "INPUT");
-    expect(screen.queryByText(/Showing known models/i)).toBeNull();
+    expect(screen.queryByText(/last reported/i)).toBeNull();
   });
 
   it("still reports an endpoint that answered with nothing at all", async () => {
     mockModels = {
       models: [],
       listable: true,
-      source: "none",
-      curated: [],
+      source: "live",
+      remembered: [],
+      rememberedAt: null,
       warning: null,
     };
     open();
@@ -505,22 +487,6 @@ describe("AI Settings: the curated fallback", () => {
   });
 });
 
-/**
- * #242: the saved API key belongs to ONE provider.
- *
- * Curio stores a single credential per account - `user.llm_api_key` alongside
- * `user.llm_api_type` - but this panel has a tab per provider. Every tab read
- * the same `has_llm_api_key`, so configuring Gemini made OpenAI, Anthropic and
- * Custom all claim a saved key too.
- *
- * The cosmetic half of that is confusing. The other half is a real defect:
- * `handleSave` sent `apiKey || undefined`, `patch_me` leaves `llm_api_key`
- * untouched when the field is absent, and it writes the new `llm_api_type`
- * regardless. Switching to Anthropic and pressing Save therefore kept the
- * Gemini key, relabelled it Anthropic, and `resolve_provider_config` then sent
- * it to Anthropic - which fails as an authentication error nowhere near the
- * screen that caused it.
- */
 describe("AI Settings: the saved key belongs to one provider", () => {
   const SAVED_ON_GEMINI = {
     ...SIGNED_IN,
@@ -649,31 +615,33 @@ describe("AI Settings: the saved key belongs to one provider", () => {
 });
 
 describe("AI Settings: refetching after the first answer", () => {
-  it("drops the curated explanation once a live list arrives", async () => {
+  it("drops the replay explanation once a live list arrives", async () => {
     // Fetch with no key, paste one, Refresh. The old note would otherwise sit
     // over a list that is now genuinely from the endpoint.
     mockModels = {
       models: ["claude-sonnet-5"],
       listable: false,
-      source: "curated",
-      curated: ["claude-sonnet-5"],
+      source: "remembered",
+      remembered: ["claude-sonnet-5"],
+      rememberedAt: "2026-09-01T12:00:00+00:00",
       warning: "Add an API key above to ask this provider what it serves.",
     };
     open();
     fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
     fireEvent.click(screen.getByRole("button", { name: /Fetch models/i }));
-    await screen.findByText(/Showing known models/i);
+    await screen.findByText(/last reported/i);
 
     mockModels = {
       models: ["claude-opus-5"],
       listable: true,
       source: "live",
-      curated: [],
+      remembered: [],
+      rememberedAt: null,
       warning: null,
     };
     fireEvent.click(screen.getByRole("button", { name: /Refresh models/i }));
     await waitFor(() =>
-      expect(screen.queryByText(/Showing known models/i)).toBeNull(),
+      expect(screen.queryByText(/last reported/i)).toBeNull(),
     );
   });
 });
@@ -681,9 +649,9 @@ describe("AI Settings: refetching after the first answer", () => {
 describe("AI Settings: the model suggestions are canonical ids", () => {
   it("offers no date-suffixed model as a placeholder", async () => {
     // The Anthropic placeholder read `claude-haiku-4-5-20251001` while the
-    // backend's curated list offered the bare `claude-haiku-4-5`, so the same
-    // model appeared under two spellings on one screen. A constructed
-    // `-YYYYMMDD` variant is also not guaranteed to resolve at the provider.
+    // provider reports the bare `claude-haiku-4-5`, so the same model appeared
+    // under two spellings on one screen. A constructed `-YYYYMMDD` variant is
+    // also not guaranteed to resolve at the provider.
     const suffixed = /-20\d{6}/;
     for (const tab of ["OpenAI", "Anthropic", "Gemini"]) {
       const { unmount } = render(<AiSettingsModal isOpen onClose={jest.fn()} />);

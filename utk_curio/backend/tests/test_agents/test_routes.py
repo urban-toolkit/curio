@@ -7549,12 +7549,15 @@ class TestProviderModels:
     endpoint what it serves - and it has to be able to ask *before* the user
     saves, which is why this is a POST carrying the credentials on screen.
 
-    #241 made the answer hybrid. Two things changed and both are asserted here:
-    Anthropic and Gemini are now actually *asked* (the route used to report them
-    unlistable without trying, which was not true), and a provider that cannot
-    answer falls back to a curated list rather than to an error and an empty
-    box. The curated list is a suggestion, never an allowlist, so nothing here
-    should ever assert that a model was refused.
+    #241 made the answer hybrid, and both halves come from the API. Anthropic
+    and Gemini are now actually *asked* (the route used to report them
+    unlistable without trying, which was not true), and when a live listing
+    cannot happen the route replays what that endpoint last reported rather than
+    answering with an error and an empty box.
+
+    Nothing here is authored: the fallback is a recording, so the tests below
+    always establish it by performing a successful fetch first. And nothing is
+    ever an allowlist - no assertion here should ever say a model was refused.
     """
 
     URL = "/api/agents/provider-models"
@@ -7580,6 +7583,17 @@ class TestProviderModels:
         monkeypatch.setattr(anthropic, "Anthropic", _boom)
         monkeypatch.setattr(genai, "configure", _boom)
         monkeypatch.setattr(genai, "list_models", _boom)
+
+    @pytest.fixture(autouse=True)
+    def _fresh_store(self, tmp_path, monkeypatch):
+        """Give each case its own suggestion store.
+
+        The fallback is a recording now, so a leaked one from a previous test
+        would let a case pass without ever having fetched anything.
+        """
+        from utk_curio.backend.app.agents import model_catalog
+
+        monkeypatch.setattr(model_catalog, "_users_base", lambda: tmp_path)
 
     @staticmethod
     def _no_deployment_key(monkeypatch):
@@ -7695,9 +7709,6 @@ class TestProviderModels:
         assert body["listable"] is True
         assert body["source"] == "live"
         assert body["warning"] is None
-        # A custom endpoint has no curated list: there is no such thing as a
-        # model some unknown OpenAI-compatible server probably serves.
-        assert body["curated"] == []
 
     def test_uses_the_credentials_in_the_request(self, client, user_and_token, monkeypatch):
         # The panel calls this mid-edit, before Save. Listing against the saved
@@ -7760,66 +7771,105 @@ class TestProviderModels:
 
     # -- the curated fallback ---------------------------------------------
 
-    def test_a_provider_that_cannot_be_reached_falls_back_to_curated(
+    def test_a_provider_that_cannot_be_reached_replays_its_last_listing(
         self, client, user_and_token, monkeypatch
     ):
-        # An error and an empty box leaves the user with nothing to pick. A
-        # short list plus the reason leaves them able to finish.
-        self._fake_anthropic(monkeypatch, raises=RuntimeError("connection refused"))
+        # An error and an empty box leaves the user with nothing to pick. What
+        # the endpoint said last time, plus why we could not ask now, leaves
+        # them able to finish.
         _, token = user_and_token
-        res = client.post(
-            self.URL,
-            headers=_auth(token),
-            json={"apiType": "anthropic", "apiKey": "sk-ant-typed"},
-        )
+        body_json = {"apiType": "anthropic", "apiKey": "sk-ant-typed"}
+
+        self._fake_anthropic(monkeypatch, models=["claude-sonnet-5"])
+        assert client.post(self.URL, headers=_auth(token), json=body_json).status_code == 200
+
+        self._fake_anthropic(monkeypatch, raises=RuntimeError("connection refused"))
+        res = client.post(self.URL, headers=_auth(token), json=body_json)
         assert res.status_code == 200
         body = res.get_json()
-        assert body["source"] == "curated"
+        assert body["source"] == "remembered"
         assert body["listable"] is False
-        assert body["models"] and body["models"] == body["curated"]
+        assert body["models"] == ["claude-sonnet-5"]
+        assert body["rememberedAt"], "the panel has to be able to say when"
         assert "connection refused" in body["warning"]
 
-    def test_no_key_is_answered_from_the_curated_list_without_a_round_trip(
+    def test_a_live_listing_becomes_the_next_fallback(
+        self, client, user_and_token, monkeypatch
+    ):
+        # The recording is refreshed on every success, which is the whole point:
+        # the suggestions track the provider without anyone maintaining them.
+        _, token = user_and_token
+        body_json = {"apiType": "gemini", "apiKey": "AIza-typed"}
+
+        self._fake_gemini(
+            monkeypatch, models=[("models/old-model", ["generateContent"])],
+        )
+        client.post(self.URL, headers=_auth(token), json=body_json)
+        self._fake_gemini(
+            monkeypatch, models=[("models/new-model", ["generateContent"])],
+        )
+        client.post(self.URL, headers=_auth(token), json=body_json)
+
+        self._fake_gemini(monkeypatch, raises=RuntimeError("offline"))
+        body = client.post(self.URL, headers=_auth(token), json=body_json).get_json()
+        assert body["models"] == ["new-model"]
+
+    def test_no_key_replays_the_last_listing_without_a_round_trip(
         self, client, user_and_token, monkeypatch
     ):
         # Every provider authenticates its models endpoint, so sending a
         # placeholder key only buys a socket timeout for a foregone 401. The
         # autouse guard is the assertion that nothing was dialled.
-        self._no_deployment_key(monkeypatch)
         _, token = user_and_token
+
+        self._fake_anthropic(monkeypatch, models=["claude-sonnet-5"])
+        client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "apiKey": "sk-ant-typed"},
+        )
+
+        self._no_deployment_key(monkeypatch)
         body = client.post(
             self.URL, headers=_auth(token), json={"apiType": "anthropic"},
         ).get_json()
-        assert body["source"] == "curated"
-        assert body["models"]
+        assert body["source"] == "remembered"
+        assert body["models"] == ["claude-sonnet-5"]
         assert "API key" in body["warning"]
 
-    def test_curated_entries_are_appended_after_the_live_ones(
+    def test_a_recording_is_scoped_to_the_endpoint_that_produced_it(
         self, client, user_and_token, monkeypatch
     ):
-        # What the endpoint reports is authoritative; the curated list only
-        # tops up, and never duplicates.
-        self._no_deployment_base_url(monkeypatch)
-        self._fake_openai(monkeypatch, models=["gpt-4o", "zzz-custom"])
+        # One provider's models must never be offered for another, and a custom
+        # endpoint is its own provider even under the same api_type.
         _, token = user_and_token
-        body = client.post(
+        self._fake_anthropic(monkeypatch, models=["claude-sonnet-5"])
+        client.post(
             self.URL,
             headers=_auth(token),
-            json={"apiType": "openai_compatible", "apiKey": "sk-typed"},
-        ).get_json()
-        assert body["source"] == "live+curated"
-        assert body["models"][:2] == ["gpt-4o", "zzz-custom"]
-        assert body["models"].count("gpt-4o") == 1
-        assert "gpt-4o-mini" in body["models"]
+            json={"apiType": "anthropic", "apiKey": "sk-ant-typed"},
+        )
+
+        self._no_deployment_key(monkeypatch)
+        self._no_deployment_base_url(monkeypatch)
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "openai_compatible", "baseUrl": "http://ollama.test/v1"},
+        )
+        # Nothing was ever recorded for that endpoint, so there is nothing to
+        # replay - not Anthropic's list.
+        assert res.status_code == 400
 
     # -- when there is nothing to fall back to ----------------------------
 
-    def test_a_rejected_key_on_a_custom_endpoint_is_a_400_that_says_why(
+    def test_a_rejected_key_with_nothing_recorded_is_a_400_that_says_why(
         self, client, user_and_token, monkeypatch
     ):
-        # A custom endpoint has no curated list, so the reason IS the answer.
-        # The user is mid-edit and the message is what tells them which field
-        # is wrong, so it has to reach them rather than becoming a bare 500.
+        # Nothing has ever been recorded for this endpoint, so the reason IS
+        # the answer. The user is mid-edit and the message is what tells them
+        # which field is wrong, so it has to reach them rather than becoming a
+        # bare 500.
         self._fake_openai(
             monkeypatch, raises=RuntimeError("401 invalid proxy server token"),
         )
@@ -7836,9 +7886,11 @@ class TestProviderModels:
         assert res.status_code == 400
         assert "invalid proxy server token" in res.get_json()["error"]
 
-    def test_a_custom_endpoint_with_no_key_says_to_add_one(
+    def test_a_new_account_with_no_key_is_told_to_add_one(
         self, client, user_and_token, monkeypatch
     ):
+        # The honest cold start: nothing recorded, no key, so no suggestions -
+        # and the Model field stays free text, which costs nothing.
         self._no_deployment_key(monkeypatch)
         _, token = user_and_token
         res = client.post(

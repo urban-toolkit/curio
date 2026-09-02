@@ -53,6 +53,21 @@ const PROVIDER_INFO: Record<UiMode, ProviderInfo> = {
   },
 };
 
+// " (on 3 Sep 2026)", or "" when the timestamp is missing or unparseable. The
+// suggestion is still worth showing without a date; the date is not worth an
+// "Invalid Date" in the label.
+function formatSeenAt(iso?: string | null): string {
+  if (!iso) return "";
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return "";
+  const shown = when.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  return " (on " + shown + ")";
+}
+
 const PROVIDER_LABEL: Record<UiMode, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
@@ -89,11 +104,15 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   // asked, or it could not tell us", and the Model field stays free text -
   // an endpoint that cannot list must not become an endpoint you cannot use.
   const [models, setModels] = useState<string[]>([]);
-  // The subset of `models` that came from the curated table rather than from
-  // the endpoint (#241). Held separately so the dropdown can group the two and
-  // the user can see which is which; a curated id is a suggestion, and reading
-  // it as "what this endpoint serves" is how a wrong model gets saved.
-  const [curatedModels, setCuratedModels] = useState<string[]>([]);
+  // When the endpoint could not be asked, `models` is a replay of what it last
+  // reported (#241). Tracked separately so the dropdown can say so: reading a
+  // recording as the present tense is how a model the endpoint no longer has
+  // gets saved, and that surfaces much later as a failed agent run.
+  //
+  // An object rather than a bare date string, because "replaying" and "we know
+  // when" are two facts and an older store entry can carry models with no
+  // timestamp. Keying the label off the date alone labelled that case as live.
+  const [replay, setReplay] = useState<{ at: string | null } | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [modelsNote, setModelsNote] = useState<string | null>(null);
@@ -126,7 +145,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setError(null);
       setSuccess(false);
       setModels([]);
-      setCuratedModels([]);
+      setReplay(null);
       setModelsError(null);
       setModelsNote(null);
     }
@@ -161,24 +180,23 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
       });
       const listed = res.models || [];
       setModels(listed);
-      setCuratedModels(res.curated || []);
+      const replaying = res.source === "remembered";
+      setReplay(replaying ? { at: res.rememberedAt ?? null } : null);
       if (!listed.length) {
         setModelsError("The endpoint returned no models.");
-      } else if (!res.listable) {
+      } else if (replaying) {
         // It used to say "This provider does not publish a model list", which
         // was both wrong (nobody had asked Anthropic or Gemini) and a dead end.
-        // Now there is always something to pick, and the reason sits next to it.
+        // Now there is something to pick, and the reason sits beside it.
+        const why = res.warning ? res.warning + " " : "";
         setModelsNote(
-          res.warning
-            ? `${res.warning} Showing known models for this provider instead.`
-            : "Showing known models for this provider.",
+          why + "Showing what this endpoint last reported" +
+            formatSeenAt(res.rememberedAt) + " instead.",
         );
-      } else if (res.source === "live+curated") {
-        setModelsNote("Known models are listed after the ones this endpoint reported.");
       }
     } catch (e: any) {
       setModels([]);
-      setCuratedModels([]);
+      setReplay(null);
       setModelsError(e?.message || "Could not reach the endpoint.");
     } finally {
       setLoadingModels(false);
@@ -194,7 +212,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
     setModel("");
     // A list fetched from one provider must not be offered for another.
     setModels([]);
-    setCuratedModels([]);
+    setReplay(null);
     setModelsError(null);
     setModelsNote(null);
     if (newMode !== "custom") {
@@ -268,12 +286,13 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const info = PROVIDER_INFO[uiMode];
-  // `models` is the merged list the server returned, live entries first. Split
-  // it back apart for the dropdown's two groups rather than asking the server
-  // for it twice.
-  const curatedSet = new Set(curatedModels);
-  const liveModels = models.filter((m) => !curatedSet.has(m));
-  const offeredCurated = models.filter((m) => curatedSet.has(m));
+  // One group either way; only the label changes, because the whole list is
+  // either what the endpoint just said or what it said last time. Driven by
+  // `replay` and not by the date: a recording with no timestamp is still a
+  // recording, and calling it live is the one thing this label must not do.
+  const modelGroupLabel = replay
+    ? "Last reported by this endpoint" + formatSeenAt(replay.at)
+    : "From this endpoint";
 
   return (
     // `layer="overlay"` because the Agent Catalog drawer's header cog opens
@@ -424,20 +443,12 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                       ? `${deployed.model} (from this deployment)`
                       : "Select a model…"}
                   </option>
-                  {/* Grouped so a curated suggestion is never mistaken for
-                      something the endpoint said it had (#241). When only one
-                      group has entries the label still reads correctly, so
-                      there is no special case for that. */}
-                  {liveModels.length > 0 && (
-                    <optgroup label="From this endpoint">
-                      {liveModels.map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {offeredCurated.length > 0 && (
-                    <optgroup label="Known models for this provider">
-                      {offeredCurated.map((m) => (
+                  {/* Labelled so a replay is never mistaken for something the
+                      endpoint confirmed just now (#241): saving a model it no
+                      longer has surfaces much later as a failed agent run. */}
+                  {models.length > 0 && (
+                    <optgroup label={modelGroupLabel}>
+                      {models.map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </optgroup>
