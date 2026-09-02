@@ -622,6 +622,34 @@ def is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) -> bool
     return all(marker in stderr_text for marker in _NODE_INTERNAL_STREAM_CRASH_MARKERS)
 
 
+# Placeholder the frontend puts where a backend URL belongs in code destined for
+# this sandbox (autkGrammarBehavior.SANDBOX_BACKEND_URL_TOKEN). It is resolved
+# here, in the process that actually performs the fetch, rather than guessed in
+# the browser bundle.
+_SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__'
+
+
+def backend_base_url():
+    """``http://host:port`` for the backend, as reachable from this process.
+
+    ``main.py::set_environment_variables`` exports FLASK_BACKEND_HOST/PORT and
+    start_sandbox passes the environment through, so a sandbox launched with the
+    stack always has the true values - including on a custom-port stack, where
+    the browser's own port would be wrong, and inside a container, where a
+    host-published port is not the one to dial.
+
+    The loopback host is normalised to 127.0.0.1: Node's fetch can stall when
+    ``localhost`` resolves to IPv6 ::1 while Flask listens on IPv4 only.
+    """
+    import os
+
+    host = os.environ.get('FLASK_BACKEND_HOST') or '127.0.0.1'
+    port = os.environ.get('FLASK_BACKEND_PORT') or '5002'
+    if host in ('localhost', '0.0.0.0', '::', '[::]'):
+        host = '127.0.0.1'
+    return f'http://{host}:{port}'
+
+
 def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
     """
     Execute user JavaScript code in an isolated Node.js subprocess.
@@ -649,6 +677,11 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
 
     t0 = time.perf_counter()
     cwd = launch_dir or os.getcwd()
+
+    # Resolve the frontend's backend-URL placeholder now, while the real host and
+    # port are in this process's environment. Done before the import rewriting
+    # below so the substituted code is what gets parsed and run.
+    code = code.replace(_SANDBOX_BACKEND_URL_TOKEN, backend_base_url())
 
     try:
         # Load input from Python DuckDB (same pattern as execute_code).

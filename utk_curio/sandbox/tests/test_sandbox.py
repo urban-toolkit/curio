@@ -215,6 +215,68 @@ class TestSandbox(unittest.TestCase):
         self.assertEqual(layer['geojson']['type'], 'FeatureCollection')
         self.assertEqual(len(layer['geojson']['features']), 1)
 
+    def test_backend_base_url_follows_the_running_stack(self):
+        """The backend URL handed to JS comes from the environment, not a constant.
+
+        The frontend cannot know which address the sandbox subprocess must dial -
+        under Docker the two are in different network namespaces, and on a
+        custom-port stack the page's own port is not the sandbox's. It used to
+        force :5002 for any loopback backend, so every OSM/PBF load on a
+        non-default-port stack died with "fetch failed" (#248).
+        """
+        import os
+        from utk_curio.sandbox.app.worker import backend_base_url
+
+        saved = {k: os.environ.get(k) for k in ('FLASK_BACKEND_HOST', 'FLASK_BACKEND_PORT')}
+        try:
+            os.environ['FLASK_BACKEND_HOST'] = 'localhost'
+            os.environ['FLASK_BACKEND_PORT'] = '5248'
+            # localhost is normalised: Node's fetch can stall on ::1 while Flask
+            # listens on IPv4 only.
+            self.assertEqual(backend_base_url(), 'http://127.0.0.1:5248')
+
+            os.environ['FLASK_BACKEND_HOST'] = '0.0.0.0'
+            self.assertEqual(backend_base_url(), 'http://127.0.0.1:5248')
+
+            os.environ['FLASK_BACKEND_HOST'] = 'backend.internal'
+            self.assertEqual(backend_base_url(), 'http://backend.internal:5248')
+
+            # Standalone sandbox with nothing exported: the documented default.
+            del os.environ['FLASK_BACKEND_HOST']
+            del os.environ['FLASK_BACKEND_PORT']
+            self.assertEqual(backend_base_url(), 'http://127.0.0.1:5002')
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    @_SKIP_NO_NODE
+    def test_exec_js_substitutes_the_backend_url_token(self):
+        """The placeholder is replaced before the user code runs."""
+        import os
+        from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
+        from utk_curio.sandbox.util.parsers import load_from_duckdb
+        _worker_init()
+
+        saved = os.environ.get('FLASK_BACKEND_PORT')
+        os.environ['FLASK_BACKEND_PORT'] = '5248'
+        try:
+            result = execute_js_code(
+                "return '__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi.osm.pbf';",
+                '', 'JS_COMPUTATION', '', launch_dir=_REPO_ROOT, session_id=None,
+            )
+            self.assertEqual(result['stderr'], '', msg=result.get('stderr'))
+            value = load_from_duckdb(result['output']['path'], session_id=None)
+            self.assertEqual(
+                value, 'http://127.0.0.1:5248/file/docs/examples/data/niteroi.osm.pbf')
+        finally:
+            if saved is None:
+                os.environ.pop('FLASK_BACKEND_PORT', None)
+            else:
+                os.environ['FLASK_BACKEND_PORT'] = saved
+
     @_SKIP_NO_NODE
     @_SKIP_NO_AUTK_DB
     def test_exec_js_autk_short_load_fails_the_node(self):

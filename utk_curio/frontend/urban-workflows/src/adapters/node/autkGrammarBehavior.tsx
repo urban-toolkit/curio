@@ -1841,26 +1841,31 @@ function firstCoordinate(coords: any): [number, number] | null {
 // host/port, no route prefix) exactly as a Python node would read it.
 // Absolute URIs (http://, https://, data:, blob:, …) are passed through unchanged.
 // Applies to all file-URL fields across every data source type.
+// Stand-in for "the backend, as reachable from the sandbox" inside a URL that
+// will be fetched by the sandbox's Node subprocess.
+// ``utk_curio/sandbox/app/worker.py::execute_js_code`` replaces it with the
+// backend's real base URL at execution time.
+//
+// Why a token rather than a URL: the browser cannot know which address that
+// subprocess must use. The two run in different network namespaces whenever
+// Curio is containerised (a host-published 5022 is still 5002 inside), so the
+// port the page was served against is not usable there - and neither is any
+// constant. This used to force :5002 for a loopback backend, which meant every
+// OSM/PBF load on a stack NOT using the default port failed with
+// "fetch failed" and silently fell back to the in-browser loader (#248).
+// Resolving it in the process that performs the fetch is correct in all three
+// cases: default ports, a custom-port stack, and a remapped container port.
+export const SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__';
+
 function resolveDataSourceUrls(spec: any, forBackend = false): any {
     if (!Array.isArray(spec.data) || spec.data.length === 0) return spec;
 
-    let backendUrl = (process.env.BACKEND_URL || 'http://localhost:5002').replace(/\/$/, '');
-    // When the URL will be fetched by the sandbox's Node.js subprocess (the data
-    // section runs there), force the loopback host to 127.0.0.1 — node's fetch
-    // can stall on `localhost` resolving to IPv6 ::1. The /file/ route is
-    // unauthenticated, so the node fetch needs no token.
-    if (forBackend) {
-        backendUrl = backendUrl.replace(/:\/\/localhost(:|\/|$)/, '://127.0.0.1$1');
-        // The sandbox is co-located with the backend in the SAME container, so
-        // it reaches it on the backend's fixed *internal* port (5002). Any host
-        // port remapping (e.g. CI on a shared host publishes 5002 as 5022 to
-        // avoid colliding with another stack) does NOT apply inside the
-        // container — fetching the host-mapped port from in-container yields
-        // "fetch failed" and the OSM/PBF data load comes back empty. Force the
-        // internal port for a loopback backend; a public BACKEND_URL (prod) has
-        // no 127.0.0.1 host and is left unchanged.
-        backendUrl = backendUrl.replace(/^(https?:\/\/127\.0\.0\.1):\d+/, '$1:5002');
-    }
+    // For the browser, the host-published URL the page itself talks to. For the
+    // sandbox, the token above - deliberately not a URL. The /file/ route is
+    // unauthenticated, so the node fetch needs no token of the auth kind.
+    const backendUrl = forBackend
+        ? SANDBOX_BACKEND_URL_TOKEN
+        : (process.env.BACKEND_URL || 'http://localhost:5002').replace(/\/$/, '');
     const urlFields = ['pbfFileUrl', 'csvFileUrl', 'jsonFileUrl', 'geojsonFileUrl'];
     const isAbsolute = (url: string) => /^[a-z][a-z\d+\-.]*:/i.test(url);
 

@@ -93,7 +93,7 @@ import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
 import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
 import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
 import { useDataPoolBehavior } from '../../../adapters/node/dataPoolBehavior';
-import { useAutkGrammarBehavior, attachMapInteractionZoomFix, requestedLayerTables } from '../../../adapters/node/autkGrammarBehavior';
+import { useAutkGrammarBehavior, attachMapInteractionZoomFix, requestedLayerTables, SANDBOX_BACKEND_URL_TOKEN } from '../../../adapters/node/autkGrammarBehavior';
 import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
@@ -774,6 +774,47 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
       mockAutkDbGetLayerTables.mockReset();
       mockAutkDbGetLayerTables.mockReturnValue([]);
+    });
+
+    // The browser must not put a host or port in a URL the SANDBOX will fetch:
+    // the two are in different network namespaces under Docker, and on a
+    // custom-port stack no constant is right. Forcing :5002 here made every
+    // OSM/PBF load fail with "fetch failed" on any non-default-port stack,
+    // which silently pushed each Autark data load onto the in-browser
+    // fallback (#248).
+    test('data-only node: the sandbox gets a backend-URL token, never an address (#248)', async () => {
+      let sentCode = '';
+      const interpretCode = jest.fn(
+        (_unresolved, code, _input, _inputTypes, cb) => {
+          sentCode = code;
+          cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } });
+        },
+      );
+
+      const result = await callBehavior(useAutkGrammarBehavior, {
+        jsInterpreter: { interpretCode } as any,
+      });
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'osm',
+            pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            outputTableName: 'table_osm',
+            autoLoadLayers: { layers: ['roads'] },
+          }],
+        }));
+      });
+
+      // The relative path is still resolved against a base .
+      expect(sentCode).toContain(
+        `${SANDBOX_BACKEND_URL_TOKEN}/file/docs/examples/data/niteroi.osm.pbf`,
+      );
+      // . but that base is the token the sandbox resolves at execution time,
+      // not an address guessed in the browser.
+      expect(sentCode).not.toContain('5002');
+      expect(sentCode).not.toContain('127.0.0.1');
+      expect(sentCode).not.toContain('localhost');
     });
   });
 
