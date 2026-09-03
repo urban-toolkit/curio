@@ -360,7 +360,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       __resetWebGpuSupportCache();
       Object.defineProperty(navigator, 'gpu', {
         configurable: true,
-        value: { requestAdapter: jest.fn().mockResolvedValue({ name: 'fake' }) },
+        value: { requestAdapter: jest.fn().mockResolvedValue({ name: 'fake' }), getPreferredCanvasFormat: () => 'bgra8unorm' },
       });
     });
 

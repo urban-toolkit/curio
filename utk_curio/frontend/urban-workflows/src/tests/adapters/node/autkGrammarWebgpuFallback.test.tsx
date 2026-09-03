@@ -13,7 +13,7 @@
  * the supported case needs to install one.
  */
 import React from 'react';
-import { render, act, waitFor } from '@testing-library/react';
+import { render, act, waitFor, fireEvent } from '@testing-library/react';
 
 const mockShowToast = jest.fn();
 jest.mock('../../../providers/ToastProvider', () => ({
@@ -92,6 +92,8 @@ function withGpu(adapter: unknown, { throws = false } = {}) {
       requestAdapter: throws
         ? jest.fn().mockRejectedValue(new Error('pref disabled'))
         : jest.fn().mockResolvedValue(adapter),
+      // autk-map calls this before requestAdapter; the probe checks for it.
+      getPreferredCanvasFormat: () => 'bgra8unorm',
     },
   });
 }
@@ -220,5 +222,123 @@ describe('an Autark node on a browser that does have WebGPU', () => {
     expect(mockGrammarRun).toHaveBeenCalled();
     expect(h.outputs.filter((o) => o.code === 'error')).toHaveLength(0);
     expect(document.body.querySelector('[role="alert"]')).toBeNull();
+  });
+});
+
+describe('Firefox: the adapter arrives on the second ask (#272)', () => {
+  test('null on the first requestAdapter, an adapter on the retry, and the grammar runs', async () => {
+    Object.defineProperty(navigator, 'gpu', {
+      configurable: true,
+      value: {
+        requestAdapter: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ name: 'late' }),
+        getPreferredCanvasFormat: () => 'bgra8unorm',
+      },
+    });
+    const h = renderBehavior();
+
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+
+    expect(mockAutkGrammar).toHaveBeenCalled();
+    expect(h.outputs.filter((o) => o.code === 'error')).toHaveLength(0);
+  });
+});
+
+describe('"Check again" on the fallback panel (#272)', () => {
+  const checkAgainButton = () =>
+    document.body.querySelector('button[aria-label="Check WebGPU again"]') as HTMLButtonElement | null;
+
+  test('re-probes and, once WebGPU answers, runs the spec without another play', async () => {
+    const h = renderBehavior();
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+    await waitFor(() => expect(checkAgainButton()).not.toBeNull());
+    expect(mockAutkGrammar).not.toHaveBeenCalled();
+
+    // The pref was flipped / the GPU process came up.
+    withGpu({ name: 'fake-adapter' });
+    await act(async () => {
+      fireEvent.click(checkAgainButton()!);
+    });
+
+    await waitFor(() => {
+      expect(mockAutkGrammar).toHaveBeenCalled();
+      expect(document.body.querySelector('[role="alert"]')).toBeNull();
+    });
+    expect(h.outputs.at(-1)).toEqual(expect.objectContaining({ code: 'success' }));
+  });
+
+  test('while WebGPU is still missing, the panel stays and the toast fires again', async () => {
+    const h = renderBehavior();
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+    await waitFor(() => expect(checkAgainButton()).not.toBeNull());
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      fireEvent.click(checkAgainButton()!);
+    });
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledTimes(2));
+    expect(document.body.querySelector('[role="alert"]')).not.toBeNull();
+    expect(mockAutkGrammar).not.toHaveBeenCalled();
+  });
+});
+
+describe('the run always ends (#271)', () => {
+  const terminal = (h: Harness) => h.outputs.filter((o) => o.code === 'success' || o.code === 'error');
+
+  test('a WebGPU refusal is exactly one terminal output, so the runner is released once', async () => {
+    const h = renderBehavior();
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+
+    expect(terminal(h)).toHaveLength(1);
+    expect(terminal(h)[0].code).toBe('error');
+  });
+
+  test('a grammar whose run() rejects still ends with one error output carrying the message', async () => {
+    withGpu({ name: 'fake-adapter' });
+    mockGrammarRun.mockRejectedValueOnce(new Error('createShaderModule of undefined'));
+    const h = renderBehavior();
+
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+
+    expect(terminal(h)).toHaveLength(1);
+    expect(terminal(h)[0]).toEqual({
+      code: 'error',
+      content: expect.stringContaining('createShaderModule'),
+    });
+    // exec came first, so the node visibly went running -> error, not nothing.
+    expect(h.outputs.some((o) => o.code === 'exec')).toBe(true);
+  });
+
+  test('a navigator.gpu getter that throws is an error output, not an escaped rejection', async () => {
+    Object.defineProperty(navigator, 'gpu', {
+      configurable: true,
+      get() {
+        throw new Error('gpu getter exploded');
+      },
+    });
+    const h = renderBehavior();
+
+    let escaped: unknown = null;
+    await act(async () => {
+      try {
+        await h.apply(MAP_SPEC);
+      } catch (err) {
+        escaped = err;
+      }
+    });
+    expect(escaped).toBeNull();
+
+    expect(terminal(h)).toHaveLength(1);
+    expect(terminal(h)[0].code).toBe('error');
   });
 });

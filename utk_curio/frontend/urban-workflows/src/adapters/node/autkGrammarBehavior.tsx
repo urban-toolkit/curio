@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Feature, FeatureCollection } from 'geojson';
 import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
-import { detectWebGpuSupport } from '../../utils/webgpuSupport';
+import { detectWebGpuSupport, reprobeWebGpuSupport } from '../../utils/webgpuSupport';
 import { useToastContext } from '../../providers/ToastProvider';
 import { autkGrammarAdapter } from '../../adapters/autkGrammarAdapter';
 import { VisInteractionType, NodeType } from '../../constants';
@@ -16,6 +16,11 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // in-node explanation instead of the map container, so the node says why
     // it is empty rather than looking like it simply produced nothing.
     const [gpuBlocked, setGpuBlocked] = useState<string | null>(null);
+    // The fallback panel's "Check again" is re-probing (#272).
+    const [gpuChecking, setGpuChecking] = useState(false);
+    // The last spec handed to applyGrammar, so "Check again" can re-run it the
+    // moment WebGPU answers instead of asking the user to press play again.
+    const lastSpecRef = useRef<string | null>(null);
     // What kind of step this spec is, so the body can say so. A data-only or
     // compute-only node has no map/plot to draw, and used to render a blank
     // 400px box under a green "Done" chip - indistinguishable from a node that
@@ -50,12 +55,15 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // or the upstream input changes.
     const dataCacheRef = useRef<{ key: string; ref: { path: string; dataType: string } } | null>(null);
 
-    const applyGrammar = async (specString: string) => {
+    const runGrammar = async (
+        specString: string,
+        emit: (o: { code: string; content: string }) => void,
+    ) => {
         let spec: any;
         try {
             spec = typeof specString === 'string' ? JSON.parse(specString) : { ...(specString as any) };
         } catch {
-            nodeState.setOutput({ code: 'error', content: 'Invalid JSON grammar spec.' });
+            emit({ code: 'error', content: 'Invalid JSON grammar spec.' });
             return;
         }
         setSpecKind(classifyAutkSpec(spec));
@@ -78,7 +86,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     support.reason ??
                     'Autark nodes need WebGPU, which this browser does not provide.';
                 setGpuBlocked(message);
-                nodeState.setOutput({ code: 'error', content: message });
+                emit({ code: 'error', content: message });
                 showToast(message, 'error');
                 return;
             }
@@ -161,7 +169,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         interactionOffRef.current.forEach(f => f());
         interactionOffRef.current = [];
 
-        nodeState.setOutput({ code: 'exec', content: '' });
+        emit({ code: 'exec', content: '' });
         let summary: string | null = null;
         try {
             // ── Data section → backend sandbox ──────────────────────────────
@@ -424,7 +432,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                             // untouched input under a green "Done" badge.
                             const message =
                                 'Compute failed: ' + computeFailures.join('; ');
-                            nodeState.setOutput({ code: 'error', content: message });
+                            emit({ code: 'error', content: message });
                             showToast(message, 'error');
                             return;
                         }
@@ -456,15 +464,65 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             // A render node reports through its map/plot; a data or compute
             // node has only this line to show that it did something (#282).
             setRunSummary(summary);
-            nodeState.setOutput({ code: 'success', content: summary ?? '' });
+            emit({ code: 'success', content: summary ?? '' });
         } catch (err: any) {
             const msg = err?.message ?? String(err);
             // The toast is transient and the node UI has no error tab, so
             // also log to console — it's the only durable place tooling
             // (and the e2e browser-log dump) can read the failure from.
             console.error('[autk-grammar] node error:', msg);
-            nodeState.setOutput({ code: 'error', content: msg });
+            emit({ code: 'error', content: msg });
             showToast(msg, 'error');
+        }
+    };
+
+    /**
+     * Run the spec, and always leave the "exec" state (#271).
+     *
+     * The runner (FlowProvider's Run All) has no promise to await: it waits
+     * for this node's output to flip to success or error, and until then the
+     * whole run - and every later Run / Run All click - is held. runGrammar
+     * has several early returns and awaits a WebGPU probe, a dynamic import
+     * and the library's own async init, any of which can throw or hang in
+     * ways its inner try/catch never sees. So the terminal output is
+     * guaranteed here, in a finally, rather than hoped for in the body.
+     */
+    const applyGrammar = async (specString: string) => {
+        lastSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
+        let settled = false;
+        const emit = (o: { code: string; content: string }) => {
+            if (o.code === 'success' || o.code === 'error') settled = true;
+            nodeState.setOutput(o);
+        };
+        try {
+            await runGrammar(specString, emit);
+        } catch (err: any) {
+            const msg = err?.message ?? String(err);
+            console.error('[autk-grammar] node error:', msg);
+            emit({ code: 'error', content: msg });
+            showToast(msg, 'error');
+        } finally {
+            if (!settled) {
+                emit({ code: 'error', content: 'The Autark node stopped without reporting a result.' });
+            }
+        }
+    };
+
+    /** Re-probe WebGPU and, if it is there now, run the last spec (#272). */
+    const checkGpuAgain = async () => {
+        setGpuChecking(true);
+        try {
+            const support = await reprobeWebGpuSupport();
+            if (support.supported) {
+                setGpuBlocked(null);
+                if (lastSpecRef.current != null) await applyGrammar(lastSpecRef.current);
+            } else {
+                const message = support.reason ?? 'Autark nodes need WebGPU, which this browser does not provide.';
+                setGpuBlocked(message);
+                showToast(message, 'error');
+            }
+        } finally {
+            setGpuChecking(false);
         }
     };
 
@@ -607,6 +665,24 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 >
                     <strong>WebGPU is not available</strong>
                     <span>{gpuBlocked}</span>
+                    <button
+                        type="button"
+                        className="nodrag nopan"
+                        aria-label="Check WebGPU again"
+                        disabled={gpuChecking}
+                        onClick={() => { void checkGpuAgain(); }}
+                        style={{
+                            alignSelf: 'flex-start',
+                            padding: '4px 10px',
+                            border: '1px solid currentColor',
+                            borderRadius: 'var(--curio-radius-sm, 4px)',
+                            background: 'transparent',
+                            color: 'inherit',
+                            cursor: gpuChecking ? 'progress' : 'pointer',
+                        }}
+                    >
+                        {gpuChecking ? 'Checking…' : 'Check again'}
+                    </button>
                 </div>
             ) : (
                 // The wrapper is always mounted - applyGrammar owns its
@@ -658,7 +734,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 </div>
             ),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [nodeState.output, gpuBlocked, runSummary, specKind],
+        [nodeState.output, gpuBlocked, gpuChecking, runSummary, specKind],
     );
 
     // Editor seed, decided ONCE at mount: a node that arrives with no code gets
