@@ -8,6 +8,34 @@ import re
 
 _PYTHON_BUILTINS = set(dir(builtins))
 
+# A line magic (``%matplotlib inline``), a cell magic (``%%time``) or a shell
+# escape (``!pip install geopandas``). None of these is Python, and none of them
+# survives ``ast.parse``.
+_MAGIC_OR_SHELL_LINE = re.compile(r"^\s*[%!]")
+
+
+def _strip_magics(code: str) -> str:
+    """Blank the IPython lines out of *code* so the Python around them parses.
+
+    Only ever used as a fallback for a cell that did not parse as-is, and only
+    for analysis - the node still shows the user's original source, magics
+    included.
+
+    Without this, the first cell of most real notebooks (``%matplotlib inline``
+    followed by the imports) raises ``SyntaxError``, is classified as neither
+    import-only nor edge-bearing, and lands on the canvas as exactly the
+    disconnected untitled node #235 is about. ``_is_import_only`` has always
+    described itself as tolerating "what a stripped ``%magic`` leaves behind";
+    this is the reader that does the stripping.
+
+    Lines are blanked rather than removed so positions still line up with the
+    source the user sees.
+    """
+    return "\n".join(
+        "" if _MAGIC_OR_SHELL_LINE.match(line) else line
+        for line in code.splitlines()
+    )
+
 # ── AST helpers ───────────────────────────────────────────────────────────────
 
 def _collect_assign_target(node, out):
@@ -215,9 +243,20 @@ def analyze_cells(cells: list[str]) -> dict:
         try:
             tree = ast.parse(code)
         except SyntaxError:
-            # Unparsable: it gets its own node and its content untouched. It is
-            # NOT import-only - merging code we could not read into a Setup
-            # node would hide the very cell the user has to go fix.
+            # Retry without the IPython lines before giving up. A cell is only
+            # re-parsed when it already failed, so a cell that parses as-is is
+            # untouched and this can never change an existing classification.
+            stripped = _strip_magics(code)
+            try:
+                tree = ast.parse(stripped) if stripped != code else None
+            except SyntaxError:
+                tree = None
+
+        if tree is None:
+            # Unparsable even without magics: it gets its own node and its
+            # content untouched. It is NOT import-only - merging code we could
+            # not read into a Setup node would hide the very cell the user has
+            # to go fix.
             analysis.append({
                 'defined': [], 'used': [], 'last_var': None, 'altair_spec': None,
                 'is_import_only': False,

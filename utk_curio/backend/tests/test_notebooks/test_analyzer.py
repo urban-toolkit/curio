@@ -93,6 +93,63 @@ class TestImportOnlyDetection:
         assert _flags("this is not python ===") == [False]
 
 
+class TestIPythonMagics:
+    """Magics must not defeat the merge (#235).
+
+    ``%matplotlib inline`` followed by the imports is the first cell of most
+    real notebooks. It is not Python, so the cell raised ``SyntaxError``, was
+    classified as neither import-only nor edge-bearing, and arrived on the
+    canvas as precisely the disconnected untitled node this feature exists to
+    prevent.
+    """
+
+    def test_a_magic_before_the_imports_still_folds_into_setup(self):
+        assert _flags(
+            """
+            %matplotlib inline
+            import pandas as pd
+            import geopandas as gpd
+            """
+        ) == [True]
+
+    def test_a_cell_magic_does_not_block_the_merge(self):
+        assert _flags(
+            """
+            %%capture
+            import seaborn as sns
+            """
+        ) == [True]
+
+    def test_a_shell_escape_cell_folds_away(self):
+        # `!pip install ...` leaves nothing behind, and an empty cell is merged
+        # rather than rendered as an empty node.
+        assert _flags("!pip install seaborn") == [True]
+
+    def test_a_magic_over_real_code_is_still_not_import_only(self):
+        # Stripping the magic must not promote a computing cell into Setup.
+        assert _flags(
+            """
+            %%time
+            df = load()
+            """
+        ) == [False]
+
+    def test_real_code_after_a_magic_still_reports_its_output(self):
+        result = analyze_cells(
+            _cells(
+                """
+                %%time
+                total = 1 + 1
+                """
+            )
+        )
+        assert result["analysis"][0]["last_var"] == "total"
+
+    def test_a_genuinely_broken_cell_is_still_not_merged(self):
+        # The fallback must not swallow a cell that is broken for other reasons.
+        assert _flags("this is not python at all !!!") == [False]
+
+
 class TestDependencyEdges:
     def test_a_producer_edges_to_its_consumer(self):
         result = analyze_cells(_cells("df = load()", "print(df)"))
