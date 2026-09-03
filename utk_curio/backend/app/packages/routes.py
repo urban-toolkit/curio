@@ -1121,7 +1121,10 @@ def install_workflow_deps():
     package's libraries and nodes both become available. A dataflow depends
     on *packages*, not loose libraries; the libraries follow from the package.
 
-    Response: ``{"installedPackages": ["<dirName>", ...]}``.
+    Response: ``{"installedPackages": [...], "importErrors": {lib: reason}}``.
+    ``importErrors`` is populated when a declared library installed but cannot
+    be imported - pip is satisfied by metadata alone, so that case otherwise
+    reads as a clean install and only surfaces later as a node's ImportError.
     """
     from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
 
@@ -1141,7 +1144,12 @@ def install_workflow_deps():
             installed_packages.append(dir_name)
         except packages_services.PackageServiceError as exc:
             return _error(f"failed to install {dir_name}: {exc}", exc.status)
-    return jsonify({"installedPackages": installed_packages}), 200
+    return jsonify({
+        "installedPackages": installed_packages,
+        "importErrors": packages_services.import_failures_for_packages(
+            user_key, installed_packages,
+        ),
+    }), 200
 
 
 # ---------------------------------------------------------------------------
@@ -1191,6 +1199,15 @@ def install_to_project_route(project_id: str):
         return _error("project not found", 404)
     except packages_services.PackageServiceError as exc:
         return _packages_error(exc)
+    # Same reason as the workflow-deps install: a package whose library is
+    # present but unimportable installs without complaint, and the user only
+    # finds out when a node raises.
+    payload = {
+        **payload,
+        "importErrors": packages_services.import_failures_for_packages(
+            user_key, [dir_name],
+        ),
+    }
     return jsonify(payload), 201
 
 

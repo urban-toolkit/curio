@@ -1030,6 +1030,35 @@ def prune_unreferenced_packages(
     return {"pruned": pruned, "removedFromDefaults": removed_from_defaults}
 
 
+def import_failures_for_packages(user_key: str, dir_names) -> dict[str, str]:
+    """``{distribution: reason}`` for declared deps of *dir_names* that fail to import.
+
+    Installing a package is not the same as its libraries working. pip reports a
+    requirement satisfied from metadata alone, so a wheel whose native extension
+    cannot load - a rasterio built against a different GDAL is the everyday case
+    - installs "successfully" and then raises the moment a node touches it. The
+    install routes call this so the answer they return is about the libraries
+    rather than about pip's exit code.
+
+    Empty when nothing is declared or nothing is broken, so a caller can treat a
+    falsy result as "all well" without a special case. One subprocess covers
+    every dep across every named package, and ``pip_runner`` memoises per
+    ``(distribution, version)``, so a second install in the same process is free.
+    """
+    from utk_curio.backend.app.packages.pip_runner import import_failures
+
+    declared: dict[str, str] = {}
+    for dir_name in dir_names:
+        declared.update(_read_python_deps(user_key, dir_name))
+    if not declared:
+        return {}
+    try:
+        return import_failures(declared.keys())
+    except Exception:  # noqa: BLE001 - a probe failure must not fail the install
+        log.warning("import probe failed for %s", sorted(declared), exc_info=True)
+        return {}
+
+
 def _read_python_deps(user_key: str, dir_name: str) -> dict[str, str]:
     """Read the installed package's ``manifest.dependencies.python`` map."""
     from utk_curio.backend.app.packages.manifest import (

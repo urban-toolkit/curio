@@ -84,14 +84,28 @@ export function useEnsureWorkflowDeps() {
           "warning"
         );
         try {
-          await packagesApi.installWorkflowDeps(needed);
+          const result = await packagesApi.installWorkflowDeps(needed);
           // Refresh so the catalog drawer + palette reflect the new packages.
           try {
             await refreshPackageRegistry();
           } catch {
             /* palette refresh is best-effort; install already succeeded */
           }
-          showToast(`Installed ${names}.`, "success");
+          // The package arrived, but one of its libraries cannot be imported -
+          // pip counts metadata as satisfaction, so this reads as a clean
+          // install right up until a node touches the library. Saying
+          // "Installed" here would be the last chance to tell them, missed.
+          const broken = Object.entries(result?.importErrors ?? {});
+          if (broken.length) {
+            showToast(
+              `Installed ${names}, but ${broken
+                .map(([lib, reason]) => `${lib} cannot be imported (${reason})`)
+                .join("; ")}. Nodes needing it will fail until it is repaired.`,
+              "error",
+            );
+          } else {
+            showToast(`Installed ${names}.`, "success");
+          }
         } catch (err) {
           console.error("Workflow dependency install failed:", err);
           showToast(

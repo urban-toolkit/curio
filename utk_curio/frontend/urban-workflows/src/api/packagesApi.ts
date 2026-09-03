@@ -236,6 +236,13 @@ export interface WorkflowDepsCheckResponse {
 export interface WorkflowDepsInstallResponse {
   /** Catalog package dirNames installed into the user store. */
   installedPackages: string[];
+  /**
+   * ``{library: reason}`` for declared python deps that installed but cannot
+   * be imported. pip is satisfied by metadata alone, so a wheel whose native
+   * extension is broken installs without complaint; report this rather than
+   * letting the user meet it later as a node's ImportError.
+   */
+  importErrors?: Record<string, string>;
 }
 
 /** Response from project-scoped install / uninstall and `GET /projects/<id>`. */

@@ -241,6 +241,48 @@ def test_install_installs_each_package_to_store(client, user_and_token, tmp_curi
     assert calls == ["curio.weather@1"]
 
 
+def test_install_reports_a_library_that_cannot_be_imported(
+    client, user_and_token, tmp_curio, monkeypatch,
+):
+    """Installing a package is not the same as its libraries working.
+
+    pip counts metadata as satisfaction, so a wheel whose native extension
+    cannot load - a rasterio built against a different GDAL is the everyday
+    case - installs without complaint. The route answered with a bare
+    ``installedPackages`` list, the canvas toasted "Installed", and the user
+    met the failure later as a node's ImportError with nothing connecting the
+    two.
+    """
+    monkeypatch.setattr(packages_services, "install_to_store", lambda uk, dn: True)
+    monkeypatch.setattr(
+        packages_services, "import_failures_for_packages",
+        lambda uk, dirs: {"rasterio": "ImportError: DLL load failed"},
+    )
+    _, token = user_and_token
+
+    resp = _install(client, token, ["curio.weather@1"])
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["installedPackages"] == ["curio.weather@1"]
+    assert body["importErrors"] == {"rasterio": "ImportError: DLL load failed"}
+
+
+def test_install_reports_no_import_errors_when_the_libraries_work(
+    client, user_and_token, tmp_curio, monkeypatch,
+):
+    monkeypatch.setattr(packages_services, "install_to_store", lambda uk, dn: True)
+    monkeypatch.setattr(
+        packages_services, "import_failures_for_packages", lambda uk, dirs: {},
+    )
+    _, token = user_and_token
+
+    resp = _install(client, token, ["curio.weather@1"])
+
+    assert resp.status_code == 200
+    assert resp.get_json()["importErrors"] == {}
+
+
 def test_install_rejects_empty_packages(client, user_and_token, tmp_curio):
     _, token = user_and_token
     resp = _install(client, token, [])
@@ -384,3 +426,65 @@ def test_installing_a_declared_package_twice_is_idempotent(
     second = _install(client, token, declared)
     assert second.status_code == 200, second.get_json()
     assert second.get_json()["installedPackages"] == declared
+
+
+# ---------------------------------------------------------------------------
+# services.import_failures_for_packages — the rule both install routes share
+# ---------------------------------------------------------------------------
+
+def test_import_failures_reads_the_packages_declared_deps(monkeypatch):
+    """It must probe what the manifests declare, not what pip happened to fetch.
+
+    The broken case is precisely the one where pip fetched nothing, because the
+    metadata already satisfied the requirement.
+    """
+    probed: list[list[str]] = []
+    monkeypatch.setattr(
+        packages_services, "_read_python_deps",
+        lambda uk, dn: {"rasterio": ">=1.3"} if dn == "curio.weather@1" else {"numpy": ""},
+    )
+    import utk_curio.backend.app.packages.pip_runner as pip_runner
+    monkeypatch.setattr(
+        pip_runner, "import_failures",
+        lambda deps: probed.append(sorted(deps)) or {"rasterio": "ImportError: boom"},
+    )
+
+    out = packages_services.import_failures_for_packages(
+        "1", ["curio.weather@1", "other@1"],
+    )
+
+    assert out == {"rasterio": "ImportError: boom"}
+    # One subprocess for every dep across every package, not one per package.
+    assert probed == [["numpy", "rasterio"]]
+
+
+def test_import_failures_is_empty_when_nothing_is_declared(monkeypatch):
+    """No declared deps means no probe at all - the 19s cost is not free."""
+    called = False
+
+    def _probe(deps):
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(packages_services, "_read_python_deps", lambda uk, dn: {})
+    import utk_curio.backend.app.packages.pip_runner as pip_runner
+    monkeypatch.setattr(pip_runner, "import_failures", _probe)
+
+    assert packages_services.import_failures_for_packages("1", ["x@1"]) == {}
+    assert not called
+
+
+def test_a_probe_that_raises_does_not_fail_the_install(monkeypatch):
+    """The install succeeded; a broken probe must not turn that into an error."""
+    monkeypatch.setattr(
+        packages_services, "_read_python_deps", lambda uk, dn: {"rasterio": ""},
+    )
+    import utk_curio.backend.app.packages.pip_runner as pip_runner
+
+    def _boom(deps):
+        raise OSError("no interpreter")
+
+    monkeypatch.setattr(pip_runner, "import_failures", _boom)
+
+    assert packages_services.import_failures_for_packages("1", ["x@1"]) == {}
