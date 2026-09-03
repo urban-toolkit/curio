@@ -550,10 +550,13 @@ def prepare_backend_database():
             env["DATABASE_URL"] = test_url
             # Testing wipes the SQLA file so every `curio start` lands on
             # an empty-but-migrated DB, like Django's TEST_RUNNER.
-            try:
-                os.remove(test_sqla)
-            except FileNotFoundError:
-                pass
+            # WAL sidecars too: a stale -wal next to a fresh file is ignored by
+            # SQLite but confuses anyone reading the directory.
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.remove(test_sqla + suffix)
+                except FileNotFoundError:
+                    pass
 
         # `flask db upgrade` is idempotent — alembic skips already-applied
         # revisions. Running it on every startup avoids the "schema is
