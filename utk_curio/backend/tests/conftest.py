@@ -79,10 +79,11 @@ _TEST_SQLA_DB = os.path.join(_TEST_DB_DIR, "urban_workflow_test.db")
 # those own the DB lifecycle and the running backend is holding sqlite
 # connections we shouldn't yank.
 if _TEST_OWNED_DIR is not None:
-    try:
-        os.remove(_TEST_SQLA_DB)
-    except FileNotFoundError:
-        pass
+    for _suffix in ("", "-wal", "-shm"):   # the DB and its WAL sidecars
+        try:
+            os.remove(_TEST_SQLA_DB + _suffix)
+        except FileNotFoundError:
+            pass
 
 os.environ["CURIO_TESTING"] = "1"
 os.environ["CURIO_LAUNCH_CWD"] = _TEST_WORKSPACE

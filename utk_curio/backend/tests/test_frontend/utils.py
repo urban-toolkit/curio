@@ -1375,7 +1375,14 @@ def _request_json(
         return json.loads(body)
 
 
-def _post_json(url: str, payload: dict, timeout: float = 10.0) -> dict:
+# 60 s, not 10: under ``--parallel`` four backends share the CPU with four
+# Chromiums, and a stub-login that seeds the examples for a fresh user was
+# measured taking 15-48 s to answer. The server does finish; a client that
+# gives up at 10 s turns that into a class-wide setup error.
+HTTP_TIMEOUT_S = 60.0
+
+
+def _post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT_S) -> dict:
     """POST *payload* as JSON to *url* and return the parsed JSON body."""
     return _request_json(url, method="POST", payload=payload, timeout=timeout)
 
@@ -1535,7 +1542,7 @@ def install_session_cookie(page, frontend_url: str, token: str) -> None:
     )
 
 
-def _await_session(backend_url: str, token: str, *, timeout: float = 10.0) -> None:
+def _await_session(backend_url: str, token: str, *, timeout: float = HTTP_TIMEOUT_S) -> None:
     """Block until *token* authenticates, or fail saying it never did.
 
     Not defensive padding - it closes a real race in this harness. The autouse
