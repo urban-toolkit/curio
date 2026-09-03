@@ -7818,9 +7818,71 @@ class TestProviderModels:
     model only shows up much later as a failed agent run. So the panel asks the
     endpoint what it serves - and it has to be able to ask *before* the user
     saves, which is why this is a POST carrying the credentials on screen.
+
+    #241 made the answer hybrid, and both halves come from the API. Anthropic
+    and Gemini are now actually *asked* (the route used to report them
+    unlistable without trying, which was not true), and when a live listing
+    cannot happen the route replays what that endpoint last reported rather than
+    answering with an error and an empty box.
+
+    Nothing here is authored: the fallback is a recording, so the tests below
+    always establish it by performing a successful fetch first. And nothing is
+    ever an allowlist - no assertion here should ever say a model was refused.
     """
 
     URL = "/api/agents/provider-models"
+
+    @pytest.fixture(autouse=True)
+    def _no_real_calls(self, monkeypatch):
+        """Make an unstubbed provider call fail loudly instead of dialling out.
+
+        The suite's ``DEFAULT_LLM_BASE_URL`` is unroutable on purpose so a
+        forgotten stub cannot reach anything - but that only protects the
+        OpenAI-compatible path. The Anthropic and Gemini SDKs ignore
+        ``base_url`` and always talk to their own hosts, so listing them needs
+        its own net. Each ``_fake_*`` helper below overrides these.
+        """
+        import anthropic
+        import google.generativeai as genai
+        import openai
+
+        def _boom(*_a, **_k):
+            raise AssertionError("this test reached a real provider SDK")
+
+        monkeypatch.setattr(openai, "OpenAI", _boom)
+        monkeypatch.setattr(anthropic, "Anthropic", _boom)
+        monkeypatch.setattr(genai, "configure", _boom)
+        monkeypatch.setattr(genai, "list_models", _boom)
+
+    @pytest.fixture(autouse=True)
+    def _fresh_store(self, tmp_path, monkeypatch):
+        """Give each case its own suggestion store.
+
+        The fallback is a recording now, so a leaked one from a previous test
+        would let a case pass without ever having fetched anything.
+        """
+        from utk_curio.backend.app.agents import model_catalog
+
+        monkeypatch.setattr(model_catalog, "_users_base", lambda: tmp_path)
+
+    @staticmethod
+    def _no_deployment_key(monkeypatch):
+        """Drop the suite's stand-in operator key.
+
+        ``conftest`` configures one for every agents test, and the route
+        inherits it for any field the caller left blank - which is exactly the
+        behaviour under test when the question is "what happens with no key".
+        """
+        from utk_curio.backend.app.agents import provider_config
+
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "")
+
+    @staticmethod
+    def _no_deployment_base_url(monkeypatch):
+        """Resolve to plain OpenAI rather than the suite's custom endpoint."""
+        from utk_curio.backend.app.agents import provider_config
+
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "")
 
     @staticmethod
     def _fake_openai(monkeypatch, *, models=(), raises=None):
@@ -7850,6 +7912,56 @@ class TestProviderModels:
         monkeypatch.setattr(openai, "OpenAI", _Client)
         return seen
 
+    @staticmethod
+    def _fake_anthropic(monkeypatch, *, models=(), raises=None):
+        """Stand in for the Anthropic SDK's ``client.models.list()``."""
+        seen = {}
+
+        class _Models:
+            def list(self):
+                if raises is not None:
+                    raise raises
+                return [type("M", (), {"id": i})() for i in models]
+
+        class _Client:
+            def __init__(self, **kwargs):
+                seen.update(kwargs)
+                self.models = _Models()
+
+        import anthropic
+
+        monkeypatch.setattr(anthropic, "Anthropic", _Client)
+        return seen
+
+    @staticmethod
+    def _fake_gemini(monkeypatch, *, models=(), raises=None):
+        """Stand in for ``google.generativeai.list_models()``.
+
+        *models* is a list of ``(name, methods)`` pairs because the real listing
+        mixes chat models with embedding and tuning-only ones, and filtering
+        those out is the part worth testing.
+        """
+        seen = {}
+
+        def _configure(**kwargs):
+            seen.update(kwargs)
+
+        def _list_models():
+            if raises is not None:
+                raise raises
+            return [
+                type("M", (), {"name": n, "supported_generation_methods": ms})()
+                for n, ms in models
+            ]
+
+        import google.generativeai as genai
+
+        monkeypatch.setattr(genai, "configure", _configure)
+        monkeypatch.setattr(genai, "list_models", _list_models)
+        return seen
+
+    # -- the live path ----------------------------------------------------
+
     def test_lists_what_the_endpoint_serves(self, client, user_and_token, monkeypatch):
         self._fake_openai(monkeypatch, models=["llama4-nim", "gemma4"])
         _, token = user_and_token
@@ -7863,7 +7975,10 @@ class TestProviderModels:
             },
         ).get_json()
         # Sorted, so the menu order does not depend on the server's.
-        assert body == {"models": ["gemma4", "llama4-nim"], "listable": True}
+        assert body["models"] == ["gemma4", "llama4-nim"]
+        assert body["listable"] is True
+        assert body["source"] == "live"
+        assert body["warning"] is None
 
     def test_uses_the_credentials_in_the_request(self, client, user_and_token, monkeypatch):
         # The panel calls this mid-edit, before Save. Listing against the saved
@@ -7882,24 +7997,149 @@ class TestProviderModels:
         assert seen["base_url"] == "https://typed.example.test/"
         assert seen["api_key"] == "sk-typed"
 
-    def test_a_provider_without_a_listing_is_not_an_error(
+    def test_anthropic_is_asked_rather_than_assumed_unlistable(
         self, client, user_and_token, monkeypatch
     ):
-        # Anthropic and Gemini have no OpenAI-shaped /models. Saying so lets the
-        # panel keep its free-text box rather than show an empty menu.
-        self._fake_openai(monkeypatch, models=["unused"])
-        _, token = user_and_token
-        res = client.post(
-            self.URL, headers=_auth(token), json={"apiType": "anthropic"},
+        # #241: the route used to answer {"models": [], "listable": false} for
+        # Anthropic without calling anything, and the panel rendered that as
+        # "This provider does not publish a model list."
+        seen = self._fake_anthropic(
+            monkeypatch, models=["claude-sonnet-5", "claude-haiku-4-5"],
         )
-        assert res.status_code == 200
-        assert res.get_json() == {"models": [], "listable": False}
+        _, token = user_and_token
+        body = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "apiKey": "sk-ant-typed"},
+        ).get_json()
+        assert seen["api_key"] == "sk-ant-typed"
+        assert body["listable"] is True
+        assert "claude-sonnet-5" in body["models"]
 
-    def test_a_rejected_key_is_a_400_that_says_why(
+    def test_gemini_offers_only_models_that_can_chat(
         self, client, user_and_token, monkeypatch
     ):
-        # The user is mid-edit and the message is what tells them which field is
-        # wrong, so it has to reach them rather than becoming a bare 500.
+        # The real listing mixes in embedding and tuning-only models. Offering
+        # one as the chat model fails at the first agent run, not here.
+        self._fake_gemini(
+            monkeypatch,
+            models=[
+                ("models/gemini-2.0-flash", ["generateContent", "countTokens"]),
+                ("models/text-embedding-004", ["embedContent"]),
+            ],
+        )
+        _, token = user_and_token
+        body = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "gemini", "apiKey": "AIza-typed"},
+        ).get_json()
+        # And the "models/" prefix is stripped: every other place in Curio
+        # names the bare id.
+        assert body["models"] == ["gemini-2.0-flash"]
+        assert body["listable"] is True
+
+    # -- the curated fallback ---------------------------------------------
+
+    def test_a_provider_that_cannot_be_reached_replays_its_last_listing(
+        self, client, user_and_token, monkeypatch
+    ):
+        # An error and an empty box leaves the user with nothing to pick. What
+        # the endpoint said last time, plus why we could not ask now, leaves
+        # them able to finish.
+        _, token = user_and_token
+        body_json = {"apiType": "anthropic", "apiKey": "sk-ant-typed"}
+
+        self._fake_anthropic(monkeypatch, models=["claude-sonnet-5"])
+        assert client.post(self.URL, headers=_auth(token), json=body_json).status_code == 200
+
+        self._fake_anthropic(monkeypatch, raises=RuntimeError("connection refused"))
+        res = client.post(self.URL, headers=_auth(token), json=body_json)
+        assert res.status_code == 200
+        body = res.get_json()
+        assert body["source"] == "remembered"
+        assert body["listable"] is False
+        assert body["models"] == ["claude-sonnet-5"]
+        assert body["rememberedAt"], "the panel has to be able to say when"
+        assert "connection refused" in body["warning"]
+
+    def test_a_live_listing_becomes_the_next_fallback(
+        self, client, user_and_token, monkeypatch
+    ):
+        # The recording is refreshed on every success, which is the whole point:
+        # the suggestions track the provider without anyone maintaining them.
+        _, token = user_and_token
+        body_json = {"apiType": "gemini", "apiKey": "AIza-typed"}
+
+        self._fake_gemini(
+            monkeypatch, models=[("models/old-model", ["generateContent"])],
+        )
+        client.post(self.URL, headers=_auth(token), json=body_json)
+        self._fake_gemini(
+            monkeypatch, models=[("models/new-model", ["generateContent"])],
+        )
+        client.post(self.URL, headers=_auth(token), json=body_json)
+
+        self._fake_gemini(monkeypatch, raises=RuntimeError("offline"))
+        body = client.post(self.URL, headers=_auth(token), json=body_json).get_json()
+        assert body["models"] == ["new-model"]
+
+    def test_no_key_replays_the_last_listing_without_a_round_trip(
+        self, client, user_and_token, monkeypatch
+    ):
+        # Every provider authenticates its models endpoint, so sending a
+        # placeholder key only buys a socket timeout for a foregone 401. The
+        # autouse guard is the assertion that nothing was dialled.
+        _, token = user_and_token
+
+        self._fake_anthropic(monkeypatch, models=["claude-sonnet-5"])
+        client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "apiKey": "sk-ant-typed"},
+        )
+
+        self._no_deployment_key(monkeypatch)
+        body = client.post(
+            self.URL, headers=_auth(token), json={"apiType": "anthropic"},
+        ).get_json()
+        assert body["source"] == "remembered"
+        assert body["models"] == ["claude-sonnet-5"]
+        assert "API key" in body["warning"]
+
+    def test_a_recording_is_scoped_to_the_endpoint_that_produced_it(
+        self, client, user_and_token, monkeypatch
+    ):
+        # One provider's models must never be offered for another, and a custom
+        # endpoint is its own provider even under the same api_type.
+        _, token = user_and_token
+        self._fake_anthropic(monkeypatch, models=["claude-sonnet-5"])
+        client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "apiKey": "sk-ant-typed"},
+        )
+
+        self._no_deployment_key(monkeypatch)
+        self._no_deployment_base_url(monkeypatch)
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "openai_compatible", "baseUrl": "http://ollama.test/v1"},
+        )
+        # Nothing was ever recorded for that endpoint, so there is nothing to
+        # replay - not Anthropic's list.
+        assert res.status_code == 400
+
+    # -- when there is nothing to fall back to ----------------------------
+
+    def test_a_rejected_key_with_nothing_recorded_is_a_400_that_says_why(
+        self, client, user_and_token, monkeypatch
+    ):
+        # Nothing has ever been recorded for this endpoint, so the reason IS
+        # the answer. The user is mid-edit and the message is what tells them
+        # which field is wrong, so it has to reach them rather than becoming a
+        # bare 500.
         self._fake_openai(
             monkeypatch, raises=RuntimeError("401 invalid proxy server token"),
         )
@@ -7907,10 +8147,29 @@ class TestProviderModels:
         res = client.post(
             self.URL,
             headers=_auth(token),
-            json={"apiType": "openai_compatible", "baseUrl": "https://x.test/"},
+            json={
+                "apiType": "openai_compatible",
+                "baseUrl": "https://x.test/",
+                "apiKey": "sk-wrong",
+            },
         )
         assert res.status_code == 400
         assert "invalid proxy server token" in res.get_json()["error"]
+
+    def test_a_new_account_with_no_key_is_told_to_add_one(
+        self, client, user_and_token, monkeypatch
+    ):
+        # The honest cold start: nothing recorded, no key, so no suggestions -
+        # and the Model field stays free text, which costs nothing.
+        self._no_deployment_key(monkeypatch)
+        _, token = user_and_token
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "openai_compatible", "baseUrl": "https://x.test/"},
+        )
+        assert res.status_code == 400
+        assert "API key" in res.get_json()["error"]
 
     def test_an_unconfigured_account_can_still_ask(
         self, client, user_and_token, monkeypatch

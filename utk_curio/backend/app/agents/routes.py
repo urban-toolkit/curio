@@ -123,7 +123,7 @@ def get_provider_default():
 @require_auth
 @_map_agent_errors
 def list_provider_models():
-    """The models an OpenAI-compatible endpoint says it serves.
+    """The models AI Settings can offer for the endpoint being configured.
 
     POST rather than GET because AI Settings needs this *before* the user saves:
     they type a base URL and a key, then want to pick a model from what that
@@ -135,12 +135,41 @@ def list_provider_models():
     retyping a secret. A blank ``apiKey`` in particular means "use the saved
     one", matching the panel's own "blank means keep" rule.
 
-    Only ``openai_compatible`` is listable: Anthropic and Gemini have no
-    equivalent ``/models`` in the shape the OpenAI SDK speaks, so they return an
-    empty list and the panel keeps its free-text box rather than pretending.
+    **Hybrid, per #241 - and both halves come from the API.** Two sources:
+
+    - *Live*: what the endpoint reports now. Asked of Anthropic and Gemini too,
+      not only OpenAI-compatible endpoints. The old code never asked them and
+      reported ``listable: false``, which read as "this provider publishes no
+      model list" - a claim that was not true.
+    - *Remembered*: what this endpoint reported the last time it was asked
+      (``agents/model_catalog.py``), recorded per user on every success. Serves
+      as the fallback when a live listing cannot happen, labelled with when it
+      was seen.
+
+    Nothing here is authored by hand. The first cut of this route carried a
+    literal table of model ids, which drifts silently the moment a provider
+    ships or retires one, and could never say anything about a custom endpoint.
+    A recording of what an endpoint said about itself has neither problem.
+
+    Suggestions are never an allowlist: the Model field stays free text, a live
+    listing always wins, and a model typed by hand is always accepted. So a live
+    failure is a 200 with ``source: "remembered"`` and the reason in ``warning``
+    when something was remembered, because "here is what it said last time, and
+    why we could not ask now" beats an error and an empty box. With nothing
+    remembered - a new account that has not pasted a key - the reason *is* the
+    answer and this is a 400.
     """
+    from utk_curio.backend.app.agents.model_catalog import (
+        remember_models,
+        remembered_models,
+    )
     from utk_curio.backend.app.agents.provider_config import (
         resolve_provider_config,
+    )
+    from utk_curio.backend.app.agents.providers import (
+        ModelListingUnavailable,
+        ProviderConfig,
+        list_provider_models as fetch_models,
     )
 
     data = request.get_json(silent=True) or {}
@@ -162,26 +191,44 @@ def list_provider_models():
             api_key = api_key or (resolved.api_key or "")
 
     api_type = api_type or "openai_compatible"
-    if api_type != "openai_compatible":
-        return jsonify({"models": [], "listable": False}), 200
+    user_key = _user_dir_key(g.user)
 
-    from openai import OpenAI
-
-    kwargs = {"api_key": api_key or "no-key", "timeout": 20.0}
-    if base_url:
-        kwargs["base_url"] = base_url
     try:
-        listing = OpenAI(**kwargs).models.list()
-    except Exception as exc:  # noqa: BLE001 - every SDK failure is the same answer here
-        # A rejected key, an unreachable host and an endpoint without /models
-        # all mean "cannot offer a choice". Report it as a 400 the panel can
-        # show verbatim rather than a 500: the user is mid-edit and the message
-        # is the thing that tells them which field is wrong.
-        return _error(f"Could not list models: {exc}", 400)
-    models = sorted(
-        {m.id for m in listing.data if getattr(m, "id", None)}
-    )
-    return jsonify({"models": models, "listable": True}), 200
+        live = fetch_models(
+            ProviderConfig(
+                api_key=api_key, api_type=api_type, base_url=base_url, model="",
+            )
+        )
+    except ModelListingUnavailable as exc:
+        remembered, seen_at = remembered_models(user_key, api_type, base_url)
+        if not remembered:
+            # Nothing was ever recorded for this endpoint, so the reason IS the
+            # answer. 400 rather than 500: the user is mid-edit and the message
+            # tells them which field to fill in.
+            return _error(str(exc), 400)
+        return jsonify({
+            "models": remembered,
+            "listable": False,
+            "source": "remembered",
+            "remembered": remembered,
+            "rememberedAt": seen_at,
+            "warning": str(exc),
+        }), 200
+
+    # A live answer supersedes the recording, and becomes the next one. Writing
+    # is best-effort inside remember_models: a store that cannot be written must
+    # not turn a working listing into an error.
+    remember_models(user_key, api_type, base_url, live)
+    return jsonify({
+        "models": live,
+        # Kept for callers written against the older shape. It means what it
+        # says: the endpoint itself answered.
+        "listable": True,
+        "source": "live",
+        "remembered": [],
+        "rememberedAt": None,
+        "warning": None,
+    }), 200
 
 
 @agents_bp.route("/imports", methods=["GET"])
