@@ -451,11 +451,9 @@ const ProjectsList: React.FC = () => {
               }
               title={selected.name}
               badges={
-                <>
-                  <span className={browseStyles.drawerCategoryBadge}>
-                    Rev {selected.spec_revision}
-                  </span>
-                </>
+                <span className={browseStyles.drawerCategoryBadge}>
+                  Rev {selected.spec_revision}
+                </span>
               }
               subtitle={selected.slug}
               metaLeft={
