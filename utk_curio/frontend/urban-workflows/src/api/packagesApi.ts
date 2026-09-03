@@ -546,13 +546,17 @@ export const packagesApi = {
   },
 
   /** Add a standalone library; backend pip-installs and persists.
-   *  ``installed`` lists what pip actually fetched; ``skipped`` lists
-   *  deps that were already importable (no work done — the UI uses
-   *  this to distinguish "Installed" from "Already installed"). */
+   *  ``installed`` lists what pip actually fetched; ``skipped`` lists deps
+   *  whose requirement was already satisfied (no work done — the UI uses this
+   *  to distinguish "Installed" from "Already installed"). Satisfied is not the
+   *  same as working: ``importError`` carries the reason when the library
+   *  cannot actually be imported, and the UI must report that as a failure
+   *  whatever the other two lists say. */
   addLibrary(kind: "python" | "js", spec: string): Promise<{
     standalone: { python: string[]; js: string[] };
     installed: string[];
     skipped: string[];
+    importError?: string | null;
   }> {
     return apiFetch("/api/packages/libraries", {
       method: "POST",

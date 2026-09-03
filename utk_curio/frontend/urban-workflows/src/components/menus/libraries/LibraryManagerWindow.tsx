@@ -166,6 +166,18 @@ export default function LibraryManagerWindow({
         await new Promise((r) => window.setTimeout(r, MIN_PROGRESS_MS - elapsed));
       }
       setStandalone(data.standalone);
+      // A library can install cleanly and still not import - a wheel whose
+      // native extension cannot load reports a good version, so pip skips it
+      // and the two lists below read as success. Reporting that as "Already
+      // installed" is how a broken library stayed invisible until a node
+      // touched it, so the backend's verdict overrides both lists.
+      if (data.importError) {
+        setStatus(newKind, spec, {
+          kind: "error", spec, libKind: newKind,
+          message: `Installed, but it cannot be imported: ${data.importError}`,
+        });
+        return;
+      }
       const alreadyInstalled = (data.installed?.length ?? 0) === 0 && (data.skipped?.length ?? 0) > 0;
       setStatus(newKind, spec, {
         kind: "success", spec, libKind: newKind, alreadyInstalled,

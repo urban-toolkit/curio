@@ -1345,7 +1345,7 @@ def add_library_route():
     """
     from utk_curio.backend.app.packages import libraries as libs
     from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, PipSpecError, install_python_deps,
+        PipInstallError, PipSpecError, import_failures, install_python_deps,
     )
 
     body = request.get_json(silent=True) or {}
@@ -1374,13 +1374,23 @@ def add_library_route():
     except PipInstallError as exc:
         return _error(f"pip install failed: {exc}", 502)
     libs.add_library(user_key, kind, spec)
+    # pip exiting 0 does not mean the library works, and "skipped" means only
+    # that the metadata was already satisfied. A wheel whose native extension
+    # cannot load - a rasterio built against a different GDAL is the everyday
+    # case - reports a good version, so pip declines to do anything and this
+    # route used to answer "Already installed" for a library that raises
+    # ImportError the moment a node touches it. Say so instead.
+    import_error = import_failures([name]).get(name)
     return jsonify({
         "standalone": libs.list_standalone(user_key),
-        # ``skipped`` is non-empty when the lib was already importable -
-        # the frontend reads this to show "Already installed" instead of
-        # "Installed" so the user knows nothing was actually downloaded.
+        # ``skipped`` is non-empty when pip found the requirement already
+        # satisfied - the frontend reads this to show "Already installed"
+        # instead of "Installed" so the user knows nothing was downloaded.
         "installed": list(report.installed),
         "skipped": list(report.skipped),
+        # Present only when the library cannot actually be imported. The
+        # frontend must treat this as a failure however the two lists read.
+        "importError": import_error,
     }), 201
 
 
