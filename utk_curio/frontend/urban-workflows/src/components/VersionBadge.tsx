@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { backendUrl } from "../utils/backendUrl";
 
 /**
  * How node code is being executed, in the words the docs use.
@@ -41,7 +42,7 @@ const VersionBadge: React.FC = () => {
   const [isolation, setIsolation] = useState<string>("");
 
   useEffect(() => {
-    fetch(process.env.BACKEND_URL + "/version", { cache: "no-store" })
+    fetch(backendUrl() + "/version", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!d) return;

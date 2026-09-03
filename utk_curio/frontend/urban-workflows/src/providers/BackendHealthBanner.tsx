@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
+import { backendUrl } from "../utils/backendUrl";
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5002";
+const BACKEND_URL = backendUrl() || "http://localhost:5002";
 
 /**
  * Pings the backend /live endpoint. If the backend is unreachable (e.g. not started),

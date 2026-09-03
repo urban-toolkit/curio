@@ -52,7 +52,13 @@ def curio_root() -> Path:
     """
     from utk_curio.backend.config import _is_testing
 
-    root = launch_dir() / ".curio"
+    # CURIO_STATE_DIR relocates the whole ``.curio`` tree without moving the
+    # DATA root (``launch_dir`` also anchors ``/file/`` and relative node paths,
+    # and ``safe_paths.is_within`` resolves symlinks, so those cannot be
+    # redirected). The parallel e2e harness gives each backend+sandbox pair
+    # its own; see backend/tests/shards.py.
+    override = os.environ.get("CURIO_STATE_DIR")
+    root = Path(override) if override else launch_dir() / ".curio"
     return root / "test" if _is_testing() else root
 
 

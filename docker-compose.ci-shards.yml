@@ -1,0 +1,37 @@
+# CI overlay: publish the ports of the EXTRA e2e shards.
+#
+# `scripts/test.sh --parallel N` runs the e2e suite on N pytest-xdist workers,
+# each against its own backend+sandbox pair behind the one frontend. In CI the
+# pairs for shards 1..N-1 run INSIDE the same container as the base stack
+# (started with `docker compose exec -d`, see the workflow), on container ports
+# 5002+k / 2000+k. `docker compose exec` cannot publish ports, so they are
+# declared here at create time -- declaring more than a run uses costs nothing, so seven pairs
+# (up to 8 workers) are declared; raise CURIO_E2E_PARALLEL, not this file.
+# Compose APPENDS `ports` across overlays, so the base file's 5002/8080 and
+# docker-compose.ci.yml's sandbox publish survive.
+#
+# Loopback only, for the same reason docker-compose.ci.yml gives for the base
+# sandbox: these execute arbitrary code and only the host-side pytest needs
+# them. Host ports default to container+21 so that, unset, they land next to
+# the CI stack's remapped 5022/2020 rather than on prod's 5002/2000 block.
+#
+# Host-side workers find their pair through backend/tests/shards.py: base host
+# port (CURIO_E2E_BACKEND_PORT=5022) + k. The mappings below must keep that
+# arithmetic true: shard k's host port == 5022+k, container port == 5002+k.
+services:
+  curio:
+    ports:
+      - "127.0.0.1:${CURIO_PORT_5003:-5023}:5003"   # shard 1 backend
+      - "127.0.0.1:${CURIO_PORT_2001:-2021}:2001"   # shard 1 sandbox
+      - "127.0.0.1:${CURIO_PORT_5004:-5024}:5004"   # shard 2 backend
+      - "127.0.0.1:${CURIO_PORT_2002:-2022}:2002"   # shard 2 sandbox
+      - "127.0.0.1:${CURIO_PORT_5005:-5025}:5005"   # shard 3 backend
+      - "127.0.0.1:${CURIO_PORT_2003:-2023}:2003"   # shard 3 sandbox
+      - "127.0.0.1:${CURIO_PORT_5006:-5026}:5006"   # shard 4 backend
+      - "127.0.0.1:${CURIO_PORT_2004:-2024}:2004"   # shard 4 sandbox
+      - "127.0.0.1:${CURIO_PORT_5007:-5027}:5007"   # shard 5 backend
+      - "127.0.0.1:${CURIO_PORT_2005:-2025}:2005"   # shard 5 sandbox
+      - "127.0.0.1:${CURIO_PORT_5008:-5028}:5008"   # shard 6 backend
+      - "127.0.0.1:${CURIO_PORT_2006:-2026}:2006"   # shard 6 sandbox
+      - "127.0.0.1:${CURIO_PORT_5009:-5029}:5009"   # shard 7 backend
+      - "127.0.0.1:${CURIO_PORT_2007:-2027}:2007"   # shard 7 sandbox

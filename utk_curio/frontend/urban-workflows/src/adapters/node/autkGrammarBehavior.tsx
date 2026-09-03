@@ -8,6 +8,7 @@ import { autkGrammarAdapter } from '../../adapters/autkGrammarAdapter';
 import { VisInteractionType, NodeType } from '../../constants';
 import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
+import { backendUrl } from '../../utils/backendUrl';
 
 export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     const { showToast } = useToastContext();
@@ -1962,9 +1963,9 @@ function resolveDataSourceUrls(spec: any, forBackend = false): any {
     // For the browser, the host-published URL the page itself talks to. For the
     // sandbox, the token above - deliberately not a URL. The /file/ route is
     // unauthenticated, so the node fetch needs no token of the auth kind.
-    const backendUrl = forBackend
+    const base = forBackend
         ? SANDBOX_BACKEND_URL_TOKEN
-        : (process.env.BACKEND_URL || 'http://localhost:5002').replace(/\/$/, '');
+        : (backendUrl() || 'http://localhost:5002');
     const urlFields = ['pbfFileUrl', 'csvFileUrl', 'jsonFileUrl', 'geojsonFileUrl'];
     const isAbsolute = (url: string) => /^[a-z][a-z\d+\-.]*:/i.test(url);
 
@@ -1973,7 +1974,7 @@ function resolveDataSourceUrls(spec: any, forBackend = false): any {
         for (const field of urlFields) {
             const val = source[field];
             if (typeof val === 'string' && !isAbsolute(val)) {
-                patch[field] = `${backendUrl}/file/${val.replace(/^\/+/, '')}`;
+                patch[field] = `${base}/file/${val.replace(/^\/+/, '')}`;
             }
         }
         return Object.keys(patch).length > 0 ? { ...source, ...patch } : source;

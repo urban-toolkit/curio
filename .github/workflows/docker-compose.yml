@@ -13,6 +13,7 @@ on:
       - 'docker-compose.ci.yml'
       - 'docker-compose.ci-isolated.yml'
       - 'docker-compose.ci-exec-user.yml'
+      - 'docker-compose.ci-shards.yml'
       - '.github/workflows/docker-compose.yml'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -39,6 +40,7 @@ on:
       - 'docker-compose.ci.yml'
       - 'docker-compose.ci-isolated.yml'
       - 'docker-compose.ci-exec-user.yml'
+      - 'docker-compose.ci-shards.yml'
       - '.github/workflows/docker-compose.yml'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -92,7 +94,7 @@ jobs:
       # workflow deps, library manager, project save/load, ...). Every
       # `docker compose` step below reads COMPOSE_FILE, so setting it here is
       # enough. See docker-compose.ci.yml for why this isn't the deploy overlay.
-      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml:docker-compose.ci-shards.yml
       # Hardware WebGPU path (see conftest.py browser_type_launch_args).
       CURIO_WEBGPU_BACKEND: hardware
       CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
@@ -107,6 +109,16 @@ jobs:
       CURIO_PORT_2000: "2020"
       CURIO_PORT_5002: "5022"
       CURIO_PORT_8080: "8100"
+      # Extra e2e shards (docker-compose.ci-shards.yml publishes pairs for up
+      # to 8 workers): shard k's backend is container 5002+k on host 5022+k,
+      # its sandbox container 2000+k on host 2020+k -- the arithmetic
+      # backend/tests/shards.py does from CURIO_E2E_BACKEND_PORT /
+      # CURIO_E2E_SANDBOX_PORT below. Each worker is a Chromium + backend +
+      # sandbox (~3 GiB) inside the one container, on a host that also runs
+      # the prod stacks, and no N beats the longest group (test_agent_runs_e2e,
+      # ~2 min here). 4 to begin with; raise once the pass set matches the
+      # serial run, watching memory and nvidia-smi.
+      CURIO_E2E_PARALLEL: "4"
       BACKEND_URL: "http://localhost:5022"
       # Host-side Playwright targets the remapped ports (utils.py
       # e2e_existing_servers / _backend_base_url_for_config read these).
@@ -289,9 +301,53 @@ jobs:
             utk_curio/frontend/urban-workflows/dist
           test -f utk_curio/frontend/urban-workflows/dist/index.html
 
+      - name: 🧩 Start the extra e2e shards inside the CI container
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Shards 1..N-1 are backend+sandbox pairs in the SAME container as the
+          # base stack (no extra compose stacks). Their ports were published at
+          # create time by docker-compose.ci-shards.yml. Inside the container
+          # shards.py derives container ports (5002+k / 2000+k) and a state dir
+          # under /app/.curio/shards/k, which the bind mount shares with the host
+          # worker that will drive it. `umask 000` for the same reason the base
+          # command has it: root-created files the host-side pytest must write.
+          for k in $(seq 1 $((CURIO_E2E_PARALLEL - 1))); do
+            echo "==> starting shard $k"
+            docker compose -p curio-ci exec -d -T curio sh -c '
+              umask 000
+              k="$1"
+              eval "$(env -u CURIO_E2E_BACKEND_PORT -u CURIO_E2E_SANDBOX_PORT \
+                          -u BACKEND_PORT -u SANDBOX_PORT \
+                          python -m utk_curio.backend.tests.shards "$k")"
+              mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
+              cp -r /app/datasets/. "$CURIO_CATALOG_ROOT/"
+              python curio.py start backend --auth --with-examples \
+                --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
+                --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
+                > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
+              python curio.py start sandbox \
+                --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
+                --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
+                > "$CURIO_STATE_DIR/launch-sandbox.out" 2>&1 &
+              wait
+            ' sh "$k"
+          done
+          # Same shape as the base health gate: poll /live on each host port.
+          for k in $(seq 1 $((CURIO_E2E_PARALLEL - 1))); do
+            for port in $((CURIO_E2E_BACKEND_PORT + k)) $((CURIO_E2E_SANDBOX_PORT + k)); do
+              echo "==> waiting for shard $k on :$port"
+              timeout 240 bash -c "until curl -sf http://localhost:$port/live >/dev/null; do sleep 2; done" \
+                || { echo "::error::shard $k never answered on :$port" >&2
+                     docker compose -p curio-ci exec -T curio sh -c "tail -50 /app/.curio/shards/$k/launch-*.out" || true
+                     exit 1; }
+            done
+          done
+
       - name: 🎭 Run e2e tests (full matrix, hardware WebGPU)
         run: |
           bash scripts/test.sh --e2e-only --use-existing \
+            --parallel "$CURIO_E2E_PARALLEL" \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"
 
       - name: 📊 Install Allure CLI
