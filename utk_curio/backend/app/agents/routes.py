@@ -160,10 +160,12 @@ def list_provider_models():
     answer and this is a 400.
     """
     from utk_curio.backend.app.agents.model_catalog import (
+        provider_key,
         remember_models,
         remembered_models,
     )
     from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
         resolve_provider_config,
     )
     from utk_curio.backend.app.agents.providers import (
@@ -178,17 +180,40 @@ def list_provider_models():
     api_key = (data.get("apiKey") or "").strip()
 
     # Fall back to the account's resolved provider for whatever the caller left
-    # blank. Tolerate the resolve failing: it raises when no model is set, and
-    # "no model yet" is the normal state of someone about to choose one here.
+    # blank - but only as far as the caller is asking about that same endpoint.
+    # An account holds one credential triple, so filling the blanks in
+    # unconditionally lent the Anthropic tab the key saved for someone's Ollama,
+    # then labelled the answer "From this endpoint" and filed the recording
+    # under the wrong provider. That is the same thing ``provider_config``'s own
+    # same-provider rule exists to prevent, undone one layer up.
     if not (api_type and base_url and api_key):
         try:
-            resolved = resolve_provider_config(g.user)
-        except Exception:  # noqa: BLE001 - an unconfigured account is expected
+            # A model is what the user is on this screen to choose, so it cannot
+            # be a precondition for asking what models exist - and the resolve
+            # raising over it used to take the deployment's API key down with
+            # it. A guest with no key deployed still raises, and inherits
+            # nothing.
+            resolved = resolve_provider_config(g.user, require_model=False)
+        except ProviderConfigError:
             resolved = None
         if resolved is not None:
             api_type = api_type or (resolved.api_type or "")
-            base_url = base_url or (resolved.base_url or "")
-            api_key = api_key or (resolved.api_key or "")
+            if provider_key(api_type) == provider_key(resolved.api_type):
+                # A blank base URL still means "the endpoint this account
+                # resolved to": the panel sends "" on every non-custom tab, and
+                # inheriting the deployment's endpoint there is what "leave a
+                # field blank to use it" promises.
+                base_url = base_url or (resolved.base_url or "")
+            if provider_key(api_type, base_url) == provider_key(
+                resolved.api_type, resolved.base_url
+            ):
+                # A key belongs to the endpoint it was saved against, and
+                # ``provider_key`` is where Curio already says what "the same
+                # endpoint" means. Once the caller names a different one - a
+                # different provider, or a URL typed on the Custom tab -
+                # inheriting the key would post the account's, or the operator's,
+                # secret to a host neither of them chose.
+                api_key = api_key or (resolved.api_key or "")
 
     api_type = api_type or "openai_compatible"
     user_key = _user_dir_key(g.user)

@@ -39,7 +39,7 @@ class ProviderConfigError(ValueError):
     """No provider is available for this caller (surfaced as a 400)."""
 
 
-def resolve_provider_config(user) -> ProviderConfig:
+def resolve_provider_config(user, require_model: bool = True) -> ProviderConfig:
     """Resolve the caller's provider config, field by field.
 
     Each field the user set wins; each field they left blank inherits the
@@ -50,6 +50,17 @@ def resolve_provider_config(user) -> ProviderConfig:
     endpoint (see ``config.DEFAULT_LLM_*``), so when neither the user nor the
     operator named one, refuse here and let the caller point the user at AI
     Settings rather than dispatching a half-formed config into a provider SDK.
+
+    ``require_model=False`` is for the one caller that is *choosing* the model:
+    the AI Settings model listing, which never dispatches a completion. A model
+    it does not have yet must not cost it the credentials resolved alongside
+    one. An operator can set ``CURIO_DEFAULT_LLM_API_KEY`` while leaving
+    ``CURIO_DEFAULT_LLM_MODEL`` empty (both default to empty, and only the model
+    has no fallback), and refusing over that empty field discarded the whole
+    config - so every new user on such a deployment was told to add a key the
+    server was already holding. The returned config carries ``model=""`` and is
+    NOT dispatchable; only pass ``False`` if you are not about to run a
+    completion with it.
     """
     if user.is_guest:
         if not GUEST_LLM_API_KEY:
@@ -76,7 +87,7 @@ def resolve_provider_config(user) -> ProviderConfig:
         base_url = base_url or DEFAULT_LLM_BASE_URL
         model = model or DEFAULT_LLM_MODEL
 
-    if not model:
+    if require_model and not model:
         raise ProviderConfigError(
             "No AI provider is configured. Set one up in AI Settings, or ask "
             "your Curio operator to configure a default provider."

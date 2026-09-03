@@ -7886,6 +7886,21 @@ class TestProviderModels:
         monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "")
 
     @staticmethod
+    def _no_deployment_model(monkeypatch):
+        """Ship the real default: an operator key with no model named.
+
+        ``conftest`` pins ``DEFAULT_LLM_MODEL`` to a stand-in for every test in
+        this package, which means ``resolve_provider_config`` always finds a
+        model and its "no model" refusal is never reached here. That pin is what
+        hid the bug this helper exists to expose: ``CURIO_DEFAULT_LLM_MODEL``
+        ships empty while an operator may well set the key, and the listing
+        route used to lose the key along with the refused config.
+        """
+        from utk_curio.backend.app.agents import provider_config
+
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "")
+
+    @staticmethod
     def _fake_openai(monkeypatch, *, models=(), raises=None):
         """Stand in for the OpenAI SDK, recording how it was constructed."""
         seen = {}
@@ -8175,8 +8190,9 @@ class TestProviderModels:
     def test_an_unconfigured_account_can_still_ask(
         self, client, user_and_token, monkeypatch
     ):
-        # resolve_provider_config raises when no model is set, and "no model
-        # yet" is the normal state of someone about to choose one here.
+        # An account with nothing saved asks with only what is on screen. Note
+        # this omits apiType, so it also pins that a missing provider is
+        # inherited from the resolved account.
         self._fake_openai(monkeypatch, models=["gemma4"])
         _, token = user_and_token
         res = client.post(
@@ -8186,6 +8202,131 @@ class TestProviderModels:
         )
         assert res.status_code == 200
         assert res.get_json()["models"] == ["gemma4"]
+
+    def test_a_deployment_key_is_not_lost_when_no_default_model_is_set(
+        self, client, user_and_token, monkeypatch
+    ):
+        """A model is what this screen is for, so it cannot gate asking (#241).
+
+        ``resolve_provider_config`` refuses when no model resolves, and the
+        route threw the whole config away with the refusal - including the
+        operator's API key. Since ``CURIO_DEFAULT_LLM_MODEL`` ships empty, an
+        operator who deploys a key and leaves the model to their users had
+        every one of them told to add a key the server was already holding.
+        """
+        self._no_deployment_model(monkeypatch)
+        seen = self._fake_openai(monkeypatch, models=["gemma4"])
+        _, token = user_and_token
+
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "openai_compatible", "baseUrl": "", "apiKey": ""},
+        )
+
+        assert res.status_code == 200, res.get_json()
+        assert res.get_json()["models"] == ["gemma4"]
+        # The deployment's credentials were used, not discarded.
+        assert seen["api_key"] == "test-key"
+        assert seen["base_url"] == "http://127.0.0.1:9/v1"
+
+    def test_a_key_saved_for_one_provider_is_not_lent_to_another(
+        self, client, db, user_and_token, monkeypatch
+    ):
+        """One credential per account must not mean one credential everywhere.
+
+        The account holds a single provider triple, and the route filled every
+        blank field from it regardless of which tab asked. So opening Anthropic
+        with an Ollama credential saved listed the Ollama endpoint and labelled
+        the answer "From this endpoint" - the exact class of unverified claim
+        #241 exists to remove.
+        """
+        self._no_deployment_key(monkeypatch)
+        user, token = user_and_token
+        user.llm_api_type = "openai_compatible"
+        user.llm_base_url = "http://ollama.local/v1"
+        user.llm_api_key = "sk-ollama-secret"
+        db.session.commit()
+
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "baseUrl": "", "apiKey": ""},
+        )
+
+        # Refused for want of a key, rather than answered with another
+        # provider's. The Anthropic SDK is booby-trapped by _no_real_calls, so
+        # a leak would fail loudly here instead of passing quietly.
+        assert res.status_code == 400
+        assert "API key" in res.get_json()["error"]
+
+    def test_a_typed_endpoint_is_not_handed_another_endpoints_key(
+        self, client, user_and_token, monkeypatch
+    ):
+        """Typing a URL must not post the operator's secret to it.
+
+        The Custom tab sends a base URL the user typed. Inheriting the blank
+        key alongside it sent whatever the account resolved - here the
+        deployment's key - to a host neither the operator nor the user chose.
+        """
+        seen = self._fake_openai(monkeypatch, models=["anything"])
+        _, token = user_and_token
+
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={
+                "apiType": "openai_compatible",
+                "baseUrl": "http://typed.example.test/v1",
+                "apiKey": "",
+            },
+        )
+
+        assert res.status_code == 400
+        assert "API key" in res.get_json()["error"]
+        # The strong half: the SDK was never even constructed, so nothing was
+        # sent anywhere. An assertion on the status alone would still pass if
+        # the key leaked and the endpoint merely refused it.
+        assert seen == {}
+
+    def test_a_recording_is_filed_under_the_endpoint_that_answered(
+        self, client, user_and_token, monkeypatch
+    ):
+        """Record and replay have to agree on which endpoint spoke.
+
+        The base URL is part of an endpoint's identity, so inheriting the
+        deployment's URL into an Anthropic request filed that listing under
+        ``anthropic@<the openai-compatible url>``. The replay then looked for it
+        under plain ``anthropic`` and missed.
+        """
+        self._fake_anthropic(monkeypatch, models=["claude-haiku-4-5"])
+        _, token = user_and_token
+        recorded = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "baseUrl": "", "apiKey": "sk-typed"},
+        )
+        assert recorded.status_code == 200
+        assert recorded.get_json()["models"] == ["claude-haiku-4-5"]
+
+        # The recording must be filed under "anthropic", not under anthropic
+        # plus whatever unrelated base URL the account happened to resolve to.
+        # Proven by moving that URL: the replay below can only find the entry if
+        # the deployment's endpoint never entered its identity in the first
+        # place. Without the fix the write went to
+        # ``anthropic@http://127.0.0.1:9/v1`` and this lookup misses.
+        self._no_deployment_base_url(monkeypatch)
+        self._no_deployment_key(monkeypatch)
+        replayed = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "baseUrl": "", "apiKey": ""},
+        )
+
+        assert replayed.status_code == 200, replayed.get_json()
+        body = replayed.get_json()
+        assert body["source"] == "remembered"
+        assert body["models"] == ["claude-haiku-4-5"]
 
     def test_requires_auth(self, client):
         assert client.post(self.URL, json={}).status_code == 401
