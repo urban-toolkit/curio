@@ -43,7 +43,6 @@ export interface ProjectSummary {
   last_opened_at: string | null;
   created_at: string;
   updated_at: string;
-  archived_at: string | null;
   graph_preview?: GraphPreview | null;
 }
 
@@ -86,7 +85,7 @@ export interface LoadResponse {
 }
 
 export interface ListParams {
-  scope?: "mine" | "recent" | "archived";
+  scope?: "mine" | "recent";
   sort?: "last_opened" | "name" | "created";
 }
 
@@ -123,8 +122,10 @@ export const projectsApi = {
     });
   },
 
-  delete(id: string, opts?: { purge?: boolean }): Promise<void> {
-    return apiFetch(`/api/projects/${id}?purge=${opts?.purge ?? false}`, {
+  /** Hard-deletes the project and its files. There is no soft variant — the
+   *  ``purge`` parameter went with Archive (#261). */
+  delete(id: string): Promise<void> {
+    return apiFetch(`/api/projects/${id}`, {
       method: "DELETE",
     });
   },

@@ -28,7 +28,7 @@ import PromptDialog from "../../components/PromptDialog";
 import { UNREADABLE_FILE_MESSAGE } from "../../utils/dataflowImport";
 
 type ViewMode = "grid" | "list";
-type FilterTab = "all" | "recent" | "archived";
+type FilterTab = "all" | "recent";
 /** Mirrors the sorts projectsApi and `list_for_user` already implement. */
 type ProjectSort = "last_opened" | "name" | "created";
 
@@ -38,18 +38,16 @@ const SORT_OPTIONS: { value: ProjectSort; label: string }[] = [
   { value: "created", label: "Sort: Created" },
 ];
 
-const FILTER_TABS: FilterTab[] = ["all", "recent", "archived"];
+const FILTER_TABS: FilterTab[] = ["all", "recent"];
 
-const SCOPE_BY_TAB: Record<FilterTab, "mine" | "recent" | "archived"> = {
+const SCOPE_BY_TAB: Record<FilterTab, "mine" | "recent"> = {
   all: "mine",
   recent: "recent",
-  archived: "archived",
 };
 
 const TAB_LABELS: Record<FilterTab, string> = {
   all: "All projects",
   recent: "Recent",
-  archived: "Archived",
 };
 
 function formatDate(value: string | null): string {
@@ -78,7 +76,6 @@ const ProjectsList: React.FC = () => {
   const [byTab, setByTab] = useState<Record<FilterTab, ProjectSummary[]>>({
     all: [],
     recent: [],
-    archived: [],
   });
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [sort, setSort] = useState<ProjectSort>("last_opened");
@@ -95,7 +92,7 @@ const ProjectsList: React.FC = () => {
   // each holding the project it was opened for.
   const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
-  // The project an action is currently running against. A purge can take a
+  // The project an action is currently running against. A delete can take a
   // while, and the buttons were re-clickable throughout.
   const [busyId, setBusyId] = useState<string | null>(null);
   const importNotebookRef = useRef<HTMLInputElement>(null);
@@ -108,7 +105,7 @@ const ProjectsList: React.FC = () => {
           .catch(() => [] as ProjectSummary[])
       )
     );
-    setByTab({ all: results[0], recent: results[1], archived: results[2] });
+    setByTab({ all: results[0], recent: results[1] });
   }, [sort]);
 
   useEffect(() => {
@@ -139,7 +136,7 @@ const ProjectsList: React.FC = () => {
   // `null` and this effect read it as falsy and re-selected `filtered[0]`; only
   // the dependency array delayed it, so the drawer stayed shut until the next
   // search keystroke, filter click, sort change or post-mutation refetch - and
-  // after a rename or archive it came back on a *different* project than the
+  // after a rename or a delete it came back on a *different* project than the
   // one the user had been reading.
   useEffect(() => {
     if (filtered.length === 0) {
@@ -180,25 +177,10 @@ const ProjectsList: React.FC = () => {
     }
   };
 
-  const handleArchive = async (project: ProjectSummary) => {
+  const performDelete = async (project: ProjectSummary) => {
     setBusyId(project.id);
     try {
       await projectsApi.delete(project.id);
-      loadProjects();
-      showToast(`Archived "${project.name}".`, "success");
-    } catch (err) {
-      // Was a bare console.error, so a failed archive looked exactly like a
-      // successful one to anyone not holding the devtools open.
-      showToast((err as Error)?.message || "Couldn't archive that dataflow.", "error");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const performDeleteForever = async (project: ProjectSummary) => {
-    setBusyId(project.id);
-    try {
-      await projectsApi.delete(project.id, { purge: true });
       loadProjects();
       showToast(`Deleted "${project.name}".`, "success");
     } catch (err) {
@@ -208,7 +190,7 @@ const ProjectsList: React.FC = () => {
     }
   };
 
-  const handleDeleteForever = (project: ProjectSummary) => setDeleteTarget(project);
+  const handleDelete = (project: ProjectSummary) => setDeleteTarget(project);
 
   /**
    * Run one action from {@link projectActions}, whichever surface asked.
@@ -228,16 +210,8 @@ const ProjectsList: React.FC = () => {
       case "duplicate":
         void handleDuplicate(project);
         return;
-      case "archive":
-        void handleArchive(project);
-        return;
       case "delete":
-        handleDeleteForever(project);
-        return;
-      case "restore":
-        // Not offered yet: there is no restore route. Listed in the action
-        // union so adding one is a compile error here rather than a silent
-        // no-op on whichever surface forgot it.
+        handleDelete(project);
         return;
     }
   };
@@ -481,9 +455,6 @@ const ProjectsList: React.FC = () => {
                   <span className={browseStyles.drawerCategoryBadge}>
                     Rev {selected.spec_revision}
                   </span>
-                  {selected.archived_at ? (
-                    <span className={browseStyles.drawerInstalledBadge}>Archived</span>
-                  ) : null}
                 </>
               }
               subtitle={selected.slug}
@@ -502,9 +473,6 @@ const ProjectsList: React.FC = () => {
                 { label: "Last opened", value: catalogRelativeTime(selected.last_opened_at) },
                 { label: "Updated", value: formatDate(selected.updated_at) },
                 { label: "Created", value: formatDate(selected.created_at) },
-                selected.archived_at
-                  ? { label: "Archived", value: formatDate(selected.archived_at) }
-                  : null,
               ]}
               primaryAction={
                 <button
@@ -521,7 +489,7 @@ const ProjectsList: React.FC = () => {
                 // what may be done to a project again (#221). "Open" is the
                 // primary action above, so it is dropped here.
                 <div className={styles.detailButtonRow}>
-                  {projectActions({ archived: Boolean(selected.archived_at) })
+                  {projectActions()
                     .filter((action) => action.id !== "open")
                     .map((action) => (
                       <button
@@ -559,12 +527,11 @@ const ProjectsList: React.FC = () => {
             boxShadow: "var(--curio-shadow-context-menu)",
           }}
         >
-          {/* The same list the detail drawer renders. It used to hardcode five
-              items with no reference to ``archived_at``, so it offered Archive
-              on an already-archived project and disagreed with the drawer about
-              Delete forever (#221). Real buttons, not clickable divs: these are
-              actions and were unreachable by keyboard. */}
-          {projectActions({ archived: Boolean(contextMenu.project.archived_at) }).map(
+          {/* The same list the detail drawer renders. Both used to hardcode
+              their own, and disagreed about what a project allowed (#221).
+              Real buttons, not clickable divs: these are actions and were
+              unreachable by keyboard. */}
+          {projectActions().map(
             (action) => (
               <button
                 key={action.id}
@@ -607,13 +574,13 @@ const ProjectsList: React.FC = () => {
           // backup posture - never claim irreversibility the platform can't
           // control.
           body={permanentDeletionNotice()}
-          confirmLabel="Delete forever"
+          confirmLabel="Delete"
           destructive
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => {
             const project = deleteTarget;
             setDeleteTarget(null);
-            void performDeleteForever(project);
+            void performDelete(project);
           }}
         />
       ) : null}
