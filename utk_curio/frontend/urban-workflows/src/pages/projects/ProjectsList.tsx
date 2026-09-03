@@ -26,6 +26,7 @@ import styles from "./ProjectsBrowseLayout.module.css";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import PromptDialog from "../../components/PromptDialog";
 import { UNREADABLE_FILE_MESSAGE } from "../../utils/dataflowImport";
+import { backendUrl } from "../../utils/backendUrl";
 
 type ViewMode = "grid" | "list";
 /** Mirrors the sorts projectsApi and `list_for_user` already implement. */
@@ -217,7 +218,7 @@ const ProjectsList: React.FC = () => {
         return;
       }
       try {
-        const trillSpec = await notebookToTrill(json, process.env.BACKEND_URL as string);
+        const trillSpec = await notebookToTrill(json, backendUrl());
         const name = file.name.replace(/\.ipynb$/i, "");
         await projectsApi.create({ name, spec: trillSpec as unknown as Record<string, unknown>, outputs: [] });
         loadProjects();

@@ -24,6 +24,15 @@
 #   --e2e-only          Run only the E2E suite
 #   --unit-only         Run only backend, sandbox, and frontend unit tests (no E2E)
 #   --allure-dir DIR    Write Allure results to DIR (passed to E2E pytest)
+#   --parallel N        Run the E2E suite on N pytest-xdist workers, each against
+#                       its own backend+sandbox pair (one shared frontend).
+#                       N=auto picks min(4, cores/4). Default 1, or $CURIO_E2E_PARALLEL.
+#                       With --use-existing, pairs 1..N-1 must already be running
+#                       on the ports `python -m utk_curio.backend.tests.shards K` prints.
+#
+# Ports: the stack this script boots binds BACKEND_PORT / SANDBOX_PORT /
+# FRONTEND_PORT from the environment (defaults 5002 / 2000 / 8080), so a
+# checkout with its own .curio-ports.sh never fights a sibling's stack.
 
 set -uo pipefail
 
@@ -36,6 +45,7 @@ VIDEOS=0
 EXAMPLES=1
 E2E_WORKFLOWS=""
 ALLURE_DIR=""
+PARALLEL="${CURIO_E2E_PARALLEL:-1}"
 SUITE="all"   # all | backend | sandbox | jest | e2e | unit
 
 while [[ $# -gt 0 ]]; do
@@ -51,8 +61,9 @@ while [[ $# -gt 0 ]]; do
     --e2e-only)      SUITE="e2e";          shift ;;
     --unit-only)     SUITE="unit";         shift ;;
     --allure-dir)    ALLURE_DIR="$2";      shift 2 ;;
+    --parallel)      PARALLEL="$2";        shift 2 ;;
     --help|-h)
-      sed -n '2,26p' "$0"
+      sed -n '2,35p' "$0"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -60,6 +71,24 @@ done
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CURIO_PID=""
+SHARD_PIDS=()   # launchers of the extra backend+sandbox pairs (--parallel > 1)
+
+# Base ports for the stack this script boots and for shard 0.
+export BACKEND_PORT="${BACKEND_PORT:-5002}"
+export SANDBOX_PORT="${SANDBOX_PORT:-2000}"
+export FRONTEND_PORT="${FRONTEND_PORT:-8080}"
+export CURIO_E2E_HOST="${CURIO_E2E_HOST:-localhost}"
+export CURIO_E2E_BACKEND_PORT="${CURIO_E2E_BACKEND_PORT:-$BACKEND_PORT}"
+export CURIO_E2E_SANDBOX_PORT="${CURIO_E2E_SANDBOX_PORT:-$SANDBOX_PORT}"
+export CURIO_E2E_FRONTEND_PORT="${CURIO_E2E_FRONTEND_PORT:-$FRONTEND_PORT}"
+
+if [[ "$PARALLEL" == "auto" ]]; then
+  cores=$(python -c 'import os; print(os.cpu_count() or 4)')
+  PARALLEL=$(( cores / 4 )); (( PARALLEL < 1 )) && PARALLEL=1; (( PARALLEL > 4 )) && PARALLEL=4
+fi
+if ! [[ "$PARALLEL" =~ ^[0-9]+$ ]] || (( PARALLEL < 1 )); then
+  echo "ERROR: --parallel expects a positive integer or 'auto', got '$PARALLEL'" >&2; exit 1
+fi
 
 # This script NEVER lets pytest own the server lifecycle. It either attaches to
 # a stack someone else booted (--use-existing) or boots one itself below and
@@ -119,6 +148,7 @@ wait_for_port() {
     # Fail fast if the Curio process already exited
     if [[ -n "${CURIO_PID:-}" ]] && ! kill -0 "$CURIO_PID" 2>/dev/null; then
       echo "ERROR: Curio process (pid $CURIO_PID) exited unexpectedly while waiting for $name" >&2
+      RESULTS+=("  FAIL  stack boot ($name never came up; launcher exited)"); OVERALL=1
       exit 1
     fi
     if python -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('localhost', $port)); s.close()" 2>/dev/null; then
@@ -128,10 +158,90 @@ wait_for_port() {
     sleep 1
   done
   echo "ERROR: $name (port $port) did not start within 240 s" >&2
+  RESULTS+=("  FAIL  stack boot ($name on port $port timed out)"); OVERALL=1
   exit 1
 }
 
+# --parallel N: shards 1..N-1 are extra backend+sandbox pairs behind the ONE
+# frontend the base stack serves. Ports, state dir, DuckDB, dataset-catalog copy
+# and logs all come from backend/tests/shards.py -- the same module every xdist
+# worker uses to find ITS pair, so driver and worker cannot disagree. Shard 0 is
+# the base stack itself.
+shard_facts() {   # -> "<backend port> <sandbox port> <state dir>" for shard $1
+  PYTHONPATH="$REPO_ROOT" python -m utk_curio.backend.tests.shards "$1" --json \
+    | python -c 'import json,sys; d=json.load(sys.stdin); print(d["CURIO_E2E_BACKEND_PORT"], d["CURIO_E2E_SANDBOX_PORT"], d["CURIO_STATE_DIR"])'
+}
+start_extra_shards() {
+  local k bport sport state
+  for (( k = 1; k < PARALLEL; k++ )); do
+    read -r bport sport state < <(shard_facts "$k")
+    echo "==> Starting shard $k: backend $bport, sandbox $sport, state $state"
+    rm -rf "$state"
+    (
+      eval "$(PYTHONPATH="$REPO_ROOT" python -m utk_curio.backend.tests.shards "$k")"
+      mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
+      # A COPY, not an empty dir: the catalog tests assert the shipped datasets exist.
+      cp -r "$REPO_ROOT/datasets/." "$CURIO_CATALOG_ROOT/"
+      export CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1
+      python "$REPO_ROOT/curio.py" start backend --auth --with-examples \
+        --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
+        > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
+      echo $! > "$CURIO_STATE_DIR/backend.pid"
+      python "$REPO_ROOT/curio.py" start sandbox \
+        --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
+        > "$CURIO_STATE_DIR/launch-sandbox.out" 2>&1 &
+      echo $! > "$CURIO_STATE_DIR/sandbox.pid"
+    )
+    SHARD_PIDS+=("$(cat "$state/backend.pid")" "$(cat "$state/sandbox.pid")")
+  done
+  for (( k = 1; k < PARALLEL; k++ )); do
+    read -r bport sport state < <(shard_facts "$k")
+    wait_for_port "shard $k backend" "$bport"
+    wait_for_port "shard $k sandbox" "$sport"
+  done
+}
+
+# Stop everything this script started -- and nothing else. Two mechanisms,
+# because on Windows/MSYS the `$!` of a backgrounded launcher is an MSYS pid
+# that taskkill does not know, so a PID-based kill silently leaves the whole
+# server tree running (observed: every port still serving after "cleanup").
+#   1. by PORT, through the launcher's own _kill_port (what `curio.py start`
+#      uses to claim a port), for the base triple and every shard pair;
+#   2. by COMMAND LINE scoped to THIS checkout's path, for the launcher
+#      processes themselves -- never by process name, which would take down a
+#      sibling checkout's stack on the same machine.
+stop_own_stacks() {
+  local ports=("$BACKEND_PORT" "$SANDBOX_PORT" "$FRONTEND_PORT") k bport sport state
+  for (( k = 1; k < PARALLEL; k++ )); do
+    read -r bport sport state < <(shard_facts "$k") && ports+=("$bport" "$sport")
+  done
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      powershell -NoProfile -Command "
+        Get-CimInstance Win32_Process | Where-Object {
+          \$_.CommandLine -match [regex]::Escape('$(basename "$REPO_ROOT")') -and
+          ((\$_.Name -eq 'python.exe' -and \$_.CommandLine -match 'curio.py start') -or
+           (\$_.Name -eq 'node.exe' -and \$_.CommandLine -match 'webpack'))
+        } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }" >/dev/null 2>&1 || true
+      ;;
+    *)
+      pkill -f "$REPO_ROOT/curio.py start" 2>/dev/null || true
+      ;;
+  esac
+  PYTHONPATH="$REPO_ROOT" python - "${ports[@]}" <<'PY' >/dev/null 2>&1 || true
+import sys
+from utk_curio.main import _kill_port
+for port in sys.argv[1:]:
+    _kill_port(int(port))
+PY
+}
+
 cleanup() {
+  if [[ -n "$CURIO_PID" || ${#SHARD_PIDS[@]} -gt 0 ]]; then
+    echo ""
+    echo "==> Stopping the stack(s) this run started..."
+    stop_own_stacks
+  fi
   if [[ -n "$CURIO_PID" ]]; then
     echo ""
     echo "==> Stopping Curio (pid $CURIO_PID) and its server tree..."
@@ -158,7 +268,9 @@ cleanup() {
         kill -KILL "-$CURIO_PID" 2>/dev/null || true
         ;;
     esac
-    wait "$CURIO_PID" 2>/dev/null || true
+    # Bounded: the tree is already down; a launcher taskkill could not see
+    # would otherwise hang this wait forever.
+    for _ in $(seq 20); do kill -0 "$CURIO_PID" 2>/dev/null || break; sleep 0.5; done
   fi
 
   # Print summary
@@ -250,13 +362,16 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   set -m
   CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_TESTING=1 \
   CURIO_LAUNCH_CWD="$REPO_ROOT" \
-    python "$REPO_ROOT/curio.py" start --auth --with-examples &
+    python "$REPO_ROOT/curio.py" start --auth --with-examples \
+      --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
+      --frontend-port "$FRONTEND_PORT" &
   CURIO_PID=$!
   set +m
 
-  wait_for_port "backend"  5002
-  wait_for_port "sandbox"  2000
-  wait_for_port "frontend" 8080
+  wait_for_port "backend"  "$BACKEND_PORT"
+  wait_for_port "sandbox"  "$SANDBOX_PORT"
+  wait_for_port "frontend" "$FRONTEND_PORT"
+  (( PARALLEL > 1 )) && start_extra_shards
 else
   trap cleanup EXIT INT TERM
 fi
@@ -312,6 +427,9 @@ if [[ $RUN_E2E -eq 1 ]]; then
 
   PYTEST_ARGS="-v"
   [[ $HEADED -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --headed"
+  # One xdist worker per backend+sandbox pair; loadgroup keeps each workflow's
+  # four class-scoped tests (and each other file) on one worker.
+  (( PARALLEL > 1 ))     && PYTEST_ARGS="$PYTEST_ARGS -n $PARALLEL --dist loadgroup"
   [[ $VIDEOS -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --videos"
   [[ $EXAMPLES -eq 1 ]]  && PYTEST_ARGS="$PYTEST_ARGS --with-examples"
   [[ -n "$ALLURE_DIR" ]] && PYTEST_ARGS="$PYTEST_ARGS --alluredir=$ALLURE_DIR"
@@ -327,7 +445,8 @@ if [[ $RUN_E2E -eq 1 ]]; then
   echo "==> Running E2E tests..."
   cd "$REPO_ROOT/utk_curio/backend"
   die "cd to utk_curio/backend" $?
-  env $E2E_ENV python -m pytest tests/test_frontend/ $PYTEST_ARGS
+  # CURIO_E2E_TARGETS narrows the run to specific files (smoke runs); default is the suite.
+  env $E2E_ENV python -m pytest ${CURIO_E2E_TARGETS:-tests/test_frontend/} $PYTEST_ARGS
   record "E2E tests" $?
 fi
 

@@ -1,4 +1,5 @@
 import { apiFetch, getToken } from "../utils/authApi";
+import { backendUrl } from "../utils/backendUrl";
 
 /**
  * REST client for ``/api/packages`` — catalog, factory, and resolver APIs.
@@ -15,7 +16,7 @@ import { apiFetch, getToken } from "../utils/authApi";
  *     reload. Implemented in ``registry/packageRegistryBootstrap.ts`` (also
  *     mounted on ``window.curio`` from ``index.tsx`` for legacy callers).
  */
-const BACKEND_URL = process.env.BACKEND_URL || "";
+const BACKEND_URL = backendUrl();
 
 export interface PortPayload {
   types: string[];

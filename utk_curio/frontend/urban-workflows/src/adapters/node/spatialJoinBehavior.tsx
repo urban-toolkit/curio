@@ -3,6 +3,7 @@ import { useEdges, Position } from 'reactflow';
 import { NodeBehaviorHook, HandleDef } from '../../registry/types';
 import { useFlowContext } from '../../providers/FlowProvider';
 import { useToastContext } from '../../providers/ToastProvider';
+import { backendUrl } from '../../utils/backendUrl';
 
 /**
  * Spatial Join behavior — tag each point with the polygon it falls in.
@@ -28,7 +29,7 @@ import { useToastContext } from '../../providers/ToastProvider';
  */
 
 const DEFAULT_NAME_PROPERTY = 'name';
-const API_BASE = `${process.env.BACKEND_URL || ''}/spatial_join`;
+const API_BASE = `${backendUrl()}/spatial_join`;
 
 // Heuristic for the single-handle fallback (when the framework hands us a
 // scalar instead of a slot-indexed array): polygons have Polygon /
