@@ -627,7 +627,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                                     padding: '10px 14px',
                                     fontSize: 'var(--curio-font-size-md, 13px)',
                                     lineHeight: 1.5,
-                                    color: 'var(--curio-text, #333)',
+                                    color: 'var(--curio-text-primary, #1E1F23)',
                                     whiteSpace: 'pre-wrap',
                                     overflow: 'auto',
                                 }}
