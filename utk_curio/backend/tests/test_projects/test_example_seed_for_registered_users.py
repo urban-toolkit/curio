@@ -24,6 +24,7 @@ from utk_curio.backend.app.projects import services, storage
 from utk_curio.backend.app.projects.schemas import ProjectCreate
 from utk_curio.backend.app.projects.repositories import list_for_user
 from utk_curio.backend.app.projects.seed import (
+    _seeded_marker,
     _EXAMPLES_NAMESPACE,
     _example_files,
     _example_id,
@@ -277,3 +278,99 @@ def test_seeding_is_off_without_the_flag(app, db, user_and_token, monkeypatch, f
     assert ensure_user_examples_seeded(user) == 0
     assert list_for_user(user.id) == []
     assert services.list_projects(user) == []
+
+
+# ---------------------------------------------------------------------------
+# The back-fill must not rewrite what the user has changed (#270)
+# ---------------------------------------------------------------------------
+
+def _drop_marker(user):
+    from utk_curio.backend.app.projects.services import _user_dir_key
+    marker = _seeded_marker(_user_dir_key(user))
+    if marker.exists():
+        marker.unlink()
+
+
+def test_backfill_keeps_a_renamed_example(app, db, user_and_token):
+    """A renamed example reverted to its shipped name on the next listing.
+
+    ``seed_example_projects`` rewrote name/description/spec for every existing
+    example whenever it ran, and ``ensure_user_examples_seeded`` re-runs it
+    whenever the marker is missing - a truncated DB, a legacy marker, a failed
+    write. The Projects list calls it on every visit. So visiting the list could
+    hand back the old name of a dataflow the user had just renamed and saved.
+    """
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, _ = user_and_token
+    ensure_user_examples_seeded(user)
+    victim = list_for_user(user.id)[0]
+
+    services.rename_project(user, victim.id, "My renamed copy")
+    _drop_marker(user)
+
+    assert ensure_user_examples_seeded(user) == 0
+    renamed = next(p for p in list_for_user(user.id) if p.id == victim.id)
+    assert renamed.name == "My renamed copy"
+    # And the spec file was left alone too (it was not rewritten from disk).
+    assert storage.read_spec(_user_dir_key(user), victim.id) is not None
+
+
+def test_backfill_keeps_an_edited_example_spec(app, db, user_and_token):
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, _ = user_and_token
+    ensure_user_examples_seeded(user)
+    victim = list_for_user(user.id)[0]
+    ukey = _user_dir_key(user)
+
+    spec = storage.read_spec(ukey, victim.id)
+    spec["dataflow"]["nodes"].append({
+        "id": "user-added", "type": "curio.builtin/data-loading",
+        "x": 0, "y": 0, "content": "return 1",
+    })
+    storage.write_spec(ukey, victim.id, spec)
+    _drop_marker(user)
+
+    ensure_user_examples_seeded(user)
+    after = storage.read_spec(ukey, victim.id)
+    assert any(n["id"] == "user-added" for n in after["dataflow"]["nodes"])
+
+
+def test_backfill_still_creates_an_example_that_is_missing(app, db, user_and_token):
+    user, _ = user_and_token
+    ensure_user_examples_seeded(user)
+    victim = list_for_user(user.id)[0]
+    services.delete_project(user, victim.id)
+    assert victim.id not in {p.id for p in list_for_user(user.id)}
+    _drop_marker(user)
+
+    assert ensure_user_examples_seeded(user) == 1
+    assert victim.id in {p.id for p in list_for_user(user.id)}
+
+
+def test_backfill_repairs_an_example_whose_spec_file_is_gone(app, db, user_and_token):
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, _ = user_and_token
+    ensure_user_examples_seeded(user)
+    victim = list_for_user(user.id)[0]
+    ukey = _user_dir_key(user)
+    services.rename_project(user, victim.id, "Still mine")
+    # write_spec returns the file it wrote; that is the one to remove.
+    storage.write_spec(ukey, victim.id, storage.read_spec(ukey, victim.id)).unlink()
+    _drop_marker(user)
+
+    ensure_user_examples_seeded(user)
+    assert storage.read_spec(ukey, victim.id) is not None
+    assert next(p for p in list_for_user(user.id) if p.id == victim.id).name == "Still mine"
+
+
+def test_guest_boot_still_resets_its_examples(app, db, shared_guest):
+    """The guest's posture is unchanged: its examples are scratch, reset on boot."""
+    seed_example_projects(shared_guest)
+    victim = list_for_user(shared_guest.id)[0]
+    services.rename_project(shared_guest, victim.id, "Scribbled on")
+
+    seed_example_projects(shared_guest)
+    assert next(p for p in list_for_user(shared_guest.id) if p.id == victim.id).name != "Scribbled on"
