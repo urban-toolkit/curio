@@ -213,9 +213,10 @@ export const NodeContainer = ({
     const [currentNodeHeight, setCurrentNodeHeight] = useState<
         number | undefined
     >(nodeHeight);
-    // Icon-only nodes (manifest `containerStyle.noContent: true` — merge-flow,
-    // spatial-join, etc.) start minimized: they have no body to expand and the
-    // 50×180 footprint is their default render.
+    // Icon-only nodes (manifest `containerStyle.noContent: true` — merge-flow)
+    // start minimized: they have no body to expand and the 50×180 footprint is
+    // their default render. (Spatial Join left this set in #262, when it gained
+    // a body with the polygon-property control.)
     const [minimized, setMinimized] = useState(!!noContent);
     // Hover state for the minimized chip's delete control (noContent nodes have
     // no header band to put it in).

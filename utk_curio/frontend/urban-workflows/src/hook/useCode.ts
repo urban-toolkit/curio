@@ -175,6 +175,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && Array.isArray(node.metadata.comments))
                 nodeMeta.comments = node.metadata.comments;
 
+            // #262: the Spatial Join's polygon property round-trips into node data.
+            if(node.metadata != undefined && node.metadata.spatialJoin != undefined)
+                nodeMeta.spatialJoin = node.metadata.spatialJoin;
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
