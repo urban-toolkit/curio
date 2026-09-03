@@ -115,10 +115,14 @@ jobs:
       # backend/tests/shards.py does from CURIO_E2E_BACKEND_PORT /
       # CURIO_E2E_SANDBOX_PORT below. Each worker is a Chromium + backend +
       # sandbox (~3 GiB) inside the one container, on a host that also runs
-      # the prod stacks, and no N beats the longest group (test_agent_runs_e2e,
-      # ~2 min here). 4 to begin with; raise once the pass set matches the
-      # serial run, watching memory and nvidia-smi.
-      CURIO_E2E_PARALLEL: "4"
+      # the prod stacks, and no N beats the longest group: groups are atomic
+      # under --dist loadgroup, and test_walkthrough_baselines takes 6m22s on
+      # its own. Priced from the 4-worker run's Allure timeline (40m12s of
+      # test time over 87 groups): LPT makespan is 10m at 4 workers, 6m42s at
+      # 6, and 6m22s at 7 or more. So 6 buys all but 20s of what parallelism
+      # can give here and 8 would only add load. To go higher, lower the floor
+      # first -- split that module off its per-file xdist group.
+      CURIO_E2E_PARALLEL: "6"
       BACKEND_URL: "http://localhost:5022"
       # Host-side Playwright targets the remapped ports (utils.py
       # e2e_existing_servers / _backend_base_url_for_config read these).
