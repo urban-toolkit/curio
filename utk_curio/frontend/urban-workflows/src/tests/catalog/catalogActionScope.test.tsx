@@ -798,14 +798,27 @@ describe("the three palettes are one design", () => {
 // ── The node drawer knows what a new dataflow will contain ──────────────────
 
 describe("the Node drawer's In project tab in an unsaved dataflow", () => {
-  test("falls back to the account defaults", () => {
+  test("shows the account defaults, seeded into the scope by the loader", () => {
     // `projectPackages` is empty until the first save, so this read "No
     // packages added to this dataflow yet" while the account's defaults
     // (curio.builtin, the examples, uhvi) were seeded into it the moment it
     // saved. Its two peers already did this.
+    //
+    // The guarantee is unchanged; where it is implemented moved (#204). The
+    // drawer used to fetch the defaults itself and swap them in when there was
+    // no project, which made it a SECOND source of truth that could disagree
+    // with the palette beside it. ProjectLoader now seeds the unsaved
+    // dataflow's scope from the same defaults, so both read one store.
+    const loader = read("components/ProjectLoader.tsx");
+    expect(loader).toContain("setUnsavedDataflow");
+    expect(loader).toMatch(/packagesApi\s*\.getDefaults\(\)/);
+  });
+
+  test("the drawer has no defaults source of its own", () => {
+    // The half that made the two surfaces able to disagree.
     const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
-    expect(src).toMatch(/packagesApi\s*\.getDefaults\(\)/);
-    expect(src).toContain("projectId ? projectPackages : accountDefaults");
+    expect(src).not.toContain("accountDefaults");
+    expect(src).toContain("new Set(projectPackages)");
   });
 
   test("the count comes from the same set as the list", () => {
@@ -966,6 +979,17 @@ describe("Remove from project is in all three drawers", () => {
     const src = read(rel);
     expect(src).toMatch(/hasProject/);
     expect(src).toMatch(/hasProject\s*$|hasProject\s*\n?\s*\?/m);
+  });
+
+  test("the package card's Remove also WORKS without a project", () => {
+    // Visible was only half of it. The Node card rendered the control disabled
+    // ("Save this dataflow first"), which is the same dead end one step later:
+    // a package the account defaults put into a new dataflow still could not be
+    // taken out of it (#220). Clicking now saves the dataflow first, so the
+    // only thing that disables it is an action already in flight.
+    const src = read("components/packages/publishing/PackageCard.tsx");
+    expect(src).toContain("disabled={cardBusy}");
+    expect(src).not.toContain("Save this dataflow first");
   });
 
   test("the drawers pass the handler unconditionally", () => {

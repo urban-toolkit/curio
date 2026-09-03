@@ -29,8 +29,10 @@ export interface PackageCardProps {
   cardActionDir?: string | null;
   onInstall: (pkg: PackagePayload) => void;
   onUninstall?: (pkg: PackagePayload) => void;
-  /** False in a dataflow that has not been saved yet: there is no project to
-   *  remove from, so the control shows disabled rather than vanishing. */
+  /** False in a dataflow that has not been saved yet. Only wording now: the
+   *  control stays enabled and its click saves the dataflow before removing,
+   *  because a package the account defaults seeded into a new dataflow has to
+   *  be removable from it (#220). */
   hasProject?: boolean;
   onOpenDetails?: (pkg: PackagePayload) => void;
 }

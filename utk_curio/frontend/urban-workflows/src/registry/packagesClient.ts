@@ -23,6 +23,7 @@
 import { faCube } from '@fortawesome/free-solid-svg-icons';
 
 import { SupportedType } from '../constants';
+import { BUILTIN_PACKAGE_ID } from './packageKeys';
 import {
   inputOnly,
   outputOnly,
@@ -122,7 +123,7 @@ function asCategory(raw: string): NodeCategory {
   return (KNOWN_CATEGORIES.has(raw as NodeCategory) ? raw : 'computation') as NodeCategory;
 }
 
-export const BUILTIN_PACKAGE_ID = 'curio.builtin';
+export { BUILTIN_PACKAGE_ID } from './packageKeys';
 
 function asSupportedTypes(raw: string[]): SupportedType[] {
   const known = new Set(Object.values(SupportedType));
@@ -386,18 +387,23 @@ async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void>
   }
 }
 
-export async function loadInstalledPackages(
-  projectFilter: ReadonlySet<string> | null = null,
-): Promise<NodeDescriptor[]> {
+/**
+ * Register every package installed for this account.
+ *
+ * Deliberately unfiltered. The per-dataflow scope is applied when the palette is
+ * READ (``getPaletteNodeTypes``), not when descriptors are registered: baking it
+ * in here meant the registry held one dataflow's view, so every scope change
+ * needed a refetch to correct it and any path that forgot one left the previous
+ * dataflow's packages on the palette (#204, #220).
+ *
+ * Registering everything also means a canvas node whose package is not in this
+ * dataflow's lockfile still resolves its descriptor instead of rendering as an
+ * unknown kind.
+ */
+export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
   try {
     const { packages } = await packagesApi.listInstalled();
-    const filtered = projectFilter
-      ? (packages ?? []).filter(
-          (p) =>
-            p.packageId === BUILTIN_PACKAGE_ID ||
-            projectFilter.has(`${p.packageId}@${p.major}`),
-        )
-      : (packages ?? []);
+    const filtered = packages ?? [];
     // Inject and await any `behaviorScript` bundles BEFORE descriptor
     // build so the behavior keys referenced in the templates are
     // actually registered against the global behavior registry. Without

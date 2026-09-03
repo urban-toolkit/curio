@@ -6,10 +6,19 @@
  * share one user package store. See ``docs/NODE-CATALOG.md`` § "Per-project
  * lockfile".
  *
+ * Three scopes, not two. ``projectId === undefined`` used to mean both "no
+ * dataflow is open" and "a dataflow is open but has never been saved", and both
+ * resolved to *no filter at all* — which is why a new dataflow inherited the
+ * palette of whatever was open before it (#204, #220). An unsaved dataflow is a
+ * dataflow: it has a package set (the account defaults the backend will seed on
+ * first save), and the palette must honour it.
+ *
  * Writers:
  *  - {@link ProjectLoader} on project load → ``setCurrentProject``
+ *  - {@link ProjectLoader} on ``/dataflow/new`` → ``setUnsavedDataflow``
  *  - {@link NodeCatalogDrawer} install / uninstall handlers → ``setCurrentProjectPackages``
- *  - On project-list page (no project): ``clearCurrentProject`` (palette shows everything)
+ *  - On the project-list / catalog pages (no dataflow at all):
+ *    ``clearCurrentProject`` (palette shows everything)
  *
  * Readers:
  *  - {@link loadInstalledPackages} reads ``getCurrentProjectPackages`` to filter.
@@ -17,13 +26,18 @@
  */
 
 export type ProjectPackages = {
-  /** ``undefined`` means "no project loaded - show everything in the palette". */
-  projectId: string | undefined;
   /**
-   * Sorted dirNames in the project's lockfile. Empty when no project is
-   * loaded - but {@link getCurrentProjectPackages} returns ``null`` in that
-   * case so the palette filter knows to skip the intersection.
+   * ``'dataflow'`` - a dataflow is open (saved or not) and ``packages`` is its
+   * set. ``'none'`` - no dataflow is open, so there is nothing to filter by and
+   * the palette shows everything installed.
+   *
+   * Carried separately from ``projectId`` because an unsaved dataflow has no id
+   * yet and still has a package set.
    */
+  kind: 'dataflow' | 'none';
+  /** ``undefined`` while the dataflow is unsaved; the backend mints it on first save. */
+  projectId: string | undefined;
+  /** dirNames in the dataflow's lockfile. Meaningless when ``kind === 'none'``. */
   packages: ReadonlySet<string>;
 };
 
@@ -32,23 +46,38 @@ type Listener = () => void;
 const _listeners = new Set<Listener>();
 
 let _state: ProjectPackages = {
+  kind: 'none',
   projectId: undefined,
   packages: new Set(),
 };
 
 export function setCurrentProject(projectId: string, packages: Iterable<string>): void {
-  _state = { projectId, packages: new Set(packages) };
+  _state = { kind: 'dataflow', projectId, packages: new Set(packages) };
+  _notify();
+}
+
+/**
+ * A dataflow is open but has not been saved, so it has no id yet.
+ *
+ * Seed it with what the backend will merge into its lockfile on first save (the
+ * account defaults), so the palette shows the same thing before and after that
+ * save instead of showing everything the account owns until then.
+ */
+export function setUnsavedDataflow(packages: Iterable<string>): void {
+  _state = { kind: 'dataflow', projectId: undefined, packages: new Set(packages) };
   _notify();
 }
 
 export function setCurrentProjectPackages(packages: Iterable<string>): void {
-  // Same project, new package set - drawer install / uninstall path.
-  _state = { projectId: _state.projectId, packages: new Set(packages) };
+  // Same dataflow, new package set - drawer install / uninstall path, and the
+  // defaults arriving for an unsaved dataflow. Keeps the current kind: calling
+  // this before a dataflow is open must not silently open one.
+  _state = { kind: _state.kind, projectId: _state.projectId, packages: new Set(packages) };
   _notify();
 }
 
 export function clearCurrentProject(): void {
-  _state = { projectId: undefined, packages: new Set() };
+  _state = { kind: 'none', projectId: undefined, packages: new Set() };
   _notify();
 }
 
@@ -57,7 +86,7 @@ export function clearCurrentProject(): void {
  * when no project is loaded (palette shows everything).
  */
 export function getCurrentProjectPackages(): ReadonlySet<string> | null {
-  if (_state.projectId === undefined) return null;
+  if (_state.kind === 'none') return null;
   return _state.packages;
 }
 

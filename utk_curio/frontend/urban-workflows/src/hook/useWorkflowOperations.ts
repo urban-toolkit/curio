@@ -118,9 +118,18 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const pendingInstallsRef = useRef<PendingInstall[]>([]);
     pendingInstallsRef.current = pendingInstalls;
     const pendingInstallTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-    useEffect(() => subscribeProjectPackages(() => {
+    useEffect(() => {
+        // Re-read on subscribe, not only on notify. ``ProjectLoader`` is a
+        // DESCENDANT of this provider, so React runs its route effect first:
+        // the ``setUnsavedDataflow`` / ``setCurrentProject`` it fires on mount
+        // notifies a store nobody is listening to yet, and the mirror keeps the
+        // previous dataflow's list forever (#204). Reading once here closes that
+        // window; the subscription then keeps it live.
         setPackagesState(getCurrentProjectPackagesList());
-    }), []);
+        return subscribeProjectPackages(() => {
+            setPackagesState(getCurrentProjectPackagesList());
+        });
+    }, []);
 
     const setPackages = useCallback((pkgs: string[]) => {
         setCurrentProjectPackages(pkgs);
@@ -1069,11 +1078,19 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             outputs: outputRefs,
         });
         syncDatasetsFromSavedSpec(detail.spec);
+        projectIdRef.current = detail.id;
         setProjectId(detail.id);
         setProjectName(detail.name);
         setProjectSavedAt(new Date());
         setProjectDirty(false);
         setViewerMode("owner");
+        // Re-pin the package store to the copy, as saveCurrentProject's create
+        // branch does. Without it the store still names the ORIGINAL dataflow,
+        // so the copy's palette and every lockfile write from it would be
+        // filtered by, and applied to, the dataflow it was copied from.
+        const copiedPackages = (detail?.spec?.dataflow as { packages?: string[] } | undefined)
+            ?.packages;
+        setCurrentProject(detail.id, Array.isArray(copiedPackages) ? copiedPackages : []);
         return detail;
     }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 

@@ -422,21 +422,21 @@ def session_app():
     ``config._resolve_database_uri``.
     """
     application = create_app()
+    # Defaults are the production ports, so CI and a plain ``pytest`` run are
+    # unchanged. They are overridable because two checkouts of this repo cannot
+    # otherwise run their suites at the same time -- the second one's servers
+    # collide with the first one's on every port.
+    #
+    # BACKEND_PORT must agree with the frontend's ``BACKEND_URL``, which
+    # dotenv-webpack bakes into the bundle at BUILD time: changing it means
+    # editing ``utk_curio/frontend/urban-workflows/.env`` and rebuilding, not
+    # just exporting a variable.
+    backend_port = int(os.environ.get("BACKEND_PORT") or 5002)
     application.config.update(
         {
             "TESTING": True,
-            "LIVESERVER_PORT": int(os.environ.get("BACKEND_PORT") or 5002),
-            # 5002/2000/8080 by default, so the frontend's dotenv `.env` finds the
-            # backend with no extra configuration.
-            #
-            # Read from the environment rather than pinned, because these three
-            # values are what the e2e stack BINDS and what ``_free_port`` KILLS
-            # before binding. Hardcoded, they made the ports in ``config.py``
-            # decorative: a run pointed at a free port still seized 5002/2000/8080
-            # and killed whatever was serving there - so two clones could not run
-            # their suites at the same time, and the one that lost found its dev
-            # stack silently dead.
-            "BACKEND_PORT": int(os.environ.get("BACKEND_PORT") or 5002),
+            "LIVESERVER_PORT": backend_port,
+            "BACKEND_PORT": backend_port,
             "SANDBOX_PORT": int(os.environ.get("SANDBOX_PORT") or 2000),
             "FRONTEND_PORT": int(os.environ.get("FRONTEND_PORT") or 8080),
         }

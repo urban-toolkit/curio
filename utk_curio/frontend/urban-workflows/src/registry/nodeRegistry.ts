@@ -1,5 +1,9 @@
 import { NodeTemplateId, NodeDescriptor } from './types';
-import { splitCanonicalNodeType } from './packageKeys';
+import { BUILTIN_PACKAGE_ID, splitCanonicalNodeType } from './packageKeys';
+import {
+  getCurrentProjectPackages,
+  subscribe as subscribeProjectPackages,
+} from './projectPackagesStore';
 
 /**
  * The node-kind registry.
@@ -175,8 +179,46 @@ export function getAllNodeTypes(): NodeDescriptor[] {
   return Array.from(registry.values());
 }
 
+/**
+ * Is *d* offered by a dataflow whose lockfile is *scope*?
+ *
+ * ``null`` scope means no dataflow is open (the project list, the catalog
+ * pages), where there is nothing to filter by. The builtin package is always
+ * in, because every dataflow has it and it is never in a lockfile the user
+ * edits.
+ *
+ * Takes the scope rather than reading it, so one list is filtered against one
+ * snapshot: reading per descriptor would let a mid-iteration store write split
+ * the result between two dataflows.
+ */
+function inDataflowScope(d: NodeDescriptor, scope: ReadonlySet<string> | null): boolean {
+  if (scope === null) return true;
+  const pkg = d.package;
+  if (!pkg) return true;
+  if (pkg.packageId === BUILTIN_PACKAGE_ID) return true;
+  return scope.has(`${pkg.packageId}@${pkg.major}`);
+}
+
+/**
+ * The palette's kinds, scoped to the open dataflow.
+ *
+ * The scope used to be applied at WRITE time: ``loadInstalledPackages`` took a
+ * filter and registered only the packages that passed it, so the registry held
+ * one project's view and every scope change needed a refetch to correct it. Any
+ * path that changed the scope without refetching left the previous dataflow's
+ * packages in the palette, which is exactly what #204 reported. Filtering on
+ * read makes that unrepresentable: the registry holds everything installed, and
+ * the answer follows the scope with no refetch and no ordering to get wrong.
+ */
 export function getPaletteNodeTypes(): NodeDescriptor[] {
+  const scope = getCurrentProjectPackages();
   return Array.from(registry.values())
-    .filter(d => d.inPalette)
+    .filter(d => d.inPalette && inDataflowScope(d, scope))
     .sort((a, b) => (a.paletteOrder ?? 999) - (b.paletteOrder ?? 999));
 }
+
+// The palette reads through ``useSyncExternalStore(subscribeToRegistry, ...)``,
+// so with the filter on the read side a scope change has to pulse the same
+// listeners a registration does - otherwise switching dataflow would leave the
+// previous palette painted until something else happened to touch the registry.
+subscribeProjectPackages(() => pulseRegistryListeners());

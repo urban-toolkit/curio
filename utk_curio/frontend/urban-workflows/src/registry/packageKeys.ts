@@ -11,6 +11,16 @@
  * the registry's unversioned index — see {@link getNodeDescriptor}.
  */
 
+/**
+ * The pre-installed package every Curio ships with.
+ *
+ * Lives here rather than in ``packagesClient`` because the rules that key off
+ * it -- "always in the palette regardless of the project lockfile", "no PACKAGE
+ * pill" -- are read by modules ``packagesClient`` imports, which cannot import
+ * it back. This module has no imports of its own, so it is safe from anywhere.
+ */
+export const BUILTIN_PACKAGE_ID = 'curio.builtin';
+
 /** `it.vendor.package/foo-kind@3` → `it.vendor.package@3` */
 export function packageKeyFromCanonicalNodeType(nodeType: string | undefined | null): string | null {
   if (nodeType == null || typeof nodeType !== 'string') return null;
