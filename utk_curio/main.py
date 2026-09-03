@@ -844,7 +844,7 @@ def install_framework_requirements() -> None:
     )
 
 
-def install_manifest_dependencies() -> None:
+def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     """Walk every installed package manifest — catalog source-of-truth at
     ``<repo>/packages/`` PLUS every user store under
     ``$CURIO_LAUNCH_CWD/.curio/users/<u>/packages/`` — collect their
@@ -978,6 +978,55 @@ def install_manifest_dependencies() -> None:
     except PipInstallError as exc:
         log_error(f"[Setup] Manifest dep install failed: {exc}")
         sys.exit(1)
+
+    _report_unimportable_deps(merged, block=block_on_verify)
+
+
+def _report_unimportable_deps(merged, *, block: bool) -> None:
+    """Warn about deps that installed cleanly but cannot be imported.
+
+    pip exiting 0 is not the same as the library working. A wheel whose native
+    extension cannot load - the ordinary GDAL/CUDA case, and what a broken
+    ``rasterio`` looks like on Windows - records a perfectly good version, so
+    pip reports "already satisfied" and changes nothing on every subsequent
+    start. This is the drifted env the caller above says it exists to catch, and
+    without this check the first sign of it is a raw ``ImportError`` from
+    whichever node happens to run first, long after a setup that looked clean.
+
+    A warning, never a fatal: the stack is still useful and the nodes that avoid
+    the library work normally. The fix is usually outside pip - a matching GDAL,
+    a conda-forge build - so the decision is the operator's, and this line is
+    what lets them make it.
+
+    ``block=False`` runs the probe on a daemon thread, because it costs real
+    time: importing the twelve builtin data-ops libraries in one subprocess
+    takes ~19 s on a developer machine, which is too much to add to every
+    ``start``. The warning then lands while the servers are coming up, which is
+    early enough to be read. ``curio setup`` passes ``block=True``: it exits as
+    soon as it returns, so a background thread would be killed before it
+    reported, and waiting is the point of running setup explicitly.
+    """
+    def _probe() -> None:
+        # Imported here, not at module scope: this file is the launcher and
+        # keeps backend imports lazy, and resolving the attribute at call time
+        # is also what lets a test stand in for the probe.
+        from utk_curio.backend.app.packages import pip_runner
+
+        try:
+            broken = pip_runner.import_failures(merged)
+        except Exception as exc:  # noqa: BLE001 - never stop a boot over a probe
+            log_warning(f"[Setup] Could not verify manifest deps import: {exc}")
+            return
+        for name, reason in sorted(broken.items()):
+            log_warning(
+                f"[Setup] {name} is installed but cannot be imported: {reason}. "
+                f"Nodes that need it will fail when run."
+            )
+
+    if block:
+        _probe()
+    else:
+        threading.Thread(target=_probe, name="dep-import-probe", daemon=True).start()
 
 
 TEST_SUITES = ["all", "unit", "backend", "sandbox", "jest", "e2e"]
@@ -1387,7 +1436,9 @@ def main():
 
     if args.command == "setup":
         install_framework_requirements()
-        install_manifest_dependencies()
+        # Blocking: this command exits on the next line, and reporting a broken
+        # install is most of the value of running setup on its own.
+        install_manifest_dependencies(block_on_verify=True)
         sys.exit(0)
 
     if args.command == "start":

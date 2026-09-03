@@ -102,6 +102,9 @@ def installed(monkeypatch):
         pip_runner, "install_python_deps",
         lambda merged, on_line=None: calls.append(dict(merged)),
     )
+    # The post-install importability check spawns a real interpreter, so stub it
+    # to "everything imports" here. The tests that care about it override this.
+    monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
     return calls
 
 
@@ -186,3 +189,107 @@ def test_manifests_nested_inside_a_package_payload_are_ignored(
     launcher.install_manifest_dependencies()
     merged = {k: v for call in installed for k, v in call.items()}
     assert "cowsay" not in merged
+
+
+class TestBrokenInstallIsReported:
+    """pip exiting 0 is not the same as the library working.
+
+    A wheel whose native extension cannot load - a rasterio built against a
+    different GDAL is the everyday case on Windows - records a perfectly good
+    version. pip then reports "already satisfied" on every subsequent start and
+    changes nothing, so setup looked clean and the first sign of trouble was a
+    raw ImportError from whichever node happened to run first.
+    """
+
+    @staticmethod
+    def _package(launch_cwd):
+        _write_package(
+            _user_store(launch_cwd), "acme.geo@1",
+            deps={"rasterio": ">=1.3"}, backend=False, python_template=True,
+        )
+
+    def test_a_dep_that_installs_but_cannot_import_is_warned_about(
+        self, launch_cwd, installed, monkeypatch, capsys
+    ):
+        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        self._package(launch_cwd)
+        monkeypatch.setattr(
+            pip_runner, "import_failures",
+            lambda deps: {"rasterio": "ImportError: DLL load failed"},
+        )
+
+        launcher.install_manifest_dependencies(block_on_verify=True)
+
+        err = capsys.readouterr().err
+        assert "rasterio" in err
+        assert "cannot be imported" in err
+        # The reason matters as much as the name: "it is broken" sends the
+        # operator to pip, "DLL load failed" sends them to their GDAL.
+        assert "DLL load failed" in err
+
+    def test_a_working_dep_says_nothing(
+        self, launch_cwd, installed, monkeypatch, capsys
+    ):
+        self._package(launch_cwd)
+        launcher.install_manifest_dependencies(block_on_verify=True)
+        assert "cannot be imported" not in capsys.readouterr().err
+
+    def test_a_broken_dep_does_not_stop_the_boot(
+        self, launch_cwd, installed, monkeypatch
+    ):
+        """Warn, do not exit: the nodes that avoid the library still work, and
+        the fix is usually outside pip."""
+        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        self._package(launch_cwd)
+        monkeypatch.setattr(
+            pip_runner, "import_failures",
+            lambda deps: {"rasterio": "ImportError: DLL load failed"},
+        )
+
+        launcher.install_manifest_dependencies(block_on_verify=True)  # no SystemExit
+
+    def test_a_probe_that_cannot_run_is_itself_reported(
+        self, launch_cwd, installed, monkeypatch, capsys
+    ):
+        """A failed check must not masquerade as a clean bill of health."""
+        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        self._package(launch_cwd)
+
+        def _boom(deps):
+            raise OSError("no interpreter")
+
+        monkeypatch.setattr(pip_runner, "import_failures", _boom)
+
+        launcher.install_manifest_dependencies(block_on_verify=True)
+
+        assert "Could not verify" in capsys.readouterr().err
+
+    def test_start_does_not_wait_for_the_probe(
+        self, launch_cwd, installed, monkeypatch
+    ):
+        """The default path must not add the probe's cost to every boot.
+
+        Importing the twelve builtin data-ops libraries in one subprocess takes
+        about 19 seconds here, so the check runs on a daemon thread and the
+        warning lands while the servers come up. A regression to a blocking
+        call would be invisible except as a slower start, which is exactly the
+        kind of thing nobody attributes to the right commit.
+        """
+        import threading
+        import utk_curio.backend.app.packages.pip_runner as pip_runner
+
+        self._package(launch_cwd)
+        entered = threading.Event()
+        release = threading.Event()
+
+        def _slow(deps):
+            entered.set()
+            release.wait(5)
+            return {}
+
+        monkeypatch.setattr(pip_runner, "import_failures", _slow)
+
+        launcher.install_manifest_dependencies()  # returns while _slow blocks
+
+        assert entered.wait(5), "the probe never ran"
+        release.set()
