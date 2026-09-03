@@ -296,7 +296,7 @@ For the full walkthrough, covering concepts, the Save-As flow, the per-package m
 
 ## Data Catalog
 
-Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships eleven datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.
+Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twelve datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.
 
 Three surfaces manage datasets:
 

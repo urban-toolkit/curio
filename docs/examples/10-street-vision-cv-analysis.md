@@ -81,16 +81,16 @@ Click **▶ Push to Downstream** to emit the same data as a GEODATAFRAME-shaped 
 
 ## Step 4: Load neighborhood polygons (`Data Loading`)
 
-For Chicago, the city publishes a [Boundaries, Neighborhoods](https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Neighborhoods/bbvr-jsnu) GeoJSON. Any FeatureCollection works as long as each Polygon feature carries a string property to use as the tag.
+The Data Catalog ships Chicago's [Boundaries, Neighborhoods](https://data.cityofchicago.org/d/y6yq-dbs2) layer as `data.cityofchicago.neighborhoods` (98 polygons named in `pri_neigh`), so this step runs offline. Any FeatureCollection works as long as each Polygon feature carries a string property to use as the tag.
 
 ```python
 import geopandas as gpd
 
-# Chicago official neighborhoods boundary. Swap in any local file via
-# `gpd.read_file("docs/examples/data/<your-polygons>.geojson")` for non-Chicago runs.
-gdf = gpd.read_file(
-    "https://data.cityofchicago.org/api/geospatial/bbvr-jsnu?method=export&format=GeoJSON",
-)
+# Chicago official neighborhoods boundary (98 polygons, `pri_neigh` names),
+# vendored in the Data Catalog so this example runs offline. Any polygon
+# FeatureCollection with a string name property works here.
+dataset_path = curio_dataset_path("data.cityofchicago.neighborhoods")
+gdf = gpd.read_file(dataset_path)
 
 gdf.metadata = {"name": "chicago_neighborhoods"}
 return gdf
