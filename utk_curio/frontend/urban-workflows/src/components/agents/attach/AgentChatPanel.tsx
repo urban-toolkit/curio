@@ -34,6 +34,7 @@ import { usePackageInstallReview } from "./usePackageInstallReview";
 // dev/84: genuine cross-feature reuse — agent package proposals apply through
 // the SAME install review the Nodes Catalog drawer uses, never a duplicate.
 import { InstallPermissionsDialog } from "../../packages/publishing/InstallPermissionsDialog";
+import ConfirmDialog from "../../ConfirmDialog";
 import { AgentRunStatusLine } from "./AgentRunStatusLine";
 import { AgentSessionTokenCounter } from "./AgentSessionTokenCounter";
 import {
@@ -383,10 +384,14 @@ export const AgentChatPanel: React.FC<{
     }
   };
 
-  const clearConversation = async () => {
+  // The app's own dialog, not the browser's (#197). This was the last
+  // `window.confirm` outside the top menu: unstyled, unthemed, and outside the
+  // modal stack the rest of the panel's dialogs live in.
+  const [confirmingClear, setConfirmingClear] = useState(false);
+
+  const clearConversation = () => {
     if (!onClearConversation) return;
-    if (!window.confirm("Clear this conversation? The agent stays attached.")) return;
-    await onClearConversation();
+    setConfirmingClear(true);
   };
 
   const displayedTitle = pendingTitle ?? attachment.title;
@@ -778,6 +783,20 @@ export const AgentChatPanel: React.FC<{
           busy={packageReview.busy}
           onCancel={packageReview.cancel}
           onConfirm={() => void packageReview.confirm()}
+        />
+      ) : null}
+      {confirmingClear ? (
+        <ConfirmDialog
+          title="Clear this conversation?"
+          body="The transcript goes; the agent stays attached to this node."
+          confirmLabel="Clear"
+          cancelLabel="Keep it"
+          destructive
+          onConfirm={() => {
+            setConfirmingClear(false);
+            void onClearConversation?.();
+          }}
+          onCancel={() => setConfirmingClear(false)}
         />
       ) : null}
       </div>

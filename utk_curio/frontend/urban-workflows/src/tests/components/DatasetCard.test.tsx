@@ -38,7 +38,6 @@ const renderCard = (dataset: DatasetCatalogItem, props: Partial<DatasetCardProps
     <DatasetCard
       dataset={dataset}
       isInstalled={false}
-      isPublished={false}
       busy={false}
       onInstall={jest.fn()}
       onDelete={jest.fn()}

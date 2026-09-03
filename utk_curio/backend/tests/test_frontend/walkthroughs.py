@@ -31,11 +31,24 @@ from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
 from playwright.sync_api import expect
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
     REPO_ROOT,
     accept_confirm_dialog,
+    api_json,
+    assert_vega_canvas_rendered,
+    canvas_nodes,
+    close_tools_palette,
+    connect_nodes,
+    drag_to_canvas,
+    frame_node,
+    node_locator,
+    open_tools_palette,
     play_node,
+    run_node_and_wait,
+    set_node_code,
+    wait_for_node_done,
     signup_e2e_user,
     wait_for_projects_page,
 )
@@ -185,6 +198,11 @@ class Walkthrough:
     clip_selector: str | None = None
     #: ``False`` for pages with no canvas -- the helper otherwise spends its
     #: whole timeout waiting for a ``.react-flow__node`` that never arrives.
+    #:
+    #: Also ``False`` for a scene that aims its own camera: the helper fitViews
+    #: immediately before every capture, so a ``frame_node`` call is undone
+    #: between the framing and the screenshot and the image comes out as the
+    #: whole dataflow regardless.
     fit_reactflow: bool = True
     #: Fraction of pixels allowed to differ. The helper's 0.20 default is blind
     #: to a restored 1.5px border or a button that grew one line, so the small
@@ -200,6 +218,10 @@ class Walkthrough:
     #: table cannot demonstrate itself without the right one. So each scene says
     #: what it needs, and says nothing when it needs nothing.
     example: str | None = None
+    #: Needs the stack seeded with the example dataflows. The scene then carries
+    #: the ``examples`` marker, so an ordinary run skips it honestly instead of
+    #: asserting against an empty gallery and blaming the seed.
+    needs_examples: bool = False
 
     @property
     def stem(self) -> str:
@@ -545,6 +567,11 @@ def _viewport_transform(page) -> str:
 
 AGENT_DRAWER_ROOT = '[data-curio-agent-catalog-drawer="true"]'
 
+#: The catalog PAGES' detail drawer (/catalog/data, /catalog/nodes,
+#: /catalog/agents). Distinct from the canvas drawers above: the account-level
+#: actions live here, not on a card and not in the canvas.
+BROWSE_DRAWER_ROOT = '[data-curio-browse-drawer="true"]'
+
 
 def open_agent_drawer(ctx: Ctx):
     """Data menu -> Agent Catalog, returning the drawer dialog."""
@@ -673,33 +700,138 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
 
 
 @walkthrough(
-    slug="agent-catalog-action-labels-fit",
-    refs=[191],
-    title="Agent card buttons fit their column",
-    premise="Read the actions on an imported agent's card.",
-    note="The action column is pinned at 140px so the card body cannot "
-         "collapse, and the shared secondary button is a fixed 30px single "
-         "line - so \"Remove from all projects\" wrapped to two lines inside it "
-         "and spilled out. The label's type size comes down instead.",
-    tests=["src/tests/styles/agentDrawerButtonGeometry.test.ts",
+    slug="agent-catalog-account-agent-on-an-unsaved-dataflow",
+    refs=[190, 199],
+    title="An agent you already have, on a dataflow you have not saved",
+    premise="Add an agent to every project, then open the Agent Catalog on a new dataflow.",
+    note="The sibling scene covers a fresh account, where every card offers Add. "
+         "An account that already holds the agent takes the other branch: "
+         "`inThisDataflow` counts it as present, so the card renders Remove - and "
+         "Remove was still gated on `hasProject`, which is null until the first "
+         "save. The result was a disabled control and nothing else, which is the "
+         "symptom #190 and #199 both report, reached through a different door. "
+         "Remove now creates the dataflow on the click, exactly as Add does.",
+    tests=["src/tests/catalog/AgentCatalogDrawer.test.tsx",
            "test_frontend/test_walkthrough_baselines.py"],
     clip_selector=AGENT_DRAWER_ROOT,
     fit_reactflow=False,
-    max_diff_ratio=0.02,
+    max_diff_ratio=0.03,
+)
+def agent_catalog_account_agent_on_an_unsaved_dataflow(ctx: Ctx) -> None:
+    page = ctx.page
+
+    # Put the agent in the ACCOUNT first, through the UI. "Add to all projects"
+    # on the catalog page posts /api/agents/imports, which is what sets
+    # `imported` - the flag the drawer then reads to decide Add versus Remove.
+    ctx.say("Add an agent to every project", "An account-level decision, made on the catalog page.")
+    page.goto(f"{ctx.frontend}/catalog/agents")
+    page.wait_for_load_state("domcontentloaded")
+    browse_drawer = page.locator(BROWSE_DRAWER_ROOT)
+    browse_drawer.wait_for(state="visible", timeout=30000)
+
+    add_to_all = browse_drawer.get_by_role("button", name="Add to all projects")
+    if add_to_all.count():
+        ctx.click(add_to_all.first)
+        browse_drawer.get_by_role(
+            "button", name="Remove from all projects"
+        ).first.wait_for(state="visible", timeout=30000)
+    coord = page.locator("article[data-agent-coord]").first.get_attribute(
+        "data-agent-coord"
+    )
+    assert coord, "no agent card to read a coordinate from"
+
+    # Now a dataflow that has never been saved.
+    ctx.say("A brand-new dataflow", "Nothing has saved it yet.")
+    page.goto(f"{ctx.frontend}/dataflow/new")
+    page.wait_for_url("**/dataflow/new", timeout=20000)
+    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    disk = page.locator("[data-curio-save-state]")
+    disk.wait_for(state="visible", timeout=15000)
+    assert disk.get_attribute("data-curio-save-state") == "unsaved", (
+        f"the save indicator reads "
+        f"{disk.get_attribute('data-curio-save-state')!r} on a dataflow that "
+        f"has never been saved"
+    )
+
+    dialog = open_agent_drawer(ctx)
+    card = dialog.locator(f'article[data-agent-coord="{coord}"]')
+    card.wait_for(state="visible", timeout=30000)
+
+    # THE POINT: the account already holds it, so this card shows Remove - and
+    # that control has to be usable. It was disabled, with a tooltip telling the
+    # user to go and save first, on a surface whose Add button saves for them.
+    remove = card.get_by_role("button", name="Remove from project", exact=True)
+    remove.wait_for(state="visible", timeout=30000)
+    assert remove.is_enabled(), (
+        "Remove from project is disabled on an unsaved dataflow, so an agent "
+        "the account already holds offers no usable control at all - the drawer "
+        "is still gating on a project id instead of creating one on the click"
+    )
+    ctx.focus(remove, hold=1200)
+    ctx.capture("remove-enabled-on-unsaved-dataflow")
+
+    ctx.say("Remove it", "The dataflow is saved first, then the agent comes out.")
+    ctx.click(remove)
+    accept_confirm_dialog(page, title=re.compile(r"^Remove "), button="Remove")
+
+    # The save really happened, and the card flipped to the other branch.
+    page.wait_for_url(lambda url: "/dataflow/new" not in url, timeout=30000)
+    card.get_by_role("button", name=re.compile(r"^Add to project")).first.wait_for(
+        state="visible", timeout=30000
+    )
+    page.wait_for_function(
+        "() => document.querySelector('[data-curio-save-state]')"
+        "?.getAttribute('data-curio-save-state') === 'saved'",
+        timeout=20000,
+    )
+    ctx.capture("removed-and-saved")
+    ctx.say("Removed, and the dataflow saved itself",
+            "The same one-click save the Add path already did.")
+
+
+@walkthrough(
+    slug="agent-catalog-action-labels-fit",
+    refs=[191],
+    title="Agent action labels fit their button",
+    premise="Read the account-level actions on an agent, where the longest label lives.",
+    note="The reported overflow was on the agent drawer's card column, pinned at "
+         "140px, where \"Remove from all projects\" wrapped inside a 30px box and "
+         "spilled out. That control has since moved: account-level actions are "
+         "decisions about an item, not about one dataflow, so they live on the "
+         "Agent Catalog page's detail drawer now. This scene follows the label - "
+         "the claim is unchanged, only its address.",
+    tests=["src/tests/styles/agentDrawerButtonGeometry.test.ts",
+           "test_frontend/test_walkthrough_baselines.py"],
+    clip_selector=BROWSE_DRAWER_ROOT,
+    fit_reactflow=False,
+    # The claim above is asserted in code; the PNG only documents it. The
+    # Linux runner antialiases text differently from the machine that captured
+    # the baseline (5.1% of pixels on CI, run to run stable), so the pin
+    # must leave room for that without waving through a real change.
+    max_diff_ratio=0.10,
 )
 def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
-    dialog = open_agent_drawer(ctx)
+    page = ctx.page
 
-    # "Remove from all projects" only exists on a card in My imports, and a fresh
-    # account has none - so import one first, through the UI rather than the API.
-    ctx.say("Import an agent", "My imports is where the longest label lives.")
-    import_button = dialog.get_by_role("button", name="Import", exact=True).first
-    import_button.wait_for(state="visible", timeout=20000)
-    ctx.click(import_button)
+    ctx.say("The Agent Catalog page", "Where the account-level actions live.")
+    page.goto(f"{ctx.frontend}/catalog/agents")
+    page.wait_for_load_state("domcontentloaded")
 
-    ctx.click(dialog.get_by_role("button", name="My imports"))
-    remove = dialog.get_by_role("button", name="Remove from all projects").first
-    remove.wait_for(state="visible", timeout=20000)
+    # The page auto-selects the first card so the drawer arrives populated.
+    drawer = page.locator(BROWSE_DRAWER_ROOT)
+    drawer.wait_for(state="visible", timeout=30000)
+
+    # "Remove from all projects" is the longest label in the product, and it
+    # only renders once the agent is in the account. Whether it already is
+    # depends on leftover per-user state, so reach the state rather than assume
+    # it: `primaryAction` toggles on `agent.imported`.
+    add = drawer.get_by_role("button", name="Add to all projects")
+    if add.count():
+        ctx.say("Add it to every project", "That is what puts the long label on screen.")
+        ctx.click(add.first)
+
+    remove = drawer.get_by_role("button", name="Remove from all projects").first
+    remove.wait_for(state="visible", timeout=30000)
     ctx.focus(remove, hold=1200)
 
     box = fits_on_one_line(remove)
@@ -713,9 +845,9 @@ def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
         f"{box['scrollW']}px wide in a {box['clientW']}px box"
     )
 
-    # Every button in the column, not just the reported one.
-    for name in ("Remove from all projects", "Add to project"):
-        button = dialog.get_by_role("button", name=name).first
+    # Every button in the drawer's action bar, not just the reported one.
+    for name in ("Remove from all projects", "Add to all projects", "View details"):
+        button = drawer.get_by_role("button", name=name).first
         if not button.count():
             continue
         metrics = fits_on_one_line(button)
@@ -725,7 +857,7 @@ def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
 
     ctx.capture("labels-fit")
     ctx.say("Every label inside its button",
-            "The row height is unchanged; the type came down instead.")
+            "The longest one in the product, on the surface that now owns it.")
 
 
 # ---------------------------------------------------------------------------
@@ -893,7 +1025,11 @@ def catalog_remove_is_an_app_dialog(ctx: Ctx) -> None:
            "test_frontend/test_walkthrough_baselines.py"],
     clip_selector=TOAST_REGION,
     fit_reactflow=False,
-    max_diff_ratio=0.02,
+    # The claim above is asserted in code; the PNG only documents it. The
+    # Linux runner antialiases text differently from the machine that captured
+    # the baseline (5.8% of pixels on CI, run to run stable), so the pin
+    # must leave room for that without waving through a real change.
+    max_diff_ratio=0.10,
 )
 def catalog_add_reports_success(ctx: Ctx) -> None:
     page = ctx.page
@@ -907,7 +1043,7 @@ def catalog_add_reports_success(ctx: Ctx) -> None:
     accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to project")
 
     toast = page.locator(TOAST_REGION).get_by_text(
-        re.compile(r"^Added .+ to this dataflow\.$")
+        re.compile(r"^Added .+ to this project\.$")
     )
     toast.first.wait_for(state="visible", timeout=30000)
     ctx.focus(toast.first, hold=1500)
@@ -931,6 +1067,7 @@ EXAMPLE_TITLES = [
 
 @walkthrough(
     slug="examples-are-seeded-for-a-new-account",
+    needs_examples=True,
     refs=[200],
     title="A new account arrives to a gallery of examples",
     premise="Create an account and read what is waiting on the projects page.",
@@ -966,18 +1103,27 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
     wait_for_projects_page(page, timeout=30000)
     ctx.beat(900)
 
-    missing = [
-        title
-        for title in EXAMPLE_TITLES
-        if page.get_by_text(title, exact=True).count() == 0
-    ]
+    # Wait for each title rather than counting once. Seeding eleven dataflows
+    # and their datasets happens on the signup request, and the gallery fetches
+    # them after the route renders, so a bare `count()` a beat later is a race
+    # the scene loses on a cold store - it read zero while the seed was still
+    # landing. The sibling e2e (`test_examples_for_registered_users_e2e`) has
+    # always waited; this scene was the one asserting on a snapshot in time.
+    missing = []
+    for title in EXAMPLE_TITLES:
+        try:
+            page.get_by_text(title, exact=True).first.wait_for(
+                state="visible", timeout=30000,
+            )
+        except PlaywrightTimeoutError:
+            missing.append(title)
     if missing:
         # Distinguish the two ways this scene can fail: a stack booted without
         # the flag has nothing to show and is a harness problem, not the bug.
         raise AssertionError(
             f"the gallery is missing {missing}. If every example is absent, the "
-            "stack was started without --with-examples (set "
-            "CURIO_E2E_WITH_EXAMPLES=1); if only some are, the seed is at fault."
+            "stack was started without --with-examples (pass --with-examples to "
+            "pytest); if only some are, the seed is at fault."
         )
 
     for title in EXAMPLE_TITLES:
@@ -1037,10 +1183,26 @@ def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
     expect(page.locator("#tools-menu")).to_be_visible()
     ctx.capture("refused-with-nothing-pinned")
 
-    ctx.say("Pin one node", "Now the mode has something to show.")
-    pin = page.locator(".react-flow__node").first.get_by_role(
-        "button", name="Pin to dashboard"
-    )
+    # RUN a node that renders, and pin that one. `.react-flow__node.first` is
+    # the Data Loading node, which has no visual output and, unrun, no output
+    # at all - so Dashboard Mode laid out an empty tile and the capture was a
+    # flat grey box that would still be a flat grey box if the mode broke.
+    # `play_node` runs the not-yet-successful ancestors too, so playing the
+    # chart at the tail runs the chain behind it.
+    ctx.say("Run the chart", "Dashboard Mode needs something to lay out.")
+    node_id = first_node_of_type(PROVENANCE_EXAMPLE, "vis-vega")
+    node = node_locator(page, node_id)
+    node.wait_for(state="visible", timeout=45000)
+    node.scroll_into_view_if_needed()
+    # Not `run_node_and_wait`: that returns the output text and so waits for
+    # `[data-curio-node-output]`, the code node's text pane, which a chart node
+    # does not have. Wait on the status attribute, then on drawn marks.
+    play_node(page, node_id)
+    wait_for_node_done(page, node_id, node_type="vis-vega", timeout_ms=180000)
+    assert_vega_canvas_rendered(page, node_id, timeout=60000)
+
+    ctx.say("Pin it", "Now the mode has something to show.")
+    pin = node.get_by_role("button", name="Pin to dashboard")
     pin.wait_for(state="visible", timeout=15000)
     ctx.click(pin.first)
     ctx.beat(700)
@@ -1048,6 +1210,15 @@ def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
     ctx.say("And it opens", "One pinned node, laid out on its own.")
     open_view_menu_dashboard(ctx)
     page.wait_for_timeout(1200)
+    # The pinned node is the subject, so prove the chart came with it rather
+    # than photographing whatever the panel put on screen. Scoped to the Vega
+    # mount (`"vega" + nodeId`, the convention useVega.ts owns) - a bare
+    # `canvas` locator finds Monaco's hidden decorationsOverviewRuler first.
+    dash_canvas = page.locator(f"#vega{node_id} canvas").first
+    dash_canvas.wait_for(state="visible", timeout=45000)
+    assert dash_canvas.evaluate("c => c.width > 0 && c.height > 0"), (
+        "Dashboard Mode laid out the pinned node but its chart drew nothing"
+    )
     ctx.capture("entered-with-one-pin")
 
 
@@ -1138,7 +1309,11 @@ DATA_POOL_EXAMPLE = "02-vega-lite-spatial-density.json"
     tests=["src/tests/catalog/tagChipsArePlain.test.ts",
            "src/tests/catalog/datasetFormatStyles.test.ts"],
     fit_reactflow=False,
-    max_diff_ratio=0.02,
+    # The claim above is asserted in code; the PNG only documents it. The
+    # Linux runner antialiases text differently from the machine that captured
+    # the baseline (2.0% of pixels on CI, run to run stable), so the pin
+    # must leave room for that without waving through a real change.
+    max_diff_ratio=0.05,
 )
 def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
     """The tints lived on the BROWSE PAGE cards, not the canvas drawer cards.
@@ -1197,6 +1372,10 @@ def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
     tests=["src/tests/hook/vegaSpecSizing.test.ts",
            "src/tests/components/nodeEditorOutputScroll.test.tsx"],
     example=MULTI_VIEW_EXAMPLE,
+    # The scene frames the chart node itself (see `frame_node` below); leaving
+    # this True would have the capture helper fitView the whole 28-node
+    # dataflow again immediately before each screenshot and undo it.
+    fit_reactflow=False,
     max_diff_ratio=0.05,
 )
 def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
@@ -1237,6 +1416,10 @@ def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
         arg=f"vega{node_id}",
         timeout=180000,
     )
+    # Frame the node before capturing. The subject is a chart inside a 525x350
+    # node; at the harness's fit zoom this example's 28 nodes make it a ~90x60
+    # thumbnail, and both captures came out as the same canvas wallpaper.
+    frame_node(page, node_id, zoom=1.1)
     ctx.focus(node, hold=1400)
 
     metrics = mount.evaluate(
@@ -1289,7 +1472,11 @@ def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
     tests=["src/tests/components/tables/TabularPreviewTable.test.tsx",
            "src/tests/adapters/node/components/DataPoolContent.test.tsx"],
     example=DATA_POOL_EXAMPLE,
-    max_diff_ratio=0.05,
+    # The claim above is asserted in code; the PNG only documents it. The
+    # Linux runner antialiases text differently from the machine that captured
+    # the baseline (6.4% of pixels on CI, run to run stable), so the pin
+    # must leave room for that without waving through a real change.
+    max_diff_ratio=0.10,
 )
 def data_pool_scrolls_sideways(ctx: Ctx) -> None:
     page = ctx.page
@@ -1327,3 +1514,335 @@ def data_pool_scrolls_sideways(ctx: Ctx) -> None:
     ctx.say("The right-hand columns, in place",
             "One scroller owns both axes now.")
     ctx.capture("scrolled-right")
+
+
+# ---------------------------------------------------------------------------
+# Dataflow identity
+# ---------------------------------------------------------------------------
+
+@walkthrough(
+    slug="renaming-a-dataflow-renames-it-everywhere",
+    example=PROVENANCE_EXAMPLE,
+    refs=[230],
+    title="A renamed dataflow is renamed on the projects page too",
+    premise="Rename a dataflow on the canvas, save it, then go and look at the list.",
+    note="The name is stored twice - the project row the Projects list renders, "
+         "and `spec.dataflow.name` the canvas title renders. Committing the "
+         "title wrote only the second, and the save sent `projectName`, which "
+         "only loading ever set - so the save re-sent the name the dataflow was "
+         "opened under. The reverse direction was broken too: a name-only PUT, "
+         "which is what the list's own rename sends, never reached the spec.",
+    tests=["src/tests/hook/useWorkflowOperations.rename.test.ts",
+           "src/tests/components/upMenuRename.test.ts",
+           "tests/test_projects/test_routes.py",
+           "test_frontend/test_project_save_load.py"],
+    fit_reactflow=False,
+    max_diff_ratio=0.03,
+)
+def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
+    """Three captures because the bug spans two pages and two directions.
+
+    A canvas-only shot cannot show the symptom at all - the canvas was the one
+    surface that always looked right.
+    """
+    page = ctx.page
+
+    ctx.say("Rename it on the canvas", "Click the title, type, press Enter.")
+    title = page.locator("h1").first
+    title.wait_for(state="visible", timeout=30000)
+    ctx.click(title)
+
+    box = page.locator("input[type='text']").last
+    box.wait_for(state="visible", timeout=10000)
+    box.fill("Renamed Dataflow")
+    box.press("Enter")
+
+    disk = page.locator("[data-curio-save-state]")
+    state = disk.get_attribute("data-curio-save-state")
+    assert state == "unsaved", (
+        f"the rename left the indicator reading {state!r}; a rename diverges "
+        f"from disk and has to say so, or the user is told their edit is saved"
+    )
+    ctx.focus(disk, hold=900)
+    ctx.say("Unsaved, as it should be", "The rename is an edit like any other.")
+    ctx.capture("renamed-on-canvas")
+
+    ctx.say("Save it", "")
+    ctx.click(disk)
+    page.wait_for_function(
+        "() => document.querySelector('[data-curio-save-state]')"
+        "?.getAttribute('data-curio-save-state') === 'saved'",
+        timeout=30000,
+    )
+
+    ctx.say("Now the projects page", "This is where the old name used to survive.")
+    page.goto(f"{ctx.frontend}/projects")
+    page.get_by_text("Renamed Dataflow").first.wait_for(state="visible", timeout=30000)
+    ctx.focus(page.get_by_text("Renamed Dataflow").first, hold=1200)
+    ctx.capture("renamed-in-the-list")
+
+    ctx.say("And back the other way",
+            "Renaming from the list has to reach the canvas title too.")
+    # Straight through the API: the subject is what the canvas reads back, not
+    # the context menu that gets there. The token is the `session_token` cookie
+    # the app itself authenticates with (utils/authApi), read off the live
+    # context rather than threaded through Ctx, which the video runner shares.
+    token = next(
+        c["value"] for c in page.context.cookies() if c["name"] == "session_token"
+    )
+    listed = api_json(f"{ctx.backend}/api/projects", token)
+    target = next(p for p in listed if p["name"] == "Renamed Dataflow")
+    api_json(
+        f"{ctx.backend}/api/projects/{target['id']}",
+        token,
+        method="PUT",
+        payload={"name": "Renamed From The List"},
+    )
+
+    page.goto(f"{ctx.frontend}/dataflow/{target['id']}")
+    heading = page.locator("h1").filter(has_text="Renamed From The List")
+    heading.wait_for(state="visible", timeout=30000)
+    ctx.focus(heading, hold=1200)
+    ctx.say("The canvas title followed", "Both stores hold one name now.")
+    ctx.capture("canvas-follows-a-list-rename")
+
+
+@walkthrough(
+    slug="a-loaded-dataflow-is-not-dirty",
+    example=PROVENANCE_EXAMPLE,
+    refs=[229],
+    title="Opening a saved dataflow leaves nothing to save",
+    premise="Open a dataflow you already saved and read the save indicator.",
+    note="`loadParsedTrill` replays every persisted edge through the same "
+         "`onConnect` a user drag goes through, and onConnect marks the project "
+         "dirty - rightly, for a real connection. So any dataflow with even one "
+         "edge came back from disk reading 'Unsaved changes', and the 30s "
+         "auto-save then rewrote it for nothing, which is what made the disk "
+         "turn green a while after opening.",
+    tests=["src/tests/hook/useWorkflowOperations.dirtyOnLoad.test.ts",
+           "src/tests/components/loadPathsMarkDirty.test.ts",
+           "test_frontend/test_project_dirty_guard.py"],
+    clip_selector="[data-curio-save-state]",
+    max_diff_ratio=0.02,
+)
+def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
+    """Two captures, clipped to the disk: the subject is one glyph's colour.
+
+    At the suite's default 0.20 an amber disk and a green one are the same
+    picture, so a single wide shot could document the fix without ever being
+    able to police it. The pair is what makes the two states legible in review.
+
+    The runner has already entered `/dataflow/<id>` through the real
+    ProjectLoader path, so this scene only has to read the result.
+    """
+    page = ctx.page
+
+    # The edge is what the replay processes; before it renders, the bug has not
+    # had its chance to happen.
+    page.locator(".react-flow__edge").first.wait_for(state="visible", timeout=45000)
+
+    disk = page.locator("[data-curio-save-state]")
+    state = disk.get_attribute("data-curio-save-state")
+    assert state == "saved", (
+        f"a freshly loaded dataflow reads {state!r} with no edits made - #229"
+    )
+
+    ctx.say("Just opened, nothing edited", "The disk is green: what you see is on disk.")
+    ctx.focus(disk, hold=1200)
+    ctx.capture("loaded")
+
+    ctx.say("Now add a node", "A real edit still has to register.")
+    # `drag_to_canvas`, the suite's proven drop path, rather than a raw mouse drag
+    # of an existing node: the drag is what would be flaky here, and adding a node
+    # is just as much a real edit for the purpose of the claim.
+    before = len(canvas_nodes(page))
+    drag_to_canvas(page, page.locator("#step-analysis"), at=(150, 150))
+    assert len(canvas_nodes(page)) == before + 1, "the drop created no node"
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-curio-save-state]')"
+        "?.getAttribute('data-curio-save-state') === 'unsaved'",
+        timeout=15000,
+    )
+    ctx.focus(disk, hold=1200)
+    ctx.say("Amber, as it should be",
+            "The guard covers the load's own replay, not the user's edits.")
+    ctx.capture("after-an-edit")
+
+
+# ---------------------------------------------------------------------------
+# Catalog chrome (#236)
+# ---------------------------------------------------------------------------
+
+@walkthrough(
+    slug="catalog-details-clear-the-version-badge",
+    refs=[236],
+    title="The details panel leaves the version badge alone",
+    premise="Open a catalog item's details panel and read the bottom-right corner.",
+    note="The badge is `position: fixed` at bottom-right with a bare z-index of "
+         "9999, and nothing between it and the page makes a stacking context - "
+         "so it painted ON TOP of the details drawer, grey monospace over the "
+         "drawer's dark primary button. The height chain to the drawer is "
+         "unbroken to the viewport (.pageShell is 100vh, .browseDrawer is "
+         "height:100%), so nothing reserved the corner. The shell now does, "
+         "once, for every catalog and both drawers, and the badge sits on the "
+         "documented z-scale instead of above everything.",
+    tests=["src/tests/styles/zLayerScale.test.ts",
+           "test_frontend/test_walkthrough_baselines.py"],
+    # The scene leaves for /catalog immediately and has nothing to do with this
+    # dataflow. It is named only because the runner waits for a canvas node
+    # before handing over, and an empty dataflow never produces one.
+    example=PROVENANCE_EXAMPLE,
+    fit_reactflow=False,
+    # A restored 30px gutter is a small number of pixels; the 0.20 default
+    # would not notice it going away again.
+    max_diff_ratio=0.05,
+)
+def catalog_details_clear_the_version_badge(ctx: Ctx) -> None:
+    page = ctx.page
+
+    ctx.say("Open the Node Catalog", "Any catalog will do - they share one shell.")
+    page.goto(f"{ctx.frontend}/catalog/nodes")
+    page.wait_for_load_state("networkidle")
+
+    # The first card, whatever it is: the claim is about the drawer's geometry,
+    # not about any particular package. `article[data-pkg-dir]` is the card's
+    # own hook (PackageBrowseCard), not a hashed CSS-module class.
+    card = page.locator("article[data-pkg-dir]").first
+    card.wait_for(state="visible", timeout=30000)
+    ctx.click(card)
+
+    drawer = page.locator('[data-curio-browse-drawer="true"]').first
+    drawer.wait_for(state="visible", timeout=30000)
+
+    ctx.say("Scroll to the bottom of the details",
+            "This is where the two used to collide.")
+    drawer.evaluate("el => el.scrollTo({ top: el.scrollHeight })")
+    page.wait_for_timeout(600)
+
+    badge = page.locator("span[title]").filter(has_text=re.compile("isolated", re.I))
+    if badge.count() == 0:
+        raise AssertionError(
+            "no version badge on /catalog - the scene cannot show #236. The "
+            "badge only renders once GET /version answers, so this usually "
+            "means the backend is unreachable rather than that the badge moved."
+        )
+
+    badge_box = badge.first.bounding_box()
+    drawer_box = drawer.bounding_box()
+    assert badge_box and drawer_box, "could not measure the badge or the drawer"
+
+    # The whole fix is that the drawer stops short of the badge. Overlap is
+    # measured rather than eyeballed, so a failure says which way it went.
+    overlap = (
+        badge_box["x"] < drawer_box["x"] + drawer_box["width"]
+        and badge_box["x"] + badge_box["width"] > drawer_box["x"]
+        and badge_box["y"] < drawer_box["y"] + drawer_box["height"]
+        and badge_box["y"] + badge_box["height"] > drawer_box["y"]
+    )
+    assert not overlap, (
+        f"the details drawer still runs under the version badge: "
+        f"badge={badge_box}, drawer={drawer_box}"
+    )
+
+    ctx.focus(badge.first, hold=1200)
+    ctx.say("The corner is its own", "The drawer ends above it, not behind it.")
+    ctx.capture("details-panel-and-version-badge")
+
+
+# ---------------------------------------------------------------------------
+# The Column Filter reads a real DataFrame (#194)
+# ---------------------------------------------------------------------------
+
+#: The package the Column Filter ships in, and the node body that feeds it.
+EXAMPLE_UI_PKG = "curio.example-ui@1"
+COLUMN_FILTER_CODE = (
+    "import pandas as pd\n"
+    "df = pd.DataFrame({'population': [2746, 8804, 1200],"
+    " 'name': ['Chicago', 'NYC', 'Peoria']})\n"
+    "return df\n"
+)
+
+
+@walkthrough(
+    slug="column-filter-reads-a-dataframe",
+    refs=[194],
+    title="A packaged node reads the frame wired into it",
+    premise="Wire Data Loading into the Column Filter and watch it react.",
+    note="`asFrame` required the row-map encoding pandas' bare `to_dict()` "
+         "produces and explicitly rejected arrays - but Curio serialises with "
+         "`to_dict(orient='list')`, so every real DataFrame arrived as arrays, "
+         "`asFrame` returned null, and the node sat there asking to be "
+         "connected to the thing it was already connected to. Nothing threw and "
+         "nothing logged, which is why it read as 'the node does nothing'.",
+    tests=["src/tests/adapters/node/exampleUiColumnFilter.test.tsx",
+           "sandbox/tests/test_dataframe_wire_shape.py",
+           "test_frontend/test_package_refresh_e2e.py"],
+    fit_reactflow=False,
+    max_diff_ratio=0.05,
+)
+def column_filter_reads_a_dataframe(ctx: Ctx) -> None:
+    page = ctx.page
+
+    ctx.say("Add the example package", "The Column Filter ships inside it.")
+    page.get_by_text("NODE CATALOG").click()
+    page.get_by_role("button", name=re.compile("Browse Node Catalog")).click()
+    drawer = page.locator('[data-curio-node-catalog-drawer="true"]')
+    drawer.wait_for(state="attached", timeout=15000)
+    expect(drawer).to_have_attribute("aria-hidden", "false", timeout=10000)
+
+    card = page.locator(f'article[data-pkg-dir="{EXAMPLE_UI_PKG}"]')
+    if card.count() == 0:
+        card = page.locator("article").filter(has_text="Example: Custom UI Node").first
+    ctx.click(card.first.get_by_role("button", name=re.compile(r"^Add to project")))
+    # NOT `accept_confirm_dialog`. The Node catalog is the one that asks through
+    # `InstallPermissionsDialog` rather than the shared `ConfirmDialog` — it has
+    # permissions and conflicts to show, which is exactly the asymmetry #196
+    # documented — so there is no dialog named "Add …" to wait for here.
+    page.get_by_role("dialog").last.get_by_role(
+        "button", name=re.compile(r"^(Add|Install)")
+    ).last.click()
+    expect(
+        page.locator(f'article[data-pkg-dir="{EXAMPLE_UI_PKG}"]').first.get_by_role(
+            "button", name="Remove from project"
+        )
+    ).to_be_visible(timeout=120000)
+    page.keyboard.press("Escape")
+
+    ctx.say("A node that outputs a frame", "Three rows, one numeric column.")
+    loading = drag_to_canvas(page, page.locator("#step-loading"), at=(220, 200))
+    set_node_code(page, loading, COLUMN_FILTER_CODE)
+
+    ctx.say("And the Column Filter beside it")
+    open_tools_palette(page, "packages")
+    row = page.locator(f'#packages-palette [data-pkg-palette-coords~="{EXAMPLE_UI_PKG}"]')
+    expect(row).to_have_count(1, timeout=30000)
+    filter_node = drag_to_canvas(page, row, at=(760, 220))
+    close_tools_palette(page, "packages")
+
+    node = node_locator(page, filter_node)
+    ctx.focus(node, hold=1000)
+    # Before the frame arrives the node is honest about what it is waiting for;
+    # capturing it here is what makes the next frame mean something.
+    ctx.capture("waiting-for-a-frame")
+
+    ctx.say("Wire them together, and run the loader",
+            "This is the moment the node used to ignore.")
+    connect_nodes(page, loading, filter_node)
+    run_node_and_wait(page, loading, node_type="curio.builtin/data-loading")
+
+    # THE POINT: the node read the frame. It names the numeric column it found
+    # and counts the rows that match, neither of which it could do from the
+    # payload it used to reject.
+    body = node_locator(page, filter_node)
+    expect(body).to_contain_text("population", timeout=60000)
+    expect(body).to_contain_text(re.compile(r"\d+ of \d+ rows match"), timeout=60000)
+    text = " ".join((body.text_content() or "").split())
+    assert "Connect a DataFrame upstream" not in text, (
+        "the Column Filter still says it has no frame after one was wired in "
+        f"and run, so `asFrame` is rejecting the payload again: {text[:200]}"
+    )
+    ctx.focus(body, hold=1400)
+    ctx.capture("reading-the-frame")
+    ctx.say("It found the column and counted the rows",
+            "The same payload it used to reject.")

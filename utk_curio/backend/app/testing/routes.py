@@ -26,8 +26,12 @@ a normal ``curio.py start`` does not.
 
 from __future__ import annotations
 
+import logging
+import shutil
+
 from flask import Blueprint, jsonify, request
 
+from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.config import _is_dev, _is_testing
 from utk_curio.backend.app.agents import testing_provider
 from utk_curio.backend.extensions import db
@@ -38,6 +42,8 @@ from utk_curio.backend.app.projects.schemas import ProjectCreate
 
 
 testing_bp = Blueprint("testing", __name__, url_prefix="/api/testing")
+
+log = logging.getLogger(__name__)
 
 
 @testing_bp.before_request
@@ -222,6 +228,45 @@ def dataset_paths():
     return jsonify({"paths": paths}), 200
 
 
+def _clear_test_user_stores() -> list[str]:
+    """Delete the on-disk trees that :func:`reset_db`'s truncate would orphan.
+
+    Emptying ``user`` and leaving ``.curio/test/users/`` behind is not a clean
+    slate, it is a trap: the store path contains ``user.id``, SQLite reissues
+    ids from 1 after a delete, and so the next account created by a test opens
+    onto the previous one's imported agents, installed packages, datasets and
+    projects. Four separate failures in the #186-#203 follow-ups were that,
+    each of them reading as a product bug until the store was listed by hand.
+
+    Removes the per-user tree and its sibling published-agents catalog, which
+    ``agents/publications.py`` derives from the same root and which leaks the
+    same way.
+
+    Refuses to touch anything outside ``.curio/test/``. The blueprint guard
+    already requires ``CURIO_TESTING``, but this function deletes user data, so
+    it re-checks rather than trusting a caller to have been routed correctly:
+    without the flag ``users_base()`` is a developer's real store.
+    """
+    from utk_curio.backend.app.common.user_storage import curio_root, users_base
+
+    if not _is_testing():  # pragma: no cover - the blueprint guard precedes us
+        return []
+    root = curio_root().resolve()
+    if root.name != "test":
+        log.warning("refusing to clear stores: %s is not a test root", root)
+        return []
+
+    cleared = []
+    for target in (users_base(), (root / "agents-catalog").resolve()):
+        if not is_within(target, root):  # pragma: no cover - both are children
+            continue
+        if not target.exists():
+            continue
+        shutil.rmtree(target, ignore_errors=True)
+        cleared.append(target.name)
+    return cleared
+
+
 @testing_bp.route("/reset-db", methods=["POST"])
 def reset_db():
     """Truncate mutable tables so the next test starts with a clean slate.
@@ -236,8 +281,12 @@ def reset_db():
         that set is refused rather than executed: the name goes into raw SQL,
         and "which tables may a test wipe" is a decision for this module, not
         for the request body.
+      * ``stores`` – default ``true``. Also delete the per-user files under
+        ``.curio/test/``, which the truncate would otherwise orphan onto the
+        ids it is about to free. Pass ``false`` only to inspect what a previous
+        test left behind; a test that skips it is asking to inherit it.
 
-    Response: ``{"truncated": [...table names...]}``
+    Response: ``{"truncated": [...], "stores_cleared": [...]}``
     """
     body = request.get_json(silent=True) or {}
     requested = body.get("tables")
@@ -267,7 +316,11 @@ def reset_db():
         except Exception:
             pass
     db.session.commit()
-    return jsonify({"truncated": truncated}), 200
+
+    stores_cleared = []
+    if body.get("stores", True):
+        stores_cleared = _clear_test_user_stores()
+    return jsonify({"truncated": truncated, "stores_cleared": stores_cleared}), 200
 
 
 @testing_bp.route("/stub-project", methods=["POST"])
@@ -406,3 +459,124 @@ def agent_script_reset():
         return denied
     testing_provider.reset()
     return jsonify({"pending": testing_provider.pending()}), 200
+
+
+@testing_bp.route("/package-store", methods=["POST"])
+def package_store():
+    """Read or perturb one file in a user's package store.
+
+    For the #194 delivery regression. A fix can ship inside a package at an
+    unchanged version, and the question that test asks is whether an existing
+    install picks it up — which means the test has to make a store copy stale
+    and then read it back. Neither is possible from the pytest process when the
+    stack runs in a container, because it does not share that filesystem. So it
+    happens here, in the process that does, for the same reason ``dataset-paths``
+    resolves paths here rather than in the harness.
+
+    Body (JSON):
+      * ``username`` – required; whose store to act on.
+      * ``dirName``  – required; ``<packageId>@<major>``, validated.
+      * ``action``   – ``"hash"`` reads, ``"stale"`` perturbs.
+      * ``path``     – file inside the package, POSIX-relative.
+                       Defaults to ``manifest.json``.
+
+    ``hash`` answers ``{"sha256": "...", "catalog_sha256": "..."}`` so a caller
+    can compare the store copy against the catalog it came from in one call.
+    ``stale`` appends a marker byte to the file and drops the package's
+    seed-state record, then answers the same shape — after which the two hashes
+    differ by construction.
+    """
+    import hashlib
+
+    from utk_curio.backend.app.packages import seed_state
+    from utk_curio.backend.app.packages.seed import _catalog_root
+    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE, package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    body = request.get_json(silent=True) or {}
+    username = (body.get("username") or "").strip()
+    dir_name = (body.get("dirName") or "").strip()
+    action = (body.get("action") or "hash").strip()
+    rel = (body.get("path") or "manifest.json").strip()
+
+    if not username or not dir_name:
+        return jsonify({"error": "username and dirName are required"}), 400
+    if not PACKAGE_DIR_RE.match(dir_name):
+        return jsonify({"error": f"invalid dirName: {dir_name!r}"}), 400
+    if action not in ("hash", "stale", "reset"):
+        return jsonify({"error": "action must be 'hash', 'stale' or 'reset'"}), 400
+    # Narrow the writable surface by hand: this route can only ever touch a
+    # file INSIDE one validated package directory.
+    if not rel or rel.startswith("/") or ".." in rel.split("/"):
+        return jsonify({"error": f"invalid path: {rel!r}"}), 400
+
+    user = user_repo.user_by_identifier(username)
+    if user is None:
+        return jsonify({"error": f"no such user: {username}"}), 404
+
+    try:
+        store_root = package_dir(_user_dir_key(user), dir_name)
+    except Exception as exc:  # noqa: BLE001 — traversal guard etc.
+        return jsonify({"error": str(exc)}), 400
+
+    if action == "reset":
+        # Drop the store copy so the next install is a true first install.
+        #
+        # A test cannot get this by using a fresh username. The store is keyed
+        # by user ID, and the e2e harness truncates the ``user`` table between
+        # tests, so SQLite reissues low ids and a brand-new account inherits
+        # whatever the last occupant of that id left on disk — including, for
+        # this test, a deliberately damaged file. That is the hazard the recheck
+        # logged as F6; until it is fixed at the source, a test that needs a
+        # known starting state has to say so explicitly.
+        import shutil
+
+        if store_root.is_dir():
+            shutil.rmtree(store_root, ignore_errors=True)
+        seed_state.clear(_user_dir_key(user), dir_name)
+        return jsonify({"reset": dir_name, "present": store_root.is_dir()}), 200
+
+    target = store_root / rel
+    if not target.is_file():
+        return jsonify({"error": f"not in the store: {dir_name}/{rel}"}), 404
+
+    if action == "stale":
+        from utk_curio.backend.app.packages.installer import (
+            refresh_packageage_integrity,
+        )
+
+        # A marker byte rather than a rewrite: the file stays valid for anything
+        # that only parses it, so the ONLY thing this changes is the hash.
+        with open(target, "ab") as fh:
+            fh.write(b"\n// stale-marker\n")
+        # ...and then rewrite the store copy's own integrity.json to match.
+        #
+        # This is what makes it an UPGRADE rather than a corruption, and the
+        # distinction is the whole point. A real upgrade leaves the user's copy
+        # internally consistent — its files and its integrity map agree, they
+        # are simply an older pair than the catalog's. Perturbing the file alone
+        # leaves the store's map still quoting the original hash, so it matches
+        # the catalog's map and the refresh correctly declines to act: the copy
+        # is damaged, not out of date, and repairing damage is a different job
+        # (`_package_is_healthy`). Skipping this step made the first version of
+        # this endpoint simulate the wrong thing entirely.
+        refresh_packageage_integrity(store_root)
+        seed_state.clear(_user_dir_key(user), dir_name)
+
+    def _sha256(path):
+        h = hashlib.sha256()
+        h.update(path.read_bytes())
+        return h.hexdigest()
+
+    catalog_file = _catalog_root() / dir_name / rel
+    return (
+        jsonify(
+            {
+                "sha256": _sha256(target),
+                "catalog_sha256": _sha256(catalog_file) if catalog_file.is_file() else None,
+                "path": rel,
+                "dirName": dir_name,
+            }
+        ),
+        200,
+    )

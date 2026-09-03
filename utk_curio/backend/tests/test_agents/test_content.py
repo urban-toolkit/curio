@@ -187,6 +187,95 @@ class TestToolRequestPart:
             assert content.parse_parts(json.dumps(payload)) is None
 
 
+class TestContentClassToolBudgets:
+    """#245 — the mutate tools whose params carry a node's SOURCE.
+
+    The parser refused at 1KB (``_TOOL_PARAMS_MAX_BYTES``) what the mints
+    accept at ``PROPOSAL_CONTENT_MAX_CHARS`` (65536), so every non-trivial
+    node.create failed open and the whole request rendered as raw JSON in the
+    chat with no node and no review card. The budget is scoped to the CONTENT
+    FIELD, never to the tool — the smuggling tests below are why.
+    """
+
+    def _request(self, tool, params):
+        return json.dumps({"toolRequest": {"tool": tool, "params": params}})
+
+    def test_node_create_content_gets_the_proposal_budget(self):
+        body = self._request("node.create", {
+            "nodeType": "curio.builtin/computation-analysis",
+            "content": "x" * 20000, "title": "Loader", "goal": "load a CSV"})
+        assert len(body.encode()) > content.TAIL_MAX_BYTES
+        (part,) = content.parse_parts(body)
+        assert part["tool"] == "node.create"
+        assert len(part["params"]["content"]) == 20000  # byte-identical passthrough
+
+    def test_content_over_the_mint_bound_is_refused(self):
+        # Parser and mint now agree at ONE number, so an oversized body is a
+        # correctable refusal rather than a silent fail-open leak.
+        body = self._request("node.create", {
+            "nodeType": "a/b", "content": "x" * (content.PROPOSAL_CONTENT_MAX_CHARS + 1)})
+        assert content.parse_parts(body) is None
+
+    def test_non_content_params_keep_a_classic_cap(self):
+        # The whole reason the budget is field-scoped: a per-tool budget would
+        # hand `pad` a 256KB allowance too.
+        body = self._request("node.create", {"pad": "x" * 8000})
+        assert content.parse_parts(body) is None
+
+    def test_node_content_write_gets_it_too(self):
+        (part,) = content.parse_parts(
+            self._request("node.content.write", {"nodeId": "n1", "content": "z" * 20000}))
+        assert part["tool"] == "node.content.write"
+
+    def test_node_template_create_nests_its_content(self):
+        # The fallback rung of the reuse ladder carries its source one level
+        # down, at params.template.content (services.py::_mint_node_template_create).
+        (part,) = content.parse_parts(self._request("node.template.create", {
+            "justification": "j" * 2000,
+            "template": {"label": "L", "engine": "python", "content": "y" * 20000}}))
+        assert len(part["params"]["template"]["content"]) == 20000
+        assert content.parse_parts(self._request("node.template.create", {
+            "template": {"content": "y" * (content.PROPOSAL_CONTENT_MAX_CHARS + 1)}})) is None
+        # The justification is prose for the review card, not a code channel.
+        assert content.parse_parts(self._request("node.template.create", {
+            "justification": "j" * 6000, "template": {"content": "y"}})) is None
+
+    def test_wrong_typed_content_still_reaches_the_mint(self):
+        # A non-str content field is left in the remainder so the mint's own
+        # "must be a non-empty string" refusal fires — behaviour unchanged.
+        assert content.parse_parts(self._request("node.create", {
+            "nodeType": "a/b", "content": {"not": "a string"}})) is not None
+
+    def test_other_tools_are_byte_identical(self):
+        assert content.parse_parts(self._request("node.read", {"x": "y" * 2000})) is None
+        (part,) = content.parse_parts(self._request("node.create", {
+            "nodeType": "a/b", "content": "print(1)"}))
+        assert part["params"]["content"] == "print(1)"
+
+    def test_smuggling_a_content_tool_name_stays_refused(self):
+        payload = {"suggestedPrompts": {"primary": "P"},
+                   "pad": '"node.create"' + "x" * 8000}
+        assert content.parse_parts(json.dumps(payload)) is None
+
+    def test_verbose_errors_name_the_real_field_path(self):
+        _, errors = content.parse_tool_request_verbose({
+            "tool": "node.template.create",
+            "params": {"template": {"content": "y" * (content.PROPOSAL_CONTENT_MAX_CHARS + 1)}}})
+        # The model cannot correct what the error does not name.
+        assert errors and "params.template.content" in errors[0]
+        _, errors = content.parse_tool_request_verbose({"tool": "node.create", "params": []})
+        assert errors == ["toolRequest.params must be an object"]
+
+    def test_the_reported_leak_is_gone_end_to_end(self):
+        # Issue #245's exact shape: prose, then the request block.
+        body = self._request("node.create", {
+            "nodeType": "curio.builtin/computation-analysis", "content": "x" * 20000})
+        visible, parts = content.extract_content("I will add that node.\n\n"
+                                                 f"```curio.v1\n{body}\n```")
+        assert parts and parts[0]["tool"] == "node.create"
+        assert "toolRequest" not in visible
+
+
 class TestTailInstruction:
     def test_grantless_instruction_is_byte_identical(self):
         # Regression pin (dev/41): runs without grants are unchanged from T2.

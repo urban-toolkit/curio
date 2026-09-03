@@ -295,7 +295,11 @@ def curio_servers(session_app, request):
     # configuration never tested. Opt-in rather than always-on because seeding
     # eleven dataflows (and provisioning the datasets they reference) costs
     # real time on every boot, and only the tests that read the gallery need it.
-    if env.get("CURIO_E2E_WITH_EXAMPLES", "0") in ("1", "true", "yes", "on"):
+    # A pytest flag, not another CURIO_* env var: --longrun and --videos already
+    # set the convention (see tests/conftest.py), and the env var this replaced
+    # was never exported by scripts/test.sh or CI - so the one suite written to
+    # catch #200 skipped in every ordinary run.
+    if request.config.getoption("examples", default=False):
         extra_args.append("--with-examples")
     # Replay the whole e2e suite against isolated node execution by setting
     # CURIO_E2E_ISOLATION=fork. Off by default, and deliberately so: the
@@ -324,10 +328,15 @@ def curio_servers(session_app, request):
             "python", "curio.py", "start",
             "--backend-port", str(backend_port),
             "--sandbox-port", str(sandbox_port),
-            # Passed explicitly, like its two peers. ``env["PORT"]`` above does
-            # NOT reach webpack: ``start_frontend`` takes the port from
-            # ``--frontend-port`` (default 8080), so without this the readiness
-            # gate waits on a port nothing was ever told to listen on.
+            # Passed explicitly, like the other two. Without it ``curio.py
+            # start`` falls back to its own default of 8080 - and
+            # ``start_frontend`` both ``_kill_port``s and binds whatever port it
+            # was given. So a run configured onto a free FRONTEND_PORT still
+            # killed whatever held 8080 and then served there, while the
+            # readiness gate below waited on the port nobody was listening on.
+            # Invisible at the default port, where the two agree; fatal to
+            # running two stacks side by side, which is the only reason to set
+            # FRONTEND_PORT at all.
             "--frontend-port", str(frontend_port),
             *extra_args,
         ],
