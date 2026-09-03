@@ -96,6 +96,8 @@ export default function UpMenu({
         projectDirty,
         projectSavedAt,
         cleanCanvas,
+        markDirty,
+        renameDataflow,
         saveCurrentProject,
         saveAsNewProject,
         discardProject,
@@ -152,13 +154,27 @@ export default function UpMenu({
         setWorkflowName(e.target.value);
     };
 
-    const handleNameBlur = () => {
+    // Commit through ``renameDataflow`` so the project row's name - what the
+    // Projects list and the details drawer render - moves with the canvas title
+    // (#230). Committing used to only close the editor, which left the rename
+    // living in ``workflowName`` alone. ``handleNameChange`` is untouched, so
+    // typing still updates the visible title live.
+    const commitName = () => {
+        if (!renameDataflow(workflowName)) {
+            // A blank entry is not a rename. Put the dataflow's own name back
+            // rather than leaving the title empty.
+            setWorkflowName(projectName || workflowNameRef.current || "Untitled dataflow");
+        }
         setIsEditing(false);
+    };
+
+    const handleNameBlur = () => {
+        commitName();
     };
 
     const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
-            setIsEditing(false);
+            commitName();
         }
     };
 
@@ -284,6 +300,11 @@ export default function UpMenu({
                     showToast(loadFailedMessage(err), "error");
                     return;
                 }
+                // Importing REPLACES the canvas, so it does diverge from what
+                // is on disk. The edge replay inside loadParsedTrill no longer
+                // says so on its own (#229) - and never did for an edgeless
+                // import - so say it here, where the intent is known.
+                markDirty();
                 // Importing a workflow file is a deliberate user action, so
                 // warn + auto-install its Python deps the same way opening
                 // your own project does.

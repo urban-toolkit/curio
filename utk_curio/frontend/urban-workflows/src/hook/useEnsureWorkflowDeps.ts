@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useToastContext } from "../providers/ToastProvider";
 import { packagesApi } from "../api/packagesApi";
+import type { WorkflowDepImportFailure } from "../api/packagesApi";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 
 interface DataflowSpec {
@@ -43,6 +44,7 @@ export function useEnsureWorkflowDeps() {
         // route, a transient dev-reloader restart) stays silent and never
         // asserts an install failure for packages that may already be ready.
         let needed: string[];
+        let broken: WorkflowDepImportFailure[];
         try {
           const probe = await packagesApi.checkWorkflowDeps(packages);
           // Anything the backend defers is missing but must not be installed
@@ -52,10 +54,29 @@ export function useEnsureWorkflowDeps() {
           // Install button, so the user makes that call knowingly (#233).
           const deferred = new Set(probe.deferred ?? []);
           needed = probe.packages.filter((dirName) => !deferred.has(dirName));
+          broken = probe.broken ?? [];
         } catch (err) {
           console.error("Workflow dependency check failed:", err);
           return;
         }
+
+        // Installed, version-satisfying, and still not importable — a wheel
+        // whose native extension won't load. Say so instead of installing:
+        // pip would report "already satisfied" and change nothing, and the
+        // user would otherwise meet this as a raw ImportError from whichever
+        // node happened to run first.
+        if (broken.length) {
+          const detail = broken
+            .map((b) => `${b.dep} (${b.error})`)
+            .join("; ");
+          showToast(
+            `This dataflow needs ${detail}. The library is installed but cannot be ` +
+              `imported, so reinstalling will not help — repair it in the Curio ` +
+              `environment before running these nodes.`,
+            "error",
+          );
+        }
+
         if (!needed.length) return;
         const names = needed.join(", ");
         showToast(

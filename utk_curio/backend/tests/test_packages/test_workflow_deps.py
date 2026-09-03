@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from utk_curio.backend.app.packages import pip_runner as packages_routes_pip
 from utk_curio.backend.app.packages import routes as packages_routes
 from utk_curio.backend.app.packages import services as packages_services
 
@@ -119,6 +120,98 @@ def test_check_flags_installed_package_with_missing_dep(
     resp = _check(client, token, ["curio.weather@1"])
     assert resp.status_code == 200
     assert resp.get_json()["packages"] == ["curio.weather@1"]
+
+
+def test_check_reports_an_installed_but_unimportable_dep_as_broken(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    """Version-satisfying and still unimportable → reported, NOT flagged for install.
+
+    Metadata presence is not importability: a wheel whose native extension
+    cannot load (GDAL, CUDA) records a perfectly good version, so the version
+    check alone calls it satisfied and the failure only surfaces later as a raw
+    ImportError from whichever node runs first. Reinstalling does not fix it -
+    pip says "already satisfied" and does nothing - so it belongs in ``broken``,
+    where the client warns, and never in ``packages``, where the client installs.
+    """
+    _, token = user_and_token
+    monkeypatch.setattr(
+        packages_routes, "list_user_packageages",
+        lambda uk: [Path("curio.weather@1")],
+    )
+    monkeypatch.setattr(
+        packages_services, "_read_python_deps",
+        lambda uk, dn: {"flask": ""},
+    )
+    monkeypatch.setattr(
+        packages_routes_pip, "import_failures",
+        lambda deps: {d: "ImportError: DLL load failed while importing _base" for d in deps},
+    )
+    resp = _check(client, token, ["curio.weather@1"])
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["packages"] == [], "a broken extension is not fixed by installing"
+    assert body["broken"] == [
+        {
+            "package": "curio.weather@1",
+            "dep": "flask",
+            "error": "ImportError: DLL load failed while importing _base",
+        }
+    ]
+
+
+def test_check_does_not_probe_a_dep_it_already_flagged_for_install(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    """A dep pip will install anyway is not also reported as broken.
+
+    Otherwise a plain missing library would produce both a "will install" and a
+    "cannot be repaired" message for the same thing, and the second is wrong.
+    """
+    _, token = user_and_token
+    monkeypatch.setattr(
+        packages_routes, "list_user_packageages",
+        lambda uk: [Path("curio.weather@1")],
+    )
+    monkeypatch.setattr(
+        packages_services, "_read_python_deps",
+        lambda uk, dn: {"zzz_not_a_real_package_qq": ">=1"},
+    )
+    probed: list[set] = []
+
+    def _spy(deps):
+        probed.append(set(deps))
+        return {d: "should not be consulted" for d in deps}
+
+    monkeypatch.setattr(packages_routes_pip, "import_failures", _spy)
+    resp = _check(client, token, ["curio.weather@1"])
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["packages"] == ["curio.weather@1"]
+    assert body["broken"] == []
+    # The probe is still called once (batched), but with nothing in it - the dep
+    # pip will install anyway must not also be reported as unrepairable.
+    assert probed == [set()], probed
+
+
+def test_check_reports_nothing_broken_when_every_dep_imports(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    """The healthy case, unmocked: flask really is importable here."""
+    _, token = user_and_token
+    monkeypatch.setattr(
+        packages_routes, "list_user_packageages",
+        lambda uk: [Path("curio.weather@1")],
+    )
+    monkeypatch.setattr(
+        packages_services, "_read_python_deps",
+        lambda uk, dn: {"flask": ""},
+    )
+    resp = _check(client, token, ["curio.weather@1"])
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["packages"] == []
+    assert body["broken"] == []
 
 
 def test_check_rejects_malformed_body(client, user_and_token, tmp_curio):

@@ -117,13 +117,16 @@ const ProjectsList: React.FC = () => {
     return () => document.removeEventListener("click", dismiss);
   }, [contextMenu]);
 
-  const filtered = useMemo(
-    () =>
-      byTab[filter].filter((p) =>
-        p.name.toLowerCase().includes(search.toLowerCase())
-      ),
-    [byTab, filter, search]
-  );
+  const filtered = useMemo(() => {
+    // Trim first, the same normalization the catalog predicates this page's chrome
+    // mirrors already do (packageUtils.matchesSearch, agentListUtils.matchesAgentSearch)
+    // - so a name pasted with a trailing space still matches (#231). No empty-query
+    // short-circuit: `"anything".includes("")` is already true, and keeping the
+    // `.filter()` keeps `filtered` a fresh array every render, which is what the
+    // tri-state auto-select effect below is written against.
+    const needle = search.trim().toLowerCase();
+    return byTab[filter].filter((p) => p.name.toLowerCase().includes(needle));
+  }, [byTab, filter, search]);
 
   // Mirrors the catalog browse pages: the first item is selected so the detail
   // drawer arrives populated instead of empty.
@@ -350,7 +353,10 @@ const ProjectsList: React.FC = () => {
 
           {filtered.length === 0 ? (
             <div className={browseStyles.empty}>
-              {search
+              {/* `search.trim()`, matching the needle above: a whitespace-only box
+                  is not a filter, so an empty account must not be told its
+                  projects were filtered out (#231). */}
+              {search.trim()
                 ? "No projects match the current filters."
                 : "No projects yet. Create a new dataflow!"}
             </div>

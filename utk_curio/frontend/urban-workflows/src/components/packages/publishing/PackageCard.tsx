@@ -27,16 +27,12 @@ export interface PackageCardProps {
   busy: boolean;
   /** When set, this card's secondary actions show a busy state. */
   cardActionDir?: string | null;
-  /** Whether shared-catalog writes are allowed on this server. */
-  /** True when the package exists in the shared catalog (drives the Published badge). */
-  /** When set, this card's Publish pill shows a busy state. */
   onInstall: (pkg: PackagePayload) => void;
   onUninstall?: (pkg: PackagePayload) => void;
   /** False in a dataflow that has not been saved yet: there is no project to
    *  remove from, so the control shows disabled rather than vanishing. */
   hasProject?: boolean;
   onOpenDetails?: (pkg: PackagePayload) => void;
-  /** Supplied on the /catalog page surface; when omitted, the Publish pill is hidden. */
 }
 
 export const PackageCard: React.FC<PackageCardProps> = ({

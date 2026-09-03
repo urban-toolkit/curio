@@ -95,6 +95,36 @@ def _ensure_dataflow_identity(spec: Optional[dict], name: Optional[str]) -> bool
     return changed
 
 
+def _sync_dataflow_name(spec: Optional[dict], name: Optional[str]) -> bool:
+    """Mirror an explicit rename into the spec's ``dataflow.name`` (#230).
+
+    The project row's ``name`` and ``spec.dataflow.name`` are two copies of one
+    fact: the Projects list renders the row, the canvas title renders the spec. A
+    rename reaching only one of them leaves the app showing two different names
+    for the same dataflow - whichever direction the rename came from. The canvas
+    side was fixed in the client; this is the other direction, because a name-only
+    PUT (what the Projects list's rename sends) never enters the spec block at all.
+
+    Unlike :func:`_ensure_dataflow_identity` - a backfill that must never overwrite
+    a spec's own name (#148) - this runs ONLY when the caller explicitly sent
+    ``name``, i.e. actually asked for a rename.
+
+    ``provenance_id`` is deliberately left alone: already-recorded provenance
+    versions are keyed on the old name, and rewriting it here would orphan them.
+
+    Returns True when the spec changed.
+    """
+    if not isinstance(spec, dict) or not isinstance(name, str) or not name:
+        return False
+    dataflow = spec.get("dataflow")
+    if not isinstance(dataflow, dict):
+        return False
+    if dataflow.get("name") == name:
+        return False
+    dataflow["name"] = name
+    return True
+
+
 def _prune_sink_node_dataset_refs(spec: Optional[dict]) -> Optional[dict]:
     """Drop ``dataflow.datasets`` refs whose producer is a visualization/sink node.
 
@@ -658,6 +688,14 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         pruned_spec = _prune_sink_node_dataset_refs(effective_spec)
         if pruned_spec is not effective_spec:
             effective_spec = pruned_spec
+            spec_dirty = True
+
+        # A rename renames the dataflow, not just the DB row (#230): the canvas
+        # title reads ``spec.dataflow.name``. Deliberately OUTSIDE the
+        # ``data.spec is not None`` block, so a name-only PUT - what the Projects
+        # list's rename sends - reaches the spec too. ``project.name`` rather than
+        # ``data.name`` so the spec matches what the row actually holds.
+        if data.name and _sync_dataflow_name(effective_spec, project.name):
             spec_dirty = True
 
         if data.spec is not None or spec_dirty:

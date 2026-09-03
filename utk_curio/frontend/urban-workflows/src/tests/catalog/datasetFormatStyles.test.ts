@@ -52,7 +52,11 @@ const SURFACES: Surface[] = [
     // chip took the format's colour, so a "2023" chip turned green because the
     // file was GeoJSON) and the coloured strip already carries the format.
     file: "pages/catalog/CatalogBrowseLayout.module.css",
-    prefixes: ["strip", "card", "dot", "dfmt"],
+    // ``chipDot`` is the quick-filter chip's colour dot. It was absent here while
+    // only three formats were ever chipped, which is exactly how five formats
+    // shipped with no rule at all; the row derives from the facets now, so every
+    // format can reach it (#232).
+    prefixes: ["strip", "card", "dot", "dfmt", "chipDot"],
   },
   {
     // List/row view format badge.
