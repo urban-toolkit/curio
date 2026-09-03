@@ -130,7 +130,7 @@ def test_projects_search_ignores_surrounding_whitespace(
     assert page.get_by_text("Weather analysis").count() == 0, (
         "the other project should have been filtered out"
     )
-    assert page.get_by_text("No projects match the current filters.").count() == 0, (
+    assert page.get_by_text("No projects match that search.").count() == 0, (
         "a padded query must not empty the list - this is #231"
     )
 
@@ -147,7 +147,7 @@ def test_projects_search_ignores_surrounding_whitespace(
     page.get_by_text("Street-level computer vision").first.wait_for(
         state="visible", timeout=10000
     )
-    assert page.get_by_text("No projects match the current filters.").count() == 0
+    assert page.get_by_text("No projects match that search.").count() == 0
 
 
 def test_rename_then_save_updates_the_projects_card(

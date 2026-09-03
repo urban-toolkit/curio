@@ -100,7 +100,7 @@ def test_list_projects(app, db, user_and_token, tmp_curio):
     services.save_project(user, ProjectCreate(name="P1", spec=_make_spec()))
     services.save_project(user, ProjectCreate(name="P2", spec=_make_spec()))
 
-    items = services.list_projects(user, scope="mine")
+    items = services.list_projects(user)
     assert len(items) == 2
 
 
@@ -115,8 +115,7 @@ def test_delete_removes_the_row_and_the_files(app, db, user_and_token, tmp_curio
     services.delete_project(user, detail.id)
     assert not proj_dir.exists()
 
-    assert services.list_projects(user, scope="mine") == []
-    assert services.list_projects(user, scope="recent") == []
+    assert services.list_projects(user) == []
 
 
 def test_duplicate_project(app, db, user_and_token, tmp_curio):

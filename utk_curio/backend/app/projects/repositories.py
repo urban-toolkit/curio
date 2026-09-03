@@ -22,14 +22,11 @@ def get_for_user(project_id: str, user_id: int) -> Project:
 
 def list_for_user(
     user_id: int,
-    scope: str = "mine",
     sort: str = "last_opened",
 ) -> List[Project]:
-    # ``scope`` selects nothing any more. Archive was removed (#261), and the
-    # archived filter was the only thing the scopes ever differed by — "recent"
-    # and "mine" already returned identical sets. Kept in the signature because
-    # the route and the projects page still pass it; collapsing the "Recent"
-    # tab is a UX decision, not part of removing Archive. See #286.
+    # No ``scope``. It only ever varied the ``archived_at`` filter, which #261
+    # removed, leaving "mine" and "recent" returning identical sets — so the
+    # "Recent" tab and the parameter behind it both went (#286).
     q = Project.query.filter_by(user_id=user_id)
 
     if sort == "name":

@@ -908,7 +908,7 @@ def install_to_defaults(user, dir_name: str) -> dict:
     defaults_io.add_to_defaults(user_key, dir_name)
 
     results: list[dict] = []
-    for project in projects_repo.list_for_user(user.id, scope="mine"):
+    for project in projects_repo.list_for_user(user.id):
         try:
             current = get_project_lockfile(user_key, project.id)
             if dir_name in current:
@@ -973,7 +973,7 @@ def prune_unreferenced_packages(
 
     referenced: set[str] = set()
     installed_majors = _installed_majors_by_pkg(user_key)
-    for project in projects_repo.list_for_user(user_id, scope="mine"):
+    for project in projects_repo.list_for_user(user_id):
         spec = projects_storage.read_spec(user_key, project.id)
         if spec is None:
             continue

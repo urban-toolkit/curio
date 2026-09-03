@@ -423,7 +423,7 @@ def _fan_out_imports(user, user_key: str, coord: str, *, install: bool) -> list[
     from utk_curio.backend.app.projects import repositories as projects_repo
 
     results: list[dict] = []
-    for project in projects_repo.list_for_user(user.id, scope="mine"):
+    for project in projects_repo.list_for_user(user.id):
         try:
             if install:
                 install_in_project(user_key, project.id, coord)

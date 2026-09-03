@@ -85,14 +85,12 @@ export interface LoadResponse {
 }
 
 export interface ListParams {
-  scope?: "mine" | "recent";
   sort?: "last_opened" | "name" | "created";
 }
 
 export const projectsApi = {
   list(params?: ListParams): Promise<ProjectSummary[]> {
     const qs = new URLSearchParams();
-    if (params?.scope) qs.set("scope", params.scope);
     if (params?.sort) qs.set("sort", params.sort);
     const query = qs.toString();
     return apiFetch<ProjectSummary[]>(

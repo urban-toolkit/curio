@@ -90,10 +90,13 @@ def update_project(project_id: str):
 @projects_bp.route("", methods=["GET"])
 @require_auth
 def list_projects():
-    scope = request.args.get("scope", "mine")
+    # ``?scope=`` is no longer read: every value it accepted returned the same
+    # set once Archive went (#261), so the parameter and the "Recent" tab that
+    # sent it were removed (#286). An old client still passing it is ignored
+    # rather than rejected — it was always getting these rows anyway.
     sort = request.args.get("sort", "last_opened")
     try:
-        summaries = services.list_projects(g.user, scope=scope, sort=sort)
+        summaries = services.list_projects(g.user, sort=sort)
     except ProjectError as exc:
         return _error(str(exc), exc.status)
 

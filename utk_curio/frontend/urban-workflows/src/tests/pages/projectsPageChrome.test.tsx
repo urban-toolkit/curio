@@ -72,10 +72,8 @@ jest.mock('../../components/VersionBadge', () => ({ __esModule: true, default: (
 import ProjectsList from '../../pages/projects/ProjectsList';
 
 /** The page fetches every scope at once so the rail can show counts. */
-function stubScopes(byScope: Record<string, unknown[]>) {
-  mockList.mockImplementation((params: { scope?: string }) =>
-    Promise.resolve(byScope[params?.scope ?? 'mine'] ?? [])
-  );
+function stubProjects(rows: unknown[]) {
+  mockList.mockImplementation(() => Promise.resolve(rows));
 }
 
 async function renderPage() {
@@ -92,7 +90,7 @@ async function renderPage() {
 
 beforeEach(() => {
   mockList.mockReset();
-  stubScopes({ mine: PROJECTS, recent: [PROJECTS[0]] });
+  stubProjects(PROJECTS);
 });
 
 describe('projects page chrome', () => {
@@ -136,36 +134,19 @@ describe('projects page chrome', () => {
   });
 });
 
-describe('projects filter rail', () => {
-  test('the rail lists each scope with its count', async () => {
-    const { getByRole } = await renderPage();
+describe('projects filtering', () => {
+  // #286: the rail held "All projects" and "Recent", which returned the same
+  // rows in the same order - their only filter was on ``archived_at``, which no
+  // scope varied and #261 removed. Both tabs and the rail went with it, so
+  // search is the only filter left.
+  test('there is no status rail, and only one request is made', async () => {
+    const { queryByRole } = await renderPage();
 
-    const rail = getByRole('complementary', { name: 'Project filters' });
-    expect(
-      Array.from(rail.querySelectorAll('button')).map((b) => (b.textContent || '').trim())
-    ).toEqual(['All projects2', 'Recent1']);
-  });
-
-  test('the active scope is the pressed rail button, and picking one refilters', async () => {
-    const { getByRole } = await renderPage();
-
-    const rail = getByRole('complementary', { name: 'Project filters' });
-    const railButton = (label: string) =>
-      Array.from(rail.querySelectorAll('button')).find((b) =>
-        (b.textContent || '').startsWith(label)
-      ) as HTMLButtonElement;
-
-    expect(railButton('All projects').getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText('Bike lanes')).toBeTruthy();
-
-    await act(async () => {
-      fireEvent.click(railButton('Recent'));
-    });
-
-    expect(railButton('Recent').getAttribute('aria-pressed')).toBe('true');
-    expect(railButton('All projects').getAttribute('aria-pressed')).toBe('false');
-    // "recent" holds only the first project.
-    expect(screen.queryByText('Bike lanes')).toBeNull();
+    expect(queryByRole('complementary', { name: 'Project filters' })).toBeNull();
+    expect(queryByRole('button', { name: /^Recent/ })).toBeNull();
+    // Two identical scopes meant two round trips on every load and sort change.
+    expect(mockList).toHaveBeenCalledTimes(1);
+    expect(mockList.mock.calls[0][0]).not.toHaveProperty('scope');
   });
 
   // #231: the filter used the raw input value as the needle, so a name pasted with
@@ -198,23 +179,27 @@ describe('projects filter rail', () => {
 
     expect(screen.getAllByText('Bike lanes').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Air quality').length).toBeGreaterThan(0);
-    expect(screen.queryByText('No projects match the current filters.')).toBeNull();
+    expect(screen.queryByText('No projects match that search.')).toBeNull();
   });
 
-  test('an empty scope shows the empty state and no card area', async () => {
-    stubScopes({ mine: PROJECTS, recent: [] });
-    const { getByRole, container } = await renderPage();
-
-    const rail = getByRole('complementary', { name: 'Project filters' });
-    const recent = Array.from(rail.querySelectorAll('button')).find((b) =>
-      (b.textContent || '').startsWith('Recent')
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      fireEvent.click(recent);
-    });
+  test('an empty account shows the empty state and no card area', async () => {
+    stubProjects([]);
+    const { container } = await renderPage();
 
     expect(screen.getByText('No projects yet. Create a new dataflow!')).toBeTruthy();
+    expect(container.querySelector('[data-curio-projects-scroll="true"]')).toBeNull();
+  });
+
+  test('a search that matches nothing says so, without blaming a filter', async () => {
+    const { getByPlaceholderText, container } = await renderPage();
+
+    await act(async () => {
+      fireEvent.change(getByPlaceholderText('Search projects…'), {
+        target: { value: 'nothing-matches-this' },
+      });
+    });
+
+    expect(screen.getByText('No projects match that search.')).toBeTruthy();
     expect(container.querySelector('[data-curio-projects-scroll="true"]')).toBeNull();
   });
 });

@@ -1,15 +1,39 @@
 /* ─────────────────────────────────────────────────────────────
    /projects in the shape of the catalog browse pages:
-   category rail | project cards | detail drawer.
+   project cards | detail drawer.
 
-   The rail, page grid, header band, filter bar and drawer shell are reused
-   from ../catalog/CatalogBrowseLayout.module.css. This file holds only what
-   is specific to projects.
+   The page grid, header band, filter bar and drawer shell are reused from
+   ../catalog/CatalogBrowseLayout.module.css. This file holds only what is
+   specific to projects — including the absence of a category rail (#286).
 
    Colours and geometry come from ../../styles/curioTokens.css. The card grid
    also inherits the --catalogBrowseCard* variables declared on `.page` in the
    catalog layout, so gaps and padding change on all three browse pages at once.
    ───────────────────────────────────────────────────────────── */
+
+/* The shared `.page` grid is `212px | 1fr | drawer`, because the three
+   catalog pages all filter by category down the left. This page has nothing
+   to put there: its only tabs were "All projects" and "Recent", which
+   returned identical sets (#286). Collapse the rail column rather than
+   re-numbering `.main` and the drawer, so the shared layout is untouched and
+   the catalog pages keep their rails.
+
+   Both selectors are needed: `.pageWithDrawer` also sets
+   `grid-template-columns`, and it wins on source order when the drawer opens. */
+.pageNoRail {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+.pageNoRailWithDrawer {
+  grid-template-columns: 0 minmax(0, 1fr) 320px;
+}
+
+/* The catalog layout drops to two columns here; keep the rail collapsed. */
+@media (max-width: 1100px) {
+  .pageNoRail,
+  .pageNoRailWithDrawer {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+}
 
 .main {
   grid-column: 2;

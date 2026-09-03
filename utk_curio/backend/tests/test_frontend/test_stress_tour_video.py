@@ -620,15 +620,14 @@ def chapter_access(run: StressRun) -> None:
         search.fill("no-such-project")
         page.wait_for_timeout(900)
         expect(
-            page.get_by_text("No projects match the current filters.")
+            page.get_by_text("No projects match that search.")
         ).to_be_visible(timeout=8000)
         search.fill("")
         page.wait_for_timeout(700)
 
-    for tab in ("Recent", "All projects"):
-        with run.step(f"Filter: {tab}"):
-            tour.click(page.get_by_role("button", name=tab, exact=True).first)
-            page.wait_for_timeout(900)
+    # The "All projects" / "Recent" status tabs used to be cycled here. They
+    # returned the same rows and were removed with the rail (#286); search and
+    # sort are the filters now.
 
     with run.step("Re-sort the list"):
         select = page.get_by_label("Sort projects")
@@ -693,7 +692,6 @@ def chapter_access(run: StressRun) -> None:
             run.snap("projects-delete-confirm")
             tour.click(confirm.get_by_role("button", name="Delete", exact=True))
             page.wait_for_timeout(2500)
-        tour.click(page.get_by_role("button", name="All projects", exact=True).first)
         page.wait_for_timeout(1200)
 
     with run.step("Import a Jupyter notebook as a dataflow"):

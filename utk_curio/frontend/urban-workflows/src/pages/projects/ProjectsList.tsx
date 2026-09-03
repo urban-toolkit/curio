@@ -28,7 +28,6 @@ import PromptDialog from "../../components/PromptDialog";
 import { UNREADABLE_FILE_MESSAGE } from "../../utils/dataflowImport";
 
 type ViewMode = "grid" | "list";
-type FilterTab = "all" | "recent";
 /** Mirrors the sorts projectsApi and `list_for_user` already implement. */
 type ProjectSort = "last_opened" | "name" | "created";
 
@@ -37,18 +36,6 @@ const SORT_OPTIONS: { value: ProjectSort; label: string }[] = [
   { value: "name", label: "Sort: Name" },
   { value: "created", label: "Sort: Created" },
 ];
-
-const FILTER_TABS: FilterTab[] = ["all", "recent"];
-
-const SCOPE_BY_TAB: Record<FilterTab, "mine" | "recent"> = {
-  all: "mine",
-  recent: "recent",
-};
-
-const TAB_LABELS: Record<FilterTab, string> = {
-  all: "All projects",
-  recent: "Recent",
-};
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
@@ -71,15 +58,9 @@ function edgeCount(project: ProjectSummary): number {
 const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
   const { showToast } = useToastContext();
-  // Every scope is held at once so the rail can show counts and switching
-  // filters does not wait on a round trip.
-  const [byTab, setByTab] = useState<Record<FilterTab, ProjectSummary[]>>({
-    all: [],
-    recent: [],
-  });
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [sort, setSort] = useState<ProjectSort>("last_opened");
-  const [filter, setFilter] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
   // Tri-state, like the three catalog browse pages: `undefined` is "nothing
   // chosen yet, fall back to the first card", `null` is "the user closed the
@@ -97,15 +78,14 @@ const ProjectsList: React.FC = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const importNotebookRef = useRef<HTMLInputElement>(null);
 
+  // One request. There used to be a "Recent" tab fetched alongside this one,
+  // but it returned the same projects in the same order — its only filter was
+  // on ``archived_at``, which no scope varied and #261 removed (#286).
   const loadProjects = useCallback(async () => {
-    const results = await Promise.all(
-      FILTER_TABS.map((tab) =>
-        projectsApi
-          .list({ scope: SCOPE_BY_TAB[tab], sort })
-          .catch(() => [] as ProjectSummary[])
-      )
-    );
-    setByTab({ all: results[0], recent: results[1] });
+    const rows = await projectsApi
+      .list({ sort })
+      .catch(() => [] as ProjectSummary[]);
+    setProjects(rows);
   }, [sort]);
 
   useEffect(() => {
@@ -126,8 +106,8 @@ const ProjectsList: React.FC = () => {
     // `.filter()` keeps `filtered` a fresh array every render, which is what the
     // tri-state auto-select effect below is written against.
     const needle = search.trim().toLowerCase();
-    return byTab[filter].filter((p) => p.name.toLowerCase().includes(needle));
-  }, [byTab, filter, search]);
+    return projects.filter((p) => p.name.toLowerCase().includes(needle));
+  }, [projects, search]);
 
   // Mirrors the catalog browse pages: the first item is selected so the detail
   // drawer arrives populated instead of empty.
@@ -272,28 +252,19 @@ const ProjectsList: React.FC = () => {
       <GlobalPageHeader />
       <AppSectionTabs />
 
-      <div className={joined(browseStyles.page, drawerSlotOpen && browseStyles.pageWithDrawer)}>
-        <aside className={browseStyles.categoryRail} aria-label="Project filters">
-          <p className={browseStyles.railLabel}>By status</p>
-          {FILTER_TABS.map((tab) => (
-            <button
-              key={tab}
-              className={joined(
-                browseStyles.railButton,
-                filter === tab && browseStyles.railButtonActive
-              )}
-              type="button"
-              aria-pressed={filter === tab}
-              onClick={() => setFilter(tab)}
-            >
-              <span>{TAB_LABELS[tab]}</span>
-              <span className={tab === "all" ? browseStyles.railCountBadge : browseStyles.railCount}>
-                {byTab[tab].length}
-              </span>
-            </button>
-          ))}
-        </aside>
-
+      {/* No category rail: the three catalog browse pages filter by category,
+          this page had only "All projects" and "Recent" and they were the same
+          set (#286). ``pageNoRail`` collapses the rail column the shared grid
+          reserves, so the header starts at the left edge instead of behind a
+          212px gap. */}
+      <div
+        className={joined(
+          browseStyles.page,
+          styles.pageNoRail,
+          drawerSlotOpen && browseStyles.pageWithDrawer,
+          drawerSlotOpen && styles.pageNoRailWithDrawer
+        )}
+      >
         <main className={styles.main}>
           <section className={browseStyles.browseHeader}>
             <p className={browseStyles.crumb}>Projects</p>
@@ -331,16 +302,6 @@ const ProjectsList: React.FC = () => {
           </section>
 
           <div className={browseStyles.filterBar}>
-            {FILTER_TABS.map((tab) => (
-              <button
-                key={tab}
-                className={joined(browseStyles.chip, filter === tab && browseStyles.chipActive)}
-                type="button"
-                onClick={() => setFilter(tab)}
-              >
-                {TAB_LABELS[tab]}
-              </button>
-            ))}
             <span className={browseStyles.filterSpacer} />
             <select
               className={browseStyles.sortSelect}
@@ -375,9 +336,10 @@ const ProjectsList: React.FC = () => {
             <div className={browseStyles.empty}>
               {/* `search.trim()`, matching the needle above: a whitespace-only box
                   is not a filter, so an empty account must not be told its
-                  projects were filtered out (#231). */}
+                  projects were filtered out (#231). Search is the only filter
+                  left now the status tabs are gone (#286). */}
               {search.trim()
-                ? "No projects match the current filters."
+                ? "No projects match that search."
                 : "No projects yet. Create a new dataflow!"}
             </div>
           ) : (

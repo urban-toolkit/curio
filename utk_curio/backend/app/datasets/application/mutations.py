@@ -637,7 +637,7 @@ class CatalogMutations:
         dataset_defaults.add_to_dataset_defaults(user_key, dataset_id)
 
         results: list[dict[str, Any]] = []
-        for project in projects_repo.list_for_user(self.user.id, scope="mine"):
+        for project in projects_repo.list_for_user(self.user.id):
             try:
                 # install_dataset is idempotent: it replaces any existing ref
                 # for this id rather than appending a duplicate.
@@ -677,7 +677,7 @@ class CatalogMutations:
         dataset_defaults.remove_from_dataset_defaults(user_key, dataset_id)
 
         results: list[dict[str, Any]] = []
-        for project in projects_repo.list_for_user(self.user.id, scope="mine"):
+        for project in projects_repo.list_for_user(self.user.id):
             try:
                 # Detach only. Left to its default this would delete the
                 # user's uploaded file the moment the last project let go of it.
