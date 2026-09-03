@@ -27,6 +27,10 @@ interface ErrorBoundaryState {
  * a rejected promise. Those are handled where they are raised (see
  * `applyGrammar`'s WebGPU guard) and by the `unhandledrejection` logger in
  * `index.tsx`.
+ *
+ * `onError` is also how a node reports a render throw into its own output
+ * (UniversalNode), and `reset` / the default fallback's "Try again" let the
+ * subtree remount once whatever broke it has changed (#271).
  */
 export default class ErrorBoundary extends React.Component<
   ErrorBoundaryProps,
@@ -37,6 +41,11 @@ export default class ErrorBoundary extends React.Component<
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { error };
   }
+
+  /** Drop the caught error and render the children again. */
+  reset = (): void => {
+    this.setState({ error: null });
+  };
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
     const where = this.props.label ? ` in ${this.props.label}` : "";
@@ -69,6 +78,21 @@ export default class ErrorBoundary extends React.Component<
         <div style={{ marginTop: 4, opacity: 0.8 }}>
           The rest of the dataflow is unaffected.
         </div>
+        <button
+          type="button"
+          onClick={this.reset}
+          style={{
+            marginTop: 8,
+            padding: "4px 10px",
+            border: "1px solid currentColor",
+            borderRadius: "var(--curio-radius-sm, 4px)",
+            background: "transparent",
+            color: "inherit",
+            cursor: "pointer",
+          }}
+        >
+          Try again
+        </button>
       </div>
     );
   }

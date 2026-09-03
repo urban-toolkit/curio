@@ -145,6 +145,12 @@ function NodeEditor({
     useEffect(() => {
         // The play path deliberately gets the un-suppressed version.
         setSendCodeCallback(sendCodeToWidgets);
+        // Unregister on unmount. An editor the per-node ErrorBoundary has
+        // replaced otherwise leaves a live-looking callback behind, so a later
+        // play sets "exec", calls into a dead tree and never completes -
+        // wedging Run All for the whole dataflow (#271). With it gone,
+        // UniversalNode's `!sendCode` branch releases the runner instead.
+        return () => setSendCodeCallback(undefined);
     }, []);
 
     useEffect(() => {
@@ -290,6 +296,7 @@ function NodeEditor({
                                             nodeId={data.nodeId}
                                             applyGrammar={applyGrammar}
                                             schema={schema}
+                                            setOutputCallback={setOutputCallback}
                                         />
                                     </Tab.Pane>
                                 ) : null}

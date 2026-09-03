@@ -8,7 +8,7 @@
  * which is why the containment is asserted separately from the WebGPU fix.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ErrorBoundary from '../../components/ErrorBoundary';
 
 function Boom({ message = "kaboom" }: { message?: string }): React.ReactElement {
@@ -95,6 +95,26 @@ describe('ErrorBoundary', () => {
       expect.anything(),
       expect.anything(),
     );
+  });
+
+  test('"Try again" re-renders the children once whatever broke them has changed (#271)', () => {
+    let shouldThrow = true;
+    function Flaky(): React.ReactElement {
+      if (shouldThrow) throw new Error('first render only');
+      return <div>recovered</div>;
+    }
+    render(
+      <ErrorBoundary>
+        <Flaky />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('first render only');
+
+    shouldThrow = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(screen.getByText('recovered')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   test('an error with no message still renders something actionable', () => {
