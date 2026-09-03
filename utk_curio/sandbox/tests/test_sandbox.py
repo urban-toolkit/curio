@@ -453,3 +453,57 @@ class TestNoInputTripwire(unittest.TestCase):
         self.assertIn("has not run yet, failed, or is not wired", stderr)
         self.assertIn("fix any that show an error", stderr)
         self.assertEqual(result['output']['path'], '')
+
+    def test_a_loader_that_never_reads_arg_is_not_refused(self):
+        """A standalone loader may contain the letters "arg" and still run (#273).
+
+        The guard used to be ``'arg' in code``, a substring test, so an
+        input-free Data Loading node was refused for ordinary words like
+        ``target`` or a URL query parameter. Every name below contains the
+        substring; none of them reads the input.
+        """
+        from utk_curio.sandbox.app.worker import execute_code
+
+        code = (
+            "    target = 2\n"
+            "    large_margin = 3  # arguably enough\n"
+            "    return target * large_margin\n"
+        )
+        result = execute_code(
+            code,
+            file_path='',
+            node_type='DATA_LOADING',
+            data_type='',
+            launch_dir=_REPO_ROOT,
+            session_id=None,
+        )
+
+        # Not asserting an empty stderr: this returns an int, which Data Loading's
+        # own output validation rejects. The claim here is only that the no-input
+        # tripwire did not fire.
+        self.assertNotIn("received no input", result['stderr'])
+
+    def test_binding_arg_without_reading_it_is_not_refused(self):
+        """Binding ``arg`` is a Store, not a read, so it needs no input (#273)."""
+        from utk_curio.sandbox.app.worker import execute_code
+
+        result = execute_code(
+            "    arg = 7\n    return 7\n",
+            file_path='',
+            node_type='DATA_TRANSFORMATION',
+            data_type='',
+            launch_dir=_REPO_ROOT,
+            session_id=None,
+        )
+
+        self.assertNotIn("received no input", result['stderr'])
+
+    def test_the_guard_still_fires_for_code_that_reads_arg(self):
+        """Reading the input is still detected, however it is spelled (#276)."""
+        from utk_curio.sandbox.app.worker import _code_reads_arg
+
+        self.assertTrue(_code_reads_arg("    return arg.head()\n"))
+        self.assertTrue(_code_reads_arg("    for row in arg:\n        pass\n"))
+        self.assertTrue(_code_reads_arg("    return [x for x in arg]\n"))
+        self.assertFalse(_code_reads_arg("    return 'targets and arguments'\n"))
+        self.assertFalse(_code_reads_arg("    # arg is not used here\n    return 1\n"))

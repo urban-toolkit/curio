@@ -52,6 +52,39 @@ def _import_bindings_for(session_id):
     return bindings
 
 
+def _code_reads_arg(code):
+    """Whether the node's code actually *reads* the ``arg`` parameter.
+
+    The tripwire below used to ask ``'arg' in code``, a substring test over the
+    whole source. That fires on any occurrence of those three letters - a word
+    in a comment, a URL query string, or an identifier such as ``target``,
+    ``large``, ``margin`` or ``args`` - so a deliberately input-free loader like
+    ``gpd.read_file(<url>)`` was refused for referencing an input it never
+    mentions (#273).
+
+    ``code`` is already indented ready to drop into ``def userCode(arg):``, and
+    the caller has just ``exec``-ed that same wrapped source, so parsing it here
+    cannot fail on syntax. Walking for a load of the name is exact: a *binding*
+    of ``arg`` (the parameter itself, or a reassignment) is a Store and does not
+    count, which is what we want - code that only overwrites ``arg`` does not
+    need an input either.
+    """
+    import ast
+
+    try:
+        tree = ast.parse("def userCode(arg):" + chr(10) + code)
+    except SyntaxError:
+        # Unreachable in practice; fall back to the old test rather than
+        # deciding that a node we cannot parse is input-free.
+        return "arg" in code
+    return any(
+        isinstance(node, ast.Name)
+        and node.id == "arg"
+        and isinstance(node.ctx, ast.Load)
+        for node in ast.walk(tree)
+    )
+
+
 def _hoist_user_imports(code, ns, session_id):
     """Execute the user's top-level imports into ``ns`` and remember them.
 
@@ -377,15 +410,16 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                         checkIOType(synthetic, node_type)
                         incomingInput = input_data
 
-                # Tripwire: if the user code references `arg` but no input was
+                # Tripwire: if the user code reads `arg` but no input was
                 # delivered, the historical behaviour was to bubble up a
                 # confusing `'NoneType' object is not subscriptable` from the
                 # first `arg[…]`. Fail fast here with a message that points the
                 # user at the actual cause (unwired/unrun upstream, or a stale
                 # `data.input` because the merge-flow output effect hadn't
-                # propagated yet). Cheap substring check - false positives
-                # are harmless because we only act when arg is truly None.
-                if incomingInput is None and 'arg' in code:
+                # propagated yet). The check is an AST walk rather than a
+                # substring test, so a node that never reads an input is not
+                # refused for merely containing the letters "arg" (#273).
+                if incomingInput is None and _code_reads_arg(code):
                     raise RuntimeError(
                         "This node received no input but its code references `arg`. "
                         "An upstream node has not run yet, failed, or is not wired "
