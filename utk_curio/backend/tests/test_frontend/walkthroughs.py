@@ -1689,7 +1689,7 @@ def empty_nodes_say_why(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="spatial-join-explains-itself",
-    refs=[225],
+    refs=[225, 262],
     title="A node can explain itself",
     premise="Add a Spatial Join and open its info.",
     note="The help text already existed - the builtin manifest documents the "
@@ -1719,8 +1719,8 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
     ctx.say("Spatial Join", "What goes in each handle was not stated anywhere.")
     node = _add_builtin_node(ctx, "#step-spatial-join", (300, 220))
     node.scroll_into_view_if_needed()
-    # A noContent node has no header band, so its info button lives on the
-    # minimized chip and is revealed on hover.
+    # The node gained a body and a header band in #262 (it was icon-only), so
+    # the info button is the header's; hovering is harmless either way.
     node.hover()
     ctx.beat(400)
     info = node.locator('button[title^="About"]')
