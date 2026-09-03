@@ -50,6 +50,24 @@ describe('DataPoolContent', () => {
     expect(screen.getByText('Run the node feeding this one.')).toBeInTheDocument();
   });
 
+  test('says the input is not tabular when the upstream ran but made no table', () => {
+    // The empty branch passed `tabular: true`, so a connected pool handed a
+    // payload it cannot tabulate reported "The input ran, but came back empty" —
+    // wrong, and uninformative in exactly the way #224 complained about. A
+    // dataframe with zero rows still yields a tab and renders as an empty table,
+    // so reaching here with an input really does mean "not table-shaped".
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        tabData={[]}
+        connected
+        data={{ nodeId: 'test-node', input: { filename: 'artifact_id' } }}
+      />
+    );
+    expect(screen.getByText('Nothing to display')).toBeInTheDocument();
+    expect(screen.queryByText('The input ran, but came back empty.')).toBeNull();
+  });
+
   test('renders ContentTable with provided tableData', () => {
     render(<DataPoolContent {...defaultProps} />);
     expect(screen.getAllByText('name').length).toBeGreaterThanOrEqual(1);

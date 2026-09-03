@@ -182,9 +182,15 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
               resolveNodeEmptyReason({
                 connected,
                 hasInput: data?.input != null && data.input !== '',
-                // A pool only ever renders tables, so anything that reached it
-                // and produced no tab is a payload it cannot show.
-                tabular: true,
+                // A pool only ever renders tables, and ``tabData`` is empty in
+                // this branch, so an input that got here produced nothing
+                // table-shaped. That is "not tabular", not "no rows": a
+                // dataframe with zero rows still yields a tab and renders as an
+                // empty table above, so it never reaches here. Passing `true`
+                // sent every such payload to "The input ran, but came back
+                // empty", which is exactly the uninformative message #224 was
+                // about.
+                tabular: false,
                 rowCount: 0,
               }) ?? 'no-rows'
             }
