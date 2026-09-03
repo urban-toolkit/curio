@@ -686,7 +686,9 @@ def patch_package_metadata(dir_name: str):
 def download_packageage_archive(dir_name: str):
     user_key = _user_dir_key(g.user)
     try:
-        body = export_packageage_archive(user_key, dir_name)
+        # Falls back to the committed catalog copy for a package this account
+        # never installed - the catalog page exports every row it lists (#275).
+        body = export_packageage_archive(user_key, dir_name, catalog_root=_catalog_root())
     except (InstallerError, PackageIdError) as exc:
         return _error(str(exc), 404)
     response = Response(body, mimetype="application/zip")

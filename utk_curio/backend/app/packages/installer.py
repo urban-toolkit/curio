@@ -703,6 +703,18 @@ def install_packageage_from_directory(
     """
     if not source_dir.is_dir():
         raise InstallerError(f"catalog source {source_dir} is not a directory")
+    return install_packageage_from_archive(user_key, zip_package_tree(source_dir), replace=replace)
+
+
+def zip_package_tree(source_dir: Path) -> bytes:
+    """A deterministic ``.curio.zip`` of one package directory.
+
+    Sorted walk, deflate, ``integrity.json`` left out: that file is the
+    installer's own record of what it copied and is rewritten on every install,
+    so an archive must not carry one. Shared by the catalog install (which
+    re-zips a catalog directory to reuse the sideload validator) and the export
+    routes, so the two cannot drift apart in what they emit.
+    """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for entry in sorted(source_dir.rglob("*")):
@@ -712,27 +724,36 @@ def install_packageage_from_directory(
                 continue
             rel = entry.relative_to(source_dir).as_posix()
             zf.write(entry, arcname=rel)
-    return install_packageage_from_archive(user_key, buf.getvalue(), replace=replace)
+    return buf.getvalue()
 
 
-def export_packageage_archive(user_key: str, dir_name: str) -> bytes:
-    """Repackage an installed package back into a deterministic ``.curio.zip`` zip.
+def export_packageage_archive(
+    user_key: str,
+    dir_name: str,
+    *,
+    catalog_root: Path | None = None,
+) -> bytes:
+    """Repackage a package back into a deterministic ``.curio.zip`` zip.
 
     Useful for the factory ("Export package" button) and for migrating an
     installed package from one user to another. The archive layout matches
     the one :func:`install_packageage_from_archive` accepts, so a round-trip
     install -> export -> install is lossless.
+
+    The user's own store copy is preferred. When the account has never
+    installed the package but it is in the committed catalog (*catalog_root*),
+    the catalog copy is exported instead: the Node Catalog page offers "View
+    details -> Export" on every row it lists, and a row the user had not added
+    answered ``package X is not installed`` - true, and useless from a page
+    whose whole point is that the package is right there (#275).
     """
     target = package_dir(user_key, dir_name)
-    if not target.is_dir():
-        raise InstallerError(f"package {dir_name} is not installed")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for entry in sorted(target.rglob("*")):
-            if not entry.is_file():
-                continue
-            if entry.name == "integrity.json":
-                continue
-            rel = entry.relative_to(target).as_posix()
-            zf.write(entry, arcname=rel)
-    return buf.getvalue()
+    if target.is_dir():
+        return zip_package_tree(target)
+    if catalog_root is not None:
+        base = catalog_root.resolve()
+        candidate = (base / dir_name).resolve()
+        if is_within(candidate, base) and (candidate / "manifest.json").is_file():
+            return zip_package_tree(candidate)
+        raise InstallerError(f"package {dir_name} is neither installed nor in the catalog")
+    raise InstallerError(f"package {dir_name} is not installed")

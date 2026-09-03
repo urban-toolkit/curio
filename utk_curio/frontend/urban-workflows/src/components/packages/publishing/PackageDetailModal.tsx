@@ -64,8 +64,9 @@ export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
 
   // `packagesApi.download` streams `GET /api/packages/<dir>/archive`, the same
   // `.curio.zip` the Node Catalog's import accepts - so a package exported from
-  // one Curio installs into another. It only exists for an INSTALLED package;
-  // a catalog row the user has not added has no archive to stream.
+  // one Curio installs into another. The route serves the account's installed
+  // copy, or the committed catalog copy for a row the user has not added
+  // (#275) - so every row this page lists can be exported.
   const onExport = async () => {
     if (exporting) return;
     setExporting(true);

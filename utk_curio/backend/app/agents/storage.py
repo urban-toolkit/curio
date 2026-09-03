@@ -113,7 +113,16 @@ def read_definition_bundle(user_key: str, dir_name: str) -> dict | None:
     ``write_definition`` and ``upload_import`` consume, so the two round-trip.
     ``None`` when there is no such definition.
     """
-    target = agent_definition_dir(user_key, dir_name)
+    return read_definition_bundle_from_dir(agent_definition_dir(user_key, dir_name))
+
+
+def read_definition_bundle_from_dir(target: Path) -> dict | None:
+    """The bundle for a definition directory wherever it lives.
+
+    Factored out of :func:`read_definition_bundle` so the shared published
+    catalog can be read the same way (#275); the user store is one location a
+    definition may be in, not the only one.
+    """
     manifest_path = target / "manifest.json"
     if not manifest_path.is_file():
         return None

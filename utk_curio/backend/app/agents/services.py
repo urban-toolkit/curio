@@ -160,6 +160,48 @@ def _resolve_definition(user_key: str, coord: str) -> AgentManifest | None:
     return publications.get_published_manifest(coord)
 
 
+def builtin_definition_bundle(coord: str) -> dict | None:
+    """A built-in's ``{manifest, prompts}`` straight from the roster and
+    ``llm-prompts/``, without materializing anything into a store."""
+    spec = builtin.get_builtin_spec(coord)
+    if spec is None:
+        return None
+    manifest = builtin.build_builtin_manifest(spec)
+    prompts: dict[str, str] = {}
+    for key, asset in manifest["prompts"].items():
+        text = builtin.read_prompt_text(coord, key)
+        if text is not None:
+            prompts[asset["path"]] = text
+    return {"manifest": manifest, "prompts": prompts}
+
+
+def read_definition_bundle_anywhere(user_key: str, coord: str) -> dict | None:
+    """The exportable definition of *coord* from wherever it is (#275).
+
+    ``GET /api/agents/definitions/<coord>`` read the user store only, so
+    "View details -> Export" on the Agent Catalog page - which lists the whole
+    roster and the shared catalog - failed for any agent this account had not
+    imported or installed, including every built-in. The precedence here is
+    :func:`_resolve_definition`'s: an owned import shadows everything, then
+    the built-in roster (so a stale materialized copy does not win over the
+    current prompts), then a built-in's store copy, then the published catalog.
+    """
+    store = storage.read_definition_bundle(user_key, coord)
+    if store is not None:
+        trust = ((store.get("manifest") or {}).get("provenance") or {}).get("trust")
+        if trust != "built-in":
+            return store
+    roster = builtin_definition_bundle(coord)
+    if roster is not None:
+        return roster
+    if store is not None:
+        return store
+    try:
+        return storage.read_definition_bundle_from_dir(publications.published_agent_dir(coord))
+    except (AgentManifestError, PathTraversalError):
+        return None
+
+
 def _require_definition(user_key: str, coord: str) -> AgentManifest:
     m = _resolve_definition(user_key, coord)
     if m is None:
