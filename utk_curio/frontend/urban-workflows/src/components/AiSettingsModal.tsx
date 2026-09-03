@@ -20,6 +20,11 @@ interface ProviderInfo {
   baseUrlPlaceholder?: string;
 }
 
+// `model` here is only the placeholder: the suggestion shown when the box is
+// empty, never a value that gets saved. Ids are the canonical ones, without a
+// date suffix - a constructed `-YYYYMMDD` variant is not guaranteed to resolve,
+// and the Anthropic entry used to carry one while `model_catalog.py` listed the
+// bare id, so one screen offered the same model under two spellings.
 const PROVIDER_INFO: Record<UiMode, ProviderInfo> = {
   openai: {
     model: "gpt-4o-mini",
@@ -28,7 +33,7 @@ const PROVIDER_INFO: Record<UiMode, ProviderInfo> = {
     showBaseUrl: false,
   },
   anthropic: {
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-haiku-4-5",
     keyLink: "https://console.anthropic.com/keys",
     keyLinkLabel: "Get your Anthropic key",
     showBaseUrl: false,
@@ -47,6 +52,32 @@ const PROVIDER_INFO: Record<UiMode, ProviderInfo> = {
     baseUrlPlaceholder: "http://localhost:11434/v1  (Ollama, LM Studio, vLLM, …)",
   },
 };
+
+// " (on 3 Sep 2026)", or "" when the timestamp is missing or unparseable. The
+// suggestion is still worth showing without a date; the date is not worth an
+// "Invalid Date" in the label.
+function formatSeenAt(iso?: string | null): string {
+  if (!iso) return "";
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return "";
+  const shown = when.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  return " (on " + shown + ")";
+}
+
+const PROVIDER_LABEL: Record<UiMode, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  gemini: "Gemini",
+  custom: "a custom endpoint",
+};
+
+// Named on the API Key input's aria-describedby, so the one-key-per-account
+// rule reaches a screen reader too and not only a sighted user.
+const OTHER_KEY_NOTE_ID = "ai-settings-api-key-other-provider";
 
 function uiModeFromSaved(apiType: string | null, baseUrl: string | null): UiMode {
   if (apiType === "anthropic") return "anthropic";
@@ -73,8 +104,18 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   // asked, or it could not tell us", and the Model field stays free text -
   // an endpoint that cannot list must not become an endpoint you cannot use.
   const [models, setModels] = useState<string[]>([]);
+  // When the endpoint could not be asked, `models` is a replay of what it last
+  // reported (#241). Tracked separately so the dropdown can say so: reading a
+  // recording as the present tense is how a model the endpoint no longer has
+  // gets saved, and that surfaces much later as a failed agent run.
+  //
+  // An object rather than a bare date string, because "replaying" and "we know
+  // when" are two facts and an older store entry can carry models with no
+  // timestamp. Keying the label off the date alone labelled that case as live.
+  const [replay, setReplay] = useState<{ at: string | null } | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelsNote, setModelsNote] = useState<string | null>(null);
   // What this deployment configured with --llm-provider / --llm-base-url /
   // --llm-model. Those flags and this panel write the same account-wide
   // setting, so the flags' values belong here as the inherited value rather
@@ -104,13 +145,26 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setError(null);
       setSuccess(false);
       setModels([]);
+      setReplay(null);
       setModelsError(null);
+      setModelsNote(null);
     }
   }, [isOpen, user]);
+
+  // Curio stores ONE provider credential per account (`user.llm_api_key` with
+  // `user.llm_api_type`), but this panel has a tab per provider, so every tab
+  // read the same has_llm_api_key and every tab claimed a saved key (#242).
+  // The key belongs to the provider it was saved under, and nowhere else.
+  const savedMode = uiModeFromSaved(user?.llm_api_type ?? null, user?.llm_base_url ?? null);
+  const keyBelongsHere = !!user?.has_llm_api_key && uiMode === savedMode;
+  const otherProviderHasKey = !!user?.has_llm_api_key && !keyBelongsHere;
 
   const loadModels = async () => {
     setLoadingModels(true);
     setModelsError(null);
+    // Cleared alongside the error: Refresh after adding a key would otherwise
+    // leave "Showing known models" standing over a list that is now live.
+    setModelsNote(null);
     try {
       const apiType =
         uiMode === "anthropic" ? "anthropic"
@@ -124,14 +178,25 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         baseUrl: uiMode === "custom" ? baseUrl : "",
         apiKey,
       });
-      setModels(res.models || []);
-      if (!res.listable) {
-        setModelsError("This provider does not publish a model list.");
-      } else if (!res.models?.length) {
+      const listed = res.models || [];
+      setModels(listed);
+      const replaying = res.source === "remembered";
+      setReplay(replaying ? { at: res.rememberedAt ?? null } : null);
+      if (!listed.length) {
         setModelsError("The endpoint returned no models.");
+      } else if (replaying) {
+        // It used to say "This provider does not publish a model list", which
+        // was both wrong (nobody had asked Anthropic or Gemini) and a dead end.
+        // Now there is something to pick, and the reason sits beside it.
+        const why = res.warning ? res.warning + " " : "";
+        setModelsNote(
+          why + "Showing what this endpoint last reported" +
+            formatSeenAt(res.rememberedAt) + " instead.",
+        );
       }
     } catch (e: any) {
       setModels([]);
+      setReplay(null);
       setModelsError(e?.message || "Could not reach the endpoint.");
     } finally {
       setLoadingModels(false);
@@ -147,7 +212,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
     setModel("");
     // A list fetched from one provider must not be offered for another.
     setModels([]);
+    setReplay(null);
     setModelsError(null);
+    setModelsNote(null);
     if (newMode !== "custom") {
       setBaseUrl("");
     }
@@ -193,10 +260,13 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         // the copy said "leave blank to use the deployment default" and there
         // was no way to get back to it.
         model,
-        // Secrets keep "blank means keep" - that is what their labels promise
-        // and re-typing a key to save an unrelated field would be hostile.
-        // Removing one is an explicit action, below.
-        apiKey: apiKey || undefined,
+        // "Blank means keep" holds only while you are on the provider the
+        // stored key belongs to - that is what its label promises, and
+        // re-typing a key to save an unrelated field would be hostile. On any
+        // other tab, blank has to mean *clear* (#242): the account holds one
+        // key, and leaving it in place while writing a new llm_api_type
+        // silently re-attributed a Gemini key to Anthropic and sent it there.
+        apiKey: keyBelongsHere ? (apiKey || undefined) : apiKey,
         huggingfaceToken: hfToken || undefined,
       });
       setSuccess(true);
@@ -216,6 +286,13 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const info = PROVIDER_INFO[uiMode];
+  // One group either way; only the label changes, because the whole list is
+  // either what the endpoint just said or what it said last time. Driven by
+  // `replay` and not by the date: a recording with no timestamp is still a
+  // recording, and calling it live is the one thing this label must not do.
+  const modelGroupLabel = replay
+    ? "Last reported by this endpoint" + formatSeenAt(replay.at)
+    : "From this endpoint";
 
   return (
     // `layer="overlay"` because the Agent Catalog drawer's header cog opens
@@ -299,7 +376,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <label className={modal.label} htmlFor="ai-settings-api-key">
                 API Key{" "}
                 <span className={styles.optional}>
-                  {user?.has_llm_api_key
+                  {keyBelongsHere
                     ? "(saved - leave blank to keep)"
                     : deployed?.hasApiKey
                       ? "(optional - this deployment provides one)"
@@ -314,15 +391,28 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={user?.has_llm_api_key ? "••••••••  (unchanged)" : "Enter your API key"}
+                placeholder={keyBelongsHere ? "••••••••  (unchanged)" : "Enter your API key"}
                 autoComplete="new-password"
+                aria-describedby={otherProviderHasKey ? OTHER_KEY_NOTE_ID : undefined}
               />
+              {/* One credential per account, so switching tabs and saving
+                  replaces the stored key rather than adding a second one. The
+                  panel used to imply otherwise by showing "saved" on every tab
+                  (#242), and saving from one of them quietly kept the other
+                  provider's key and relabelled it. */}
+              {otherProviderHasKey && (
+                <span id={OTHER_KEY_NOTE_ID} className={modal.hint}>
+                  Curio stores one provider key per account, and the saved one
+                  belongs to {PROVIDER_LABEL[savedMode]}. Saving here replaces
+                  it.
+                </span>
+              )}
               {info.keyLink && (
                 <a href={info.keyLink} target="_blank" rel="noreferrer" className={styles.keyLink}>
                   {info.keyLinkLabel} →
                 </a>
               )}
-              {user?.has_llm_api_key && (
+              {keyBelongsHere && (
                 <button
                   type="button"
                   className={styles.removeSecretBtn}
@@ -353,9 +443,16 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                       ? `${deployed.model} (from this deployment)`
                       : "Select a model…"}
                   </option>
-                  {models.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
+                  {/* Labelled so a replay is never mistaken for something the
+                      endpoint confirmed just now (#241): saving a model it no
+                      longer has surfaces much later as a failed agent run. */}
+                  {models.length > 0 && (
+                    <optgroup label={modelGroupLabel}>
+                      {models.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </optgroup>
+                  )}
                   {/* A model saved earlier that the endpoint no longer lists
                       would otherwise vanish from the box that claims to show
                       it. */}
@@ -392,6 +489,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 </button>
                 {modelsError && (
                   <span className={styles.modelsError}>{modelsError}</span>
+                )}
+                {!modelsError && modelsNote && (
+                  <span className={styles.modelsNote}>{modelsNote}</span>
                 )}
               </div>
               <span className={modal.hint}>

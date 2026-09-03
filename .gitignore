@@ -43,3 +43,6 @@ _curio_*.mjs
 # debugging a failing run, not something to track in git.
 docs/examples/dataflows/expected_outputs/*_browser_log.txt
 docs/examples/dataflows/expected_outputs/*_actual.png
+
+# Per-session port overrides (see the file for why the defaults collide).
+.curio-ports.sh

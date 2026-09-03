@@ -23,6 +23,7 @@ import types
 import pytest
 
 from utk_curio.backend.app.streetvision.services import huggingface as hf
+from utk_curio.backend.app.common.user_storage import users_base
 
 
 @pytest.fixture()
@@ -140,7 +141,7 @@ class TestPerUserCacheDirs:
         theirs = cache.images_dir("guest")
         assert mine != theirs
         for path in (mine, theirs):
-            assert os.path.join(".curio", "users") in path
+            assert str(users_base()) in path
             assert "streetvision" in path
 
     def test_model_cache_is_scoped_to_the_user(self, launch_dir):

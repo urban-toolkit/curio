@@ -35,17 +35,14 @@ Run::
 """
 from __future__ import annotations
 
-import os
 import re
 import urllib.error
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 from playwright.sync_api import expect
 
 from .utils import (
-    REPO_ROOT,
     api_json,
     drag_to_canvas,
     play_node,
@@ -103,10 +100,10 @@ def library_teardown(current_server):
     it runs in the backend process - the interpreter guaranteed to match the
     sandbox's. The pytest process's ``sys.executable`` is not.
     """
-    registered: list[tuple[str, str, int]] = []
-    yield lambda token, name, user_id: registered.append((token, name, user_id))
+    registered: list[tuple[str, str]] = []
+    yield lambda token, name: registered.append((token, name))
 
-    for token, name, _ in registered:
+    for token, name in registered:
         try:
             api_json(
                 f"{current_server}/api/packages/libraries/python/{name}",
@@ -117,13 +114,11 @@ def library_teardown(current_server):
         except (urllib.error.URLError, OSError) as exc:  # best-effort
             print(f"[teardown] DELETE library {name} failed: {exc}")
 
-    # reset-db truncates SQL only and sqlite recycles user ids from 1, so a
-    # leftover list file would leak into the next test's view.
-    base = Path(os.environ.get("CURIO_LAUNCH_CWD", REPO_ROOT))
-    for _, _, user_id in registered:
-        (base / ".curio" / "users" / str(user_id) / "installed-libraries.json").unlink(
-            missing_ok=True
-        )
+    # The list file used to need unlinking here: reset-db truncated SQL only,
+    # sqlite recycles user ids from 1, and the leftover file leaked into the
+    # next test's view. reset-db now clears the per-user tree under
+    # .curio/test/ along with the rows, so this teardown is only responsible
+    # for the pip uninstall above.
 
 
 def _open_library_modal(page):
@@ -154,9 +149,8 @@ def test_install_library_from_ui_then_use_it(
     )
     require_owner_view(page)
     token = session["token"]
-    user_id = session["user"]["id"]
     # Register before installing, so a mid-test failure still cleans up.
-    library_teardown(token, LIB, user_id)
+    library_teardown(token, LIB)
 
     # 1. A node that needs a library nobody has installed.
     node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_NODE)

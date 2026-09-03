@@ -170,15 +170,50 @@ def seed_examples_flag():
 
 def test_example_dep_package_ids_derived_from_lockfiles():
     """The example-dep package set is derived from the bundled examples'
-    ``dataflow.packages`` lockfiles — example 09 declares curio.weather, and
-    heavy packages (curio.streetvision) stay out because no example's
-    lockfile declares them."""
+    ``dataflow.packages`` lockfiles — example 09 declares curio.weather, so
+    curio.weather is provisioned."""
     from utk_curio.backend.app.packages.seed import example_dep_package_ids
 
     ids = example_dep_package_ids()
     assert "curio.weather" in ids
-    assert "curio.streetvision" not in ids
     assert "curio.builtin" not in ids  # always-installed, never an example dep
+
+
+def test_install_on_demand_packages_are_excluded_even_when_declared():
+    """A heavy package stays out of the boot install *explicitly*.
+
+    It used to stay out by accident: nothing pip-installed curio.streetvision
+    because no example declared it, and example 10 was left with an empty
+    lockfile to keep it that way. That silence is what broke #233 - with
+    nothing declaring the dependency, and the example's node types written
+    unversioned, the backend's backfill had no way to name the package the
+    dataflow needed, so its nodes rendered "Loading node…" forever.
+
+    Example 10 now declares it, and the exclusion is stated here instead. This
+    asserts the declaration exists AND that it still does not reach the
+    launcher's pip walk - the whole point of separating the two.
+    """
+    import json
+    from pathlib import Path
+
+    from utk_curio.backend.app.packages.seed import (
+        INSTALL_ON_DEMAND_PACKAGE_IDS,
+        example_dep_package_ids,
+    )
+
+    repo_root = Path(__file__).resolve().parents[4]
+    example = repo_root / "docs" / "examples" / "10-street-vision-cv-analysis.json"
+    declared = json.loads(example.read_text(encoding="utf-8"))["dataflow"]["packages"]
+    assert "curio.streetvision@1" in declared, (
+        "example 10 must declare the package its nodes need, or nothing can "
+        "resolve them (#233)"
+    )
+
+    assert "curio.streetvision" in INSTALL_ON_DEMAND_PACKAGE_IDS
+    assert "curio.streetvision" not in example_dep_package_ids(), (
+        "declaring a heavy package must not put it in the boot install - that "
+        "is a ~3 GB torch download on every --with-examples start"
+    )
 
 
 def test_examples_flag_seeds_weather(tmp_curio, real_fixtures_root, seed_examples_flag):
@@ -678,4 +713,74 @@ def test_fixture_catalog_reads_happen_before_the_lock_is_taken(
     assert not any(held_during.values()), (
         f"catalog reads ran INSIDE the seed lock: "
         f"{[k for k, v in held_during.items() if v]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# An upgrade reaches a package the user already installed (#194).
+#
+# A fix can ship inside a package at an unchanged version — the catalog under
+# <repo_root>/packages moves, the coordinate does not. Installing is copy-once,
+# so before this the user kept whatever they first copied, indefinitely. These
+# two tests pin the rule and its limit: a stale copy refreshes, a copy the user
+# deliberately removed does not come back.
+# ---------------------------------------------------------------------------
+
+def _probe_file(user_key: str, dir_name: str, rel: str = "manifest.json") -> Path:
+    return user_packageages_dir(user_key) / dir_name / rel
+
+
+def test_a_stale_installed_package_is_refreshed_from_the_catalog(
+    tmp_curio, real_fixtures_root,
+):
+    """The #194 delivery bug, at the unit layer."""
+    dir_name = "ai.urbanlab.uhvi@1"
+    install_packageage_from_directory("guest", real_fixtures_root / dir_name)
+    assert dir_name in _installed_names()
+
+    probe = _probe_file("guest", dir_name)
+    catalog_bytes = (real_fixtures_root / dir_name / "manifest.json").read_bytes()
+    assert probe.read_bytes() == catalog_bytes, "install did not copy faithfully"
+
+    # Diverge the store copy the way an UPGRADE diverges it, which means leaving
+    # it internally consistent: an older copy's files and its own
+    # ``integrity.json`` agree with each other, they are simply an older pair
+    # than the catalog's. Editing the file alone would leave the store's map
+    # still quoting the original hash — a damaged copy, not an out-of-date one,
+    # and the refresh is right to decline that. Getting this wrong made an
+    # earlier version of this test pass for the wrong reason.
+    from utk_curio.backend.app.packages.installer import refresh_packageage_integrity
+
+    probe.write_bytes(catalog_bytes + b"\n")
+    refresh_packageage_integrity(probe.parent)
+    seed_state.clear("guest", dir_name)
+    assert probe.read_bytes() != catalog_bytes
+
+    seed_dev_packageages(user_key="guest")
+
+    assert probe.read_bytes() == catalog_bytes, (
+        "a stale installed package was not refreshed, so a fix shipped inside "
+        "a package at an unchanged version never reaches an existing install"
+    )
+
+
+def test_an_uninstalled_package_is_not_resurrected_by_the_refresh(
+    tmp_curio, real_fixtures_root,
+):
+    """The limit that matters: refreshing must not undo an uninstall.
+
+    The refresh only ever looks at packages the store already holds, so a
+    tombstoned one is not a candidate — but that is the property worth pinning,
+    because the obvious implementation (widen the seed plan to the whole
+    catalog) would resurrect it.
+    """
+    dir_name = "ai.urbanlab.uhvi@1"
+    install_packageage_from_directory("guest", real_fixtures_root / dir_name)
+    uninstall_packageage("guest", dir_name)
+    assert dir_name not in _installed_names()
+
+    seed_dev_packageages(user_key="guest")
+
+    assert dir_name not in _installed_names(), (
+        "the refresh brought back a package the user uninstalled"
     )

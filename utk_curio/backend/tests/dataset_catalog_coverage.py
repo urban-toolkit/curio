@@ -355,7 +355,13 @@ def _geotiff_expectations(data_file: Path) -> dict[str, str]:
     except ImportError as exc:  # pragma: no cover - environment problem
         raise AssertionError(
             f"reading {data_file.name} needs rasterio and numpy, declared by "
-            f"packages/curio.weather@1; run `python curio.py setup`"
+            f"packages/curio.weather@1 - an OPT-IN catalog package, so a plain "
+            f"`python curio.py setup` will NOT install them: its catalog walk is "
+            f"scoped to curio.builtin@* unless CURIO_SEED_EXAMPLES=1. Boot once "
+            f"with `python curio.py start --with-examples` (what scripts/test.sh "
+            f"does before this suite runs), or pip-install them directly. If the "
+            f"import fails with a DLL/extension error rather than ModuleNotFound, "
+            f"the wheel is installed but broken and needs --force-reinstall."
         ) from exc
 
     with rasterio.open(data_file) as src:

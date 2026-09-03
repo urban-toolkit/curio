@@ -18,6 +18,7 @@ import {
   isDatasetPublishedToCatalog,
   isUserOwnedDataset,
 } from "../../services/datasetCatalog";
+import { useUserContext } from "../../providers/UserProvider";
 import { DataCatalogGeoPreview } from "./DataCatalogGeoPreview";
 import { datasetCount, formatBytes, metaLeft } from "./dataHubBrowseFormat";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
@@ -92,6 +93,12 @@ function DataCatalogBrowseDrawerContent({
 }: DataCatalogBrowseDrawerContentProps) {
   const crs = dataset.schema?.crs ?? null;
   const published = isDatasetPublishedToCatalog(dataset);
+  // Every guest sign-in shares ONE account, so a guest publishing writes an
+  // entry whose recorded publisher is "all guests", and any guest can then
+  // withdraw any other's (#222). The server refuses both regardless; withholding
+  // the pill keeps the UI from offering an action that can only fail.
+  const { isSharedGuest } = useUserContext();
+
   const showPublishPill = shouldShowPublishPill({
     isPublished: published,
     allowPublish: catalogPublishAllowed,
@@ -101,7 +108,11 @@ function DataCatalogBrowseDrawerContent({
     // always gated on ownership (`pkg.readOnly !== true`, `agent.publishable`);
     // this one did not. `isUserOwnedDataset` reads the store folder, which does
     // not move when installing flips `origin` from hub to imported.
-    canPublish: isUserOwnedDataset(dataset),
+    //
+    // The guest clause rides in the same slot deliberately: publish and
+    // unpublish are one control here, so a separate gate would have to be
+    // repeated for both halves and could drift between them.
+    canPublish: isUserOwnedDataset(dataset) && !isSharedGuest,
   });
 
   return (

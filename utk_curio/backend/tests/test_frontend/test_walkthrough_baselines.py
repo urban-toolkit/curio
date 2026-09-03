@@ -31,10 +31,22 @@ from .utils import (
     save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
 )
-from .walkthroughs import PROVENANCE_EXAMPLE, load_example_spec
+from .walkthroughs import PROVENANCE_EXAMPLE, TOAST_REGION, load_example_spec
 
 
-@pytest.mark.parametrize("walk", WALKTHROUGHS, ids=lambda w: w.slug)
+def _walkthrough_params():
+    """``WALKTHROUGHS`` as pytest params, carrying each scene's own marks.
+
+    A scene that declares ``needs_examples`` gets the ``examples`` marker, so an
+    ordinary run deselects it rather than driving it against an empty gallery and
+    reporting the seed as broken.
+    """
+    return [
+        pytest.param(w, marks=[pytest.mark.examples] if w.needs_examples else [])
+        for w in WALKTHROUGHS
+    ]
+
+@pytest.mark.parametrize("walk", _walkthrough_params(), ids=lambda w: w.slug)
 def test_walkthrough_baseline(walk, app_frontend, current_server, page):
     require_project_page()
     require_user_auth()
@@ -50,11 +62,29 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
         project_spec=load_example_spec(walk.example) if walk.example else None,
     )
     require_owner_view(page)
-    page.wait_for_selector(".react-flow__node", timeout=45000)
+    # An empty dataflow has no nodes; only wait for one when the scene asked for
+    # a spec that puts them there. The seven catalog/agent scenes deliberately
+    # start on a never-saved dataflow or a catalog page, and waiting on a node
+    # they will never have killed every one of them in setup — 45 s before the
+    # first assertion ran. ``test_walkthrough_videos.py`` already guards this;
+    # this file was the half that was missed.
+    if walk.example:
+        page.wait_for_selector(".react-flow__node", timeout=45000)
+    else:
+        page.wait_for_selector("#tools-menu", timeout=45000)
+
+    # A stray toast is timing noise in most baselines, so they are swept before
+    # every capture — but NOT when the toast IS the subject.
+    # `catalog-add-reports-success` clips to the toast region, so sweeping first
+    # photographed an empty box and the capture timed out waiting for that box
+    # to become visible. The scene was unsatisfiable as written, and nobody
+    # could see it while the scene was still dying in setup.
+    subject_is_a_toast = walk.clip_selector == TOAST_REGION
 
     def snapshot(label: str) -> None:
         """One committed PNG per pinned step of the journey."""
-        dismiss_toasts(page)
+        if not subject_is_a_toast:
+            dismiss_toasts(page)
         save_workflow_test_screenshot(
             page,
             walk.stem,
@@ -75,8 +105,9 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
     walk.run(ctx)
 
     # Toasts are timed, so one still fading would make the diff depend on how
-    # fast the machine got here.
-    dismiss_toasts(page)
+    # fast the machine got here — except where the toast is what we came for.
+    if not subject_is_a_toast:
+        dismiss_toasts(page)
     save_workflow_test_screenshot(
         page,
         walk.stem,

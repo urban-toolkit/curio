@@ -50,7 +50,10 @@ export function catalogFetchKey(query: StableCatalogQuery): string {
 export function toStableCatalogQuery(query: DatasetCatalogQuery = {}): StableCatalogQuery {
   return {
     dataflowId: query.dataflowId || undefined,
-    search: query.search || undefined,
+    // Trimmed here, the sole chokepoint, so a padded query neither reaches the
+    // wire nor mints a distinct ``catalogFetchKey`` - which would miss the cache
+    // and refetch a result set the server now returns identically (#231).
+    search: query.search?.trim() || undefined,
     format: query.format || undefined,
     origin: query.origin || undefined,
     sort: query.sort || "recent",

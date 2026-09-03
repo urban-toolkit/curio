@@ -633,14 +633,23 @@ export const agentsApi = {
    * the account's saved provider server-side, so an already-configured user can
    * refresh without retyping their key.
    *
-   * `listable` is false for Anthropic and Gemini, which have no equivalent
-   * listing in the shape the OpenAI SDK speaks; the panel keeps its free-text
-   * box in that case rather than offering an empty menu. */
+   * Hybrid since #241, with both halves coming from the API. `source` is
+   * `"live"` when the endpoint answered just now, or `"remembered"` when it
+   * could not and Curio is replaying what it last reported - `rememberedAt`
+   * says when that was, and `warning` why the live call did not happen.
+   * `listable` means the endpoint itself answered; kept for older callers. */
   providerModels(input?: {
     apiType?: string;
     baseUrl?: string;
     apiKey?: string;
-  }): Promise<{ models: string[]; listable: boolean }> {
+  }): Promise<{
+    models: string[];
+    listable: boolean;
+    source?: "live" | "remembered";
+    remembered?: string[];
+    rememberedAt?: string | null;
+    warning?: string | null;
+  }> {
     return apiFetch("/api/agents/provider-models", {
       method: "POST",
       body: JSON.stringify(input || {}),

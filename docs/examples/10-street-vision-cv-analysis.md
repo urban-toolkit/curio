@@ -6,7 +6,9 @@ This example doubles as the worked example in [EXTENDING.md](../EXTENDING.md). I
 
 > [!NOTE]
 > **Setup required**
-> Install the **Street Vision** package from Curio's `/catalog` page; the first install pip-installs the package's ML stack (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in its manifest, roughly a 3 GB download on a cold env. Have a Google Maps API key ready to paste into the Street View Fetcher node (the key lives in the node UI for the current session only, and is never written to disk or saved with the dataflow). The Spatial Join node is built-in and needs no separate install.
+> Install the **Street Vision** package from Curio's `/catalog` page, or click
+> **Install Street Vision** on any of the three nodes, which say what they are
+> missing until you do; the first install pip-installs the package's ML stack (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in its manifest, roughly a 3 GB download on a cold env. Have a Google Maps API key ready to paste into the Street View Fetcher node (the key lives in the node UI for the current session only, and is never written to disk or saved with the dataflow). The Spatial Join node is built-in and needs no separate install.
 
 ## Pipeline overview
 

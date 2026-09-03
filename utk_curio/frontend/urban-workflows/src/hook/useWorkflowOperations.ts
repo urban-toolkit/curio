@@ -162,7 +162,20 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed">>({});
     const [viewerMode, setViewerMode] = useState<"owner" | "shared">("owner");
 
+    // True only while ``loadParsedTrill`` replays a persisted dataflow onto the
+    // canvas. That replay drives the very same ``onConnect`` a user drag does -
+    // once per edge - and onConnect marks the project dirty, so a dataflow with
+    // even one edge came back from disk already reading "Unsaved changes" and
+    // the 30s auto-save below then rewrote it for nothing (#229).
+    //
+    // A ref, not state: the replay runs inside a ``setNodes`` updater and has to
+    // read this synchronously. Deliberately NOT a timer or a settle window - it
+    // is opened and closed around the synchronous replay loop alone, so an edit
+    // made a millisecond after the load still marks the dataflow dirty.
+    const hydratingRef = useRef(false);
+
     const markDirty = useCallback(() => {
+        if (hydratingRef.current) return;
         setProjectDirty(true);
     }, []);
 
@@ -345,24 +358,36 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
         console.log("loadParsedTrill second");
         setNodes((prevNodes: any) => {
-            // skipValidation=true: these edges come from a saved/imported trill and
-            // were validated when created. Re-validating on load races the async
-            // node-descriptor registry and would drop valid edges + toast mid-render.
-            if (merge) {
-                for (const edge of loaded_edges) {
-                    if (!currentEdgeIds.has(edge.id)) {
-                        onConnect(edge, prevNodes, undefined, workflowName, false, true);
+            // Replaying persisted edges must not dirty the project: ``onConnect``
+            // marks dirty because a user connecting two nodes IS an edit, and this
+            // loop is the same call (#229). Opened and closed INSIDE the updater,
+            // because React may run it long after loadParsedTrill returned (and
+            // twice under StrictMode) - so the window is scoped to exactly the
+            // replay. ``finally`` so a malformed spec throwing inside onConnect
+            // cannot leave dirty-tracking wedged off for the rest of the session.
+            hydratingRef.current = true;
+            try {
+                // skipValidation=true: these edges come from a saved/imported trill and
+                // were validated when created. Re-validating on load races the async
+                // node-descriptor registry and would drop valid edges + toast mid-render.
+                if (merge) {
+                    for (const edge of loaded_edges) {
+                        if (!currentEdgeIds.has(edge.id)) {
+                            onConnect(edge, prevNodes, undefined, workflowName, false, true);
+                        }
+                    }
+                } else {
+                    // Accumulate the spec edges connected so far and hand them to
+                    // onConnect, so merge-handle resolution sees the earlier edges
+                    // of this load (in_N occupancy) instead of an empty list.
+                    const connectedSoFar: any[] = [];
+                    for (const edge of loaded_edges) {
+                        onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true);
+                        connectedSoFar.push(edge);
                     }
                 }
-            } else {
-                // Accumulate the spec edges connected so far and hand them to
-                // onConnect, so merge-handle resolution sees the earlier edges
-                // of this load (in_N occupancy) instead of an empty list.
-                const connectedSoFar: any[] = [];
-                for (const edge of loaded_edges) {
-                    onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true);
-                    connectedSoFar.push(edge);
-                }
+            } finally {
+                hydratingRef.current = false;
             }
 
             if (!merge) {
@@ -731,6 +756,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         [setDataflowDatasets],
     );
 
+    // The dataflow's name is stored twice: in ``spec.dataflow.name``, which the
+    // canvas title renders, and in the project row's ``name``, which the Projects
+    // list renders. #230: the canvas rename wrote only ``workflowName`` (the spec
+    // side), while ``saveCurrentProject`` sends ``projectName`` - so the save
+    // faithfully re-sent the name the dataflow was loaded under and the Projects
+    // card never moved. One entry point keeps both in step.
+    //
+    // Deliberately NOT solved by flipping the ``||`` precedence below:
+    // ``loadParsedTrill`` also calls ``setWorkflowName``, so preferring the canvas
+    // name there would make File -> Load into an open project silently rename it.
+    //
+    // Returns false for a blank entry so the caller can restore the old title.
+    const renameDataflow = useCallback((rawName: string): boolean => {
+        const next = rawName.trim();
+        if (!next) return false;
+        setWorkflowName(next);
+        setProjectName(next);
+        // A rename diverges from disk like any other edit. Nothing said so before,
+        // which went unnoticed only because the phantom dirty flag of #229 was
+        // masking it.
+        markDirty();
+        return true;
+    }, [setWorkflowName, markDirty]);
+
     const saveCurrentProject = useCallback(async (nameOverride?: string) => {
         if (viewerMode === "shared") {
             throw new Error("Shared dataflows are read-only; use Save a copy");
@@ -766,6 +815,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 name,
             });
             syncDatasetsFromSavedSpec(detail.spec);
+            // Re-pin the client's copy of the name to what the server actually
+            // stored. The create branch already did this, so only the update path
+            // could drift out of date - and it also self-heals a project that
+            // diverged before #230 was fixed.
+            setProjectName(detail.name);
             // The backend prunes attachments for deleted nodes/edges (and
             // preserves the agent lockfile) on save, so reconcile the dock with
             // the freshly-persisted spec — a just-deleted node's tile disappears
@@ -1153,6 +1207,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         applyReviewedRemovals,
 
         // Project operations
+        renameDataflow,
         saveCurrentProject,
         saveAsNewProject,
         ensureProjectId,

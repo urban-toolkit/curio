@@ -127,3 +127,13 @@
   font-size: var(--curio-font-size-sm);
   line-height: 1.4;
 }
+
+/* Why a curated list is being offered instead of a live one (#241). Same
+   register as .modelsError because it sits in the same row and is the same
+   kind of thing: a reason, not an alarm. */
+.modelsNote {
+  color: var(--curio-text-secondary);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  line-height: 1.4;
+}
