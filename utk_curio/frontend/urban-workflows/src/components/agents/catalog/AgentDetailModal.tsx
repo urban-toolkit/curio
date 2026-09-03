@@ -35,6 +35,11 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
   } | null>(null);
   const [bundleError, setBundleError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  // The export's own failure, shown beside the button that caused it. It used
+  // to be folded into ``bundleError`` as a bare "Export failed." rendered under
+  // the Prompts heading - nowhere near the button, and without the server's
+  // reason (#275).
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +65,7 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
   const onExport = async () => {
     if (exporting) return;
     setExporting(true);
+    setExportError(null);
     try {
       const b = bundle ?? (await agentsApi.readDefinition(agent.dirName));
       // One file, not a manifest plus loose prompt files in two directories.
@@ -67,8 +73,10 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
       // Curio imports into another in a single pick.
       const blob = new Blob([JSON.stringify(b, null, 2)], { type: "application/json" });
       triggerBlobDownload(blob, `${agent.dirName}.curio-agent.json`);
-    } catch {
-      setBundleError("Export failed.");
+    } catch (err) {
+      // apiFetch throws with the server's own ``error`` text, which says what
+      // is actually wrong ("no agent definition x") rather than that something is.
+      setExportError(err instanceof Error && err.message ? err.message : "Export failed.");
     } finally {
       setExporting(false);
     }
@@ -109,6 +117,12 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
 
       <div className={styles.body}>
         {agent.purpose ? <p className={styles.purpose}>{agent.purpose}</p> : null}
+
+        {exportError ? (
+          <p className={styles.purpose} role="alert" data-curio-export-error="true">
+            Export failed: {exportError}
+          </p>
+        ) : null}
 
 
         <section className={styles.section}>

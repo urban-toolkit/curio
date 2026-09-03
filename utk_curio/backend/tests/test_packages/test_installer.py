@@ -583,3 +583,22 @@ def test_validate_copy_lands_beside_the_tree_it_validates(tmp_curio, make_archiv
     assert seen, "the validate copy should declare an explicit parent dir"
     assert all(d and "package-staging" in d for d in seen), seen
 
+
+
+def test_zip_package_tree_is_what_both_install_and_export_emit(tmp_path):
+    """One zip writer for the catalog install and the export routes (#275).
+
+    The two loops were byte-for-byte copies; when export learned to read the
+    catalog they became one function, and this pins what it leaves out.
+    """
+    from utk_curio.backend.app.packages.installer import zip_package_tree
+
+    src = tmp_path / "pkg@1"
+    (src / "sources").mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    (src / "sources" / "a.py").write_text("print(1)", encoding="utf-8")
+    (src / "integrity.json").write_text("{}", encoding="utf-8")
+
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        names = zf.namelist()
+    assert names == ["manifest.json", "sources/a.py"]

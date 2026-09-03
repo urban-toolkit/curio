@@ -293,9 +293,7 @@ def read_definition(coord: str):
     exactly the shape ``POST /api/agents/imports/upload`` consumes, so the two
     round-trip.
     """
-    from utk_curio.backend.app.agents import storage as agents_storage
-
-    bundle = agents_storage.read_definition_bundle(_user_dir_key(g.user), coord)
+    bundle = agents_services.read_definition_bundle_anywhere(_user_dir_key(g.user), coord)
     if bundle is None:
         return jsonify({"error": f"no agent definition {coord}"}), 404
     return jsonify(bundle), 200
