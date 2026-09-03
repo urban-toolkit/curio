@@ -8,12 +8,16 @@ from playwright.sync_api import expect
 
 from .utils import (
     _post_json,
+    _wait_for_reactflow_ready,
     api_json,
+    project_card,
     require_project_page,
     require_user_auth,
+    run_node_and_wait,
     signup_and_enter_new_workflow,
     signup_e2e_user,
     stub_db_login,
+    stub_login_and_enter_workflow,
     wait_for_projects_page,
 )
 
@@ -82,6 +86,30 @@ def test_project_list_page(app_frontend: "FrontendPage", page):
 
 def _empty_spec(name: str) -> dict:
     return {"dataflow": {"name": name, "nodes": [], "edges": []}}
+
+
+def _one_node_spec(name: str, code: str) -> dict:
+    """One runnable Python node, so a run can schedule the install-sync save."""
+    return {
+        "dataflow": {
+            "name": name,
+            "task": "",
+            "nodes": [
+                {
+                    "id": "rename-node",
+                    "type": "curio.builtin/computation-analysis",
+                    "x": 420,
+                    "y": 300,
+                    "content": code,
+                    "in": "DEFAULT",
+                    "out": "DEFAULT",
+                    "goal": "",
+                    "metadata": {"keywords": []},
+                }
+            ],
+            "edges": [],
+        }
+    }
 
 
 def test_projects_search_ignores_surrounding_whitespace(
@@ -230,6 +258,63 @@ def test_rename_then_save_updates_the_projects_card(
     # And it is the SAME project, not a replacement that happens to be named right.
     renamed = next(p for p in listed if p["id"] == pid)
     assert renamed["name"] == "After Rename"
+
+
+def test_rename_by_clicking_away_then_the_logo_shows_the_new_name(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """#270: the reporter's exact path, which no test drove.
+
+    Rename, click elsewhere (commit on blur, not Enter), Save, then click the
+    Curio logo - an SPA navigation to the list, not a page load. The #230 fix
+    was exercised only with Enter and ``page.goto``. Also runs one producing
+    node first, so the 500 ms install-sync save is in flight around the rename:
+    that queued save used to PUT the pre-rename name back over the manual one.
+    """
+    require_project_page()
+    require_user_auth()
+
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Blur Rename User",
+        username="blur_rename_user",
+        project_name="Before Blur",
+        project_spec=_one_node_spec("Before Blur", "return [1, 2, 3]"),
+    )
+    token = session["token"]
+    pid = session["project"]["id"]
+    node_id = "rename-node"
+    _wait_for_reactflow_ready(page)
+
+    # A producing node run schedules the debounced install-sync save.
+    run_node_and_wait(page, node_id, node_type="computation-analysis")
+
+    title = page.locator("h1").filter(has_text="Before Blur")
+    title.wait_for(state="visible", timeout=30000)
+    title.click()
+    box = page.locator("input[type='text']").last
+    box.wait_for(state="visible", timeout=10000)
+    box.fill("After Blur")
+    # Commit by clicking away, not Enter.
+    box.blur()
+    expect(page.locator("h1").filter(has_text="After Blur")).to_be_visible(timeout=10000)
+
+    disk = page.locator("[data-curio-save-state]")
+    disk.click()
+    expect(disk).to_have_attribute("data-curio-save-state", "saved", timeout=20000)
+    # Let any debounced install-sync save land before leaving.
+    page.wait_for_timeout(1200)
+
+    page.locator('img[alt="Curio logo"]').click()
+    wait_for_projects_page(page, timeout=20000)
+    expect(project_card(page, "After Blur")).to_be_visible(timeout=20000)
+    assert page.get_by_text("Before Blur").count() == 0
+
+    listed = api_json(f"{current_server}/api/projects", token)
+    renamed = next(p for p in listed if p["id"] == pid)
+    assert renamed["name"] == "After Blur", [p["name"] for p in listed]
 
 
 def test_renaming_from_the_projects_list_reaches_the_canvas_title(

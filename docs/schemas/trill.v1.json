@@ -219,6 +219,14 @@
           "items": { "type": "integer" },
           "description": "Indices into the dataflow task's keyword list, bound by the LLM keyword prompt. INTEGERS, not strings or free text. Empty on the overwhelming majority of real nodes."
         },
+        "spatialJoin": {
+          "type": "object",
+          "description": "Settings of a Spatial Join node (#262). `nameProperty` is the polygon property used as the tag; absent means `name`, which is also what the backend assumes.",
+          "additionalProperties": false,
+          "properties": {
+            "nameProperty": { "type": "string", "minLength": 1 }
+          }
+        },
         "comments": {
           "type": "array",
           "items": { "$ref": "#/$defs/comment" },

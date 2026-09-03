@@ -90,7 +90,9 @@ def _example_id(stem: str, user=None) -> str:
     return str(uuid.uuid5(_EXAMPLES_NAMESPACE, f"{user.id}:{stem}"))
 
 
-def seed_example_projects(user, *, prune: bool | None = None) -> int:
+def seed_example_projects(
+    user, *, prune: bool | None = None, overwrite: bool | None = None,
+) -> int:
     """Seed/refresh example projects for ``user`` from docs/examples/.
 
     Each example JSON gets a deterministic project_id derived from its
@@ -111,6 +113,15 @@ def seed_example_projects(user, *, prune: bool | None = None) -> int:
     # for a registered account. Default to the guest's behaviour exactly.
     if prune is None:
         prune = is_guest
+
+    # Overwriting is the guest's posture too: its examples are reset to the
+    # shipped copy on every boot. For a registered account an example is theirs
+    # once seeded - renamed, edited, saved - and a back-fill that rewrote the
+    # row and the spec from docs/examples/ silently undid that work the next
+    # time the projects list was opened (#270). Default to the guest's behaviour
+    # exactly, as ``prune`` does; ``ensure_user_examples_seeded`` passes False.
+    if overwrite is None:
+        overwrite = is_guest
 
     examples_dir = _repo_root() / "docs" / "examples"
     if not examples_dir.exists():
@@ -145,6 +156,12 @@ def seed_example_projects(user, *, prune: bool | None = None) -> int:
             with db.session.begin_nested():
                 folder = str(storage.project_dir(ukey, project_id))
                 existing = db.session.get(Project, project_id)
+                if existing is not None and existing.user_id == user.id and not overwrite:
+                    # Theirs now. Repair a missing spec file (the row without
+                    # its spec is unopenable) and otherwise leave it alone.
+                    if storage.read_spec(ukey, project_id) is None:
+                        storage.write_spec(ukey, project_id, spec)
+                    continue
                 if existing is not None and existing.user_id == user.id:
                     existing.name = name
                     existing.description = description
@@ -247,7 +264,7 @@ def ensure_user_examples_seeded(user) -> int:
     if marker.exists() and _marker_owner(marker) == owner:
         return 0
     try:
-        seeded = seed_example_projects(user, prune=False)
+        seeded = seed_example_projects(user, prune=False, overwrite=False)
     except Exception:
         logger.exception("Back-filling examples failed for user %s", user.id)
         return 0

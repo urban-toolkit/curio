@@ -345,3 +345,36 @@ describe("TrillGenerator provenance ids are unique", () => {
     expect(Object.keys(TrillGenerator.list_of_trills)).toHaveLength(2);
   });
 });
+
+describe("TrillGenerator Spatial Join settings (#262)", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+  });
+
+  test("persists the chosen polygon property at metadata.spatialJoin, and only when set", () => {
+    const spec = TrillGenerator.generateTrill(
+      [
+        {
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 0, y: 0 },
+          data: {
+            nodeId: "sj-1",
+            nodeType: "curio.builtin/spatial-join",
+            spatialJoin: { nameProperty: "pri_neigh" },
+          },
+        },
+        {
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 5, y: 5 },
+          data: { nodeId: "sj-2", nodeType: "curio.builtin/spatial-join" },
+        },
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["sj-1"].metadata.spatialJoin).toEqual({ nameProperty: "pri_neigh" });
+    expect(byId["sj-2"].metadata).toBeUndefined();
+  });
+});

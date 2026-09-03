@@ -1882,7 +1882,7 @@ def empty_nodes_say_why(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="spatial-join-explains-itself",
-    refs=[225],
+    refs=[225, 262],
     title="A node can explain itself",
     premise="Add a Spatial Join and open its info.",
     note="The help text already existed - the builtin manifest documents the "
@@ -1912,8 +1912,8 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
     ctx.say("Spatial Join", "What goes in each handle was not stated anywhere.")
     node = _add_builtin_node(ctx, "#step-spatial-join", (300, 220))
     node.scroll_into_view_if_needed()
-    # A noContent node has no header band, so its info button lives on the
-    # minimized chip and is revealed on hover.
+    # The node gained a body and a header band in #262 (it was icon-only), so
+    # the info button is the header's; hovering is harmless either way.
     node.hover()
     ctx.beat(400)
     info = node.locator('button[title^="About"]')
@@ -2104,7 +2104,7 @@ def project_drawer_offers_delete(ctx: Ctx) -> None:
 @walkthrough(
     slug="renaming-a-dataflow-renames-it-everywhere",
     example=PROVENANCE_EXAMPLE,
-    refs=[230],
+    refs=[230, 270],
     title="A renamed dataflow is renamed on the projects page too",
     premise="Rename a dataflow on the canvas, save it, then go and look at the list.",
     note="The name is stored twice - the project row the Projects list renders, "
@@ -2132,7 +2132,7 @@ def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
     """
     page = ctx.page
 
-    ctx.say("Rename it on the canvas", "Click the title, type, press Enter.")
+    ctx.say("Rename it on the canvas", "Click the title, type, click away.")
     title = page.locator("h1").first
     title.wait_for(state="visible", timeout=30000)
     ctx.click(title)
@@ -2140,7 +2140,8 @@ def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
     box = page.locator("input[type='text']").last
     box.wait_for(state="visible", timeout=10000)
     box.fill("Renamed Dataflow")
-    box.press("Enter")
+    # Commit on blur - the path #270 was reported on; Enter is the other one.
+    box.blur()
 
     disk = page.locator("[data-curio-save-state]")
     state = disk.get_attribute("data-curio-save-state")
@@ -2161,7 +2162,15 @@ def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
     )
 
     ctx.say("Now the projects page", "This is where the old name used to survive.")
-    page.goto(f"{ctx.frontend}/projects")
+    # Through the logo, as a user would - an in-app navigation, not a reload
+    # (#270). Falls back to a plain visit for the recorder, which shares the
+    # page across scenes and may not have the top bar in view.
+    logo = page.locator('img[alt="Curio logo"]')
+    if logo.count():
+        ctx.click(logo.first)
+        wait_for_projects_page(page, timeout=30000)
+    else:
+        page.goto(f"{ctx.frontend}/projects")
     page.get_by_text("Renamed Dataflow").first.wait_for(state="visible", timeout=30000)
     ctx.focus(page.get_by_text("Renamed Dataflow").first, hold=1200)
     ctx.capture("renamed-in-the-list")

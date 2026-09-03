@@ -187,3 +187,74 @@ describe("saveCurrentProject", () => {
     );
   });
 });
+
+describe("queued saves (#270)", () => {
+  // The rename fix of #230 held on the direct path and lost on the queued one:
+  // ``requestProjectSave`` chained ``prior.then(() => saveCurrentProject())``,
+  // capturing the save closure - and its name - as of enqueue time. The 500 ms
+  // install-sync save that follows a producing node uses that chain, so a
+  // rename made between two such saves was PUT back over by the second.
+  function deferredUpdate() {
+    let resolve!: (detail: unknown) => void;
+    const promise = new Promise((r) => { resolve = r; });
+    (projectsApi.update as jest.Mock).mockImplementationOnce(() => promise);
+    return (name: string) =>
+      resolve({ id: "proj-1", name, spec: { dataflow: { datasets: [], packages: [] } } });
+  }
+
+  it("a save queued before the rename still sends the NEW name", async () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await loadedProject(result);
+    const finishFirst = deferredUpdate();
+
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
+    act(() => {
+      first = result.current.requestProjectSave();   // in flight, name "Loaded name"
+      second = result.current.requestProjectSave();  // queued behind it, BEFORE the rename
+    });
+    act(() => {
+      result.current.renameDataflow("New name");
+    });
+    await act(async () => {
+      finishFirst("Loaded name");
+      await first;
+      await second;
+    });
+
+    expect(projectsApi.update).toHaveBeenCalledTimes(2);
+    expect(projectsApi.update).toHaveBeenLastCalledWith(
+      "proj-1",
+      expect.objectContaining({ name: "New name" }),
+    );
+  });
+
+  it("a rename made while a save is in flight is not undone by that save's echo", async () => {
+    // The response re-pins the client's name to what the server stored. When
+    // the user renamed in between, the server is echoing the name we SENT, and
+    // adopting it would silently revert the rename.
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await loadedProject(result);
+    const finishFirst = deferredUpdate();
+
+    let first!: Promise<unknown>;
+    act(() => {
+      first = result.current.saveCurrentProject();
+    });
+    act(() => {
+      result.current.renameDataflow("New name");
+    });
+    await act(async () => {
+      finishFirst("Loaded name");
+      await first;
+    });
+    await act(async () => {
+      await result.current.saveCurrentProject();
+    });
+
+    expect(projectsApi.update).toHaveBeenLastCalledWith(
+      "proj-1",
+      expect.objectContaining({ name: "New name" }),
+    );
+  });
+});

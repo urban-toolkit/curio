@@ -1,8 +1,8 @@
 /**
  * Icon-only nodes keep a way to remove themselves.
  *
- * `spatial-join` and `merge-flow` are the only templates with
- * `containerStyle.noContent: true`. They start minimized (`useState(!!noContent)`),
+ * `merge-flow` is the only template with `containerStyle.noContent: true`
+ * (`spatial-join` left the set in #262, when it gained a body). They start minimized (`useState(!!noContent)`),
  * both un-minimize paths are gated by `if (!noContent)` so they can never be
  * expanded, and the whole header band — pin, comments, delete — is gated on
  * `{!noContent && !dashboardOn ? …}`. The result was a node with no on-node
@@ -29,7 +29,7 @@ const BUILTIN_MANIFEST = path.resolve(
 );
 
 describe("noContent nodes", () => {
-  it("are still only the two templates this control exists for", () => {
+  it("are still only the template this control exists for", () => {
     const manifest = JSON.parse(fs.readFileSync(BUILTIN_MANIFEST, "utf8"));
     const noContent = manifest.templates
       .filter((t: any) => t?.containerStyle?.noContent)
@@ -37,7 +37,7 @@ describe("noContent nodes", () => {
       .sort();
     // A third one arriving should send someone back to this test, not silently
     // inherit a control nobody checked against it.
-    expect(noContent).toEqual(["merge-flow", "spatial-join"]);
+    expect(noContent).toEqual(["merge-flow"]);
   });
 
   it("render a delete control on the minimized chip", () => {

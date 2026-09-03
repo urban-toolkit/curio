@@ -677,7 +677,8 @@ def spatial_join():
           "type": "FeatureCollection",
           "features": [...]   # input points augmented with `neighborhood_name`
                               # (and `nbhd_*` aggregates) on properties
-          "metadata": { "aggregates": [...] }   # per-polygon roll-up
+          "metadata": { "aggregates": [...],   # per-polygon roll-up
+                        "warnings": [...] }     # only when non-empty (#262)
         }
 
     Returns 503 if the shapely extras aren't installed (geopandas is already
@@ -709,12 +710,14 @@ def spatial_join():
         props["longitude"] = lon
         point_dicts.append(props)
 
+    warnings: list = []
     try:
         from utk_curio.backend.app.common.spatial import enrich_points_with_polygons
         enriched, aggregates = enrich_points_with_polygons(
             points=point_dicts,
             polygon_fc=polygons_fc,
             name_property=name_property,
+            warnings=warnings,
         )
     except ImportError as e:
         return jsonify({
@@ -742,8 +745,11 @@ def spatial_join():
             "properties": p,
         })
 
+    metadata = {"name": "spatial_join_result", "aggregates": aggregates}
+    if warnings:
+        metadata["warnings"] = warnings
     return jsonify({
         "type": "FeatureCollection",
         "features": out_features,
-        "metadata": {"name": "spatial_join_result", "aggregates": aggregates},
+        "metadata": metadata,
     })
