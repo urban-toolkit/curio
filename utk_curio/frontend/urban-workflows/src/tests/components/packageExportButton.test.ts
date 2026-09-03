@@ -96,11 +96,11 @@ describe("packagesApi.download", () => {
       ok: false,
       status: 404,
       headers: { get: () => null },
-      json: async () => ({ error: "package me.missing@1 is not installed" }),
+      json: async () => ({ error: "package me.missing@1 is neither installed nor in the catalog" }),
     }) as unknown as typeof fetch;
 
     await expect(packagesApi.download("me.missing@1")).rejects.toThrow(
-      "package me.missing@1 is not installed",
+      "package me.missing@1 is neither installed nor in the catalog",
     );
   });
 

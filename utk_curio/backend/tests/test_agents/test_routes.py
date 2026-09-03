@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 
 import pytest
 
-from utk_curio.backend.app.agents import ledger, storage
+from utk_curio.backend.app.agents import ledger, publications, storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 
@@ -8189,3 +8190,66 @@ class TestProviderModels:
     def test_requires_auth(self, client):
         assert client.post(self.URL, json={}).status_code == 401
 
+
+
+class TestReadDefinition:
+    """``GET /api/agents/definitions/<coord>`` reads from wherever the agent is (#275).
+
+    It read the user store only, so "View details -> Export" on the Agent
+    Catalog page - which lists the whole roster and the shared catalog - failed
+    for any agent this account had not imported, including every built-in, and
+    the page could only say "Export failed".
+    """
+
+    BUILTIN = "agent.node-researcher@1.0.0"
+
+    def test_a_builtin_is_readable_without_ever_importing_it(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        r = client.get(f"/api/agents/definitions/{self.BUILTIN}", headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        assert body["manifest"]["id"] == "agent.node-researcher"
+        assert body["manifest"]["provenance"]["trust"] == "built-in"
+        declared = {asset["path"] for asset in body["manifest"]["prompts"].values()}
+        assert declared, "a built-in declares its prompt files"
+        # Every declared prompt travels with its text, from llm-prompts/.
+        assert declared <= set(body["prompts"]), (declared, set(body["prompts"]))
+        assert all(body["prompts"][p].strip() for p in declared)
+
+    def test_an_owned_import_is_readable(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        coord = _write_def(user)
+        r = client.get(f"/api/agents/definitions/{coord}", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.get_json()["manifest"]["id"] == "agent.node-explainer"
+
+    def test_a_published_only_definition_is_readable(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        coord = _write_def(user, agent_id="agent.shared-only")
+        src = storage.agent_definition_dir(_user_dir_key(user), coord)
+        publications.publish_from_dir(src, coord)
+        shutil.rmtree(src)  # this account no longer holds a copy
+
+        r = client.get(f"/api/agents/definitions/{coord}", headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["manifest"]["id"] == "agent.shared-only"
+
+    def test_an_unknown_coordinate_is_still_404(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        r = client.get("/api/agents/definitions/agent.nope@1.0.0", headers=_auth(token))
+        assert r.status_code == 404
+        assert "agent.nope@1.0.0" in r.get_json()["error"]
+
+    def test_an_exported_builtin_round_trips_through_upload(self, client, user_and_token, tmp_curio):
+        """What Export writes for a built-in, Import accepts - under a new id."""
+        _, token = user_and_token
+        bundle = client.get(f"/api/agents/definitions/{self.BUILTIN}", headers=_auth(token)).get_json()
+        manifest = dict(bundle["manifest"])
+        manifest["id"] = "agent.node-researcher-copy"
+        manifest["provenance"] = {"publisher": "alice", "trust": "imported"}
+        r = client.post(
+            "/api/agents/imports/upload",
+            json={"manifest": manifest, "prompts": bundle["prompts"]},
+            headers=_auth(token),
+        )
+        assert r.status_code in (200, 201), r.get_json()

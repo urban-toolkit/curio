@@ -1140,3 +1140,72 @@ def test_catalog_install_replace_refreshes_behavior_bundle(
 
     served = client.get(bundle_url, headers=_auth(token)).get_data(as_text=True)
     assert "build 2" in served
+
+
+# ---------------------------------------------------------------------------
+# GET /api/packages/<dir>/archive for a package this account never installed
+# ---------------------------------------------------------------------------
+
+class TestExportFromTheCatalog:
+    """The catalog page exports every row it lists (#275).
+
+    ``export_packageage_archive`` read the user's store only, so "View details
+    -> Export" on a catalog row the account had not added answered
+    ``package X is not installed`` - true, and useless from a page whose whole
+    point is that the package is right there. The route now falls back to the
+    committed catalog copy.
+    """
+
+    #: In the shipped catalog, referenced by no example, so no seeder installs
+    #: it for a fresh account - the exact package the issue was filed against.
+    CATALOG_ONLY = "ai.urbanlab.uhvi@1"
+
+    def test_catalog_only_package_exports_the_catalog_copy(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        r = client.get(f"/api/packages/{self.CATALOG_ONLY}/archive", headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        assert r.mimetype == "application/zip"
+        assert f'filename="{self.CATALOG_ONLY}.curio.zip"' in r.headers["Content-Disposition"]
+        with zipfile.ZipFile(io.BytesIO(r.data)) as zf:
+            names = zf.namelist()
+            manifest = json.loads(zf.read("manifest.json"))
+        assert manifest["id"] == "ai.urbanlab.uhvi"
+        assert any(n.startswith("sources/") for n in names), names
+        # The installer's own record never travels in an archive.
+        assert "integrity.json" not in names
+
+    def test_an_installed_copy_still_wins(self, client, user_and_token, tmp_curio):
+        from utk_curio.backend.app.packages.installer import (
+            install_packageage_from_directory,
+            package_dir,
+        )
+        from utk_curio.backend.app.packages.routes import _catalog_root
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        user_key = _user_dir_key(user)
+        install_packageage_from_directory(user_key, _catalog_root() / self.CATALOG_ONLY)
+        # Change the installed copy so the two sources are distinguishable.
+        readme = package_dir(user_key, self.CATALOG_ONLY) / "README.md"
+        readme.write_text("installed copy", encoding="utf-8")
+
+        r = client.get(f"/api/packages/{self.CATALOG_ONLY}/archive", headers=_auth(token))
+        assert r.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(r.data)) as zf:
+            assert zf.read("README.md").decode("utf-8") == "installed copy"
+
+    def test_a_package_in_neither_place_is_still_404(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        r = client.get("/api/packages/me.missing@1/archive", headers=_auth(token))
+        assert r.status_code == 404
+        assert "neither installed nor in the catalog" in r.get_json()["error"]
+
+    def test_the_catalog_fallback_cannot_escape_the_catalog(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        # A dir name that fails the package grammar is refused before any path
+        # is built, so the fallback never resolves a path for it. (A literal
+        # ``../`` never reaches the route: the router rejects it first.)
+        for bad in ("..@1", ".@1", "..%5C..%5Cetc@1"):
+            r = client.get(f"/api/packages/{bad}/archive", headers=_auth(token))
+            assert r.status_code == 404, (bad, r.status_code)
+            assert "error" in (r.get_json() or {}), bad

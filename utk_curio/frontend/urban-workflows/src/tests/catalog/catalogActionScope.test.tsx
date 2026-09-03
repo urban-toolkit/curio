@@ -490,6 +490,15 @@ describe("all three catalogs have a details view, and it is the same shape", () 
     expect(src).toContain("styles.exportButton");
   });
 
+  test("an agent export failure says what the server said, beside the button (#275)", () => {
+    // It used to be a bare `catch {}` writing "Export failed." into the Prompts
+    // section - the reason discarded, the message nowhere near the button.
+    const src = read("components/agents/catalog/AgentDetailModal.tsx");
+    expect(src).toContain("err instanceof Error");
+    expect(src).toContain("data-curio-export-error");
+    expect(src).not.toMatch(/catch \{\s*setBundleError\("Export failed\."\)/);
+  });
+
   test("the agent details view shows the prompts, which ARE the agent", () => {
     // `AgentCard` is a summary and carries no prompt text, so the details
     // screen described an agent's behaviour without showing the prompts that
