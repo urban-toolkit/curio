@@ -800,10 +800,9 @@ class CatalogMutations:
 
         Best-effort: any failure (still-referenced, usage lookup error, or a
         locked file) leaves the folder in place and never fails the uninstall.
-        Archived projects count as users — their refs must keep resolving when
-        the project is restored (#176)."""
+        Every project the user has counts as a user of the dataset (#176)."""
         try:
-            still_used = self._owner.dataset_usage(dataset_id, include_archived=True)
+            still_used = self._owner.dataset_usage(dataset_id)
         except Exception:  # noqa: BLE001 – if usage can't be resolved, keep the folder
             return
         if still_used:
@@ -1033,20 +1032,20 @@ class CatalogMutations:
                 raise
 
         # 2. Remove the dataset's references from every dataflow that holds any
-        #    (archived included, #176) — both the ``dataflow.datasets`` ref and
-        #    node-level ``metadata.datasetRefs`` bindings — so no project is
-        #    left pointing at a deleted asset.
+        #    (#176) — both the ``dataflow.datasets`` ref and node-level
+        #    ``metadata.datasetRefs`` bindings — so no project is left pointing
+        #    at a deleted asset.
         removed_from: list[str] = []
         try:
-            usages = self._owner.dataset_usage(dataset_id, include_archived=True)
+            usages = self._owner.dataset_usage(dataset_id)
         except Exception:  # noqa: BLE001 – best-effort; still delete the asset
             usages = []
         for usage in usages:
             df_id = usage.get("dataflowId") if isinstance(usage, dict) else None
             if not df_id:
                 continue
-            # Per-dataflow isolation: one unreadable (possibly archived) spec
-            # must not abort the cascade for the others.
+            # Per-dataflow isolation: one unreadable spec must not abort the
+            # cascade for the others.
             try:
                 if self.installed.remove_dataset_references(df_id, dataset_id):
                     removed_from.append(df_id)

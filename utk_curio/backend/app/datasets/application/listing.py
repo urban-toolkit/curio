@@ -744,9 +744,7 @@ class CatalogListing:
             "path": resolved,
         }
 
-    def dataset_usage(
-        self, dataset_id: str, *, include_archived: bool = False
-    ) -> list[dict[str, Any]]:
+    def dataset_usage(self, dataset_id: str) -> list[dict[str, Any]]:
         """Dataflows across the user's projects that use *dataset_id*.
 
         Powers the standalone catalog detail page, which has no live canvas:
@@ -757,11 +755,14 @@ class CatalogListing:
         ``[{dataflowId, dataflowName, nodeCount, nodes: [{nodeId, nodeType}]}]``
         sorted by name.
 
-        *include_archived* widens the scan to archived (soft-deleted) projects.
-        The public ``/usage`` endpoint stays active-only (archived rows would
-        reference un-openable projects in the UI), but destructive gates -
-        delete's ref strip and uninstall's orphan-dir check - must see archived
-        refs too, or they destroy data an archived project still uses (#176).
+        Scans every project the user has. This used to take an
+        *include_archived* flag: the destructive gates - delete's ref strip and
+        uninstall's orphan-dir check - had to widen the scan to archived
+        projects or they destroyed data an archived project still used (#176).
+        Archive was removed in #261 and its migration purged every archived
+        row, so there is no longer a class of project this scan can miss. **If
+        a soft-deleted or hidden project state is ever reintroduced, this scan
+        must see it** - that is what #176 was about.
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
@@ -769,9 +770,8 @@ class CatalogListing:
         from utk_curio.backend.app.projects import storage as project_storage
 
         user_key = self._paths._user_key()
-        scope = "all" if include_archived else "mine"
         usages: list[dict[str, Any]] = []
-        for project in projects_repo.list_for_user(self.user.id, scope=scope):
+        for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
             consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id, project.id)
             if consumers is None:

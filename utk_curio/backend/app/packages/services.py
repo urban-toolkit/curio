@@ -941,7 +941,7 @@ def prune_unreferenced_packages(
 
     For each candidate dirName:
       - Skip if it's the builtin (never prunable).
-      - Scan all of the user's non-archived projects' lockfiles.
+      - Scan all of the user's projects' lockfiles.
       - If no project references it, delete from user store AND remove from
         defaults. (Defaults exists explicitly to keep something seeded into
         new projects — if nothing actually uses it, the seed has no future
