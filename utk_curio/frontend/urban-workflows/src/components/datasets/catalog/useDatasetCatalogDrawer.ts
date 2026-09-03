@@ -215,8 +215,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         notifyDatasetCatalogRefresh();
         showToast(
           isGroup
-            ? `Added ${installedItems.length} layers from ${dataset.title} to this dataflow.`
-            : `Added ${dataset.title} to this dataflow.`,
+            ? `Added ${installedItems.length} layers from ${dataset.title} to this project.`
+            : `Added ${dataset.title} to this project.`,
           "success",
         );
       } catch (err) {
@@ -240,8 +240,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       setConfirmAction({
         title: `Add ${title}?`,
         body: isGroup
-          ? `Add all ${layerCount} layers from ${title} to this dataflow?`
-          : `Add ${title} to this dataflow?`,
+          ? `Add all ${layerCount} layers from ${title} to this project?`
+          : `Add ${title} to this project?`,
         confirmLabel: "Add to project",
         destructive: false,
         run: () => performInstall(dataset),
@@ -275,8 +275,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         const title = datasetDisplayTitle(dataset);
         showToast(
           isGroup
-            ? `Removed ${title} (${memberIds.length} layers) from this dataflow.`
-            : `Removed ${title} from this dataflow.`,
+            ? `Removed ${title} (${memberIds.length} layers) from this project.`
+            : `Removed ${title} from this project.`,
           "success",
         );
       } catch (err) {
@@ -324,10 +324,10 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       setConfirmAction({
         title: `Remove ${title}?`,
         body: alsoDeletes
-          ? `Remove ${title} from this dataflow?
+          ? `Remove ${title} from this project?
 
 No other dataflow uses it, so the uploaded file is also deleted from your Data Catalog.`
-          : `Remove ${title} from this dataflow?
+          : `Remove ${title} from this project?
 
 The dataset stays in your Data Catalog and in any other dataflow using it.`,
         confirmLabel: alsoDeletes ? "Remove and delete" : "Remove",

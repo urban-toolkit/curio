@@ -27,9 +27,6 @@ export interface PackageCardProps {
   busy: boolean;
   /** When set, this card's secondary actions show a busy state. */
   cardActionDir?: string | null;
-  /** Whether shared-catalog writes are allowed on this server. */
-  /** True when the package exists in the shared catalog (drives the Published badge). */
-  /** When set, this card's Publish pill shows a busy state. */
   onInstall: (pkg: PackagePayload) => void;
   onUninstall?: (pkg: PackagePayload) => void;
   /** False in a dataflow that has not been saved yet. Only wording now: the
@@ -38,7 +35,6 @@ export interface PackageCardProps {
    *  be removable from it (#220). */
   hasProject?: boolean;
   onOpenDetails?: (pkg: PackagePayload) => void;
-  /** Supplied on the /catalog page surface; when omitted, the Publish pill is hidden. */
 }
 
 export const PackageCard: React.FC<PackageCardProps> = ({
@@ -177,11 +173,18 @@ export const PackageCard: React.FC<PackageCardProps> = ({
             <button
               type="button"
               className={styles.btnSecondary}
+              /* Not gated on `hasProject`, matching its two peers. This branch
+                 IS reachable before the first save: `projectInstalledDirs`
+                 falls back to the account defaults when there is no project, so
+                 a default package renders Remove on an unsaved dataflow - and
+                 the gate then left a disabled control and nothing else, the
+                 same dead end as the Agent and Data cards (#190, #199).
+                 `performUninstall` saves the dataflow on the click now. */
               disabled={cardBusy}
               title={
                 hasProject
                   ? `Remove ${pkg.name} from this project`
-                  : `Remove ${pkg.name} from this dataflow (saves the dataflow first)`
+                  : `Remove ${pkg.name}; this saves the dataflow first`
               }
               onClick={() => onUninstall(pkg)}
             >

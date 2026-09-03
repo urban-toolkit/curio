@@ -320,8 +320,13 @@ class CatalogListing:
         if group_osm:
             items = collapse_osm_groups(items)
 
-        if q:
-            needle = q.casefold()
+        # Surrounding whitespace is not part of the needle (#231). Settled here,
+        # the single chokepoint, because the two callers disagreed: the HTTP route
+        # passes ``request.args`` through raw while the agent tool (``agents/tools
+        # .py::_param``) already strips. A whitespace-only query is therefore no
+        # query at all, rather than one that matches nothing.
+        needle = (q or "").strip().casefold()
+        if needle:
             items = [
                 item for item in items
                 if needle in " ".join([

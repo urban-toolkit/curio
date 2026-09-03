@@ -22,6 +22,7 @@ from __future__ import annotations
 import io
 
 import pytest
+from utk_curio.backend.app.common.user_storage import users_base
 
 
 def _auth(token):
@@ -294,7 +295,7 @@ def test_a_corrupt_defaults_file_reads_as_empty(tmp_path, monkeypatch):
     from utk_curio.backend.app.datasets import defaults as dataset_defaults
 
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
-    path = tmp_path / ".curio" / "users" / "guest" / "default-datasets.json"
+    path = users_base() / "guest" / "default-datasets.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{not json at all", encoding="utf-8")
 
@@ -307,7 +308,7 @@ def test_junk_entries_are_filtered_not_trusted(tmp_path, monkeypatch):
     from utk_curio.backend.app.datasets import defaults as dataset_defaults
 
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
-    path = tmp_path / ".curio" / "users" / "guest" / "default-datasets.json"
+    path = users_base() / "guest" / "default-datasets.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         '{"version": 1, "datasets": ["imported.ok@1", "../../etc/passwd", "", 7,'
@@ -325,7 +326,7 @@ def test_saving_is_sorted_deduped_and_atomic(tmp_path, monkeypatch):
     dataset_defaults.save_dataset_defaults(
         "guest", ["imported.b@1", "imported.a@1", "imported.b@1"]
     )
-    path = tmp_path / ".curio" / "users" / "guest" / "default-datasets.json"
+    path = users_base() / "guest" / "default-datasets.json"
     import json
 
     payload = json.loads(path.read_text(encoding="utf-8"))

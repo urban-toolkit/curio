@@ -209,6 +209,10 @@ class CatalogMutations:
     def publish_dataset(self, dataset_id: str, metadata: dict[str, Any], *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root
 
+        # Publishing writes into the shared catalog tree, which every account
+        # reads. Gate it on the account before anything is computed (#222).
+        self._assert_can_manage_shared_catalog("publish")
+
         item = deepcopy(self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs))
         for key in ("title", "description", "license", "tags"):
             if key in metadata:
@@ -243,6 +247,12 @@ class CatalogMutations:
 
         dir_name = f"{catalog_id}@1"
         dest = catalog_root() / dir_name
+        # Publishing is a write to a path derived from the dataset id, so two
+        # accounts can land on the same ``dest``. Check the incumbent's manifest
+        # BEFORE mkdir: creating the tree first is itself a mutation, so a
+        # refusal that runs after it has already damaged the entry it refused
+        # to touch (#222).
+        self._assert_can_publish_to(dest, catalog_id)
         (dest / "data").mkdir(parents=True, exist_ok=True)
 
         # Copy data file into the catalog data/ subdirectory. A publishable
@@ -810,6 +820,61 @@ class CatalogMutations:
         except Exception:  # noqa: BLE001
             pass
 
+    def _assert_can_manage_shared_catalog(self, verb: str) -> None:
+        """Raise 403 unless the caller is an account that may write shared state.
+
+        Separate from :meth:`_assert_is_publisher`, which asks "is this yours?".
+        This asks the prior question: is the caller an identity ownership can be
+        attributed to at all? Every guest sign-in resolves to one shared ``User``
+        row, so for a guest the answer is no and no ownership check downstream
+        can recover it.
+        """
+        from utk_curio.backend.app.users.capabilities import can_manage_shared_catalog
+
+        if not can_manage_shared_catalog(self.user):
+            raise DatasetCatalogError(
+                f"Guest sessions share one account, so they cannot {verb} "
+                f"datasets in the shared Data Catalog. Sign in to {verb}.",
+                403,
+            )
+
+    def _assert_can_publish_to(self, dest: "Path", catalog_id: str) -> None:
+        """Raise 403 when *dest* is already published by someone else.
+
+        The publish path is derived from the dataset id, so two accounts can
+        resolve to the same directory. Without this, publishing was an
+        unauthenticated overwrite of whatever was already there: the reporter of
+        #222 guessed a missing server-side check and this was it.
+
+        A *free* destination is the normal case and passes. So does one this
+        caller published -- republishing your own dataset is how an update is
+        applied. Mirrors :meth:`_assert_is_publisher` deliberately, including
+        failing closed on an unreadable manifest.
+        """
+        from utk_curio.backend.app.datasets.domain.manifest import (
+            ManifestError,
+            load_dataset_manifest_from_dir,
+        )
+
+        if not (dest / "manifest.json").is_file():
+            # Nothing published here (or a leftover with no recorded owner):
+            # there is no incumbent to protect.
+            return
+        caller = str(self.user) if self.user is not None else None
+        try:
+            publisher = load_dataset_manifest_from_dir(dest).publisher
+        except (ManifestError, OSError, ValueError):
+            # Present but unreadable -> the owner is unknowable, so fail closed
+            # rather than let a truncated manifest become an overwrite vector.
+            publisher = None
+        if not caller or publisher != caller:
+            raise DatasetCatalogError(
+                f"'{catalog_id}' is already published by someone else. "
+                f"Publish it under a different name, or ask its publisher to "
+                f"update it.",
+                403,
+            )
+
     def _assert_is_publisher(self, catalog_dir: "Path", dataset_id: str) -> None:
         """Raise 403 unless the caller published *catalog_dir*.
 
@@ -871,6 +936,17 @@ class CatalogMutations:
             raise DatasetCatalogError(f"Dataset '{dataset_id}' is not in the Data Catalog", 404)
 
         dir_name = catalog_dir.name
+
+        # Account gate, ahead of the ownership gate rather than instead of it.
+        # ``_assert_is_publisher`` skips a directory with no manifest so legacy
+        # leftovers stay removable, and it compares ``str(user)`` -- the same
+        # string for every shared guest. Both are right for a real account and
+        # both are holes for the guest, so the guest is refused first (#222).
+        #
+        # Placed AFTER the 404 above on purpose: ``delete_dataset`` cascades
+        # through here and re-raises a 403, so gating before the lookup would
+        # stop a guest deleting a dataset of their own that was never published.
+        self._assert_can_manage_shared_catalog("unpublish")
 
         # Ownership gate (security): only the user who published this dataset may
         # remove it from the SHARED catalog tree. Without this, any authenticated

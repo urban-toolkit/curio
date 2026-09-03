@@ -165,8 +165,19 @@ function TrillProvenanceGraph({ open }: { open: boolean }) {
             // already uses for a React Flow nested inside the canvas.
             noPanClassName="inner-nopan"
             noWheelClassName="inner-nowheel"
-            // The default floor of 0.5 clamps fitView, so a long version chain still
-            // could not be framed inside the modal.
+            // Below React Flow's 0.5 floor, which clamped fitView so hard that a
+            // dozen versions overflowed the modal.
+            //
+            // It does NOT frame every chain, and the comment here used to claim
+            // it did. Opening a large example synthesises one version per node
+            // and per edge, so `05-vega-lite-multi-view-drilldown` has 50 of
+            // them; at dagre's 180px rank spacing that is ~8940px of content in
+            // a ~619px pane, needing ~0.046. Measured, this floor frames 34 of
+            // 50 and 33 of 51 on the two biggest examples. Going lower is not
+            // the fix: at 0.046 a card is a 7px sliver, an overview that shows
+            // nothing. Panning reaches every version, which is what #187 asked
+            // for; if the chain length itself becomes the problem, the answer is
+            // to record fewer versions for a load, not to zoom out further.
             minZoom={0.1}
             fitView
             fitViewOptions={{ padding: 0.25 }}

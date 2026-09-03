@@ -25,6 +25,7 @@ import shellStyles from "../catalog/CatalogMasterPage.module.css";
 import styles from "./ProjectsBrowseLayout.module.css";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import PromptDialog from "../../components/PromptDialog";
+import { UNREADABLE_FILE_MESSAGE } from "../../utils/dataflowImport";
 
 type ViewMode = "grid" | "list";
 type FilterTab = "all" | "recent" | "archived";
@@ -71,6 +72,7 @@ function edgeCount(project: ProjectSummary): number {
 
 const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
+  const { showToast } = useToastContext();
   // Every scope is held at once so the rail can show counts and switching
   // filters does not wait on a round trip.
   const [byTab, setByTab] = useState<Record<FilterTab, ProjectSummary[]>>({
@@ -92,7 +94,6 @@ const ProjectsList: React.FC = () => {
   // #197: the rename prompt and the delete confirmation are app modals now,
   // each holding the project it was opened for.
   const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
-  const { showToast } = useToastContext();
   const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
   // The project an action is currently running against. A purge can take a
   // while, and the buttons were re-clickable throughout.
@@ -120,13 +121,16 @@ const ProjectsList: React.FC = () => {
     return () => document.removeEventListener("click", dismiss);
   }, [contextMenu]);
 
-  const filtered = useMemo(
-    () =>
-      byTab[filter].filter((p) =>
-        p.name.toLowerCase().includes(search.toLowerCase())
-      ),
-    [byTab, filter, search]
-  );
+  const filtered = useMemo(() => {
+    // Trim first, the same normalization the catalog predicates this page's chrome
+    // mirrors already do (packageUtils.matchesSearch, agentListUtils.matchesAgentSearch)
+    // - so a name pasted with a trailing space still matches (#231). No empty-query
+    // short-circuit: `"anything".includes("")` is already true, and keeping the
+    // `.filter()` keeps `filtered` a fresh array every render, which is what the
+    // tri-state auto-select effect below is written against.
+    const needle = search.trim().toLowerCase();
+    return byTab[filter].filter((p) => p.name.toLowerCase().includes(needle));
+  }, [byTab, filter, search]);
 
   // Mirrors the catalog browse pages: the first item is selected so the detail
   // drawer arrives populated instead of empty.
@@ -238,23 +242,46 @@ const ProjectsList: React.FC = () => {
     }
   };
 
+  // Same silence as the canvas's "Load dataflow" had (#238): a notebook that
+  // would not parse produced a console line and a projects list that simply did
+  // not grow, which reads as the click having missed.
   const handleNotebookImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (event: ProgressEvent<FileReader>) => {
+      let json: Record<string, unknown>;
       try {
-        const json = JSON.parse(event.target?.result as string) as Record<string, unknown>;
+        json = JSON.parse(event.target?.result as string) as Record<string, unknown>;
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error("Failed to import Jupyter notebook:", err);
+        showToast(
+          `That file is not valid JSON, so it could not be imported (${detail}).`,
+          "error",
+        );
+        return;
+      }
+      try {
         const trillSpec = await notebookToTrill(json, process.env.BACKEND_URL as string);
         const name = file.name.replace(/\.ipynb$/i, "");
         await projectsApi.create({ name, spec: trillSpec as unknown as Record<string, unknown>, outputs: [] });
         loadProjects();
       } catch (err) {
+        // Was console-only: picking a file and getting no response at all
+        // reads as a broken button, and a malformed .ipynb is the common case.
         console.error("Failed to import Jupyter notebook:", err);
+        showToast(
+          (err as Error)?.message ||
+            "That notebook could not be converted into a dataflow.",
+          "error",
+        );
       }
     };
-    reader.onerror = (event: ProgressEvent<FileReader>) =>
+    reader.onerror = (event: ProgressEvent<FileReader>) => {
       console.error("Error reading notebook file:", event.target?.error);
+      showToast(UNREADABLE_FILE_MESSAGE, "error");
+    };
     reader.readAsText(file);
   };
 
@@ -372,7 +399,10 @@ const ProjectsList: React.FC = () => {
 
           {filtered.length === 0 ? (
             <div className={browseStyles.empty}>
-              {search
+              {/* `search.trim()`, matching the needle above: a whitespace-only box
+                  is not a filter, so an empty account must not be told its
+                  projects were filtered out (#231). */}
+              {search.trim()
                 ? "No projects match the current filters."
                 : "No projects yet. Create a new dataflow!"}
             </div>

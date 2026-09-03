@@ -57,6 +57,12 @@ SEARCH_PLACEHOLDER = "Search datasets, publishers, tags…"
 # title as the real card, so every card locator has to exclude it.
 CARD = 'article:not([role="status"])'
 
+#: The formats the Data Catalog's rail offers, in its own order. Mirrors
+#: ``FORMAT_FILTERS`` in pages/dataHub/dataHubBrowseConstants.ts - the chip row
+#: is derived from these, so the expected chip set is derivable from the facet
+#: counts alone (#232).
+RAIL_FORMATS = ("geojson", "csv", "json", "parquet", "geotiff", "shp")
+
 
 def _one_node_spec() -> dict:
     """A single node so the canvas is not empty.
@@ -438,3 +444,106 @@ beta,2
         page.locator(f'#datasets-palette [data-dataset-id="{dataset_id}"]')
     ).to_have_count(1, timeout=20000)
 
+
+
+def test_quick_filters_cover_every_populated_format(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """#232: the /catalog/data quick-filter chips were a hardcoded three.
+
+    The page renders format filters twice - a sidebar rail derived from the live
+    ``facets.format`` counts, and a chip row above the cards that was a literal
+    ``["geojson", "csv", "json"]``. So the chips advertised JSON with zero
+    datasets while hiding Parquet and GeoTIFF, both of which the rail beside them
+    was counting off the shipped ``datasets/`` folder.
+
+    Chips are located by accessible NAME, never by index: the set is derived from
+    the catalog now, so a positional locator would silently follow the data.
+    """
+    require_project_page()
+    require_user_auth()
+
+    session = _enter_dataflow(
+        page, app_frontend, current_server,
+        username="quickfilters", project="Quick Filters",
+    )
+    token = session["token"]
+    # Absorb the cold webpack compile HERE, on the canvas, the way the rest of
+    # this suite does. The fixture's readiness gate is port-based, and
+    # webpack-dev-server opens its port before the first build finishes - so on
+    # a loaded machine the first navigation of a run can outrun the bundle, and
+    # every later wait then expires against a page React never mounted.
+    page.wait_for_selector(".react-flow__node", timeout=90000)
+
+    page.goto(f"{app_frontend.base_url}/catalog/data")
+    # `networkidle`, not `domcontentloaded`: the page renders its rail and chips
+    # from the catalog listing, so the markup this test reads does not exist
+    # until that request has come back. On a loaded machine the difference is
+    # the whole test.
+    page.wait_for_load_state("networkidle")
+    expect(
+        page.get_by_role("heading", name="Data Catalog", exact=True)
+    ).to_be_visible(timeout=30000)
+
+    # Located by data attribute, not by class: CSS Modules hashes every class
+    # name, so a `[class*=...]` selector matches nothing in a real build - a trap
+    # this suite has been caught by before (see test_tools_rail_fits.py).
+    bar = page.locator('[data-curio-catalog-filter-bar="true"]')
+    expect(bar).to_be_visible(timeout=20000)
+    chip = lambda fmt: bar.locator(f'[data-curio-format-chip="{fmt}"]')
+
+    # Gate on a derived chip, not a timeout: the row renders off the facets, so
+    # it is empty until the first listing lands.
+    expect(chip("geojson")).to_have_count(1, timeout=20000)
+
+    # The contract, not the fixture: the chip row must be exactly the rail
+    # formats that hold datasets. An earlier version of this test hardcoded
+    # "JSON must be absent", which is only true of a pristine catalog - in a
+    # full-suite run another test had published a JSON dataset to the shared
+    # hub, so JSON legitimately had a chip and the assertion failed on correct
+    # behaviour. Reading the same facet counts the page reads keeps it honest
+    # whatever else the suite has left lying around.
+    facets = api_json(f"{current_server}/api/datasets/catalog", token)["facets"]["format"]
+    expected = [f for f in RAIL_FORMATS if facets.get(f, 0) > 0]
+    offered = bar.locator("[data-curio-format-chip]").evaluate_all(
+        "els => els.map(e => e.getAttribute('data-curio-format-chip'))"
+    )
+    assert offered == expected, (
+        f"chips {offered} do not match the populated formats {expected} "
+        f"(facet counts: {facets})"
+    )
+
+    # ...and the shipped catalog must actually exercise the bug, or the check
+    # above could pass vacuously. Parquet and GeoTIFF are the two formats the
+    # hardcoded list could never show, and both ship with datasets.
+    for populated in ("parquet", "geotiff"):
+        assert facets.get(populated, 0) > 0, (
+            f"{populated} has no datasets, so this test cannot prove #232"
+        )
+        expect(chip(populated)).to_have_count(1)
+
+    # Every dot must actually be painted. A format-keyed class with no CSS rule
+    # resolves to "" and renders an invisible 8px dot - jest cannot catch that at
+    # all, because CSS modules are mapped to identity-obj-proxy there.
+    for populated in offered:
+        colour = chip(populated).locator("[data-curio-format-chip-dot]").evaluate(
+            "el => getComputedStyle(el).backgroundColor"
+        )
+        assert colour not in ("rgba(0, 0, 0, 0)", "transparent"), (
+            f"the {populated} chip's dot is transparent ({colour!r}) - its "
+            f".chipDot_* rule is missing"
+        )
+
+    # Selecting a format must not collapse the row. The facets are computed
+    # BEFORE the format filter is applied (listing.py), and this is what pins
+    # that ordering: move the facet call below the filter and this fails.
+    chip("parquet").click()
+    # If any of these disappears, the facets are being computed AFTER the format
+    # filter instead of before it, and the chip row has become self-erasing.
+    page.wait_for_timeout(1000)
+    after = bar.locator("[data-curio-format-chip]").evaluate_all(
+        "els => els.map(e => e.getAttribute('data-curio-format-chip'))"
+    )
+    assert after == offered, (
+        f"selecting Parquet changed the chip row from {offered} to {after}"
+    )

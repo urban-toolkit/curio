@@ -162,6 +162,8 @@
     "task": "",
     "timestamp": 1778306678524,
     "provenance_id": "Street-level computer vision",
-    "packages": []
+    "packages": [
+      "curio.streetvision@1"
+    ]
   }
 }

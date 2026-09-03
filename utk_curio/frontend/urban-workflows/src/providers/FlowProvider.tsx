@@ -160,6 +160,8 @@ interface FlowContextProps {
     viewerMode: "owner" | "shared";
 
     // Project operations
+    /** Rename the open dataflow, writing BOTH name stores (#230). False if blank. */
+    renameDataflow: (name: string) => boolean;
     saveCurrentProject: (nameOverride?: string) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
@@ -282,6 +284,7 @@ export const FlowContext = createContext<FlowContextProps>({
     projectSavedAt: null,
     nodeExecStatus: {},
     viewerMode: "owner",
+    renameDataflow: () => false,
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
