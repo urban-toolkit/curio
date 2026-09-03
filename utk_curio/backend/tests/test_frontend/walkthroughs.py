@@ -1225,7 +1225,7 @@ def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="autark-without-webgpu-says-so",
-    refs=[201],
+    refs=[201, 272],
     title="An Autark node on a browser without WebGPU",
     premise="Run an Autark node where WebGPU is unavailable, and read the node.",
     note="Nothing asked whether the browser had WebGPU. The library swallows "
@@ -1233,8 +1233,12 @@ def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
          "`this._renderer.device.createShaderModule`, throwing a TypeError - "
          "and with no error boundary anywhere, that throw unmounted the whole "
          "React root and left a blank page. The node now checks first, says "
-         "what is missing and what to do about it, and the canvas survives.",
+         "what is missing and what to do about it, and the canvas survives. "
+         "Since #272 the answer is not final either: the panel's Check again "
+         "re-probes, because Firefox returns no adapter on the first ask while "
+         "its GPU process starts, and a negative is never cached.",
     tests=["src/tests/adapters/node/autkGrammarWebgpuFallback.test.tsx",
+           "src/tests/utils/webgpuSupport.test.ts",
            "src/tests/components/errorBoundary.test.tsx"],
     example=AUTARK_EXAMPLE,
     max_diff_ratio=0.05,
@@ -1245,9 +1249,11 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     # Take WebGPU away in the page itself. `add_init_script` would need to run
     # before navigation and the runner has already navigated, so the property is
     # redefined in place - the probe reads it at run time, not at load time.
+    # The real object is stashed so the recovery half below can hand it back.
     page.evaluate(
-        "() => Object.defineProperty(navigator, 'gpu',"
-        " { configurable: true, value: undefined })"
+        "() => { window.__curioRealGpu = navigator.gpu;"
+        " Object.defineProperty(navigator, 'gpu',"
+        " { configurable: true, value: undefined }); }"
     )
     ctx.say("A browser with no WebGPU",
             "Firefox and Safari today; Chrome on a blocklisted driver.")
@@ -1283,6 +1289,92 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
         "the canvas lost its nodes, so the throw was not contained"
     )
     expect(page.locator("#tools-menu")).to_be_visible()
+    assert not errors, f"an uncaught page error escaped: {errors}"
+
+    # A refusal did not wedge the runner (#271): the run-all control still
+    # offers a run rather than a cancel, i.e. the guard was released.
+    expect(page.get_by_role("button", name="Run all nodes")).to_be_visible()
+
+    # Check again while WebGPU is still missing: the panel stays.
+    check_again = fallback.first.get_by_role("button", name=re.compile("check", re.I))
+    check_again.wait_for(state="visible", timeout=5000)
+    ctx.focus(check_again, hold=900)
+    ctx.say("Ask again", "Nothing has changed yet, so the answer is the same.")
+    check_again.click()
+    expect(fallback.first).to_be_visible()
+    ctx.capture("webgpu-check-again")
+
+    # Now WebGPU is back - the pref was flipped, or Firefox's GPU process came
+    # up. The first version of the probe had memoised its "no" for the life of
+    # the page, so this click would have changed nothing (#272).
+    page.evaluate(
+        "() => Object.defineProperty(navigator, 'gpu',"
+        " { configurable: true, value: window.__curioRealGpu })"
+    )
+    ctx.say("WebGPU is back", "Check again re-probes and re-runs the node.")
+    check_again.click()
+    expect(fallback.first).to_be_hidden(timeout=45000)
+    wait_for_node_done(page, node_id, node_type="autk-grammar", timeout_ms=180000)
+    ctx.focus(autark, hold=1200)
+    ctx.capture("webgpu-recovered")
+    assert not errors, f"an uncaught page error escaped during recovery: {errors}"
+
+
+@walkthrough(
+    slug="run-all-survives-a-failed-node",
+    refs=[271],
+    title="Run All after a node fails",
+    premise="Run all nodes where one Autark node cannot run, then run all again.",
+    note="The runner waited for every node in a level to report success or "
+         "error, and the guard that refused a second run lived in a ref. A node "
+         "that never reported - an Autark node whose WebGPU init threw in a "
+         "render, or whose probe hung - held the run, and every later click on "
+         "Run All or a node's play silently did nothing until the dataflow was "
+         "reopened. The run now always ends, the button shows a run in flight "
+         "and cancels it, and a refused second click says so.",
+    tests=["src/tests/providers/playAllRelease.test.tsx",
+           "src/tests/components/toolsMenuRunAll.test.tsx",
+           "src/tests/adapters/node/autkGrammarWebgpuFallback.test.tsx"],
+    example=AUTARK_EXAMPLE,
+    max_diff_ratio=0.05,
+)
+def run_all_survives_a_failed_node(ctx: Ctx) -> None:
+    page = ctx.page
+    page.evaluate(
+        "() => Object.defineProperty(navigator, 'gpu',"
+        " { configurable: true, value: undefined })"
+    )
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    node_id = first_node_of_type(AUTARK_EXAMPLE, "autk-grammar", containing='"map"')
+    autark = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    autark.wait_for(state="visible", timeout=45000)
+
+    run_all = page.get_by_role("button", name="Run all nodes")
+    ctx.focus(run_all, hold=900)
+    ctx.say("Run all nodes", "One of them cannot run here.")
+    run_all.click()
+
+    # While the run is in flight the same button offers to cancel it.
+    cancel = page.get_by_role("button", name="Cancel run")
+    cancel.wait_for(state="visible", timeout=15000)
+    ctx.capture("run-in-flight")
+
+    # The Autark node refuses, and reports it - which is what releases its level.
+    autark.locator('[role="alert"]').first.wait_for(state="visible", timeout=45000)
+
+    # The run ends on its own: the button is Run All again, not a dead control.
+    run_all.wait_for(state="visible", timeout=180000)
+    ctx.focus(run_all, hold=1200)
+    ctx.say("The run ended", "A failed node no longer holds every later run hostage.")
+    ctx.capture("run-ended")
+
+    # And a second run is accepted - the guard was released, not wedged.
+    run_all.click()
+    cancel.wait_for(state="visible", timeout=15000)
+    cancel.click()
+    expect(run_all).to_be_visible()
     assert not errors, f"an uncaught page error escaped: {errors}"
 
 
