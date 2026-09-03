@@ -1286,6 +1286,52 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     assert not errors, f"an uncaught page error escaped: {errors}"
 
 
+STREET_VISION_EXAMPLE = "10-street-vision-cv-analysis.json"
+
+
+@walkthrough(
+    slug="street-vision-example-loads-its-boundaries",
+    refs=[276],
+    title="The street-vision example's first node runs on a fresh install",
+    premise="Open the curated street-vision example and run its first node.",
+    note="The example fetched Chicago's neighborhood boundaries from a Socrata "
+         "id the portal has since retired, so a curated example failed on its "
+         "very first node with a 404 - and the node after it then blamed its "
+         "wiring. The layer now ships in the Data Catalog and the node reads it "
+         "with curio_dataset_path, so the run is offline and deterministic.",
+    tests=["utk_curio/backend/tests/test_frontend/test_examples.py"],
+    example=STREET_VISION_EXAMPLE,
+    # The scene frames the loader node itself; the harness must not re-fit.
+    fit_reactflow=False,
+    max_diff_ratio=0.05,
+)
+def street_vision_example_loads_its_boundaries(ctx: Ctx) -> None:
+    page = ctx.page
+
+    node_id = first_node_of_type(
+        STREET_VISION_EXAMPLE, "data-loading",
+        containing="data.cityofchicago.neighborhoods",
+    )
+    node = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    node.wait_for(state="visible", timeout=45000)
+    node.scroll_into_view_if_needed()
+    ctx.focus(node, hold=1000)
+    ctx.say("The first node of the street-vision example",
+            "It used to fetch a live URL that no longer exists.")
+
+    text = run_node_and_wait(page, node_id, node_type="data-loading", timeout_ms=180000)
+    assert "Saved to file" in text, (
+        f"the boundaries loader should have produced an artifact, got {text!r}"
+    )
+    # At fit-view this eight-node canvas makes the loader a thumbnail; the
+    # output line is the claim, so frame the node before pinning it.
+    frame_node(page, node_id, zoom=1.1)
+    ctx.focus(node, hold=1200)
+    ctx.say("Loaded from the Data Catalog",
+            "98 neighborhood polygons, no network involved.")
+    ctx.capture("boundaries-loaded")
+
+
 PBF_EXAMPLE = "11-autark-pbf-loading.json"
 
 
@@ -1313,6 +1359,9 @@ def autark_data_node_says_what_it_loaded(ctx: Ctx) -> None:
     node.scroll_into_view_if_needed()
     ctx.focus(node, hold=1000)
 
+    # The body lives in the editor's Output pane; before a run the grammar
+    # tab is the active one, so open the pane the way a user would.
+    node.locator('.nav-link[data-rr-ui-event-key="output"]').first.click()
     before = node.locator('[data-curio-node-empty="upstream-not-run"]')
     before.first.wait_for(state="visible", timeout=15000)
     assert "loads data" in (before.first.inner_text() or ""), (
