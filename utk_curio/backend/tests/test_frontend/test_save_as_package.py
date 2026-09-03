@@ -248,14 +248,17 @@ def test_save_node_as_package_export_then_load_back(
 
     assert upload.value.status == 201, upload.value.text()[:500]
 
-    # 9. It is a real installed package now: listed under "In project" (which
-    #    renders MyPackagesList, so the per-row Remove label is the stable hook)
-    #    and present in the palette, since onPickArchive also writes the lockfile.
+    # 9. It is a real installed package now: listed under "In project" (a
+    #    PackageCard keyed by data-pkg-dir, whose Remove reads "Remove from
+    #    project" since 29a4e902) and present in the palette, since onPickArchive
+    #    also writes the lockfile.
     drawer.get_by_role("navigation", name="Catalog sections").get_by_role(
         "button", name="In project"
     ).click()
     expect(
-        drawer.get_by_role("button", name=f"Remove {NEW_PACKAGE_NAME}", exact=True)
+        drawer.locator(f'article[data-pkg-dir="{dir_name}"]').get_by_role(
+            "button", name="Remove from project", exact=True
+        )
     ).to_be_visible(timeout=30000)
 
     drawer.locator("header").get_by_role(
