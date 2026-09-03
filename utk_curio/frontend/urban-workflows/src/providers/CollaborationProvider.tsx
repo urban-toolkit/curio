@@ -32,8 +32,9 @@ import {
     getCurrentProjectId,
     subscribe as subscribeProject,
 } from "../registry/projectPackagesStore";
+import { backendUrl } from "../utils/backendUrl";
 
-const BACKEND_URL = process.env.BACKEND_URL || "";
+const BACKEND_URL = backendUrl();
 const NAMESPACE = "/collab";
 
 export interface CollabUser {

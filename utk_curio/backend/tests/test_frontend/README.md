@@ -19,6 +19,32 @@ pytest utk_curio/backend/tests/test_frontend/ --headed
 CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 ```
 
+### Parallel
+
+```bash
+python curio.py test e2e --parallel 4          # boots the stack + 3 extra pairs, runs 4 xdist workers
+bash scripts/test.sh --e2e-only --parallel auto # auto = min(4, cores/4)
+```
+
+Every worker gets its **own backend+sandbox pair** behind the one frontend. That
+is the unit of isolation, not the test: the suite truncates `user` / `project` /
+`user_session` between tests through `/api/testing/reset-db`, so two workers on
+one backend would delete each other's logged-in users mid-test. Shard 0 is the
+stack as configured; shards 1..N-1 get their ports, sqlite DB, DuckDB store,
+dataset-catalog copy and logs from `backend/tests/shards.py`, relocated under
+`.curio/shards/<k>/` through `CURIO_STATE_DIR`. The bundle picks its backend at
+runtime (`window.__CURIO_BACKEND_URL__`, injected per browser context by the
+`browser` fixture), so one webpack build serves all of them.
+
+Tests are scheduled with `--dist loadgroup`: one group per workflow in
+`test_workflows.py` (its four class-scoped methods share a browser and a login),
+one group per file everywhere else. A missing screenshot baseline **fails**
+under xdist instead of being minted -- see *Screenshot baselines*.
+
+With `--use-existing`, pairs 1..N-1 must already be running on the ports
+`python -m utk_curio.backend.tests.shards K` prints (that is what CI does,
+inside its one container).
+
 ### AUTK / WebGPU note
 
 Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes a minimal flag set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.

@@ -7,7 +7,7 @@ This guide deploys Curio under a `/curio` path prefix on a hostname you already 
 Assumed setup: a Linux server with the hostname already pointing at it, Docker + Compose installed, and [Caddy](https://caddyserver.com) installed as the reverse proxy.
 
 > [!IMPORTANT]
-> The frontend bundle is built **inside the Docker image** with `BACKEND_URL` and `PUBLIC_PATH` baked in at build time. Changing the public URL or path prefix means rebuilding the image, there is no runtime override.
+> The frontend bundle is built **inside the Docker image** with `BACKEND_URL` and `PUBLIC_PATH` baked in at build time. (The baked `BACKEND_URL` is the bundle's *default*: `src/utils/backendUrl.ts` prefers `window.__CURIO_BACKEND_URL__` when a page sets it, which is how the parallel e2e harness points one build at several backends. Deployments still bake the right default.) Changing the public URL or path prefix means rebuilding the image, there is no runtime override.
 
 ## Contents
 

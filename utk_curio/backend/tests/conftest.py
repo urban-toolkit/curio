@@ -38,6 +38,12 @@ _REPO_ROOT = os.path.abspath(
 # CURIO_TEST_WORKSPACE / CURIO_E2E_USE_EXISTING let callers override the
 # workspace; in those cases the caller owns its lifecycle and we don't
 # clean anything up.
+# Under xdist every worker attaches to its own backend+sandbox pair. Derive this
+# worker's ports and state root before anything below (or any backend import)
+# reads the environment. A no-op in a serial run. See shards.py.
+from .shards import apply_shard_env  # noqa: E402
+apply_shard_env()
+
 _PERSISTENT_WS = os.environ.get("CURIO_TEST_WORKSPACE")
 _USE_EXISTING = os.environ.get("CURIO_E2E_USE_EXISTING")
 if _PERSISTENT_WS:
@@ -57,9 +63,13 @@ else:
     # ``.curio/users/``, and the live ``messages.log``. A blanket rmtree of
     # ``.curio/`` would yank the dev DuckDB out from under any concurrently
     # running dev sandbox and break its cached connection.
-    _TEST_OWNED_DIR = os.path.join(_REPO_ROOT, ".curio", "test")
+    _TEST_OWNED_DIR = os.path.join(
+        os.environ.get("CURIO_STATE_DIR") or os.path.join(_REPO_ROOT, ".curio"), "test")
 
-_TEST_DB_DIR = os.path.join(_TEST_WORKSPACE, ".curio", "test")
+# CURIO_STATE_DIR relocates ``.curio`` without moving the data root; it must
+# agree with config._resolve_database_uri and user_storage.curio_root.
+_STATE_DIR = os.environ.get("CURIO_STATE_DIR") or os.path.join(_TEST_WORKSPACE, ".curio")
+_TEST_DB_DIR = os.path.join(_STATE_DIR, "test")
 os.makedirs(_TEST_DB_DIR, exist_ok=True)
 
 _TEST_SQLA_DB = os.path.join(_TEST_DB_DIR, "urban_workflow_test.db")
@@ -69,19 +79,18 @@ _TEST_SQLA_DB = os.path.join(_TEST_DB_DIR, "urban_workflow_test.db")
 # those own the DB lifecycle and the running backend is holding sqlite
 # connections we shouldn't yank.
 if _TEST_OWNED_DIR is not None:
-    try:
-        os.remove(_TEST_SQLA_DB)
-    except FileNotFoundError:
-        pass
+    for _suffix in ("", "-wal", "-shm"):   # the DB and its WAL sidecars
+        try:
+            os.remove(_TEST_SQLA_DB + _suffix)
+        except FileNotFoundError:
+            pass
 
 os.environ["CURIO_TESTING"] = "1"
 os.environ["CURIO_LAUNCH_CWD"] = _TEST_WORKSPACE
 # Tests get their own DuckDB under .curio/test/data/, parallel to the
 # SQLite test DB in .curio/test/. The dev sandbox keeps using
 # .curio/data/, so a pytest run never clobbers dev artifacts.
-os.environ.setdefault("CURIO_SHARED_DATA", os.path.join(
-    _TEST_WORKSPACE, ".curio", "test", "data",
-))
+os.environ.setdefault("CURIO_SHARED_DATA", os.path.join(_TEST_DB_DIR, "data"))
 os.makedirs(os.environ["CURIO_SHARED_DATA"], exist_ok=True)
 
 # Point the backend (and any subprocess that inherits this env — e.g. the
@@ -123,7 +132,12 @@ def _bootstrap_schemas() -> None:
         _db.engine.dispose()
 
 
-_bootstrap_schemas()
+# Under CURIO_E2E_USE_EXISTING the running backend owns the sqlite file and
+# ``prepare_backend_database`` has already migrated it, so this is redundant
+# even serially -- and under xdist it would run once in the controller and
+# once more in every worker, all against the same file.
+if not os.environ.get("CURIO_E2E_USE_EXISTING"):
+    _bootstrap_schemas()
 
 
 # ---------------------------------------------------------------------------

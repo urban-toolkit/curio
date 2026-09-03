@@ -50,6 +50,7 @@ import type {
   NodeDescriptor,
   PortDef,
 } from './types';
+import { backendUrl } from '../utils/backendUrl';
 
 interface RawPackageTemplate {
   id: string; // canonical "<packageId>/<templateId>@<major>"
@@ -336,7 +337,7 @@ export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor
 const inFlightBehaviorScripts = new Map<string, Promise<void>>();
 
 async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void> {
-  const base = process.env.BACKEND_URL ?? '';
+  const base = backendUrl();
   const targets = packages.filter((p) => p.behaviorScript && p.dirName);
   if (targets.length === 0) return;
   const token = getToken();

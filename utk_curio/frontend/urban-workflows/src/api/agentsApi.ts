@@ -1,6 +1,7 @@
 import { apiFetch, getToken } from "../utils/authApi";
+import { backendUrl } from "../utils/backendUrl";
 
-const BACKEND_URL = process.env.BACKEND_URL || "";
+const BACKEND_URL = backendUrl();
 
 /**
  * REST client for ``/api/agents`` - the three-scope Agent Catalog and its
