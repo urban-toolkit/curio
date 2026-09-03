@@ -256,12 +256,15 @@ def test_add_agent_propagates_to_palette(
     # 3. Adding confirms first (#196), as the Data and Node catalogs do, so the
     #    card click only opens the dialog - the POST follows the confirm.
     card.get_by_role("button", name="Add to project").click()
+    # 60 s, not 30: under the parallel e2e run the backend answers an install
+    # in 15-48 s (see the harness HTTP timeout), and the Data catalog's
+    # install wait already allows the same.
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.url.endswith("/install")
         and r.request.method == "POST"
         and r.ok,
-        timeout=30000,
+        timeout=60000,
     ):
         accept_confirm_dialog(
             page, title=f"Add {AGENT_NAME}?", button="Add to project"
@@ -299,7 +302,7 @@ def test_add_agent_propagates_to_palette(
         lambda r: "/api/agents/projects/" in r.url
         and r.request.method == "DELETE"
         and r.ok,
-        timeout=30000,
+        timeout=60000,
     ):
         # The dialog is titled "Remove <name> from this project?" - the same
         # sentence the Data and Node catalogs use since the copy was unified.
@@ -361,7 +364,7 @@ def test_requires_agents_closure_is_disclosed_and_installed(
         and r.url.endswith("/install")
         and r.request.method == "POST"
         and r.ok,
-        timeout=30000,
+        timeout=60000,
     ):
         # The confirmation lists the closure it is about to pull in (dev/106).
         accept_confirm_dialog(
