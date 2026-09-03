@@ -1,3 +1,4 @@
+import json
 import os
 
 import pytest
@@ -20,13 +21,45 @@ from .fixtures import _clean_db
 # Re-launching Chromium between workflow classes drops it back to baseline
 # at the cost of ~5 s × workflow_count of startup overhead.
 
+class _BackendUrlBrowser:
+    """A ``Browser`` whose every new context knows this worker's backend.
+
+    The bundle resolves the backend address at runtime from
+    ``window.__CURIO_BACKEND_URL__`` (src/utils/backendUrl.ts), falling back to
+    the value baked at build time. Injecting it per context is what lets ONE
+    frontend build serve several backend+sandbox pairs at once under xdist.
+
+    Wrapped at the browser, not the ``context`` fixture: sixteen tests call
+    ``browser.new_context(...)`` themselves (two-user flows, share links, the
+    video tours), and pytest-playwright's own ``context`` fixture goes through
+    the same method. A context that missed the script would talk to whatever
+    backend the bundle was built for -- under xdist, some OTHER worker's -- and
+    pass against a stack the test does not own. ``__getattr__`` forwards
+    everything else; Playwright's ``Browser`` has no public constructor to
+    subclass.
+    """
+
+    def __init__(self, inner: "Browser", backend_url: str):
+        self._inner = inner
+        self._init_script = f"window.__CURIO_BACKEND_URL__ = {json.dumps(backend_url)};"
+
+    def new_context(self, **kwargs):
+        context = self._inner.new_context(**kwargs)
+        context.add_init_script(self._init_script)
+        return context
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 @pytest.fixture(scope="class")
 def browser(
     browser_type: "BrowserType",
     browser_type_launch_args: dict,
+    current_server: str,
 ) -> "Browser":
     launched = browser_type.launch(**browser_type_launch_args)
-    yield launched
+    yield _BackendUrlBrowser(launched, current_server)
     launched.close()
 
 # ------------------------------------------------------------------ #

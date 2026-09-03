@@ -102,10 +102,13 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
     os.environ["FLASK_SANDBOX_HOST"] = sandbox_host
     os.environ["FLASK_SANDBOX_PORT"] = str(sandbox_port)
-    # The frontend bundle needs the backend's address baked in at BUILD time
+    # The frontend bundle's DEFAULT backend address is baked in at BUILD time
     # (webpack substitutes ``process.env.BACKEND_URL`` through dotenv-webpack).
     # Derive it from the same --backend-host/--backend-port the backend itself
-    # is started with, so the two cannot disagree.
+    # is started with, so the two cannot disagree. It is only the default:
+    # ``src/utils/backendUrl.ts`` prefers ``window.__CURIO_BACKEND_URL__`` when
+    # the page sets it, which is how one build serves several backends (the
+    # parallel e2e harness injects it per browser context).
     #
     # This used to come only from a hand-maintained
     # ``frontend/urban-workflows/.env``, which meant every port change was two
