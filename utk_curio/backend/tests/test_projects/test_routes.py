@@ -233,6 +233,39 @@ def test_delete_project(client, user_and_token, tmp_curio):
     assert len(listing.get_json()) == 0
 
 
+def test_delete_refuses_the_old_archive_call(client, user_and_token, tmp_curio):
+    """A stale bundle's Archive click must not become a permanent delete (#261).
+
+    Before Archive was removed, the frontend sent ``DELETE ?purge=false`` for it,
+    with no confirmation dialog because archiving looked reversible. This route
+    now always hard-deletes, so a browser still running that bundle would destroy
+    a project from one unconfirmed click. Sending ``purge`` at all identifies that
+    bundle, so it is refused and the project must survive.
+    """
+    _, token = user_and_token
+    create = client.post(
+        "/api/projects",
+        data=json.dumps({"name": "Keep", "spec": _spec()}),
+        headers=_auth(token),
+    )
+    pid = create.get_json()["id"]
+
+    resp = client.delete(f"/api/projects/{pid}?purge=false", headers=_auth(token))
+    assert resp.status_code == 410
+    assert "Reload the page" in resp.get_json()["error"]
+
+    # purge=true was the old "Delete forever"; it is the same stale bundle.
+    assert client.delete(
+        f"/api/projects/{pid}?purge=true", headers=_auth(token)
+    ).status_code == 410
+
+    listing = client.get("/api/projects", headers=_auth(token))
+    assert [p["id"] for p in listing.get_json()] == [pid], "project was deleted anyway"
+
+    # The current bundle sends no purge parameter, and still deletes.
+    assert client.delete(f"/api/projects/{pid}", headers=_auth(token)).status_code == 204
+
+
 def test_duplicate_project(client, user_and_token, tmp_curio):
     _, token = user_and_token
     create = client.post(
