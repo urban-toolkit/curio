@@ -157,6 +157,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const projectIdRef = useRef<string | null>(null);
     projectIdRef.current = projectId;
     const [projectName, setProjectName] = useState<string>("");
+    // Same treatment for the name (#270). A save queued behind an in-flight
+    // one - the 500 ms install-sync save landing after a manual save - ran a
+    // ``saveCurrentProject`` closed over the name as it was when the chain was
+    // built, and PUT the pre-rename name back over the one the user had just
+    // saved. Synced on render, and pinned synchronously by ``renameDataflow``.
+    const projectNameRef = useRef<string>("");
+    projectNameRef.current = projectName;
     const [projectDirty, setProjectDirty] = useState<boolean>(false);
     const [projectSavedAt, setProjectSavedAt] = useState<Date | null>(null);
     const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed">>({});
@@ -772,6 +779,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const next = rawName.trim();
         if (!next) return false;
         setWorkflowName(next);
+        projectNameRef.current = next;
         setProjectName(next);
         // A rename diverges from disk like any other edit. Nothing said so before,
         // which went unnoticed only because the phantom dirty flag of #229 was
@@ -803,7 +811,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
         const outputRefs: OutputRef[] = buildOutputRefs();
 
-        const name = nameOverride || projectName || workflowNameRef.current;
+        // The ref, not the closure (#270): see projectNameRef.
+        const name = nameOverride || projectNameRef.current || workflowNameRef.current;
 
         // Read the live id from the ref, not the closure: a save chained right
         // after a create (serialized install saves) must take the update branch.
@@ -818,8 +827,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             // Re-pin the client's copy of the name to what the server actually
             // stored. The create branch already did this, so only the update path
             // could drift out of date - and it also self-heals a project that
-            // diverged before #230 was fixed.
-            setProjectName(detail.name);
+            // diverged before #230 was fixed. Unless the user renamed while
+            // this save was in flight (#270): then the server is echoing the
+            // name we SENT, and adopting it would silently undo the rename.
+            if (projectNameRef.current === name) {
+                projectNameRef.current = detail.name;
+                setProjectName(detail.name);
+            }
             // The backend prunes attachments for deleted nodes/edges (and
             // preserves the agent lockfile) on save, so reconcile the dock with
             // the freshly-persisted spec — a just-deleted node's tile disappears
@@ -840,7 +854,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             projectIdRef.current = detail.id;
             syncDatasetsFromSavedSpec(detail.spec);
             setProjectId(detail.id);
-            setProjectName(detail.name);
+            if (projectNameRef.current === name) {
+                projectNameRef.current = detail.name;
+                setProjectName(detail.name);
+            }
             setProjectSavedAt(new Date());
             setProjectDirty(false);
             // The backend merges the user's defaults (e.g. ``curio.builtin@1``)
@@ -860,22 +877,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
-    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
+    }, [projectId, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
     // Serialize project saves so concurrent callers (e.g. two producing nodes
     // finishing back-to-back) can never run two creates in parallel and POST
     // duplicate projects. Each request runs strictly after all prior ones; once
     // the first create has set projectIdRef, every chained save takes the update
-    // branch. Because saveCurrentProject reads dataflowDatasetsRef/projectIdRef
-    // live (not from a closure), a save enqueued after a ref was staged persists
-    // that ref even if it rode in on an already-running chain.
+    // branch. Because saveCurrentProject reads dataflowDatasetsRef/projectIdRef/
+    // projectNameRef live (not from a closure), a save enqueued after a ref was
+    // staged persists that ref even if it rode in on an already-running chain.
+    //
+    // The chained call goes through a ref too (#270): ``prior.then(() =>
+    // saveCurrentProject())`` captured the *identity* of saveCurrentProject at
+    // enqueue time, so any state it still closes over was as of then.
     const saveChainRef = useRef<Promise<any> | null>(null);
+    const saveCurrentProjectRef = useRef(saveCurrentProject);
+    saveCurrentProjectRef.current = saveCurrentProject;
     const requestProjectSave = useCallback((): Promise<any> => {
         const prior = saveChainRef.current;
         // Start immediately when idle (so the create/update fires synchronously);
         // otherwise chain strictly after the previous save so two creates never run
         // in parallel. ``prior`` is always a never-rejecting tail.
-        const next = prior ? prior.then(() => saveCurrentProject()) : saveCurrentProject();
+        const next = prior
+            ? prior.then(() => saveCurrentProjectRef.current())
+            : saveCurrentProject();
         // Track a caught tail for chaining + cleanup so a failed save can neither
         // surface as an unhandled rejection nor wedge the chain. The caller still
         // gets ``next`` (which may reject) and is expected to handle it.
@@ -1212,6 +1237,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         saveAsNewProject,
         ensureProjectId,
         persistDataflowForInstall,
+        requestProjectSave,
         loadProject,
         loadSharedProject,
         discardProject,
