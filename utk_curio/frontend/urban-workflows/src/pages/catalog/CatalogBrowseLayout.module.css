@@ -316,7 +316,14 @@
   gap: 5px;
 }
 
-.chip:hover { background: var(--curio-page-bg); }
+/* Hover feedback is for chips you have NOT chosen. `.chip:hover` is (0,2,0) and
+   `.chipActive` is (0,1,0), so hovering a selected chip used to replace its dark
+   background with the light one while leaving `--curio-text-on-dark` text in
+   place - #fbfcf6 on #f0f0f0, about 1.03:1, which reads as a blank chip. The
+   selected chip already announces itself with the fill and border, so it needs
+   no hover state at all. Same idiom as `.viewButton:hover:not(.viewButtonActive)`
+   in ProjectsBrowseLayout.module.css. */
+.chip:hover:not(.chipActive) { background: var(--curio-page-bg); }
 
 .chipActive {
   background: var(--curio-top-bar-bg);
@@ -332,9 +339,18 @@
   flex-shrink: 0;
 }
 
+/* One rule per DatasetFormat, from the same tokens the rail's .dot_* block uses.
+   Only three formats had one while the chip row was a hardcoded three (#232); the
+   row derives from the facets now, so any format can reach it - and a missing rule
+   resolves to "", i.e. an invisible dot rather than a wrong-coloured one. */
 .chipDot_geojson { background: var(--curio-format-geojson-fg); }
 .chipDot_csv     { background: var(--curio-format-csv-fg); }
 .chipDot_json    { background: var(--curio-format-json-fg); }
+.chipDot_parquet { background: var(--curio-format-parquet-fg); }
+.chipDot_geotiff { background: var(--curio-format-geotiff-fg); }
+.chipDot_shp     { background: var(--curio-format-shp-fg); }
+.chipDot_bundle  { background: var(--curio-format-bundle-fg); }
+.chipDot_osm     { background: var(--curio-format-osm-fg); }
 .chipDotDefault { background: var(--curio-text-muted); }
 /* Node Catalog category chips (primaryCategory) */
 .chipDot_data         { background: var(--curio-category-data-fg); }

@@ -12,6 +12,7 @@ import ReactFlow, {
     useReactFlow,
 } from "reactflow";
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
+import { computeTranslateExtent } from "../utils/canvasExtent";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { useCollab } from "../providers/CollaborationProvider";
@@ -48,19 +49,6 @@ import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";
 
-/**
- * How far the viewport may pan, in flow coordinates.
- *
- * Without a clamp, `minZoom` 0.05 lets a stray trackpad gesture carry the
- * dataflow far enough off-screen that there is no way back to it short of
- * reloading. The bound is generous rather than tight: it exists to keep the
- * work findable, not to constrain where nodes may sit.
- */
-const CANVAS_EXTENT: [[number, number], [number, number]] = [
-    [-2000, -2000],
-    [6000, 6000],
-];
-
 export function MainCanvas() {
     const { showToast } = useToastContext();
     const { setActivePackageKey } = usePackagePalette();
@@ -78,6 +66,27 @@ export function MainCanvas() {
         markDirty,
         saveCurrentProject,
     } = useFlowContext();
+
+    // How far the viewport may pan, tracking the nodes rather than a fixed box
+    // (#234). Two memos on purpose: React Flow re-applies `translateExtent`
+    // through an effect keyed on the value's IDENTITY, so handing it a fresh
+    // array every render would call `d3Zoom.translateExtent()` on every frame
+    // of a drag. `computeTranslateExtent` rounds to a coarse grid, and keying
+    // the tuple on those four numbers keeps the identity stable until a node
+    // actually crosses a boundary.
+    const [extentMinX, extentMinY, extentMaxX, extentMaxY] = useMemo(() => {
+        const [[minX, minY], [maxX, maxY]] = computeTranslateExtent(nodes);
+        return [minX, minY, maxX, maxY];
+    }, [nodes]);
+    const translateExtent = useMemo(
+        () =>
+            [
+                [extentMinX, extentMinY],
+                [extentMaxX, extentMaxY],
+            ] as [[number, number], [number, number]],
+        [extentMinX, extentMinY, extentMaxX, extentMaxY],
+    );
+
     const collab = useCollab();
     const collabRef = useRef(collab);
     collabRef.current = collab;
@@ -522,7 +531,7 @@ export function MainCanvas() {
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
-                translateExtent={CANVAS_EXTENT}
+                translateExtent={translateExtent}
                 panOnDrag={!dashboardOn || !dashboardLocked}
                 zoomOnScroll={!dashboardOn || !dashboardLocked}
                 zoomOnPinch={!dashboardOn || !dashboardLocked}
@@ -542,7 +551,6 @@ export function MainCanvas() {
             </ReactFlow>
             {!isSharedView ? <AgentDockOverlay /> : null}
             </div>
-            <input hidden type="file" name="file" id="file" />
 
         </div> : loadingAnimation() }
         <VersionBadge />

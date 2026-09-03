@@ -23,7 +23,7 @@ import { DatasetDetailModal } from "../../components/datasets/catalog/DatasetDet
 import {
   FORMAT_FILTERS,
   ORIGIN_FILTERS,
-  QUICK_FORMAT_FILTERS,
+  quickFormatFilters,
 } from "./dataHubBrowseConstants";
 import { CatalogHeaderImport } from "../catalog/CatalogHeaderImport";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
@@ -90,6 +90,15 @@ export const DataCatalogBrowse: React.FC = () => {
   const catalogFacetDatasetTotal = useMemo(
     () => Object.values(catalog.facets.format).reduce((sum, n) => sum + n, 0),
     [catalog.facets.format],
+  );
+
+  // The chip row is the format rail's non-empty subset, read off the very same
+  // facet counts the rail renders - never a second, hand-maintained list (#232).
+  // `format` is a dependency so the active chip stays pinned when a search
+  // zeroes its count.
+  const quickFormats = useMemo(
+    () => quickFormatFilters(catalog.facets.format, format),
+    [catalog.facets.format, format],
   );
 
   // How many of the listed datasets are in the account's "all projects" list.
@@ -322,7 +331,7 @@ export const DataCatalogBrowse: React.FC = () => {
           </div>
         </section>
 
-        <div className={styles.filterBar}>
+        <div className={styles.filterBar} data-curio-catalog-filter-bar="true">
           <button
             className={`${styles.chip} ${
               format === "" && scope === "" ? styles.chipActive : ""
@@ -345,14 +354,25 @@ export const DataCatalogBrowse: React.FC = () => {
           >
             In all projects
           </button>
-          {QUICK_FORMAT_FILTERS.map((key) => (
+          {quickFormats.map((key) => (
             <button
               key={key}
+              // The chip row is derived now, so a test has to be able to ask what
+              // it actually offers. CSS Modules hashes every class name, so
+              // `[class*="chip"]` matches nothing in a real build - hence the
+              // same `data-curio-*` hook the other e2e-visible surfaces carry.
+              data-curio-format-chip={key}
               className={`${styles.chip} ${format === key ? styles.chipActive : ""}`}
               type="button"
               onClick={() => setFormat((prev) => (prev === key ? "" : key))}
             >
-              <span className={`${styles.chipDot} ${styles[`chipDot_${key}`] || ""}`} />
+              {/* `?? chipDotDefault`, the fallback the Node catalog's chips already
+                  use: a derived row can carry any format, and a missing rule used to
+                  resolve to "" - an invisible dot rather than a wrong-coloured one. */}
+              <span
+                data-curio-format-chip-dot=""
+                className={`${styles.chipDot} ${styles[`chipDot_${key}`] ?? styles.chipDotDefault}`}
+              />
               {DATASET_FORMAT_LABEL[key]}
             </button>
           ))}

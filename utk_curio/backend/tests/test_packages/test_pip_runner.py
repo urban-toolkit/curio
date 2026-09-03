@@ -11,10 +11,13 @@ fast (and to not actually mutate the test env). What we care about:
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 from unittest.mock import patch
 
 import pytest
+
+from utk_curio.backend.app.packages import pip_runner
 
 from utk_curio.backend.app.packages.pip_runner import (
     PipInstallError,
@@ -237,3 +240,181 @@ def test_streaming_path_kills_pip_when_it_overruns(monkeypatch):
         install_python_deps({"slowpkg": ""}, on_line=lambda line: None)
 
     assert killed["count"] == 1, "a pip that overruns must be killed, not leaked"
+
+
+# ---------------------------------------------------------------------------
+# Import probing — metadata presence is not importability
+# ---------------------------------------------------------------------------
+
+class TestModuleForDistribution:
+    """A distribution's name is not the module you import it as."""
+
+    def test_resolves_a_dist_whose_module_name_differs(self):
+        # The canonical example, and the reason a naive `import <dist>` probe
+        # would report every such library as broken.
+        if importlib.util.find_spec("PIL") is None:
+            pytest.skip("pillow not installed in this environment")
+        assert pip_runner._module_for_distribution("pillow") == "PIL"
+
+    def test_resolves_a_dist_whose_module_name_matches(self):
+        assert pip_runner._module_for_distribution("flask") == "flask"
+
+    def test_falls_back_to_normalised_name_for_an_unknown_dist(self):
+        # Not installed → no mapping to consult. The probe that follows will
+        # fail anyway; it just has to fail for the right reason.
+        assert (
+            pip_runner._module_for_distribution("zzz-not-a-real-dist")
+            == "zzz_not_a_real_dist"
+        )
+
+    def test_prefers_the_library_module_over_a_shipped_tests_package(self, monkeypatch):
+        # pythermalcomfort really does map to ['pythermalcomfort', 'tests'];
+        # probing `tests` could succeed while the library itself is broken.
+        # Patched on importlib.metadata, not on pip_runner: the resolver imports
+        # `packages_distributions` inside the function, so that is the binding
+        # it actually reads.
+        import importlib.metadata as md
+
+        monkeypatch.setattr(
+            md, "packages_distributions",
+            lambda: {"tests": ["somedist"], "somedist": ["somedist"]},
+        )
+        assert pip_runner._module_for_distribution("somedist") == "somedist"
+
+    def test_ignores_a_tests_only_mapping_rather_than_probing_it(self, monkeypatch):
+        import importlib.metadata as md
+
+        monkeypatch.setattr(
+            md, "packages_distributions", lambda: {"tests": ["odd"], "docs": ["odd"]},
+        )
+        # Both candidates are non-library; falling back to one of them is fine,
+        # but it must not crash and must be deterministic.
+        assert pip_runner._module_for_distribution("odd") in {"docs", "tests"}
+
+
+class TestImportFailure:
+    def test_returns_none_for_a_library_that_imports(self):
+        pip_runner.forget_import_probes()
+        assert pip_runner.import_failure("flask") is None
+
+    def test_reports_a_distribution_that_is_not_installed(self):
+        pip_runner.forget_import_probes()
+        reason = pip_runner.import_failure("zzz-not-a-real-dist")
+        assert reason and "not installed" in reason
+
+    def test_reports_the_import_error_for_a_present_but_broken_dist(self, monkeypatch):
+        """The case a version check cannot see (#232 follow-up).
+
+        Simulated by pointing a real, installed distribution at a module that
+        does not exist: metadata resolves, the import does not — exactly the
+        shape of a wheel whose native extension fails to load.
+        """
+        pip_runner.forget_import_probes()
+        monkeypatch.setattr(
+            pip_runner, "_module_for_distribution", lambda name: "zzz_no_such_module"
+        )
+        reason = pip_runner.import_failure("flask")
+        assert reason is not None
+        assert "ModuleNotFoundError" in reason or "No module named" in reason
+
+    def test_is_satisfied_still_says_yes_for_that_same_dist(self, monkeypatch):
+        """Pins the gap itself, so nobody 'simplifies' the probe away.
+
+        `_is_satisfied` reads metadata and evaluates the version specifier; it
+        is *correct* and it is *not enough*. If this ever starts failing, the
+        two checks have been merged and the split below is redundant.
+        """
+        assert pip_runner.is_satisfied("flask", "") is True
+
+    def test_memoises_so_a_page_load_does_not_respawn_probes(self, monkeypatch):
+        pip_runner.forget_import_probes()
+        calls: list[list[str]] = []
+        real_run = pip_runner.subprocess.run
+
+        def _counting_run(cmd, **kw):
+            calls.append(cmd)
+            return real_run(cmd, **kw)
+
+        monkeypatch.setattr(pip_runner.subprocess, "run", _counting_run)
+        pip_runner.import_failure("flask")
+        pip_runner.import_failure("flask")
+        assert len(calls) == 1, "the second probe should have come from the memo"
+
+    def test_forget_import_probes_reopens_the_question(self, monkeypatch):
+        # A repair can land without the version changing (`--force-reinstall`),
+        # which the (name, version) key would otherwise hide forever.
+        pip_runner.forget_import_probes()
+        pip_runner.import_failure("flask")
+        assert pip_runner._import_probe_cache
+        pip_runner.forget_import_probes()
+        assert not pip_runner._import_probe_cache
+
+    def test_a_probe_that_cannot_run_reports_nothing_rather_than_guessing(
+        self, monkeypatch
+    ):
+        """Best-effort: an unusable probe must not invent a broken dependency."""
+        pip_runner.forget_import_probes()
+
+        def _boom(*a, **kw):
+            raise OSError("no subprocesses here")
+
+        monkeypatch.setattr(pip_runner.subprocess, "run", _boom)
+        assert pip_runner.import_failure("flask") is None
+
+
+class TestImportFailures:
+    def test_maps_only_the_broken_ones(self, monkeypatch):
+        # Patched at `_run_probe`, the subprocess seam. `import_failure` is now a
+        # wrapper OVER `import_failures`, so patching it would test nothing.
+        pip_runner.forget_import_probes()
+        monkeypatch.setattr(
+            pip_runner, "_run_probe", lambda mapping: {"flask": "boom"},
+        )
+        assert pip_runner.import_failures(["flask"]) == {"flask": "boom"}
+
+    def test_probes_every_dep_in_a_single_subprocess(self, monkeypatch):
+        # The point of batching: three deps used to pay three interpreter starts
+        # (4.7s for curio.weather); now they share one.
+        pip_runner.forget_import_probes()
+        calls: list[dict] = []
+
+        def _spy(mapping):
+            calls.append(dict(mapping))
+            return {}
+
+        monkeypatch.setattr(pip_runner, "_run_probe", _spy)
+        pip_runner.import_failures(["flask", "pytest"])
+        assert len(calls) == 1, f"expected one batched probe, got {len(calls)}"
+        assert set(calls[0]) == {"flask", "pytest"}
+
+    def test_falls_back_to_one_at_a_time_when_the_batch_gives_no_answer(
+        self, monkeypatch
+    ):
+        # A module that segfaults its interpreter takes the whole batch's output
+        # with it. Retrying singly keeps one bad module from hiding every other
+        # verdict in the set.
+        pip_runner.forget_import_probes()
+        seen: list[dict] = []
+
+        def _fake(mapping):
+            seen.append(dict(mapping))
+            if len(mapping) > 1:
+                return None                      # the batch "crashed"
+            name = next(iter(mapping))
+            return {name: "boom"} if name == "pytest" else {}
+
+        monkeypatch.setattr(pip_runner, "_run_probe", _fake)
+        out = pip_runner.import_failures(["flask", "pytest"])
+        assert out == {"pytest": "boom"}
+        assert len(seen) == 3, "one batch attempt, then one probe per dep"
+
+    def test_no_answer_reports_nothing_and_caches_nothing(self, monkeypatch):
+        # None must mean "no verdict", never "all fine".
+        pip_runner.forget_import_probes()
+        monkeypatch.setattr(pip_runner, "_run_probe", lambda mapping: None)
+        assert pip_runner.import_failures(["flask"]) == {}
+        assert not pip_runner._import_probe_cache
+
+    def test_is_empty_for_a_healthy_set(self):
+        pip_runner.forget_import_probes()
+        assert pip_runner.import_failures(["flask"]) == {}

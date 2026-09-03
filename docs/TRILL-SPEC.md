@@ -62,6 +62,15 @@ document. It is absent on presentation-only templates. `title` and
 accepts a palette name *or* a `#rrggbb` value, because agents are instructed to
 supply either.
 
+`metadata.comments` carries the node's discussion, written only when non-empty.
+Each entry is `{id, text, author, authorName, createdAt, resolved}`. Two fields
+you might expect are deliberately absent: the author's **avatar**, because
+`profile_image` may be a full data URL and one copy per comment would bloat the
+spec, and **`canDelete`**, because it is a per-viewer permission rather than a
+fact about the comment — it is derived on read by comparing `author` to the
+current user, so a shared dataflow cannot hand a visitor a comment claiming they
+may delete it.
+
 ### An edge
 
 `id`, `source` and `target` are required. `type` is present only on an interaction

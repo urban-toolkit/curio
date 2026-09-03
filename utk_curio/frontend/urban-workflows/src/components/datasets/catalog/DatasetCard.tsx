@@ -206,11 +206,18 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
               <button
                 type="button"
                 className={styles.btnSecondary}
-                disabled={cardBusy || !hasProject}
+                /* Not gated on `hasProject`. `isInThisDataflow` returns true for
+                   an account default before the first save - that is the whole
+                   point of it - so this branch renders on an unsaved dataflow
+                   and gating here left the card showing a disabled control and
+                   nothing else. `performUninstall` already awaits
+                   `ensureProjectId`, so the click creates the dataflow the same
+                   way Add does. Same defect as the Agent drawer's (#190, #199). */
+                disabled={cardBusy}
                 title={
                   hasProject
                     ? `Remove ${dataset.title} from this project`
-                    : "Save this dataflow first. There is no project to remove it from yet."
+                    : `Remove ${dataset.title}; this saves the dataflow first`
                 }
                 onClick={() => onUninstall(dataset)}
               >

@@ -49,6 +49,9 @@ type CreateCodeNodeOptions = {
     appearance?: { backgroundColor?: string };
     // dev/89: optional display title (post-it header et al.).
     title?: string;
+    // #237: persisted per-node comments (canonical shape metadata.comments).
+    // Opaque here - utils/nodeComments owns the mapping to live IComment.
+    comments?: unknown[];
 };
 
 interface IUseCode {
@@ -64,6 +67,7 @@ export function useCode(): IUseCode {
         applyNewPropagation,
         applyNewOutput,
         loadParsedTrill,
+        markDirty,
         defaultSaveOutputDataset,
     } = useFlowContext();
     const { loadNodeProvenance } = useProvenanceContext();
@@ -166,6 +170,11 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.appearance != undefined)
                 nodeMeta.appearance = node.metadata.appearance;
 
+            // #237: comments round-trip through the canvas node's data, which
+            // is what NodeContainer renders and what TrillGenerator re-reads.
+            if(node.metadata != undefined && Array.isArray(node.metadata.comments))
+                nodeMeta.comments = node.metadata.comments;
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -246,6 +255,12 @@ export function useCode(): IUseCode {
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
             TrillGenerator.loadDataflowProvenance(savedProv);
+            // Reverting puts a DIFFERENT graph on the canvas than the one on
+            // disk, so it is an edit. The edge replay inside loadParsedTrill no
+            // longer says so (#229), and this branch is the only place the
+            // revert is still distinguishable from opening a project - both
+            // reach loadParsedTrill identically from there down.
+            markDirty();
         } else if(suggestionType == undefined) {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
             if (trill.nodeProvenance) loadNodeProvenance(trill.nodeProvenance);
@@ -285,6 +300,7 @@ export function useCode(): IUseCode {
             saveOutputDataset = undefined,
             appearance = undefined,
             title = undefined,
+            comments = undefined,
         } = options;
 
         const node: Node = {
@@ -325,6 +341,7 @@ export function useCode(): IUseCode {
                 datasetSource,
                 appearance,
                 title,
+                comments,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset

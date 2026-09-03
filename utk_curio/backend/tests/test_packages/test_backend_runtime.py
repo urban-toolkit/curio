@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from utk_curio.backend.app.common.user_storage import users_base
 from utk_curio.backend.app.packages import backend_contract as bc
 from utk_curio.backend.app.packages import backend_runtime as rt
 from utk_curio.backend.app.packages.build_workspace import WorkerLimits
@@ -87,10 +88,27 @@ _ALL_HANDLERS = ["word-count", "env-probe", "net", "remember", "boom", "spin",
                  "unserializable"]
 
 
+def _user_store(tmp_path: Path) -> Path:
+    """The per-user root the app will use once ``CURIO_LAUNCH_CWD`` is *tmp_path*.
+
+    Asked of the code rather than spelled out here. Under ``CURIO_TESTING`` —
+    which the root conftest sets for the whole suite — that root is
+    ``.curio/test/users/`` (see ``common/user_storage``), so a literal
+    ``tmp_path / ".curio" / "users"`` builds a tree the app never looks at and
+    every assertion below fails on an empty store.
+    """
+    base = users_base()
+    assert base.is_relative_to(tmp_path.resolve()), (
+        f"store root {base} escaped the tmp workspace {tmp_path}; "
+        "CURIO_LAUNCH_CWD was probably not patched before this call"
+    )
+    return base
+
+
 def _install_pkg(monkeypatch, tmp_path: Path, *, permissions=None,
                  handler_src: str = _HANDLER_SRC) -> Path:
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
-    pkg = tmp_path / ".curio" / "users" / USER / "packages" / PKG
+    pkg = _user_store(tmp_path) / USER / "packages" / PKG
     (pkg / "backend").mkdir(parents=True)
     perms = [bc.PERMISSION_SERVER_CODE] + list(permissions or [])
     manifest = {
@@ -123,7 +141,7 @@ def _fresh_breakers_everywhere():
 
 
 def _ledger_rows(tmp_path: Path) -> list[dict]:
-    root = tmp_path / ".curio" / "users" / USER / "package-backend-ledger" / PKG
+    root = _user_store(tmp_path) / USER / "package-backend-ledger" / PKG
     rows: list[dict] = []
     if root.is_dir():
         for day_file in sorted(root.glob("*.jsonl")):
@@ -293,7 +311,7 @@ class TestRefusals:
 
     def test_backend_less_package_404s(self, monkeypatch, tmp_path):
         monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
-        pkg = tmp_path / ".curio" / "users" / USER / "packages" / "curio.plain@1"
+        pkg = _user_store(tmp_path) / USER / "packages" / "curio.plain@1"
         pkg.mkdir(parents=True)
         (pkg / "manifest.json").write_text(json.dumps({
             "id": "curio.plain", "version": "1.0.0", "name": "P", "publisher": "t",
@@ -378,7 +396,7 @@ class TestPromoteInvokeConsistency:
             # while the "promote" below has it torn open.
             assert worker.is_alive()
             # Simulate the installer's non-atomic replace: dir GONE, then new.
-            pkg_dir = tmp_path / ".curio" / "users" / USER / "packages" / PKG
+            pkg_dir = _user_store(tmp_path) / USER / "packages" / PKG
             shutil.rmtree(pkg_dir)
             assert not pkg_dir.exists()  # the pre-dev/92 404 window, held open
             _install_pkg(monkeypatch, tmp_path)
@@ -559,7 +577,7 @@ class TestDependencyOverlay:
 
         assert removed == {"overlay": True, "dataDir": True, "pin": True}
         assert not overlay.exists()
-        assert not (tmp_path / ".curio" / "users" / USER
+        assert not (_user_store(tmp_path) / USER
                     / "package-backend-data" / PKG).exists()
         assert rt.pinned_entry_digest(USER, PKG) is None
         # The append-only audit history SURVIVES uninstall (retention owns it).

@@ -37,12 +37,16 @@ export interface NodeCatalogDrawerProps {
   onRequestClose: () => void;
   /** Called once the exit transition finishes (or immediately when motion is reduced). */
   onExitComplete: () => void;
+  /** Seeds the search box on open, so a caller that already knows which
+   *  package the user needs can land them on it (#233). */
+  initialSearch?: string;
 }
 
 export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   presented,
   onRequestClose,
   onExitComplete,
+  initialSearch = "",
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
 
@@ -57,7 +61,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const [installed, setInstalled] = useState<PackagePayload[]>([]);
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [detailPkg, setDetailPkg] = useState<PackagePayload | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [sort, setSort] = useState<SortMode>("new");
   const [pinned, setPinned] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -101,7 +105,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
    * Install vs Uninstall affordance per card. */
   const projectInstalledDirs = useMemo(
     // A dataflow is created on its FIRST SAVE, so before that `projectPackages`
-    // is empty and this tab rendered "No packages added to this dataflow yet."
+    // is empty and this tab rendered "No packages added to this project yet."
     // - even though the account's defaults (curio.builtin, the examples, uhvi)
     // are seeded into the dataflow the moment it is saved. They ARE in this
     // dataflow, one save away. Its two peers do the same.
@@ -284,7 +288,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       await reload();
       setInstallCandidate(null);
       setConflictReport(null);
-      showToast(`Added ${installCandidate.name} to this dataflow.`, "success");
+      showToast(`Added ${installCandidate.name} to this project.`, "success");
     } catch (err) {
       reportActionError(`Couldn't add ${installCandidate.name}`, err);
     } finally {
@@ -357,8 +361,8 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         .join(" ");
       showToast(
         extra
-          ? `Removed ${pkg.name} from this dataflow ${extra}.`
-          : `Removed ${pkg.name} from this dataflow.`,
+          ? `Removed ${pkg.name} from this project ${extra}.`
+          : `Removed ${pkg.name} from this project.`,
         "success",
       );
     } catch (err) {
@@ -384,7 +388,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       // the other dataflows' lockfiles, so the wording states the condition
       // rather than guessing the outcome.
       body:
-        `Remove ${pkg.name} (${pkg.dirName}) from this dataflow?` +
+        `Remove ${pkg.name} (${pkg.dirName}) from this project?` +
         `\n\nIf no other dataflow uses it, it is also deleted from your account ` +
         `and its Python libraries are uninstalled from the shared environment, ` +
         `which affects every dataflow and everyone using this Curio.`,
@@ -568,7 +572,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
               filteredInstalled.length === 0 ? (
                 <div className={shell.empty}>
                   {projectInstalledDirs.size === 0
-                    ? "No packages added to this dataflow yet."
+                    ? "No packages added to this project yet."
                     : "No packages match the current filters."}
                 </div>
               ) : (

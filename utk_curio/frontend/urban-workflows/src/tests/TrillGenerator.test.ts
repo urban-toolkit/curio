@@ -166,6 +166,77 @@ describe("TrillGenerator node appearance (dev/89)", () => {
   });
 });
 
+describe("TrillGenerator node comments (#237)", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+  });
+
+  test("persists per-node comments at metadata.comments", () => {
+    // The reported bug: a newly dragged module saved fine, comments did not.
+    // They were held in NodeContainer's local useState and read by nothing, so
+    // the serializer never saw them. Both halves are covered here - the node
+    // carrying comments emits them, and the one without stays byte-identical
+    // to the pre-fix shape (no `metadata` key at all).
+    const comments = [
+      {
+        id: "c-1",
+        text: "check the CRS before the join",
+        author: "ada",
+        authorName: "Ada Lovelace",
+        createdAt: "2026-08-30T12:00:00.000Z",
+        resolved: false,
+      },
+    ];
+    const spec = TrillGenerator.generateTrill(
+      [
+        {
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 0, y: 0 },
+          data: {
+            nodeId: "discussed-1",
+            nodeType: "curio.builtin/computation-analysis",
+            comments,
+          },
+        },
+        {
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 5, y: 5 },
+          data: { nodeId: "plain-1", nodeType: "curio.builtin/computation-analysis" },
+        },
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["discussed-1"].metadata.comments).toEqual(comments);
+    expect(byId["plain-1"].metadata).toBeUndefined();
+  });
+
+  test("emits nothing for an empty comment list", () => {
+    // Deleting the last comment must not leave `metadata: { comments: [] }`
+    // behind - that would dirty every example in the committed corpus the
+    // first time someone opened and saved one.
+    const spec = TrillGenerator.generateTrill(
+      [
+        {
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 0, y: 0 },
+          data: {
+            nodeId: "emptied-1",
+            nodeType: "curio.builtin/computation-analysis",
+            comments: [],
+          },
+        },
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    expect(spec.dataflow.nodes[0].metadata).toBeUndefined();
+  });
+});
+
 describe("the dataflow goal", () => {
   beforeEach(() => {
     TrillGenerator.reset();
