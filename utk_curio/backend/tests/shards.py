@@ -164,6 +164,24 @@ def _base_of(environ) -> dict[str, str]:
     return base
 
 
+def sibling_backend_urls(environ=os.environ) -> list[tuple[int, str]]:
+    """``[(j, "http://host:port"), ...]`` for every OTHER shard of this run.
+
+    For the isolation canary: something minted on this shard must not be
+    visible on any of these. Works from a worker whose environment
+    ``apply_shard_env`` already shifted, by deriving siblings from the base.
+    """
+    base = _base_of(environ)
+    me = shard_index(environ)
+    out = []
+    for j in range(shard_count(environ)):
+        if j == me:
+            continue
+        env = shard_env(j, base)
+        out.append((j, f"http://{env['CURIO_E2E_HOST']}:{env['CURIO_E2E_BACKEND_PORT']}"))
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     as_json = "--json" in args
