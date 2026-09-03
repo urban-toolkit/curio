@@ -169,8 +169,8 @@
 
 /* A run is in flight: the same button now cancels it (#271). */
 .playAllButton[data-run-active="true"] {
-  border-color: var(--curio-warning, #e0a800);
-  color: var(--curio-warning, #e0a800);
+  border-color: var(--curio-warning-text, #b7791f);
+  color: var(--curio-warning-text, #b7791f);
 }
 
 .playAllButton:hover {
