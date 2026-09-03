@@ -128,7 +128,9 @@ def _resolve_database_uri() -> str:
         explicit = os.environ.get("DATABASE_URL_TEST")
         if explicit:
             return explicit
-        test_dir = os.path.join(_test_launch_dir(), ".curio", "test")
+        state_dir = (os.environ.get("CURIO_STATE_DIR")
+                     or os.path.join(_test_launch_dir(), ".curio"))
+        test_dir = os.path.join(state_dir, "test")
         os.makedirs(test_dir, exist_ok=True)
         return "sqlite:///" + os.path.join(test_dir, "urban_workflow_test.db")
     return os.environ.get("DATABASE_URL") or "sqlite:///urban_workflow.db"

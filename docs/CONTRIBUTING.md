@@ -206,6 +206,9 @@ python curio.py test backend
 
 # watch the browser, specific workflows only
 python curio.py test e2e --use-existing --headed --workflows Vega.json,Regression.json
+
+# E2E on 4 xdist workers, one backend+sandbox pair each (see test_frontend/README.md, "Parallel")
+python curio.py test e2e --parallel 4
 ```
 
 See `python curio.py test --help` for all options, or read the sections below for

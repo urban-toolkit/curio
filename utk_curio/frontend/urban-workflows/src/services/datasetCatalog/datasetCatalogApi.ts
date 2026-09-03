@@ -9,8 +9,9 @@ import {
   DatasetPreviewQuery,
   DatasetPreviewResponse,
 } from "./datasetCatalogTypes";
+import { backendUrl } from "../../utils/backendUrl";
 
-const BACKEND_URL = process.env.BACKEND_URL || "";
+const BACKEND_URL = backendUrl();
 
 /** Canonical file extension per dataset format (mirror of the backend map). */
 const DATASET_FORMAT_EXTENSIONS: Record<string, string> = {
