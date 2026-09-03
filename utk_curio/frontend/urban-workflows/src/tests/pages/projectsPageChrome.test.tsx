@@ -47,6 +47,9 @@ const mockList = jest.fn();
 jest.mock('../../providers/UserProvider', () => ({
   useUserContext: () => ({ user: { name: 'Test User' }, signout: jest.fn(), enableUserAuth: true }),
 }));
+jest.mock('../../providers/ToastProvider', () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
 jest.mock('../../api/projectsApi', () => ({
   projectsApi: {
     list: (...args: unknown[]) => mockList(...args),
@@ -158,6 +161,39 @@ describe('projects filter rail', () => {
     expect(railButton('All projects').getAttribute('aria-pressed')).toBe('false');
     // "recent" holds only the first project.
     expect(screen.queryByText('Bike lanes')).toBeNull();
+  });
+
+  // #231: the filter used the raw input value as the needle, so a name pasted with
+  // a trailing space matched nothing. Every other search surface in the app
+  // (packageUtils.matchesSearch, agentListUtils.matchesAgentSearch, the dataset
+  // drawer) already trimmed; this page was the outlier.
+  test('a padded query still matches, and whitespace alone is not a filter', async () => {
+    const { getByPlaceholderText } = await renderPage();
+
+    await act(async () => {
+      fireEvent.change(getByPlaceholderText('Search projects…'), {
+        target: { value: '  Bike lanes  ' },
+      });
+    });
+
+    // getAllByText, not getByText: the selected project is rendered twice - once
+    // as a card and once in the detail drawer beside it (see the assertion at
+    // 'the drawer opens on the first project' above).
+    expect(screen.getAllByText('Bike lanes').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Air quality')).toBeNull();
+
+    // A box holding only spaces is an empty query, not one that matches nothing -
+    // otherwise the second half of the fix (the empty-state copy) would still tell
+    // the user their projects had been filtered out.
+    await act(async () => {
+      fireEvent.change(getByPlaceholderText('Search projects…'), {
+        target: { value: '   ' },
+      });
+    });
+
+    expect(screen.getAllByText('Bike lanes').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Air quality').length).toBeGreaterThan(0);
+    expect(screen.queryByText('No projects match the current filters.')).toBeNull();
   });
 
   test('an empty scope shows the empty state and no card area', async () => {

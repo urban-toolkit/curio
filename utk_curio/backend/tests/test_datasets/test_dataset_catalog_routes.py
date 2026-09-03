@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+from utk_curio.backend.app.common.user_storage import users_base
 
 
 def _auth(token):
@@ -324,7 +325,7 @@ def test_install_hub_dataset_copies_to_user_store(client, user_and_token, tmp_pa
     assert body["path"]
     assert "datasets/data.urbanlab.chicago-community-areas@1" in body["path"]
 
-    user_store = tmp_path / ".curio" / "users"
+    user_store = users_base()
     copied = list(user_store.rglob("community-areas.geojson"))
     assert copied, "hub install should copy payload into the user dataset store"
 
@@ -550,3 +551,51 @@ def test_catalog_surfaces_workspace_data_without_dataflow(client, user_and_token
     body = resp.get_json()
     workspace = [i for i in body["items"] if i.get("sourceLabel") == "Workspace data"]
     assert any("blocks" in (i.get("title") or "").lower() for i in workspace), body["items"]
+
+
+def test_catalog_search_ignores_surrounding_whitespace(
+    client, user_and_token, tmp_path, monkeypatch
+):
+    """``?q=`` is normalised before matching (#231).
+
+    The Data Catalog's search is a server query, so the whitespace bug the reporter
+    hit on the Projects list lives here too - and worse: it only *looked* tolerant.
+    The haystack is a ``" ".join([...])`` of five fields, so a single trailing space
+    was absorbed by the separator between title and description, while a LEADING
+    space (nothing precedes the title) and two trailing spaces both missed.
+
+    Note also that the two callers of ``list_catalog`` disagreed: the HTTP route
+    passes ``request.args`` through raw while the agent tool already stripped. The
+    fix is in the service, so both agree now.
+    """
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+
+    imp = client.post(
+        "/api/datasets/import",
+        headers={"Authorization": f"Bearer {token}"},
+        data={"file": (io.BytesIO(b"a,b\n1,2\n"), "cities.csv")},
+        content_type="multipart/form-data",
+    )
+    assert imp.status_code == 201, imp.get_data(as_text=True)
+    imported_id = imp.get_json()["id"]
+    title = imp.get_json()["title"]
+
+    def ids_for(q):
+        resp = client.get(f"/api/datasets/catalog?q={q}", headers=_auth(token))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        return {item["id"] for item in resp.get_json()["items"]}
+
+    from urllib.parse import quote
+
+    bare = quote(title)
+    assert imported_id in ids_for(bare), "sanity: the untouched query must match"
+
+    # The leading-space case is the one that genuinely missed before the fix.
+    assert imported_id in ids_for("%20" + bare)
+    assert imported_id in ids_for(bare + "%20%20")
+    assert imported_id in ids_for("%20" + bare + "%20")
+
+    # Whitespace alone is no query at all, not a query that matches nothing.
+    everything = ids_for("")
+    assert ids_for("%20%20") == everything

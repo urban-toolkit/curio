@@ -39,14 +39,12 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 import re
 import urllib.error
-from pathlib import Path
 
 import pytest
 
-from .utils import REPO_ROOT, api_json, load_artifact_as_dict, require_user_auth
+from .utils import api_json, load_artifact_as_dict, require_user_auth
 
 LIB = "inflection"
 
@@ -126,24 +124,20 @@ def library_teardown(current_server):
     sandbox's. The pytest process's ``sys.executable`` is not.
     """
     registered: list[tuple[str, str]] = []  # (token, library name)
-    user_ids: set[int] = set()
 
-    def register(token: str, name: str, user_id: int) -> None:
+    def register(token: str, name: str) -> None:
         registered.append((token, name))
-        user_ids.add(user_id)
 
     yield register
 
     for token, name in registered:
         _delete_library(current_server, token, name)
 
-    # reset-db truncates SQL only and sqlite recycles user ids from 1, so a
-    # leftover list file would leak into the next test's view.
-    base = Path(os.environ.get("CURIO_LAUNCH_CWD", REPO_ROOT))
-    for uid in user_ids:
-        (base / ".curio" / "users" / str(uid) / "installed-libraries.json").unlink(
-            missing_ok=True
-        )
+    # The list file used to need unlinking here: reset-db truncated SQL only,
+    # sqlite recycles user ids from 1, and the leftover file leaked into the
+    # next test's view. reset-db now clears the per-user tree under
+    # .curio/test/ along with the rows, so this teardown is only responsible
+    # for the pip uninstall above.
 
 
 def test_installed_library_becomes_importable_by_the_sandbox(
@@ -151,9 +145,9 @@ def test_installed_library_becomes_importable_by_the_sandbox(
 ):
     require_user_auth()
 
-    user_id, token = _stub_token(current_server, "lib_integration_user")
+    _, token = _stub_token(current_server, "lib_integration_user")
     # Register before installing, so a mid-test failure still cleans up.
-    library_teardown(token, LIB, user_id)
+    library_teardown(token, LIB)
 
     # Self-healing pre-clean: remove_library_route pip-uninstalls whenever no
     # installed package declares the lib, even for a spec that was never added -

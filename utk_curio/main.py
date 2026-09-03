@@ -854,11 +854,15 @@ def install_manifest_dependencies() -> None:
     )
     from utk_curio.backend.app.packages.seed import example_dep_package_ids
     from utk_curio.backend.app.packages.backend_runtime import dep_destinations
+    from utk_curio.backend.app.common.user_storage import users_base
 
     repo_root = Path(__file__).resolve().parent.parent
-    launch_cwd = Path(os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd())
     catalog = repo_root / "packages"
-    users = launch_cwd / ".curio" / "users"
+    # Asked of the backend rather than spelled out again: under CURIO_TESTING
+    # the per-user tree is ``.curio/test/users/``, and this walk feeding off a
+    # different root than the one the backend seeds into is a boot that
+    # installs no dependencies at all while looking like it worked.
+    users = users_base()
 
     per_pkg: list[tuple[str, dict[str, str]]] = []
     seen: set[str] = set()  # dir_name dedupe across users

@@ -44,6 +44,14 @@ import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDr
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
+import {
+    looksLikeJsonFile,
+    parseDataflowFile,
+    loadFailedMessage,
+    NOT_JSON_FILE_MESSAGE,
+    UNREADABLE_FILE_MESSAGE,
+} from "../../../utils/dataflowImport";
+import ConfirmDialog from "../../ConfirmDialog";
 
 export default function UpMenu({
     setDashBoardMode,
@@ -61,6 +69,21 @@ export default function UpMenu({
     const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    /** The "you have unsaved changes" guard, as one dialog instead of three
+     *  `window.confirm` calls (#197).
+     *
+     *  Three call sites asked the same question in two wordings, and all three
+     *  asked it through the browser: unstyled, unthemed, outside the app's modal
+     *  stack, and carrying the origin line. They are the last native dialogs in
+     *  the product now that the catalogs have been converted.
+     *
+     *  Holding the pending action rather than a boolean is what lets one dialog
+     *  serve all three: each site hands over what to run if the user confirms. */
+    const [pendingLeave, setPendingLeave] = useState<{
+        body: string;
+        run: () => void;
+    } | null>(null);
+
 
     const menuBarRef = useRef<HTMLDivElement>(null);
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
@@ -73,6 +96,8 @@ export default function UpMenu({
         projectDirty,
         projectSavedAt,
         cleanCanvas,
+        markDirty,
+        renameDataflow,
         saveCurrentProject,
         saveAsNewProject,
         discardProject,
@@ -81,6 +106,15 @@ export default function UpMenu({
         nodes,
         edges,
     } = useFlowContext();
+
+    /** Run *action* now, or ask first when there is unsaved work to lose. */
+    const leaveWithGuard = (body: string, action: () => void) => {
+        if (!projectDirty) {
+            action();
+            return;
+        }
+        setPendingLeave({ body, run: action });
+    };
 
     const collab = useCollab();
     // Mirror the ``isSharedView`` gate in MainCanvas: when collab is on,
@@ -120,13 +154,27 @@ export default function UpMenu({
         setWorkflowName(e.target.value);
     };
 
-    const handleNameBlur = () => {
+    // Commit through ``renameDataflow`` so the project row's name - what the
+    // Projects list and the details drawer render - moves with the canvas title
+    // (#230). Committing used to only close the editor, which left the rename
+    // living in ``workflowName`` alone. ``handleNameChange`` is untouched, so
+    // typing still updates the visible title live.
+    const commitName = () => {
+        if (!renameDataflow(workflowName)) {
+            // A blank entry is not a rename. Put the dataflow's own name back
+            // rather than leaving the title empty.
+            setWorkflowName(projectName || workflowNameRef.current || "Untitled dataflow");
+        }
         setIsEditing(false);
+    };
+
+    const handleNameBlur = () => {
+        commitName();
     };
 
     const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
-            setIsEditing(false);
+            commitName();
         }
     };
 
@@ -147,13 +195,15 @@ export default function UpMenu({
     };
 
     const handleNewWorkflow = () => {
-        if (projectDirty && !window.confirm("You have unsaved changes. Continue?")) {
-            return;
-        }
-        discardProject();
-        cleanCanvas();
-        setActiveMenu(null);
-        navigate("/dataflow/new");
+        leaveWithGuard(
+            "Starting a new dataflow discards the changes you have not saved.",
+            () => {
+                discardProject();
+                cleanCanvas();
+                setActiveMenu(null);
+                navigate("/dataflow/new");
+            },
+        );
     };
 
     const handleSave = async () => {
@@ -213,37 +263,64 @@ export default function UpMenu({
         setActiveMenu(null);
     };
 
+    // Every failure here used to be a console.error, so picking a malformed file
+    // left the canvas unchanged with nothing on screen to say why (#238). The
+    // three failures are told apart deliberately: reporting a wrong-shaped
+    // dataflow as "invalid JSON" sends people hunting for a syntax error that
+    // is not there.
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
 
-        if (file && file.type === "application/json") {
-            const reader = new FileReader();
-
-            reader.onload = (event: ProgressEvent<FileReader>) => {
-                try {
-                    const jsonContent = JSON.parse(event.target?.result as string);
-                    loadTrill(jsonContent);
-                    // Importing a workflow file is a deliberate user action, so
-                    // warn + auto-install its Python deps the same way opening
-                    // your own project does.
-                    ensureWorkflowDeps(jsonContent);
-                } catch (err) {
-                    console.error("Invalid JSON file:", err);
-                } finally {
-                    setActiveMenu(null);
-                }
-            };
-
-            reader.onerror = (event: ProgressEvent<FileReader>) => {
-                console.error("Error reading file:", event.target?.error);
-                setActiveMenu(null);
-            };
-
-            reader.readAsText(file);
-        } else {
-            console.error("Please select a valid .json file.");
+        if (!file) {
             setActiveMenu(null);
+            return;
         }
+
+        if (!looksLikeJsonFile(file)) {
+            showToast(NOT_JSON_FILE_MESSAGE, "error");
+            setActiveMenu(null);
+            return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onload = (event: ProgressEvent<FileReader>) => {
+            try {
+                const parsed = parseDataflowFile(event.target?.result as string);
+                if (!parsed.ok) {
+                    showToast(parsed.message, "error");
+                    return;
+                }
+                try {
+                    loadTrill(parsed.spec);
+                } catch (err) {
+                    // A spec can carry the right shape and still throw while it
+                    // is replayed, on a node type this build does not know.
+                    console.error("Failed to load dataflow:", err);
+                    showToast(loadFailedMessage(err), "error");
+                    return;
+                }
+                // Importing REPLACES the canvas, so it does diverge from what
+                // is on disk. The edge replay inside loadParsedTrill no longer
+                // says so on its own (#229) - and never did for an edgeless
+                // import - so say it here, where the intent is known.
+                markDirty();
+                // Importing a workflow file is a deliberate user action, so
+                // warn + auto-install its Python deps the same way opening
+                // your own project does.
+                ensureWorkflowDeps(parsed.spec);
+            } finally {
+                setActiveMenu(null);
+            }
+        };
+
+        reader.onerror = (event: ProgressEvent<FileReader>) => {
+            console.error("Error reading file:", event.target?.error);
+            showToast(UNREADABLE_FILE_MESSAGE, "error");
+            setActiveMenu(null);
+        };
+
+        reader.readAsText(file);
     };
 
     const exportAsJupyterNotebook = () => {
@@ -304,8 +381,19 @@ export default function UpMenu({
                     intro: "Welcome to Curio, a framework for urban analytics. Let's take a quick tour to help you get started.",
                 },
                 {
+                    // #240: this step used to promise a file picker the node
+                    // has never shipped. The uploader it described was
+                    // commented out of WidgetsEditor and has now been deleted,
+                    // so the copy names the two routes that do exist, and the
+                    // Data Catalog step below follows immediately because it is
+                    // the answer to the question this one raises.
                     element: "#step-loading",
-                    intro: "This is a Data Loading Node. Here, you can create an array for basic datasets or import data from a file. Once loaded, add your code to convert the data into a DataFrame for further analysis.",
+                    intro: "This is a Data Loading Node. Write Python here to build a small dataset inline, or to read one already available to your dataflow. The node holds code, not a file picker: to bring a file in, use the Data Catalog (next step), or add a file widget to the code with the marker [!! path$FILE !!].",
+                },
+                {
+                    // The tour never mentioned the Data Catalog, which is how a
+                    // file actually gets into a dataflow.
+                    intro: "Files live in the Data Catalog, not inside a node. Open Data → Data Catalog, import a CSV or GeoJSON, then drag the dataset onto the canvas: Curio creates a Data Loading Node already wired to it.",
                 },
                 {
                     element: "#step-analysis",
@@ -369,8 +457,10 @@ export default function UpMenu({
                     src={logo}
                     alt="Curio logo"
                     onClick={() => {
-                        if (projectDirty && !window.confirm("You have unsaved changes. Leaving will lose your work.")) return;
-                        navigate("/projects");
+                        leaveWithGuard(
+                            "Leaving this dataflow discards the changes you have not saved.",
+                            () => navigate("/projects"),
+                        );
                     }}
                 />
 
@@ -426,9 +516,13 @@ export default function UpMenu({
                                     <div
                                         className={styles.dropDownRow}
                                         onClick={() => {
-                                            if (projectDirty && !window.confirm("You have unsaved changes. Leaving will lose your work.")) return;
-                                            navigate("/projects");
-                                            setActiveMenu(null);
+                                            leaveWithGuard(
+                                                "Leaving this dataflow discards the changes you have not saved.",
+                                                () => {
+                                                    navigate("/projects");
+                                                    setActiveMenu(null);
+                                                },
+                                            );
                                         }}
                                     >
                                         <FontAwesomeIcon className={styles.dropDownIcon} icon={faFolderOpen} />
@@ -701,6 +795,21 @@ export default function UpMenu({
                 open={librariesOpen}
                 closeModal={() => setLibrariesOpen(false)}
             />
+            {pendingLeave ? (
+                <ConfirmDialog
+                    title="Discard unsaved changes?"
+                    body={pendingLeave.body}
+                    confirmLabel="Discard and continue"
+                    cancelLabel="Stay here"
+                    destructive
+                    onConfirm={() => {
+                        const run = pendingLeave.run;
+                        setPendingLeave(null);
+                        run();
+                    }}
+                    onCancel={() => setPendingLeave(null)}
+                />
+            ) : null}
         </>
     );
 }

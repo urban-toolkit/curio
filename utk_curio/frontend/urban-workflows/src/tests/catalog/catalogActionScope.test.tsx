@@ -972,8 +972,16 @@ describe("Remove from project is in all three drawers", () => {
     // rendered it disabled. So an item listed under "In project" in an unsaved
     // dataflow had no way back out on two of the three surfaces - and the card
     // changed shape depending on whether you had saved.
+    //
+    // This used to look for the literal `!hasProject`, which was a proxy for
+    // "the prop reaches the button" and stopped being true once the disabled
+    // gate came off. It also passed on the Agent card for the wrong reason -
+    // `inThisDataflow` contains that token for an unrelated purpose. Assert
+    // what is meant instead: the card still takes `hasProject`, and uses it
+    // only to word the tooltip.
     const src = read(rel);
-    expect(src).toContain("hasProject");
+    expect(src).toMatch(/hasProject/);
+    expect(src).toMatch(/hasProject\s*$|hasProject\s*\n?\s*\?/m);
   });
 
   test("the package card's Remove also WORKS without a project", () => {
@@ -1050,28 +1058,28 @@ describe("the drawer cards' Add and Remove both carry tooltips", () => {
     ["agent", "components/agents/catalog/AgentCatalogDrawer.tsx"],
   ];
 
-  // The package card is not in this list any more: its Remove no longer HAS a
-  // disabled state to explain (#220), so the sentence below would be a claim
-  // about a state that cannot occur. Its own wording is pinned right after.
-  const DISABLED_WITHOUT_A_PROJECT: [string, string][] = CARDS.filter(
-    ([k]) => k !== "package",
-  );
-
-  test.each(DISABLED_WITHOUT_A_PROJECT)(
-    "the %s card's Remove explains both of its states",
-    (_k, rel) => {
-      // The Agent one had no `title` at all, in either state - so the disabled
-      // case in an unsaved dataflow said nothing about why it was disabled.
-      const src = read(rel);
-      expect(src).toContain("from this project`");
-      expect(src).toContain("There is no project to remove it from yet.");
-    },
-  );
-
-  test("the package card's Remove explains that it will save first", () => {
-    const src = read("components/packages/publishing/PackageCard.tsx");
+  test.each(CARDS)("the %s card's Remove explains both of its states", (_k, rel) => {
+    // The Agent one had no `title` at all, in either state - so the disabled
+    // case in an unsaved dataflow said nothing about why it was disabled.
+    //
+    // The unsaved wording changed with the behaviour. It used to say "Save this
+    // dataflow first. There is no project to remove it from yet." - which was
+    // true only while the button was disabled. All three now create the
+    // dataflow on the click, the way Add always did, so the tooltip says what
+    // will happen rather than what the user must go and do (#190, #199).
+    const src = read(rel);
     expect(src).toContain("from this project`");
-    expect(src).toContain("saves the dataflow first");
+    expect(src).toContain("this saves the dataflow first`");
+    expect(src).not.toContain("There is no project to remove it from yet.");
+  });
+
+  test.each(CARDS)("the %s card's Remove is never gated on a saved dataflow", (_k, rel) => {
+    // The gate that produced the dead control. An item already in the account
+    // renders Remove before the first save - `inThisDataflow` for agents,
+    // `isInThisDataflow` for datasets, the accountDefaults fallback in
+    // `projectInstalledDirs` for packages - so `!hasProject` here left the card
+    // offering one disabled button and no other action at all.
+    expect(read(rel)).not.toMatch(/disabled=\{\s*\w+\s*\|\|\s*!hasProject\s*\}/);
   });
 
   test.each(CARDS)("the %s card's Add has one too", (_k, rel) => {
