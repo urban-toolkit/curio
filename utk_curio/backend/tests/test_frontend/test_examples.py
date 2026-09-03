@@ -296,3 +296,68 @@ def test_declared_dataset_refs_have_the_shape_the_backend_writes():
             assert ref["consumerNodeIds"] == [], f"{name}: {ref}"
             assert ref["producerNodeId"] is None, f"{name}: {ref}"
             assert ref["installedAt"], f"{name}: missing installedAt"
+
+
+#: URL prefixes an example node may legitimately reference. Vega-Lite specs
+#: carry their ``$schema`` URL, which the renderer never fetches.
+_EXTERNAL_URL_ALLOWLIST = (
+    "https://vega.github.io/schema/",
+)
+
+_EXTERNAL_URL = re.compile(r"""https?://[^\s"'\)\]]+""")
+
+
+def test_example_nodes_do_not_fetch_external_urls():
+    """No example node reads its data from a live third-party URL (#276).
+
+    Example 10 fetched Chicago's neighborhood boundaries from a Socrata id that
+    the portal later retired, so a curated example failed on its first node with
+    a 404 on a fresh install. Open-data portals rename and retire resources; a
+    layer an example depends on belongs in ``datasets/`` as a catalog entry,
+    loaded with ``curio_dataset_path``. Anything else here needs an allowlist
+    entry with a reason.
+    """
+    for path in _example_json_paths():
+        spec = json.load(open(path, encoding="utf-8"))
+        for node in spec["dataflow"]["nodes"]:
+            urls = sorted({
+                url
+                for url in _EXTERNAL_URL.findall(node.get("content") or "")
+                if not url.startswith(_EXTERNAL_URL_ALLOWLIST)
+            })
+            assert not urls, (
+                f"{os.path.basename(path)} node {node.get('id')} fetches "
+                f"{urls}. Vendor the data under datasets/ and load it with "
+                f'curio_dataset_path("<id>"), or allowlist the prefix with a '
+                f"reason in _EXTERNAL_URL_ALLOWLIST."
+            )
+
+
+def test_examples_declared_datasets_exist_in_the_catalog():
+    """Every ``dataflow.datasets`` ref points at a shipped catalog directory.
+
+    The parity test above proves the ref matches the node; this proves the ref
+    matches the repository. A ref to a directory that is not committed passes
+    every structural check and then fails at run time, when the seeder has
+    nothing to provision and ``curio_dataset_path`` cannot resolve.
+    """
+    datasets_dir = os.path.join(REPO_ROOT, "datasets")
+    for path in _example_json_paths():
+        spec = json.load(open(path, encoding="utf-8"))
+        for ref in spec["dataflow"].get("datasets") or []:
+            root = os.path.join(datasets_dir, ref["dirName"])
+            manifest_path = os.path.join(root, "manifest.json")
+            assert os.path.isfile(manifest_path), (
+                f"{os.path.basename(path)} declares {ref['dirName']} but "
+                f"{manifest_path} does not exist"
+            )
+            manifest = json.load(open(manifest_path, encoding="utf-8"))
+            assert manifest["id"] == ref["datasetId"], (
+                f"{ref['dirName']}/manifest.json id {manifest['id']!r} != "
+                f"ref datasetId {ref['datasetId']!r}"
+            )
+            data_file = os.path.join(root, manifest["dataFile"])
+            assert os.path.isfile(data_file), (
+                f"{ref['dirName']} manifest names {manifest['dataFile']} but "
+                f"the file is missing"
+            )
