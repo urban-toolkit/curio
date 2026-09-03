@@ -150,6 +150,28 @@ Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something look
 
 ## Updating
 
+> **One-time, destructive: archived projects are deleted on this upgrade.**
+> Archive was removed as an action (#261), and alembic revision `f6a7b8c9d0e1`
+> purges what it left behind: every project with `archived_at` set loses its row,
+> its execution-cache entries and its files under
+> `.curio/users/<user>/projects/<id>/`. It runs automatically during the
+> migration step, without prompting, and `downgrade` restores only the column —
+> not the data. The files go rather than just the rows because the guest boot
+> re-imports any project folder that has no row, so a rows-only purge would bring
+> archived guest projects back as active ones.
+>
+> Before upgrading, if anyone was using Archive as a holding area, copy those
+> trees out. To see what would be removed, query the deployment's database
+> (`$DATABASE_URL`, or `instance/urban_workflow.db` when it is unset):
+>
+> ```bash
+> sqlite3 instance/urban_workflow.db \
+>   "SELECT id, user_id, name FROM project WHERE archived_at IS NOT NULL"
+> ```
+>
+> Deployments that never archived anything are unaffected; the purge finds
+> nothing and only the schema changes.
+
 Pulling new code is straightforward, but the `--no-cache` flag is important: Docker's layer cache occasionally fails to invalidate the npm-build step when build args change, which silently produces a frontend bundle still pointing at the old URL. Forcing a clean build is slower but guarantees correctness.
 
 ```bash
