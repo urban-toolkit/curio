@@ -995,6 +995,7 @@ def _parse_test_args(argv, command_prefix="curio"):
         {command_prefix} test backend               # one suite on its own
         {command_prefix} test e2e --use-existing    # E2E against servers already running
         {command_prefix} test e2e --headed --workflows Vega.json,Regression.json
+        {command_prefix} test e2e --parallel 4     # 4 xdist workers, one backend+sandbox pair each
     """,
     )
     parser.add_argument(
@@ -1020,6 +1021,13 @@ def _parse_test_args(argv, command_prefix="curio"):
         "--allure-dir", default=None, metavar="DIR",
         help="Write the E2E run's Allure results to DIR",
     )
+    parser.add_argument(
+        "--parallel", default=None, metavar="N",
+        help=(
+            "Run the E2E suite on N pytest-xdist workers, each against its own "
+            "backend+sandbox pair behind one shared frontend; 'auto' = min(4, cores/4)"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1036,6 +1044,8 @@ def _test_script_flags(args) -> list[str]:
         flags += ["--workflows", args.workflows]
     if args.allure_dir:
         flags += ["--allure-dir", args.allure_dir]
+    if args.parallel:
+        flags += ["--parallel", args.parallel]
     return flags
 
 
