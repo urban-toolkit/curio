@@ -18,19 +18,22 @@
    re-numbering `.main` and the drawer, so the shared layout is untouched and
    the catalog pages keep their rails.
 
-   Both selectors are needed: `.pageWithDrawer` also sets
-   `grid-template-columns`, and it wins on source order when the drawer opens. */
-.pageNoRail {
+   The doubled class is deliberate. `.page` and `.pageWithDrawer` live in the
+   catalog module, so which of two equal-specificity rules wins would come down
+   to the order webpack happens to inject the two stylesheets - not something
+   this file should depend on. Repeating the class makes these (0,2,0) and
+   settles it outright. */
+.pageNoRail.pageNoRail {
   grid-template-columns: 0 minmax(0, 1fr) 0;
 }
-.pageNoRailWithDrawer {
+.pageNoRailWithDrawer.pageNoRailWithDrawer {
   grid-template-columns: 0 minmax(0, 1fr) 320px;
 }
 
 /* The catalog layout drops to two columns here; keep the rail collapsed. */
 @media (max-width: 1100px) {
-  .pageNoRail,
-  .pageNoRailWithDrawer {
+  .pageNoRail.pageNoRail,
+  .pageNoRailWithDrawer.pageNoRailWithDrawer {
     grid-template-columns: 0 minmax(0, 1fr);
   }
 }
