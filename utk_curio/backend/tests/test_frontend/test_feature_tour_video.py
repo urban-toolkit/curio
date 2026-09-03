@@ -765,7 +765,7 @@ def scene_projects(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.say(
         "The projects workspace",
-        "Dataflows as cards, with search, filters and a grid or list view.",
+        "Dataflows as cards, with search, sorting and a grid or list view.",
         hold=2600,
     )
     tour.focus(page.get_by_placeholder("Search projects…"), hold=900)

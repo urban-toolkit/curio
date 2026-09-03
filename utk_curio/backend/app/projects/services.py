@@ -902,17 +902,17 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
     projects = repo.list_for_user(user.id, sort=sort)
     ukey = _user_dir_key(user)
     summaries = []
-    purged = False
+    dropped_stale_row = False
     for p in projects:
         spec = storage.read_spec(ukey, p.id)
         if spec is None:
             # Spec file is gone — remove the stale DB row so the list stays
             # in sync with the filesystem (files are the source of truth).
-            repo.purge_project(p.id, user.id)
-            purged = True
+            repo.delete_project_row(p.id, user.id)
+            dropped_stale_row = True
             continue
         summaries.append(_to_summary(p, graph_preview=_extract_graph_preview(spec)))
-    if purged:
+    if dropped_stale_row:
         db.session.commit()
     return summaries
 
@@ -943,7 +943,7 @@ def delete_project(user, project_id: str) -> None:
     """
     repo.get_for_user(project_id, user.id)  # 404s before anything is touched
     storage.delete_tree(_user_dir_key(user), project_id)
-    repo.purge_project(project_id, user.id)
+    repo.delete_project_row(project_id, user.id)
     db.session.commit()
 
 

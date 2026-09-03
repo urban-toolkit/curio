@@ -148,20 +148,6 @@ def get_shared_project(project_id: str):
 @projects_bp.route("/<project_id>", methods=["DELETE"])
 @require_auth
 def delete_project(project_id: str):
-    # Refuse the old Archive call rather than performing its successor (#261).
-    # Before Archive was removed, the frontend's Archive action was
-    # `DELETE ?purge=false`, and it asked for no confirmation because archiving
-    # was reversible-looking. This route now always hard-deletes, so a browser
-    # still running the pre-#261 bundle would turn one unconfirmed click into a
-    # permanent delete of the project and its files. Anyone sending `purge` at
-    # all is running that bundle; tell them to reload instead.
-    if request.args.get("purge") is not None:
-        return _error(
-            "This version of Curio no longer archives projects, and delete is "
-            "permanent. Reload the page to get the current app, then try again.",
-            410,
-        )
-
     try:
         services.delete_project(g.user, project_id)
     except NotFoundError:

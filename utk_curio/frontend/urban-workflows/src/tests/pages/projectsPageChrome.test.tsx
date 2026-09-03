@@ -71,7 +71,6 @@ jest.mock('../../components/VersionBadge', () => ({ __esModule: true, default: (
 
 import ProjectsList from '../../pages/projects/ProjectsList';
 
-/** The page fetches every scope at once so the rail can show counts. */
 function stubProjects(rows: unknown[]) {
   mockList.mockImplementation(() => Promise.resolve(rows));
 }

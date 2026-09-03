@@ -89,7 +89,7 @@ def upsert_project(
     return project
 
 
-def purge_project(project_id: str, user_id: int) -> Project:
+def delete_project_row(project_id: str, user_id: int) -> Project:
     project = get_for_user(project_id, user_id)
     db.session.delete(project)
     db.session.flush()

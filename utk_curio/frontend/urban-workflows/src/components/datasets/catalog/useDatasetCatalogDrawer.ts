@@ -291,8 +291,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   /** Would removing this from the dataflow also delete it from the account?
    *
    *  The backend deletes an ``imported.*`` upload's store folder once no other
-   *  dataflow references it (``_remove_orphaned_imported_store_dir``), archived
-   *  projects included. Computed and source-node datasets are never deleted
+   *  dataflow references it (``_remove_orphaned_imported_store_dir``).
+   *  Computed and source-node datasets are never deleted
    *  this way. Usage is read BEFORE the removal, so the current dataflow is
    *  still counted - one user means this one and nothing else.
    */

@@ -120,8 +120,7 @@ export const projectsApi = {
     });
   },
 
-  /** Hard-deletes the project and its files. There is no soft variant — the
-   *  ``purge`` parameter went with Archive (#261). */
+  /** Hard-deletes the project and its files. There is no soft variant (#261). */
   delete(id: string): Promise<void> {
     return apiFetch(`/api/projects/${id}`, {
       method: "DELETE",
