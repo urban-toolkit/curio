@@ -496,7 +496,11 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`,
           `This deletes the dataset itself, and removes it from every dataflow ` +
           `that uses it, not just this one.` +
           usageNote,
-        confirmLabel: "Delete forever",
+        // Plain "Delete": the projects page dropped its "forever" when Archive
+        // went (#261), and one destructive verb across both surfaces beats two
+        // wordings for the same act (#285). The permanence is stated in the
+        // body above, which is where it belongs.
+        confirmLabel: "Delete",
         destructive: true,
         run: () => performDelete(dataset),
       });

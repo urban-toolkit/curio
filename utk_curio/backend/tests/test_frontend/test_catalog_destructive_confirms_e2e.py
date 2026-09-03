@@ -425,7 +425,7 @@ def test_uploading_a_file_then_deleting_it_warns_about_every_dataflow(
         timeout=60000,
     ):
         _modal(page, re.compile(r"^Delete ")).get_by_role(
-            "button", name="Delete forever", exact=True
+            "button", name="Delete", exact=True
         ).click()
 
     expect(
