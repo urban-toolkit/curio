@@ -37,10 +37,15 @@ verbosity = 1
 logger = logging.getLogger(__name__)
 
 
-def setup_logging():
-    log_dir = Path(".curio")
-    log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / "messages.log"
+def setup_logging(server: str = "all"):
+    # CURIO_STATE_DIR relocates every per-stack file (backend/app/common/
+    # user_storage.py); the log follows so two stacks in one checkout do not
+    # truncate each other's -- ``filemode="w"`` below wipes the first
+    # launcher's log the moment a second one starts. A single-server start
+    # gets its own file for the same reason: an e2e shard is two launchers.
+    log_dir = Path(os.environ.get("CURIO_STATE_DIR") or ".curio")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / ("messages.log" if server == "all" else f"messages-{server}.log")
 
     logging.basicConfig(
         filename=log_file,
@@ -515,7 +520,10 @@ def prepare_backend_database():
 
     testing = _is_testing()
     launch_dir = os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd()
-    db_dir = os.path.join(launch_dir, ".curio", "test") if testing else os.path.join(launch_dir, ".curio")
+    # Must agree with config._resolve_database_uri, or the wipe below hits a
+    # file the backend never opens.
+    state_dir = os.environ.get("CURIO_STATE_DIR") or os.path.join(launch_dir, ".curio")
+    db_dir = os.path.join(state_dir, "test") if testing else state_dir
 
     if not os.path.exists(db_dir):
         os.makedirs(db_dir)
@@ -679,6 +687,18 @@ def start_backend(host, port, no_server=False):
     return process
 
 
+def _skip_dep_install() -> bool:
+    """``CURIO_SKIP_DEP_INSTALL=1``: trust the environment as it is.
+
+    The parallel e2e driver starts several backend+sandbox pairs from one
+    checkout. Without this every launcher would run ``pip install`` into the
+    same interpreter and ``npm install`` into the same ``node_modules`` at the
+    same time. The driver does one warm-up (``curio.py setup`` and a root
+    ``npm install``) before the first pair starts.
+    """
+    return os.environ.get("CURIO_SKIP_DEP_INSTALL", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _ensure_root_node_modules(project_root: str) -> None:
     """Install the repo-root node_modules used by the sandbox's Node.js
     subprocess. ``@urban-toolkit/autk-db`` is declared in the root
@@ -728,7 +748,8 @@ def start_sandbox(host, port):
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(script_dir, ".."))
-    _ensure_root_node_modules(project_root)
+    if not _skip_dep_install():
+        _ensure_root_node_modules(project_root)
     # sandbox_server = os.path.join(script_dir, "sandbox", "server.py")
     env = os.environ.copy()
     env = {**os.environ, "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", "")}
@@ -1302,7 +1323,7 @@ def main():
 
     args = parser.parse_args()
 
-    setup_logging()
+    setup_logging(args.server)
     verbosity = int(args.verbose)
 
     set_environment_variables(
@@ -1363,7 +1384,7 @@ def main():
         # Framework first (gives us Flask + manifest-parsing deps), then
         # the manifest walk (covers builtin's data-ops libs + every other
         # installed package's declared python deps).
-        if args.server in ("all", "backend", "sandbox"):
+        if args.server in ("all", "backend", "sandbox") and not _skip_dep_install():
             install_framework_requirements()
             install_manifest_dependencies()
 

@@ -213,9 +213,19 @@ def resolve_widget_placeholders(code: str) -> str:
     return _WIDGET_RE.sub(_replace, code)
 
 
-PLAYWRIGHT_EXPECTED_DIR = os.path.join(
-    REPO_ROOT, ".curio", "playwright", "expected"
-)
+
+
+def state_root() -> str:
+    """``.curio/`` for this stack -- ``CURIO_STATE_DIR`` when set.
+
+    Per-shard under xdist (backend/tests/shards.py), so the Playwright scratch
+    artifacts below never interleave across workers. Mirrors
+    ``user_storage.curio_root`` minus the ``/test`` suffix.
+    """
+    return os.environ.get("CURIO_STATE_DIR") or os.path.join(REPO_ROOT, ".curio")
+
+
+PLAYWRIGHT_EXPECTED_DIR = os.path.join(state_root(), "playwright", "expected")
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
@@ -1146,7 +1156,7 @@ def save_workflow_test_screenshot(
 def debug_log(location: str, message: str, data: dict = None, hypothesis_id: str = ""):
     """Write a single NDJSON debug entry to ``.curio/playwright.log``."""
     try:
-        log_path = os.path.join(REPO_ROOT, ".curio", "playwright.log")
+        log_path = os.path.join(state_root(), "playwright.log")
         entry = {
             "timestamp": int(time.time() * 1000),
             "location": location,
