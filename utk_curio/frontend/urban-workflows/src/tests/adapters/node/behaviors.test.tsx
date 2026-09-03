@@ -40,6 +40,7 @@ jest.mock('../../../components/editing/OutputContent', () => {
 // `useEdges()` is settable per test so a Play-All test can wire the merge's
 // input slots. Defaults to [] for every other behavior test; reset in afterEach.
 let mockEdges: any[] = [];
+let mockNodes: Record<string, any> = {};
 jest.mock('reactflow', () => ({
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   useStoreApi: () => ({
@@ -47,6 +48,7 @@ jest.mock('reactflow', () => ({
     getState: () => ({ edges: [] }),
   }),
   useEdges: () => mockEdges,
+  useReactFlow: () => ({ getNode: (id: string) => mockNodes[id] }),
 }));
 
 jest.mock('../../../providers/StarterProvider', () => ({
@@ -182,6 +184,11 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   });
 
   describe('useDataExportBehavior', () => {
+    afterEach(() => {
+      mockEdges = [];
+      mockNodes = {};
+    });
+
     test('returns expected fields', async () => {
       const result = await callBehavior(useDataExportBehavior);
       assertValidBehaviorResult(result.current);
@@ -189,6 +196,57 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
       expect(typeof result.current.customWidgetsCallback).toBe('function');
       expect(result.current.contentComponent).toBeDefined();
+    });
+
+    // These go through the hook rather than calling resolveExportTarget directly.
+    // The unit test for the "producing node" fallback passed against a code path
+    // no caller reached: the name was read off the export node's own
+    // datasetSource, which nothing writes, so every ordinary dataflow fell
+    // through to "data_export" (#226).
+    function exportButtonLabel(result: any): string {
+      // customWidgetsCallback mutates the element it is handed rather than
+      // returning nodes, so give it one and read the button back out.
+      const host = document.createElement('div');
+      result.current.customWidgetsCallback(host);
+      return host.querySelector('button')?.textContent ?? '';
+    }
+
+    test('names the file after the node feeding it', async () => {
+      mockEdges = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
+      mockNodes = {
+        'upstream-1': {
+          id: 'upstream-1',
+          data: { nodeType: 'curio.builtin/data-loading@1' },
+        },
+      };
+      const result = await callBehavior(useDataExportBehavior, {
+        input: { path: 'p', dataType: 'dataframe' },
+      });
+      expect(exportButtonLabel(result)).not.toContain('data_export');
+    });
+
+    test('prefers a renamed upstream node title', async () => {
+      mockEdges = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
+      mockNodes = {
+        'upstream-1': {
+          id: 'upstream-1',
+          data: {
+            nodeType: 'curio.builtin/data-loading@1',
+            datasetSource: { title: 'boundaries.geojson' },
+          },
+        },
+      };
+      const result = await callBehavior(useDataExportBehavior, {
+        input: { path: 'p', dataType: 'geodataframe' },
+      });
+      expect(exportButtonLabel(result)).toContain('boundaries.geojson');
+    });
+
+    test('falls back to the default stem when nothing is upstream', async () => {
+      const result = await callBehavior(useDataExportBehavior, {
+        input: { path: 'p', dataType: 'dataframe' },
+      });
+      expect(exportButtonLabel(result)).toContain('data_export.csv');
     });
   });
 

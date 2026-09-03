@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEdges, useReactFlow } from 'reactflow';
 import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
+import { resolveNodeDisplayLabel } from '../../utils/palettePackageFactoryDraft';
 import { triggerBlobDownload } from '../../utils/triggerBlobDownload';
 import {
   EXPORT_MIME,
@@ -68,11 +70,40 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
   const connected = Boolean(input?.path);
 
   // The name of whatever produced the input, used when the payload carries no
-  // dataset filename of its own. ``datasetSource`` is written by the dataset
-  // palette onto nodes created from it and is not part of the behavior data
-  // contract, so it is read defensively rather than declared.
-  const datasetSource = (data as { datasetSource?: { title?: unknown } }).datasetSource;
-  const sourceName = typeof datasetSource?.title === 'string' ? datasetSource.title : null;
+  // dataset filename of its own.
+  //
+  // This used to read ``datasetSource`` off the export node's own data, which
+  // never resolved: that field is written by the dataset palette onto the node
+  // it creates, and an export node is never created that way. So the ordinary
+  // case — a compute node wired into Data Export — always fell through to the
+  // default stem and the button read "Download data_export.csv" (#226). Name the
+  // node actually feeding this one instead, which is what the button should have
+  // said all along.
+  const edges = useEdges();
+  const upstreamId = useMemo(
+    () => edges.find((edge) => edge.target === data.nodeId)?.source ?? null,
+    [edges, data.nodeId],
+  );
+  const { getNode } = useReactFlow();
+  const sourceName = useMemo(() => {
+    // A dataset dropped straight onto this node still wins, when it is there.
+    const own = (data as { datasetSource?: { title?: unknown } }).datasetSource;
+    if (typeof own?.title === 'string' && own.title.trim()) return own.title;
+    if (!upstreamId) return null;
+    const upstream = getNode(upstreamId);
+    if (!upstream?.data) return null;
+    const fromPalette = (upstream.data as { datasetSource?: { title?: unknown } })
+      .datasetSource;
+    if (typeof fromPalette?.title === 'string' && fromPalette.title.trim()) {
+      return fromPalette.title;
+    }
+    try {
+      return resolveNodeDisplayLabel(upstream.data as any);
+    } catch {
+      // An unresolvable node type is not worth failing a download over.
+      return null;
+    }
+  }, [data, upstreamId, getNode]);
 
   const target = useMemo(
     () => resolveExportTarget(input, sourceName),
