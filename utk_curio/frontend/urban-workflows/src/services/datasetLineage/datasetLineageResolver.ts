@@ -31,6 +31,8 @@ import {
 } from "./datasetLineageTypes";
 
 /** Minimal shape of a canvas node the resolver needs (subset of ReactFlow INode). */
+import { datasetIdsInCode } from "../datasetCatalog/datasetLoaderSnippets";
+
 export interface LineageCanvasNode {
   /** ReactFlow node id (used for edge matching); usually equal to data.nodeId. */
   id?: string;
@@ -43,6 +45,9 @@ export interface LineageCanvasNode {
       string,
       { id?: string; datasetId?: string; title?: string } | null | undefined
     > | null;
+    /** Node source, scanned for ``curio_dataset_path`` references (#205). */
+    code?: string;
+    defaultCode?: string;
   } | null;
 }
 
@@ -152,6 +157,12 @@ function datasetIdsForNode(node: LineageCanvasNode): Set<string> {
     const valueId = value?.datasetId || value?.id;
     if (valueId) ids.add(valueId);
   }
+  // Same blind spot the palette highlight had (#205): the bindings above exist
+  // only on nodes created by dragging a dataset, so a hand-authored loader was
+  // not recognised as a carrier and the edge walk below never reported its
+  // downstream consumers.
+  for (const id of datasetIdsInCode(data.code)) ids.add(id);
+  for (const id of datasetIdsInCode(data.defaultCode)) ids.add(id);
   return ids;
 }
 

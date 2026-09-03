@@ -22,6 +22,8 @@ import {
   type LineageStatus,
 } from "../../../services/datasetLineage";
 import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
+import { CopyButton } from "../../CopyButton";
+import { datasetReference } from "../../../services/datasetCatalog";
 import {
   absoluteDate,
   datasetCount,
@@ -299,6 +301,13 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   // Shared schema resolution so the header/info counts match the schema panel.
   const resolvedSchema = useDatasetResolvedSchema(dataset, dataflowId, liveOutputs);
   const fields = resolvedSchema.fields;
+  // What to paste into a node, and where the bytes are. One helper decides, so
+  // no surface has to reason about ids versus paths (#206).
+  const reference = useMemo(
+    () => (dataset ? datasetReference(dataset) : null),
+    [dataset],
+  );
+
   const columnsLabel =
     fields.length > 0
       ? fields.length.toLocaleString()
@@ -472,6 +481,29 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
         <aside className={styles.infoColumn} aria-label="Dataset info">
           <div className={styles.infoHeader}>
             <h2>Dataset Info</h2>
+          </div>
+
+          {/* How to USE this dataset, above what it contains: the details view
+              is where someone comes to find that out, and until now it was the
+              one place that did not say (#206). The reference is what goes into
+              a node -- the location is shown beside it as information, because
+              an absolute path is specific to this machine and pasting it
+              produces code that breaks for the next person. */}
+          <div className={styles.infoSection}>
+            <p className={styles.infoSectionLabel}>Use in a node</p>
+            <div className={styles.referenceRow}>
+              <code className={styles.referenceCode}>{reference?.code}</code>
+              <CopyButton
+                value={reference?.code ?? ""}
+                label="Copy dataset reference"
+                variant="labelled"
+              />
+            </div>
+            {reference?.location ? (
+              <p className={styles.referenceLocation} title={reference.location}>
+                {reference.location}
+              </p>
+            ) : null}
           </div>
 
           <div className={styles.infoSection}>
