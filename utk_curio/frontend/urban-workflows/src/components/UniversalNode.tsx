@@ -252,7 +252,14 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             to unmount the whole React root - canvas, menus and every other
             node - leaving a blank page. Contained here, the rest of the
             dataflow keeps working and the broken node says so in place. */}
-        <ErrorBoundary label={`node ${data.nodeId}`}>
+        <ErrorBoundary
+          label={`node ${data.nodeId}`}
+          // A render throw mid-run used to leave this node at "exec" for good:
+          // the boundary swallows the subtree but UniversalNode stays mounted,
+          // so neither the output watcher nor the unmount safety net fires and
+          // the run is held until its ten-minute watchdog (#271).
+          onError={(err) => setOutputCallback({ code: "error", content: err.message || "This node could not render." })}
+        >
         {adapter.editor ? (
           <NodeEditor
             outputId={behavior.outputIdOverride ?? adapter.editor.outputId?.(data.nodeId)}

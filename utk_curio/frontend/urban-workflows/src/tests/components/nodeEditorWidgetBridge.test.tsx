@@ -192,3 +192,27 @@ describe('during a run the output tab still takes focus', () => {
     expect(activePane()).toBe('output');
   });
 });
+
+describe('the play callback does not outlive the editor (#271)', () => {
+  test('unmount unregisters sendCode, so a dead editor cannot be asked to run', () => {
+    const setSendCodeCallback = jest.fn();
+    const view = render(
+      <NodeEditor
+        {...(baseProps as any)}
+        setSendCodeCallback={setSendCodeCallback}
+        code={false}
+        grammar={true}
+        widgets={true}
+        defaultValue={GRAMMAR_SPEC}
+      />,
+    );
+    expect(setSendCodeCallback).toHaveBeenCalledWith(expect.any(Function));
+
+    // What the per-node ErrorBoundary does to a subtree that threw. Before,
+    // the registered callback stayed behind and UniversalNode kept calling
+    // into a tree that no longer existed - the node sat at "exec" forever.
+    view.unmount();
+
+    expect(setSendCodeCallback).toHaveBeenLastCalledWith(undefined);
+  });
+});

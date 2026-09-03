@@ -17,6 +17,8 @@ type GrammarEditorProps = {
     defaultValue?: any;
     floatCode?: any;
     readOnly: boolean;
+    /** Lets a rejected applyGrammar become an error output, so the run ends (#271). */
+    setOutputCallback?: (output: { code: string; content: string }) => void;
 };
 
 export default function GrammarEditor({
@@ -30,6 +32,7 @@ export default function GrammarEditor({
     defaultValue,
     floatCode,
     readOnly,
+    setOutputCallback,
 }: GrammarEditorProps) {
     const [grammar, _setGrammar] = useState("{}");
     const grammarRef = useRef(grammar);
@@ -162,6 +165,12 @@ export default function GrammarEditor({
             // grammar took the whole screen in development.
             void Promise.resolve(applyGrammar(replacedCode)).catch((err) => {
                 console.error("[GrammarEditor] applyGrammar failed:", err);
+                // A rejection that only reached the console left the node at
+                // "exec" forever, and with it the Run All guard (#271).
+                setOutputCallback?.({
+                    code: "error",
+                    content: (err as Error)?.message ?? String(err),
+                });
             });
         }
         replacedCodeDirtyBypass.current = true;
