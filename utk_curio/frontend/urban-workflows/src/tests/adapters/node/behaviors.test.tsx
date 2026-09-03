@@ -1,5 +1,5 @@
 import React from 'react';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, render, act } from '@testing-library/react';
 import type { NodeBehaviorHook, NodeBehaviorData, UseNodeStateReturn, NodeBehaviorResult } from '../../../registry/types';
 
 jest.setTimeout(15000);
@@ -93,7 +93,7 @@ import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
 import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
 import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
 import { useDataPoolBehavior } from '../../../adapters/node/dataPoolBehavior';
-import { useAutkGrammarBehavior, attachMapInteractionZoomFix, requestedLayerTables, SANDBOX_BACKEND_URL_TOKEN } from '../../../adapters/node/autkGrammarBehavior';
+import { useAutkGrammarBehavior, attachMapInteractionZoomFix, requestedLayerTables, SANDBOX_BACKEND_URL_TOKEN, classifyAutkSpec, classifyAutkSpecString, describeAutkRun } from '../../../adapters/node/autkGrammarBehavior';
 import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
@@ -445,6 +445,68 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // … and the node emits the DuckDB artifact reference downstream (DB-backed,
       // like a normal code node), not an in-memory layer array.
       expect(outputCallback).toHaveBeenCalledWith('node-1', { path: 'art-1', dataType: 'list' });
+    });
+
+    test('data-only node says what it loaded instead of leaving the body blank (#282)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+      );
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+        { setOutput },
+      );
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'geojson',
+            geojsonObject: { type: 'FeatureCollection', features: [] },
+            outputTableName: 't',
+          }],
+        }));
+      });
+
+      // The success output names the table rather than carrying an empty
+      // string - a Python node leaves "[1]: Saved to file"; this is the
+      // Autark equivalent.
+      expect(setOutput).toHaveBeenLastCalledWith({
+        code: 'success',
+        content: expect.stringContaining('Loaded 1 table: t'),
+      });
+      // And the body shows it: the wrapper the grammar owns is empty for a
+      // data-only spec, so this sibling is the only thing in the node.
+      const { container } = render(<>{result.current.contentComponent}</>);
+      const summary = container.querySelector('[data-curio-autk-summary="data"]');
+      expect(summary).not.toBeNull();
+      expect(summary!.textContent).toContain('Loaded 1 table: t');
+      expect(container.querySelector('[data-curio-node-empty]')).toBeNull();
+    });
+
+    test('data-only node before its first run says what running it will do (#282)', async () => {
+      const result = await callBehavior(useAutkGrammarBehavior, {
+        code: JSON.stringify({
+          data: [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', features: [] }, outputTableName: 't' }],
+        }),
+      } as any);
+
+      const { container } = render(<>{result.current.contentComponent}</>);
+      const empty = container.querySelector('[data-curio-node-empty="upstream-not-run"]');
+      expect(empty).not.toBeNull();
+      expect(empty!.textContent).toContain('This step loads data');
+      expect(container.querySelector('[data-curio-autk-summary]')).toBeNull();
+    });
+
+    test('render node body is the map box, not an empty-state or summary (#282)', async () => {
+      const result = await callBehavior(useAutkGrammarBehavior, {
+        code: JSON.stringify({ map: { layerRefs: [] } }),
+      } as any);
+
+      const { container } = render(<>{result.current.contentComponent}</>);
+      expect(container.querySelector('[data-curio-node-empty]')).toBeNull();
+      expect(container.querySelector('[data-curio-autk-summary]')).toBeNull();
     });
 
     test('render node loads data in the backend, then runs the grammar in the browser', async () => {
@@ -826,6 +888,33 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   // because a wrong name here is invisible in the happy path and shows up only
   // as a phantom "missing table" failure - or, worse, as the silent short load
   // of #248 going undetected.
+  describe('classifyAutkSpec / describeAutkRun (#282)', () => {
+    test('a map or plot is a render step, whatever else the spec carries', () => {
+      expect(classifyAutkSpec({ map: {}, data: [{}], compute: [{}] })).toBe('render');
+      expect(classifyAutkSpec({ plot: {} })).toBe('render');
+    });
+
+    test('compute outranks data; data alone is a data step', () => {
+      expect(classifyAutkSpec({ data: [{}], compute: [{ shader: 'x' }] })).toBe('compute');
+      expect(classifyAutkSpec({ data: [{}] })).toBe('data');
+      expect(classifyAutkSpec({ data: [], compute: [] })).toBe('unknown');
+    });
+
+    test('the string form tolerates garbage, so a half-typed spec cannot throw at render', () => {
+      expect(classifyAutkSpecString('{"data": [{}]}')).toBe('data');
+      expect(classifyAutkSpecString('{ not json')).toBe('unknown');
+      expect(classifyAutkSpecString(undefined)).toBe('unknown');
+      expect(classifyAutkSpecString('')).toBe('unknown');
+    });
+
+    test('describeAutkRun pluralises and lists', () => {
+      expect(describeAutkRun('Loaded', 'table', ['a'])).toBe('Loaded 1 table: a');
+      expect(describeAutkRun('Computed', 'layer', ['a (3 rows)', 'b (0 rows)']))
+        .toBe('Computed 2 layers: a (3 rows), b (0 rows)');
+      expect(describeAutkRun('Loaded', 'table', [])).toMatch(/nothing/);
+    });
+  });
+
   describe('requestedLayerTables (autk data-spec contract)', () => {
     test('osm: one table per requested layer, using autk-db naming', () => {
       expect(requestedLayerTables([{

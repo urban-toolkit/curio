@@ -45,7 +45,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 600,
-        "content": "import geopandas as gpd\n\n# Chicago official neighborhoods boundary. Swap in any local file via\n# `gpd.read_file(\"docs/examples/data/<your-polygons>.geojson\")` for non-Chicago runs.\ngdf = gpd.read_file(\n    \"https://data.cityofchicago.org/api/geospatial/bbvr-jsnu?method=export&format=GeoJSON\",\n)\n\ngdf.metadata = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
+        "content": "import geopandas as gpd\n\n# Chicago official neighborhoods boundary (98 polygons, `pri_neigh` names),\n# vendored in the Data Catalog so this example runs offline. Any polygon\n# FeatureCollection with a string name property works here.\ndataset_path = curio_dataset_path(\"data.cityofchicago.neighborhoods\")\ngdf = gpd.read_file(dataset_path)\n\ngdf.metadata = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load a polygon GeoDataFrame with a `pri_neigh` column (Chicago's neighborhood name field).",
@@ -164,6 +164,16 @@
     "provenance_id": "Street-level computer vision",
     "packages": [
       "curio.streetvision@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.cityofchicago.neighborhoods",
+        "dirName": "data.cityofchicago.neighborhoods@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-03T00:00:00Z"
+      }
     ]
   }
 }

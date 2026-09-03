@@ -7,6 +7,7 @@ import { useToastContext } from '../../providers/ToastProvider';
 import { autkGrammarAdapter } from '../../adapters/autkGrammarAdapter';
 import { VisInteractionType, NodeType } from '../../constants';
 import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
+import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { backendUrl } from '../../utils/backendUrl';
 
 export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -16,6 +17,17 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // in-node explanation instead of the map container, so the node says why
     // it is empty rather than looking like it simply produced nothing.
     const [gpuBlocked, setGpuBlocked] = useState<string | null>(null);
+    // What kind of step this spec is, so the body can say so. A data-only or
+    // compute-only node has no map/plot to draw, and used to render a blank
+    // 400px box under a green "Done" chip - indistinguishable from a node that
+    // never ran or silently failed (#282). Seeded from the authored spec so the
+    // pre-run body already says what running it will do; updated on every run.
+    const [specKind, setSpecKind] = useState<AutkSpecKind>(() =>
+        classifyAutkSpecString((data as any).code || data.defaultCode || autkGrammarAdapter.getDefaultSpec?.()),
+    );
+    // One line per table/layer the last successful run produced. Null while
+    // running and after an error, so a stale summary never outlives its data.
+    const [runSummary, setRunSummary] = useState<string | null>(null);
 
     // Grammar instance and last-run spec, kept in refs so effects can access
     // them without causing re-renders.
@@ -47,6 +59,8 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             nodeState.setOutput({ code: 'error', content: 'Invalid JSON grammar spec.' });
             return;
         }
+        setSpecKind(classifyAutkSpec(spec));
+        setRunSummary(null);
 
         // Ask whether this browser can run Autark at all, BEFORE any canvas or
         // DOM work (#201). Upstream of the dynamic import, the compute path and
@@ -149,6 +163,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         interactionOffRef.current = [];
 
         nodeState.setOutput({ code: 'exec', content: '' });
+        let summary: string | null = null;
         try {
             // ── Data section → backend sandbox ──────────────────────────────
             // The authored data sources are compiled to autk-db JavaScript and
@@ -366,6 +381,13 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     // loads it straight from the DB. The fallback emits layers inline.
                     const out = backendRef ?? backendLayers;
                     if (data.outputCallback) data.outputCallback(data.nodeId, out);
+                    // The backend path hands back an artifact ref, not the
+                    // tables, so name what the spec asked autk-db to create -
+                    // a short load has already failed above, so these exist.
+                    const tables = backendLayers
+                        ? backendLayers.map((l) => `${l.name} (${l.geojson?.features?.length ?? 0} features)`)
+                        : requestedLayerTables(specDataSources);
+                    summary = describeAutkRun('Loaded', 'table', tables);
                 } else {
                     // Compute-only node: skip the extra AutkDb round-trip — upstream layers
                     // (from backend, or the in-browser fallback) are already normalized and
@@ -424,10 +446,18 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         }
                     }
                     if (data.outputCallback) data.outputCallback(data.nodeId, out ?? layers);
+                    summary = describeAutkRun(
+                        'Computed',
+                        'layer',
+                        layers.map((l) => `${l.name} (${(l.geojson as any)?.features?.length ?? 0} rows)`),
+                    );
                 }
             }
 
-            nodeState.setOutput({ code: 'success', content: '' });
+            // A render node reports through its map/plot; a data or compute
+            // node has only this line to show that it did something (#282).
+            setRunSummary(summary);
+            nodeState.setOutput({ code: 'success', content: summary ?? '' });
         } catch (err: any) {
             const msg = err?.message ?? String(err);
             // The toast is transient and the node UI has no error tab, so
@@ -580,20 +610,56 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     <span>{gpuBlocked}</span>
                 </div>
             ) : (
+                // The wrapper is always mounted - applyGrammar owns its
+                // children (canvas / plot div) and empties it on every run - so
+                // the data/compute feedback is a SIBLING React owns, not a child
+                // the next run would wipe (#282). A render node keeps the old
+                // 400px box; a data/compute node has nothing to draw there, so
+                // the box collapses and the summary is the body.
                 <div
                     className="nodrag nopan nowheel"
-                    ref={wrapperRef}
-                    style={{
-                        position: 'relative',
-                        width: '100%',
-                        height: '100%',
-                        minHeight: 400,
-                        overflow: 'hidden',
-                    }}
-                />
+                    style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}
+                >
+                    {specKind === 'data' || specKind === 'compute' ? (
+                        runSummary ? (
+                            <div
+                                data-curio-autk-summary={specKind}
+                                style={{
+                                    padding: '10px 14px',
+                                    fontSize: 'var(--curio-font-size-md, 13px)',
+                                    lineHeight: 1.5,
+                                    color: 'var(--curio-text-primary, #1E1F23)',
+                                    whiteSpace: 'pre-wrap',
+                                    overflow: 'auto',
+                                }}
+                            >
+                                {runSummary}
+                            </div>
+                        ) : (
+                            <NodeEmptyState
+                                reason="upstream-not-run"
+                                hint={
+                                    specKind === 'data'
+                                        ? 'This step loads data; run it to pass tables downstream.'
+                                        : 'This step computes on upstream layers; run it to pass results downstream.'
+                                }
+                            />
+                        )
+                    ) : null}
+                    <div
+                        ref={wrapperRef}
+                        style={{
+                            position: 'relative',
+                            width: '100%',
+                            flex: 1,
+                            minHeight: specKind === 'data' || specKind === 'compute' ? 0 : 400,
+                            overflow: 'hidden',
+                        }}
+                    />
+                </div>
             ),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [nodeState.output, gpuBlocked],
+        [nodeState.output, gpuBlocked, runSummary, specKind],
     );
 
     // Editor seed, decided ONCE at mount: a node that arrives with no code gets
@@ -790,6 +856,39 @@ export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => vo
 //
 // Naming mirrors autk-db's own, which derives a layer table as
 // `outputTableName || `${osmInputTableName}_${layer}``.
+export type AutkSpecKind = 'render' | 'data' | 'compute' | 'unknown';
+
+/**
+ * Which kind of step an UrbanSpec describes (#282).
+ *
+ * ``render`` draws a map or plot; ``compute`` runs WGSL over upstream layers;
+ * ``data`` only loads sources. The last two have nothing to draw, so the node
+ * body reports what they produced instead of staying blank.
+ */
+export function classifyAutkSpec(spec: any): AutkSpecKind {
+    if (!spec || typeof spec !== 'object') return 'unknown';
+    if (spec.map != null || spec.plot != null) return 'render';
+    if (Array.isArray(spec.compute) && spec.compute.length > 0) return 'compute';
+    if (Array.isArray(spec.data) && spec.data.length > 0) return 'data';
+    return 'unknown';
+}
+
+export function classifyAutkSpecString(specString: unknown): AutkSpecKind {
+    if (typeof specString !== 'string' || specString.trim() === '') return 'unknown';
+    try {
+        return classifyAutkSpec(JSON.parse(specString));
+    } catch {
+        return 'unknown';
+    }
+}
+
+/** ``Loaded 3 tables: a, b, c`` - the one line a data/compute node shows after a run. */
+export function describeAutkRun(verb: string, noun: string, items: string[]): string {
+    if (items.length === 0) return `${verb} nothing - the spec names no ${noun}s.`;
+    const plural = items.length === 1 ? noun : `${noun}s`;
+    return `${verb} ${items.length} ${plural}: ${items.join(', ')}`;
+}
+
 export function requestedLayerTables(dataSources: any[]): string[] {
     const names: string[] = [];
     for (const source of dataSources ?? []) {

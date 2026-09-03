@@ -388,11 +388,12 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 if incomingInput is None and 'arg' in code:
                     raise RuntimeError(
                         "This node received no input but its code references `arg`. "
-                        "Make sure every upstream node has produced output (state "
-                        "'Done') and is wired to this node's input handle before "
-                        "running. If the inputs come through a Merge Flow node, "
-                        "give it a moment after the last upstream finishes so the "
-                        "merged tuple can propagate, then click Run again."
+                        "An upstream node has not run yet, failed, or is not wired "
+                        "to this node's input handle. Check the nodes feeding this "
+                        "one: fix any that show an error, run them until each shows "
+                        "'Done', then run this node again. If the inputs come "
+                        "through a Merge Flow node, give it a moment after the last "
+                        "upstream finishes so the merged tuple can propagate."
                     )
 
                 # Run user code.

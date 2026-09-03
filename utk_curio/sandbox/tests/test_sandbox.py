@@ -420,3 +420,36 @@ class TestProjDataDir(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestNoInputTripwire(unittest.TestCase):
+    """The ``arg``-without-input guard names the upstream failure (#276).
+
+    A downstream node whose upstream just failed used to report only that it
+    "received no input", which reads as a wiring problem and sent the reporter
+    hunting through edges before finding the 404 one node up. The message now
+    says the input is missing because an upstream node has not run, failed, or
+    is not wired, and says what to do about each.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from utk_curio.sandbox.app.worker import _worker_init
+        _worker_init()
+
+    def test_message_points_at_the_upstream_node(self):
+        from utk_curio.sandbox.app.worker import execute_code
+
+        result = execute_code(
+            "    return arg.head()\n",
+            file_path='',
+            node_type='DATA_TRANSFORMATION',
+            data_type='',
+            launch_dir=_REPO_ROOT,
+            session_id=None,
+        )
+
+        stderr = result['stderr']
+        self.assertIn("received no input but its code references `arg`", stderr)
+        self.assertIn("has not run yet, failed, or is not wired", stderr)
+        self.assertIn("fix any that show an error", stderr)
+        self.assertEqual(result['output']['path'], '')
