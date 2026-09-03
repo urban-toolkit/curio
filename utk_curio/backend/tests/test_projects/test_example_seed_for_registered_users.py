@@ -171,7 +171,7 @@ def test_backfill_does_not_resurrect_a_deleted_example(app, db, user_and_token):
     assert ensure_user_examples_seeded(user) == len(_example_stems())
 
     victim = list_for_user(user.id)[0]
-    services.delete_project(user, victim.id, purge=True)
+    services.delete_project(user, victim.id)
     assert victim.id not in {p.id for p in list_for_user(user.id)}
 
     # A second call is a no-op, so the deliberate deletion stands.
@@ -240,7 +240,7 @@ def test_the_same_account_is_still_seeded_only_once(app, db, user_and_token):
     assert ensure_user_examples_seeded(user) == len(_example_stems())
 
     victim = list_for_user(user.id)[0]
-    services.delete_project(user, victim.id, purge=True)
+    services.delete_project(user, victim.id)
 
     assert ensure_user_examples_seeded(user) == 0
     assert victim.id not in {p.id for p in list_for_user(user.id)}

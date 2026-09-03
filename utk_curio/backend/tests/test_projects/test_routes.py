@@ -334,17 +334,18 @@ def test_get_shared_project_missing(client, tmp_curio):
     assert resp.status_code == 404
 
 
-def test_get_shared_project_archived(client, user_and_token, tmp_curio):
+def test_get_shared_project_deleted(client, user_and_token, tmp_curio):
+    """Deleting revokes the public share link."""
     _, token = user_and_token
     create = client.post(
         "/api/projects",
-        data=json.dumps({"name": "Soon Archived", "spec": _spec()}),
+        data=json.dumps({"name": "Soon Deleted", "spec": _spec()}),
         headers=_auth(token),
     )
     pid = create.get_json()["id"]
 
-    archived = client.delete(f"/api/projects/{pid}", headers=_auth(token))
-    assert archived.status_code == 204
+    deleted = client.delete(f"/api/projects/{pid}", headers=_auth(token))
+    assert deleted.status_code == 204
 
     resp = client.get(f"/api/projects/{pid}/shared")
     assert resp.status_code == 404

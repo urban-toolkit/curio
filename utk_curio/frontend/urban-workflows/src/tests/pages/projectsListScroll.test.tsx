@@ -14,7 +14,7 @@
  * geometry half is asserted against the stylesheet on disk — the same approach
  * as tests/catalog/removedCatalogChrome.test.ts.
  */
-// ProjectsList toasts the outcome of archive / delete (#221), and the real
+// ProjectsList toasts the outcome of a delete (#221), and the real
 // provider is not mounted in these tests. Same stub the other page and drawer
 // suites use.
 jest.mock("../../providers/ToastProvider", () => ({
@@ -45,7 +45,6 @@ jest.mock('../../api/projectsApi', () => ({
         last_opened_at: null,
         created_at: '2026-01-01T10:00:00Z',
         updated_at: '2026-01-01T10:00:00Z',
-        archived_at: null,
         graph_preview: null,
       },
     ]),

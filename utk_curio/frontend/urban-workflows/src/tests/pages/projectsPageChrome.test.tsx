@@ -7,7 +7,7 @@
  * (wait_for_projects_page in backend/tests/test_frontend/utils.py), so that
  * link's accessible name matters.
  */
-// ProjectsList toasts the outcome of archive / delete (#221), and the real
+// ProjectsList toasts the outcome of a delete (#221), and the real
 // provider is not mounted in these tests. Same stub the other page and drawer
 // suites use.
 jest.mock("../../providers/ToastProvider", () => ({
@@ -31,7 +31,6 @@ const PROJECTS = [
     last_opened_at: '2026-02-01T10:00:00Z',
     created_at: '2026-01-01T10:00:00Z',
     updated_at: '2026-02-02T10:00:00Z',
-    archived_at: null,
     graph_preview: { nodes: [{ id: 'a', type: 't', x: 0, y: 0 }], edges: [] },
   },
   {
@@ -44,7 +43,6 @@ const PROJECTS = [
     last_opened_at: null,
     created_at: '2026-01-05T10:00:00Z',
     updated_at: '2026-01-06T10:00:00Z',
-    archived_at: null,
     graph_preview: null,
   },
 ];
@@ -94,7 +92,7 @@ async function renderPage() {
 
 beforeEach(() => {
   mockList.mockReset();
-  stubScopes({ mine: PROJECTS, recent: [PROJECTS[0]], archived: [] });
+  stubScopes({ mine: PROJECTS, recent: [PROJECTS[0]] });
 });
 
 describe('projects page chrome', () => {
@@ -145,7 +143,7 @@ describe('projects filter rail', () => {
     const rail = getByRole('complementary', { name: 'Project filters' });
     expect(
       Array.from(rail.querySelectorAll('button')).map((b) => (b.textContent || '').trim())
-    ).toEqual(['All projects2', 'Recent1', 'Archived0']);
+    ).toEqual(['All projects2', 'Recent1']);
   });
 
   test('the active scope is the pressed rail button, and picking one refilters', async () => {
@@ -204,15 +202,16 @@ describe('projects filter rail', () => {
   });
 
   test('an empty scope shows the empty state and no card area', async () => {
+    stubScopes({ mine: PROJECTS, recent: [] });
     const { getByRole, container } = await renderPage();
 
     const rail = getByRole('complementary', { name: 'Project filters' });
-    const archived = Array.from(rail.querySelectorAll('button')).find((b) =>
-      (b.textContent || '').startsWith('Archived')
+    const recent = Array.from(rail.querySelectorAll('button')).find((b) =>
+      (b.textContent || '').startsWith('Recent')
     ) as HTMLButtonElement;
 
     await act(async () => {
-      fireEvent.click(archived);
+      fireEvent.click(recent);
     });
 
     expect(screen.getByText('No projects yet. Create a new dataflow!')).toBeTruthy();
@@ -368,24 +367,25 @@ describe('projects detail drawer', () => {
     expect(getByRole('heading', { name: 'Bike lanes' })).toBeTruthy();
   });
 
-  test('an unarchived project offers both Archive and Delete forever', async () => {
-    // This asserted the opposite until #221. The drawer hid Delete forever
-    // until a project was archived, while the right-click menu offered it to
-    // anything -- so the same project was told two different things about what
-    // could be done to it, and the drawer looked like archiving was the only
-    // option. The archive step was never a safety mechanism; the confirm
-    // dialog is what makes deletion deliberate.
-    const { getByRole } = await renderPage();
+  test('the drawer offers Delete, and no Archive', async () => {
+    // This asserted the opposite until #221: the drawer hid deletion until a
+    // project was archived, while the right-click menu offered it to anything,
+    // so the same project was told two different things about what could be
+    // done to it. The archive step was never a safety mechanism -- the confirm
+    // dialog is what makes deletion deliberate -- and it was removed outright
+    // in #261. The label lost its "forever" with it.
+    const { getByRole, queryByRole } = await renderPage();
 
-    expect(getByRole('button', { name: 'Archive' })).toBeTruthy();
-    expect(getByRole('button', { name: 'Delete forever' })).toBeTruthy();
+    expect(getByRole('button', { name: 'Delete' })).toBeTruthy();
+    expect(queryByRole('button', { name: 'Archive' })).toBeNull();
+    expect(queryByRole('button', { name: 'Delete forever' })).toBeNull();
   });
 
   test('deleting from the drawer asks first', async () => {
     const { getByRole } = await renderPage();
 
     await act(async () => {
-      fireEvent.click(getByRole('button', { name: 'Delete forever' }));
+      fireEvent.click(getByRole('button', { name: 'Delete' }));
     });
 
     // The existing ConfirmDialog, with the retention copy it already carried.
@@ -403,7 +403,7 @@ describe('projects detail drawer', () => {
     });
 
     // Open is the drawer's primary action ("Open dataflow"), so compare the rest.
-    for (const label of ['Rename', 'Duplicate', 'Archive', 'Delete forever']) {
+    for (const label of ['Rename', 'Duplicate', 'Delete']) {
       expect(
         screen.getAllByRole('button', { name: label }).length,
       ).toBeGreaterThanOrEqual(2);
@@ -426,7 +426,7 @@ describe('projects detail drawer', () => {
     // The test above passes by doing nothing after the click. The bug was that
     // Close and "nothing chosen yet" were the same value, so the auto-select
     // effect resurrected the drawer on the next thing that rebuilt `filtered` -
-    // a keystroke, a filter, a sort, or the refetch after a rename or archive.
+    // a keystroke, a filter, a sort, or the refetch after a rename or delete.
     // Searching is the cheapest of those to reproduce.
     const { getByRole, getByPlaceholderText, queryByRole } = await renderPage();
 

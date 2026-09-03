@@ -104,29 +104,19 @@ def test_list_projects(app, db, user_and_token, tmp_curio):
     assert len(items) == 2
 
 
-def test_soft_delete(app, db, user_and_token, tmp_curio):
+def test_delete_removes_the_row_and_the_files(app, db, user_and_token, tmp_curio):
+    """Delete is a hard delete. There is no soft variant since Archive was
+    removed (#261) — nothing survives it to be listed under another scope."""
     user, _ = user_and_token
     detail = services.save_project(user, ProjectCreate(name="Del", spec=_make_spec()))
-    services.delete_project(user, detail.id, purge=False)
-
-    items = services.list_projects(user, scope="mine")
-    assert len(items) == 0
-
-    archived = services.list_projects(user, scope="archived")
-    assert len(archived) == 1
-
-
-def test_purge_delete(app, db, user_and_token, tmp_curio):
-    user, _ = user_and_token
-    detail = services.save_project(user, ProjectCreate(name="Purge", spec=_make_spec()))
     proj_dir = storage.project_dir(services._user_dir_key(user), detail.id)
     assert proj_dir.exists()
 
-    services.delete_project(user, detail.id, purge=True)
+    services.delete_project(user, detail.id)
     assert not proj_dir.exists()
 
-    items = services.list_projects(user, scope="mine")
-    assert len(items) == 0
+    assert services.list_projects(user, scope="mine") == []
+    assert services.list_projects(user, scope="recent") == []
 
 
 def test_duplicate_project(app, db, user_and_token, tmp_curio):
