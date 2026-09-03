@@ -175,6 +175,10 @@ interface FlowContextProps {
     playAllNodes: () => void;
     playNodesUpTo: (targetNodeId: string) => void;
     signalNodeExecDone: (nodeId: string) => void;
+    /** A Run All / run-up-to is in flight. State, not a ref, so buttons can show it (#271). */
+    isRunActive: boolean;
+    /** Abandon the run in flight: clears the guard so the next play is accepted. */
+    cancelRun: () => void;
     defaultSaveOutputDataset: boolean;
     setDefaultSaveOutputDataset: (value: boolean) => void;
 }
@@ -298,6 +302,8 @@ export const FlowContext = createContext<FlowContextProps>({
     playAllNodes: () => {},
     playNodesUpTo: () => {},
     signalNodeExecDone: () => {},
+    isRunActive: false,
+    cancelRun: () => {},
     defaultSaveOutputDataset: false,
     setDefaultSaveOutputDataset: () => {},
 });
@@ -353,6 +359,11 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [outputs, _setOutputs] = useState<IOutput[]>([]);
     const outputsRef = useRef<IOutput[]>([]);
     const playAllStateRef = useRef<PlayAllState | null>(null);
+    // Mirrors "playAllStateRef.current != null" as React state. The ref is what
+    // the runner reads; this is what the UI reads. The guard used to live only
+    // in the ref, so every play control stayed enabled and a click during (or
+    // after a wedged) run silently did nothing (#271).
+    const [isRunActive, setIsRunActive] = useState(false);
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
@@ -1061,7 +1072,18 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     function finishPlayAll() {
         clearPlayAllStallTimer();
         playAllStateRef.current = null;
+        setIsRunActive(false);
         flushInstallSyncRef.current();
+    }
+
+    // Abandon the run without the finishing save: a cancelled run has nothing
+    // new worth persisting, and on "New workflow" the user has just agreed to
+    // discard changes. Nodes already executing still settle on their own;
+    // their signals then find no run and are ignored (#271).
+    function cancelRun() {
+        clearPlayAllStallTimer();
+        playAllStateRef.current = null;
+        setIsRunActive(false);
     }
 
     function advancePlayAll(state: PlayAllState) {
@@ -1081,8 +1103,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             if (!state) return;
             const stuck = state.pending.size;
             if (stuck > 0) {
+                const ids = [...state.pending].join(", ");
                 showToast(
-                    `${stuck} node(s) didn't finish in time; continuing with the rest of the run`,
+                    `${stuck} node(s) didn't finish in time (${ids}); continuing with the rest ` +
+                    "of the run. Use the Run All button to cancel a run that is stuck.",
                     "warning",
                 );
             }
@@ -1124,7 +1148,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     }, [setNodes]);
 
     function playAllNodes() {
-        if (playAllStateRef.current != null) return;
+        if (playAllStateRef.current != null) {
+            // Say so. A silent no-op here is indistinguishable from a dead
+            // button, which is how #271 was reported.
+            showToast(
+                "A run is already in progress. Wait for it to finish, or cancel it from the Run All button.",
+                "info",
+            );
+            return;
+        }
         const allNodes = reactFlow.getNodes();
         const allEdges = reactFlow.getEdges();
         const levels = computeTopologicalLevels(allNodes, allEdges);
@@ -1135,6 +1167,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             showToast(`${cyclic.length} node(s) skipped due to cycles in the graph`, "warning");
         }
         playAllStateRef.current = { levels, currentLevel: 0, pending: new Set() };
+        setIsRunActive(true);
         triggerLevel(0);
     }
 
@@ -1143,7 +1176,13 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         // the e2e helper issues on its own, retrying up to three times when a
         // node has not visibly acknowledged - overwrites playAllStateRef and
         // orphans the level already in flight.
-        if (playAllStateRef.current != null) return;
+        if (playAllStateRef.current != null) {
+            showToast(
+                "A run is already in progress. Wait for it to finish, or cancel it from the Run All button.",
+                "info",
+            );
+            return;
+        }
 
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
@@ -1227,6 +1266,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         if (!levels.length) return;
 
         playAllStateRef.current = { levels, currentLevel: 0, pending: new Set() };
+        setIsRunActive(true);
         triggerLevel(0);
     }
 
@@ -1708,6 +1748,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 playAllNodes,
                 playNodesUpTo,
                 signalNodeExecDone,
+                isRunActive,
+                cancelRun,
 
                 // NEW CODE
                 dashboardPins,
@@ -1722,6 +1764,13 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 loading,
 
                 ...workflowOps,
+                // A project switch must not inherit a run in flight: the guard
+                // is provider state, and the provider outlives the dataflow
+                // when the user loads another one in place (#271).
+                loadProject: async (id: string) => { cancelRun(); return workflowOps.loadProject(id); },
+                loadSharedProject: async (id: string) => { cancelRun(); return workflowOps.loadSharedProject(id); },
+                cleanCanvas: () => { cancelRun(); workflowOps.cleanCanvas(); },
+                discardProject: () => { cancelRun(); workflowOps.discardProject(); },
                 applyNodeContent,
                 defaultSaveOutputDataset,
                 setDefaultSaveOutputDataset,

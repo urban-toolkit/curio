@@ -66,7 +66,7 @@ export const AgentBuilderStrip: React.FC<{
   onCancelSimulate,
   simulationActivity,
 }) => {
-  const { playAllNodes } = useFlowContext();
+  const { playAllNodes, isRunActive } = useFlowContext();
   const [solving, setSolving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
@@ -386,8 +386,8 @@ export const AgentBuilderStrip: React.FC<{
         <button
           type="button"
           className={styles.run}
-          disabled={phase !== "ready" || Boolean(runDisabledReason)}
-          title={runDisabledReason ?? undefined}
+          disabled={phase !== "ready" || Boolean(runDisabledReason) || isRunActive}
+          title={runDisabledReason ?? (isRunActive ? "A run is already in progress" : undefined)}
           onClick={() => playAllNodes()}
         >
           Run workflow

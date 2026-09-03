@@ -167,6 +167,12 @@
     transition: background-color 0.15s ease;
 }
 
+/* A run is in flight: the same button now cancels it (#271). */
+.playAllButton[data-run-active="true"] {
+  border-color: var(--curio-warning, #e0a800);
+  color: var(--curio-warning, #e0a800);
+}
+
 .playAllButton:hover {
     background-color: #2c2d32;
 }
