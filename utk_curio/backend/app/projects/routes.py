@@ -145,9 +145,8 @@ def get_shared_project(project_id: str):
 @projects_bp.route("/<project_id>", methods=["DELETE"])
 @require_auth
 def delete_project(project_id: str):
-    purge = request.args.get("purge", "false").lower() == "true"
     try:
-        services.delete_project(g.user, project_id, purge=purge)
+        services.delete_project(g.user, project_id)
     except NotFoundError:
         return _error("Project not found", 404)
     except ProjectError as exc:

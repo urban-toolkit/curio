@@ -25,18 +25,12 @@ def list_for_user(
     scope: str = "mine",
     sort: str = "last_opened",
 ) -> List[Project]:
+    # ``scope`` selects nothing any more. Archive was removed (#261), and the
+    # archived filter was the only thing the scopes ever differed by — "recent"
+    # and "mine" already returned identical sets. Kept in the signature because
+    # the route and the projects page still pass it; collapsing the "Recent"
+    # tab is a UX decision, not part of removing Archive.
     q = Project.query.filter_by(user_id=user_id)
-
-    if scope == "archived":
-        q = q.filter(Project.archived_at.isnot(None))
-    elif scope == "all":
-        # Active AND archived — destructive gates (dataset delete/uninstall)
-        # must see refs held by archived projects too (#176).
-        pass
-    elif scope == "recent":
-        q = q.filter(Project.archived_at.is_(None))
-    else:
-        q = q.filter(Project.archived_at.is_(None))
 
     if sort == "name":
         q = q.order_by(Project.name.asc())
@@ -94,13 +88,6 @@ def upsert_project(
         )
         db.session.add(project)
 
-    db.session.flush()
-    return project
-
-
-def soft_delete(project_id: str, user_id: int) -> Project:
-    project = get_for_user(project_id, user_id)
-    project.archived_at = datetime.now(timezone.utc)
     db.session.flush()
     return project
 

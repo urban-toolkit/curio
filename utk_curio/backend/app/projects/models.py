@@ -22,19 +22,17 @@ class Project(db.Model):
     thumbnail_accent = db.Column(db.String(16), default="peach")
     spec_revision = db.Column(db.Integer, default=1, nullable=False)
     last_opened_at = db.Column(db.DateTime, nullable=True)
-    archived_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=_now, nullable=False)
     updated_at = db.Column(db.DateTime, default=_now, onupdate=_now, nullable=False)
 
     owner = db.relationship("User", backref=db.backref("projects", lazy="dynamic"))
 
-    # Mirrors migration b2c3d4e5f6a7. Leading column is user_id, so single-
+    # Mirrors migration f6a7b8c9d0e1. Leading column is user_id, so single-
     # column lookups by user_id use this index too — no separate ix_project_user_id needed.
     __table_args__ = (
         db.Index(
-            "ix_project_user_archived_opened",
+            "ix_project_user_opened",
             "user_id",
-            "archived_at",
             db.text("last_opened_at DESC"),
         ),
     )

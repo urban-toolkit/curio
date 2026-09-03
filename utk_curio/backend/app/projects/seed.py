@@ -150,7 +150,6 @@ def seed_example_projects(user, *, prune: bool | None = None) -> int:
                     existing.description = description
                     existing.thumbnail_accent = accent
                     existing.folder_path = folder
-                    existing.archived_at = None
                     existing.spec_revision = (existing.spec_revision or 0) + 1
                     existing.slug = repo._unique_slug(
                         user.id, _slugify(name), exclude_id=project_id

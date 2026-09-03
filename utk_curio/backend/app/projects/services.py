@@ -385,7 +385,6 @@ def _to_summary(p, graph_preview=None) -> ProjectSummary:
         last_opened_at=p.last_opened_at.isoformat() if p.last_opened_at else None,
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
-        archived_at=p.archived_at.isoformat() if p.archived_at else None,
         graph_preview=graph_preview,
     )
 
@@ -401,7 +400,6 @@ def _to_detail(p, spec=None, outputs=None, dataset_install_warnings=None) -> Pro
         last_opened_at=p.last_opened_at.isoformat() if p.last_opened_at else None,
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
-        archived_at=p.archived_at.isoformat() if p.archived_at else None,
         folder_path=p.folder_path,
         spec=spec,
         outputs=outputs or [],
@@ -840,13 +838,13 @@ def load_shared_project(project_id: str) -> dict:
     """Hydrate a project for any caller, regardless of ownership.
 
     Used by the unauthenticated ``GET /api/projects/<id>/shared`` route to
-    power link-based sharing. Archived projects are treated as missing so a
-    deleted/archived link 404s instead of leaking a stale spec.
+    power link-based sharing. A deleted project 404s because its row is gone
+    — deletion is a hard delete since Archive was removed (#261).
     """
     from utk_curio.backend.app.projects.models import Project
 
     project = db.session.get(Project, project_id)
-    if project is None or project.archived_at is not None:
+    if project is None:
         raise repo.NotFoundError(f"Project {project_id} not found")
 
     ukey = _owner_user_dir_key(project)
@@ -937,13 +935,17 @@ def rename_project(user, project_id: str, new_name: str) -> ProjectSummary:
 # Delete
 # ---------------------------------------------------------------------------
 
-def delete_project(user, project_id: str, purge: bool = False) -> None:
-    if purge:
-        project = repo.get_for_user(project_id, user.id)
-        storage.delete_tree(_user_dir_key(user), project_id)
-        repo.purge_project(project_id, user.id)
-    else:
-        repo.soft_delete(project_id, user.id)
+def delete_project(user, project_id: str) -> None:
+    """Delete a project outright — the row and its on-disk tree.
+
+    There is no soft variant. Archiving used to be the ``purge=False`` half of
+    this and was removed (#261): it never cleared, so it was a second permanent
+    state that merely read as the cautious one. The confirm dialog is what
+    makes deletion deliberate.
+    """
+    repo.get_for_user(project_id, user.id)  # 404s before anything is touched
+    storage.delete_tree(_user_dir_key(user), project_id)
+    repo.purge_project(project_id, user.id)
     db.session.commit()
 
 
