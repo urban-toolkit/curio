@@ -161,12 +161,35 @@ def pytest_generate_tests(metafunc):
         params = []
         for f in files:
             basename = os.path.basename(f)
-            marks = []
+            # One xdist group per workflow. The four TestWorkflowCanvas
+            # methods share a class-scoped browser, page and login, so they
+            # must stay on one worker -- but different workflows are
+            # independent, so ``--dist loadgroup`` can spread the ~30 groups
+            # across workers instead of pinning the whole file to one.
+            marks = [pytest.mark.xdist_group(f"wf-{basename}")]
             if basename.startswith("10-") and not external:
-                marks = [pytest.mark.skip(reason=(
+                marks.append(pytest.mark.skip(reason=(
                     "example 10 (street-vision) needs external HuggingFace "
                     "inference + street-view APIs and the curio.streetvision "
                     "package; set CURIO_E2E_EXTERNAL=1 to run it"
-                ))]
+                )))
             params.append(pytest.param(f, marks=marks, id=basename))
         metafunc.parametrize("loaded_workflow", params, indirect=True)
+
+
+def pytest_itemcollected(item):
+    """Default every item without an explicit xdist group to its module.
+
+    Under ``--dist loadgroup`` a group runs on one worker in collection order,
+    so a per-file group preserves every module-scoped fixture and every
+    within-file ordering assumption a test may rely on. Only the workflow
+    matrix above is split finer (see ``pytest_generate_tests``).
+
+    This hook fires during collection, strictly before xdist's own
+    ``pytest_collection_modifyitems`` appends the ``@group`` suffix to node
+    ids -- doing it in that hook instead would race xdist's ``tryfirst``.
+    """
+    if item.get_closest_marker("xdist_group") is None:
+        module = getattr(item, "module", None)
+        if module is not None:
+            item.add_marker(pytest.mark.xdist_group(module.__name__.rsplit(".", 1)[-1]))

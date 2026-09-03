@@ -123,7 +123,12 @@ def _bootstrap_schemas() -> None:
         _db.engine.dispose()
 
 
-_bootstrap_schemas()
+# Under CURIO_E2E_USE_EXISTING the running backend owns the sqlite file and
+# ``prepare_backend_database`` has already migrated it, so this is redundant
+# even serially -- and under xdist it would run once in the controller and
+# once more in every worker, all against the same file.
+if not os.environ.get("CURIO_E2E_USE_EXISTING"):
+    _bootstrap_schemas()
 
 
 # ---------------------------------------------------------------------------

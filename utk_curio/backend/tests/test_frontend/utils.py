@@ -1044,6 +1044,12 @@ def save_workflow_test_screenshot(
     correct, and eyeball the PNG before committing it. A baseline captured
     against a broken build enshrines the bug as expected output.
 
+    That minting happens in serial runs only. Under xdist (``PYTEST_XDIST_WORKER``
+    set), or whenever ``CURIO_E2E_REQUIRE_BASELINES=1``, a missing baseline is a
+    failure instead: with several workers a mis-derived environment or a grouping
+    bug can change what renders, and a silently written baseline would turn that
+    into a pass. Set ``CURIO_E2E_REQUIRE_BASELINES=0`` to mint anyway.
+
     Set *fit_reactflow* to ``False`` for pages with no canvas (the projects list,
     the catalog). The default path pins the ReactFlow viewport first, which waits
     on ``.react-flow__node`` and would otherwise spend its whole timeout waiting
@@ -1076,6 +1082,14 @@ def save_workflow_test_screenshot(
         return _capture_full_page(page)
 
     if not os.path.isfile(expected_path):
+        if env_flag("CURIO_E2E_REQUIRE_BASELINES",
+                    default=bool(os.environ.get("PYTEST_XDIST_WORKER"))):
+            raise AssertionError(
+                f"no baseline at {expected_path}. Parallel runs never mint "
+                "baselines: generate it with a serial run (or set "
+                "CURIO_E2E_REQUIRE_BASELINES=0) and eyeball the PNG before "
+                "committing it."
+            )
         _capture().save(expected_path)
 
     expected_img = Image.open(expected_path).convert("RGB")
