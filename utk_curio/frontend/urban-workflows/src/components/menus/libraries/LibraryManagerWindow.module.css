@@ -30,6 +30,29 @@
   font-size: 13px;
 }
 
+/* Says why the spec box and Add are dead on the JavaScript kind (#239).
+   Sits under the add row rather than replacing it, so the disabled controls
+   stay visible and the note is read as an explanation of them. */
+.kindNote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #666;
+}
+
+.kindNote code {
+  font-size: 11px;
+  padding: 1px 4px;
+  background: #f1f1f3;
+  border-radius: 3px;
+}
+
+.input:disabled {
+  background: #f5f5f6;
+  color: #999;
+  cursor: not-allowed;
+}
+
 .addButton {
   padding: 6px 14px;
   background-color: #1E1F23;
@@ -40,8 +63,15 @@
   font-size: 13px;
 }
 
-.addButton:hover {
+.addButton:hover:not(:disabled) {
   background-color: rgb(251, 170, 105);
+}
+
+/* Add was already disabled on an empty box, but wore its enabled colours and
+   still lit up on hover, so it read as clickable. */
+.addButton:disabled {
+  background-color: #c7c7cc;
+  cursor: not-allowed;
 }
 
 .packageList {

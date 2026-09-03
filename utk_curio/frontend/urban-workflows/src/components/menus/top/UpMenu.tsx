@@ -44,6 +44,13 @@ import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDr
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
+import {
+    looksLikeJsonFile,
+    parseDataflowFile,
+    loadFailedMessage,
+    NOT_JSON_FILE_MESSAGE,
+    UNREADABLE_FILE_MESSAGE,
+} from "../../../utils/dataflowImport";
 import ConfirmDialog from "../../ConfirmDialog";
 
 export default function UpMenu({
@@ -256,42 +263,64 @@ export default function UpMenu({
         setActiveMenu(null);
     };
 
+    // Every failure here used to be a console.error, so picking a malformed file
+    // left the canvas unchanged with nothing on screen to say why (#238). The
+    // three failures are told apart deliberately: reporting a wrong-shaped
+    // dataflow as "invalid JSON" sends people hunting for a syntax error that
+    // is not there.
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
 
-        if (file && file.type === "application/json") {
-            const reader = new FileReader();
-
-            reader.onload = (event: ProgressEvent<FileReader>) => {
-                try {
-                    const jsonContent = JSON.parse(event.target?.result as string);
-                    loadTrill(jsonContent);
-                    // Importing REPLACES the canvas, so it does diverge from what
-                    // is on disk. The edge replay inside loadParsedTrill no longer
-                    // says so on its own (#229) - and never did for an edgeless
-                    // import - so say it here, where the intent is known.
-                    markDirty();
-                    // Importing a workflow file is a deliberate user action, so
-                    // warn + auto-install its Python deps the same way opening
-                    // your own project does.
-                    ensureWorkflowDeps(jsonContent);
-                } catch (err) {
-                    console.error("Invalid JSON file:", err);
-                } finally {
-                    setActiveMenu(null);
-                }
-            };
-
-            reader.onerror = (event: ProgressEvent<FileReader>) => {
-                console.error("Error reading file:", event.target?.error);
-                setActiveMenu(null);
-            };
-
-            reader.readAsText(file);
-        } else {
-            console.error("Please select a valid .json file.");
+        if (!file) {
             setActiveMenu(null);
+            return;
         }
+
+        if (!looksLikeJsonFile(file)) {
+            showToast(NOT_JSON_FILE_MESSAGE, "error");
+            setActiveMenu(null);
+            return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onload = (event: ProgressEvent<FileReader>) => {
+            try {
+                const parsed = parseDataflowFile(event.target?.result as string);
+                if (!parsed.ok) {
+                    showToast(parsed.message, "error");
+                    return;
+                }
+                try {
+                    loadTrill(parsed.spec);
+                } catch (err) {
+                    // A spec can carry the right shape and still throw while it
+                    // is replayed, on a node type this build does not know.
+                    console.error("Failed to load dataflow:", err);
+                    showToast(loadFailedMessage(err), "error");
+                    return;
+                }
+                // Importing REPLACES the canvas, so it does diverge from what
+                // is on disk. The edge replay inside loadParsedTrill no longer
+                // says so on its own (#229) - and never did for an edgeless
+                // import - so say it here, where the intent is known.
+                markDirty();
+                // Importing a workflow file is a deliberate user action, so
+                // warn + auto-install its Python deps the same way opening
+                // your own project does.
+                ensureWorkflowDeps(parsed.spec);
+            } finally {
+                setActiveMenu(null);
+            }
+        };
+
+        reader.onerror = (event: ProgressEvent<FileReader>) => {
+            console.error("Error reading file:", event.target?.error);
+            showToast(UNREADABLE_FILE_MESSAGE, "error");
+            setActiveMenu(null);
+        };
+
+        reader.readAsText(file);
     };
 
     const exportAsJupyterNotebook = () => {
@@ -352,8 +381,19 @@ export default function UpMenu({
                     intro: "Welcome to Curio, a framework for urban analytics. Let's take a quick tour to help you get started.",
                 },
                 {
+                    // #240: this step used to promise a file picker the node
+                    // has never shipped. The uploader it described was
+                    // commented out of WidgetsEditor and has now been deleted,
+                    // so the copy names the two routes that do exist, and the
+                    // Data Catalog step below follows immediately because it is
+                    // the answer to the question this one raises.
                     element: "#step-loading",
-                    intro: "This is a Data Loading Node. Here, you can create an array for basic datasets or import data from a file. Once loaded, add your code to convert the data into a DataFrame for further analysis.",
+                    intro: "This is a Data Loading Node. Write Python here to build a small dataset inline, or to read one already available to your dataflow. The node holds code, not a file picker: to bring a file in, use the Data Catalog (next step), or add a file widget to the code with the marker [!! path$FILE !!].",
+                },
+                {
+                    // The tour never mentioned the Data Catalog, which is how a
+                    // file actually gets into a dataflow.
+                    intro: "Files live in the Data Catalog, not inside a node. Open Data → Data Catalog, import a CSV or GeoJSON, then drag the dataset onto the canvas: Curio creates a Data Loading Node already wired to it.",
                 },
                 {
                     element: "#step-analysis",

@@ -24,6 +24,7 @@ import shellStyles from "../catalog/CatalogMasterPage.module.css";
 import styles from "./ProjectsBrowseLayout.module.css";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import PromptDialog from "../../components/PromptDialog";
+import { UNREADABLE_FILE_MESSAGE } from "../../utils/dataflowImport";
 
 type ViewMode = "grid" | "list";
 type FilterTab = "all" | "recent" | "archived";
@@ -195,13 +196,27 @@ const ProjectsList: React.FC = () => {
 
   const handleDeleteForever = (project: ProjectSummary) => setDeleteTarget(project);
 
+  // Same silence as the canvas's "Load dataflow" had (#238): a notebook that
+  // would not parse produced a console line and a projects list that simply did
+  // not grow, which reads as the click having missed.
   const handleNotebookImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (event: ProgressEvent<FileReader>) => {
+      let json: Record<string, unknown>;
       try {
-        const json = JSON.parse(event.target?.result as string) as Record<string, unknown>;
+        json = JSON.parse(event.target?.result as string) as Record<string, unknown>;
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error("Failed to import Jupyter notebook:", err);
+        showToast(
+          `That file is not valid JSON, so it could not be imported (${detail}).`,
+          "error",
+        );
+        return;
+      }
+      try {
         const trillSpec = await notebookToTrill(json, process.env.BACKEND_URL as string);
         const name = file.name.replace(/\.ipynb$/i, "");
         await projectsApi.create({ name, spec: trillSpec as unknown as Record<string, unknown>, outputs: [] });
@@ -211,14 +226,15 @@ const ProjectsList: React.FC = () => {
         // reads as a broken button, and a malformed .ipynb is the common case.
         console.error("Failed to import Jupyter notebook:", err);
         showToast(
-          `Could not import ${file.name}. It may not be a valid notebook.`,
+          (err as Error)?.message ||
+            "That notebook could not be converted into a dataflow.",
           "error",
         );
       }
     };
     reader.onerror = (event: ProgressEvent<FileReader>) => {
       console.error("Error reading notebook file:", event.target?.error);
-      showToast(`Could not read ${file.name}.`, "error");
+      showToast(UNREADABLE_FILE_MESSAGE, "error");
     };
     reader.readAsText(file);
   };

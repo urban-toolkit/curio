@@ -31,9 +31,9 @@ describe("load paths that DO diverge from disk still mark dirty", () => {
       UP_MENU.indexOf("const handleFileUpload"),
       UP_MENU.indexOf("const loadTrillFile"),
     );
-    expect(upload).toContain("loadTrill(jsonContent)");
+    expect(upload).toContain("loadTrill(parsed.spec)");
     expect(upload).toContain("markDirty()");
-    expect(upload.indexOf("loadTrill(jsonContent)")).toBeLessThan(
+    expect(upload.indexOf("loadTrill(parsed.spec)")).toBeLessThan(
       upload.indexOf("markDirty()"),
     );
   });

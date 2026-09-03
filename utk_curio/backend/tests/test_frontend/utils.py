@@ -96,18 +96,56 @@ def sandbox_auth_header() -> dict:
 def sandbox_base_url() -> str:
     """``http://host:port`` for the sandbox these tests should talk to.
 
-    ``CURIO_E2E_SANDBOX_PORT`` is the documented knob (README, and what
-    ``e2e_existing_servers`` waits on), so it wins; ``FLASK_SANDBOX_PORT`` is
-    honoured as a fallback because ``main.py`` exports it for the stack it
-    started. Reading only the latter is what made every ``test_node_execution``
-    case on a non-default-port stack die on a 401 from :2000/exec - 28 failures
-    that read exactly like the bug under investigation in #248.
+    A couple of helpers below bypass the backend and call the sandbox directly
+    (deliberately - DuckDB wants a single writer). They used to read only
+    ``FLASK_SANDBOX_PORT``, which nothing sets in the ``CURIO_E2E_USE_EXISTING``
+    path: ``e2e_existing_servers`` honours ``CURIO_E2E_SANDBOX_PORT`` and that
+    is the variable the README documents. So on any non-default port the direct
+    callers silently addressed **port 2000** - some other session's sandbox, or
+    nothing - and the failure surfaced as an unexplained ``401`` from a URL the
+    test never mentioned.
+
+    Precedence, most specific first:
+
+    1. ``CURIO_E2E_SANDBOX_PORT`` / ``CURIO_E2E_HOST`` - the documented knobs
+       for "test the servers already running".
+    2. ``FLASK_SANDBOX_PORT`` / ``FLASK_SANDBOX_HOST`` - what ``curio.py start``
+       exports into the sandbox's own process, and what
+       ``test_large_dataframe_e2e`` sets for the children it spawns.
+    3. The stock ``127.0.0.1:2000``.
     """
-    host = (os.environ.get('CURIO_E2E_SANDBOX_HOST')
-            or os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1'))
-    port = (os.environ.get('CURIO_E2E_SANDBOX_PORT')
-            or os.environ.get('FLASK_SANDBOX_PORT', '2000'))
+    host = (
+        os.environ.get('CURIO_E2E_HOST')
+        or os.environ.get('FLASK_SANDBOX_HOST')
+        or '127.0.0.1'
+    )
+    port = (
+        os.environ.get('CURIO_E2E_SANDBOX_PORT')
+        or os.environ.get('FLASK_SANDBOX_PORT')
+        or '2000'
+    )
     return f'http://{host}:{int(port)}'
+
+
+def _explain_sandbox_auth_failure(resp, route: str) -> None:
+    """Turn a sandbox 401/403 into the sentence that actually unblocks you.
+
+    The guarded routes answer 401 when the shared secret does not match, and
+    nothing in the response says which secret it wanted. In the use-existing
+    path the running stack minted its own token unless the operator pinned one,
+    so "export the same CURIO_SANDBOX_TOKEN the stack was started with" is the
+    fix roughly every time - and it is not guessable from the status line.
+    """
+    if resp.status_code not in (401, 403):
+        return
+    have = 'set' if os.environ.get('CURIO_SANDBOX_TOKEN', '').strip() else 'UNSET'
+    raise AssertionError(
+        f"sandbox {route} -> {resp.status_code}: the shared secret was rejected. "
+        f"CURIO_SANDBOX_TOKEN is {have} in this pytest process, and the sandbox "
+        f"at {sandbox_base_url()} expects the value it was started with. "
+        "Start the stack with an explicit CURIO_SANDBOX_TOKEN and export the "
+        "same one here (curio.py start mints a random one otherwise)."
+    )
 
 
 def load_artifact_as_dict(artifact_id: str) -> dict:
@@ -119,6 +157,7 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
         headers=sandbox_auth_header(),
         timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
     )
+    _explain_sandbox_auth_failure(resp, f'/get fileName={artifact_id}')
     if not resp.ok:
         # Surface the sandbox's structured error body (added in api.py /get)
         # so pytest shows *why* the load failed.
@@ -701,6 +740,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
             headers=sandbox_auth_header(),
             timeout=120,
         )
+        _explain_sandbox_auth_failure(resp, '/exec')
         resp.raise_for_status()
         result = resp.json()
 
