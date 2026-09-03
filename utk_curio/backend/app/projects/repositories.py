@@ -29,7 +29,7 @@ def list_for_user(
     # archived filter was the only thing the scopes ever differed by — "recent"
     # and "mine" already returned identical sets. Kept in the signature because
     # the route and the projects page still pass it; collapsing the "Recent"
-    # tab is a UX decision, not part of removing Archive.
+    # tab is a UX decision, not part of removing Archive. See #286.
     q = Project.query.filter_by(user_id=user_id)
 
     if sort == "name":
