@@ -361,7 +361,7 @@ def test_uploading_a_file_then_deleting_it_warns_about_every_dataflow(
 
     So: upload one, delete it, and check the dialog is honest about the scope.
     Delete removes the dataset AND strips its references from every dataflow
-    that holds one, archived projects included (``delete_dataset`` step 2).
+    that holds one (``delete_dataset`` step 2).
     """
     require_project_page()
     require_user_auth()

@@ -625,7 +625,7 @@ def chapter_access(run: StressRun) -> None:
         search.fill("")
         page.wait_for_timeout(700)
 
-    for tab in ("Recent", "Archived", "All projects"):
+    for tab in ("Recent", "All projects"):
         with run.step(f"Filter: {tab}"):
             tour.click(page.get_by_role("button", name=tab, exact=True).first)
             page.wait_for_timeout(900)
@@ -677,26 +677,21 @@ def chapter_access(run: StressRun) -> None:
         tour.click(rename.get_by_role("button", name="Rename", exact=True))
         page.wait_for_timeout(2200)
 
-    with run.step("Archive one, then find it under Archived"):
-        page.locator("[data-project-id]").last.click(button="right")
-        page.wait_for_timeout(500)
-        tour.click(page.get_by_text("Archive", exact=True).first)
-        page.wait_for_timeout(2000)
-        tour.click(page.get_by_role("button", name="Archived", exact=True).first)
-        page.wait_for_timeout(1500)
-        run.snap("projects-archived")
-
-    with run.step("Delete it forever"):
-        archived = page.locator("[data-project-id]")
-        if archived.count():
-            archived.first.click(button="right")
+    # Archive used to sit between these two steps - right-click Archive, find
+    # it under the Archived tab, then delete it from there. Both the action
+    # and the tab were removed in #261; deletion is the only removal now.
+    with run.step("Delete one from the context menu"):
+        projects = page.locator("[data-project-id]")
+        if projects.count():
+            projects.last.click(button="right")
             page.wait_for_timeout(500)
-            tour.click(page.get_by_text("Delete forever", exact=True).first)
+            tour.click(page.get_by_text("Delete", exact=True).first)
             # The confirmation is an in-app ConfirmDialog now (#197).
             confirm = page.get_by_role("dialog", name=re.compile(r"^Permanently delete "))
             expect(confirm).to_be_visible(timeout=10000)
             page.wait_for_timeout(800)
-            tour.click(confirm.get_by_role("button", name="Delete forever", exact=True))
+            run.snap("projects-delete-confirm")
+            tour.click(confirm.get_by_role("button", name="Delete", exact=True))
             page.wait_for_timeout(2500)
         tour.click(page.get_by_role("button", name="All projects", exact=True).first)
         page.wait_for_timeout(1200)

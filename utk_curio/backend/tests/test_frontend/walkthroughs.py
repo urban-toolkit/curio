@@ -1862,13 +1862,16 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
 
 @walkthrough(
     slug="project-drawer-offers-delete",
-    refs=[221],
+    refs=[221, 261],
     title="A project can be deleted from its own drawer",
-    premise="Select an unarchived project and read the actions offered.",
-    note="The drawer offered Archive only, and revealed Delete forever after "
-         "the project was archived - while the right-click menu offered "
-         "deletion to anything. The same project was told two different things "
-         "about what could be done to it. Both surfaces render one list now.",
+    premise="Select a project and read the actions offered.",
+    note="The drawer offered Archive only, and revealed deletion after the "
+         "project was archived - while the right-click menu offered deletion "
+         "to anything. The same project was told two different things about "
+         "what could be done to it. Both surfaces render one list now (#221), "
+         "and Archive itself is gone (#261): it never cleared, so it was a "
+         "second permanent state that merely read as the cautious one. With no "
+         "softer-sounding sibling left, Delete dropped its \"forever\".",
     tests=["src/tests/pages/projectActions.test.ts",
            "src/tests/pages/projectsPageChrome.test.tsx"],
     fit_reactflow=False,
@@ -1893,11 +1896,11 @@ def project_drawer_offers_delete(ctx: Ctx) -> None:
     card.wait_for(state="visible", timeout=30000)
     ctx.click(card)
 
-    expect(page.get_by_role("button", name="Archive", exact=True)).to_be_visible(timeout=15000)
-    expect(page.get_by_role("button", name="Delete forever", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Delete", exact=True)).to_be_visible(timeout=15000)
+    expect(page.get_by_role("button", name="Archive", exact=True)).to_have_count(0)
     ctx.capture("drawer-actions")
 
-    ctx.say("Both, on an unarchived project",
+    ctx.say("Delete, on every project",
             "The confirm is what makes deleting deliberate.")
 
 
