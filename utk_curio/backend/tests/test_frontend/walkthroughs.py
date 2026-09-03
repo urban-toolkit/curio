@@ -1286,6 +1286,58 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     assert not errors, f"an uncaught page error escaped: {errors}"
 
 
+PBF_EXAMPLE = "11-autark-pbf-loading.json"
+
+
+@walkthrough(
+    slug="autark-data-node-says-what-it-loaded",
+    refs=[282],
+    title="An Autark data step reports what it produced",
+    premise="Run the PBF-loading step of an Autark chain, and read its body.",
+    note="An autk-grammar node whose spec has only a `data` (or `compute`) "
+         "section has nothing to draw, so its body was a blank box under a "
+         "green Done chip - indistinguishable from a node that never ran or "
+         "silently failed. Before a run it now says what running it will do; "
+         "after, it names the tables it created for the next node.",
+    tests=["src/tests/adapters/node/behaviors.test.tsx"],
+    example=PBF_EXAMPLE,
+    max_diff_ratio=0.05,
+)
+def autark_data_node_says_what_it_loaded(ctx: Ctx) -> None:
+    page = ctx.page
+
+    # The data-only step: the one whose spec carries a PBF source and no map.
+    node_id = first_node_of_type(PBF_EXAMPLE, "autk-grammar", containing='"pbfFileUrl"')
+    node = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    node.wait_for(state="visible", timeout=45000)
+    node.scroll_into_view_if_needed()
+    ctx.focus(node, hold=1000)
+
+    before = node.locator('[data-curio-node-empty="upstream-not-run"]')
+    before.first.wait_for(state="visible", timeout=15000)
+    assert "loads data" in (before.first.inner_text() or ""), (
+        "the pre-run body should say this step loads data"
+    )
+    ctx.say("Before a run, the step says what it is for",
+            "Not a blank box: 'This step loads data; run it to pass tables downstream.'")
+    ctx.capture("before-run")
+
+    ctx.say("Run it", "Loads the PBF into DuckDB in the sandbox - nothing to draw here.")
+    play_node(page, node_id)
+    wait_for_node_done(page, node_id, node_type="autk-grammar", timeout_ms=180000)
+
+    summary = node.locator("[data-curio-autk-summary]")
+    summary.first.wait_for(state="visible", timeout=15000)
+    text = summary.first.inner_text() or ""
+    assert text.startswith("Loaded"), f"expected a 'Loaded N tables' line, got {text!r}"
+    assert "table_osm_" in text, f"the summary should name the OSM tables, got {text!r}"
+    assert before.count() == 0, "the pre-run hint should give way to the summary"
+    ctx.focus(summary.first, hold=1500)
+    ctx.say("After, it names what it made",
+            "The same tables the next node's map will draw.")
+    ctx.capture("after-run")
+
+
 # ---------------------------------------------------------------------------
 # Layout and data shape (#193, #202, #203)
 # ---------------------------------------------------------------------------
