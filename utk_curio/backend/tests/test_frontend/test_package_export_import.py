@@ -301,13 +301,15 @@ def test_export_then_load_package_through_node_catalog(
         _import_archive(page, drawer, clone)
 
     # The clone is sideloaded, so it shows under "In project" but never under
-    # Browse, which lists the committed packages/ catalog. That tab renders
-    # MyPackagesList rather than PackageCard, so there is no data-pkg-dir to key
-    # on - the per-row Remove control's aria-label is the stable hook.
+    # Browse, which lists the committed packages/ catalog. Both tabs render
+    # PackageCard now (the per-row list went with 29a4e902), so the card is
+    # keyed by data-pkg-dir and its Remove control reads "Remove from project".
     tabs = drawer.get_by_role("navigation", name="Catalog sections")
     tabs.get_by_role("button", name="In project").click()
     expect(
-        drawer.get_by_role("button", name=f"Remove {CLONE_NAME}", exact=True)
+        drawer.locator(f'article[data-pkg-dir="{CLONE_DIR}"]').get_by_role(
+            "button", name="Remove from project", exact=True
+        )
     ).to_be_visible(timeout=30000)
 
     # 6. onPickArchive also writes the project lockfile - without that the
@@ -373,22 +375,27 @@ def test_export_from_the_drawer_in_dataflow_tab(
     page.wait_for_load_state("domcontentloaded")
 
     drawer = _open_drawer_from_menu(page)
-    # The export control lives on the "In project" rows, which render
-    # MyPackagesList (no data-pkg-dir there) - the aria-label uses the manifest
-    # NAME, while the palette accordion's uses a longer ".curio.zip archive" form.
+    # Export moved off the card and into the package's details modal
+    # (29a4e902): the "In project" tab renders PackageCard, whose avatar and
+    # "View details" both open PackageDetailModal, and Export is that modal's
+    # header action. The palette accordion keeps its own longer-named control.
     drawer.get_by_role("navigation", name="Catalog sections").get_by_role(
         "button", name="In project"
     ).click()
-    export_button = drawer.get_by_role("button", name=f"Export {PKG_NAME}", exact=True)
-    expect(export_button).to_be_visible(timeout=30000)
+    card = drawer.locator(f'article[data-pkg-dir="{PKG_DIR}"]')
+    expect(card).to_be_visible(timeout=30000)
 
-    # Visual baseline of the In project tab with its row actions. This is the
-    # surface whose export control was dead code until it was wired, so a
-    # baseline here records what "wired" looks like.
+    # Visual baseline of the In project tab with its card actions.
     save_workflow_test_screenshot(
         page, "package-export-drawer",
         test_name="test_export_from_the_drawer_in_dataflow_tab",
     )
+
+    card.get_by_role("button", name=f"View {PKG_NAME} details").click()
+    details = page.get_by_role("dialog", name="Package details")
+    expect(details).to_be_visible(timeout=15000)
+    export_button = details.get_by_role("button", name="Export", exact=True)
+    expect(export_button).to_be_visible(timeout=10000)
 
     with page.expect_download(timeout=30000) as download:
         export_button.click()

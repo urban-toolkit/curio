@@ -282,15 +282,23 @@ def test_add_dataset_propagates_to_palette(
     # Server-side truth: the spec ref was persisted, not just the React state.
     assert _installed_flag() is True
 
-    # Round-trip. No window.confirm on this path, unlike package removal.
+    # Round-trip. Removal confirms in an app dialog now (#196, #197): the card
+    # click only opens "Remove <title>?", and the DELETE follows the confirm.
+    # The confirm button reads "Remove and delete" when no other dataflow uses
+    # the file, so match it by prefix.
     drawer = _open_drawer_from_menu(page)
+    _card(drawer, DATASET_ID).get_by_role(
+        "button", name="Remove from project", exact=True
+    ).click()
     with page.expect_response(
         lambda r: "/datasets/" in r.url and r.request.method == "DELETE",
         timeout=30000,
     ):
-        _card(drawer, DATASET_ID).get_by_role(
-            "button", name="Remove from project", exact=True
-        ).click()
+        accept_confirm_dialog(
+            page,
+            title=f"Remove {DATASET_TITLE}?",
+            button=re.compile(r"^Remove( and delete)?$"),
+        )
 
     expect(
         _card(drawer, DATASET_ID).get_by_role(

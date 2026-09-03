@@ -301,7 +301,11 @@ def test_add_agent_propagates_to_palette(
         and r.ok,
         timeout=30000,
     ):
-        accept_confirm_dialog(page, title=f"Remove {AGENT_NAME}?", button="Remove")
+        # The dialog is titled "Remove <name> from this project?" - the same
+        # sentence the Data and Node catalogs use since the copy was unified.
+        accept_confirm_dialog(
+            page, title=f"Remove {AGENT_NAME} from this project?", button="Remove"
+        )
 
     expect(
         card.get_by_role("button", name=re.compile(r"^Add to project"))
