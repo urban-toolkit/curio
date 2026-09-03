@@ -117,6 +117,26 @@ describe("an unsaved dataflow", () => {
   });
 });
 
+describe("re-pinning a dataflow", () => {
+  test("does not blank a package set that is already known", () => {
+    // ProjectLoader pins the id with an empty set before the spec loads. With
+    // the filter on the read side that is instantly visible as "builtin only",
+    // so a remount (navigating away and back onto the same canvas) would empty
+    // the palette until the load finished.
+    setCurrentProject("proj-1", ["acme.widgets@1"]);
+    setCurrentProject("proj-1", []);
+    expect(paletteIds()).toEqual([ACME.id, BUILTIN.id].sort());
+  });
+
+  test("but a DIFFERENT dataflow starts from its own empty set", () => {
+    // The preserve rule is keyed on the id: switching dataflow must not carry
+    // the previous one's packages across, which is the leak in the first place.
+    setCurrentProject("proj-1", ["acme.widgets@1"]);
+    setCurrentProject("proj-2", []);
+    expect(paletteIds()).toEqual([BUILTIN.id]);
+  });
+});
+
 describe("the builtin package", () => {
   test("survives a lockfile that does not name it", () => {
     // It is never in a lockfile the user edits, so the filter must let it

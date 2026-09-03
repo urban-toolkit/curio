@@ -51,6 +51,7 @@ import {
     faCirclePlus,
     faFont,
     faCube,
+    faCircleInfo,
     faTriangleExclamation,
     faChartLine,
     faXmark,
@@ -73,6 +74,8 @@ import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
 import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
 import { nodeRunStatus } from "../utils/nodeRunStatus";
+import { RUN_NODE_SHORTCUT_LABEL } from "./canvasKeyBindings";
+import { hasNodeDescription } from "../utils/nodeDescription";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 import { useDatasetPalette } from "../providers/DatasetPaletteContext";
@@ -691,6 +694,24 @@ export const NodeContainer = ({
                         ) : null}
 
                         {/* Right-side action icons */}
+                        {/* The node's own documentation. ``DescriptionModal`` was
+                            already implemented and already mounted for every node,
+                            and ``promptDescription`` was already threaded down to
+                            here -- destructured at the top of this component and
+                            then never called. So every kind's manifest description
+                            shipped unreachable (#225). This is the trigger.
+
+                            Generic on purpose: Spatial Join is the kind the issue
+                            names, but the fix is one button that any kind with a
+                            description gets, rather than help bolted onto one node. */}
+                        {hasNodeDescription(packageDescriptor) ? (
+                            <HeaderIconButton
+                                icon={faCircleInfo}
+                                style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                                title={`About ${headerKindLabel}`}
+                                onActivate={promptDescription}
+                            />
+                        ) : null}
                         <HeaderIconButton
                             icon={pinnedToDashboard ? faCircleDot : faCircle}
                             style={{
@@ -758,6 +779,11 @@ export const NodeContainer = ({
                                         <FontAwesomeIcon
                                             className={"nowheel nodrag"}
                                             icon={faCirclePlay}
+                                            // The shortcut is only useful if it
+                                            // is discoverable, and the play
+                                            // button is where someone looks for
+                                            // "how do I run this" (#223).
+                                            title={`Run this node (${RUN_NODE_SHORTCUT_LABEL})`}
                                             style={{
                                                 cursor: "pointer",
                                                 fontSize: "27px",
@@ -1055,16 +1081,21 @@ export const NodeContainer = ({
                         never be expanded to reach one - so without this it has
                         no on-node control at all, and the only way to remove a
                         mis-dropped one is the Delete key, which nothing on
-                        screen suggests. Delete alone: an icon-only flow node
-                        renders no output to pin to a dashboard and has no body
-                        to annotate. Revealed on hover so the 50x180 chip reads
-                        the same at rest. */}
+                        screen suggests. Revealed on hover so the 50x180 chip
+                        reads the same at rest.
+
+                        Info joins Delete here because this shape is exactly the
+                        one that needs it most: Spatial Join is a noContent node,
+                        it is the kind #225 was reported against, and with no
+                        header band this chip is the ONLY surface it has. */}
                     {noContent && !dashboardOn ? (
                         <div
                             style={{
                                 position: "absolute",
                                 top: "2px",
                                 right: "3px",
+                                display: "flex",
+                                gap: "2px",
                                 // Quiet at rest, legible on hover. This file
                                 // styles inline, so the transition is state
                                 // rather than a :hover rule.
@@ -1072,6 +1103,14 @@ export const NodeContainer = ({
                                 transition: "opacity 120ms ease",
                             }}
                         >
+                            {hasNodeDescription(packageDescriptor) ? (
+                                <HeaderIconButton
+                                    icon={faCircleInfo}
+                                    style={{ ...headerIconStyle, fontSize: "10px" }}
+                                    title={`About ${headerKindLabel}`}
+                                    onActivate={promptDescription}
+                                />
+                            ) : null}
                             <HeaderIconButton
                                 icon={faXmark}
                                 style={{ ...headerIconStyle, fontSize: "10px" }}

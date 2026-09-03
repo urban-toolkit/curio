@@ -14,6 +14,7 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { resolveSaveOutputDataset } from "../../utils/saveOutputDataset";
+import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
@@ -56,6 +57,7 @@ function CodeEditor({
         signalNodeExecDone,
         projectId,
         defaultSaveOutputDataset,
+        playNodesUpTo,
     } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
@@ -106,9 +108,18 @@ function CodeEditor({
         c.requestCodeChange(data.nodeId, baseline, local, "code");
     };
 
-    const handleEditorMount = (editor: any, _monaco: Monaco) => {
+    // onMount fires once, so the action reads the CURRENT play function through
+    // a ref rather than capturing the first render's (#223).
+    const runNodeRef = useRef<() => void>(() => {});
+    runNodeRef.current = () => playNodesUpTo(data.nodeId);
+
+    const handleEditorMount = (editor: any, monaco: Monaco) => {
         attachEditor(editor);
         editor.onDidBlurEditorText(proposeOnBlur);
+        // Ctrl/Cmd+Enter. Registered here rather than on the window because
+        // Monaco owns the chord while the editor has focus — and already bound
+        // it to "insert line below", which is what the keystroke did before.
+        registerRunNodeAction(editor, monaco, () => runNodeRef.current);
     };
 
     // Apply remote-approved code changes to this node's editor.

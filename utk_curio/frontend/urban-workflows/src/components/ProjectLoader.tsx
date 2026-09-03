@@ -13,7 +13,6 @@ import { useEnsureWorkflowDeps } from "../hook/useEnsureWorkflowDeps";
 import { TrillGenerator } from "../TrillGenerator";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import {
-  clearCurrentProject,
   setCurrentProject,
   setCurrentProjectPackages,
   setUnsavedDataflow,
@@ -64,17 +63,6 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
       navigate(`/dataflow/${projectId}`, { replace: true });
     }
   }, [id, projectId, navigate]);
-
-  // Leaving the canvas entirely (the project list, the catalog pages) means no
-  // dataflow is open, so the palette should stop filtering rather than keep the
-  // last one's scope. Nothing did this before: ``clearCurrentProject`` was only
-  // reachable on ``/dataflow/new``, and those routes do not mount this
-  // component, so the store kept the previous dataflow pinned indefinitely.
-  useEffect(() => {
-    return () => {
-      clearCurrentProject();
-    };
-  }, []);
 
   useEffect(() => {
     // ``/dataflow`` with no id at all reaches the same canvas as

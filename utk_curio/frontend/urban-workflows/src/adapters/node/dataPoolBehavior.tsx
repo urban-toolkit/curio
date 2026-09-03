@@ -1,12 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useEdges } from 'reactflow';
 import { NodeBehaviorHook } from '../../registry/types';
 import useTableData from '../../hook/useTableData';
 import { ICodeData, ICodeDataContent } from '../../types';
 import { IPropagation } from '../../providers/FlowProvider';
 import DataPoolContent from './components/DataPoolContent';
+import { hasIncomingEdge } from '../../utils/nodeEmptyState';
 import { ResolutionType, VisInteractionType, NodeType } from '../../constants';
 
 export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
+  // Which empty state to show turns on whether anything is wired in, which
+  // only the graph knows (#224).
+  const poolEdges = useEdges();
+  const connected = hasIncomingEdge(poolEdges, data.nodeId);
   const [output, setOutput] = useState<ICodeData>({ code: '', content: '' });
   const [plotResolutionMode, setPlotResolutionMode] = useState<string>(ResolutionType.OVERWRITE);// how interaction conflicts are solved in the context of one plot
   const [resolutionMode, setResolutionMode] = useState<string>(ResolutionType.OVERWRITE);// how interaction conflicts between plots are resolved
@@ -531,9 +537,10 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
         tabData={tabData}
         tableData={tableData}
         data={data}
+        connected={connected}
       />
     ),
-    [activeTab, setActiveTab, tabData, tableData, data],
+    [activeTab, setActiveTab, tabData, tableData, data, connected],
   );
 
   return {

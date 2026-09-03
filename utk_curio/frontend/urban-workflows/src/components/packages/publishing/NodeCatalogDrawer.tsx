@@ -6,9 +6,11 @@ import {
   refreshPackageRegistry,
 } from "../../../api/packagesApi";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { BUILTIN_PACKAGE_ID } from "../../../registry/packageKeys";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   applyProjectLockfile,
+  getPackagesRevision,
   setCurrentProjectPackages,
 } from "../../../registry/projectPackagesStore";
 import { draftFromInstalledPackagePayload } from "../../../utils/palettePackageFactoryDraft";
@@ -41,6 +43,8 @@ export interface NodeCatalogDrawerProps {
    *  package the user needs can land them on it (#233). */
   initialSearch?: string;
 }
+
+const BUILTIN_PACKAGE_DIR = `${BUILTIN_PACKAGE_ID}@1`;
 
 export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   presented,
@@ -115,7 +119,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     // disagree with the palette. ``ProjectLoader`` now seeds the unsaved
     // dataflow's scope from the same defaults, so both read the one store and
     // this can just follow the lockfile in every case.
-    () => new Set(projectPackages),
+    //
+    // The builtin package is added unconditionally, as the palette filter also
+    // treats it (``inDataflowScope``). It is in every dataflow by construction
+    // -- the backend seeds it and refuses to uninstall it -- so the only state
+    // its absence here can represent is "the lockfile has not arrived yet",
+    // which used to render an "Add to project" button for something already
+    // present and un-removable.
+    () => new Set([...projectPackages, BUILTIN_PACKAGE_DIR]),
     [projectPackages],
   );
 
@@ -136,6 +147,10 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     // remount ProjectLoader (e.g. installing via /catalog and coming back).
     // The pull is best-effort: 404 / network error just leaves the existing
     // store untouched.
+    // Captured BEFORE the fetch below: if a local write lands while these are
+    // in flight, the lockfile we get back is older than what the store already
+    // knows and applying it would undo that write (see applyProjectLockfile).
+    const lockfileReadAt = getPackagesRevision();
     const promises: [
       ReturnType<typeof packagesApi.catalog>,
       ReturnType<typeof packagesApi.listInstalled>,
@@ -157,7 +172,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     if (projLock && Array.isArray(projLock.packages)) {
       // memo dev/101: when the backend's lockfile differs from the mirror,
       // the palette/registry must follow — not only the drawer's pill.
-      if (applyProjectLockfile(projLock.packages)) {
+      if (applyProjectLockfile(projLock.packages, lockfileReadAt)) {
         await refreshPackageRegistry();
       }
     }

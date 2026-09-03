@@ -3,6 +3,8 @@ import Editor, { Monaco } from "@monaco-editor/react";
 import { ICodeData } from "../../types";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
+import { useFlowContext } from "../../providers/FlowProvider";
+import { registerRunNodeAction } from "./runNodeMonacoAction";
 
 type GrammarEditorProps = {
     output: ICodeData;
@@ -75,6 +77,12 @@ export default function GrammarEditor({
         c.requestCodeChange(nodeId, baseline, local, "grammar");
     };
 
+    // onMount fires once, so the action reads the CURRENT play function through
+    // a ref rather than capturing the first render's (#223).
+    const { playNodesUpTo } = useFlowContext();
+    const runNodeRef = useRef<() => void>(() => {});
+    runNodeRef.current = () => playNodesUpTo(nodeId);
+
     const handleEditorMount = (editor: any, monaco: Monaco) => {
         // Vega-Lite specs carry `$schema: "https://.../v6.json"` (~2 MB). Monaco's
         // built-in JSON support will fetch and validate against that URL on first
@@ -106,6 +114,9 @@ export default function GrammarEditor({
         }
         attachEditor(editor);
         editor.onDidBlurEditorText(proposeOnBlur);
+        // Same chord as the code editor, so a grammar node runs the way a
+        // Python one does (#223).
+        registerRunNodeAction(editor, monaco, () => runNodeRef.current);
     };
 
     useEffect(() => {

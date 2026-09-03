@@ -24,6 +24,8 @@ import { faCube } from '@fortawesome/free-solid-svg-icons';
 
 import { SupportedType } from '../constants';
 import { BUILTIN_PACKAGE_ID } from './packageKeys';
+import { isSupportedPortType } from '../constants/supportedPortTypes';
+import { getCurrentProjectPackages } from './projectPackagesStore';
 import {
   inputOnly,
   outputOnly,
@@ -125,9 +127,17 @@ function asCategory(raw: string): NodeCategory {
 
 export { BUILTIN_PACKAGE_ID } from './packageKeys';
 
+/**
+ * Keep only the types the runtime can actually match.
+ *
+ * Shares its predicate with the settings dialog's dropdown, so the set a node
+ * author can PICK and the set that survives the trip into the registry are one
+ * list. They used to be two independent derivations of the same enum, and the
+ * dialog's field was free text, so a typo passed the editor and was dropped
+ * here in silence (#219).
+ */
 function asSupportedTypes(raw: string[]): SupportedType[] {
-  const known = new Set(Object.values(SupportedType));
-  return raw.filter((t) => known.has(t as SupportedType)) as SupportedType[];
+  return raw.filter(isSupportedPortType);
 }
 
 function asPortDef(p: { types: string[]; cardinality?: string }): PortDef {
@@ -399,17 +409,32 @@ async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void>
  * Registering everything also means a canvas node whose package is not in this
  * dataflow's lockfile still resolves its descriptor instead of rendering as an
  * unknown kind.
+ *
+ * DESCRIPTORS are unfiltered; behavior SCRIPTS are not. Building a descriptor is
+ * local work, but each behavior bundle is a fetch plus a ``<script>`` injection,
+ * and awaiting all of them on every refresh made the whole registry refresh
+ * scale with the size of the account rather than of the open dataflow. Those
+ * are loaded for the dataflow's own packages, and lazily for anything else.
  */
 export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
   try {
     const { packages } = await packagesApi.listInstalled();
     const filtered = packages ?? [];
+    const scope = getCurrentProjectPackages();
+    const scoped =
+      scope === null
+        ? filtered
+        : filtered.filter(
+            (p) =>
+              p.packageId === BUILTIN_PACKAGE_ID ||
+              scope.has(`${p.packageId}@${p.major}`),
+          );
     // Inject and await any `behaviorScript` bundles BEFORE descriptor
     // build so the behavior keys referenced in the templates are
     // actually registered against the global behavior registry. Without
     // this step, `getBehavior()` returns undefined and packages with
     // custom behaviors soft-fail to the package code editor.
-    await loadPackageBehaviorScripts(filtered);
+    await loadPackageBehaviorScripts(scoped);
     // Replace package-derived kinds wholesale — `registerNode` only adds/overwrites,
     // so without this pass, uninstalled packages would leave stale palette entries.
     // Notify subscribers only after clear + register so React Flow keeps package node types wired.

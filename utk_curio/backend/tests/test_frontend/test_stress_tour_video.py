@@ -972,9 +972,13 @@ def chapter_canvas(run: StressRun) -> None:
         if add.count():
             add.first.click()
             page.wait_for_timeout(600)
-            rows = section.locator("input")
-            if rows.count():
-                rows.first.fill("table")
+            # Was ``rows.first.fill("table")`` against a free-text field. "table"
+            # is not a SupportedType, so it was exactly the value the old editor
+            # accepted and the registry then dropped -- the defect #219 fixed.
+            # The control is a closed dropdown now, so pick a real type.
+            type_select = page.locator('[aria-label="Input ports port 1 type 1"]')
+            if type_select.count():
+                type_select.select_option("DATAFRAME")
         run.snap("node-settings-ports")
 
     with run.step("Cancel out of Node settings"):

@@ -40,6 +40,7 @@ def _isolate_env(monkeypatch, tmp_path):
         "CURIO_NO_AUTH",
         "CURIO_NO_PROJECT",
         "ENABLE_COLLAB",
+        "BACKEND_URL",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
@@ -287,3 +288,50 @@ class TestVariablesThatStayEnvOnly:
 
         source = Path(launcher.__file__).read_text(encoding="utf-8")
         assert "CURIO_TESTING_LLM_SCRIPT" not in source
+
+
+# ── The address the frontend bundle is built against ────────────────────────
+
+
+def test_backend_url_follows_the_backend_port():
+    """The bundle must be built for the backend this launch actually starts.
+
+    ``BACKEND_URL`` is substituted into the frontend at BUILD time. It used to
+    come only from a hand-maintained ``frontend/urban-workflows/.env``, so
+    ``--backend-port`` alone moved the server without moving the UI's idea of
+    where it is -- and the UI then called whatever Curio owned the old port.
+    """
+    set_environment_variables(**{**BASE, "backend_port": 5102})
+
+    assert os.environ["BACKEND_URL"] == "http://localhost:5102"
+
+
+def test_a_loopback_backend_is_addressed_as_localhost():
+    """127.0.0.1 and localhost are different ORIGINS to the browser.
+
+    The backend binds 127.0.0.1 by default, but the page is served from
+    localhost, so baking the literal bind address in would make every request
+    cross-origin.
+    """
+    set_environment_variables(**{**BASE, "backend_host": "127.0.0.1"})
+    assert os.environ["BACKEND_URL"].startswith("http://localhost:")
+
+    set_environment_variables(**{**BASE, "backend_host": "0.0.0.0"})
+    assert os.environ["BACKEND_URL"].startswith("http://localhost:")
+
+
+def test_a_real_host_is_kept():
+    """A deployment behind a hostname must not be rewritten to localhost."""
+    set_environment_variables(**{**BASE, "backend_host": "curio.example.org"})
+    assert os.environ["BACKEND_URL"] == "http://curio.example.org:5002"
+
+
+def test_an_explicit_backend_url_wins(monkeypatch):
+    """An operator terminating TLS or proxying needs the last word.
+
+    Everything else here is derived, so this is the one escape hatch -- hence
+    ``setdefault`` rather than an unconditional write, unlike its neighbours.
+    """
+    monkeypatch.setenv("BACKEND_URL", "https://curio.example.org")
+    set_environment_variables(**{**BASE, "backend_port": 5102})
+    assert os.environ["BACKEND_URL"] == "https://curio.example.org"

@@ -152,8 +152,18 @@ def test_drawer_lists_catalog_packages(
     ).to_be_visible()
 
     # curio.builtin ships with every instance and can be neither uninstalled nor
-    # published, so its card must offer nothing.
-    expect(_card(drawer, BUILTIN_DIR).get_by_role("button")).to_have_count(0)
+    # published, so its card must offer no WRITE.
+    #
+    # Asserted per action rather than as "no buttons at all": every card has
+    # carried a details affordance since the catalogs were given a shared card
+    # shape, so a bare button count also forbids reading about the package,
+    # which was never the claim.
+    builtin_card = _card(drawer, BUILTIN_DIR)
+    expect(builtin_card).to_have_count(1, timeout=15000)
+    for action in ("Add to project", "Remove from project", "Publish", "Unpublish"):
+        expect(
+            builtin_card.get_by_role("button", name=action, exact=True)
+        ).to_have_count(0), action
 
     # A wedged user store (a half-copied package dir with no manifest) surfaces
     # here as an error banner. Asserting its absence turns that into a legible
