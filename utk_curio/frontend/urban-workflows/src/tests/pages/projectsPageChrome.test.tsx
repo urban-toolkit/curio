@@ -7,6 +7,13 @@
  * (wait_for_projects_page in backend/tests/test_frontend/utils.py), so that
  * link's accessible name matters.
  */
+// ProjectsList toasts the outcome of archive / delete (#221), and the real
+// provider is not mounted in these tests. Same stub the other page and drawer
+// suites use.
+jest.mock("../../providers/ToastProvider", () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
+
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
@@ -361,11 +368,47 @@ describe('projects detail drawer', () => {
     expect(getByRole('heading', { name: 'Bike lanes' })).toBeTruthy();
   });
 
-  test('an unarchived project offers Archive, not Delete forever', async () => {
-    const { getByRole, queryByRole } = await renderPage();
+  test('an unarchived project offers both Archive and Delete forever', async () => {
+    // This asserted the opposite until #221. The drawer hid Delete forever
+    // until a project was archived, while the right-click menu offered it to
+    // anything -- so the same project was told two different things about what
+    // could be done to it, and the drawer looked like archiving was the only
+    // option. The archive step was never a safety mechanism; the confirm
+    // dialog is what makes deletion deliberate.
+    const { getByRole } = await renderPage();
 
     expect(getByRole('button', { name: 'Archive' })).toBeTruthy();
-    expect(queryByRole('button', { name: 'Delete forever' })).toBeNull();
+    expect(getByRole('button', { name: 'Delete forever' })).toBeTruthy();
+  });
+
+  test('deleting from the drawer asks first', async () => {
+    const { getByRole } = await renderPage();
+
+    await act(async () => {
+      fireEvent.click(getByRole('button', { name: 'Delete forever' }));
+    });
+
+    // The existing ConfirmDialog, with the retention copy it already carried.
+    expect(getByRole('heading', { name: /Permanently delete/ })).toBeTruthy();
+  });
+
+  test('the drawer and the context menu offer the same actions', async () => {
+    // The anti-drift assertion, and the point of the refactor: both surfaces
+    // render from ``projectActions``, so they cannot disagree again.
+    const { container, getByRole } = await renderPage();
+
+    const card = container.querySelector('[data-project-id="p1"]') as HTMLElement;
+    await act(async () => {
+      fireEvent.contextMenu(card);
+    });
+
+    // Open is the drawer's primary action ("Open dataflow"), so compare the rest.
+    for (const label of ['Rename', 'Duplicate', 'Archive', 'Delete forever']) {
+      expect(
+        screen.getAllByRole('button', { name: label }).length,
+      ).toBeGreaterThanOrEqual(2);
+    }
+    expect(getByRole('button', { name: 'Open dataflow' })).toBeTruthy();
   });
 
   test('closing the drawer collapses it', async () => {

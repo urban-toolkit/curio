@@ -14,6 +14,13 @@
  * geometry half is asserted against the stylesheet on disk — the same approach
  * as tests/catalog/removedCatalogChrome.test.ts.
  */
+// ProjectsList toasts the outcome of archive / delete (#221), and the real
+// provider is not mounted in these tests. Same stub the other page and drawer
+// suites use.
+jest.mock("../../providers/ToastProvider", () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
+
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
