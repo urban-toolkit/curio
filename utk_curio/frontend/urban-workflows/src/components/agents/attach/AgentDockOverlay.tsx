@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
-import { useReactFlow } from "reactflow";
+import { useReactFlow, useStore } from "reactflow";
+import { resolveNodeDisplayLabel } from "../../../utils/palettePackageFactoryDraft";
 import { AgentDock } from "./AgentDock";
 import { AgentChatPanel } from "./AgentChatPanel";
 import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
@@ -22,6 +23,34 @@ export const AgentDockOverlay: React.FC = () => {
   // and content writes land on the LIVE canvas from here, where React Flow
   // is reachable.
   useAgentCanvasMutations();
+
+  // The name of whatever the open chat is attached to, for its header (#228).
+  // Computed here, above the `!ctx` return, because it uses hooks; keyed on the
+  // node id alone so the selector identity is stable across renders. Reading it
+  // through the store rather than getNodes() means renaming a node updates the
+  // open chat's header live, without the overlay re-rendering on every unrelated
+  // node change the way useNodes() would.
+  const openTarget = ctx?.attachments.find(
+    (a) => a.attachmentId === ctx?.selectedId,
+  )?.target;
+  const openNodeId =
+    openTarget && openTarget.kind === "node" ? openTarget.targetId ?? null : null;
+  const selectedTargetName = useStore(
+    useCallback(
+      (s: any) => {
+        if (!openNodeId) return null;
+        const node = s.nodeInternals.get(openNodeId);
+        if (!node?.data) return null;
+        try {
+          return resolveNodeDisplayLabel(node.data);
+        } catch {
+          // An unregistered node type is not worth blanking the header over.
+          return null;
+        }
+      },
+      [openNodeId],
+    ),
+  );
   // Attachment id whose settings modal is open (memo dev/42), or null.
   if (!ctx) return null;
 
@@ -70,6 +99,7 @@ export const AgentDockOverlay: React.FC = () => {
         ? createPortal(
             <AgentChatPanel
               attachment={selected}
+              targetName={selectedTargetName}
               index={selectedIdx + 1}
               total={ctx.attachments.length}
               onPrev={prev ? () => ctx.openChat(prev.attachmentId) : undefined}

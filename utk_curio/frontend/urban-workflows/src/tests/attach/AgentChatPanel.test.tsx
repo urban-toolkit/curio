@@ -47,11 +47,45 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AgentChatPan
 }
 
 describe("AgentChatPanel", () => {
-  it("renders the concept header: name, target, session chip", () => {
+  it("renders the concept header: name and target", () => {
     renderPanel();
     expect(screen.getByText("Node Explainer")).toBeInTheDocument();
     expect(screen.getByText(/attached to canvas/i)).toBeInTheDocument();
-    expect(screen.getByText(/session s1234567/)).toBeInTheDocument();
+  });
+
+  // #228: the header used to read "Attached to node 6bea6863-…" beside a
+  // "session s1234567" chip. Neither told the user which node they were talking
+  // to. Both ids are diagnostic, so they moved into the tooltip.
+  it("names the node it is attached to instead of showing its id", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        target: { kind: "node" as const, targetId: "6bea6863-1f2e-4a11-9b0c-77d2e3f4a5b6" },
+      },
+      targetName: "Data Loading",
+    });
+    expect(screen.getByText(/attached to data loading/i)).toBeInTheDocument();
+    expect(screen.queryByText(/6bea6863/)).toBeNull();
+  });
+
+  it("falls back to the target kind and id when the node cannot be named", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        target: { kind: "node" as const, targetId: "6bea6863" },
+      },
+      targetName: null,
+    });
+    expect(screen.getByText(/attached to node 6bea6863/i)).toBeInTheDocument();
+  });
+
+  it("keeps the session id available as a tooltip, not as header text", () => {
+    renderPanel();
+    expect(screen.queryByText(/session s1234567/)).toBeNull();
+    expect(screen.getByText(/attached to canvas/i)).toHaveAttribute(
+      "title",
+      expect.stringContaining("session s1234567890") as unknown as string,
+    );
   });
 
   it("sends the trimmed message through onSend", async () => {

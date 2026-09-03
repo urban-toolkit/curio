@@ -179,16 +179,6 @@
   min-width: 0;
 }
 
-.sessionChip {
-  flex: none;
-  font-size: 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--curio-text-muted);
-  background: var(--curio-top-bar-bg-hover);
-  border-radius: 999px;
-  padding: 2px 8px;
-}
-
 .headerBtn {
   flex: none;
   width: 28px;

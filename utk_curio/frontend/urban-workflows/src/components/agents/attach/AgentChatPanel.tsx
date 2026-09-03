@@ -67,6 +67,13 @@ const INTENT_CLAMP_CHARS = 280;
 export const AgentChatPanel: React.FC<{
   attachment: AgentAttachment;
   turns: AgentSessionTurn[];
+  /**
+   * Display name of what this agent is attached to, for the header.
+   *
+   * Resolved by the caller, which can see the canvas; omit it and the header
+   * falls back to naming the target kind and id (#228).
+   */
+  targetName?: string | null;
   /** 1-based position among all attached agents (for the `idx / total` label). */
   index?: number;
   /** Total attached agents in the dataflow. */
@@ -131,6 +138,7 @@ export const AgentChatPanel: React.FC<{
 }> = ({
   attachment,
   turns,
+  targetName = null,
   index = 1,
   total = 1,
   onPrev,
@@ -302,10 +310,16 @@ export const AgentChatPanel: React.FC<{
 
   const tint = styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles];
 
+  // "Attached to <name>", not "Attached to node 6bea6863-…". The raw id told the
+  // user nothing about which node they were talking to, and a session id in the
+  // header told them less (#228). The name is resolved by the overlay, which can
+  // see the canvas; the id stays as the element's title so support can still
+  // recover it. Falls back to the old shape when the node is gone.
   const targetLabel =
     attachment.target.kind === "canvas"
       ? "canvas"
-      : `${attachment.target.kind} ${attachment.target.targetId ?? ""}`.trim();
+      : targetName?.trim() ||
+        `${attachment.target.kind} ${attachment.target.targetId ?? ""}`.trim();
 
   // Escape dismisses the chat (close only — the attachment is untouched);
   // while renaming, Escape cancels the edit instead (handled on the input).
@@ -520,12 +534,22 @@ export const AgentChatPanel: React.FC<{
           </button>
         </div>
         <div className={styles.headerRow}>
-          <span className={styles.subtitle}>Attached to {targetLabel}</span>
+          {/* The target id and session id are diagnostic, not something to read
+              while working, so they live in the tooltip rather than the header
+              (#228). */}
+          <span
+            className={styles.subtitle}
+            title={
+              attachment.target.kind === "canvas"
+                ? `session ${attachment.sessionId}`
+                : `${attachment.target.kind} ${attachment.target.targetId ?? ""} · ` +
+                  `session ${attachment.sessionId}`
+            }
+          >
+            Attached to {targetLabel}
+          </span>
           {titleError ? <span className={styles.titleError}>{titleError}</span> : null}
           <span className={styles.headerSpacer} />
-          <span className={styles.sessionChip} title={`session ${attachment.sessionId}`}>
-            session {attachment.sessionId.slice(0, 8)}
-          </span>
         </div>
       </div>
 
