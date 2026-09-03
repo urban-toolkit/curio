@@ -910,6 +910,47 @@ def extract_content(reply: str) -> tuple[str, list[dict]]:
     return visible, parts
 
 
+# The tool whose grant means an agent is expected to propose dataset candidates.
+# Used to decide whether the candidates schema belongs in this run's tail.
+_CANDIDATES_TOOL = "catalog.search"
+
+# The datasetCandidates schema, shown to agents that can actually produce one.
+#
+# The Dataset Finder's intent tells it to "propose candidates as ONE
+# datasetCandidates block with two lanes", but until this existed nothing ever
+# showed it the shape — the tail taught only suggestedPrompts and toolRequest.
+# Asked by name for a structured block whose syntax it had never seen, the model
+# invented one, usually XML. That is not a terminal ``curio.v1`` fence, so the
+# parser never saw it and the documented fail-open folded the raw markup into the
+# visible transcript, losing the whole candidates card along with it (#269).
+#
+# It lives here rather than in the prompt file for the same reason the rest of
+# the tail does (dev/38): an edited intent can neither strip nor spoof it.
+CANDIDATES_INSTRUCTION = (
+    "When you have dataset candidates to propose, end your reply with exactly "
+    "one fenced block of this form instead:\n"
+    "```curio.v1\n"
+    '{"datasetCandidates": {"lanes": {'
+    '"external": [{"name": "<dataset name>", '
+    '"sourceType": "api|endpoint|portal|catalog|document|database", '
+    '"url": "https://...", "provider": "<who publishes it>", '
+    '"format": "<e.g. GeoJSON>", "coverage": "<area and years>", '
+    '"requirement": "<key or licence needed, if any>", '
+    '"fit": {"score": 0, "rationale": "<why it fits>"}}], '
+    '"catalog": [{"name": "<dataset name>", '
+    '"datasetId": "<id from catalog.search>", "sourceType": "catalog", '
+    '"installed": false, '
+    '"fit": {"score": 0, "rationale": "<why it fits>"}}]}}}\n'
+    "```\n"
+    "Both lanes are optional but at least one row is required, at most 8 rows "
+    "each. Every catalog row needs the datasetId catalog.search returned; only "
+    "http(s) URLs are accepted; fit.score is 0-100. Names stay under 120 "
+    "characters and the other text fields under 160. Do not invent any other "
+    "markup for candidates — a block that does not match this shape is shown to "
+    "the user as raw text."
+)
+
+
 def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
     """The system-turn tail instruction for one run (memo dev/41).
 
@@ -918,11 +959,15 @@ def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
     exactly the granted ids with their registry descriptions and the
     ``toolRequest`` syntax. The list is server-resolved grants — never the
     manifest's raw declarations.
+
+    A run that can search the catalog also gets the ``datasetCandidates`` schema
+    (#269): those agents are asked for that block by name, so they have to be
+    told what it looks like.
     """
     if not grants:
         return TAIL_INSTRUCTION
     lines = "\n".join(f"- {tool_id}: {description}" for tool_id, description in grants)
-    return (
+    instruction = (
         f"{TAIL_INSTRUCTION}\n\n"
         "You may also use these tools, granted for this conversation:\n"
         f"{lines}\n"
@@ -933,6 +978,9 @@ def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
         '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n'
         "```"
     )
+    if any(tool_id == _CANDIDATES_TOOL for tool_id, _ in grants):
+        instruction = f"{instruction}\n\n{CANDIDATES_INSTRUCTION}"
+    return instruction
 
 
 def delegation_instruction(entries: list[tuple[str, str]]) -> str:

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from utk_curio.backend.app.agents import content
 
@@ -290,6 +291,73 @@ class TestTailInstruction:
         assert "- dataflow.read: Read the saved spec." in text
         assert "- node.read: Read one node." in text
         assert '"toolRequest"' in text
+
+
+class TestCandidatesInstruction:
+    """An agent asked for datasetCandidates has to be shown the shape (#269).
+
+    The Dataset Finder's intent names a "datasetCandidates block with two lanes",
+    but the runtime tail only ever taught suggestedPrompts and toolRequest. With
+    no schema to follow the model invented markup — XML in the reports — which is
+    not a terminal curio.v1 fence, so the parser never saw it and the fail-open
+    folded the raw tags into the visible transcript, losing the card entirely.
+    """
+
+    def test_a_catalog_searcher_is_shown_the_schema(self):
+        text = content.tail_instruction(
+            [("catalog.search", "Search the catalog."), ("dataset.install", "Install.")]
+        )
+        assert '"datasetCandidates"' in text
+        assert '"lanes"' in text
+        assert '"datasetId"' in text
+
+    def test_other_agents_are_not(self):
+        # Nothing should invite a card from an agent that cannot produce one.
+        text = content.tail_instruction([("dataflow.read", "Read the saved spec.")])
+        assert "datasetCandidates" not in text
+
+    def test_grantless_runs_are_still_byte_identical(self):
+        assert "datasetCandidates" not in content.tail_instruction()
+
+    def test_the_documented_example_is_valid_json(self):
+        # A schema the model cannot copy verbatim is worse than none.
+        text = content.tail_instruction([("catalog.search", "Search the catalog.")])
+        match = re.search(r'\{"datasetCandidates".*?\}\}\}', text, re.S)
+        assert match is not None
+        payload = json.loads(match.group(0))
+        assert set(payload["datasetCandidates"]["lanes"]) == set(content._CANDIDATE_LANES)
+
+    def test_the_documented_shape_is_what_the_parser_accepts(self):
+        # Pins the schema against the parser, so the two cannot drift.
+        parsed = content._parse_dataset_candidates(
+            {
+                "lanes": {
+                    "external": [
+                        {
+                            "name": "Chicago boundaries",
+                            "sourceType": "portal",
+                            "url": "https://example.org/data",
+                            "provider": "City of Chicago",
+                            "format": "GeoJSON",
+                            "coverage": "Chicago, 2020",
+                            "requirement": "none",
+                            "fit": {"score": 80, "rationale": "matches the area"},
+                        }
+                    ],
+                    "catalog": [
+                        {
+                            "name": "Neighborhoods",
+                            "datasetId": "data.cityofchicago.neighborhoods",
+                            "sourceType": "catalog",
+                            "installed": False,
+                            "fit": {"score": 90, "rationale": "already local"},
+                        }
+                    ],
+                }
+            }
+        )
+        assert parsed is not None
+        assert parsed["type"] == "datasetCandidates"
 
 
 class TestProposalPart:
