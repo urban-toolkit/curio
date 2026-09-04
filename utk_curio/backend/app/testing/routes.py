@@ -27,6 +27,7 @@ a normal ``curio.py start`` does not.
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 
 from flask import Blueprint, jsonify, request
@@ -459,6 +460,143 @@ def agent_script_reset():
         return denied
     testing_provider.reset()
     return jsonify({"pending": testing_provider.pending()}), 200
+
+
+#: The default identity of the fake distribution :func:`broken_library` mints.
+#: A name no index carries, so a stray ``pip install`` of it can only fail —
+#: nothing here should ever reach a network, and a name collision would make
+#: that hard to notice.
+_BROKEN_LIB_NAME = "brokenlib"
+_BROKEN_LIB_VERSION = "9.9.9"
+_BROKEN_LIB_REASON = (
+    "DLL load failed while importing _base: The specified procedure could not "
+    "be found."
+)
+
+
+def _broken_lib_root():
+    """Where the fake distributions live — inside the test rig's state tree."""
+    from utk_curio.backend.app.common.user_storage import curio_root
+
+    return curio_root() / "broken-libs"
+
+
+@testing_bp.route("/broken-library", methods=["POST"])
+def broken_library():
+    """Make a library that pip considers installed, and python cannot import.
+
+    This is the bug class the import probe exists for, and it is the one an
+    E2E test cannot otherwise stage. pip reports a requirement satisfied from
+    ``importlib.metadata`` alone, so a wheel whose native extension will not
+    load — a rasterio built against a different GDAL is the everyday case —
+    records a perfectly good version, installs "successfully", and raises the
+    first time a node touches it. Every layer above reads pip's exit code as
+    success.
+
+    Reproduced here as a distribution with valid metadata over a module that
+    raises on import. Byte-for-byte the same shape as the real thing, and
+    deterministic and offline, which a genuinely broken wheel is not: the
+    install path finds the version satisfied and SKIPS pip entirely, so nothing
+    in this reaches an index.
+
+    It lives in this process rather than in the harness because that is where
+    the question is asked. ``pip_runner`` probes in a subprocess of the backend,
+    so the fake has to be on the backend's ``sys.path`` (for the metadata read)
+    and its ``PYTHONPATH`` (for the child that attempts the import) — neither of
+    which a pytest process can reach, still less one talking to a container.
+    Same reason ``dataset-paths`` and ``package-store`` resolve here.
+
+    Body (JSON):
+      * ``action``  – ``"install"`` mints it, ``"remove"`` takes it away.
+      * ``name``    – distribution name; defaults to ``brokenlib``.
+      * ``version`` – defaults to ``9.9.9``.
+      * ``reason``  – the ImportError text; defaults to the DLL-load wording.
+
+    Answers ``{"name", "version", "path", "versionSatisfied", "importError"}``
+    so a caller can assert the premise — pip WOULD skip this, and the import
+    DOES fail — before asserting anything about a user-facing surface.
+    """
+    import importlib
+    import os
+    import sys
+
+    from utk_curio.backend.app.packages import pip_runner
+
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "install").strip()
+    name = (body.get("name") or _BROKEN_LIB_NAME).strip()
+    version = (body.get("version") or _BROKEN_LIB_VERSION).strip()
+    reason = body.get("reason") or _BROKEN_LIB_REASON
+
+    if action not in ("install", "remove"):
+        return jsonify({"error": "action must be 'install' or 'remove'"}), 400
+    # The name becomes a directory and a module filename, so keep it to the
+    # shape a distribution name actually has.
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,40}", name):
+        return jsonify({"error": f"invalid name: {name!r}"}), 400
+    if not re.fullmatch(r"[0-9][0-9A-Za-z.]{0,20}", version):
+        return jsonify({"error": f"invalid version: {version!r}"}), 400
+
+    root = _broken_lib_root()
+
+    if action == "remove":
+        shutil.rmtree(root, ignore_errors=True)
+        _drop_from_import_path(str(root))
+        importlib.invalidate_caches()
+        pip_runner.forget_import_probes()
+        return jsonify({"name": name, "removed": True}), 200
+
+    info = root / f"{name}-{version}.dist-info"
+    info.mkdir(parents=True, exist_ok=True)
+    (info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n",
+        encoding="utf-8",
+    )
+    (info / "top_level.txt").write_text(f"{name}\n", encoding="utf-8")
+    # The module raises rather than being absent, because "absent" is a
+    # different bug with a different remedy: pip would reinstall it.
+    (root / f"{name}.py").write_text(
+        f"raise ImportError({reason!r})\n", encoding="utf-8",
+    )
+
+    path = str(root)
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    existing = os.environ.get("PYTHONPATH")
+    if not existing or path not in existing.split(os.pathsep):
+        os.environ["PYTHONPATH"] = (
+            f"{path}{os.pathsep}{existing}" if existing else path
+        )
+    # The metadata finder caches directory listings, and the probe memoises per
+    # (distribution, version) — both would otherwise answer from before this.
+    importlib.invalidate_caches()
+    pip_runner.forget_import_probes()
+
+    return jsonify({
+        "name": name,
+        "version": version,
+        "path": path,
+        # The premise, measured rather than asserted: pip is satisfied ...
+        "versionSatisfied": pip_runner.is_satisfied(name, ""),
+        # ... and the import is not.
+        "importError": pip_runner.import_failures([name]).get(name),
+    }), 200
+
+
+def _drop_from_import_path(path: str) -> None:
+    """Take *path* back off ``sys.path`` and ``PYTHONPATH``."""
+    import os
+    import sys
+
+    while path in sys.path:
+        sys.path.remove(path)
+    existing = os.environ.get("PYTHONPATH")
+    if existing:
+        kept = [p for p in existing.split(os.pathsep) if p and p != path]
+        if kept:
+            os.environ["PYTHONPATH"] = os.pathsep.join(kept)
+        else:
+            os.environ.pop("PYTHONPATH", None)
 
 
 @testing_bp.route("/package-store", methods=["POST"])
