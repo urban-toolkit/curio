@@ -183,10 +183,11 @@ def _declared_import_failures(
     them "not installed", which is a fabricated failure, and probing only the
     host for a backend-bearing package would vouch for libraries nobody checked.
 
-    An overlay that was never built is not probed. The question here is "does
-    what we installed work"; a directory nothing wrote to has nothing to answer
-    for, and the install paths that used to skip building it are fixed rather
-    than reported on.
+    An overlay that was never built is REPORTED, not probed: reaching that
+    branch means the manifest declares these deps and routes them to an overlay,
+    so a missing directory is precisely the state in which the package's
+    handlers cannot import them. Probing it would report the same thing less
+    clearly; staying quiet would be a clean bill of health nobody earned.
 
     Empty when nothing is declared: the probe costs a subprocess and ~19s of
     cold imports for the twelve builtin data-ops libraries, so it is never run
@@ -212,6 +213,24 @@ def _declared_import_failures(
         overlay = backend_runtime.overlay_dir_for(user_key, dir_name)
         if overlay.is_dir():
             failures.update(_import_failures_or_silence(deps, overlay_dir=overlay))
+        else:
+            # An overlay that was never built is a REPORTABLE failure, not a
+            # silence. Reaching here means the manifest routes these deps to an
+            # overlay and declares them, so a missing directory is exactly the
+            # state where the package's handlers cannot import what they need -
+            # the thing this seam exists to name. It happens: an offline
+            # sideload builds the overlay, pip fails, and ``build_overlay``
+            # rmtree's the half-build on the way out.
+            #
+            # Saying nothing here was the earlier choice, on the grounds that a
+            # directory nothing wrote to has nothing to answer for. That is the
+            # wrong way round: it is a clean bill of health nobody earned, on
+            # the one shape where the libraries are hardest to reach.
+            failures.update({
+                name: f"{name} is not installed (this package's dependency "
+                      f"overlay has not been built)"
+                for name in sorted(deps)
+            })
     if destination in ("host", "both"):
         # Host last, deliberately: for a "both" package a broken host copy is
         # the one the user can repair with a plain pip, so it is the reason

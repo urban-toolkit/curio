@@ -765,11 +765,16 @@ def test_a_backend_packages_deps_are_probed_in_the_overlay_not_the_host(
     assert seen == [(["tinylib"], str(overlay))]
 
 
-def test_an_overlay_that_was_never_built_is_not_probed(monkeypatch, tmp_path):
-    """Nothing was installed there, so there is nothing to vouch for either way.
+def test_an_overlay_that_was_never_built_is_reported_not_passed_over(
+    monkeypatch, tmp_path,
+):
+    """Reaching this branch means the deps are declared AND routed to an overlay.
 
-    Probing a directory no pip run ever wrote to would report every declared dep
-    "not installed" - true of the directory, and not the claim being made.
+    So a missing directory is exactly the state where the package's handlers
+    cannot import what they need - it happens when an offline sideload's
+    ``build_overlay`` fails and rmtree's the half-build on the way out. This
+    used to answer ``{}``, which is a clean bill of health nobody earned, on the
+    one shape where the libraries are hardest to reach.
     """
     from utk_curio.backend.app.packages import backend_runtime, pip_runner
 
@@ -787,7 +792,12 @@ def test_an_overlay_that_was_never_built_is_not_probed(monkeypatch, tmp_path):
         backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
         templates=[SimpleNamespace(engine="javascript", has_code=False)],
     )
-    assert packages_services._declared_import_failures("1", "pkg@1", manifest) == {}
+    out = packages_services._declared_import_failures("1", "pkg@1", manifest)
+
+    # Named, with a reason that says what to do about it - and without spawning
+    # a probe against a directory nothing wrote to.
+    assert list(out) == ["tinylib"]
+    assert "overlay has not been built" in out["tinylib"]
 
 
 def test_a_both_destination_package_is_probed_in_both_environments(
