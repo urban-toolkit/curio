@@ -514,6 +514,68 @@ def test_a_working_overlay_is_not_wiped_and_rebuilt_on_every_ask(
     assert overlay.is_dir(), "the working overlay must still be there"
 
 
+def test_a_healthy_overlay_is_probed_once_per_install(monkeypatch, tmp_curio, tmp_path):
+    """Deciding whether to rebuild and reporting the verdict are one question.
+
+    They were asked separately - once to condition the rebuild, once to fill in
+    importErrors - and the overlay probe is deliberately unmemoised, so a
+    working overlay paid two full subprocesses of cold imports for one install.
+    """
+    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+    from utk_curio.backend.app.packages import services as svc
+
+    overlay = tmp_path / "overlay"
+    overlay.mkdir()
+    monkeypatch.setattr(backend_runtime, "overlay_dir_for", lambda uk, dn: overlay)
+    probes: list = []
+    monkeypatch.setattr(
+        pip_runner, "import_failures_in",
+        lambda deps, path: probes.append(sorted(deps)) or {})
+    monkeypatch.setattr(
+        backend_runtime, "build_overlay",
+        lambda uk, dn, deps, on_line=None: (_ for _ in ()).throw(
+            AssertionError("rebuilt a working overlay")))
+
+    manifest = SimpleNamespace(
+        python_deps={"tinylib": "1.0.0"},
+        backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
+        templates=[SimpleNamespace(engine="javascript", has_code=False)],
+    )
+    outcome = svc.provision_python_deps("1", "my.pkg@1", manifest)
+
+    assert probes == [["tinylib"]], f"expected one overlay probe, got {len(probes)}"
+    assert outcome.import_errors == {}
+
+
+def test_a_rebuilt_overlay_reports_the_new_verdict(monkeypatch, tmp_curio, tmp_path):
+    """After a rebuild the answer must come from the overlay that now exists,
+    not from the one the rebuild replaced."""
+    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+    from utk_curio.backend.app.packages import services as svc
+
+    overlay = tmp_path / "overlay"
+    overlay.mkdir()
+    monkeypatch.setattr(backend_runtime, "overlay_dir_for", lambda uk, dn: overlay)
+    monkeypatch.setattr(
+        backend_runtime, "build_overlay",
+        lambda uk, dn, deps, on_line=None: {"libs": [], "bytes": 1})
+    answers = iter([
+        {"tinylib": "ImportError: before"},   # broken, so it rebuilds
+        {"tinylib": "ImportError: after"},    # still broken afterwards
+    ])
+    monkeypatch.setattr(
+        pip_runner, "import_failures_in", lambda deps, path: next(answers))
+
+    manifest = SimpleNamespace(
+        python_deps={"tinylib": "1.0.0"},
+        backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
+        templates=[SimpleNamespace(engine="javascript", has_code=False)],
+    )
+    outcome = svc.provision_python_deps("1", "my.pkg@1", manifest)
+
+    assert outcome.import_errors == {"tinylib": "ImportError: after"}
+
+
 def test_a_broken_overlay_is_still_rebuilt(monkeypatch, tmp_curio, tmp_path):
     """The other half: skipping the rebuild must not mean never repairing."""
     from utk_curio.backend.app.packages import backend_runtime, pip_runner

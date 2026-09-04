@@ -190,8 +190,11 @@ def _declared_import_failures(
 
     Empty when nothing is declared: the probe costs a subprocess and ~19s of
     cold imports for the twelve builtin data-ops libraries, so it is never run
-    speculatively. Repeat calls within a process are memoised per
-    ``(distribution, version)`` by :mod:`.pip_runner`.
+    speculatively. Repeat HOST probes within a process are memoised per
+    ``(distribution, version)`` by :mod:`.pip_runner`; the OVERLAY probe is not
+    — ``build_overlay`` wipes and rebuilds, so a repair can land without a
+    version moving and a memo would answer from before it. A backend-bearing
+    package therefore re-pays the subprocess on every call that reaches here.
     """
     from utk_curio.backend.app.packages import backend_runtime
 
@@ -217,24 +220,27 @@ def _declared_import_failures(
     return failures
 
 
-def _overlay_needs_building(user_key: str, dir_name: str, deps) -> bool:
-    """Is *dir_name*'s overlay absent, or present and not working?
+def _overlay_import_failures(user_key: str, dir_name: str, deps):
+    """The overlay's verdict on *deps*, or ``None`` when there is no overlay.
 
-    The question a rebuild should be conditioned on. An overlay that exists and
-    whose every declared dep imports inside it is finished work: rebuilding it
-    costs a full ``pip install --target`` and, because the build wipes first,
-    risks losing it to an index that is not reachable right now.
+    ``None`` and ``{}`` are different answers and the caller needs both: nothing
+    built yet (so build it) versus built and working (so leave it alone). A
+    rebuild costs a full ``pip install --target`` and wipes first, so a working
+    overlay must not be rebuilt just because someone asked again.
 
-    A probe that cannot run answers "no" — the overlay is left alone. That is
-    the same posture the rest of the seam takes: a diagnostic's own failure
-    must not turn into destructive action.
+    Returned rather than reduced to a bool because the caller needs this exact
+    verdict anyway — asking twice means two subprocesses of cold imports for one
+    install, and the overlay probe is deliberately unmemoised.
+
+    A probe that cannot run answers ``{}``: the overlay is left alone, and the
+    diagnostic's own failure does not turn into destructive action.
     """
     from utk_curio.backend.app.packages import backend_runtime
 
     overlay = backend_runtime.overlay_dir_for(user_key, dir_name)
     if not overlay.is_dir():
-        return True
-    return bool(_import_failures_or_silence(deps, overlay_dir=overlay))
+        return None
+    return _import_failures_or_silence(deps, overlay_dir=overlay)
 
 
 def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutcome:
@@ -261,8 +267,9 @@ def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutc
 
     destination, _reason = backend_runtime.dep_destinations(manifest)
     host_installed: list[str] = []
+    failures: dict[str, str] = {}
     if destination in ("overlay", "both"):
-        # Only when there is something to build. ``build_overlay`` is
+        # Build only when there is something to build. ``build_overlay`` is
         # wipe-and-rebuild by design — right for a first build or a repair, and
         # wrong as the answer to "someone asked again". It is asked again a
         # lot: ``/workflow-deps/check`` decides what a dataflow needs from HOST
@@ -270,15 +277,22 @@ def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutc
         # and rebuilding there deletes a working overlay and re-runs pip over
         # the network. Offline that is not merely slow: the wipe happens first,
         # so a failed rebuild leaves the package with no overlay at all.
-        if _overlay_needs_building(user_key, dir_name, py_deps):
+        verdict = _overlay_import_failures(user_key, dir_name, py_deps)
+        if verdict is None or verdict:
             backend_runtime.build_overlay(user_key, dir_name, py_deps)
+            verdict = _overlay_import_failures(user_key, dir_name, py_deps) or {}
+        failures.update(verdict)
     if destination in ("host", "both"):
         pip_report = install_python_deps(py_deps)
         host_installed = sorted(pip_report.installed)
-    return InstallOutcome(
-        installed=host_installed,
-        import_errors=_declared_import_failures(user_key, dir_name, manifest),
-    )
+        # Host last, deliberately: for a "both" package a broken host copy is
+        # the one the user can repair with a plain pip, so it is the reason
+        # worth surfacing when both environments are broken.
+        failures.update(_import_failures_or_silence(py_deps))
+    # Deliberately NOT _declared_import_failures: it would route and probe all
+    # over again, and the overlay half is unmemoised, so a healthy overlay paid
+    # two full cold-import subprocesses for one install.
+    return InstallOutcome(installed=host_installed, import_errors=failures)
 
 
 def provision_declared_deps(user_key: str, dir_name: str, manifest) -> dict:
@@ -341,8 +355,10 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
 
     Already-installed is answered, not skipped: the caller's real question is
     "can the user use this package now", and a package that has sat in the store
-    for a week can have had its library broken under it since. Costs one memo
-    lookup after the first probe in the process.
+    for a week can have had its library broken under it since. For a host-routed
+    package that costs one memo lookup after the first probe in the process; a
+    backend-bearing one re-probes its overlay, which is deliberately unmemoised
+    (see :func:`_declared_import_failures`).
     """
     if _is_installed_in_user_store(user_key, dir_name):
         return InstallOutcome(
