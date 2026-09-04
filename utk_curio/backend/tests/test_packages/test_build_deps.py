@@ -290,9 +290,24 @@ class TestPythonReview:
         )
         by_name = {r["name"]: r for r in rows}
         assert by_name["pandas"]["pinned"] is True
-        assert by_name["pandas"]["installed"] is True
-        assert by_name["left-pad-py"]["installed"] is False
+        assert by_name["pandas"]["versionSatisfied"] is True
+        assert by_name["left-pad-py"]["versionSatisfied"] is False
         assert any(f.code == "py-unpinned" and f.severity == "warn" for f in findings)
+
+    def test_the_row_does_not_claim_a_library_is_installed(self, tmp_curio):
+        """It measured metadata, so metadata is all it may say.
+
+        ``is_satisfied`` is satisfied by a wheel whose native extension cannot
+        load - the everyday rasterio-against-a-different-GDAL case - and this
+        row is read on the card a user approves from. Calling that "installed"
+        is the same conflation the import probe exists to end.
+        """
+        rows, _ = review_python_dependencies(
+            {"rasterio": {"constraint": ">=1.3", "source": "declared"}},
+            "guest", is_satisfied=lambda *_: True,
+        )
+        assert "installed" not in rows[0]
+        assert rows[0]["versionSatisfied"] is True
 
     def test_bad_constraint_blocks(self, tmp_curio):
         _, findings = review_python_dependencies(

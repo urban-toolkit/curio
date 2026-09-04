@@ -511,8 +511,19 @@ def review_python_dependencies(
     installed: Mapping[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[Finding]]:
     """Validate constraints + intersect against installed packages' declared
-    python deps. Reports presence via ``pip_runner.is_satisfied`` (a metadata
-    check) — nothing is installed or executed here (dev/89 §3.4).
+    python deps. Nothing is installed or executed here (dev/89 §3.4).
+
+    Each row carries ``versionSatisfied``: ``pip_runner.is_satisfied``'s answer,
+    which is "metadata for a matching version is present" and NOT "the library
+    works". The row said ``installed`` until it was noticed that this is the
+    exact conflation the whole import-probe exists for — a wheel whose native
+    extension cannot load records a perfectly good version, so it reads
+    satisfied here and raises the moment a node touches it. This is a review
+    surface a user reads before approving, and it must not make a claim it did
+    not measure. Importability is answered where the deps are actually
+    installed (:func:`services.provision_python_deps`), because answering it
+    HERE would mean importing arbitrary libraries while reviewing an
+    unapproved draft.
 
     ``installed`` is the :func:`installed_manifests` snapshot; omitted, one is
     taken here."""
@@ -548,9 +559,9 @@ def review_python_dependencies(
                 "installer will take the latest available version",
             ))
         try:
-            row["installed"] = bool(satisfied(name, constraint))
+            row["versionSatisfied"] = bool(satisfied(name, constraint))
         except Exception:  # noqa: BLE001 — presence probing must never fail review
-            row["installed"] = None
+            row["versionSatisfied"] = None
         rows.append(row)
 
     # Conflict check against every installed package's declared python deps —
