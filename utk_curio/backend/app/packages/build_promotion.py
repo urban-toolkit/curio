@@ -253,21 +253,6 @@ def promote(
                         journal["restartRecommended"] = {
                             "libs": sorted(pip_report.installed)}
                         _save_journal(user_key, journal)
-                    # pip is satisfied by metadata alone, so a wheel whose
-                    # native extension cannot load installs without complaint
-                    # and the promotion reports success. Record it instead: the
-                    # applied turn says "built and installed", which is the last
-                    # moment this is connectable to the package that caused it.
-                    # Not a rollback — the package itself is sound, and the
-                    # repair (a matching GDAL, a different wheel) is the user's.
-                    try:
-                        broken = pip_runner.import_failures(py_deps.keys())
-                    except Exception:  # noqa: BLE001 - never fail a promotion on the probe
-                        log.warning("import probe failed after promotion", exc_info=True)
-                        broken = {}
-                    if broken:
-                        journal["importErrors"] = broken
-                        _save_journal(user_key, journal)
                 except pip_runner.PipInstallError as exc:
                     journal["error"] = f"pip install failed: {exc}"
                     _save_journal(user_key, journal)
@@ -276,6 +261,26 @@ def promote(
                         "python dependency install failed and the prior state was "
                         f"{'restored' if journal['rollback']['status'] == 'rolled-back' else 'NOT fully restored — manual repair required'}: {exc}",
                         502) from exc
+
+            # pip is satisfied by metadata alone, so a wheel whose native
+            # extension cannot load installs without complaint and the
+            # promotion reports success. Record it instead: the applied turn
+            # says "built and installed", which is the last moment this is
+            # connectable to the package that caused it. Not a rollback - the
+            # package itself is sound, and the repair (a matching GDAL, a
+            # different wheel) is the user's.
+            #
+            # Outside the host branch, and asked through the install seam, so
+            # the question follows the deps to wherever `dep_destinations` just
+            # sent them. Inside it, a backend-bearing package - whose deps went
+            # to the overlay - was never probed at all, and a "both" package was
+            # vouched for by the host copy alone.
+            from utk_curio.backend.app.packages import services as _services
+
+            broken = _services._declared_import_failures(user_key, target, manifest)
+            if broken:
+                journal["importErrors"] = broken
+                _save_journal(user_key, journal)
 
         # dev/97: the post-Apply probe — ONE invocation of the INSTALLED
         # entry with the real overlay on PYTHONPATH, catching the overlay

@@ -52,6 +52,113 @@ def _stage_build(manifest_dict, *, version="1.0.0", body="return arg\n",
     return build_staging.stage_artifact(user_key, archive)
 
 
+class TestPromotedLibrariesActuallyImport:
+    """The applied turn says "built and installed". pip is satisfied by
+    metadata alone, so a wheel whose native extension cannot load makes that
+    sentence true and useless - and this journal entry, which nothing asserted
+    on until now, is the last place the failure is attached to the package that
+    brought it in."""
+
+    def test_a_library_that_installed_and_will_not_import_is_recorded(
+        self, tmp_curio, manifest_dict, monkeypatch,
+    ):
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(
+            pip_runner, "install_python_deps",
+            lambda deps, on_line=None: pip_runner.InstallReport(
+                installed=[], skipped=sorted(deps)),
+        )
+        monkeypatch.setattr(
+            pip_runner, "import_failures",
+            lambda deps: {"rasterio": "ImportError: DLL load failed"},
+        )
+        digest = _stage_build(manifest_dict, python_deps={"rasterio": "*"})
+
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+
+        assert journal["importErrors"] == {"rasterio": "ImportError: DLL load failed"}
+        # Reported, NOT rolled back: the package is sound and the repair is the
+        # user's. The install has to stand or the report has nothing to be about.
+        assert journal["status"] == "awaiting-activation"
+        assert (package_dir("guest", "ai.test.demo@1") / "manifest.json").is_file()
+
+    def test_a_working_library_leaves_the_journal_quiet(
+        self, tmp_curio, manifest_dict, monkeypatch,
+    ):
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(
+            pip_runner, "install_python_deps",
+            lambda deps, on_line=None: pip_runner.InstallReport(
+                installed=[], skipped=sorted(deps)),
+        )
+        monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+        digest = _stage_build(manifest_dict, python_deps={"rasterio": "*"})
+
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+
+        assert "importErrors" not in journal
+
+    def test_a_backend_packages_deps_are_probed_where_they_were_installed(
+        self, tmp_curio, manifest_dict, monkeypatch,
+    ):
+        """The probe used to sit inside the HOST branch.
+
+        A backend-bearing package's deps go to the overlay, so that package was
+        never probed at all - the one shape where the libraries are hardest to
+        reach and the promotion said nothing about them.
+        """
+        from utk_curio.backend.app.packages import backend_runtime, pip_runner
+        from utk_curio.backend.app.packages import services as svc
+
+        asked: list = []
+        monkeypatch.setattr(
+            svc, "_declared_import_failures",
+            lambda uk, dn, m=None: asked.append(dn) or {"tinylib": "ImportError: boom"},
+        )
+        monkeypatch.setattr(
+            backend_runtime, "dep_destinations", lambda m: ("overlay", "backend only"))
+        monkeypatch.setattr(
+            backend_runtime, "build_overlay",
+            lambda uk, dn, deps, on_line=None: {"libs": [], "bytes": 1})
+
+        def _never_host(deps, on_line=None):  # pragma: no cover
+            raise AssertionError("host pip must not run for overlay-only routing")
+
+        monkeypatch.setattr(pip_runner, "install_python_deps", _never_host)
+        digest = _stage_build(manifest_dict, python_deps={"tinylib": "1.0"})
+
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+
+        assert asked == ["ai.test.demo@1"]
+        assert journal["importErrors"] == {"tinylib": "ImportError: boom"}
+
+    def test_a_probe_that_raises_does_not_fail_the_promotion(
+        self, tmp_curio, manifest_dict, monkeypatch,
+    ):
+        """The package is installed by this point; a diagnostic's own crash must
+        not undo it."""
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(
+            pip_runner, "install_python_deps",
+            lambda deps, on_line=None: pip_runner.InstallReport(
+                installed=[], skipped=sorted(deps)),
+        )
+
+        def _boom(deps):
+            raise OSError("no interpreter")
+
+        monkeypatch.setattr(pip_runner, "import_failures", _boom)
+        digest = _stage_build(manifest_dict, python_deps={"rasterio": "*"})
+
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+
+        assert journal["status"] == "awaiting-activation"
+        assert "importErrors" not in journal
+
+
 class TestPromoteCreate:
     def test_happy_path_journal(self, tmp_curio, manifest_dict):
         digest = _stage_build(manifest_dict)
