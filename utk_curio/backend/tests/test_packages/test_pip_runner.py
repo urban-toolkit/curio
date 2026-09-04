@@ -392,6 +392,38 @@ def _fake_broken_distribution(root):
     return root
 
 
+class TestDistributionNameNormalisation:
+    """A requirement names a distribution the way pip accepts it; the mapping
+    keys it the way the metadata spells it. Matching those by equality invented
+    failures on the one surface whose job is naming real ones."""
+
+    def test_a_casing_mismatch_does_not_invent_a_broken_library(self):
+        # PyYAML is a base-install dependency and imports fine. A manifest
+        # (or the factory's source scanner) writes it lowercase, which is what
+        # pip accepts; packages_distributions() keys it "PyYAML".
+        pip_runner.forget_import_probes()
+        assert pip_runner._module_for_distribution("pyyaml") == "yaml"
+        assert pip_runner.import_failures(["pyyaml"]) == {}
+
+    def test_the_spelling_in_the_metadata_resolves_the_same_way(self):
+        pip_runner.forget_import_probes()
+        assert pip_runner._module_for_distribution("PyYAML") == "yaml"
+        assert pip_runner.import_failures(["PyYAML"]) == {}
+
+    def test_separators_are_normalised_the_pep_503_way(self):
+        assert pip_runner._canonical_dist_name("py-yaml") == "py-yaml"
+        assert pip_runner._canonical_dist_name("py_yaml") == "py-yaml"
+        assert pip_runner._canonical_dist_name("Py.Yaml") == "py-yaml"
+
+    def test_a_private_accelerator_is_not_the_module_the_requirement_means(self):
+        # PyYAML ships both `yaml` and `_yaml`; sorting alone picks the
+        # underscore, which is an implementation detail, not the library.
+        assert not pip_runner._module_for_distribution("pyyaml").startswith("_")
+
+    def test_the_known_renames_still_resolve(self):
+        assert pip_runner._module_for_distribution("pillow") == "PIL"
+
+
 class TestImportFailuresIn:
     """The overlay probe. ``install_python_deps_to_target`` writes to a
     directory the backend process never imports from — workers get it on

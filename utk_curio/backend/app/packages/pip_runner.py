@@ -187,6 +187,11 @@ def forget_import_probes() -> None:
     _import_probe_cache.clear()
 
 
+def _canonical_dist_name(name: str) -> str:
+    """PEP 503 normalisation — ``PyYAML``, ``py-yaml`` and ``py_yaml`` are one name."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def _module_for_distribution(name: str) -> str:
     """The top-level module *name* is imported as.
 
@@ -194,6 +199,13 @@ def _module_for_distribution(name: str) -> str:
     ``scikit-learn`` as ``sklearn``. ``packages_distributions()`` carries the
     real mapping, so use it and fall back to the PEP 503-ish normalisation only
     when the distribution is not installed (where the probe will fail anyway).
+
+    Matched by PEP 503 normalisation, NOT by equality. A requirement names a
+    distribution the way pip accepts it - ``pyyaml`` - while the mapping keys it
+    the way its metadata spells it - ``PyYAML``. An exact-match lookup missed,
+    fell through to ``name.replace("-", "_")``, and reported a working library
+    as ``No module named 'pyyaml'``: a fabricated failure, on the surface whose
+    whole job is telling the user which library is broken.
     """
     try:
         from importlib.metadata import packages_distributions
@@ -205,7 +217,11 @@ def _module_for_distribution(name: str) -> str:
     except Exception:  # pragma: no cover - defensive; probe falls back
         return name.replace("-", "_")
 
-    candidates = [mod for mod, dists in mapping.items() if name in dists]
+    wanted = _canonical_dist_name(name)
+    candidates = [
+        mod for mod, dists in mapping.items()
+        if any(_canonical_dist_name(d) == wanted for d in dists)
+    ]
     if not candidates:
         return name.replace("-", "_")
     normalized = name.replace("-", "_").lower()
@@ -213,7 +229,10 @@ def _module_for_distribution(name: str) -> str:
         if mod.lower() == normalized:
             return mod
     real = [m for m in candidates if m.lower() not in _NON_LIBRARY_MODULES]
-    return sorted(real or candidates)[0]
+    # A private accelerator module is not what the requirement means: PyYAML
+    # ships ``yaml`` and ``_yaml``, and sorting alone picks the underscore.
+    public = [m for m in (real or candidates) if not m.startswith("_")]
+    return sorted(public or real or candidates)[0]
 
 
 #: Imports every requested module in ONE interpreter and reports each verdict.
@@ -341,7 +360,7 @@ def import_failures(deps: Iterable[str]) -> dict[str, str]:
 #: :func:`_module_for_distribution`; the one constant they share is passed in
 #: rather than restated.
 _TARGET_PROBE_SRC = """
-import importlib, json, sys
+import importlib, json, re, sys
 from importlib.metadata import PackageNotFoundError, packages_distributions, version
 
 payload = json.load(sys.stdin)
@@ -359,7 +378,11 @@ for name in names:
         out[name] = name + " is not installed"
         continue
     fallback = name.replace("-", "_")
-    candidates = [m for m, ds in dists.items() if name in ds]
+    wanted = re.sub(r"[-_.]+", "-", name).lower()
+    candidates = [
+        m for m, ds in dists.items()
+        if any(re.sub(r"[-_.]+", "-", d).lower() == wanted for d in ds)
+    ]
     module = None
     for mod in candidates:
         if mod.lower() == fallback.lower():
@@ -367,7 +390,8 @@ for name in names:
             break
     if module is None:
         real = [m for m in candidates if m.lower() not in non_library]
-        module = sorted(real or candidates)[0] if candidates else fallback
+        public = [m for m in (real or candidates) if not m.startswith("_")]
+        module = sorted(public or real or candidates)[0] if candidates else fallback
     try:
         importlib.import_module(module)
     except BaseException as exc:
