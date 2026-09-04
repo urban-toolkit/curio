@@ -96,7 +96,21 @@ export function useEnsureWorkflowDeps() {
           // pip counts metadata as satisfaction, so this reads as a clean
           // install right up until a node touches the library. Saying
           // "Installed" here would be the last chance to tell them, missed.
-          const notice = dependencyFailureNotice(`Installed ${names}`, result);
+          // Drop what the /check toast above already named: that toast fired
+          // for exactly the libraries that were installed-but-unimportable, and
+          // the install cannot have repaired them (pip counts them satisfied
+          // and skips). Repeating them stacks two persistent red toasts about
+          // one library.
+          const alreadyReported = new Set(broken.map((b) => b.dep));
+          const unreported = Object.fromEntries(
+            Object.entries(result?.importErrors ?? {}).filter(
+              ([lib]) => !alreadyReported.has(lib),
+            ),
+          );
+          const notice = dependencyFailureNotice(`Installed ${names}`, {
+            ...result,
+            importErrors: unreported,
+          });
           if (notice) {
             showToast(notice, "error");
           } else {

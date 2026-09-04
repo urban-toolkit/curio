@@ -234,3 +234,44 @@ describe("useEnsureWorkflowDeps - a dep that is installed but will not import", 
     expect(mockInstall).not.toHaveBeenCalled();
   });
 });
+
+describe("useEnsureWorkflowDeps - one library, one notice", () => {
+  it("does not repeat a library the check already reported", async () => {
+    // /check names installed-but-unimportable libraries, then /install runs and
+    // reports the same ones - pip counts them satisfied and skips, so the
+    // install cannot have repaired them. Two persistent red toasts about one
+    // library reads as two problems.
+    mockCheck.mockResolvedValue({
+      packages: ["curio.weather@1"],
+      broken: [{ package: "curio.weather@1", dep: "rasterio", error: "ImportError: DLL load failed" }],
+    });
+    mockInstall.mockResolvedValue({
+      installedPackages: ["curio.weather@1"],
+      importErrors: { rasterio: "ImportError: DLL load failed" },
+    });
+
+    await ensure({ dataflow: { packages: ["curio.weather@1"] } });
+
+    const mentions = mockShowToast.mock.calls.filter(([msg]) =>
+      String(msg).includes("rasterio"),
+    );
+    expect(mentions).toHaveLength(1);
+  });
+
+  it("still reports a library only the install found", async () => {
+    // The check clears a dep it considers satisfied; the install's probe is
+    // what actually tries the import. Suppressing by name must not suppress
+    // a verdict nobody has shown yet.
+    mockCheck.mockResolvedValue({ packages: ["curio.weather@1"], broken: [] });
+    mockInstall.mockResolvedValue({
+      installedPackages: ["curio.weather@1"],
+      importErrors: { rasterstats: "ImportError: DLL load failed" },
+    });
+
+    await ensure({ dataflow: { packages: ["curio.weather@1"] } });
+
+    expect(
+      mockShowToast.mock.calls.some(([msg]) => String(msg).includes("rasterstats")),
+    ).toBe(true);
+  });
+});

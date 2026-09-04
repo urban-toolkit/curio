@@ -177,7 +177,6 @@ export function NodeSaveAsModal({
       // Until the install started honouring it, "Save and install" could
       // report success over a package whose very first run raises.
       const depNotice = dependencyFailureNotice(`Saved ${nodeLabel}`, result);
-      if (depNotice) showToast(depNotice, "error");
       // When creating a brand-new package via Save As, the package is only in
       // the user store after factoryInstall. refreshPackageRegistry filters
       // by the project lockfile, so the new descriptor would be invisible.
@@ -213,11 +212,16 @@ export function NodeSaveAsModal({
           ),
         );
       }
+      // ONE verdict for one save. The dependency notice already says the save
+      // happened ("Saved <node>, but ..."), so pairing it with a green
+      // "Added ..." tells the user it worked and then that it did not - and
+      // now that an error toast persists, both sit on screen together.
       showToast(
-        replacedExistingKind
-          ? `Replaced "${nodeLabel}" in the package.`
-          : `Added "${nodeLabel}" as a new kind in the package.`,
-        "success",
+        depNotice ??
+          (replacedExistingKind
+            ? `Replaced "${nodeLabel}" in the package.`
+            : `Added "${nodeLabel}" as a new kind in the package.`),
+        depNotice ? "error" : "success",
       );
       onClose();
     } catch (err) {
