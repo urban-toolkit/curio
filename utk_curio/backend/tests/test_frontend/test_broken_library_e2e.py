@@ -534,6 +534,186 @@ def test_sideloading_an_archive_reports_its_broken_library(
 
 
 # ---------------------------------------------------------------------------
+# The other three answers the install seam can give
+# ---------------------------------------------------------------------------
+#
+# "The library installed and does not import" is the case that had no coverage,
+# and every test above is about it. These hold the answers either side of it, so
+# a fix to one cannot quietly become the answer to all three.
+
+
+@pytest.fixture()
+def pip_behaviour(current_server: str):
+    """Make this backend's pip fail on purpose, and put it back afterwards."""
+    def _set(mode: str) -> None:
+        _testing_post(current_server, "pip-behaviour", {"mode": mode})
+
+    yield _set
+    _set("normal")
+
+
+def _sideload_through_the_drawer(page, archive_path):
+    drawer = _open_node_catalog(page)
+    with page.expect_response(
+        lambda r: r.url.endswith("/api/packages/upload")
+        and r.request.method == "POST",
+        timeout=120000,
+    ) as uploaded:
+        with page.expect_file_chooser() as chooser:
+            drawer.get_by_role("button", name="Import package").click()
+        chooser.value.set_files(str(archive_path))
+    return uploaded.value
+
+
+def _write_archive(tmp_path, draft) -> "object":
+    from utk_curio.backend.app.packages.factory import build_packageage_archive
+
+    archive = tmp_path / "fixture.curio.zip"
+    archive.write_bytes(build_packageage_archive(draft).archive)
+    return archive
+
+
+def test_a_package_whose_libraries_work_says_so_and_nothing_else(
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path,
+    uninstall_fixture_package,
+):
+    """The success control, and it is load-bearing.
+
+    A suite that only asserts failures would not notice a fix that shouts at
+    everyone. ``flask`` is a base-install dependency, so it is satisfied and
+    skipped exactly as the broken library is - the only difference between this
+    test and the sideload one above is whether the import works.
+    """
+    session = _enter_canvas(
+        page, app_frontend, current_server,
+        username="brokenlib_ok_pkg", name="Working Package",
+        project_name="WorkingPackage")
+    uninstall_fixture_package(session["token"])
+    archive = _write_archive(tmp_path, _fixture_draft(imports="flask"))
+
+    response = _sideload_through_the_drawer(page, archive)
+
+    assert response.status == 201, f"{response.status}: {response.text()[:400]}"
+    body = response.json()
+    assert body["importErrors"] == {}, body
+    assert "dependencyError" not in body, body
+
+    # The drawer reports a dependency problem and stays quiet otherwise, so
+    # "nothing was said" IS the success signal here. Pinned as a count so a
+    # future notice cannot slip in unnoticed.
+    page.wait_for_timeout(1500)
+    expect(page.get_by_label(NOTIFICATIONS).get_by_text(
+        re.compile("cannot be imported|could not be installed"))).to_have_count(0)
+
+    # And it really installed, so the silence is about a package that works.
+    installed = {
+        p["dirName"]
+        for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]
+    }
+    assert FIXTURE_DIR in installed
+
+
+def test_a_pip_install_that_fails_is_not_reported_as_a_success(
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path,
+    pip_behaviour, uninstall_fixture_package,
+):
+    """pip exiting non-zero is the case pip DOES report, and it still has to
+    reach the user.
+
+    The package files are written before the dependency step on this path, so
+    the answer is a 201 that names the failure - not a 5xx, which would describe
+    neither what happened nor what is now installed.
+    """
+    session = _enter_canvas(
+        page, app_frontend, current_server,
+        username="brokenlib_pipfail", name="Pip Fail",
+        project_name="PipFail")
+    uninstall_fixture_package(session["token"])
+    pip_behaviour("install-error")
+    archive = _write_archive(tmp_path, _fixture_draft(imports="somelib"))
+
+    response = _sideload_through_the_drawer(page, archive)
+
+    assert response.status == 201, f"{response.status}: {response.text()[:400]}"
+    body = response.json()
+    assert "Could not find a version" in body.get("dependencyError", ""), body
+
+    toasts = page.get_by_label(NOTIFICATIONS)
+    expect(toasts).to_contain_text("could not be installed", timeout=30000)
+    expect(toasts).to_contain_text("Could not find a version")
+    # Not the import wording: nothing was installed, so nothing failed to import.
+    expect(toasts).not_to_contain_text("cannot be imported")
+
+
+def test_a_requirement_pip_cannot_parse_reads_differently_from_a_failed_install(
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path,
+    pip_behaviour, uninstall_fixture_package,
+):
+    """A malformed requirement is the manifest's mistake, not the index's.
+
+    Held apart from the case above because the remedy differs: one is "fix the
+    declaration", the other is "try again or check your network".
+    """
+    session = _enter_canvas(
+        page, app_frontend, current_server,
+        username="brokenlib_badspec", name="Bad Spec Pkg",
+        project_name="BadSpecPkg")
+    uninstall_fixture_package(session["token"])
+    pip_behaviour("spec-error")
+    archive = _write_archive(tmp_path, _fixture_draft(imports="somelib"))
+
+    response = _sideload_through_the_drawer(page, archive)
+
+    # 201, not 500: the package files are on disk either way.
+    assert response.status == 201, f"{response.status}: {response.text()[:400]}"
+    assert "not a valid version constraint" in response.json().get(
+        "dependencyError", ""), response.json()
+
+    expect(page.get_by_label(NOTIFICATIONS)).to_contain_text(
+        "not a valid version constraint", timeout=30000)
+
+
+def test_a_probe_that_cannot_run_does_not_fail_the_install_or_invent_a_failure(
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path,
+    broken_library, pip_behaviour, uninstall_fixture_package,
+):
+    """The diagnostic is what is broken here, not the package.
+
+    The install already happened, so letting the probe's own crash fail the
+    request would be the tail wagging the dog - and reporting a library as
+    broken on no evidence would be worse than saying nothing. Staged with a
+    genuinely broken library present, so "no failure reported" is a decision
+    about the probe rather than an accident of a healthy environment.
+    """
+    session = _enter_canvas(
+        page, app_frontend, current_server,
+        username="brokenlib_noprobe", name="No Probe",
+        project_name="NoProbe")
+    uninstall_fixture_package(session["token"])
+    pip_behaviour("probe-error")
+    archive = _write_archive(tmp_path, _fixture_draft())
+
+    response = _sideload_through_the_drawer(page, archive)
+
+    assert response.status == 201, f"{response.status}: {response.text()[:400]}"
+    body = response.json()
+    assert body["importErrors"] == {}, body
+    assert "dependencyError" not in body, body
+
+    page.wait_for_timeout(1500)
+    expect(page.get_by_label(NOTIFICATIONS).get_by_text(
+        re.compile("cannot be imported|could not be installed"))).to_have_count(0)
+
+    # The install stands, which is the half that matters: a broken diagnostic
+    # must not cost the user the package.
+    installed = {
+        p["dirName"]
+        for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]
+    }
+    assert FIXTURE_DIR in installed
+
+
+# ---------------------------------------------------------------------------
 # 6. Save As -> Save and install
 # ---------------------------------------------------------------------------
 

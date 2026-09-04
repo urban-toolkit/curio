@@ -55,14 +55,18 @@ describe("dependencyFailureNotice", () => {
     expect(notice).not.toContain("cannot be imported");
   });
 
-  it("reports the broken import first when both are present", () => {
-    // pip can fail on one dep having installed the rest; naming the library
-    // that is actually unusable beats pip's tail.
+  it("leads with pip's own failure when both are present", () => {
+    // The probe still runs after a failed pip, and reports every dep pip did
+    // not install as "not installed" - true, and a restatement of the failure
+    // rather than a second problem. Leading with the import wording said a
+    // library was broken when nothing had been installed at all.
     const notice = dependencyFailureNotice("Imported Pack", {
-      importErrors: { rasterio: "ImportError: boom" },
-      dependencyError: "ERROR: no wheel for rasterstats",
+      importErrors: { rasterstats: "rasterstats is not installed" },
+      dependencyError: "ERROR: Could not find a version",
     });
-    expect(notice).toContain("rasterio cannot be imported");
+    expect(notice).toContain("could not be installed");
+    expect(notice).toContain("Could not find a version");
+    expect(notice).not.toContain("cannot be imported");
   });
 
   it("is null when there is nothing to say", () => {

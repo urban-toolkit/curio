@@ -49,12 +49,17 @@ export function dependencyFailureNotice(
   lead: string,
   report: DependencyReport | null | undefined,
 ): string | null {
+  // pip's own failure leads. When pip could not install a library, the probe
+  // that runs afterwards reports it "not installed" - which is true, and is a
+  // restatement of the pip failure rather than a second problem. Leading with
+  // the import wording there told the user a library was broken when nothing
+  // had been installed at all, and hid the sentence that says why.
+  if (report?.dependencyError) {
+    return `${lead}, but its libraries could not be installed: ${report.dependencyError}. Nodes needing them will fail until they are installed.`;
+  }
   const clause = brokenLibraryClause(report?.importErrors);
   if (clause) {
     return `${lead}, but ${clause}. Nodes needing it will fail until it is repaired.`;
-  }
-  if (report?.dependencyError) {
-    return `${lead}, but its libraries could not be installed: ${report.dependencyError}. Nodes needing them will fail until they are installed.`;
   }
   return null;
 }

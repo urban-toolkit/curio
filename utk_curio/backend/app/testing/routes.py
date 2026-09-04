@@ -634,6 +634,84 @@ def _drop_from_import_path(path: str) -> None:
             os.environ.pop("PYTHONPATH", None)
 
 
+#: Saved on the first override so ``normal`` can put them back. Module-level
+#: because the override outlives the request that set it — that is the point:
+#: the install it has to affect happens in a LATER request.
+_PIP_ORIGINALS: dict = {}
+
+#: What each mode makes pip do. The messages are fixed so a test can assert on
+#: them without depending on an index, a network or a pip version.
+_PIP_MODES = ("normal", "install-error", "spec-error", "probe-error")
+
+
+@testing_bp.route("/pip-behaviour", methods=["POST"])
+def pip_behaviour():
+    """Make this backend's pip fail on purpose, deterministically.
+
+    The install seam has three answers, and only one of them can be staged from
+    outside the server. "The library installed and does not import" has
+    ``/api/testing/broken-library``; "pip itself failed" and "the probe could
+    not run" have nothing, because both live in a subprocess the backend spawns
+    and neither can be provoked offline — an unreachable index produces a
+    different message every time, and on a machine with a warm wheel cache it
+    may not fail at all.
+
+    So they are staged here, in the process that owns them, for the same reason
+    ``dataset-paths`` and ``package-store`` resolve here: a pytest process (or
+    one talking to a container) cannot reach into this one.
+
+    Body: ``{"mode": "normal" | "install-error" | "spec-error" | "probe-error"}``
+
+      * ``install-error`` — ``install_python_deps`` raises ``PipInstallError``,
+        the shape of pip exiting non-zero.
+      * ``spec-error`` — it raises ``PipSpecError``, the shape of a requirement
+        pip's grammar rejects. A different answer from the caller's side (400
+        rather than 502), which is the distinction worth holding.
+      * ``probe-error`` — both import probes raise, so the diagnostic is the
+        thing that is broken. The install must still succeed and must not
+        report a clean bill of health it did not earn.
+      * ``normal`` — put the real functions back.
+
+    Overriding is idempotent and always restores from the ORIGINALS captured on
+    the first call, so repeated or interleaved modes cannot stack wrappers.
+    """
+    from utk_curio.backend.app.packages import pip_runner
+
+    body = request.get_json(silent=True) or {}
+    mode = (body.get("mode") or "normal").strip()
+    if mode not in _PIP_MODES:
+        return jsonify({"error": f"mode must be one of {list(_PIP_MODES)}"}), 400
+
+    if not _PIP_ORIGINALS:
+        _PIP_ORIGINALS.update({
+            "install_python_deps": pip_runner.install_python_deps,
+            "import_failures": pip_runner.import_failures,
+            "import_failures_in": pip_runner.import_failures_in,
+        })
+
+    for name, original in _PIP_ORIGINALS.items():
+        setattr(pip_runner, name, original)
+
+    if mode == "install-error":
+        def _fail(deps, on_line=None):
+            raise pip_runner.PipInstallError(
+                "ERROR: Could not find a version that satisfies the requirement")
+        pip_runner.install_python_deps = _fail
+    elif mode == "spec-error":
+        def _bad_spec(deps, on_line=None):
+            raise pip_runner.PipSpecError(
+                "'>= 1.26' is not a valid version constraint for 'numpy'")
+        pip_runner.install_python_deps = _bad_spec
+    elif mode == "probe-error":
+        def _no_probe(*a, **kw):
+            raise OSError("no subprocesses here")
+        pip_runner.import_failures = _no_probe
+        pip_runner.import_failures_in = _no_probe
+
+    pip_runner.forget_import_probes()
+    return jsonify({"mode": mode}), 200
+
+
 @testing_bp.route("/package-store", methods=["POST"])
 def package_store():
     """Read or perturb one file in a user's package store.
