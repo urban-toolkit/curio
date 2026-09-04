@@ -171,6 +171,37 @@ describe("LibraryManagerWindow - adding", () => {
     expect(mockList).toHaveBeenCalledTimes(1);
   });
 
+  it("does not call a library that installed and cannot be imported an install failure", async () => {
+    // pip counts matching metadata as satisfaction, so a wheel whose native
+    // extension cannot load records a perfectly good version and is SKIPPED.
+    // The row said "Couldn't install brokenlib" over a message saying it had
+    // installed - a contradiction that sends the user to reinstall a library
+    // that is already there. What they actually have to fix is the build.
+    mockAdd.mockResolvedValue({
+      standalone: { python: ["brokenlib"], js: [] },
+      installed: [],
+      skipped: ["brokenlib"],
+      importError: "ImportError: DLL load failed while importing _base",
+    });
+    open();
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    fireEvent.change(specInput(), { target: { value: "brokenlib" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(
+      await screen.findByText(
+        /brokenlib installed, but it cannot be imported/, {}, { timeout: 3000 },
+      ),
+    ).toBeTruthy();
+    // The reason is shown, not just the fact.
+    expect(screen.getByText(/DLL load failed while importing _base/)).toBeTruthy();
+    expect(screen.queryByText(/Couldn't install brokenlib/)).toBeNull();
+    // And it is not reported as a success either, which is what it was before
+    // the backend started answering the question at all.
+    expect(screen.queryByText("✓ Already installed")).toBeNull();
+    expect(screen.queryByText("✓ Installed")).toBeNull();
+  });
+
   it("surfaces a failed install and persists no row", async () => {
     mockAdd.mockRejectedValue(
       new Error("JS library install is not yet supported; declare in a node package's manifest instead"),

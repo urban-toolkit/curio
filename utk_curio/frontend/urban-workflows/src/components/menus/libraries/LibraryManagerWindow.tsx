@@ -43,7 +43,15 @@ type Status =
   | { kind: "installing"; spec: string; libKind: Kind }
   | { kind: "removing";   spec: string; libKind: Kind }
   | { kind: "success";    spec: string; libKind: Kind; alreadyInstalled?: boolean }
-  | { kind: "error";      spec: string; libKind: Kind; message: string };
+  // ``heading``/``badge`` override the default "Couldn't install" wording for
+  // the case that is NOT an install failure: the library installed, pip is
+  // satisfied, and importing it raises. Saying "Couldn't install" over that
+  // message contradicts the message, and sends the user to reinstall a
+  // library that is already there.
+  | {
+      kind: "error"; spec: string; libKind: Kind; message: string;
+      heading?: string; badge?: string;
+    };
 
 // Floor on the visible duration of the progress bar. Pip's "already
 // satisfied" path returns in microseconds; without this gate the bar
@@ -174,7 +182,9 @@ export default function LibraryManagerWindow({
       if (data.importError) {
         setStatus(newKind, spec, {
           kind: "error", spec, libKind: newKind,
-          message: `Installed, but it cannot be imported: ${data.importError}`,
+          badge: "Cannot import",
+          heading: `${spec} installed, but it cannot be imported`,
+          message: data.importError,
         });
         return;
       }
@@ -247,7 +257,7 @@ export default function LibraryManagerWindow({
     }
     return (
       <div className={styles.statusErrorInline}>
-        <span title={s.message}>⚠ Failed</span>
+        <span title={s.message}>⚠ {s.badge ?? "Failed"}</span>
         <button
           type="button"
           className={styles.statusDismiss}
@@ -326,7 +336,7 @@ export default function LibraryManagerWindow({
             {errorStatuses.map((s) => (
               <div key={`err-${s.libKind}-${s.spec}`} className={styles.logError}>
                 <div className={styles.errorHeader}>
-                  <strong>Couldn't install {s.spec}</strong>
+                  <strong>{s.heading ?? `Couldn't install ${s.spec}`}</strong>
                   <button
                     type="button"
                     className={styles.statusDismiss}
