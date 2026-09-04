@@ -294,48 +294,6 @@ def provision_declared_deps(user_key: str, dir_name: str, manifest) -> dict:
     return fields
 
 
-def provision_declared_deps(user_key: str, dir_name: str, manifest) -> dict:
-    """Install a just-installed package's declared python deps and report, for
-    the paths where the package FILES land first and cannot be taken back.
-
-    A sideloaded ``.curio.zip``, the wizard's "Save and install" and "Reload
-    from catalog" all wrote the package before anything looked at its
-    dependencies — and until this existed, nothing ever did. The sharpest case
-    is the wizard: :func:`factory._apply_detected_dependencies` DERIVES
-    ``dependencies.python`` from the node's source, so a node body containing
-    ``import rasterio`` produced a rasterio declaration that no pip run
-    installed and no probe questioned, and the package reported clean until it
-    ran.
-
-    A pip failure here is reported, not raised. The files are installed either
-    way, so a 502 would describe neither outcome, and discarding a package the
-    user just authored or uploaded to punish an unreachable index is a worse
-    answer than saying which library did not arrive.
-
-    Returns the additive response fields — ``importErrors`` always,
-    ``dependencyError`` when pip itself failed, ``restartRecommended`` when pip
-    changed a shared library under the running server.
-    """
-    from utk_curio.backend.app.packages import backend_runtime
-    from utk_curio.backend.app.packages.pip_runner import PipInstallError
-
-    try:
-        outcome = provision_python_deps(user_key, dir_name, manifest)
-    except (PipInstallError, backend_runtime.BackendRuntimeError) as exc:
-        log.warning("dependency install failed for %s: %s", dir_name, exc)
-        return {
-            "dependencyError": str(exc),
-            # Still worth probing: pip can fail on one dep having installed the
-            # rest, and naming the ones that are actually unusable is more use
-            # than pip's tail alone.
-            "importErrors": _declared_import_failures(user_key, dir_name, manifest),
-        }
-    fields: dict = {"importErrors": outcome.import_errors}
-    if outcome.installed:
-        fields["restartRecommended"] = {"libs": outcome.installed}
-    return fields
-
-
 def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
     """Copy *dir_name* from the shared catalog when it is missing, install the
     python deps its manifest declares, and report whether they import.
