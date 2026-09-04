@@ -1125,6 +1125,8 @@ def install_workflow_deps():
     ``importErrors`` is populated when a declared library installed but cannot
     be imported - pip is satisfied by metadata alone, so that case otherwise
     reads as a clean install and only surfaces later as a node's ImportError.
+    The service answers that question as part of installing, so this route
+    only merges the per-package verdicts.
     """
     from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
 
@@ -1138,17 +1140,17 @@ def install_workflow_deps():
             return _error(f"invalid package dirName: {dir_name!r}")
 
     installed_packages: list[str] = []
+    import_errors: dict[str, str] = {}
     for dir_name in pkg_dirs:
         try:
-            packages_services.install_to_store(user_key, dir_name)
-            installed_packages.append(dir_name)
+            outcome = packages_services.install_to_store(user_key, dir_name)
         except packages_services.PackageServiceError as exc:
             return _error(f"failed to install {dir_name}: {exc}", exc.status)
+        installed_packages.append(dir_name)
+        import_errors.update(outcome.import_errors)
     return jsonify({
         "installedPackages": installed_packages,
-        "importErrors": packages_services.import_failures_for_packages(
-            user_key, installed_packages,
-        ),
+        "importErrors": import_errors,
     }), 200
 
 
@@ -1199,15 +1201,8 @@ def install_to_project_route(project_id: str):
         return _error("project not found", 404)
     except packages_services.PackageServiceError as exc:
         return _packages_error(exc)
-    # Same reason as the workflow-deps install: a package whose library is
-    # present but unimportable installs without complaint, and the user only
-    # finds out when a node raises.
-    payload = {
-        **payload,
-        "importErrors": packages_services.import_failures_for_packages(
-            user_key, [dir_name],
-        ),
-    }
+    # ``payload`` already carries ``importErrors``: the install itself answers
+    # whether the libraries work, so no route has to remember to ask.
     return jsonify(payload), 201
 
 
@@ -1272,15 +1267,6 @@ def install_to_defaults_route():
         payload = packages_services.install_to_defaults(g.user, dir_name)
     except packages_services.PackageServiceError as exc:
         return _packages_error(exc)
-    # As on the project install: pip is satisfied by metadata alone, so a
-    # library whose native extension cannot load installs quietly and only
-    # announces itself when a node runs.
-    payload = {
-        **payload,
-        "importErrors": packages_services.import_failures_for_packages(
-            _user_dir_key(g.user), [dir_name],
-        ),
-    }
     return jsonify(payload), 201
 
 

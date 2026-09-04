@@ -414,7 +414,9 @@ class TestRestartHonestyOnCatalogInstall:
         user_key = _user_key_for(user)
         monkeypatch.setattr(
             packages_services, "_ensure_user_store_install",
-            lambda uk, dn: ["geo-sdk", "tiny-lib"],
+            lambda uk, dn: packages_services.InstallOutcome(
+                copied=True, installed=["geo-sdk", "tiny-lib"],
+            ),
         )
         result = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
         assert result["restartRecommended"] == {"libs": ["geo-sdk", "tiny-lib"]}

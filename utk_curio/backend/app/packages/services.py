@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
@@ -41,6 +42,7 @@ from utk_curio.backend.app.packages.spec_packages import (
 )
 from utk_curio.backend.app.packages.storage import (
     PACKAGE_DIR_RE,
+    PackageIdError,
     list_user_packageages,
     package_dir,
     user_packageages_dir,
@@ -123,22 +125,152 @@ def _installed_majors_by_pkg(user_key: str) -> dict[str, list[int]]:
     return out
 
 
-def _ensure_user_store_install(user_key: str, dir_name: str) -> list[str]:
-    """No-op if installed; otherwise copy from the shared catalog AND
-    pip-install any Python deps the manifest declares.
+@dataclass(frozen=True)
+class InstallOutcome:
+    """What an install actually accomplished — every field a separate question.
 
-    The pip step runs synchronously inside the request — heavy installs
-    like ``torch`` can take many minutes (see :mod:`.pip_runner`). The
-    Install button stays in its busy state for the whole duration. If
-    pip fails the catalog copy is rolled back so a retry can re-attempt
-    cleanly.
+    ``copied``        — were the package's files copied into the user store.
+    ``installed``     — HOST distribution names pip installed or changed (the
+                        dev/92 restart signal; overlay writes never split-brain
+                        a running worker, so they stay out of it).
+    ``import_errors`` — ``{distribution: reason}`` for a declared library that
+                        pip counts as satisfied and that cannot in fact be
+                        imported.
 
-    dev/92 B-2: returns the pip report's ``installed`` names (empty when
-    nothing was actually installed/changed) — the restart-honesty signal the
-    install response surfaces; skipped-only runs stay silent.
+    The last one exists because pip exiting 0 is not the library working. A
+    wheel whose native extension cannot load records a perfectly good version,
+    so ``_is_satisfied`` says yes, pip reports "already satisfied" and changes
+    nothing, and every layer above reads that as success — until a node runs
+    and raises. Answering it HERE, at the one seam every install path funnels
+    through, is what stops the next route from having to remember to ask.
+    """
+
+    copied: bool = False
+    installed: list[str] = field(default_factory=list)
+    import_errors: dict[str, str] = field(default_factory=dict)
+
+
+def _import_failures_or_silence(deps, overlay_dir=None) -> dict[str, str]:
+    """The import probe with its own failure demoted to silence.
+
+    A probe is a diagnostic. The install it reports on already happened, so
+    letting the diagnostic's own crash fail the request would be the tail
+    wagging the dog — and would turn an environment without subprocesses into
+    an environment without installs.
+    """
+    from utk_curio.backend.app.packages import pip_runner
+
+    if not deps:
+        return {}
+    try:
+        if overlay_dir is not None:
+            return pip_runner.import_failures_in(deps, str(overlay_dir))
+        return pip_runner.import_failures(deps)
+    except Exception:  # noqa: BLE001 — a probe failure must not fail the install
+        log.warning("import probe failed for %s", sorted(deps), exc_info=True)
+        return {}
+
+
+def _declared_import_failures(
+    user_key: str, dir_name: str, manifest=None,
+) -> dict[str, str]:
+    """``{distribution: reason}`` for *dir_name*'s declared python deps that
+    cannot be imported — asked in whichever environment they were installed to.
+
+    Routed by the SAME rule that decided where they went
+    (:func:`backend_runtime.dep_destinations`), because the two answers have to
+    agree: probing the host for an overlay-only dep would report every one of
+    them "not installed", which is a fabricated failure, and probing only the
+    host for a backend-bearing package would vouch for libraries nobody checked.
+
+    An overlay that was never built is not probed. The question here is "does
+    what we installed work"; a directory nothing wrote to has nothing to answer
+    for, and the install paths that used to skip building it are fixed rather
+    than reported on.
+
+    Empty when nothing is declared: the probe costs a subprocess and ~19s of
+    cold imports for the twelve builtin data-ops libraries, so it is never run
+    speculatively. Repeat calls within a process are memoised per
+    ``(distribution, version)`` by :mod:`.pip_runner`.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+
+    if manifest is None:
+        manifest = _read_manifest(user_key, dir_name)
+    if manifest is None:
+        return {}
+    deps = dict(manifest.python_deps or {})
+    if not deps:
+        return {}
+
+    destination, _reason = backend_runtime.dep_destinations(manifest)
+    failures: dict[str, str] = {}
+    if destination in ("overlay", "both"):
+        overlay = backend_runtime.overlay_dir_for(user_key, dir_name)
+        if overlay.is_dir():
+            failures.update(_import_failures_or_silence(deps, overlay_dir=overlay))
+    if destination in ("host", "both"):
+        # Host last, deliberately: for a "both" package a broken host copy is
+        # the one the user can repair with a plain pip, so it is the reason
+        # worth surfacing when both environments are broken.
+        failures.update(_import_failures_or_silence(deps))
+    return failures
+
+
+def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutcome:
+    """pip-install *manifest*'s declared python deps, then check they IMPORT.
+
+    The ONE dependency step. Routing is
+    :func:`backend_runtime.dep_destinations`'s single rule — overlay for
+    backend-bearing packages, host when warm-sandbox python templates coexist —
+    and the probe follows the deps to wherever they landed.
+
+    Raises :class:`~.pip_runner.PipInstallError` /
+    :class:`~.backend_runtime.BackendRuntimeError` on a real pip failure; the
+    caller decides whether that rolls anything back. A library that installed
+    and cannot be imported is NOT a failure here: the package installed fine,
+    the environment is broken, and the repair (a matching GDAL, a conda-forge
+    build) is the user's. Report, do not undo.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.pip_runner import install_python_deps
+
+    py_deps = dict(manifest.python_deps or {})
+    if not py_deps:
+        return InstallOutcome()
+
+    destination, _reason = backend_runtime.dep_destinations(manifest)
+    host_installed: list[str] = []
+    if destination in ("overlay", "both"):
+        backend_runtime.build_overlay(user_key, dir_name, py_deps)
+    if destination in ("host", "both"):
+        pip_report = install_python_deps(py_deps)
+        host_installed = sorted(pip_report.installed)
+    return InstallOutcome(
+        installed=host_installed,
+        import_errors=_declared_import_failures(user_key, dir_name, manifest),
+    )
+
+
+def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
+    """Copy *dir_name* from the shared catalog when it is missing, install the
+    python deps its manifest declares, and report whether they import.
+
+    The pip step runs synchronously inside the request — heavy installs like
+    ``torch`` can take many minutes (see :mod:`.pip_runner`). The Install button
+    stays in its busy state for the whole duration. If pip fails the catalog
+    copy is rolled back so a retry can re-attempt cleanly.
+
+    Already-installed is answered, not skipped: the caller's real question is
+    "can the user use this package now", and a package that has sat in the store
+    for a week can have had its library broken under it since. Costs one memo
+    lookup after the first probe in the process.
     """
     if _is_installed_in_user_store(user_key, dir_name):
-        return []
+        return InstallOutcome(
+            copied=False,
+            import_errors=_declared_import_failures(user_key, dir_name),
+        )
     src = catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(
@@ -152,35 +284,22 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> list[str]:
     # memo dev/91: the catalog path is an install authority too — pin (or
     # clear) the backend entry digest so promote-less installs stay
     # verifiable and a reinstall never trips a stale pin.
-    from utk_curio.backend.app.packages.backend_runtime import record_entry_pin
-
-    record_entry_pin(user_key, dir_name)
-
-    py_deps = dict(result.manifest.python_deps or {})
-    if not py_deps:
-        return []
-    # dev/97: the catalog authority routes exactly as promote does — ONE
-    # rule (backend_runtime.dep_destinations): overlay for backend-bearing
-    # packages, host only when warm-sandbox python templates coexist. The
-    # returned list stays the HOST portion only (the dev/92 restart signal,
-    # narrowed by dev/97 — overlay changes never split-brain fresh workers).
     from utk_curio.backend.app.packages import backend_runtime
-    from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, install_python_deps,
-    )
+    from utk_curio.backend.app.packages.pip_runner import PipInstallError
 
-    destination, _reason = backend_runtime.dep_destinations(result.manifest)
-    host_installed: list[str] = []
+    backend_runtime.record_entry_pin(user_key, dir_name)
+
     try:
-        if destination in ("overlay", "both"):
-            backend_runtime.build_overlay(user_key, dir_name, py_deps)
-        if destination in ("host", "both"):
-            pip_report = install_python_deps(py_deps)
-            host_installed = sorted(pip_report.installed)
+        outcome = provision_python_deps(user_key, dir_name, result.manifest)
     except (PipInstallError, backend_runtime.BackendRuntimeError) as exc:
-        # Roll the just-installed files back so the user-store doesn't
-        # show a package that's unusable. Best-effort: log + continue on
-        # cleanup failure (the original error is the one we surface).
+        # Roll the just-installed files back so the user-store doesn't show a
+        # package that's unusable. Best-effort: log + continue on cleanup
+        # failure (the original error is the one we surface).
+        #
+        # Reserved for pip actually failing. A library that installed and
+        # cannot be imported never reaches here — undoing the install over an
+        # environment problem the user has to fix anyway would only take away
+        # the package that named the problem.
         try:
             import shutil
             from utk_curio.backend.app.packages.storage import package_dir
@@ -191,7 +310,11 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> list[str]:
         raise PackageServiceError(
             f"package files installed but its dependencies failed: {exc}",
         ) from exc
-    return host_installed
+    return InstallOutcome(
+        copied=True,
+        installed=outcome.installed,
+        import_errors=outcome.import_errors,
+    )
 
 
 def ensure_user_packages_initialized(user_key: str) -> None:
@@ -756,7 +879,7 @@ def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str]) -> dict
 # Install/uninstall — per-project (drawer)
 # ---------------------------------------------------------------------------
 
-def install_to_store(user_key: str, dir_name: str) -> bool:
+def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
     """Install *dir_name* into the user's package store (+ its python deps),
     without touching any project lockfile.
 
@@ -764,31 +887,32 @@ def install_to_store(user_key: str, dir_name: str) -> bool:
     dataflow has no project to scope a lockfile to, but installing the
     owning package into the store is enough to make it show as installed
     (catalog drawer / libraries menu key off the store) and to provision
-    its libraries + nodes. Returns ``True`` if a copy was performed,
-    ``False`` if it was already in the store. Raises
-    :class:`PackageServiceError` on failure (catalog miss, pip failure).
+    its libraries + nodes. Raises :class:`PackageServiceError` on failure
+    (catalog miss, pip failure); ``InstallOutcome.copied`` says whether a copy
+    was performed, and ``.import_errors`` whether the libraries actually work.
 
     If the package is already in the store, its declared python deps are
     re-ensured (idempotent pip run) — this repairs the case where a lib was
-    pip-uninstalled out from under an installed package.
+    pip-uninstalled out from under an installed package. The repair routes by
+    the same rule the original install did, so a backend-bearing package's
+    overlay is rebuilt rather than its deps being quietly redirected at the
+    host interpreter its handlers never import from.
     """
     if not PACKAGE_DIR_RE.match(dir_name):
         raise PackageServiceError(f"invalid dirName: {dir_name!r}")
-    will_install = not _is_installed_in_user_store(user_key, dir_name)
-    if will_install:
-        _ensure_user_store_install(user_key, dir_name)
-        return True
+    if not _is_installed_in_user_store(user_key, dir_name):
+        return _ensure_user_store_install(user_key, dir_name)
     # Already in the store — repair any declared dep that isn't present.
-    deps = _read_python_deps(user_key, dir_name)
-    if deps:
-        from utk_curio.backend.app.packages.pip_runner import (
-            PipInstallError, install_python_deps,
-        )
-        try:
-            install_python_deps(deps)
-        except PipInstallError as exc:
-            raise PackageServiceError(f"pip install failed: {exc}", 502) from exc
-    return False
+    manifest = _read_manifest(user_key, dir_name)
+    if manifest is None:
+        return InstallOutcome()
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.pip_runner import PipInstallError
+
+    try:
+        return provision_python_deps(user_key, dir_name, manifest)
+    except (PipInstallError, backend_runtime.BackendRuntimeError) as exc:
+        raise PackageServiceError(f"pip install failed: {exc}", 502) from exc
 
 
 def install_to_project(
@@ -796,32 +920,35 @@ def install_to_project(
 ) -> dict:
     """Add *dir_name* to *project_id*'s lockfile; install to user store if missing.
 
-    Returns ``{"packages": [...], "addedToUserStore": bool}``.
+    Returns ``{"packages": [...], "addedToUserStore": bool, "importErrors":
+    {lib: reason}}``, plus ``restartRecommended`` when pip actually changed a
+    shared library under the running server.
     """
     if not PACKAGE_DIR_RE.match(dir_name):
         raise PackageServiceError(f"invalid dirName: {dir_name!r}")
 
-    will_install = not _is_installed_in_user_store(user_key, dir_name)
-    pip_installed = _ensure_user_store_install(user_key, dir_name)
+    outcome = _ensure_user_store_install(user_key, dir_name)
     # dev/92 B-2: additive restart-honesty field — present exactly when pip
     # actually changed shared libraries under the running server.
-    restart = (
-        {"restartRecommended": {"libs": pip_installed}} if pip_installed else {}
-    )
+    extra: dict = {}
+    if outcome.installed:
+        extra["restartRecommended"] = {"libs": outcome.installed}
+    # The package arrived and one of its libraries does not work. pip counts
+    # matching metadata as satisfaction, so this reads as a clean install right
+    # up until a node touches the library; the response is the last place the
+    # failure is still attached to the package that brought it in. Always
+    # present, empty included — an absent key is how an OLD backend answers, and
+    # "nothing is broken" is a different statement from "nobody looked".
+    extra["importErrors"] = outcome.import_errors
 
     current = get_project_lockfile(user_key, project_id)
-    if dir_name in current:
-        return {
-            "packages": sorted(current),
-            "addedToUserStore": will_install,
-            **restart,
-        }
-    current.add(dir_name)
-    _write_lockfile(user_key, project_id, current)
+    if dir_name not in current:
+        current.add(dir_name)
+        _write_lockfile(user_key, project_id, current)
     return {
         "packages": sorted(current),
-        "addedToUserStore": will_install,
-        **restart,
+        "addedToUserStore": outcome.copied,
+        **extra,
     }
 
 
@@ -898,13 +1025,14 @@ def install_to_defaults(user, dir_name: str) -> dict:
 
     Best-effort per project: a single project failure (e.g. malformed spec)
     is reported and the rest continue. Returns
-    ``{"packages": [...], "projects": [{"id", "ok", "error?"}]}``.
+    ``{"packages": [...], "projects": [{"id", "ok", "error?"}],
+    "importErrors": {lib: reason}}``.
     """
     if not PACKAGE_DIR_RE.match(dir_name):
         raise PackageServiceError(f"invalid dirName: {dir_name!r}")
 
     user_key = _user_key_from_user(user)
-    _ensure_user_store_install(user_key, dir_name)
+    outcome = _ensure_user_store_install(user_key, dir_name)
     defaults_io.add_to_defaults(user_key, dir_name)
 
     results: list[dict] = []
@@ -924,10 +1052,14 @@ def install_to_defaults(user, dir_name: str) -> dict:
             )
             results.append({"id": project.id, "ok": False, "error": str(exc)})
 
-    return {
+    payload = {
         "packages": sorted(defaults_io.load_defaults(user_key)),
         "projects": results,
     }
+    # Same reason as the per-project install: every project now references a
+    # package whose library cannot be imported, and pip said nothing.
+    payload["importErrors"] = outcome.import_errors
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -1030,37 +1162,13 @@ def prune_unreferenced_packages(
     return {"pruned": pruned, "removedFromDefaults": removed_from_defaults}
 
 
-def import_failures_for_packages(user_key: str, dir_names) -> dict[str, str]:
-    """``{distribution: reason}`` for declared deps of *dir_names* that fail to import.
+def _read_manifest(user_key: str, dir_name: str):
+    """The installed package's typed manifest, or ``None`` if unreadable.
 
-    Installing a package is not the same as its libraries working. pip reports a
-    requirement satisfied from metadata alone, so a wheel whose native extension
-    cannot load - a rasterio built against a different GDAL is the everyday case
-    - installs "successfully" and then raises the moment a node touches it. The
-    install routes call this so the answer they return is about the libraries
-    rather than about pip's exit code.
-
-    Empty when nothing is declared or nothing is broken, so a caller can treat a
-    falsy result as "all well" without a special case. One subprocess covers
-    every dep across every named package, and ``pip_runner`` memoises per
-    ``(distribution, version)``, so a second install in the same process is free.
+    ``None`` rather than a raise: every caller here is reporting on an install
+    that already happened, and a manifest that will not parse is a separate
+    complaint from the one being made.
     """
-    from utk_curio.backend.app.packages.pip_runner import import_failures
-
-    declared: dict[str, str] = {}
-    for dir_name in dir_names:
-        declared.update(_read_python_deps(user_key, dir_name))
-    if not declared:
-        return {}
-    try:
-        return import_failures(declared.keys())
-    except Exception:  # noqa: BLE001 - a probe failure must not fail the install
-        log.warning("import probe failed for %s", sorted(declared), exc_info=True)
-        return {}
-
-
-def _read_python_deps(user_key: str, dir_name: str) -> dict[str, str]:
-    """Read the installed package's ``manifest.dependencies.python`` map."""
     from utk_curio.backend.app.packages.manifest import (
         ManifestError,
         load_packageage_manifest,
@@ -1068,10 +1176,15 @@ def _read_python_deps(user_key: str, dir_name: str) -> dict[str, str]:
     from utk_curio.backend.app.packages.storage import package_dir
 
     try:
-        m = load_packageage_manifest(package_dir(user_key, dir_name))
-    except (ManifestError, OSError):
-        return {}
-    return dict(m.python_deps or {})
+        return load_packageage_manifest(package_dir(user_key, dir_name))
+    except (ManifestError, OSError, PackageIdError):
+        return None
+
+
+def _read_python_deps(user_key: str, dir_name: str) -> dict[str, str]:
+    """Read the installed package's ``manifest.dependencies.python`` map."""
+    m = _read_manifest(user_key, dir_name)
+    return dict(m.python_deps or {}) if m is not None else {}
 
 
 def _python_deps_unique_to_pruned(

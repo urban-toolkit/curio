@@ -12,6 +12,7 @@ fast (and to not actually mutate the test env). What we care about:
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 from unittest.mock import patch
 
@@ -360,6 +361,112 @@ class TestImportFailure:
 
         monkeypatch.setattr(pip_runner.subprocess, "run", _boom)
         assert pip_runner.import_failure("flask") is None
+
+
+BROKEN_DIST = "brokenlib"
+BROKEN_VERSION = "9.9.9"
+BROKEN_REASON = (
+    "DLL load failed while importing _base: The specified procedure could not be found."
+)
+
+
+def _fake_broken_distribution(root):
+    """A distribution pip is satisfied by and python cannot import.
+
+    Byte-for-byte the shape of the real case (a rasterio built against a
+    different GDAL): valid metadata, so ``installed_version`` answers and
+    ``_is_satisfied`` says yes, over a module that raises the moment it is
+    imported. Deterministic and offline, unlike installing a genuinely broken
+    wheel.
+    """
+    info = root / f"{BROKEN_DIST}-{BROKEN_VERSION}.dist-info"
+    info.mkdir(parents=True, exist_ok=True)
+    (info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {BROKEN_DIST}\nVersion: {BROKEN_VERSION}\n",
+        encoding="utf-8",
+    )
+    (info / "top_level.txt").write_text(f"{BROKEN_DIST}\n", encoding="utf-8")
+    (root / f"{BROKEN_DIST}.py").write_text(
+        f'raise ImportError("{BROKEN_REASON}")\n', encoding="utf-8",
+    )
+    return root
+
+
+class TestImportFailuresIn:
+    """The overlay probe. ``install_python_deps_to_target`` writes to a
+    directory the backend process never imports from — workers get it on
+    PYTHONPATH — so the only interpreter that can answer for it is one
+    configured the way a worker is."""
+
+    def test_reports_a_library_the_host_interpreter_cannot_even_see(self, tmp_path):
+        overlay = _fake_broken_distribution(tmp_path / "overlay")
+        # The premise: the parent cannot answer this question at all.
+        with pytest.raises(pip_runner.PackageNotFoundError):
+            pip_runner.installed_version(BROKEN_DIST)
+
+        out = pip_runner.import_failures_in([BROKEN_DIST], str(overlay))
+
+        assert list(out) == [BROKEN_DIST]
+        assert BROKEN_REASON in out[BROKEN_DIST]
+
+    def test_a_working_overlay_library_is_silent(self, tmp_path):
+        overlay = tmp_path / "overlay"
+        (overlay / "worklib-1.0.dist-info").mkdir(parents=True)
+        (overlay / "worklib-1.0.dist-info" / "METADATA").write_text(
+            "Metadata-Version: 2.1\nName: worklib\nVersion: 1.0\n", encoding="utf-8",
+        )
+        (overlay / "worklib-1.0.dist-info" / "top_level.txt").write_text(
+            "worklib\n", encoding="utf-8",
+        )
+        (overlay / "worklib.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+        assert pip_runner.import_failures_in(["worklib"], str(overlay)) == {}
+
+    def test_a_dep_missing_from_the_overlay_is_reported_as_not_installed(self, tmp_path):
+        overlay = tmp_path / "overlay"
+        overlay.mkdir()
+        out = pip_runner.import_failures_in(["zzz-not-a-real-dist"], str(overlay))
+        assert "not installed" in out["zzz-not-a-real-dist"]
+
+    def test_no_deps_and_no_path_cost_nothing(self, tmp_path, monkeypatch):
+        def _boom(*a, **kw):  # pragma: no cover
+            raise AssertionError("spawned a probe with nothing to probe")
+
+        monkeypatch.setattr(pip_runner.subprocess, "run", _boom)
+        assert pip_runner.import_failures_in([], str(tmp_path)) == {}
+        assert pip_runner.import_failures_in(["flask"], "") == {}
+
+    def test_a_probe_that_cannot_run_reports_nothing_rather_than_guessing(
+        self, tmp_path, monkeypatch,
+    ):
+        """"No answer" is never "all fine" — and never a fabricated failure."""
+        overlay = _fake_broken_distribution(tmp_path / "overlay")
+
+        def _boom(*a, **kw):
+            raise OSError("no subprocesses here")
+
+        monkeypatch.setattr(pip_runner.subprocess, "run", _boom)
+        assert pip_runner.import_failures_in([BROKEN_DIST], str(overlay)) == {}
+
+    def test_the_hosts_own_pythonpath_survives(self, tmp_path, monkeypatch):
+        """The overlay is prepended, not substituted.
+
+        A worker sees the overlay ON TOP of the environment it already had;
+        replacing PYTHONPATH would make the probe answer for an environment no
+        worker runs in.
+        """
+        monkeypatch.setenv("PYTHONPATH", str(tmp_path / "pre-existing"))
+        seen = {}
+
+        def _spy(cmd, **kw):
+            seen["path"] = kw["env"]["PYTHONPATH"]
+            raise OSError("stop here; the argv is the assertion")
+
+        monkeypatch.setattr(pip_runner.subprocess, "run", _spy)
+        pip_runner.import_failures_in(["flask"], str(tmp_path / "overlay"))
+
+        assert seen["path"].split(os.pathsep)[0] == str(tmp_path / "overlay")
+        assert str(tmp_path / "pre-existing") in seen["path"]
 
 
 class TestImportFailures:

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -330,6 +331,97 @@ def import_failures(deps: Iterable[str]) -> dict[str, str]:
         if reason:
             failures[name] = reason
     return failures
+
+
+#: Same question as :data:`_PROBE_SRC`, asked inside an interpreter that can see
+#: an OVERLAY. Resolution moves into the child because it has to: an overlay's
+#: distributions are invisible to the parent, so the parent's
+#: ``installed_version`` would answer "not installed" for every one of them and
+#: invent a failure that isn't there. The module-name rule mirrors
+#: :func:`_module_for_distribution`; the one constant they share is passed in
+#: rather than restated.
+_TARGET_PROBE_SRC = """
+import importlib, json, sys
+from importlib.metadata import PackageNotFoundError, packages_distributions, version
+
+payload = json.load(sys.stdin)
+names = payload["names"]
+non_library = set(payload["nonLibrary"])
+try:
+    dists = packages_distributions()
+except BaseException:
+    dists = {}
+out = {}
+for name in names:
+    try:
+        version(name)
+    except PackageNotFoundError:
+        out[name] = name + " is not installed"
+        continue
+    fallback = name.replace("-", "_")
+    candidates = [m for m, ds in dists.items() if name in ds]
+    module = None
+    for mod in candidates:
+        if mod.lower() == fallback.lower():
+            module = mod
+            break
+    if module is None:
+        real = [m for m in candidates if m.lower() not in non_library]
+        module = sorted(real or candidates)[0] if candidates else fallback
+    try:
+        importlib.import_module(module)
+    except BaseException as exc:
+        out[name] = "{}: {}".format(type(exc).__name__, exc)
+print(json.dumps(out))
+"""
+
+
+def import_failures_in(deps: Iterable[str], search_path: str) -> dict[str, str]:
+    """``{distribution: reason}`` for deps that cannot be imported with
+    *search_path* on ``sys.path`` — the OVERLAY's environment, not the host's.
+
+    :func:`install_python_deps_to_target` installs into a directory the backend
+    process never imports from; workers receive it on ``PYTHONPATH``. So the
+    only interpreter that can answer "does this library work" for an overlay is
+    one configured the way a worker is, which is what this spawns.
+
+    Deliberately not memoised. :func:`~.backend_runtime.build_overlay` wipes and
+    rebuilds, so a repair can land without the version moving, and the answer is
+    wanted once per install — after a pip run that already cost seconds.
+
+    Empty on a probe that cannot run: "no answer" is never "all fine".
+    """
+    names = sorted({d for d in deps})
+    if not names or not search_path:
+        return {}
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        f"{search_path}{os.pathsep}{existing}" if existing else str(search_path)
+    )
+    payload = json.dumps({"names": names, "nonLibrary": sorted(_NON_LIBRARY_MODULES)})
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", _TARGET_PROBE_SRC],
+            input=payload,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=min(300, _IMPORT_PROBE_TIMEOUT * len(names)),
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        log.warning("overlay import probe for %s failed to run: %s", names, exc)
+        return {}
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        log.warning(
+            "overlay import probe for %s gave no answer (rc=%s)", names, proc.returncode,
+        )
+        return {}
+    try:
+        parsed = json.loads(proc.stdout)
+    except ValueError:
+        return {}
+    return {k: v for k, v in parsed.items() if isinstance(v, str)}
 
 
 def import_failure(name: str) -> Optional[str]:

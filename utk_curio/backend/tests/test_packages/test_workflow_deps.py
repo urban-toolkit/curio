@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from utk_curio.backend.app.packages import pip_runner as packages_routes_pip
 from utk_curio.backend.app.packages import routes as packages_routes
@@ -232,7 +233,7 @@ def test_install_installs_each_package_to_store(client, user_and_token, tmp_curi
     calls: list[str] = []
     monkeypatch.setattr(
         packages_services, "install_to_store",
-        lambda uk, dn: calls.append(dn) or True,
+        lambda uk, dn: calls.append(dn) or packages_services.InstallOutcome(copied=True),
     )
     _, token = user_and_token
     resp = _install(client, token, ["curio.weather@1"])
@@ -253,10 +254,11 @@ def test_install_reports_a_library_that_cannot_be_imported(
     met the failure later as a node's ImportError with nothing connecting the
     two.
     """
-    monkeypatch.setattr(packages_services, "install_to_store", lambda uk, dn: True)
     monkeypatch.setattr(
-        packages_services, "import_failures_for_packages",
-        lambda uk, dirs: {"rasterio": "ImportError: DLL load failed"},
+        packages_services, "install_to_store",
+        lambda uk, dn: packages_services.InstallOutcome(
+            copied=True, import_errors={"rasterio": "ImportError: DLL load failed"},
+        ),
     )
     _, token = user_and_token
 
@@ -271,9 +273,9 @@ def test_install_reports_a_library_that_cannot_be_imported(
 def test_install_reports_no_import_errors_when_the_libraries_work(
     client, user_and_token, tmp_curio, monkeypatch,
 ):
-    monkeypatch.setattr(packages_services, "install_to_store", lambda uk, dn: True)
     monkeypatch.setattr(
-        packages_services, "import_failures_for_packages", lambda uk, dirs: {},
+        packages_services, "install_to_store",
+        lambda uk, dn: packages_services.InstallOutcome(copied=True),
     )
     _, token = user_and_token
 
@@ -295,7 +297,7 @@ def test_install_rejects_invalid_dirname(client, user_and_token, tmp_curio, monk
     def _fake(uk, dn):
         nonlocal called
         called = True
-        return True
+        return packages_services.InstallOutcome(copied=True)
 
     monkeypatch.setattr(packages_services, "install_to_store", _fake)
     _, token = user_and_token
@@ -332,7 +334,7 @@ def test_install_abandons_the_partial_set_on_a_mid_loop_failure(
         attempted.append(dn)
         if dn == "ai.urbanlab.uhvi@1":
             raise packages_services.PackageServiceError("no wheel", 502)
-        return True
+        return packages_services.InstallOutcome(copied=True)
 
     monkeypatch.setattr(packages_services, "install_to_store", _second_fails)
     _, token = user_and_token
@@ -360,7 +362,7 @@ def test_check_is_a_pure_probe_and_installs_nothing(
     installs: list[str] = []
     monkeypatch.setattr(
         packages_services, "install_to_store",
-        lambda uk, dn: installs.append(dn) or True,
+        lambda uk, dn: installs.append(dn) or packages_services.InstallOutcome(copied=True),
     )
     _, token = user_and_token
     resp = _check(client, token, ["curio.example-ui@1", "curio.weather@1"])
@@ -429,36 +431,126 @@ def test_installing_a_declared_package_twice_is_idempotent(
 
 
 # ---------------------------------------------------------------------------
-# services.import_failures_for_packages — the rule both install routes share
+# services.install_to_store — the already-in-store REPAIR branch
 # ---------------------------------------------------------------------------
 
-def test_import_failures_reads_the_packages_declared_deps(monkeypatch):
-    """It must probe what the manifests declare, not what pip happened to fetch.
+
+def test_repairing_a_backend_package_rebuilds_its_overlay_not_the_host(
+    monkeypatch, tmp_curio,
+):
+    """The repair has to route like the install did.
+
+    ``/check`` flags an installed package whose declared dep went missing, and
+    the repair used to call ``install_python_deps`` unconditionally - putting a
+    backend-bearing package's libraries in the shared interpreter its handlers
+    never import from. pip exited 0, the dep read as satisfied, and the handler
+    kept raising ImportError.
+    """
+    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+    from utk_curio.backend.app.packages import services as svc
+
+    manifest = SimpleNamespace(
+        python_deps={"tinylib": "1.0.0"},
+        backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
+        templates=[SimpleNamespace(engine="javascript", has_code=False)],
+    )
+    monkeypatch.setattr(svc, "_is_installed_in_user_store", lambda uk, dn: True)
+    monkeypatch.setattr(svc, "_read_manifest", lambda uk, dn: manifest)
+    monkeypatch.setattr(
+        svc, "_declared_import_failures", lambda uk, dn, m=None: {})
+
+    built: list[tuple] = []
+    monkeypatch.setattr(
+        backend_runtime, "build_overlay",
+        lambda uk, dn, deps, on_line=None: built.append((dn, dict(deps)))
+        or {"libs": ["tinylib==1.0.0"], "bytes": 5},
+    )
+
+    def _never_host(deps, on_line=None):  # pragma: no cover
+        raise AssertionError("host pip must not run for overlay-only routing")
+
+    monkeypatch.setattr(pip_runner, "install_python_deps", _never_host)
+
+    outcome = svc.install_to_store("1", "my.pkg@1")
+
+    assert built == [("my.pkg@1", {"tinylib": "1.0.0"})]
+    assert outcome.copied is False
+    # Host portion empty → no restart notice (dev/92 narrowed by dev/97).
+    assert outcome.installed == []
+
+
+def test_repairing_an_installed_package_still_reports_a_broken_library(
+    monkeypatch, tmp_curio,
+):
+    """The branch that changes nothing is exactly where the lie lived.
+
+    pip skips a dep whose metadata already satisfies the requirement, so the
+    repair run for a broken wheel is a no-op that exits 0. Without a probe the
+    route answers "installed" and the user meets the failure as a node's
+    ImportError.
+    """
+    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages import services as svc
+
+    manifest = SimpleNamespace(
+        python_deps={"rasterio": ""}, backend=None,
+        templates=[SimpleNamespace(engine="python", has_code=True)],
+    )
+    monkeypatch.setattr(svc, "_is_installed_in_user_store", lambda uk, dn: True)
+    monkeypatch.setattr(svc, "_read_manifest", lambda uk, dn: manifest)
+    monkeypatch.setattr(
+        pip_runner, "install_python_deps",
+        lambda deps, on_line=None: pip_runner.InstallReport(
+            installed=[], skipped=["rasterio"]),
+    )
+    monkeypatch.setattr(
+        pip_runner, "import_failures",
+        lambda deps: {"rasterio": "ImportError: DLL load failed"},
+    )
+
+    outcome = svc.install_to_store("1", "my.pkg@1")
+
+    assert outcome.import_errors == {"rasterio": "ImportError: DLL load failed"}
+    assert outcome.installed == []
+
+
+# ---------------------------------------------------------------------------
+# services._declared_import_failures — the rule EVERY install path shares
+# ---------------------------------------------------------------------------
+#
+# The route-by-route version of this check kept missing surfaces, so it lives
+# at the service seam now: one function, consulted by whichever install path
+# ran, which is why these tests call it directly rather than through a route.
+
+
+def _manifest(python_deps, *, backend=None, templates=()):
+    return SimpleNamespace(
+        python_deps=dict(python_deps), backend=backend, templates=list(templates),
+    )
+
+
+def test_declared_import_failures_probes_the_manifests_deps(monkeypatch):
+    """It must probe what the manifest declares, not what pip happened to fetch.
 
     The broken case is precisely the one where pip fetched nothing, because the
     metadata already satisfied the requirement.
     """
     probed: list[list[str]] = []
-    monkeypatch.setattr(
-        packages_services, "_read_python_deps",
-        lambda uk, dn: {"rasterio": ">=1.3"} if dn == "curio.weather@1" else {"numpy": ""},
-    )
     import utk_curio.backend.app.packages.pip_runner as pip_runner
     monkeypatch.setattr(
         pip_runner, "import_failures",
         lambda deps: probed.append(sorted(deps)) or {"rasterio": "ImportError: boom"},
     )
 
-    out = packages_services.import_failures_for_packages(
-        "1", ["curio.weather@1", "other@1"],
+    out = packages_services._declared_import_failures(
+        "1", "curio.weather@1", _manifest({"rasterio": ">=1.3", "numpy": ""}),
     )
 
     assert out == {"rasterio": "ImportError: boom"}
-    # One subprocess for every dep across every package, not one per package.
     assert probed == [["numpy", "rasterio"]]
 
 
-def test_import_failures_is_empty_when_nothing_is_declared(monkeypatch):
+def test_declared_import_failures_is_empty_when_nothing_is_declared(monkeypatch):
     """No declared deps means no probe at all - the 19s cost is not free."""
     called = False
 
@@ -467,19 +559,15 @@ def test_import_failures_is_empty_when_nothing_is_declared(monkeypatch):
         called = True
         return {}
 
-    monkeypatch.setattr(packages_services, "_read_python_deps", lambda uk, dn: {})
     import utk_curio.backend.app.packages.pip_runner as pip_runner
     monkeypatch.setattr(pip_runner, "import_failures", _probe)
 
-    assert packages_services.import_failures_for_packages("1", ["x@1"]) == {}
+    assert packages_services._declared_import_failures("1", "x@1", _manifest({})) == {}
     assert not called
 
 
 def test_a_probe_that_raises_does_not_fail_the_install(monkeypatch):
     """The install succeeded; a broken probe must not turn that into an error."""
-    monkeypatch.setattr(
-        packages_services, "_read_python_deps", lambda uk, dn: {"rasterio": ""},
-    )
     import utk_curio.backend.app.packages.pip_runner as pip_runner
 
     def _boom(deps):
@@ -487,4 +575,104 @@ def test_a_probe_that_raises_does_not_fail_the_install(monkeypatch):
 
     monkeypatch.setattr(pip_runner, "import_failures", _boom)
 
-    assert packages_services.import_failures_for_packages("1", ["x@1"]) == {}
+    assert packages_services._declared_import_failures(
+        "1", "x@1", _manifest({"rasterio": ""}),
+    ) == {}
+
+
+def test_a_backend_packages_deps_are_probed_in_the_overlay_not_the_host(
+    monkeypatch, tmp_path,
+):
+    """The overlay is a different environment, so it is a different question.
+
+    ``install_python_deps_to_target`` puts a backend-bearing package's libraries
+    in a directory the backend process never imports from; workers get it on
+    PYTHONPATH. Asking the host would report every one of them "not installed" -
+    a failure that isn't there - and would vouch for nothing that is.
+    """
+    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+
+    overlay = tmp_path / "overlay"
+    overlay.mkdir()
+    monkeypatch.setattr(
+        backend_runtime, "overlay_dir_for", lambda uk, dn: overlay)
+
+    def _never_host(deps):  # pragma: no cover - the assertion is that it is unused
+        raise AssertionError("the host was probed for an overlay-only package")
+
+    seen: list[tuple[list[str], str]] = []
+    monkeypatch.setattr(pip_runner, "import_failures", _never_host)
+    monkeypatch.setattr(
+        pip_runner, "import_failures_in",
+        lambda deps, path: seen.append((sorted(deps), path))
+        or {"tinylib": "ImportError: boom"},
+    )
+
+    manifest = _manifest(
+        {"tinylib": "1.0.0"},
+        backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
+        templates=[SimpleNamespace(engine="javascript", has_code=False)],
+    )
+    out = packages_services._declared_import_failures("1", "pkg@1", manifest)
+
+    assert out == {"tinylib": "ImportError: boom"}
+    assert seen == [(["tinylib"], str(overlay))]
+
+
+def test_an_overlay_that_was_never_built_is_not_probed(monkeypatch, tmp_path):
+    """Nothing was installed there, so there is nothing to vouch for either way.
+
+    Probing a directory no pip run ever wrote to would report every declared dep
+    "not installed" - true of the directory, and not the claim being made.
+    """
+    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+
+    monkeypatch.setattr(
+        backend_runtime, "overlay_dir_for", lambda uk, dn: tmp_path / "never-built")
+
+    def _boom(*a, **kw):  # pragma: no cover
+        raise AssertionError("probed an overlay that does not exist")
+
+    monkeypatch.setattr(pip_runner, "import_failures_in", _boom)
+    monkeypatch.setattr(pip_runner, "import_failures", _boom)
+
+    manifest = _manifest(
+        {"tinylib": "1.0.0"},
+        backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
+        templates=[SimpleNamespace(engine="javascript", has_code=False)],
+    )
+    assert packages_services._declared_import_failures("1", "pkg@1", manifest) == {}
+
+
+def test_a_both_destination_package_is_probed_in_both_environments(
+    monkeypatch, tmp_path,
+):
+    """A python template and a backend handler read from different sys.paths.
+
+    Vouching for one and not the other is how a package ships half-working.
+    """
+    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+
+    overlay = tmp_path / "overlay"
+    overlay.mkdir()
+    monkeypatch.setattr(
+        backend_runtime, "overlay_dir_for", lambda uk, dn: overlay)
+    monkeypatch.setattr(
+        pip_runner, "import_failures_in", lambda deps, path: {"a": "overlay broke"})
+    monkeypatch.setattr(
+        pip_runner, "import_failures", lambda deps: {"b": "host broke"})
+
+    manifest = _manifest(
+        {"a": "", "b": ""},
+        backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
+        templates=[SimpleNamespace(engine="python", has_code=True)],
+    )
+    assert packages_services._declared_import_failures("1", "pkg@1", manifest) == {
+        "a": "overlay broke", "b": "host broke",
+    }
+
+
+def test_an_unreadable_manifest_reports_nothing_rather_than_guessing(monkeypatch):
+    """A manifest that will not parse is a different complaint from this one."""
+    monkeypatch.setattr(packages_services, "_read_manifest", lambda uk, dn: None)
+    assert packages_services._declared_import_failures("1", "x@1") == {}
