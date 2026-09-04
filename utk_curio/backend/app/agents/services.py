@@ -3110,12 +3110,20 @@ def _apply_package_install(
             "resolve the conflict in the Nodes Catalog first",
         )
     try:
-        packages_services.install_to_project(user_key, project_id, dir_name)
+        install = packages_services.install_to_project(user_key, project_id, dir_name)
     except Exception as exc:
         raise _mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
             f"the package could not be installed: {exc}",
         ) from exc
+    # pip counts matching metadata as satisfaction, so a wheel whose native
+    # extension cannot load installs without complaint. The install already
+    # asks whether the libraries import; keeping the answer here is what stops
+    # the applied turn saying "package installed" over a package whose first
+    # run raises. NOT a stale/refusal: the package is installed and the repair
+    # (a matching GDAL, a conda-forge build) is the user's, so this is the last
+    # place the failure is still attached to the package that brought it in.
+    broken_line = _broken_library_line(install.get("importErrors"))
     # The install wrote the spec (the package lockfile); re-read so the
     # proposal mirror update below does not clobber the new entry.
     spec = _read_spec_or_404(user_key, project_id)
@@ -3132,7 +3140,7 @@ def _apply_package_install(
     )
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: package installed ({name}).{notes_line}",
+        f"Applied: package installed ({name}).{broken_line}{notes_line}",
         "Applied: package installed",
         [name, dir_name, f"proposal {proposal_id[:8]}"],
         extra_parts=note_parts,
@@ -3143,6 +3151,8 @@ def _apply_package_install(
         "status": "applied",
         "mutationApplied": True,
         "installedPackage": {"dirName": dir_name, "name": name},
+        **({"importErrors": install["importErrors"]}
+           if install.get("importErrors") else {}),
         # dev/105 A4: the lockfile CHANGED — the frontend must refresh its
         # package registry + project-packages store BEFORE the follow-up notes
         # paint, or they render "Loading node…" for a type it does not hold.
@@ -3150,6 +3160,23 @@ def _apply_package_install(
         # dev/105 A3: ordered — the frontend applies them one after another.
         "followUpProposals": follow_ups,
     }
+
+
+def _broken_library_line(import_errors) -> str:
+    """`` rasterio cannot be imported (...).`` for the applied turn, or ``""``.
+
+    One sentence, appended to the turn the user reads after Apply. The wording
+    matches the frontend's ``dependencyFailureNotice`` deliberately: the same
+    failure should not read as a different problem depending on whether a
+    button or an agent reached it.
+    """
+    if not import_errors:
+        return ""
+    named = "; ".join(
+        f"{lib} cannot be imported ({reason})"
+        for lib, reason in sorted(import_errors.items())
+    )
+    return f" But {named}. Nodes needing it will fail until it is repaired."
 
 
 def _queue_enlisted_notes(

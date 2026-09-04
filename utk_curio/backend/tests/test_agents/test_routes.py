@@ -7260,6 +7260,68 @@ class TestPackageRecommendationTools:
         assert body["installedPackage"] == {"dirName": self.PKG, "name": "Weather Analysis"}
         assert self.PKG in self._lockfile(client, user, alice_project)
 
+    def test_apply_says_when_an_installed_library_cannot_be_imported(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The applied turn is the last place this is connectable to the package.
+
+        pip counts matching metadata as satisfaction, so a wheel whose native
+        extension cannot load installs without complaint - and this apply threw
+        the install's verdict away, logged "Applied: package installed", and
+        left the user to meet it as a node ImportError with nothing tying the
+        two together. Reported, not refused: the package IS installed and the
+        repair is the user's.
+        """
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(
+            pip_runner, "import_failures",
+            lambda deps: {"rasterio": "ImportError: DLL load failed"},
+        )
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(self.PKG), "Proposed - review above."],
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        # The install stands ...
+        assert body["mutationApplied"] is True
+        assert self.PKG in self._lockfile(client, user, alice_project)
+        # ... and it says which library and why.
+        assert body["importErrors"] == {"rasterio": "ImportError: DLL load failed"}
+
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        applied = [t for t in turns if "package installed" in json.dumps(t)]
+        assert applied, turns
+        text = json.dumps(applied[-1])
+        assert "rasterio" in text and "cannot be imported" in text, text
+
+    def test_apply_stays_quiet_when_the_libraries_work(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The success control: a working package must not grow a warning."""
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(self.PKG), "Proposed - review above."],
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+
+        body = resp.get_json()
+        assert body["mutationApplied"] is True
+        assert "importErrors" not in body, body
+
     def test_mint_refuses_builtin_unknown_and_installed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.packages.services import install_to_project
         from utk_curio.backend.app.projects.services import _user_dir_key
