@@ -337,7 +337,8 @@ test_frontend/
                               # (needs a built dist/; FAILS rather than skips without one)
   test_library_manager_e2e.py      # Installed-libraries modal -> a node imports the lib
   test_broken_library_e2e.py       # pip says installed, python cannot import: every install surface
-                                   # says which library and why (offline: /api/testing/broken-library)
+                                   # says which library and why (offline via
+                                   # /api/testing/broken-library; writes nothing to the shared catalog)
   test_package_roundtrip_e2e.py    # canvas node -> package -> archive -> import -> run it
   test_package_metadata_roundtrip_e2e.py  # Node settings + package metadata survive the archive
   test_workflow_deps_e2e.py   # loading a dataflow auto-installs its declared packages

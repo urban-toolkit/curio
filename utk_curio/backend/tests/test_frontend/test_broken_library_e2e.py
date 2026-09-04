@@ -9,10 +9,18 @@ ImportError, with nothing connecting it to the install that promised otherwise.
 That is live on the reference machine right now: ``import rasterio`` raises
 ``DLL load failed while importing _base`` while pip insists it is installed.
 
-Six user-facing entry points install a package's libraries, and none of them had
-E2E coverage for this case - only for the two cases pip DOES report. Each test
-below drives one of them to the point where the product makes a claim, and reads
-the claim.
+Five user-facing entry points install a package's libraries, and none of them
+had E2E coverage for this case - only for the two cases pip DOES report. Each
+test below drives one of them to the point where the product makes a claim, and
+reads the claim.
+
+Nothing here writes to the shared package catalog. ``<repo_root>/packages`` is
+tracked by git and shared by every xdist worker, so a fixture published there
+would add a card to ``/catalog/nodes`` for every other worker - drifting the
+full-page ``page-catalog-nodes`` baseline one of them may be capturing right
+then. The drawer's own "Add to project" button is the one surface that can only
+be reached with a catalog package; the route behind it is covered through the
+sideload instead, which reaches it with a per-user store copy.
 
 Model: ``test_library_manager_js_e2e.py``, not ``test_library_manager_e2e.py``.
 That second one really runs pip against PyPI and is not repeat-safe within a
@@ -129,36 +137,46 @@ def broken_library(current_server: str):
     _testing_post(current_server, "broken-library", {"action": "remove"})
 
 
-@pytest.fixture()
-def catalog_fixture(current_server: str):
-    """Publish, then unpublish, a catalog package declaring the broken library.
+def _sideload(current_server: str, token: str) -> dict:
+    """Put the fixture package in ONE user's store, over HTTP.
 
-    The catalog surfaces (the drawer, the catalog page, a dataflow's declared
-    packages) install a package rather than a loose library, so there has to be
-    a package to install. Published through the product's own route, so what the
-    test installs is a real catalog entry rather than a hand-built directory.
+    Deliberately not ``factory/publish-catalog``. The package catalog lives at
+    ``<repo_root>/packages`` and is shared by every xdist worker AND tracked by
+    git, so publishing there would add a card to ``/catalog/nodes`` for every
+    other worker for as long as the fixture existed - drifting the full-page
+    ``page-catalog-nodes`` baseline that another worker may be capturing at
+    that moment, and dirtying the working tree if a run were killed mid-test.
+    A per-user store copy is invisible to everyone else and is all these
+    surfaces need: the drawer and the catalog page both offer to add an
+    installed-but-not-in-this-project package, and that add goes through the
+    same install seam.
     """
-    def _token(username: str) -> str:
-        return api_json(
-            f"{current_server}/api/testing/stub-login", "unused", method="POST",
-            payload={"username": username, "name": "Catalog Fixture"},
-        )["token"]
+    import json
+    import urllib.request
 
-    published = api_json(
-        f"{current_server}/api/packages/factory/publish-catalog",
-        _token("catalog_fixture_publisher"),
+    from utk_curio.backend.app.packages.factory import build_packageage_archive
+
+    archive = build_packageage_archive(_fixture_draft()).archive
+    boundary = "----curioE2EBrokenLibrary"
+    crlf = "\r\n"
+    head = (
+        f"--{boundary}{crlf}"
+        f'Content-Disposition: form-data; name="file"; '
+        f'filename="broken.curio.zip"{crlf}'
+        f"Content-Type: application/zip{crlf}{crlf}"
+    ).encode()
+    tail = f"{crlf}--{boundary}--{crlf}".encode()
+    req = urllib.request.Request(
+        f"{current_server}/api/packages/upload",
+        data=head + archive + tail,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
         method="POST",
-        payload={**_fixture_draft(), "replace": True},
-        timeout=120.0,
     )
-    yield published["package"]
-    try:
-        api_json(
-            f"{current_server}/api/packages/catalog/{FIXTURE_DIR}",
-            _token("catalog_fixture_publisher"), method="DELETE", timeout=60.0,
-        )
-    except Exception as exc:  # noqa: BLE001 — teardown must not mask a failure
-        print(f"[teardown] unpublish {FIXTURE_DIR} failed: {exc}")
+    with urllib.request.urlopen(req, timeout=180) as resp:  # noqa: S310 - local
+        return json.loads(resp.read())
 
 
 @pytest.fixture()
@@ -323,82 +341,12 @@ def test_a_malformed_requirement_is_refused_before_pip_runs(
 
 
 # ---------------------------------------------------------------------------
-# 2. Node Catalog drawer -> add the package to this project
-# ---------------------------------------------------------------------------
-
-def test_adding_a_package_to_a_project_reports_its_broken_library(
-    app_frontend: "FrontendPage", current_server: str, page,
-    broken_library, catalog_fixture, uninstall_fixture_package,
-):
-    """The package arrives; its library does not work; the toast says so.
-
-    This is the last moment the failure is still attached to the package that
-    brought it in. After it, the user meets a node's ImportError.
-    """
-    session = _enter_canvas(
-        page, app_frontend, current_server,
-        username="brokenlib_drawer", name="Drawer User",
-        project_name="BrokenLibDrawer")
-    uninstall_fixture_package(session["token"])
-
-    drawer = _open_node_catalog(page)
-    card = drawer.locator(f'article[data-pkg-dir="{FIXTURE_DIR}"]')
-    expect(card).to_have_count(1, timeout=20000)
-
-    with page.expect_response(
-        lambda r: r.url.endswith("/api/packages/resolve"), timeout=30000
-    ):
-        card.get_by_role("button", name="Add to project", exact=True).click()
-
-    confirm = page.get_by_role("dialog").filter(
-        has=page.get_by_role("heading", name=f'Add "{FIXTURE_NAME}"', exact=True)
-    )
-    expect(confirm).to_be_visible(timeout=15000)
-    with page.expect_response(
-        lambda r: "/api/packages/projects/" in r.url
-        and r.url.endswith("/install")
-        and r.request.method == "POST",
-        timeout=120000,
-    ) as installed:
-        confirm.get_by_role("button", name="Add to project", exact=True).click()
-
-    response = installed.value
-    # Not a 5xx and not a rollback: the package installed fine, and the repair
-    # for a broken build belongs to the user. Report, do not undo.
-    assert response.status == 201, f"{response.status}: {response.text()[:400]}"
-    assert response.json()["importErrors"] == {
-        LIB: broken_library["importError"],
-    }, response.json()
-
-    toasts = page.get_by_label(NOTIFICATIONS)
-    expect(toasts).to_contain_text(LIB, timeout=30000)
-    expect(toasts).to_contain_text(REASON_FRAGMENT)
-    expect(toasts).not_to_contain_text(f"Added {FIXTURE_NAME} to this project.")
-
-    save_workflow_test_screenshot(
-        page, "broken-library",
-        test_name="test_adding_a_package_to_a_project_reports_its_broken_library",
-        fit_reactflow=False,
-        clip_selector='[aria-label="Notifications"]',
-        max_diff_ratio=0.05,
-    )
-
-    # The package really is installed, which is what makes "report, do not undo"
-    # a claim rather than a slogan.
-    installed_dirs = {
-        p["dirName"]
-        for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]
-    }
-    assert FIXTURE_DIR in installed_dirs
-
-
-# ---------------------------------------------------------------------------
 # 3. Node Catalog page -> add the package to every project
 # ---------------------------------------------------------------------------
 
 def test_adding_a_package_to_every_project_reports_its_broken_library(
     app_frontend: "FrontendPage", current_server: str, page,
-    broken_library, catalog_fixture, uninstall_fixture_package,
+    broken_library, uninstall_fixture_package,
 ):
     """The account-wide install, which said nothing at all.
 
@@ -418,6 +366,7 @@ def test_adding_a_package_to_every_project_reports_its_broken_library(
         project_name="BrokenLibPage",
     )
     uninstall_fixture_package(session["token"])
+    _sideload(current_server, session["token"])
 
     page.goto(f"{app_frontend.base_url}/catalog/nodes")
     page.wait_for_load_state("domcontentloaded")
@@ -461,10 +410,17 @@ def test_adding_a_package_to_every_project_reports_its_broken_library(
 
 def test_opening_a_dataflow_that_declares_it_reports_the_broken_library(
     app_frontend: "FrontendPage", current_server: str, page,
-    broken_library, catalog_fixture, uninstall_fixture_package,
+    broken_library, uninstall_fixture_package,
 ):
-    """Nobody pressed Install here: the dataflow declared the package and the
-    canvas installed it on open. The toast is the only place this is said."""
+    """Nobody pressed Install here: the dataflow declared the package, and the
+    canvas probed its libraries on open.
+
+    ``/workflow-deps/check`` is the load-time surface, and it is the one place
+    that can see this without installing anything: the library IS installed and
+    version-satisfying, so nothing is missing and nothing will be fetched - it
+    simply does not import. Reporting it as "needs installing" would be wrong
+    and pip would change nothing; the toast has to say what is actually true.
+    """
     spec = {
         "dataflow": {
             "name": "DeclaresBroken",
@@ -478,19 +434,20 @@ def test_opening_a_dataflow_that_declares_it_reports_the_broken_library(
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
 
-    # Arm the teardown before the navigation that installs, so a failure part
-    # way through still leaves the next test a clean store.
+    # The package is in the store before the dataflow opens - the realistic
+    # state, and the one where pip has nothing left to do.
     token = api_json(
         f"{current_server}/api/testing/stub-login", "unused", method="POST",
         payload={"username": "brokenlib_open", "name": "Open User"},
     )["token"]
     uninstall_fixture_package(token)
+    _sideload(current_server, token)
 
     with page.expect_response(
-        lambda r: r.url.endswith("/api/packages/workflow-deps/install")
+        lambda r: r.url.endswith("/api/packages/workflow-deps/check")
         and r.request.method == "POST",
         timeout=120000,
-    ) as installed:
+    ) as checked:
         stub_login_and_enter_workflow(
             page,
             frontend_url=app_frontend.base_url,
@@ -501,9 +458,13 @@ def test_opening_a_dataflow_that_declares_it_reports_the_broken_library(
             project_spec=spec,
         )
 
-    response = installed.value
-    assert response.ok, f"{response.status}: {response.text()[:400]}"
-    assert response.json()["importErrors"] == {LIB: broken_library["importError"]}
+    body = checked.value.json()
+    assert checked.value.ok, f"{checked.value.status}: {checked.value.text()[:400]}"
+    # Not "needed": pip is satisfied, so an install would be a no-op. Broken.
+    assert FIXTURE_DIR not in body["packages"], body
+    assert body["broken"] == [
+        {"package": FIXTURE_DIR, "dep": LIB, "error": broken_library["importError"]},
+    ], body
 
     toasts = page.get_by_label(NOTIFICATIONS)
     expect(toasts).to_contain_text(LIB, timeout=30000)
@@ -552,6 +513,24 @@ def test_sideloading_an_archive_reports_its_broken_library(
     toasts = page.get_by_label(NOTIFICATIONS)
     expect(toasts).to_contain_text(LIB, timeout=30000)
     expect(toasts).to_contain_text(REASON_FRAGMENT)
+
+    save_workflow_test_screenshot(
+        page, "broken-library",
+        test_name="test_sideloading_an_archive_reports_its_broken_library",
+        fit_reactflow=False,
+        clip_selector='[aria-label="Notifications"]',
+        max_diff_ratio=0.05,
+    )
+
+    # The drawer's import also drops the package into THIS dataflow's lockfile,
+    # which is the route the drawer's "Add to project" button calls. That button
+    # needs its package in the shared catalog, which nothing here writes to, so
+    # this is where that route gets its end-to-end coverage.
+    lockfile = api_json(
+        f"{current_server}/api/packages/projects/{session['project']['id']}",
+        session["token"],
+    )
+    assert FIXTURE_DIR in lockfile["packages"], lockfile
 
 
 # ---------------------------------------------------------------------------
