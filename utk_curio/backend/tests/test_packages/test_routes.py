@@ -512,6 +512,39 @@ def test_a_pip_failure_is_reported_and_the_package_stays_installed(
     assert "ai.test.factory" in {p["packageId"] for p in listing}
 
 
+def test_a_declaration_pip_cannot_parse_is_reported_not_a_500(
+    client, user_and_token, tmp_curio, monkeypatch,
+):
+    """A manifest is not a form field, and the files are already written.
+
+    ``PipSpecError`` is not a ``PipInstallError``, so a declaration pip's
+    grammar rejects escaped the dependency step and became a 500 AFTER the
+    package had been installed - a response describing neither what happened
+    nor what to do. Reached without anyone typing a constraint: a third-party
+    ``.curio.zip`` can carry ``">= 1.26"``, and the wizard derives
+    ``dependencies.python`` from a node body, so a private module name lands in
+    the manifest as a requirement.
+    """
+    from utk_curio.backend.app.packages import pip_runner
+
+    def _bad_spec(deps, on_line=None):
+        raise pip_runner.PipSpecError(
+            "'>= 1.26' is not a valid version constraint for 'numpy'")
+
+    monkeypatch.setattr(pip_runner, "install_python_deps", _bad_spec)
+    monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+    _, token = user_and_token
+
+    resp = _upload(client, token, _archive_from_draft(_draft_importing("numpy")))
+
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert "not a valid version constraint" in body.get("dependencyError", ""), body
+    # And the package it is describing really is installed.
+    listing = client.get("/api/packages", headers=_auth(token)).get_json()["packages"]
+    assert "ai.test.factory" in {p["packageId"] for p in listing}
+
+
 def test_a_package_declaring_nothing_never_pays_for_a_probe(
     client, user_and_token, tmp_curio, monkeypatch,
 ):

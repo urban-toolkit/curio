@@ -275,11 +275,18 @@ def provision_declared_deps(user_key: str, dir_name: str, manifest) -> dict:
     changed a shared library under the running server.
     """
     from utk_curio.backend.app.packages import backend_runtime
-    from utk_curio.backend.app.packages.pip_runner import PipInstallError
+    from utk_curio.backend.app.packages.pip_runner import PipInstallError, PipSpecError
 
     try:
         outcome = provision_python_deps(user_key, dir_name, manifest)
-    except (PipInstallError, backend_runtime.BackendRuntimeError) as exc:
+    # PipSpecError is NOT a PipInstallError, and a manifest is not a form field:
+    # a declaration pip's grammar rejects (``">= 1.26"``, a private module the
+    # factory derived from a node body) used to escape as a 500 AFTER the
+    # package files were written. The files are installed either way on these
+    # paths, so the honest answer is the same one a failed pip gets - name the
+    # declaration that could not be satisfied and let the 201 stand.
+    except (PipInstallError, PipSpecError,
+            backend_runtime.BackendRuntimeError) as exc:
         log.warning("dependency install failed for %s: %s", dir_name, exc)
         return {
             "dependencyError": str(exc),
