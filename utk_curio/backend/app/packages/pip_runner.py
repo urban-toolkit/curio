@@ -446,9 +446,18 @@ def _run_target_probe(names, search_path) -> Optional[dict[str, str]]:
         f"{search_path}{os.pathsep}{existing}" if existing else str(search_path)
     )
     payload = json.dumps({"names": names, "nonLibrary": sorted(_NON_LIBRARY_MODULES)})
+    # The WORKER's interpreter, not this process's. An overlay exists to be
+    # imported by a backend handler, and handlers run under
+    # ``backend_runtime.sandbox_interpreter()`` - which an operator can pin
+    # elsewhere with CURIO_BACKEND_SANDBOX_PYTHON. Probing sys.executable would
+    # then answer for an interpreter nothing imports the overlay from. Identical
+    # to sys.executable in the default configuration, so this changes nothing
+    # until someone pins it, which is exactly when it would have been wrong.
+    from utk_curio.backend.app.packages import backend_runtime
+
     try:
         proc = subprocess.run(
-            [sys.executable, "-c", _TARGET_PROBE_SRC],
+            [backend_runtime.sandbox_interpreter(), "-c", _TARGET_PROBE_SRC],
             input=payload,
             capture_output=True,
             text=True,

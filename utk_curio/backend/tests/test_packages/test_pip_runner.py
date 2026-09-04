@@ -511,6 +511,43 @@ class TestImportFailuresIn:
         assert pip_runner.import_failures_in(["a", "b"], str(tmp_path)) == {}
         assert calls == [["a", "b"]]
 
+    def test_it_probes_the_interpreter_the_worker_will_use(self, tmp_path, monkeypatch):
+        """An overlay exists to be imported by a backend handler.
+
+        Handlers run under ``backend_runtime.sandbox_interpreter()``, which an
+        operator can pin away from the server's own interpreter with
+        CURIO_BACKEND_SANDBOX_PYTHON. Probing sys.executable would answer for an
+        interpreter that never imports the overlay - a verdict about the wrong
+        environment, in the one place the environment is the whole question.
+        """
+        from utk_curio.backend.app.packages import backend_runtime
+
+        monkeypatch.setenv("CURIO_BACKEND_SANDBOX_PYTHON", r"C:\pinned\python.exe")
+        seen = {}
+
+        def _spy(cmd, **kw):
+            seen["argv0"] = cmd[0]
+            raise OSError("stop here; the argv is the assertion")
+
+        monkeypatch.setattr(pip_runner.subprocess, "run", _spy)
+        pip_runner.import_failures_in(["flask"], str(tmp_path))
+
+        assert seen["argv0"] == backend_runtime.sandbox_interpreter()
+        assert seen["argv0"] != pip_runner.sys.executable
+
+    def test_it_is_the_host_interpreter_when_nothing_is_pinned(self, tmp_path, monkeypatch):
+        """The default configuration must not move."""
+        monkeypatch.delenv("CURIO_BACKEND_SANDBOX_PYTHON", raising=False)
+        seen = {}
+
+        def _spy(cmd, **kw):
+            seen["argv0"] = cmd[0]
+            raise OSError("stop")
+
+        monkeypatch.setattr(pip_runner.subprocess, "run", _spy)
+        pip_runner.import_failures_in(["flask"], str(tmp_path))
+        assert seen["argv0"] == pip_runner.sys.executable
+
     def test_the_hosts_own_pythonpath_survives(self, tmp_path, monkeypatch):
         """The overlay is prepended, not substituted.
 
