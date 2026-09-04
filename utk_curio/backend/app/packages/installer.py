@@ -289,14 +289,33 @@ def non_content_filenames() -> frozenset[str]:
     return frozenset({"integrity.json", RECORD_FILENAME})
 
 
+def is_non_content_filename(name: str) -> bool:
+    """Should *name* be left out of an archive built from a package directory?
+
+    The named files above, plus ANY dotfile. The dotfile rule is provably
+    lossless: ``_safe_member_path`` rejects every member whose segment starts
+    with a dot, so a dotfile could never have been installed from an archive
+    anyway - zipping one only turns an install into "archive member has unsafe
+    segment" for the whole package.
+
+    That is not hypothetical. ``record_publisher`` writes its record through a
+    ``.curio-publisher.json.tmp`` and swallows an ``os.replace`` failure as a
+    warning, so a full disk or a Windows sharing violation can leave the .tmp
+    beside the package. The exact-name rule did not cover it, and every route
+    that re-zips a catalog directory - catalog install, the drawer install,
+    "Reload from catalog", the workflow-deps auto-install, export - would then
+    refuse the package until someone republished it.
+    """
+    return name in non_content_filenames() or name.startswith(".")
+
+
 def _build_integrity(package_root: Path) -> dict[str, str]:
     """Compute SHA-256 of every regular file under *package_root* (sorted)."""
-    skip = non_content_filenames()
     integrity: dict[str, str] = {}
     for entry in sorted(package_root.rglob("*")):
         if not entry.is_file():
             continue
-        if entry.name in skip:
+        if is_non_content_filename(entry.name):
             continue
         rel = entry.relative_to(package_root).as_posix()
         integrity[rel] = _hash_file(entry)
@@ -747,13 +766,12 @@ def zip_package_tree(source_dir: Path) -> bytes:
     the sideload validator) and the export routes, so the two cannot drift
     apart in what they emit.
     """
-    skip = non_content_filenames()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for entry in sorted(source_dir.rglob("*")):
             if not entry.is_file():
                 continue
-            if entry.name in skip:
+            if is_non_content_filename(entry.name):
                 continue
             rel = entry.relative_to(source_dir).as_posix()
             zf.write(entry, arcname=rel)

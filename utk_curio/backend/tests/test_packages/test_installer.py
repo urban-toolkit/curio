@@ -707,3 +707,54 @@ def test_the_publisher_record_is_not_copied_into_a_users_store(tmp_path):
     # integrity.json is not in the source here; the point is what did NOT travel.
     assert ".curio-publisher.json" not in copied, copied
     assert "manifest.json" in copied, copied
+
+
+def test_a_half_written_publisher_record_leaves_the_package_installable(tmp_path):
+    """``record_publisher`` can leave its .tmp behind, and did not have to.
+
+    It writes through ``.curio-publisher.json.tmp`` and swallows an os.replace
+    failure as a warning, so a full disk or a Windows sharing violation strands
+    the temp file beside the package. The exclusion was by exact name, so the
+    stray was zipped - and every member is validated on extract, where a leading
+    dot is refused. One environment hiccup made the package uninstallable for
+    everyone, through every route that re-zips a catalog directory.
+    """
+    from utk_curio.backend.app.packages.installer import (
+        _safe_member_path, zip_package_tree,
+    )
+
+    src = tmp_path / "pkg@1"
+    (src / "sources").mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    (src / "sources" / "a.py").write_text("print(1)", encoding="utf-8")
+    (src / ".curio-publisher.json.tmp").write_text('{"userKey": "7"}', encoding="utf-8")
+
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        names = zf.namelist()
+
+    assert names == ["manifest.json", "sources/a.py"], names
+    for name in names:
+        _safe_member_path(name)
+
+
+def test_no_dotfile_is_ever_shipped_because_none_could_be_installed(tmp_path):
+    """The rule is lossless by construction, which is why it can be a blanket one.
+
+    ``_safe_member_path`` refuses any segment starting with a dot, so a dotfile
+    in an archive can only ever abort the install - it can never be content
+    somebody meant to ship.
+    """
+    from utk_curio.backend.app.packages.installer import (
+        InstallerError, _safe_member_path, zip_package_tree,
+    )
+
+    src = tmp_path / "pkg@1"
+    src.mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    for stray in (".DS_Store", ".gitignore", ".anything"):
+        (src / stray).write_text("x", encoding="utf-8")
+        with pytest.raises(InstallerError, match="unsafe segment"):
+            _safe_member_path(stray)
+
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        assert zf.namelist() == ["manifest.json"]
