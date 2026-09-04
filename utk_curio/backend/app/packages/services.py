@@ -217,6 +217,26 @@ def _declared_import_failures(
     return failures
 
 
+def _overlay_needs_building(user_key: str, dir_name: str, deps) -> bool:
+    """Is *dir_name*'s overlay absent, or present and not working?
+
+    The question a rebuild should be conditioned on. An overlay that exists and
+    whose every declared dep imports inside it is finished work: rebuilding it
+    costs a full ``pip install --target`` and, because the build wipes first,
+    risks losing it to an index that is not reachable right now.
+
+    A probe that cannot run answers "no" — the overlay is left alone. That is
+    the same posture the rest of the seam takes: a diagnostic's own failure
+    must not turn into destructive action.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+
+    overlay = backend_runtime.overlay_dir_for(user_key, dir_name)
+    if not overlay.is_dir():
+        return True
+    return bool(_import_failures_or_silence(deps, overlay_dir=overlay))
+
+
 def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutcome:
     """pip-install *manifest*'s declared python deps, then check they IMPORT.
 
@@ -242,7 +262,16 @@ def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutc
     destination, _reason = backend_runtime.dep_destinations(manifest)
     host_installed: list[str] = []
     if destination in ("overlay", "both"):
-        backend_runtime.build_overlay(user_key, dir_name, py_deps)
+        # Only when there is something to build. ``build_overlay`` is
+        # wipe-and-rebuild by design — right for a first build or a repair, and
+        # wrong as the answer to "someone asked again". It is asked again a
+        # lot: ``/workflow-deps/check`` decides what a dataflow needs from HOST
+        # metadata, so an overlay-only package reads as missing on every open,
+        # and rebuilding there deletes a working overlay and re-runs pip over
+        # the network. Offline that is not merely slow: the wipe happens first,
+        # so a failed rebuild leaves the package with no overlay at all.
+        if _overlay_needs_building(user_key, dir_name, py_deps):
+            backend_runtime.build_overlay(user_key, dir_name, py_deps)
     if destination in ("host", "both"):
         pip_report = install_python_deps(py_deps)
         host_installed = sorted(pip_report.installed)
