@@ -46,3 +46,9 @@ docs/examples/dataflows/expected_outputs/*_actual.png
 
 # Per-session port overrides (see the file for why the defaults collide).
 .curio-ports.sh
+
+# The E2E broken-library fixture publishes this into the shared catalog and
+# unpublishes it in teardown (test_broken_library_e2e.py). A run killed
+# mid-test leaves it behind; it is never a real catalog package, so it must
+# never reach a commit.
+/packages/curio.e2ebroken@1/
