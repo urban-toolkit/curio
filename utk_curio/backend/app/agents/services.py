@@ -3319,6 +3319,20 @@ def _apply_package_draft(
             + ", ".join(str(lib) for lib in restart["libs"])
             + " — running nodes keep the previously loaded versions until then."
         )
+    # A declared library that installed but cannot be imported. Said here
+    # because this turn is what claims the package was installed: pip counts
+    # metadata as satisfaction, so without this the user reads "built and
+    # installed" and meets the failure later as a node's ImportError.
+    broken_imports = journal.get("importErrors")
+    if isinstance(broken_imports, dict) and broken_imports:
+        restart_line += (
+            " Warning: "
+            + "; ".join(
+                f"{lib} installed but cannot be imported ({reason})"
+                for lib, reason in sorted(broken_imports.items())
+            )
+            + " — nodes needing it will fail until it is repaired."
+        )
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
         f"Applied: package {name} built and installed"

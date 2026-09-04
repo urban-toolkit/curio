@@ -7706,13 +7706,17 @@ class TestRestartHonestyOnApply:
         build_jobs.reset_registry()
 
     def _apply_draft_with_pip(self, client, token, alice_project, monkeypatch,
-                              *, installed, skipped):
+                              *, installed, skipped, import_errors=None):
         from utk_curio.backend.app.packages import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "install_python_deps",
             lambda deps, on_line=None: pip_runner.InstallReport(
                 installed=list(installed), skipped=list(skipped)),
+        )
+        # The probe spawns a real interpreter, so it is always stubbed here.
+        monkeypatch.setattr(
+            pip_runner, "import_failures", lambda deps: dict(import_errors or {}),
         )
         helper = TestPackageBuilderTools()
         params = helper._draft_params()
@@ -7748,6 +7752,38 @@ class TestRestartHonestyOnApply:
                             if "Applied: package" in (t.get("text") or ""))
         assert "Restart Curio to pick up weather-sdk" in applied_text
         assert "previously loaded versions" in applied_text
+
+    def test_a_library_that_cannot_be_imported_is_reported_on_the_applied_turn(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """The turn that claims the package installed must not overclaim.
+
+        pip counts metadata as satisfaction, so a wheel whose native extension
+        cannot load promotes "successfully". This turn is the last place the
+        failure is still connectable to the package that introduced it - after
+        it, the user meets a node's ImportError with nothing linking the two.
+        """
+        _, token = user_and_token
+        body, turns = self._apply_draft_with_pip(
+            client, token, alice_project, monkeypatch,
+            installed=["weather-sdk"], skipped=[],
+            import_errors={"weather-sdk": "ImportError: DLL load failed"})
+
+        applied_text = next(t["text"] for t in turns
+                            if "Applied: package" in (t.get("text") or ""))
+        assert "cannot be imported" in applied_text
+        assert "DLL load failed" in applied_text
+        # The package itself still installed - this is a warning, not a rollback.
+        assert body["status"] == "applied"
+
+    def test_working_libraries_add_no_warning(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        _, turns = self._apply_draft_with_pip(
+            client, token, alice_project, monkeypatch,
+            installed=["weather-sdk"], skipped=[])
+        applied_text = next(t["text"] for t in turns
+                            if "Applied: package" in (t.get("text") or ""))
+        assert "cannot be imported" not in applied_text
 
     def test_skipped_only_apply_stays_silent(
             self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
