@@ -4,6 +4,7 @@ import {
   packagesApi,
   refreshPackageRegistry,
 } from "../../../api/packagesApi";
+import { dependencyFailureNotice } from "../../../utils/packageDependencyNotice";
 
 /**
  * The ONE package-sideload pathway, shared by the Node Catalog drawer's footer
@@ -28,8 +29,15 @@ export interface PackageArchiveImportOptions {
   onError: (label: string, err: unknown) => void;
   /** Only fires when `projectId` is set, with the project's new package dirNames. */
   onInstalledToProject?: (packages: string[]) => void;
-  /** Fires on success with the imported package, for a toast or a selection. */
-  onImported?: (pkg: PackagePayload) => void;
+  /**
+   * Fires on success with the imported package and, when the sideload's
+   * declared libraries did not end up working, the sentence saying so.
+   *
+   * Handed over rather than reported here because "the archive is in" and "its
+   * libraries are broken" are one event on this path: a surface that toasted
+   * both separately would tell the user it worked and then that it did not.
+   */
+  onImported?: (pkg: PackagePayload, dependencyNotice: string | null) => void;
 }
 
 export function usePackageArchiveImport({
@@ -63,7 +71,14 @@ export function usePackageArchiveImport({
         // older than the store's latest local write, so the order here is safe
         // without this call having to know about it.
         await reload();
-        onImported?.(result.package);
+        // A sideload used to write the files and stop there. It installs the
+        // archive's declared libraries now, so it can be wrong the way every
+        // other install path can - and this is the only moment the failure is
+        // still attached to the file the user just dropped in.
+        onImported?.(
+          result.package,
+          dependencyFailureNotice(`Imported ${result.package.name}`, result),
+        );
         return result;
       } catch (err) {
         onError(`Couldn't import ${file.name}`, err);

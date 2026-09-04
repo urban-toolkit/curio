@@ -3,6 +3,7 @@ import { useToastContext } from "../providers/ToastProvider";
 import { packagesApi } from "../api/packagesApi";
 import type { WorkflowDepImportFailure } from "../api/packagesApi";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
+import { dependencyFailureNotice } from "../utils/packageDependencyNotice";
 
 interface DataflowSpec {
   // Index signature avoids TS "weak type" assignability errors when callers
@@ -95,14 +96,9 @@ export function useEnsureWorkflowDeps() {
           // pip counts metadata as satisfaction, so this reads as a clean
           // install right up until a node touches the library. Saying
           // "Installed" here would be the last chance to tell them, missed.
-          const broken = Object.entries(result?.importErrors ?? {});
-          if (broken.length) {
-            showToast(
-              `Installed ${names}, but ${broken
-                .map(([lib, reason]) => `${lib} cannot be imported (${reason})`)
-                .join("; ")}. Nodes needing it will fail until it is repaired.`,
-              "error",
-            );
+          const notice = dependencyFailureNotice(`Installed ${names}`, result);
+          if (notice) {
+            showToast(notice, "error");
           } else {
             showToast(`Installed ${names}.`, "success");
           }

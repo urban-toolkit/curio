@@ -20,6 +20,7 @@ import {
 import { getFlowNodeCanonicalType } from "../../../utils/flowNodeCanonicalType";
 import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
 import { NodeTemplateId } from "../../../registry/types";
+import { dependencyFailureNotice } from "../../../utils/packageDependencyNotice";
 import styles from "./NodeSaveAsModal.module.css";
 
 const NOOP = () => () => {};
@@ -171,6 +172,12 @@ export function NodeSaveAsModal({
       const { draft, replace, replacedExistingKind } = built;
 
       const result = await packagesApi.factoryInstall(buildFactoryInstallEnvelope(draft, replace));
+      // The build DERIVES dependencies.python from this node's source, so a
+      // body containing `import rasterio` produces a rasterio declaration.
+      // Until the install started honouring it, "Save and install" could
+      // report success over a package whose very first run raises.
+      const depNotice = dependencyFailureNotice(`Saved ${nodeLabel}`, result);
+      if (depNotice) showToast(depNotice, "error");
       // When creating a brand-new package via Save As, the package is only in
       // the user store after factoryInstall. refreshPackageRegistry filters
       // by the project lockfile, so the new descriptor would be invisible.

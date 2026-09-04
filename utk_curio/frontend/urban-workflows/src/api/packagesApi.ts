@@ -168,6 +168,21 @@ export interface InstallResponse {
   package: PackagePayload;
   integrity: Record<string, string>;
   replacedExisting: boolean;
+  /**
+   * ``{library: reason}`` for declared python deps that installed but cannot
+   * be imported. These three routes (sideload, "Save and install", "Reload
+   * from catalog") wrote the package files and never ran pip at all, so the
+   * answer used to be neither yes nor no.
+   */
+  importErrors?: Record<string, string>;
+  /**
+   * pip itself failed. Reported rather than raised: the package files are
+   * installed either way on these paths, so an error status would describe
+   * neither outcome.
+   */
+  dependencyError?: string;
+  /** Present exactly when pip changed a shared library under the server. */
+  restartRecommended?: { libs: string[] };
 }
 
 /** Response from ``factory/publish-catalog`` (fixture write). */
@@ -278,6 +293,11 @@ export interface DefaultsInstallProjectResult {
 export interface DefaultsInstallResponse {
   /** New user-defaults list after the install. */
   packages: string[];
+  /**
+   * ``{library: reason}`` for declared python deps that installed but cannot
+   * be imported - the same claim the drawer and the dataflow loader make.
+   */
+  importErrors?: Record<string, string>;
   /** Per-project apply results so the UI can surface partial failures. */
   projects: DefaultsInstallProjectResult[];
 }

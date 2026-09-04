@@ -27,6 +27,7 @@ import { DrawerFooter } from "./DrawerFooter";
 import { DrawerTab, SortMode } from "./packageTypes";
 import { sortPackages, matchesSearch } from "./packageUtils";
 import { restartNotice } from "../../../services/packageRestartCopy";
+import { dependencyFailureNotice } from "../../../utils/packageDependencyNotice";
 import shell from "./CatalogDrawerShell.module.css";
 import styles from "./NodeCatalogDrawer.module.css";
 import { modalStackDepth } from "../../ModalShell";
@@ -308,14 +309,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       // extension is broken installs without complaint and this toast is the
       // last place the failure is still connected to the package that brought
       // it in. After this the user meets it as a node's ImportError.
-      const broken = Object.entries(result.importErrors ?? {});
-      if (broken.length) {
-        showToast(
-          `Added ${installCandidate.name}, but ${broken
-            .map(([lib, reason]) => `${lib} cannot be imported (${reason})`)
-            .join("; ")}. Nodes needing it will fail until it is repaired.`,
-          "error",
-        );
+      const notice = dependencyFailureNotice(`Added ${installCandidate.name}`, result);
+      if (notice) {
+        showToast(notice, "error");
       } else {
         showToast(`Added ${installCandidate.name} to this project.`, "success");
       }
@@ -338,6 +334,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     reload,
     onError: reportActionError,
     onInstalledToProject: setCurrentProjectPackages,
+    onImported: (_pkg, notice) => {
+      if (notice) showToast(notice, "error");
+    },
   });
 
   const onPickArchive = useCallback(

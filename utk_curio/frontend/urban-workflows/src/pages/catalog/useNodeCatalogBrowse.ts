@@ -16,6 +16,7 @@ import { toApiPayload } from "../nodes/factoryDraftModel";
 import { useToastContext } from "../../providers/ToastProvider";
 import { usePackageArchiveImport } from "../../components/packages/publishing/usePackageArchiveImport";
 import type { NodeCatalogFilterTab } from "./nodeCatalogBrowseTypes";
+import { dependencyFailureNotice } from "../../utils/packageDependencyNotice";
 
 export function useNodeCatalogBrowse() {
   const { showToast } = useToastContext();
@@ -182,6 +183,15 @@ export function useNodeCatalogBrowse() {
             (proj === 0 ? " (no existing projects; will seed into new ones)" : "")
           : `Added to ${succeeded}/${proj} projects; ${failed.length} failed: ${failed.map((f) => f.id).join(", ")}`;
       setLastInstallSummary(summary);
+      // The blue summary banner says how many projects were patched, which is
+      // not the same question. A library that installed and cannot be imported
+      // makes every one of those projects reference a package whose nodes will
+      // raise, so it gets the error channel rather than a line in a notice
+      // about counts.
+      const notice = dependencyFailureNotice(
+        `Added ${installCandidate.name}`, result,
+      );
+      if (notice) showToast(notice, "error");
       await refreshPackageRegistry();
       await reload();
       setInstallCandidate(null);
@@ -191,7 +201,7 @@ export function useNodeCatalogBrowse() {
     } finally {
       setBusy(false);
     }
-  }, [installCandidate, reload, reportError]);
+  }, [installCandidate, reload, reportError, showToast]);
 
   const onPublish = useCallback(
     async (dirName: string) => {
@@ -225,7 +235,9 @@ export function useNodeCatalogBrowse() {
   const { importing, importArchive: onImportArchive } = usePackageArchiveImport({
     reload,
     onError: reportError,
-    onImported: (pkg) => showToast(`Imported ${pkg?.name ?? "package"}.`, "success"),
+    onImported: (pkg, notice) =>
+      showToast(notice ?? `Imported ${pkg?.name ?? "package"}.`,
+                notice ? "error" : "success"),
   });
 
   /** The inverse of `onPublish`, which the page had no way to reach. Publishing
