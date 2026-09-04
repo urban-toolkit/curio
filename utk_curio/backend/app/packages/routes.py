@@ -1272,6 +1272,15 @@ def install_to_defaults_route():
         payload = packages_services.install_to_defaults(g.user, dir_name)
     except packages_services.PackageServiceError as exc:
         return _packages_error(exc)
+    # As on the project install: pip is satisfied by metadata alone, so a
+    # library whose native extension cannot load installs quietly and only
+    # announces itself when a node runs.
+    payload = {
+        **payload,
+        "importErrors": packages_services.import_failures_for_packages(
+            _user_dir_key(g.user), [dir_name],
+        ),
+    }
     return jsonify(payload), 201
 
 

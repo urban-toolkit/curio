@@ -303,7 +303,22 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       await reload();
       setInstallCandidate(null);
       setConflictReport(null);
-      showToast(`Added ${installCandidate.name} to this project.`, "success");
+      // The package arrived, but one of its libraries cannot be imported. pip
+      // treats matching metadata as satisfaction, so a wheel whose native
+      // extension is broken installs without complaint and this toast is the
+      // last place the failure is still connected to the package that brought
+      // it in. After this the user meets it as a node's ImportError.
+      const broken = Object.entries(result.importErrors ?? {});
+      if (broken.length) {
+        showToast(
+          `Added ${installCandidate.name}, but ${broken
+            .map(([lib, reason]) => `${lib} cannot be imported (${reason})`)
+            .join("; ")}. Nodes needing it will fail until it is repaired.`,
+          "error",
+        );
+      } else {
+        showToast(`Added ${installCandidate.name} to this project.`, "success");
+      }
     } catch (err) {
       reportActionError(`Couldn't add ${installCandidate.name}`, err);
     } finally {

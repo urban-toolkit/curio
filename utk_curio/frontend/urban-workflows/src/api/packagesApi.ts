@@ -258,6 +258,13 @@ export interface ProjectPackagesResponse {
   /** dev/92 B-2: present exactly when this install's pip step actually
    * installed/changed shared libraries under the running server. */
   restartRecommended?: { libs: string[] };
+  /**
+   * ``{library: reason}`` for declared python deps that installed but cannot
+   * be imported. pip counts matching metadata as satisfaction, so a wheel
+   * whose native extension is broken installs without complaint; report this
+   * rather than letting the user meet it later as a node's ImportError.
+   */
+  importErrors?: Record<string, string>;
 }
 
 /** Per-project result row in a global (defaults) install response. */
