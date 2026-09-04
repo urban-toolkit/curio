@@ -709,18 +709,33 @@ def install_packageage_from_directory(
 def zip_package_tree(source_dir: Path) -> bytes:
     """A deterministic ``.curio.zip`` of one package directory.
 
-    Sorted walk, deflate, ``integrity.json`` left out: that file is the
-    installer's own record of what it copied and is rewritten on every install,
-    so an archive must not carry one. Shared by the catalog install (which
-    re-zips a catalog directory to reuse the sideload validator) and the export
-    routes, so the two cannot drift apart in what they emit.
+    Sorted walk, deflate, and the two files that are BOOKKEEPING rather than
+    package content left out:
+
+    * ``integrity.json`` — the installer's own record of what it copied,
+      rewritten on every install, so an archive must not carry one.
+    * ``.curio-publisher.json`` — the catalog's record of who published the
+      package. It made a catalog entry uninstallable: the member validator
+      rejects a leading dot, so ``publish-catalog`` produced a directory that
+      ``catalog/install`` then refused with "archive member has unsafe
+      segment", and every route that reaches a catalog copy — the drawer's
+      install, "Reload from catalog", the workflow-deps auto-install — failed
+      on anything published through the product's own route. Leaving it out
+      also keeps one user's ``userKey`` out of every archive the export routes
+      hand to somebody else.
+
+    Shared by the catalog install (which re-zips a catalog directory to reuse
+    the sideload validator) and the export routes, so the two cannot drift
+    apart in what they emit.
     """
+    from utk_curio.backend.app.packages.publisher_record import RECORD_FILENAME
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for entry in sorted(source_dir.rglob("*")):
             if not entry.is_file():
                 continue
-            if entry.name == "integrity.json":
+            if entry.name in ("integrity.json", RECORD_FILENAME):
                 continue
             rel = entry.relative_to(source_dir).as_posix()
             zf.write(entry, arcname=rel)

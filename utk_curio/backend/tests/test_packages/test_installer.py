@@ -602,3 +602,61 @@ def test_zip_package_tree_is_what_both_install_and_export_emit(tmp_path):
     with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
         names = zf.namelist()
     assert names == ["manifest.json", "sources/a.py"]
+
+
+def test_a_published_catalog_package_can_be_installed_again(tmp_path):
+    """publish-catalog wrote a sidecar that catalog/install then refused.
+
+    ``record_publisher`` drops ``.curio-publisher.json`` beside a published
+    package, the member validator rejects a leading dot, and the catalog
+    install re-zips the directory to reuse that validator - so every route
+    reaching a catalog copy (the drawer install, "Reload from catalog", the
+    workflow-deps auto-install) answered "archive member has unsafe segment"
+    for anything published through Curio's own route.
+    """
+    from utk_curio.backend.app.packages.installer import (
+        _safe_member_path, zip_package_tree,
+    )
+    from utk_curio.backend.app.packages.publisher_record import record_publisher
+
+    src = tmp_path / "pkg@1"
+    (src / "sources").mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    (src / "sources" / "a.py").write_text("print(1)", encoding="utf-8")
+    record_publisher(tmp_path, "pkg@1", "7")
+    dotfiles = [p.name for p in src.iterdir() if p.name.startswith(".")]
+    assert dotfiles, "record_publisher wrote no sidecar; this test has no subject"
+
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        names = zf.namelist()
+
+    # Every member survives the validator the install runs them through, which
+    # is the check that used to raise. Asserted over the whole list rather than
+    # against one filename, so a second piece of catalog bookkeeping cannot
+    # reintroduce the bug under a different name.
+    for name in names:
+        _safe_member_path(name)
+    assert names == ["manifest.json", "sources/a.py"]
+
+
+def test_an_exported_archive_carries_nobodys_user_key(tmp_path):
+    """The same exclusion, for the other reason.
+
+    The sidecar records the publisher's ``userKey``, and ``zip_package_tree``
+    also builds what the export routes hand to another person. Read back
+    through ZipFile rather than searched for in the raw bytes: the members are
+    deflated, so a substring check over the blob passes whether the file is in
+    there or not.
+    """
+    from utk_curio.backend.app.packages.installer import zip_package_tree
+    from utk_curio.backend.app.packages.publisher_record import record_publisher
+
+    src = tmp_path / "pkg@1"
+    src.mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    record_publisher(tmp_path, "pkg@1", "someone-elses-key")
+
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        contents = b"".join(zf.read(n) for n in zf.namelist())
+
+    assert b"someone-elses-key" not in contents

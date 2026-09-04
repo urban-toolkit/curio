@@ -37,7 +37,12 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-_FILENAME = ".curio-publisher.json"
+#: Catalog-side bookkeeping, not package content. Exported here because
+#: ``installer.zip_package_tree`` has to leave it out of every archive it
+#: builds, and a second spelling of the name would be a second thing to keep
+#: in step.
+RECORD_FILENAME = ".curio-publisher.json"
+_FILENAME = RECORD_FILENAME
 _SCHEMA_VERSION = 1
 
 
