@@ -21,6 +21,7 @@ import { getFlowNodeCanonicalType } from "../../../utils/flowNodeCanonicalType";
 import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
 import { NodeTemplateId } from "../../../registry/types";
 import { dependencyFailureNotice } from "../../../utils/packageDependencyNotice";
+import { withRestartNotice } from "../../../services/packageRestartCopy";
 import styles from "./NodeSaveAsModal.module.css";
 
 const NOOP = () => () => {};
@@ -217,10 +218,13 @@ export function NodeSaveAsModal({
       // "Added ..." tells the user it worked and then that it did not - and
       // now that an error toast persists, both sit on screen together.
       showToast(
-        depNotice ??
-          (replacedExistingKind
-            ? `Replaced "${nodeLabel}" in the package.`
-            : `Added "${nodeLabel}" as a new kind in the package.`),
+        withRestartNotice(
+          depNotice ??
+            (replacedExistingKind
+              ? `Replaced "${nodeLabel}" in the package.`
+              : `Added "${nodeLabel}" as a new kind in the package.`),
+          result.restartRecommended,
+        ),
         depNotice ? "error" : "success",
       );
       onClose();

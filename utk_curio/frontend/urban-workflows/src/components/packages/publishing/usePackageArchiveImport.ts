@@ -5,6 +5,7 @@ import {
   refreshPackageRegistry,
 } from "../../../api/packagesApi";
 import { dependencyFailureNotice } from "../../../utils/packageDependencyNotice";
+import { withRestartNotice } from "../../../services/packageRestartCopy";
 
 /**
  * The ONE package-sideload pathway, shared by the Node Catalog drawer's footer
@@ -37,7 +38,11 @@ export interface PackageArchiveImportOptions {
    * libraries are broken" are one event on this path: a surface that toasted
    * both separately would tell the user it worked and then that it did not.
    */
-  onImported?: (pkg: PackagePayload, dependencyNotice: string | null) => void;
+  onImported?: (
+    pkg: PackagePayload,
+    dependencyNotice: string | null,
+    restartRecommended?: { libs: string[] },
+  ) => void;
 }
 
 export function usePackageArchiveImport({
@@ -78,6 +83,7 @@ export function usePackageArchiveImport({
         onImported?.(
           result.package,
           dependencyFailureNotice(`Imported ${result.package.name}`, result),
+          result.restartRecommended,
         );
         return result;
       } catch (err) {

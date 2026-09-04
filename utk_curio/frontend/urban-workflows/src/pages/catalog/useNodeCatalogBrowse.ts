@@ -17,6 +17,7 @@ import { useToastContext } from "../../providers/ToastProvider";
 import { usePackageArchiveImport } from "../../components/packages/publishing/usePackageArchiveImport";
 import type { NodeCatalogFilterTab } from "./nodeCatalogBrowseTypes";
 import { dependencyFailureNotice } from "../../utils/packageDependencyNotice";
+import { withRestartNotice } from "../../services/packageRestartCopy";
 
 export function useNodeCatalogBrowse() {
   const { showToast } = useToastContext();
@@ -235,9 +236,11 @@ export function useNodeCatalogBrowse() {
   const { importing, importArchive: onImportArchive } = usePackageArchiveImport({
     reload,
     onError: reportError,
-    onImported: (pkg, notice) =>
-      showToast(notice ?? `Imported ${pkg?.name ?? "package"}.`,
-                notice ? "error" : "success"),
+    onImported: (pkg, notice, restart) =>
+      showToast(
+        withRestartNotice(notice ?? `Imported ${pkg?.name ?? "package"}.`, restart),
+        notice ? "error" : "success",
+      ),
   });
 
   /** The inverse of `onPublish`, which the page had no way to reach. Publishing

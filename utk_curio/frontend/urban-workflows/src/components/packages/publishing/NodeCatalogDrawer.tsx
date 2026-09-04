@@ -28,6 +28,7 @@ import { DrawerTab, SortMode } from "./packageTypes";
 import { sortPackages, matchesSearch } from "./packageUtils";
 import { restartNotice } from "../../../services/packageRestartCopy";
 import { dependencyFailureNotice } from "../../../utils/packageDependencyNotice";
+import { withRestartNotice } from "../../../services/packageRestartCopy";
 import shell from "./CatalogDrawerShell.module.css";
 import styles from "./NodeCatalogDrawer.module.css";
 import { modalStackDepth } from "../../ModalShell";
@@ -334,8 +335,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     reload,
     onError: reportActionError,
     onInstalledToProject: setCurrentProjectPackages,
-    onImported: (_pkg, notice) => {
-      if (notice) showToast(notice, "error");
+    onImported: (_pkg, notice, restart) => {
+      if (notice) showToast(withRestartNotice(notice, restart), "error");
+      else if (restart?.libs?.length) setRestartNoticeText(restartNotice(restart));
     },
   });
 
