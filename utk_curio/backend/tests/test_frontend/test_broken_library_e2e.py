@@ -522,6 +522,13 @@ def test_sideloading_an_archive_reports_its_broken_library(
         max_diff_ratio=0.05,
     )
 
+    # The toast is bottom-right and now stays until dismissed; the drawer's
+    # footer button is bottom-right too. A notice that lands ON the control the
+    # user would press next does not read as a notice, it reads as a broken
+    # button. `trial=True` runs Playwright's full actionability check - visible,
+    # stable, receives events - without actually clicking.
+    drawer.get_by_role("button", name=re.compile("^Import")).click(trial=True, timeout=10000)
+
     # The drawer's import also drops the package into THIS dataflow's lockfile,
     # which is the route the drawer's "Add to project" button calls. That button
     # needs its package in the shared catalog, which nothing here writes to, so

@@ -9,6 +9,13 @@ export interface DrawerFooterProps {
   onSideload: (file: File) => void;
   /** Accepted file types. Pass ``null`` to accept any file. Defaults to ``.curio.zip`` archives. */
   accept?: string | null;
+  /**
+   * What the button says while an import is in flight. Sideloading now installs
+   * the archive's declared python deps, so this click can sit in pip for
+   * minutes where it used to return in under a second - and a button that
+   * still reads "Import package" while disabled looks broken rather than busy.
+   */
+  busyLabel?: React.ReactNode;
   /** Button content. Defaults to the Node Catalog's "Import package". */
   label?: React.ReactNode;
 }
@@ -22,6 +29,7 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({
   onSideload,
   accept = ".curio.zip,.zip,application/zip",
   label = "Import package",
+  busyLabel = "Importing…",
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -50,7 +58,7 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({
             component still looked different. The Agent drawer has its own
             footer element and imports the same icon. */}
         <FontAwesomeIcon icon={faFileImport} aria-hidden />{" "}
-        {label}
+        {busy ? busyLabel : label}
       </button>
     </footer>
   );

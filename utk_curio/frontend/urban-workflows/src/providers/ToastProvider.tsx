@@ -72,7 +72,10 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
             aria-label="Notifications"
             style={{
                 position: "fixed",
-                bottom: "20px",
+                // Clears the bottom-anchored footer band of the right-side
+                // drawers; see the token. An error toast now stays until it is
+                // dismissed, so overlapping a button is not a passing moment.
+                bottom: "var(--curio-toast-bottom-gutter, 20px)",
                 right: "20px",
                 // Top of the overlay/layering scale (see curioTokens.css) so
                 // dataset action feedback stays visible above drawers/modals.

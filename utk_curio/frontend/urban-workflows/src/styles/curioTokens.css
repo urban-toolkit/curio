@@ -86,6 +86,13 @@
      (#236). Reserved by the shell rather than padded onto each panel: one
      rule covers every catalog, both drawers and the projects page. */
   --curio-version-badge-reserve: 30px;
+  /* How far a toast sits above the bottom edge. Enough to clear a
+     bottom-anchored footer band, which every right-side drawer has:
+     12px padding + --curio-input-height + 12px padding + 1px border, plus a
+     20px gap. Error toasts stay up until dismissed, so a toast that lands ON
+     the drawer footer's "Import package" button leaves it unclickable rather
+     than briefly covered. */
+  --curio-toast-bottom-gutter: 84px;
 
   /* ── Effects ───────────────────────────────────────────────────────── */
   --curio-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
