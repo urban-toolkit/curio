@@ -76,24 +76,69 @@ describe("ToastProvider", () => {
     expect(screen.getByRole("alert")).toBeInTheDocument();
   });
 
-  it("auto-dismisses a toast after 5s", () => {
+  it.each<[ToastVariant]>([["success"], ["info"], ["warning"]])(
+    "auto-dismisses a %s toast after 5s",
+    (variant) => {
+      jest.useFakeTimers();
+      try {
+        render(
+          <ToastProvider>
+            <Trigger message="Transient" variant={variant} />
+          </ToastProvider>,
+        );
+        act(() => {
+          screen.getByText("fire").click();
+        });
+        expect(screen.getByText("Transient")).toBeInTheDocument();
+        act(() => {
+          jest.advanceTimersByTime(5000);
+        });
+        expect(screen.queryByText("Transient")).not.toBeInTheDocument();
+      } finally {
+        jest.useRealTimers();
+      }
+    },
+  );
+
+  it("keeps an error toast up until the user closes it", () => {
+    // An error reports something that went wrong and usually names what to do
+    // about it - "brokenlib cannot be imported (ImportError: DLL load failed
+    // ...)" is one of them. Five seconds is not enough to read that, let alone
+    // act on it, and there is no history to go back to.
     jest.useFakeTimers();
     try {
       render(
         <ToastProvider>
-          <Trigger message="Transient" variant="success" />
+          <Trigger message="brokenlib cannot be imported" variant="error" />
         </ToastProvider>,
       );
       act(() => {
         screen.getByText("fire").click();
       });
-      expect(screen.getByText("Transient")).toBeInTheDocument();
       act(() => {
-        jest.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(60_000);
       });
-      expect(screen.queryByText("Transient")).not.toBeInTheDocument();
+      expect(screen.getByText("brokenlib cannot be imported")).toBeInTheDocument();
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("still lets the user close an error toast", () => {
+    // Staying up is only tolerable because there is a way out; without this the
+    // change would leave every error on screen for the rest of the session.
+    render(
+      <ToastProvider>
+        <Trigger message="Import failed" variant="error" />
+      </ToastProvider>,
+    );
+    act(() => {
+      screen.getByText("fire").click();
+    });
+    const close = screen.getByRole("button", { name: /close/i });
+    act(() => {
+      close.click();
+    });
+    expect(screen.queryByText("Import failed")).not.toBeInTheDocument();
   });
 });

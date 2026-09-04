@@ -32,15 +32,30 @@ const VARIANT_TITLE: Record<ToastVariant, string> = {
     info: "Info",
 };
 
+// How long a toast stays up before it clears itself. An ERROR never does: it
+// reports something that went wrong and usually names what to do about it -
+// a library that will not import, a package that could not be added - and
+// five seconds is not long enough to read a sentence like that, let alone act
+// on it. Every other variant is an acknowledgement of something that worked,
+// which the user does not have to retain, so those still clear themselves.
+const AUTO_DISMISS_MS: Partial<Record<ToastVariant, number>> = {
+    warning: 5000,
+    success: 5000,
+    info: 5000,
+};
+
 export const ToastProvider = ({ children }: { children: ReactNode }) => {
     const [toasts, setToasts] = useState<ToastItem[]>([]);
 
     const showToast = useCallback((message: string, variant: ToastVariant = "error") => {
         const id = _nextId++;
         setToasts((prev) => [...prev, { id, message, variant }]);
-        setTimeout(() => {
-            setToasts((prev) => prev.filter((t) => t.id !== id));
-        }, 5000);
+        const after = AUTO_DISMISS_MS[variant];
+        if (after !== undefined) {
+            setTimeout(() => {
+                setToasts((prev) => prev.filter((t) => t.id !== id));
+            }, after);
+        }
     }, []);
 
     const dismiss = useCallback((id: number) => {
