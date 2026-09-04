@@ -480,6 +480,37 @@ class TestImportFailuresIn:
         monkeypatch.setattr(pip_runner.subprocess, "run", _boom)
         assert pip_runner.import_failures_in([BROKEN_DIST], str(overlay)) == {}
 
+    def test_one_crashing_import_does_not_silence_the_rest(self, tmp_path, monkeypatch):
+        """A module that aborts its interpreter takes the batch's stdout with it.
+
+        Without a retry that turns every OTHER dep's verdict into silence, which
+        the caller reads as "all fine" - the exact clean bill of health this
+        whole seam exists to stop something claiming.
+        """
+        seen: list[list[str]] = []
+
+        def _fake(names, search_path):
+            seen.append(list(names))
+            if len(names) > 1:
+                return None                       # the batch "crashed"
+            name = names[0]
+            return {name: "ImportError: boom"} if name == "brokenlib" else {}
+
+        monkeypatch.setattr(pip_runner, "_run_target_probe", _fake)
+        out = pip_runner.import_failures_in(["brokenlib", "goodlib"], str(tmp_path))
+
+        assert out == {"brokenlib": "ImportError: boom"}
+        assert len(seen) == 3, "one batch attempt, then one probe per dep"
+
+    def test_a_batch_that_answers_is_not_re_probed(self, tmp_path, monkeypatch):
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            pip_runner, "_run_target_probe",
+            lambda names, path: calls.append(list(names)) or {},
+        )
+        assert pip_runner.import_failures_in(["a", "b"], str(tmp_path)) == {}
+        assert calls == [["a", "b"]]
+
     def test_the_hosts_own_pythonpath_survives(self, tmp_path, monkeypatch):
         """The overlay is prepended, not substituted.
 

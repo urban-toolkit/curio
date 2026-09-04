@@ -418,6 +418,28 @@ def import_failures_in(deps: Iterable[str], search_path: str) -> dict[str, str]:
     names = sorted({d for d in deps})
     if not names or not search_path:
         return {}
+    verdicts = _run_target_probe(names, search_path)
+    if verdicts is not None:
+        return verdicts
+    # The batch gave no answer. Retry one at a time, exactly as the host probe
+    # does: a module whose native extension aborts the interpreter takes the
+    # whole batch's stdout with it, and without this one such dep turns every
+    # OTHER dep's verdict into silence — which the caller reads as "all fine".
+    failures: dict[str, str] = {}
+    for name in names:
+        one = _run_target_probe([name], search_path)
+        if one:
+            failures.update(one)
+    return failures
+
+
+def _run_target_probe(names, search_path) -> Optional[dict[str, str]]:
+    """Verdicts for *names* from one overlay-aware subprocess, or None.
+
+    None means "no answer", never "all fine" — same contract as
+    :func:`_run_probe`, so the caller can fall back rather than report a clean
+    bill of health it did not earn.
+    """
     env = dict(os.environ)
     existing = env.get("PYTHONPATH")
     env["PYTHONPATH"] = (
@@ -435,16 +457,16 @@ def import_failures_in(deps: Iterable[str], search_path: str) -> dict[str, str]:
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         log.warning("overlay import probe for %s failed to run: %s", names, exc)
-        return {}
+        return None
     if proc.returncode != 0 or not (proc.stdout or "").strip():
         log.warning(
             "overlay import probe for %s gave no answer (rc=%s)", names, proc.returncode,
         )
-        return {}
+        return None
     try:
         parsed = json.loads(proc.stdout)
     except ValueError:
-        return {}
+        return None
     return {k: v for k, v in parsed.items() if isinstance(v, str)}
 
 
