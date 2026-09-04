@@ -407,6 +407,12 @@ def upload_packageage():
     The archive is read into memory once (capped by the installer at
     128 MiB total uncompressed). Multipart form field name is ``file``
     to mirror the existing ``/upload`` endpoint shape.
+
+    Installs the manifest's declared python deps too, and says whether they
+    import. A sideload used to write the files and stop there, and the
+    follow-up "add to project" could not repair it either — that path returns
+    early for a package already in the store — so a sideloaded package's
+    libraries were nobody's job.
     """
     user_key = _user_dir_key(g.user)
     if "file" not in request.files:
@@ -428,6 +434,9 @@ def upload_packageage():
         "package": _manifest_to_payload(result.manifest, package_mtime_path=user_packageage),
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
+        **packages_services.provision_declared_deps(
+            user_key, result.manifest.dir_name, result.manifest,
+        ),
     }), 201
 
 
@@ -445,6 +454,11 @@ def install_from_catalog():
     via :func:`install_packageage_from_directory`. The catalog set is the
     committed packages shipped in ``<repo_root>/packages/`` - same data the
     ``GET /api/packages/catalog`` route advertises.
+
+    Its declared python deps are installed and probed as well. This is the
+    drawer's "Reload from catalog", which a user reaches precisely when the
+    package is misbehaving; answering it by restoring the files and leaving the
+    libraries alone repairs the half that was probably not broken.
     """
     user_key = _user_dir_key(g.user)
     body = request.get_json(silent=True) or {}
@@ -465,6 +479,9 @@ def install_from_catalog():
         "package": _manifest_to_payload(result.manifest, package_mtime_path=user_packageage),
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
+        **packages_services.provision_declared_deps(
+            user_key, result.manifest.dir_name, result.manifest,
+        ),
     }), 201
 
 
@@ -918,6 +935,13 @@ def factory_install():
     Convenience for the "Save and install" affordance in the wizard's
     Step 5; equivalent to POST /factory/build + POST /upload back to
     back, without the byte round-trip through the browser.
+
+    Including the dependency step, which is where this one bit hardest: the
+    build DERIVES ``dependencies.python`` from the node's source, so writing
+    ``import rasterio`` in a node body produced a manifest declaring rasterio
+    that nothing installed and nothing checked. The node then failed on its
+    first run with an ImportError naming a library the wizard had just claimed
+    to install.
     """
     user_key = _user_dir_key(g.user)
     draft = request.get_json(silent=True) or {}
@@ -964,6 +988,9 @@ def factory_install():
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
         "filename": built.filename,
+        **packages_services.provision_declared_deps(
+            user_key, result.manifest.dir_name, result.manifest,
+        ),
     }), 201
 
 
