@@ -271,13 +271,32 @@ def _hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def non_content_filenames() -> frozenset[str]:
+    """Files that live inside a package directory and are NOT the package.
+
+    ``integrity.json`` is the installer's record of what it copied;
+    ``.curio-publisher.json`` is the catalog's record of who published it.
+    Both are bookkeeping written beside the package, and every rule about
+    package CONTENT has to agree on excluding them or they disagree with each
+    other. They did: the archive writer dropped the publisher record while the
+    integrity hasher kept it, so a published package's catalog digest could
+    never match the map written for a copy installed from it, the seeder read
+    that as "the catalog has moved on", and every seed pass re-copied the
+    package and carried one user's key into another user's store.
+    """
+    from utk_curio.backend.app.packages.publisher_record import RECORD_FILENAME
+
+    return frozenset({"integrity.json", RECORD_FILENAME})
+
+
 def _build_integrity(package_root: Path) -> dict[str, str]:
     """Compute SHA-256 of every regular file under *package_root* (sorted)."""
+    skip = non_content_filenames()
     integrity: dict[str, str] = {}
     for entry in sorted(package_root.rglob("*")):
         if not entry.is_file():
             continue
-        if entry.name == "integrity.json":
+        if entry.name in skip:
             continue
         rel = entry.relative_to(package_root).as_posix()
         integrity[rel] = _hash_file(entry)
@@ -728,14 +747,13 @@ def zip_package_tree(source_dir: Path) -> bytes:
     the sideload validator) and the export routes, so the two cannot drift
     apart in what they emit.
     """
-    from utk_curio.backend.app.packages.publisher_record import RECORD_FILENAME
-
+    skip = non_content_filenames()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for entry in sorted(source_dir.rglob("*")):
             if not entry.is_file():
                 continue
-            if entry.name in ("integrity.json", RECORD_FILENAME):
+            if entry.name in skip:
                 continue
             rel = entry.relative_to(source_dir).as_posix()
             zf.write(entry, arcname=rel)

@@ -344,7 +344,17 @@ def _swap_in_package(src: Path, dest: Path, dest_base: Path) -> bool:
     new_tree = staging / src.name
     displaced = staging / f"{src.name}.displaced"
     try:
-        shutil.copytree(src, new_tree)
+        # The publisher record does not travel: it names whoever published the
+        # package INTO THE CATALOG, and copying it would hand that key to every
+        # other user's store and leave a file the store's own integrity map
+        # does not describe. ``integrity.json`` does travel — it is the store
+        # copy's own map, and :func:`_store_copy_is_stale` reads it.
+        from utk_curio.backend.app.packages.publisher_record import RECORD_FILENAME
+
+        shutil.copytree(
+            src, new_tree,
+            ignore=lambda _dir, names: [n for n in names if n == RECORD_FILENAME],
+        )
         moved_aside = False
         if dest.exists():
             os.replace(dest, displaced)

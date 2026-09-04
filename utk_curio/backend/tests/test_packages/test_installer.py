@@ -660,3 +660,50 @@ def test_an_exported_archive_carries_nobodys_user_key(tmp_path):
         contents = b"".join(zf.read(n) for n in zf.namelist())
 
     assert b"someone-elses-key" not in contents
+
+
+def test_a_published_package_does_not_read_as_stale_forever(tmp_path):
+    """The archive writer and the integrity hasher must agree on what a package IS.
+
+    They did not: ``zip_package_tree`` dropped the publisher record while
+    ``_build_integrity`` kept it, so the catalog digest of a published package
+    could never match the map written for a copy installed from it. The seeder
+    compares exactly those two, reads the mismatch as "the catalog has moved
+    on", and re-copies the package on every pass.
+    """
+    from utk_curio.backend.app.packages.installer import _build_integrity, zip_package_tree
+    from utk_curio.backend.app.packages.publisher_record import record_publisher
+
+    src = tmp_path / "pkg@1"
+    (src / "sources").mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    (src / "sources" / "a.py").write_text("print(1)", encoding="utf-8")
+    record_publisher(tmp_path, "pkg@1", "7")
+
+    catalog_digest = _build_integrity(src)
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        shipped = set(zf.namelist())
+
+    # What the seeder compares: the computed catalog map against the map an
+    # install of that same tree can produce.
+    assert set(catalog_digest) == shipped
+
+
+def test_the_publisher_record_is_not_copied_into_a_users_store(tmp_path):
+    """It names who published the package, and a store copy belongs to someone else."""
+    from utk_curio.backend.app.packages.publisher_record import record_publisher
+    from utk_curio.backend.app.packages.seed import _swap_in_package
+
+    src = tmp_path / "catalog" / "pkg@1"
+    src.mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    record_publisher(tmp_path / "catalog", "pkg@1", "someone-elses-key")
+
+    dest_base = tmp_path / "store"
+    dest_base.mkdir()
+    assert _swap_in_package(src, dest_base / "pkg@1", dest_base) is True
+
+    copied = sorted(p.name for p in (dest_base / "pkg@1").iterdir())
+    # integrity.json is not in the source here; the point is what did NOT travel.
+    assert ".curio-publisher.json" not in copied, copied
+    assert "manifest.json" in copied, copied
