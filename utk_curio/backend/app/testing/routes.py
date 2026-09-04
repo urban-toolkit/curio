@@ -517,6 +517,7 @@ def broken_library():
     DOES fail — before asserting anything about a user-facing surface.
     """
     import importlib
+    import importlib.util
     import os
     import sys
 
@@ -540,11 +541,42 @@ def broken_library():
     root = _broken_lib_root()
 
     if action == "remove":
-        shutil.rmtree(root, ignore_errors=True)
-        _drop_from_import_path(str(root))
+        # Only what this call names. The API invites naming a distribution, so
+        # removing one must not silently take away the others a test staged.
+        targets = [root / f"{name}.py", *root.glob(f"{name}-*.dist-info")]
+        # Importing the fake leaves compiled bytecode behind, and a stale
+        # __pycache__ entry both outlives the source and keeps the directory
+        # non-empty, which is how the path stayed on sys.path after a removal.
+        targets += list(root.glob(f"__pycache__/{name}.*.pyc"))
+        for path in targets:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            elif path.is_file():
+                path.unlink()
+        remaining = sorted(
+            p.name for p in root.glob("*") if p.name != "__pycache__"
+        ) if root.is_dir() else []
+        if not remaining:
+            shutil.rmtree(root, ignore_errors=True)
+            _drop_from_import_path(str(root))
         importlib.invalidate_caches()
         pip_runner.forget_import_probes()
-        return jsonify({"name": name, "removed": True}), 200
+        return jsonify({"name": name, "removed": True, "remaining": remaining}), 200
+
+    # Checked here rather than beside the other input validation, because it is
+    # only true of `install`: by the time a test removes what it staged, the
+    # name resolves precisely because this route made it resolve.
+    #
+    # A name that ALREADY resolves would not be a fake broken library, it would
+    # be a real broken one: the module lands in a directory that goes on
+    # sys.path[0] and on PYTHONPATH, so `{"name": "json"}` makes every probe
+    # child and every pip child this backend spawns die on startup, and the
+    # import failures the suite then reports are its own doing.
+    if name in sys.stdlib_module_names or importlib.util.find_spec(name) is not None:
+        return jsonify({
+            "error": f"{name!r} already resolves; staging it would shadow a real "
+                     f"module for this backend and every process it spawns",
+        }), 400
 
     info = root / f"{name}-{version}.dist-info"
     info.mkdir(parents=True, exist_ok=True)
@@ -592,8 +624,11 @@ def _drop_from_import_path(path: str) -> None:
         sys.path.remove(path)
     existing = os.environ.get("PYTHONPATH")
     if existing:
-        kept = [p for p in existing.split(os.pathsep) if p and p != path]
-        if kept:
+        # Empty entries are preserved: CPython reads one as the launch cwd, so
+        # dropping it would quietly change what every child can import - a
+        # side effect of a teardown, felt only by whatever runs next.
+        kept = [p for p in existing.split(os.pathsep) if p != path]
+        if any(kept):
             os.environ["PYTHONPATH"] = os.pathsep.join(kept)
         else:
             os.environ.pop("PYTHONPATH", None)
