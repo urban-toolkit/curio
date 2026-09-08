@@ -330,12 +330,12 @@ An example of a dataflow:
             {
                 "id": "node1",
                 "type": "DATA_LOADING",
-                "content": "import rasterio\ntimestamp = 12\nsrc = rasterio.open(f'Milan_Tmrt_2022_203_{timestamp:02d}00D.tif')\nreturn src"
+                "content": "import rasterio\n# the raster is a Data Catalog dataset (catalog.search gives the id) — never a guessed filename\ndataset_path = curio_dataset_path('imported.milan-tmrt-2022-203-1200@1')\nsrc = rasterio.open(dataset_path)\nreturn src"
             },
             {
                 "id": "node2",
                 "type": "DATA_LOADING",
-                "content": "import pandas as pd\nsensor = pd.read_csv('Milan_22.07.2022_Weather_File_UMEP_CSV.csv', delimiter=';')\nreturn sensor"
+                "content": "import pandas as pd\n# the CSV is a Data Catalog dataset (catalog.search gives the id) — never a guessed filename\ndataset_path = curio_dataset_path('imported.milan-weather-2022-07-22@1')\nsensor = pd.read_csv(dataset_path, delimiter=';')\nreturn sensor"
             },
             {
                 "id": "node3",
@@ -349,7 +349,7 @@ An example of a dataflow:
             {
                 "id": "node5",
                 "type": "DATA_LOADING",
-                "content": "import geopandas as gpd\ngdf = gpd.read_file('R03_21-11_WGS84_P_SocioDemographics_MILANO_Selected.shp')\nreturn gdf"
+                "content": "import geopandas as gpd\n# the shapefile is a Data Catalog dataset (catalog.search gives the id) — never a guessed filename\ndataset_path = curio_dataset_path('imported.milan-sociodemographics@1')\ngdf = gpd.read_file(dataset_path)\nreturn gdf"
             },
             {
                 "id": "node6",
