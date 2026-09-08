@@ -318,6 +318,43 @@ class TestNodeRuntimeRead:
         assert status == "error" and "not attached" in text
 
 
+class TestCatalogSearchRows:
+    """dev/114 (DEC-072): installed rows carry the resolved ``path`` and the
+    domain's ONE loader recipe — the only local paths generated node content
+    may open. Rows without a resolved path carry neither."""
+
+    def _listing(self, monkeypatch, items):
+        class _Svc:
+            def __init__(self, user):
+                pass
+
+            def list_catalog(self, **kwargs):
+                return {"items": items}
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.datasets.application.catalog_service.DatasetCatalogService", _Svc
+        )
+
+    def test_path_and_loader_ride_resolved_rows_only(self, app, monkeypatch):
+        self._listing(monkeypatch, [
+            {"id": "ds-acs", "title": "Census ACS", "format": "csv", "origin": "hub",
+             "installed": True, "path": "/store/census-acs@1/acs.csv",
+             "loaderSnippet": {"code": 'dataset_path = "/store/census-acs@1/acs.csv"\ndf = pd.read_csv(dataset_path)'}},
+            {"id": "ds-hub", "title": "Hub only", "format": "csv", "origin": "hub",
+             "installed": False, "path": None},
+            {"id": "ds-geo", "title": "Tracts", "format": "geojson", "origin": "local",
+             "installed": True, "path": "/store/tracts@1/tracts.geojson"},  # no snippet → recipe
+        ])
+        with app.test_request_context():
+            rows = tools._catalog_search_rows("42", "p1", {})
+        assert rows[0]["path"] == "/store/census-acs@1/acs.csv"
+        assert "pd.read_csv(dataset_path)" in rows[0]["loader"]
+        assert "path" not in rows[1] and "loader" not in rows[1]
+        assert rows[2]["path"] == "/store/tracts@1/tracts.geojson"
+        assert 'gpd.read_file(dataset_path)' in rows[2]["loader"]
+        assert "path" in tools.REGISTRY["catalog.search"].description
+
+
 class TestWebTools:
     """dev/67-4 (DEC-053) — the web read tools: policy-gated, bounded,
     honest when unconfigured; no spec needed."""

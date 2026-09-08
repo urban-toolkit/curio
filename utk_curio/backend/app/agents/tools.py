@@ -132,7 +132,10 @@ REGISTRY: dict[str, ToolContract] = {
             '{"q": "<text>", "format": "<fmt>", "origin": "<origin>"}. '
             "Returns dataset rows with id, name, format, origin, installed "
             "state, and description — catalog-lane candidates must come from "
-            "these results only."
+            "these results only. Rows whose data file is resolved also carry "
+            "`path` (the absolute file a node may open) and `loader` (the "
+            "loader code for that path): the ONLY local paths generated node "
+            "content may reference (dev/114)."
         ),
     ),
     # dev/84 — consumer: agent.package-recommendation. Grounds package
@@ -365,16 +368,29 @@ def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[d
     )
     rows = []
     for item in (listing.get("items") or [])[:_CATALOG_SEARCH_MAX_ROWS]:
-        rows.append(
-            {
-                "id": item.get("id"),
-                "name": item.get("title"),
-                "format": item.get("format"),
-                "origin": item.get("origin"),
-                "installed": bool(item.get("installed")),
-                "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
-            }
-        )
+        row = {
+            "id": item.get("id"),
+            "name": item.get("title"),
+            "format": item.get("format"),
+            "origin": item.get("origin"),
+            "installed": bool(item.get("installed")),
+            "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
+        }
+        # dev/114 (DEC-072): the resolved data path — the listing already
+        # confined it to the allowed read roots (#143 chokepoint) — and the
+        # domain's ONE loader recipe for it. These are the only local paths
+        # generated node content may open; the grounding gate checks against
+        # the same listing, so a row here is grounded by construction.
+        path = item.get("path")
+        if isinstance(path, str) and path.strip():
+            row["path"] = path
+            snippet = item.get("loaderSnippet")
+            if not (isinstance(snippet, dict) and isinstance(snippet.get("code"), str)):
+                from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
+
+                snippet = loader_snippet(item.get("format"), path)
+            row["loader"] = snippet.get("code")
+        rows.append(row)
     return rows
 
 

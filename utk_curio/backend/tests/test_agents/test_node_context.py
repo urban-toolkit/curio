@@ -65,3 +65,14 @@ class TestComposeNodeContext:
         spec = _spec(datasets=[{"id": "d1", "name": "Heat 2024", "path": "secret"}])
         ctx = node_context.compose_node_context(KEY, PID, spec, "n1")
         assert ctx["datasetRefs"] == [{"id": "d1", "name": "Heat 2024"}]
+
+    def test_thin_installed_refs_are_read_by_their_real_keys(self, tmp_curio):
+        # dev/114: the datasets domain writes ``{datasetId, dirName, origin,
+        # …}`` for an installed dataset; reading only the fat ``id``/``name``
+        # keys sent every child ``{"id": null, "name": ""}``.
+        spec = _spec(datasets=[
+            {"datasetId": "ds-acs", "dirName": "census-acs@1", "origin": "hub",
+             "producerNodeId": None, "consumerNodeIds": [], "installedAt": "2026-09-08T00:00:00Z"},
+        ])
+        ctx = node_context.compose_node_context(KEY, PID, spec, "n1")
+        assert ctx["datasetRefs"] == [{"id": "ds-acs", "name": "census-acs@1", "origin": "hub"}]

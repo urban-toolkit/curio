@@ -89,12 +89,20 @@ def compose_node_context(
     datasets = []
     for entry in (dataflow.get("datasets") or [])[:_MAX_DATASETS]:
         if isinstance(entry, dict):
-            datasets.append(
-                {
-                    "id": entry.get("id"),
-                    "name": (entry.get("name") or entry.get("title") or "")[:_GOAL_MAX_CHARS],
-                }
-            )
+            # dev/114: the installed-dataset ref written by the datasets domain
+            # is the THIN shape ``{datasetId, dirName, origin, …}`` (no name,
+            # no path); the legacy fat ref carries ``id``/``name``/``title``.
+            # Reading only the fat keys sent every child ``{"id": null,
+            # "name": ""}`` — an absence that was a bug, not honesty.
+            row = {
+                "id": entry.get("id") or entry.get("datasetId"),
+                "name": (
+                    entry.get("name") or entry.get("title") or entry.get("dirName") or ""
+                )[:_GOAL_MAX_CHARS],
+            }
+            if entry.get("origin"):
+                row["origin"] = str(entry.get("origin"))[:40]
+            datasets.append(row)
     return {
         "nodeId": node_id,
         "nodeType": node.get("type"),

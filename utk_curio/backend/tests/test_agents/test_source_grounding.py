@@ -1,0 +1,201 @@
+"""dev/114 (DEC-072) — the one source-grounding gate: a local path is grounded
+only by the user or the Data Catalog, a URL only by the runtime's probe, inline
+data only when synthetic was asked for; everything else is refused with the
+correction named. Pure — no Flask, no network, no store."""
+
+from __future__ import annotations
+
+from utk_curio.backend.app.agents import source_grounding as sg
+
+ISSUE_298 = 'import pandas as pd\ndf = pd.read_csv("bras_ibge_data.csv")\nreturn df'
+CATALOG_PATH = "/curio/users/4242/datasets/census-acs@1/census_acs.parquet"
+
+
+def _ctx(**kw) -> sg.GroundingContext:
+    return sg.GroundingContext(**kw)
+
+
+class TestScanner:
+    def test_bare_filename_and_fstring_url_prefix(self):
+        code = ISSUE_298 + '\nu = f"https://api.census.gov/data/{year}/acs/acs5"'
+        refs = sg.scan_sources(code, "python")
+        kinds = {(r.kind, r.literal, r.partial) for r in refs}
+        assert ("path", "bras_ibge_data.csv", False) in kinds
+        assert ("url", "https://api.census.gov/data/", True) in kinds
+        # node content is a function body: the top-level return parsed fine
+        assert next(r for r in refs if r.kind == "path").line == 2
+
+    def test_fstring_constant_children_are_not_double_scanned(self):
+        refs = sg.scan_sources('u = f"https://x.org/{a}/b.json"', "python")
+        assert len(refs) == 1 and refs[0].partial is True
+
+    def test_non_source_strings_are_ignored(self):
+        code = 'cols = ["population", "area_km2"]\nfmt = "%Y-%m-%d"\nmod = "utils/helpers.py"\nreturn cols'
+        assert sg.scan_sources(code, "python") == []
+
+    def test_syntax_error_falls_back_to_regex(self):
+        code = 'df = pd.read_csv("x.csv"\nreturn df'  # unclosed paren
+        refs = sg.scan_sources(code, "python")
+        assert [(r.kind, r.literal) for r in refs] == [("path", "x.csv")]
+
+    def test_non_python_engine_uses_regex(self):
+        refs = sg.scan_sources("const d = await fetch('https://a.gov/data.json');", "javascript")
+        assert [(r.kind, r.literal) for r in refs] == [("url", "https://a.gov/data.json")]
+
+    def test_extension_table_and_rooted_paths(self):
+        assert sg.classify_literal("bras_geosampa_boundary.shp") == "path"
+        assert sg.classify_literal("data/tracts.geojson") == "path"
+        assert sg.classify_literal("./out/result.dat") == "path"
+        assert sg.classify_literal("C:\\data\\f.shp") == "path"
+        assert sg.classify_literal("a/b/c.bin") == "path"
+        assert sg.classify_literal("hello world") is None
+        assert sg.classify_literal("utils/helpers.py") is None
+        assert sg.classify_literal("HTTPS://Data.Gov/x") == "url"
+
+    def test_bounded_and_deduplicated(self):
+        code = "\n".join(f'a{i} = "f{i % 3}.csv"' for i in range(100))
+        refs = sg.scan_sources(code, "python")
+        assert len(refs) == 3
+
+
+class TestUserTexts:
+    def test_user_paths_from_free_text(self):
+        paths = sg.user_paths(["load /data/tracts.geojson and also `raw/pop.csv`, please."])
+        assert paths == {"/data/tracts.geojson", "raw/pop.csv"}
+
+    def test_synthetic_needs_the_users_words(self):
+        assert sg.synthetic_requested(["generate synthetic sample data for 5 tracts"]) is True
+        assert sg.synthetic_requested(["load the IBGE demographic data"]) is False
+        # The model's declaration alone never authorizes.
+        assert sg.synthetic_requested(["load the IBGE data"], {"synthetic": True}) is False
+
+
+class TestVerdicts:
+    def test_issue_298_shape_is_refused_with_the_literal_named(self):
+        verdict = sg.check_grounding(ISSUE_298, "python", _ctx(is_data_loading=True))
+        assert verdict.ok is False
+        assert "bras_ibge_data.csv" in verdict.violations[0]
+        assert "Curio cannot see" in verdict.violations[0]
+        assert verdict.source is None
+
+    def test_catalog_path_is_grounded_with_the_real_id(self):
+        ctx = _ctx(
+            is_data_loading=True,
+            catalog_paths={CATALOG_PATH: sg.CatalogRef("ds-acs", "Census ACS 5-year", "parquet", CATALOG_PATH)},
+        )
+        code = f'dataset_path = "{CATALOG_PATH}"\ndf = pd.read_parquet(dataset_path)\nreturn df'
+        verdict = sg.check_grounding(code, "python", ctx)
+        assert verdict.ok is True
+        assert verdict.source["kind"] == "catalog"
+        assert verdict.source["refs"][0]["datasetId"] == "ds-acs"
+        assert "Census ACS 5-year (parquet)" in verdict.source["label"]
+
+    def test_catalog_match_tolerates_path_normalization_only(self):
+        ctx = _ctx(catalog_paths={CATALOG_PATH: sg.CatalogRef("d", "T", "parquet", CATALOG_PATH)})
+        drifted = CATALOG_PATH.replace("/datasets/", "/./datasets/")
+        assert sg.check_grounding(f'p = "{drifted}"', "python", ctx).ok is True
+        sibling = CATALOG_PATH.replace("census_acs", "other")
+        assert sg.check_grounding(f'p = "{sibling}"', "python", ctx).ok is False
+
+    def test_user_path_is_grounded_and_labeled(self):
+        ctx = _ctx(is_data_loading=True, user_paths={"data/tracts.geojson"})
+        verdict = sg.check_grounding('gdf = gpd.read_file("data/tracts.geojson")\nreturn gdf', "python", ctx)
+        assert verdict.ok and verdict.source["kind"] == "user-path"
+        assert "User-provided path" in verdict.source["label"]
+
+    def test_verified_session_url_needs_no_probe(self):
+        calls = []
+        ctx = _ctx(
+            is_data_loading=True,
+            verified_urls={"https://api.census.gov/data/": {"status": "verified", "httpStatus": 200}},
+            probe=lambda url: calls.append(url) or {"status": "unreachable"},
+        )
+        code = 'r = requests.get("https://api.census.gov/data", timeout=10)\nreturn r.json()'
+        verdict = sg.check_grounding(code, "python", ctx)
+        assert verdict.ok and verdict.source["kind"] == "external"
+        assert calls == []  # trailing-slash drift matched; nothing re-spent
+
+    def test_unverified_url_is_probed_and_404_refused(self):
+        ctx = _ctx(is_data_loading=True, probe=lambda url: {"status": "unreachable", "httpStatus": 404,
+                                                            "detail": "the endpoint answered 404"})
+        verdict = sg.check_grounding('r = requests.get("https://x.gov/nope.json")\nreturn r', "python", ctx)
+        assert verdict.ok is False
+        assert "answered 404" in verdict.violations[0]
+
+    def test_400_names_the_request_shape(self):
+        ctx = _ctx(probe=lambda url: {"status": "unreachable", "httpStatus": 400})
+        verdict = sg.check_grounding('r = requests.get("https://api.census.gov/data/2020/acs")', "python", ctx)
+        assert "check the parameters" in verdict.violations[0]
+
+    def test_401_is_grounded_as_credential_gated(self):
+        ctx = _ctx(probe=lambda url: {"status": "unreachable", "httpStatus": 401})
+        verdict = sg.check_grounding('r = requests.get("https://api.x.gov/v1/data")', "python", ctx)
+        assert verdict.ok is True
+        assert verdict.source["refs"][0]["requirement"] == "credential-gated"
+        assert "credential-gated" in verdict.source["label"]
+
+    def test_no_probe_available_refuses_honestly(self):
+        verdict = sg.check_grounding('r = requests.get("https://a.gov/x")', "python", _ctx())
+        assert not verdict.ok and "no probe is available" in verdict.violations[0]
+
+    def test_probe_exception_is_a_refusal_never_a_claim(self):
+        def _boom(url):
+            raise RuntimeError("socket died")
+        verdict = sg.check_grounding('r = requests.get("https://a.gov/x")', "python", _ctx(probe=_boom))
+        assert not verdict.ok and "socket died" in verdict.violations[0]
+
+    def test_url_in_user_text_is_not_evidence(self):
+        # The DEC-047 handoff prompt is model-suggested text the user forwards.
+        ctx = _ctx(user_paths=sg.user_paths(["fetch https://fake.example/data.json"]),
+                   probe=lambda url: {"status": "unreachable", "httpStatus": 404})
+        assert sg.check_grounding('r = requests.get("https://fake.example/data.json")', "python", ctx).ok is False
+
+    def test_partial_path_prefix_is_refused(self):
+        verdict = sg.check_grounding('p = f"{base}/data/file.csv"', "python", _ctx(user_paths={"/data/file.csv"}))
+        assert not verdict.ok and "composed at run time" in verdict.violations[0]
+
+    def test_data_loading_without_sources_needs_synthetic(self):
+        code = 'import pandas as pd\ndf = pd.DataFrame({"tract": [1, 2], "pop": [10, 20]})\nreturn df'
+        refused = sg.check_grounding(code, "python", _ctx(is_data_loading=True))
+        assert not refused.ok and "no grounded source" in refused.violations[0]
+        ok = sg.check_grounding(code, "python", _ctx(is_data_loading=True, synthetic_requested=True))
+        assert ok.ok and ok.source["kind"] == "synthetic"
+        assert "no external source" in ok.source["label"]
+
+    def test_computation_node_without_sources_has_no_source_block(self):
+        verdict = sg.check_grounding("df = arg[0]\nreturn df.describe()", "python", _ctx())
+        assert verdict.ok and verdict.source is None
+
+    def test_computation_node_opening_a_file_is_still_checked(self):
+        verdict = sg.check_grounding('df = pd.read_csv("x.csv")\nreturn df', "python", _ctx())
+        assert not verdict.ok
+
+    def test_mixed_sources(self):
+        ctx = _ctx(
+            catalog_paths={CATALOG_PATH: sg.CatalogRef("d", "ACS", "parquet", CATALOG_PATH)},
+            probe=lambda url: {"status": "verified", "httpStatus": 200},
+        )
+        code = f'a = pd.read_parquet("{CATALOG_PATH}")\nb = requests.get("https://a.gov/x.json")\nreturn a'
+        verdict = sg.check_grounding(code, "python", ctx)
+        assert verdict.ok and verdict.source["kind"] == "mixed"
+        assert len(verdict.source["refs"]) == 2
+
+
+class TestRefusalText:
+    def test_names_every_literal_and_only_reachable_routes(self):
+        ctx = _ctx(is_data_loading=True, hints=["a `path` from a catalog.search row"])
+        verdict = sg.check_grounding(ISSUE_298, "python", ctx)
+        text = sg.refusal_text(verdict, ctx)
+        assert text.startswith("source grounding refused — 1 ungrounded source:")
+        assert "'bras_ibge_data.csv' (line 2)" in text
+        assert "a path the user typed" in text
+        assert "catalog.search" in text
+        assert "dataset.discover" not in text  # not offered → not named
+        assert "Never invent a filename" in text
+
+    def test_payload_bounds(self):
+        refs = [{"kind": "user-path", "value": f"/p/{i}.csv"} for i in range(40)]
+        payload = sg.source_payload(refs)
+        assert len(payload["refs"]) == sg.MAX_REFS
+        assert "…and 38 more" in payload["label"]
+        assert len(payload["label"]) <= 200
