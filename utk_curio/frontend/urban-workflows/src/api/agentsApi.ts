@@ -264,6 +264,27 @@ export interface AgentDelegationPart {
   summary: string;
 }
 
+/** dev/114: one grounded source reference on a proposal. */
+export interface AgentSourceRef {
+  kind: "catalog" | "external" | "user-path" | "synthetic" | string;
+  /** The literal the code uses: a path, a curio_dataset_path("<id>") call, or a URL. */
+  value?: string;
+  datasetId?: string;
+  title?: string;
+  format?: string;
+  /** external only: the DEC-053 probe verdict the runtime recorded. */
+  verification?: AgentDatasetCandidateRow["verification"];
+  /** external only: "credential-gated" when the endpoint answered 401/403. */
+  requirement?: string;
+}
+
+/** dev/114: the proposal's source block — bounded plain data. */
+export interface AgentProposalSource {
+  kind: "catalog" | "external" | "user-path" | "synthetic" | "mixed" | string;
+  label: string;
+  refs: AgentSourceRef[];
+}
+
 export type AgentProposalStatus =
   | "pending"
   | "applied"
@@ -330,6 +351,10 @@ export interface AgentProposalPart {
   };
   /** node.template.create only: the proposed type definition summary. */
   template?: { label: string; engine: string; description?: string };
+  /** dev/114 (DEC-072): how the proposed content's sources were grounded —
+   * runtime-derived at mint (never model-claimed); display + provenance,
+   * not a pin. Absent when the content opens no file and fetches no URL. */
+  source?: AgentProposalSource;
   /** dev/67-7: the validation verdict riding a validated content proposal. */
   validation?: {
     verdict: "pass" | "fail" | string;

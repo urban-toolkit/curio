@@ -691,6 +691,12 @@ export const AgentChatPanel: React.FC<{
                         part={part}
                         tintClassName={tint}
                         onComposePrompt={composePrompt}
+                        // dev/114: in the Node Builder's chat the runtime
+                        // minted these from a dataset.discover delegation —
+                        // the confirmation asks the builder to build.
+                        variant={
+                          attachment.coord.startsWith("agent.node-builder@") ? "builder" : "finder"
+                        }
                       />
                     ))}
                   {(t.content ?? [])

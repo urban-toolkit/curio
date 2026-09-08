@@ -9,6 +9,14 @@ import styles from "./AgentChatCard.module.css";
  * suggested prompts, docs/08). `kind: "result"` is the labeled kind today;
  * unknown kinds from newer servers degrade to this same generic shell.
  */
+/** dev/114: readable labels for the kinds the runtime and the Dataset Finder
+ * emit; unknown kinds render their raw word (forward tolerance). */
+const KIND_LABEL: Record<string, string> = {
+  result: "result",
+  error: "error",
+  handoff: "hand-off",
+};
+
 export const AgentChatCard: React.FC<{
   card: AgentCardPart;
   /** Tint class carrying the agent's category color for the accent dot. */
@@ -18,7 +26,7 @@ export const AgentChatCard: React.FC<{
     <div className={`${styles.header} ${tintClassName ?? ""}`}>
       <span className={styles.accentDot} aria-hidden="true" />
       <span>{card.title}</span>
-      <span className={styles.kind}>{card.kind}</span>
+      <span className={styles.kind}>{KIND_LABEL[card.kind] ?? card.kind}</span>
     </div>
     {card.lines.length > 0 ? (
       <div className={styles.inner}>

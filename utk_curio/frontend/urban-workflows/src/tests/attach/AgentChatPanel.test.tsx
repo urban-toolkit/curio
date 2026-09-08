@@ -1086,3 +1086,48 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
+
+
+describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () => {
+  const candidatesTurns: AgentSessionTurn[] = [
+    { role: "user", text: "build a node that loads heat data" },
+    {
+      role: "agent",
+      text: "Select a source and confirm.",
+      content: [
+        {
+          type: "datasetCandidates",
+          lanes: {
+            external: [
+              { name: "NOAA Climate Data API", sourceType: "api", url: "https://api.noaa.gov",
+                verification: { status: "verified", httpStatus: 200 } },
+            ],
+            catalog: [],
+          },
+        },
+      ],
+    },
+  ];
+
+  it("a selection prefills the BUILD request when the host is Node Builder", () => {
+    renderPanel({
+      attachment: { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder" },
+      turns: candidatesTurns,
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
+    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+      "Build the data-loading node — fetch from: NOAA Climate Data API (https://api.noaa.gov).",
+    );
+  });
+
+  it("a selection prefills the hand-off confirmation in any other chat", () => {
+    renderPanel({
+      attachment: { ...attachment, coord: "agent.dataset-finder@1.0.0", name: "Dataset Finder" },
+      turns: candidatesTurns,
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
+    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+      "Confirm my selection — hand off to Node Builder: NOAA Climate Data API.",
+    );
+  });
+});

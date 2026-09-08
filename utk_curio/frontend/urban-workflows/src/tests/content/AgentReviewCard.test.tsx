@@ -766,3 +766,101 @@ describe("dependency home line (memo dev/97)", () => {
     expect(screen.queryByText(/isolated overlay/)).toBeNull();
   });
 });
+
+
+describe("AgentReviewCard — dev/114 (DEC-072) the Source block", () => {
+  const withSource = (source: AgentProposalPart["source"], tool = "node.create"): AgentProposalPart => ({
+    ...part(),
+    tool,
+    summary: "Create a new Data Loading node",
+    pins: { nodeType: "curio.builtin/data-loading" },
+    source,
+  });
+
+  it("names a Data Catalog source by title, format and id", () => {
+    render(
+      <AgentReviewCard
+        part={withSource({
+          kind: "catalog",
+          label: "Data Catalog · Census ACS 5-year (parquet)",
+          refs: [{ kind: "catalog", value: 'curio_dataset_path("imported.acs@1")',
+                   datasetId: "imported.acs@1", title: "Census ACS 5-year", format: "parquet" }],
+        })}
+        onApply={jest.fn()}
+      />,
+    );
+    const block = screen.getByRole("group", { name: "Data source" });
+    expect(block).toHaveTextContent("Source · Data Catalog");
+    expect(block).toHaveTextContent("Census ACS 5-year (parquet) · imported.acs@1");
+  });
+
+  it("shows an external URL with the runtime's verification chip", () => {
+    render(
+      <AgentReviewCard
+        part={withSource({
+          kind: "external",
+          label: "External · https://api.noaa.gov/climate · verified",
+          refs: [{ kind: "external", value: "https://api.noaa.gov/climate",
+                   verification: { status: "verified", httpStatus: 200 } }],
+        })}
+        onApply={jest.fn()}
+      />,
+    );
+    const block = screen.getByRole("group", { name: "Data source" });
+    expect(block).toHaveTextContent("Source · External source");
+    expect(block).toHaveTextContent("https://api.noaa.gov/climate");
+    expect(screen.getByText("Verified ✓")).toBeInTheDocument();
+  });
+
+  it("says a credential-gated endpoint is gated and a user path is unchecked", () => {
+    render(
+      <AgentReviewCard
+        part={withSource({
+          kind: "mixed",
+          label: "…",
+          refs: [
+            { kind: "external", value: "https://api.x.gov/v1", requirement: "credential-gated",
+              verification: { status: "unreachable", httpStatus: 401 } },
+            { kind: "user-path", value: "data/tracts.geojson" },
+          ],
+        })}
+        onApply={jest.fn()}
+      />,
+    );
+    const block = screen.getByRole("group", { name: "Data source" });
+    expect(block).toHaveTextContent("Source · Several sources");
+    expect(block).toHaveTextContent("https://api.x.gov/v1 · credential-gated");
+    expect(block).toHaveTextContent("data/tracts.geojson — not checked by Curio");
+  });
+
+  it("labels synthetic data as generated in the node", () => {
+    render(
+      <AgentReviewCard
+        part={withSource({ kind: "synthetic", label: "Synthetic · generated in the node, no external source",
+                           refs: [{ kind: "synthetic" }] })}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent(
+      "Source · Synthetic data",
+    );
+    expect(screen.getByText(/generated in the node — no external source/)).toBeInTheDocument();
+  });
+
+  it("renders no Source block when the proposal carries none (older/other cards unchanged)", () => {
+    render(<AgentReviewCard part={part()} onApply={jest.fn()} />);
+    expect(screen.queryByRole("group", { name: "Data source" })).toBeNull();
+  });
+
+  it("source text is model-derived data and renders inert", () => {
+    const { container } = render(
+      <AgentReviewCard
+        part={withSource({ kind: "user-path", label: "x",
+                           refs: [{ kind: "user-path", value: "<img src=x onerror=\"window.__srcPwned=1\">" }] })}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("<img src=x");
+  });
+});

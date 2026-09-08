@@ -122,3 +122,31 @@ describe("AgentDatasetCandidatesCard — dev/67-4 verification verdicts", () => 
     expect(screen.getByText("Unreachable ✗")).toBeInTheDocument();
   });
 });
+
+
+describe("AgentDatasetCandidatesCard — dev/114 the Node Builder chat variant", () => {
+  it("composes the build request instead of the hand-off in a Node Builder chat", () => {
+    const onComposePrompt = jest.fn();
+    render(<AgentDatasetCandidatesCard part={PART} onComposePrompt={onComposePrompt} variant="builder" />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
+    expect(onComposePrompt).toHaveBeenLastCalledWith(
+      "Build the data-loading node — fetch from: NOAA Climate Data API (https://api.noaa.gov).",
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Cities" }));
+    expect(onComposePrompt).toHaveBeenLastCalledWith(
+      "Build the data-loading node — load from the Data Catalog: Cities (imported.abc@1); " +
+        "fetch from: NOAA Climate Data API (https://api.noaa.gov).",
+    );
+    // Still no row-level buttons — the prompt stays the vehicle (docs/06).
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("the finder variant is the default and unchanged", () => {
+    expect(composeConfirmationPrompt([], [PART.lanes.external[0]])).toBe(
+      "Confirm my selection — hand off to Node Builder: NOAA Climate Data API.",
+    );
+    expect(composeConfirmationPrompt([], [PART.lanes.external[0]], "builder")).toBe(
+      "Build the data-loading node — fetch from: NOAA Climate Data API (https://api.noaa.gov).",
+    );
+  });
+});

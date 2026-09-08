@@ -1,9 +1,38 @@
 import React, { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
-import type { AgentProposalPart } from "../../../api/agentsApi";
+import type { AgentProposalPart, AgentSourceRef } from "../../../api/agentsApi";
 import { describePackagePermission } from "../../../utils/packagePermissions";
 import styles from "./AgentReviewCard.module.css";
+import { VerificationChip } from "./verificationChip";
+
+/** dev/114 (DEC-072): the Source block's kind headline — how the runtime
+ * grounded what the proposed code opens or fetches. */
+const SOURCE_KIND_LABEL: Record<string, string> = {
+  catalog: "Data Catalog",
+  external: "External source",
+  "user-path": "User-provided path",
+  synthetic: "Synthetic data",
+  mixed: "Several sources",
+};
+
+/** One grounded reference, as plain text (the chip states the verdict). */
+function sourceRefText(ref: AgentSourceRef): string {
+  switch (ref.kind) {
+    case "catalog":
+      return `${ref.title ?? ref.datasetId ?? "dataset"}${ref.format ? ` (${ref.format})` : ""}${
+        ref.datasetId ? ` · ${ref.datasetId}` : ""
+      }`;
+    case "external":
+      return `${ref.value ?? ""}${ref.requirement === "credential-gated" ? " · credential-gated" : ""}`;
+    case "user-path":
+      return `${ref.value ?? ""} — not checked by Curio`;
+    case "synthetic":
+      return "generated in the node — no external source";
+    default:
+      return ref.value ?? String(ref.kind);
+  }
+}
 
 /** dev/67-5/67-8/71: the per-node review state (mirror + builderSession). */
 export interface PlanNodeReviewState {
@@ -281,6 +310,30 @@ export const AgentReviewCard: React.FC<{
         <span>{part.summary}</span>
         <span className={styles.kind}>review</span>
       </div>
+      {part.source ? (
+        // dev/114 (DEC-072): what the code opens/fetches and how the RUNTIME
+        // grounded it — a catalog dataset by id, a probed URL with its
+        // verdict, a path the user typed, or declared synthetic data. Above
+        // the preview so it cannot be missed; plain text, never markup.
+        <div className={styles.sourceBlock} role="group" aria-label="Data source">
+          <div className={styles.sourceTitle}>
+            Source · {SOURCE_KIND_LABEL[part.source.kind] ?? part.source.kind}
+          </div>
+          <ul className={styles.sourceList}>
+            {part.source.refs.map((ref, i) => (
+              <li key={i}>
+                {sourceRefText(ref)}
+                {ref.kind === "external" && ref.verification ? (
+                  <>
+                    {" "}
+                    <VerificationChip verification={ref.verification} />
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {part.tool === "node.template.create" && part.justification ? (
         // The adequacy gate (dev/48 §3.2b): the model's reasoning is what the
         // user judges — rendered verbatim FIRST, above the definition.

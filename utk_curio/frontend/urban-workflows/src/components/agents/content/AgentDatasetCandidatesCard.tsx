@@ -4,20 +4,46 @@ import type {
   AgentDatasetCandidatesPart,
 } from "../../../api/agentsApi";
 import styles from "./AgentDatasetCandidatesCard.module.css";
+import { VerificationChip } from "./verificationChip";
 
 const LANE_LABEL: Record<"external" | "catalog", string> = {
   external: "External sources",
   catalog: "From your Data Catalog",
 };
 
+/** dev/114: whose chat the card lives in — the Dataset Finder's (the DEC-047
+ * install / hand-off prompt) or the Node Builder's (the runtime minted the
+ * candidates from a dataset.discover delegation; the confirmation asks the
+ * builder to build from the selection). */
+export type CandidatesVariant = "finder" | "builder";
+
 /** Compose the docs/06 confirmation prompt from the current selection —
  * catalog picks route to the reviewed install, external picks to the
- * DEC-047 Node Builder handoff. Exported for tests. */
+ * DEC-047 Node Builder handoff. In a Node Builder chat (dev/114) the same
+ * selection reads as the build request instead. Exported for tests. */
 export function composeConfirmationPrompt(
   catalogRows: AgentDatasetCandidateRow[],
   externalRows: AgentDatasetCandidateRow[],
+  variant: CandidatesVariant = "finder",
 ): string {
   const bits: string[] = [];
+  if (variant === "builder") {
+    if (catalogRows.length) {
+      bits.push(
+        `load from the Data Catalog: ${catalogRows
+          .map((r) => `${r.name} (${r.datasetId ?? "?"})`)
+          .join(", ")}`,
+      );
+    }
+    if (externalRows.length) {
+      bits.push(
+        `fetch from: ${externalRows
+          .map((r) => (r.url ? `${r.name} (${r.url})` : r.name))
+          .join(", ")}`,
+      );
+    }
+    return bits.length ? `Build the data-loading node — ${bits.join("; ")}.` : "";
+  }
   if (catalogRows.length) {
     bits.push(
       `install from the Data Catalog: ${catalogRows
@@ -47,7 +73,9 @@ export const AgentDatasetCandidatesCard: React.FC<{
   tintClassName?: string;
   /** Prefill the chat input (a prefill never overwrites a user-typed draft). */
   onComposePrompt?: (prompt: string) => void;
-}> = ({ part, tintClassName, onComposePrompt }) => {
+  /** dev/114: the host agent's chat — decides the confirmation prompt's shape. */
+  variant?: CandidatesVariant;
+}> = ({ part, tintClassName, onComposePrompt, variant = "finder" }) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const rowKey = (lane: string, index: number) => `${lane}:${index}`;
@@ -60,7 +88,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
     setSelected(next);
     const pick = (l: "external" | "catalog") =>
       (part.lanes[l] ?? []).filter((_, i) => next.has(rowKey(l, i)));
-    onComposePrompt?.(composeConfirmationPrompt(pick("catalog"), pick("external")));
+    onComposePrompt?.(composeConfirmationPrompt(pick("catalog"), pick("external"), variant));
   };
 
   const renderRow = (lane: "external" | "catalog", row: AgentDatasetCandidateRow, i: number) => {
@@ -86,28 +114,9 @@ export const AgentDatasetCandidatesCard: React.FC<{
               ) : null}
               {lane === "external" && row.verification ? (
                 // dev/67-4 (DEC-053): the runtime's verdict, never the
-                // model's claim — verified ✓ or a loud warning.
-                <span
-                  className={
-                    row.verification.status === "verified"
-                      ? styles.installedChip
-                      : styles.notInstalledChip
-                  }
-                  title={
-                    row.verification.detail ??
-                    (row.verification.datasetName
-                      ? `verified: ${row.verification.datasetName}`
-                      : undefined)
-                  }
-                >
-                  {row.verification.status === "verified"
-                    ? "Verified ✓"
-                    : row.verification.status === "unreachable"
-                      ? "Unreachable ✗"
-                      : row.verification.status === "refused"
-                        ? "Refused ✗"
-                        : "Unverified — never checked"}
-                </span>
+                // model's claim — verified ✓ or a loud warning (the ONE
+                // label table, shared with the review card — dev/114).
+                <VerificationChip verification={row.verification} />
               ) : null}
             </span>
             {meta ? <span className={styles.meta}>{meta}</span> : null}
