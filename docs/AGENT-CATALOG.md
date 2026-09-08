@@ -232,6 +232,40 @@ The reverse is enforced too. Removing an agent that another added agent requires
 is refused, with a message naming the dependent, so a dataflow cannot end up
 holding a broken reference.
 
+### Where a data-loading node's source comes from
+
+An agent never decides on its own that a file exists. Every piece of node
+content an agent authors — a Node Builder `node.create`, a content replacement,
+a new node type's first node, and every node the Dataflow Builder's Solve fills
+— passes one runtime **source-grounding gate** before it can become a review
+card or reach the saved dataflow (memo dev/114, DEC-072; issue #298, where the
+proposed code read `pd.read_csv("bras_ibge_data.csv")` and the file had never
+existed):
+
+| The code opens or fetches | Grounded only when |
+|---|---|
+| A local file path | You typed that path in the conversation, or the Data Catalog resolves it — the portable `curio_dataset_path("<id>")` line the catalog's loader recipe emits counts by dataset id. |
+| A URL | The runtime probed it in this run (2xx; 401/403 is accepted and labeled *credential-gated*), or a candidates card in this conversation already carried it as **Verified ✓**. A URL in your own message is not evidence — the runtime checks it. |
+| Nothing (inline data in a data-loading node) | You asked for synthetic or sample data; the card then says *Synthetic data*. |
+
+Anything else is **refused with the literal named** and the allowed routes
+listed; the refusal is a free correction round for the agent (dev/105), and a
+Solve that cannot ground a node marks it *failed — ungrounded source* with the
+remedy instead of writing the code. The resulting review card carries a
+**Source** block above the preview: the catalog dataset by title and id, the URL
+with its verification chip, the user-provided path marked *not checked by
+Curio*, or the synthetic label.
+
+Discovery follows the same order. Node Builder holds `catalog.search` (rows
+include the resolved path and the loader line) and can delegate
+`dataset.discover` to Dataset Finder: the tool-less child receives the catalog
+listing as input, its candidates are re-checked against that listing and probed
+by the runtime, and the two-lane card appears in the Node Builder's own chat.
+Selecting rows prefills an editable **Build the data-loading node — …** prompt;
+nothing is proposed until you send it. In the Dataset Finder's chat the same
+card composes the reviewed `dataset.install` or the hand-off to Node Builder, as
+before.
+
 ---
 
 ## 4. Importing, publishing, and sharing
