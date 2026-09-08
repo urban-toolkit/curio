@@ -193,8 +193,12 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # the node it modifies.
                      targets=("canvas", "node"),
                      reads=("nodeIntent", "targetContext", "externalSelection"),
+                     # dev/114 (DEC-072): catalog.search — the ONLY way a
+                     # data-loading node learns a real local path (rows carry
+                     # the resolved path); the grounding gate refuses any
+                     # other file the code opens.
                      tools=("dataflow.read", "node.create", "node.template.create",
-                            "node.runtime.read", "node.content.write"),
+                            "node.runtime.read", "node.content.write", "catalog.search"),
                      delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner",
                                    "agent.node-researcher",
                                    # dev/84: a built node's required packages.
@@ -206,7 +210,12 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.package-builder",
                                    # dev/86 (DEC-055): optional post-generation
                                    # semantic check — advisory, never approval.
-                                   "agent.generated-content-evaluator"),
+                                   "agent.generated-content-evaluator",
+                                   # dev/114 (DEC-072): source resolution for a
+                                   # data-loading node — the tool-less child gets
+                                   # the catalog as INPUT and its candidates are
+                                   # runtime-minted onto the two-lane card.
+                                   "agent.dataset-finder"),
                      review_policy="review-before-apply"),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
     # lane discovery: catalog picks → reviewed dataset.install; external picks

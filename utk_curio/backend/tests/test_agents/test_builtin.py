@@ -181,6 +181,7 @@ class TestNodeBuilderComposite:
             "agent.package-recommendation",  # dev/84: required-package identify
             "agent.package-builder",  # dev/89: no-template-fits → authoring
             "agent.generated-content-evaluator",  # dev/86: advisory semantic check
+            "agent.dataset-finder",  # dev/114 (DEC-072): source resolution for data-loading nodes
         ]
         # dev/67-6 lifts the dev/48 canvas-only limitation: modify-existing
         # attaches to the node it modifies.
@@ -189,6 +190,7 @@ class TestNodeBuilderComposite:
             "dataflow.read", "node.create", "node.template.create",
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
             "node.content.write",  # dev/67-6: modify-existing, reviewed
+            "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
         ]
         assert m.provenance.trust == "built-in"
 
@@ -205,6 +207,7 @@ class TestNodeBuilderComposite:
             "agent.node-researcher", "agent.package-recommendation",
             "agent.package-builder",  # dev/89
             "agent.generated-content-evaluator",
+            "agent.dataset-finder",  # dev/114
         ]
         cb = builtin.build_builtin_manifest(
             builtin.get_builtin_spec("agent.connection-builder@1.0.0")

@@ -28,7 +28,7 @@ from utk_curio.backend.app.agents import (
     storage,
     tools,
 )
-from utk_curio.backend.app.agents import egress, node_context, verify
+from utk_curio.backend.app.agents import egress, node_context, source_grounding, verify
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES, AgentManifest
 from utk_curio.backend.app.agents.providers import (
@@ -1079,6 +1079,15 @@ def _mint_node_template_create(
         return "refused", "template.content must be a non-empty string", None
     if len(code) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return "refused", "template.content exceeds the proposal size bound", None
+    # dev/114 (DEC-072): a new type's first-node content passes the same gate
+    # for path/URL literals (the no-source rule needs a known data-loading
+    # type, which a brand-new template is not).
+    verdict, refusal = _gate_generated_content(
+        user_key, project_id, loop_ctx,
+        code=code, engine=engine, node_type=None, params=params, is_data_loading=False,
+    )
+    if refusal:
+        return _refuse_params(refusal)
     try:
         existing = packages_services.available_templates(user_key, project_id)
     except Exception as exc:
@@ -1116,6 +1125,8 @@ def _mint_node_template_create(
     # the justification is what the user judges (memo dev/48 §3.2b).
     part["justification"] = justification.strip()
     part["template"] = {"label": label, "engine": engine, "description": description}
+    if verdict.source:
+        part["source"] = verdict.source  # dev/114
     _store_proposal(
         user_key,
         project_id,
@@ -3756,6 +3767,12 @@ def _solve_events(
             return True
         return False
 
+    # dev/114: ONE grounding base per batch (catalog paths, mission + plan
+    # texts), built here in the request thread — workers hold no request
+    # context; ONE egress budget for the batch's probes.
+    solve_ground = _solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
+    solve_ctx: dict = {"granted": [], "manifest": manifest}
+
     def _record_outcome(node_id: str, status: str, text, child) -> dict | None:
         """Fold one worker outcome into the batch state — no yields, so it is
         safe on the disconnect drain. Returns the node_result payload, or
@@ -3768,6 +3785,22 @@ def _solve_events(
             # The child replies with response formatting around the code —
             # only the executable content is written (dev/57).
             text_out = content.extract_node_content(text)
+            # dev/114 (DEC-072): the gate — a fabricated path or an
+            # unverified URL never reaches the spec; the node fails LOUDLY
+            # with the literal and the remedy named.
+            node = nodes_by_id.get(node_id) or {}
+            _verdict, refusal = _gate_generated_content(
+                user_key, project_id, solve_ctx,
+                code=text_out, engine="python", node_type=node.get("type"),
+                base=solve_ground,
+            )
+            if refusal:
+                err = (
+                    "ungrounded source: " + refusal.split("Allowed sources:")[0]
+                    .replace("source grounding refused — ", "").strip()
+                )[:220] + " — resolve the source with Dataset Finder (attach it to this node) or give the path"
+                results[node_id] = {"status": "failed", "error": err[:300]}
+                return {"nodeId": node_id, "status": "failed", "error": err[:300]}
             results[node_id] = {"status": "solved"}
             applied_contents.append({"nodeId": node_id, "content": text_out})
             return {"nodeId": node_id, "status": "solved", "content": text_out}
@@ -3962,6 +3995,20 @@ def _solve_events(
                             user_key, project_id, spec, node_id
                         ),
                     }
+                    # dev/114: the seventh DEC-063 application — a data-
+                    # loading child is HANDED its grounded sources.
+                    from utk_curio.backend.app.packages import services as _pkg
+
+                    if source_grounding.is_data_loading_type(
+                        _pkg.canonical_template_id(node.get("type"))
+                    ):
+                        inputs["sourceGrounding"] = _source_grounding_inputs(
+                            _grounding_context(
+                                user_key, project_id, solve_ctx,
+                                node_type=node.get("type"), base=solve_ground,
+                                extra_texts=(str(node.get("goal") or ""),),
+                            )
+                        )
                     status, text, child, _home = _run_delegate_traced(
                         user_key, project_id, resolution.coord,
                         "node.content.generate", inputs, config,
@@ -3998,6 +4045,21 @@ def _solve_events(
                         # writes the spec beyond the mint's own write).
                         if child is not None:
                             delegations.append(child)
+                        # dev/114: the gate runs on the batch base BEFORE the
+                        # mint so the node's failure names the source.
+                        _pnode = nodes_by_id.get(node_id) or {}
+                        _v, _refusal = _gate_generated_content(
+                            user_key, project_id, solve_ctx,
+                            code=content.extract_node_content(text), engine="python",
+                            node_type=_pnode.get("type"), base=solve_ground,
+                        )
+                        if _refusal:
+                            err = ("ungrounded source: " + _refusal.split("Allowed sources:")[0]
+                                   .replace("source grounding refused — ", "").strip())[:220] + \
+                                  " — resolve the source with Dataset Finder (attach it to this node) or give the path"
+                            results[node_id] = {"status": "failed", "error": err[:300]}
+                            yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
+                            continue
                         # dev/73: the shared content→review sequence (also the
                         # chat loops' — one mint policy, three callers).
                         part, home_att, mint_text = _mint_content_review_from_delegate(
@@ -5644,6 +5706,18 @@ def _mint_node_content_write(
     node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
     if node is None:
         return "refused", f"node {node_id!r} not found in the saved spec", None
+    # dev/114 (DEC-072): the gate, keyed on the EXISTING node's type — the
+    # dev/73 runtime review mint inherits it (a refusal is its honest text).
+    from utk_curio.backend.app.packages import services as packages_services
+
+    entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
+    verdict, refusal = _gate_generated_content(
+        user_key, project_id, loop_ctx,
+        code=proposed, engine=(entry or {}).get("engine"),
+        node_type=node.get("type"), params=params,
+    )
+    if refusal:
+        return _refuse_params(refusal)
     basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
     proposal_id = uuid.uuid4().hex
     summary = f"Replace the content of node {node_id!r}"
@@ -5654,22 +5728,19 @@ def _mint_node_content_write(
         preview=proposed,
         pins={"nodeId": node_id, "contentSha256": basis},
     )
-    _store_proposal(
-        user_key,
-        project_id,
-        spec,
-        loop_ctx,
-        {
-            "proposalId": proposal_id,
-            "tool": "node.content.write",
-            "nodeId": node_id,
-            "content": proposed,
-            "contentSha256": basis,
-            "summary": summary,
-            "status": "pending",
-        },
-        part,
-    )
+    proposal = {
+        "proposalId": proposal_id,
+        "tool": "node.content.write",
+        "nodeId": node_id,
+        "content": proposed,
+        "contentSha256": basis,
+        "summary": summary,
+        "status": "pending",
+    }
+    if verdict.source:
+        part["source"] = verdict.source
+        proposal["source"] = verdict.source
+    _store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     return (
         "proposed",
         f"proposal {proposal_id} created for node {node_id!r}; it awaits the user's "
@@ -5712,6 +5783,17 @@ def _mint_node_create(
         return _refuse_params("params.content must be a non-empty string")
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return _refuse_params("params.content exceeds the proposal size bound")
+    # dev/114 (DEC-072): the source-grounding gate — BEFORE any store write.
+    # A same-run node.create after the runtime minted dataset candidates is
+    # refused too: the user reviews and confirms a source first (DEC-006).
+    if loop_ctx.get("_candidates_pending_review"):
+        return _refuse_params(_CANDIDATES_PENDING_TEXT)
+    verdict, refusal = _gate_generated_content(
+        user_key, project_id, loop_ctx,
+        code=proposed, engine=entry.get("engine"), node_type=entry["id"], params=params,
+    )
+    if refusal:
+        return _refuse_params(refusal)
     goal = params.get("goal")
     goal = goal.strip() if isinstance(goal, str) and goal.strip() else None
     # dev/105 A2 (additive): the node's HEADER. The note behavior renders
@@ -5757,6 +5839,11 @@ def _mint_node_create(
         "summary": summary,
         "status": "pending",
     }
+    if verdict.source:
+        # dev/114: what the code opens/fetches and how it was grounded — the
+        # card's Source block; display + provenance, never a pin.
+        part["source"] = verdict.source
+        proposal["source"] = verdict.source
     if goal:
         proposal["goal"] = goal
     if title:
@@ -5773,7 +5860,7 @@ def _mint_node_create(
     )
 
 
-def _verify_candidate_parts(parts: list) -> None:
+def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
     """dev/67-4 (DEC-053): the Dataset Finder stops laundering — external
     candidate rows are verified DETERMINISTICALLY before they reach the user.
     URL-bearing rows are probed through the egress policy (first 4 — the
@@ -5786,7 +5873,15 @@ def _verify_candidate_parts(parts: list) -> None:
     # could issue a dozen requests (a Socrata probe fetched twice, and every
     # fetch follows up to MAX_REDIRECTS hops), so the documented bound of
     # MAX_CALLS_PER_RUN bore no relation to what actually went out.
-    budget = egress.CallBudget(egress.MAX_CALLS_PER_RUN)
+    # dev/114: the budget is the RUN's when a loop context rides along — the
+    # grounding gate's mint-time probes and this pass spend the same four
+    # requests — and every verified row is remembered so a same-run
+    # confirmation grounds its URL without re-spending.
+    budget = (
+        _run_egress_budget(loop_ctx)
+        if loop_ctx is not None
+        else egress.CallBudget(egress.MAX_CALLS_PER_RUN)
+    )
     for part in parts:
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
             continue
@@ -5805,6 +5900,374 @@ def _verify_candidate_parts(parts: list) -> None:
                 }
                 continue
             row["verification"] = verify.verify_external_source(url, budget=budget)
+            if loop_ctx is not None and row["verification"].get("status") == "verified":
+                loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
+
+
+def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
+    """dev/114: ONE egress budget per run (or per Solve batch) — created lazily
+    on the loop context, shared by candidate verification and the grounding
+    gate's probes, so ``MAX_CALLS_PER_RUN`` means the run's total."""
+    budget = loop_ctx.get("_egress_budget")
+    if budget is None:
+        budget = egress.CallBudget(egress.MAX_CALLS_PER_RUN)
+        loop_ctx["_egress_budget"] = budget
+    return budget
+
+
+#: dev/114: the text a same-run node.create/insert gets after the runtime
+#: minted dataset candidates — the user reviews first (DEC-006).
+_CANDIDATES_PENDING_TEXT = (
+    "dataset candidates are shown to the user for review — do not propose a "
+    "node in this turn; end your reply by asking the user to select and "
+    "confirm a source, then build from the confirmed one on the next turn"
+)
+
+
+def _catalog_grounding_refs(project_id: str) -> tuple[dict, dict]:
+    """dev/114: ``(by_path, by_id)`` — the datasets the datasets domain lists
+    for this project, the SAME listing ``catalog.search`` serves, so a row the
+    tool showed is grounded by construction: by resolved path (the historical
+    literal form) and by id (the portable ``curio_dataset_path("<id>")`` call
+    the loader recipe emits, resolved by the sandbox at run time). A failing
+    catalog read degrades to empty maps (logged): the gate still refuses
+    ungrounded sources, honestly, rather than inventing a neighborhood."""
+    try:
+        from flask import g, has_request_context
+
+        from utk_curio.backend.app.datasets.application.catalog_service import (
+            DatasetCatalogService,
+        )
+
+        user = getattr(g, "user", None) if has_request_context() else None
+        listing = DatasetCatalogService(user).list_catalog(dataflow_id=project_id)
+    except Exception:  # a broken catalog is data, never a run error
+        log.warning(
+            "Could not read the Data Catalog for source grounding (project %s) — "
+            "catalog paths are treated as unknown this run", project_id, exc_info=True,
+        )
+        return {}, {}
+    by_path: dict = {}
+    by_id: dict = {}
+    for item in (listing or {}).get("items") or []:
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
+        path = item.get("path")
+        ref = source_grounding.CatalogRef(
+            dataset_id=str(item.get("id")),
+            title=str(item.get("title") or item.get("id") or ""),
+            format=str(item.get("format") or ""),
+            path=path if isinstance(path, str) else "",
+        )
+        by_id[ref.dataset_id] = ref
+        if isinstance(path, str) and path.strip():
+            by_path[path] = ref
+    return by_path, by_id
+
+
+def _session_grounding_evidence(
+    user_key: str, project_id: str, loop_ctx: dict
+) -> tuple[list[str], dict]:
+    """dev/114: what this conversation already established — the user's own
+    texts (the current message first) and every candidate row the runtime
+    verified (persisted turns + this run's ``_verified_urls``)."""
+    texts: list[str] = []
+    verified: dict = {}
+    message = loop_ctx.get("message")
+    if isinstance(message, str) and message.strip():
+        texts.append(message)
+    session_id = loop_ctx.get("session_id")
+    if isinstance(session_id, str):
+        try:
+            turns = sessions.read_turns(user_key, project_id, session_id)
+        except Exception:
+            turns = []
+        for turn in turns:
+            if turn.get("role") == "user" and isinstance(turn.get("text"), str):
+                texts.append(turn["text"])
+            for part in turn.get("content") or []:
+                if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
+                    continue
+                for row in ((part.get("lanes") or {}).get("external") or []):
+                    if not isinstance(row, dict):
+                        continue
+                    evidence = row.get("verification")
+                    if (
+                        isinstance(row.get("url"), str)
+                        and isinstance(evidence, dict)
+                        and evidence.get("status") == "verified"
+                    ):
+                        verified[row["url"]] = evidence
+    for url, evidence in (loop_ctx.get("_verified_urls") or {}).items():
+        verified[url] = evidence
+    return texts, verified
+
+
+def _grounding_context(
+    user_key: str,
+    project_id: str,
+    loop_ctx: dict,
+    *,
+    node_type: object,
+    params: dict | None = None,
+    extra_texts: tuple = (),
+    base: dict | None = None,
+    is_data_loading: bool | None = None,
+) -> "source_grounding.GroundingContext":
+    """dev/114 (DEC-072): everything the gate needs for ONE mint — catalog
+    paths, the conversation's evidence, the run-budgeted prober, and the
+    grant-aware corrective routes. ``base`` (a Solve batch's precomputed
+    catalog paths / texts / verified map) replaces the per-mint reads."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    canonical = packages_services.canonical_template_id(node_type) if node_type else ""
+    if is_data_loading is None:
+        is_data_loading = source_grounding.is_data_loading_type(canonical)
+    if base is not None:
+        catalog_paths = base.get("catalog_paths") or {}
+        catalog_ids = base.get("catalog_ids") or {}
+        texts = list(base.get("texts") or [])
+        verified = dict(base.get("verified") or {})
+    else:
+        catalog_paths, catalog_ids = _catalog_grounding_refs(project_id)
+        texts, verified = _session_grounding_evidence(user_key, project_id, loop_ctx)
+    texts.extend(t for t in extra_texts if isinstance(t, str) and t.strip())
+    budget = _run_egress_budget(loop_ctx)
+    cache: dict = loop_ctx.setdefault("_probe_cache", {})
+
+    def _probe(url: str) -> dict:
+        if url in cache:
+            return cache[url]
+        if budget.exhausted:
+            return {
+                "status": "unverified",
+                "detail": "the egress budget was spent before this URL — not checked",
+            }
+        result = verify.verify_external_source(url, budget=budget)
+        cache[url] = result
+        if result.get("status") == "verified":
+            loop_ctx.setdefault("_verified_urls", {})[url] = result
+        return result
+
+    hints: list[str] = []
+    if "catalog.search" in (loop_ctx.get("granted") or []):
+        hints.append("a `path` from a catalog.search row (granted — search first)")
+    manifest = loop_ctx.get("manifest")
+    if "agent.dataset-finder" in (getattr(manifest, "delegates_to", None) or []):
+        hints.append(
+            "a URL the runtime verified — delegate the dataset.discover capability "
+            "to find and verify candidates first, then build from the one the user confirms"
+        )
+    elif verified:
+        hints.append("a URL already verified in this conversation")
+    hints.append(
+        'declare "synthetic": true in the params ONLY when the user asked for made-up data'
+    )
+    return source_grounding.GroundingContext(
+        catalog_paths=catalog_paths,
+        catalog_ids=catalog_ids,
+        user_paths=source_grounding.user_paths(texts),
+        verified_urls=verified,
+        synthetic_requested=source_grounding.synthetic_requested(texts, params),
+        is_data_loading=is_data_loading,
+        probe=_probe,
+        hints=hints,
+    )
+
+
+def _gate_generated_content(
+    user_key: str,
+    project_id: str,
+    loop_ctx: dict,
+    *,
+    code: str,
+    engine: object,
+    node_type: object,
+    params: dict | None = None,
+    extra_texts: tuple = (),
+    base: dict | None = None,
+    is_data_loading: bool | None = None,
+) -> tuple["source_grounding.GroundingVerdict", str | None]:
+    """The ONE call every agent-authored-content boundary makes (dev/114):
+    ``(verdict, refusal_text | None)``. The refusal is model-correctable
+    (DEC-067) and names only routes this run can take."""
+    ctx = _grounding_context(
+        user_key, project_id, loop_ctx, node_type=node_type, params=params,
+        extra_texts=extra_texts, base=base, is_data_loading=is_data_loading,
+    )
+    engine_name = engine if isinstance(engine, str) and engine else "python"
+    verdict = source_grounding.check_grounding(code, engine_name, ctx)
+    if verdict.ok:
+        return verdict, None
+    return verdict, source_grounding.refusal_text(verdict, ctx)
+
+
+def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
+    """dev/114: the grounding a tool-less content delegate is HANDED (the
+    DEC-063 pattern — evidence as inputs): the catalog datasets with their
+    real paths, the paths the user typed, the URLs already verified, and the
+    rule. Bounded; plain data."""
+    datasets = [
+        {
+            "datasetId": ref.dataset_id,
+            "title": ref.title,
+            "format": ref.format,
+            "use": f'dataset_path = curio_dataset_path("{ref.dataset_id}")',
+            **({"path": ref.path} if ref.path else {}),
+        }
+        for ref in list(ctx.catalog_ids.values())[:24]
+    ]
+    return {
+        "catalogDatasets": datasets,
+        "userPaths": sorted(ctx.user_paths)[:24],
+        "verifiedUrls": sorted(ctx.verified_urls)[:24],
+        "syntheticRequested": bool(ctx.synthetic_requested),
+        "rule": (
+            "Load catalog datasets ONLY through their `use` line "
+            "(curio_dataset_path(\"<id>\") — the sandbox resolves it), open ONLY the "
+            "local paths listed (catalogDatasets[].path or userPaths), and fetch ONLY "
+            "these URLs (verifiedUrls). Never invent a filename, never "
+            "assume a file exists, never write a URL from memory — the runtime "
+            "refuses ungrounded content. If none of these fits the intent, return "
+            "a one-line explanation of what source is missing instead of code."
+            + (
+                " The user asked for synthetic data: build it inline and say so."
+                if ctx.synthetic_requested else ""
+            )
+        ),
+    }
+
+
+def _solve_grounding_base(
+    user_key: str, project_id: str, spec: dict | None, nodes_by_id: dict, targets: list
+) -> dict:
+    """dev/114: ONE grounding base per Solve batch, built in the request
+    thread (workers hold no request context): catalog paths, the mission and
+    plan texts (the human-authored intents), and the session-free verified
+    map (empty — Solve has no candidates transcript of its own)."""
+    dataflow = (spec or {}).get("dataflow") or {}
+    texts = [str(dataflow.get("task") or ""), str(dataflow.get("name") or "")]
+    for node_id in targets:
+        node = nodes_by_id.get(node_id) or {}
+        texts.append(str(node.get("goal") or ""))
+    by_path, by_id = _catalog_grounding_refs(project_id)
+    return {
+        "catalog_paths": by_path,
+        "catalog_ids": by_id,
+        "texts": [t for t in texts if t.strip()],
+        "verified": {},
+    }
+
+
+#: dev/114: the sixth runtime-supplied-inputs application (DEC-063) — the
+#: rule a tool-less Dataset Finder child answers to. The row schema itself is
+#: content.CANDIDATES_INSTRUCTION (#269): ONE schema, never a second copy.
+_DISCOVERY_RULE = (
+    "You are running as a delegate without tools. The `catalog` input IS the "
+    "project's Data Catalog (catalog.search was run for you): catalog-lane rows "
+    "must come ONLY from it, quoting each row's id as datasetId — any other id is "
+    "dropped. External rows are suggestions the runtime will probe; do not claim "
+    "verification. Reply with the datasetCandidates block described below and a "
+    "one-line summary; nothing else."
+)
+
+
+def _extract_candidates_reply(child_text: str) -> dict | None:
+    """dev/114: the child reply's ``datasetCandidates`` payload, or None —
+    schema-only recognition (DEC-063): a JSON object, bare or inside ONE fence
+    of any language tag (the #269 schema teaches a curio.v1 fence), whose
+    ``datasetCandidates.lanes`` is a dict. Chat JSON never matches."""
+    import json as _json
+    import re as _re2
+
+    if not isinstance(child_text, str) or not child_text.strip():
+        return None
+    candidates = [child_text.strip()]
+    candidates += [m.group(1).strip() for m in _re2.finditer(
+        r"```[A-Za-z0-9_.-]*[ \t]*\n(.*?)\n?```", child_text, _re2.DOTALL)]
+    for candidate in candidates:
+        try:
+            payload = _json.loads(candidate)
+        except ValueError:
+            continue
+        block = payload.get("datasetCandidates") if isinstance(payload, dict) else None
+        if isinstance(block, dict) and isinstance(block.get("lanes"), dict):
+            return block
+    return None
+
+
+def _mint_candidates_from_delegate(
+    loop_ctx: dict, child_text: str, catalog_rows: list
+) -> tuple[dict | None, str, str]:
+    """dev/114: a successful ``dataset.discover`` delegation becomes the
+    two-lane ``datasetCandidates`` part on the PARENT's turn — runtime-minted:
+    catalog rows not in the runtime's own catalog listing are dropped (tool-
+    grounded, never model-claimed), external rows get the DEC-053 verdict, and
+    the run is marked so a same-turn node.create is refused (the user reviews
+    first). Returns ``(part | None, text_for_model, outcome)``."""
+    block = _extract_candidates_reply(child_text)
+    if block is None:
+        return None, (
+            "the Dataset Finder returned no recognizable datasetCandidates block — "
+            "report that honestly; do not invent candidates or a source"
+        ), "no-candidates"
+    known = {str(r.get("id")) for r in catalog_rows if isinstance(r, dict) and r.get("id")}
+    lanes = block.get("lanes") or {}
+    catalog_raw = lanes.get("catalog") if isinstance(lanes.get("catalog"), list) else []
+    kept = [r for r in catalog_raw if isinstance(r, dict) and str(r.get("datasetId")) in known]
+    dropped = len(catalog_raw) - len(kept)
+    for row in kept:
+        # Installed state is the LISTING's, never the child's claim.
+        listed = next((r for r in catalog_rows if str(r.get("id")) == str(row.get("datasetId"))), None)
+        if listed is not None:
+            row["installed"] = bool(listed.get("installed"))
+            row.setdefault("name", listed.get("name"))
+            row.setdefault("sourceType", "catalog")
+    parsed = content._parse_dataset_candidates({"lanes": {
+        "external": lanes.get("external") if isinstance(lanes.get("external"), list) else [],
+        "catalog": kept,
+    }})
+    if parsed is None:
+        note = f" ({dropped} catalog row(s) dropped — not in the Data Catalog)" if dropped else ""
+        return None, (
+            "the Dataset Finder returned no usable candidates" + note +
+            " — report that honestly; ask the user for a path or URL instead of guessing"
+        ), "no-candidates"
+    _verify_candidate_parts([parsed], loop_ctx)
+    loop_ctx["_candidates_pending_review"] = True
+    total = sum(len(v) for v in parsed["lanes"].values())
+    note = f" {dropped} catalog row(s) were dropped (not in the Data Catalog)." if dropped else ""
+    return parsed, (
+        f"{total} dataset candidate(s) are shown to the user for review; external rows "
+        "carry the runtime's verification verdict." + note +
+        " Do NOT propose a node in this turn — ask the user to select and confirm; "
+        "you will build from the confirmed source on the next turn."
+    ), "ok"
+
+
+def _dataset_discover_inputs(user_key: str, project_id: str, inputs: dict) -> dict:
+    """dev/114: the sixth DEC-063 application — a tool-less Dataset Finder
+    child gets the catalog listing and the reply schema as INPUTS."""
+    enriched = dict(inputs)
+    if "catalog" not in enriched:
+        try:
+            rows = tools._catalog_search_rows(user_key, project_id, {})
+        except Exception:
+            log.warning("Could not list the Data Catalog for a dataset.discover "
+                        "delegate (project %s)", project_id, exc_info=True)
+            rows = []
+        enriched["catalog"] = {
+            "note": (
+                "The project's Data Catalog as catalog.search returned it"
+                if rows else
+                "The Data Catalog listing was empty or unavailable — the catalog lane "
+                "must stay empty; say so."
+            ),
+            "rows": rows,
+        }
+    if "discoveryReplyContract" not in enriched:
+        enriched["discoveryReplyContract"] = _DISCOVERY_RULE + "\n\n" + content.CANDIDATES_INSTRUCTION
+    return enriched
 
 
 def _execute_tool_request(
@@ -6121,6 +6584,7 @@ def _mint_content_review_from_delegate(
     parent_attachment_id,
     parent_session_id,
     local_turn: bool = False,
+    parent_loop_ctx: dict | None = None,
 ) -> tuple[dict | None, str | None, str]:
     """dev/73: the ONE content→review sequence (the Solve drain's, extracted):
     a successful ``node.content.generate`` delegation becomes a reviewed
@@ -6155,9 +6619,17 @@ def _mint_content_review_from_delegate(
                 break
     except Exception:
         pass
+    # dev/114: the mint's grounding gate reads the PARENT run's evidence
+    # (current message, verified rows, probe cache, grants) — the home
+    # session alone would not know what the user just typed.
+    mint_ctx = {
+        k: v for k, v in (parent_loop_ctx or {}).items()
+        if k in ("message", "_verified_urls", "_egress_budget", "_probe_cache", "granted", "manifest")
+    }
+    mint_ctx.update({"attachment_id": home_att, "session_id": home_sess})
     p_status, p_error, part = _mint_node_content_write(
         user_key, project_id,
-        {"attachment_id": home_att, "session_id": home_sess},
+        mint_ctx,
         {"tool": "node.content.write",
          "params": {"nodeId": node_id, "content": text_out}},
     )
@@ -7063,6 +7535,12 @@ def _enriched_delegate_inputs(
         if "notesReplyContract" not in enriched:
             enriched["notesReplyContract"] = _NOTES_REPLY_CONTRACT
         return enriched
+    if capability == "dataset.discover":
+        # dev/114 — the SIXTH runtime-supplied-inputs application (DEC-063):
+        # a tool-less Dataset Finder child cannot run catalog.search, so the
+        # runtime lists the catalog for it and teaches the ONE reply schema
+        # (#269's). Model-supplied keys always win.
+        return _dataset_discover_inputs(user_key, project_id, inputs)
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs
     node_id = inputs.get("nodeId")
@@ -7079,7 +7557,21 @@ def _enriched_delegate_inputs(
     composed = node_context.compose_node_context(user_key, project_id, spec, node_id)
     if composed is None:
         return inputs
-    return {**inputs, "nodeContext": composed}
+    enriched = {**inputs, "nodeContext": composed}
+    # dev/114 — the SEVENTH application: a data-loading node's content child
+    # is HANDED its grounded sources (catalog paths, the user's paths, the
+    # URLs already verified) instead of guessing a filename.
+    from utk_curio.backend.app.packages import services as packages_services
+
+    node_type = composed.get("nodeType")
+    if "sourceGrounding" not in enriched and source_grounding.is_data_loading_type(
+        packages_services.canonical_template_id(node_type)
+    ):
+        enriched["sourceGrounding"] = _source_grounding_inputs(
+            _grounding_context(user_key, project_id, loop_ctx, node_type=node_type,
+                               extra_texts=(str(inputs.get("intent") or ""),))
+        )
+    return enriched
 
 
 def _resolve_delegate_request(
@@ -7134,6 +7626,10 @@ def run_attachment(
     coord, session_id, messages, run_policy, wants_title, pins, loop_ctx = _prepare_run(
         user_key, project_id, attachment_id, message, config, run_context
     )
+    # dev/114: the current user text — turns persist AFTER the run, so the
+    # grounding gate cannot read it from the session; a path the user typed
+    # is the one human-trusted source of a local path.
+    loop_ctx["message"] = message
     execution_id = uuid.uuid4().hex
     # Atomic admission (dev/40): after validation (an invalid request never
     # consumes quota), before provider dispatch (a denied run never reaches a
@@ -7168,7 +7664,7 @@ def run_attachment(
             )
             _add_usage(usage_total, usage_sink)
             visible, parts = content.extract_content(reply)
-            _verify_candidate_parts(parts)  # dev/67-4: no unverified laundering
+            _verify_candidate_parts(parts, loop_ctx)  # dev/67-4: no unverified laundering
             req = (
                 parts[0]
                 if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
@@ -7262,6 +7758,7 @@ def run_attachment(
                             generated_text=text,
                             parent_attachment_id=loop_ctx.get("attachment_id"),
                             parent_session_id=loop_ctx.get("session_id"),
+                            parent_loop_ctx=loop_ctx,
                         )
                         delegate_summary = text
                         if review_part is not None:
@@ -7293,6 +7790,20 @@ def run_attachment(
                         # not merely that the child ran — "ok" beside "returned
                         # no parseable draft" is how the parent learned nothing.
                         status = draft_outcome
+                    elif status == "ok" and req["capability"] == "dataset.discover":
+                        # dev/114: discovery success ⇒ the two-lane candidates part
+                        # EXISTS on this turn — runtime-minted (catalog rows tool-
+                        # grounded, external rows probed), never the model's claim.
+                        cand_part, text, cand_outcome = _mint_candidates_from_delegate(
+                            loop_ctx, text,
+                            ((req.get("inputs") or {}).get("catalog") or {}).get("rows")
+                            or _dataset_discover_inputs(user_key, project_id, {})["catalog"]["rows"],
+                        )
+                        delegate_summary = text
+                        if cand_part is not None:
+                            minted.append(cand_part)
+                            delegate_summary = "dataset candidates shown for review — select and confirm"
+                        status = cand_outcome
                     elif status == "ok" and req["capability"] == "research.notes.compose":
                         # dev/95 (Follow-up D): notes success ⇒ the reviewed
                         # A16 sequence EXISTS — runtime-minted from the
@@ -7411,6 +7922,10 @@ def stream_attachment(
     coord, session_id, messages, run_policy, wants_title, pins, loop_ctx = _prepare_run(
         user_key, project_id, attachment_id, message, config, run_context
     )
+    # dev/114: the current user text — turns persist AFTER the run, so the
+    # grounding gate cannot read it from the session; a path the user typed
+    # is the one human-trusted source of a local path.
+    loop_ctx["message"] = message
     execution_id = uuid.uuid4().hex
     # Eager atomic admission (dev/40): a quota/budget denial surfaces as a
     # plain 429 before any streaming begins, and consumes/persists nothing.
@@ -7480,7 +7995,7 @@ def stream_attachment(
                     yield ("delta", emit)
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
-        _verify_candidate_parts(parts)  # dev/67-4: no unverified laundering
+        _verify_candidate_parts(parts, loop_ctx)  # dev/67-4: no unverified laundering
         if withheld is not None and not parts:
             if hold_plan_tail and (
                 '"dataflowPlan"' in withheld or '"dataflow.plan.write"' in withheld
@@ -7661,6 +8176,7 @@ def stream_attachment(
                                 generated_text=text,
                                 parent_attachment_id=loop_ctx.get("attachment_id"),
                                 parent_session_id=loop_ctx.get("session_id"),
+                                parent_loop_ctx=loop_ctx,
                             )
                             delegate_summary = text
                             if review_part is not None:
@@ -7693,6 +8209,20 @@ def stream_attachment(
                             # dev/93 D5: the card reports the OUTCOME (see the
                             # non-streaming path).
                             status = draft_outcome
+                        elif status == "ok" and req["capability"] == "dataset.discover":
+                            # dev/114: discovery success ⇒ the two-lane candidates part
+                            # EXISTS on this turn — runtime-minted (catalog rows tool-
+                            # grounded, external rows probed), never the model's claim.
+                            cand_part, text, cand_outcome = _mint_candidates_from_delegate(
+                                loop_ctx, text,
+                                ((req.get("inputs") or {}).get("catalog") or {}).get("rows")
+                                or _dataset_discover_inputs(user_key, project_id, {})["catalog"]["rows"],
+                            )
+                            delegate_summary = text
+                            if cand_part is not None:
+                                minted.append(cand_part)
+                                delegate_summary = "dataset candidates shown for review — select and confirm"
+                            status = cand_outcome
                         elif status == "ok" and req["capability"] == "research.notes.compose":
                             # dev/95: see the non-streaming path.
                             note_parts, text, notes_outcome = _mint_notes_from_delegate(

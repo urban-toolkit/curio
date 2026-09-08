@@ -12,7 +12,9 @@ The rules (all runtime-enforced; prompt wording only teaches them):
 
 - a **local path** is grounded only when the user typed it in this
   conversation or the Data Catalog resolved it (an installed dataset's real
-  path — the same truth ``catalog.search`` serves);
+  path — the same truth ``catalog.search`` serves); the portable
+  ``curio_dataset_path("<id>")`` call the loader recipe emits is grounded
+  when the id is a dataset of this project's catalog;
 - a **URL** is grounded only when the runtime probed it this run (the dev/67-4
   gate: ``verified``, or ``401``/``403`` = the endpoint exists behind a
   credential) or an already-verified candidate row in this session carries
@@ -66,6 +68,12 @@ _LABEL_MAX_CHARS = 200
 _TITLE_MAX_CHARS = 120
 
 _URL_SCHEMES = ("http://", "https://")
+# The portable catalog reference the datasets domain's loader recipe emits and
+# the sandbox resolves at run time (KEEP IN SYNC with _DATASET_PATH_CALL_RE in
+# backend/app/api/routes.py and the frontend datasetLoaderSnippets.ts).
+DATASET_PATH_CALL_RE = re.compile(
+    r"""curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+)
 _STRING_LITERAL_RE = re.compile(
     r"""(?P<q>['"])(?P<body>(?:\\.|(?!(?P=q)).)*)(?P=q)""", re.DOTALL
 )
@@ -77,7 +85,7 @@ _TRAILING_PUNCT = ".,;:!?"
 class SourceRef:
     """One source-shaped literal found in code."""
 
-    kind: str  # "path" | "url"
+    kind: str  # "path" | "url" | "catalog-id"
     literal: str
     line: int
     partial: bool = False  # the constant prefix of an f-string
@@ -98,6 +106,8 @@ class GroundingContext:
     """Everything the verdict needs, supplied by the caller."""
 
     catalog_paths: dict[str, CatalogRef] = field(default_factory=dict)
+    #: dataset id → ref, for the portable ``curio_dataset_path("<id>")`` form.
+    catalog_ids: dict[str, CatalogRef] = field(default_factory=dict)
     user_paths: set[str] = field(default_factory=set)
     verified_urls: dict[str, dict] = field(default_factory=dict)
     synthetic_requested: bool = False
@@ -202,13 +212,22 @@ def _scan_python(code: str) -> list[SourceRef] | None:
     tree, offset = parsed
     refs: list[SourceRef] = []
     # Constant children of an f-string are scanned through the f-string —
-    # never a second time as bare constants.
+    # never a second time as bare constants; the id inside a
+    # ``curio_dataset_path("<id>")`` call is a catalog reference, not a path.
     fstring_children: set[int] = set()
+    call_ids: set[int] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.JoinedStr):
             for child in ast.walk(node):
                 if child is not node:
                     fstring_children.add(id(child))
+        elif isinstance(node, ast.Call) and _is_dataset_path_call(node):
+            arg = node.args[0] if node.args else None
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                call_ids.add(id(arg))
+                refs.append(SourceRef(
+                    "catalog-id", arg.value.strip(), max(1, getattr(node, "lineno", 1) - offset)
+                ))
     for node in ast.walk(tree):
         line = max(1, getattr(node, "lineno", 1) - offset)
         if isinstance(node, ast.JoinedStr):
@@ -228,7 +247,7 @@ def _scan_python(code: str) -> list[SourceRef] | None:
                 # is refused with the correction named.
                 refs.append(SourceRef("path", template.strip(), line, partial=True))
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if id(node) in fstring_children:
+            if id(node) in fstring_children or id(node) in call_ids:
                 continue
             kind = classify_literal(node.value)
             if kind:
@@ -236,9 +255,21 @@ def _scan_python(code: str) -> list[SourceRef] | None:
     return refs
 
 
+def _is_dataset_path_call(node: ast.Call) -> bool:
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
+    return name == "curio_dataset_path"
+
+
 def _scan_regex(code: str) -> list[SourceRef]:
     refs: list[SourceRef] = []
+    call_spans: list[tuple[int, int]] = []
+    for match in DATASET_PATH_CALL_RE.finditer(code):
+        call_spans.append(match.span())
+        refs.append(SourceRef("catalog-id", match.group(2), code.count("\n", 0, match.start()) + 1))
     for match in _STRING_LITERAL_RE.finditer(code):
+        if any(a <= match.start() < b for a, b in call_spans):
+            continue
         body = match.group("body")
         kind = classify_literal(body)
         if kind:
@@ -368,6 +399,22 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
     source_refs: list[dict] = []
     for ref in refs:
         where = f"{ref.literal!r} (line {ref.line})"
+        if ref.kind == "catalog-id":
+            catalog = ctx.catalog_ids.get(ref.literal)
+            if catalog is None:
+                violations.append(
+                    f"curio_dataset_path({ref.literal!r}) (line {ref.line}): not a dataset in "
+                    "this project's Data Catalog — use the id of a catalog.search row"
+                )
+            else:
+                source_refs.append({
+                    "kind": "catalog",
+                    "value": f'curio_dataset_path("{ref.literal}")',
+                    "datasetId": catalog.dataset_id,
+                    "title": catalog.title[:_TITLE_MAX_CHARS],
+                    "format": catalog.format,
+                })
+            continue
         if ref.kind == "path":
             if ref.partial:
                 violations.append(

@@ -58,6 +58,26 @@ class TestScanner:
         assert len(refs) == 3
 
 
+class TestCatalogIdForm:
+    """main's loader recipe emits the portable ``curio_dataset_path("<id>")``
+    call (resolved by the sandbox at run time) — grounded by dataset id."""
+
+    def test_known_id_is_grounded_and_unknown_refused(self):
+        ctx = _ctx(is_data_loading=True, catalog_ids={"imported.x1@1": sg.CatalogRef("imported.x1@1", "Tracts", "csv", "")})
+        ok = sg.check_grounding('dataset_path = curio_dataset_path("imported.x1@1")\ndf = pd.read_csv(dataset_path)\nreturn df', "python", ctx)
+        assert ok.ok and ok.source["kind"] == "catalog"
+        assert ok.source["refs"][0]["value"] == 'curio_dataset_path("imported.x1@1")'
+        assert ok.source["refs"][0]["datasetId"] == "imported.x1@1"
+        bad = sg.check_grounding("dataset_path = curio_dataset_path('imported.ghost@1')\nreturn dataset_path", "python", ctx)
+        assert not bad.ok and "not a dataset in this project's Data Catalog" in bad.violations[0]
+
+    def test_id_is_not_double_counted_and_regex_fallback_matches(self):
+        refs = sg.scan_sources('p = curio_dataset_path("computed.n1@1")', "python")
+        assert [(r.kind, r.literal) for r in refs] == [("catalog-id", "computed.n1@1")]
+        broken = 'p = curio_dataset_path("computed.n1@1")\nreturn (p'  # syntax error → regex
+        assert [(r.kind, r.literal) for r in sg.scan_sources(broken, "python")] == [("catalog-id", "computed.n1@1")]
+
+
 class TestUserTexts:
     def test_user_paths_from_free_text(self):
         paths = sg.user_paths(["load /data/tracts.geojson and also `raw/pop.csv`, please."])
