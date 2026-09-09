@@ -153,6 +153,7 @@ concepts (see `03-ui-decisions`, `04-interaction-states`, `08-unified-agent-chat
   interrupted / done / cancelled / error) via dock running dots and status chips.
 - **Streamed foreground execution** — progress and cancellation stay visible in the dock/chat.
   *(dev/115, `DEC-073`: the Dataflow Builder's Solve and the per-node Solve run as detached,
+  *(dev/118, `DEC-075`, 2026-09-09: Solve verifies EVERY executable kind, in topological waves persisted per wave; a browser-rendered kind is written and labeled `not-executable`, never verified; a batch has a wall-clock budget and a slice-bound refusal is `skipped`; passed ancestors' outputs are reused within the batch.)*
   re-attachable background jobs — the dock shows a running dot; the strip re-attaches.)*
   Multi-instance execution is not claimed until `OQ-009` is resolved.
 

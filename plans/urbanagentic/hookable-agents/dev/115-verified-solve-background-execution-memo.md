@@ -227,7 +227,7 @@ Multi-session protocol applies (pathspec commits; `git status` before every add;
 
 ## Follow-ups (recorded, not delivered)
 
-- **F1** Widen verified Solve beyond data-loading nodes (`verifyKinds`); expect longer batches — revisit `_SOLVE_MAX_WORKERS`.
+- **F1** Widen verified Solve beyond data-loading nodes (`verifyKinds`); expect longer batches — revisit `_SOLVE_MAX_WORKERS`. **Delivered by dev/118 (`DEC-075`, `BL-P5-20260909-52`, 2026-09-09) — not as one line: topological waves, per-wave persistence, `upstreamOutputs`, an honest `not-executable` outcome, a batch deadline, skipped slice bounds, same-batch ancestor reuse; `_SOLVE_MAX_WORKERS` stays 3 (the bound is sandbox concurrency — the deadline plus Retry is the lever).**
 - **F2** OQ-009: multi-instance execution and a durable lease/queue owner; the re-open path to Option B if the criteria in §3.9 are met.
 - **F3** Sandbox-side cancellation of an in-flight execution (a `/cancel` on the supervisor) so cancel is immediate.
 - **F4** Output-schema evidence (column metadata) in the verdict when the runtime journal captures it (dev/67-7 follow-up, still open).
