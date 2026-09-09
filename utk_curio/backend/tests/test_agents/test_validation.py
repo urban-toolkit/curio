@@ -139,3 +139,23 @@ class TestNotExecutable:
         assert "runs in the browser" in result["evidence"]["detail"]
         assert result["evidence"]["goal"] == "plot it"
         assert result["evidence"]["executedNodes"] == [] and calls == []
+
+
+class TestPriorOutputs:
+    def test_reused_nodes_and_the_output_record_ride_the_evidence(self, tmp_curio):
+        payloads = []
+
+        def _fn(endpoint, payload):
+            payloads.append(payload)
+            return {"stdout": [], "stderr": "", "output": {"path": "art-t", "dataType": "dataframe"}}
+
+        spec = _spec([_node("a"), _node("t")], [{"id": "e1", "source": "a", "target": "t"}])
+        result = validation.validate_candidate(
+            KEY, PID, spec, "t", "df = arg[0]\nreturn df", exec_fn=_fn,
+            prior_outputs={"a": {"path": "art-a", "dataType": "dataframe"}},
+        )
+        assert result["verdict"] == "pass"
+        assert result["evidence"]["reusedNodes"] == ["a"]
+        assert result["evidence"]["executedNodes"] == ["t"]
+        assert result["evidence"]["output"] == {"path": "art-t", "dataType": "dataframe"}
+        assert payloads[0]["file_path"] == "art-a"

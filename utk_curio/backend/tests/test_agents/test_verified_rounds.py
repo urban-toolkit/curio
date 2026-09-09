@@ -577,6 +577,67 @@ class TestNotExecutableKinds:
         assert [k for k, _ in events if k == "round_verdict"] == ["round_verdict"]
 
 
+class TestSameBatchReuse:
+    """dev/118 (DEC-075) commit 4: the loop hands the runner the outputs of
+    ancestors that passed earlier in the batch; a vanished artifact costs one
+    silent retry without reuse, never a round."""
+
+    def _chain(self):
+        node_a = {"id": "a", "type": CA, "goal": "prep", "content": "df = arg\nreturn df"}
+        node_t = {"id": "t", "type": CA, "goal": "stats", "content": ""}
+        spec = {"dataflow": {"nodes": [node_a, node_t], "edges": [{"id": "e1", "source": "a", "target": "t"}],
+                             "name": "wf", "task": "stats"}}
+        return node_t, spec
+
+    def test_prior_outputs_feed_the_target_and_are_recorded_on_the_attempt(self, app, tmp_curio):
+        node_t, spec = self._chain()
+        exec_fn = _Exec()
+        events, outcome, inputs = _rounds(
+            app, node_t, replies=["df = arg[0]\nreturn df.describe()"], exec_fn=exec_fn, spec=spec,
+            prior_outputs_fn=lambda: {"a": {"path": "art-a", "dataType": "dataframe"}},
+        )
+        assert outcome["verdict"] == "pass" and outcome["rounds"] == 1
+        assert len(exec_fn.calls) == 1  # the ancestor was not re-run
+        assert exec_fn.calls[0]["file_path"] == "art-a"
+        assert outcome["attempts"][0]["reusedNodes"] == ["a"]
+        assert "reuseRetried" not in outcome["attempts"][0]
+
+    def test_a_vanished_reused_artifact_is_retried_once_without_reuse(self, app, tmp_curio):
+        node_t, spec = self._chain()
+        calls: list[dict] = []
+
+        def _exec(endpoint, payload):
+            calls.append(payload)
+            if payload["file_path"] == "art-gone":
+                return {"stdout": [], "stderr": "KeyError: artifact 'art-gone' could not be loaded",
+                        "output": {"path": "", "dataType": "str"}}
+            return {"stdout": [], "stderr": "", "output": {"path": "art-x", "dataType": "dataframe"}}
+
+        events, outcome, inputs = _rounds(
+            app, node_t, replies=["df = arg[0]\nreturn df.describe()"], exec_fn=_exec, spec=spec,
+            prior_outputs_fn=lambda: {"a": {"path": "art-gone", "dataType": "dataframe"}},
+        )
+        assert outcome["verdict"] == "pass" and outcome["rounds"] == 1  # not a round
+        assert len(inputs) == 1  # no correction was asked for
+        # First attempt: the target alone, against the vanished artifact; the
+        # retry ran the whole slice (ancestor, then target).
+        assert [c["file_path"] for c in calls] == ["art-gone", "", "art-x"]
+        assert outcome["attempts"][0]["reuseRetried"] is True
+        assert "reusedNodes" not in outcome["attempts"][0]  # the counted result ran whole
+
+    def test_a_real_failure_with_reuse_is_the_candidates_own(self, app, tmp_curio):
+        node_t, spec = self._chain()
+        exec_fn = _Exec(fail_markers=("bad_stats",), stderr="NameError: bad_stats")
+        events, outcome, inputs = _rounds(
+            app, node_t, replies=["bad_stats()", "df = arg[0]\nreturn df.describe()"], exec_fn=exec_fn, spec=spec,
+            prior_outputs_fn=lambda: {"a": {"path": "art-a", "dataType": "dataframe"}},
+        )
+        assert outcome["verdict"] == "pass" and outcome["rounds"] == 2
+        assert len(exec_fn.calls) == 2  # each round ran the target only
+        assert "reuseRetried" not in outcome["attempts"][0]
+        assert outcome["attempts"][0]["kind"] == "execution-error"
+
+
 class TestExecDatasetPaths:
     def _service(self, monkeypatch, resolved, raise_exc=False):
         calls = []
@@ -807,9 +868,12 @@ class TestVerifiedSolve:
         # with the code that landed, then the stats node).
         stats = body["results"][ctx["stats"]]
         assert stats["status"] == "solved" and stats["verdict"] == "pass" and stats["rounds"] == 1
-        assert len(ctx["exec_payloads"]) == 3
-        assert ctx["dataset_id"] in ctx["exec_payloads"][1]["code"]  # the persisted loader, re-run as the slice
-        assert "describe" in ctx["exec_payloads"][2]["code"]
+        # dev/118 commit 4: the loader's recorded output stands in — wave 2
+        # runs the stats node alone, fed by the artifact the loader produced.
+        assert len(ctx["exec_payloads"]) == 2
+        assert "describe" in ctx["exec_payloads"][1]["code"]
+        assert ctx["exec_payloads"][1]["file_path"] == "art-1"
+        assert stats["attempts"][0]["reusedNodes"] == [ctx["load"]]
         assert ctx["dataset_id"] in self._node_content(ctx, ctx["load"])
         assert "describe" in self._node_content(ctx, ctx["stats"])
         assert body["builderSession"]["phase"] == "ready"

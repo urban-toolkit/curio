@@ -90,6 +90,7 @@ def validate_candidate(
     dataset_paths: dict | None = None,
     exec_user_key: str | None = None,
     secrets: dict | None = None,
+    prior_outputs: dict | None = None,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
     return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
@@ -101,8 +102,10 @@ def validate_candidate(
         candidate_content=candidate_content,
         session_id=session_id, exec_fn=exec_fn, progress=progress,
         dataset_paths=dataset_paths, exec_user_key=exec_user_key, secrets=secrets,
+        prior_outputs=prior_outputs,
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
+    reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]
     dataflow = (spec_dict or {}).get("dataflow") or {}
     node = next(
         (n for n in dataflow.get("nodes") or []
@@ -114,6 +117,9 @@ def validate_candidate(
         "executedNodes": executed,
         "goal": str(node.get("goal") or "")[:300],
     }
+    if reused:
+        # dev/118 commit 4: which ancestors stood in by their earlier output.
+        evidence["reusedNodes"] = reused
     if report.get("infrastructure"):
         evidence.update({"kind": "infrastructure", "detail": report["infrastructure"]})
         return {"verdict": "infrastructure", "evidence": evidence}
@@ -150,6 +156,11 @@ def validate_candidate(
         return {"verdict": "fail", "evidence": evidence}
     output_data_type = (target_record.get("output") or {}).get("dataType", "")
     evidence["outputDataType"] = output_data_type
+    # dev/118 commit 4: the artifact record a dependent's validation may reuse
+    # for this node within the same batch (an id in the sandbox store — plain
+    # data, never content).
+    if isinstance(target_record.get("output"), dict) and target_record["output"].get("path"):
+        evidence["output"] = {"path": target_record["output"]["path"], "dataType": output_data_type}
     if target_record.get("durationMs") is not None:
         evidence["durationMs"] = target_record["durationMs"]
     # Successful runs may still carry benign warnings — evidence, not verdict.

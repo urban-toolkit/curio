@@ -340,3 +340,33 @@ class TestDev118NotExecutableTarget:
         assert report["ok"] is True and report["notExecutable"] is False
         assert report["nodes"]["m"]["status"] == "pass-through"
         assert [c[1]["nodeType"] for c in rec.calls] == ["curio.builtin/computation-analysis"] * 2
+
+
+class TestDev118PriorOutputs:
+    """dev/118 (DEC-075) commit 4: an ancestor that passed earlier in the batch
+    stands in by its recorded output — the target always runs."""
+
+    def test_reused_ancestors_are_not_re_executed_and_feed_the_target(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _chain_spec(["a", "b", "c"])
+        report = runner.run_through_node(
+            KEY, PID, spec, "c", exec_fn=rec,
+            prior_outputs={"a": {"path": "art-a", "dataType": "dataframe"},
+                           "b": {"path": "art-b", "dataType": "dataframe"},
+                           "zzz": {"path": "ignored", "dataType": "x"}},
+        )
+        assert report["ok"] is True
+        assert report["nodes"]["a"] == {"status": "reused", "executed": False, "output": {"path": "art-a", "dataType": "dataframe"}}
+        assert report["nodes"]["b"]["status"] == "reused"
+        assert [c[1]["nodeType"] for c in rec.calls] == ["curio.builtin/computation-analysis"]  # only c ran
+        assert rec.calls[0][1]["file_path"] == "art-b" and rec.calls[0][1]["dataType"] == "dataframe"
+        assert report["nodes"]["c"]["executed"] is True
+
+    def test_the_target_itself_is_never_reused(self, tmp_curio):
+        rec = _RecordingExec()
+        report = runner.run_through_node(
+            KEY, PID, _chain_spec(["a"]), "a", exec_fn=rec,
+            prior_outputs={"a": {"path": "art-a", "dataType": "dataframe"}},
+        )
+        assert report["ok"] is True and report["nodes"]["a"]["executed"] is True
+        assert len(rec.calls) == 1

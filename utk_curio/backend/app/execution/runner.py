@@ -222,6 +222,7 @@ def run_through_node(
     dataset_paths: dict | None = None,
     exec_user_key: str | None = None,
     secrets: dict | None = None,
+    prior_outputs: dict | None = None,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
@@ -298,9 +299,18 @@ def run_through_node(
         return report
     report["order"] = [n.id for n in ordered]
     outputs: dict[str, dict] = {}
+    prior_outputs = dict(prior_outputs or {})
     for index, node in enumerate(ordered):
         if progress is not None:
             progress(node.id, index, len(ordered))
+        if node.id != node_id and node.id in prior_outputs and isinstance(prior_outputs[node.id], dict):
+            # dev/118 (DEC-075) commit 4: an ancestor that PASSED earlier in
+            # this batch — its recorded output stands in for a re-run. The
+            # target itself always runs. A vanished artifact surfaces on the
+            # target's input load; the caller retries once without reuse.
+            outputs[node.id] = dict(prior_outputs[node.id])
+            report["nodes"][node.id] = {"status": "reused", "executed": False, "output": outputs[node.id]}
+            continue
         content_text = node.content
         if candidate_content is not None and node.id == node_id:
             content_text = candidate_content

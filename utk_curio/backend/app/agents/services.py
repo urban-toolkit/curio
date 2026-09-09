@@ -3949,6 +3949,8 @@ def _solve_events(
                     "goal": str((nodes_by_id.get(node_id) or {}).get("goal") or "")[:200],
                     "outputDataType": (outcome.get("evidence") or {}).get("outputDataType") or "",
                     "wave": current["wave"],
+                    # dev/118 commit 4: the artifact a dependent's validation reuses.
+                    "output": (outcome.get("evidence") or {}).get("output"),
                 }
                 return {"nodeId": node_id, "status": "solved", "content": candidate, **trail}
             evidence = outcome.get("evidence") or {}
@@ -4325,6 +4327,9 @@ def _solve_events(
                             ),
                             exec_user_key=user_key,
                             secrets_fn=_exec_secrets_resolver(user_key),
+                            prior_outputs_fn=lambda: {
+                                nid: o["output"] for nid, o in wave_outputs.items() if o.get("output")
+                            },
                         )
                         try:
                             while True:
@@ -5124,7 +5129,30 @@ def _upstream_outputs_for(spec: dict | None, node_id: str, wave_outputs: dict) -
         ups = parse_workflow_dict(spec or {}).upstream_nodes(node_id)
     except Exception:
         return []
-    return [wave_outputs[u] for u in ups if u in wave_outputs][:12]
+    return [
+        {k: v for k, v in wave_outputs[u].items() if k != "output"} for u in ups if u in wave_outputs
+    ][:12]
+
+
+_VANISHED_INPUT_MARKERS = (
+    "could not be loaded", "not found", "no such file", "does not exist",
+    "keyerror", "artifact", "outputs table", "no output",
+)
+
+
+def _looks_like_a_vanished_reused_input(result: dict | None) -> bool:
+    """dev/118 commit 4: a failed round that ran with reused ancestor outputs,
+    where the TARGET failed while loading its input — the artifact behind a
+    reused record is gone, not the code wrong. Only when ancestors were
+    actually reused; a failure with a named upstream blocker or of another
+    shape is the candidate's own."""
+    if not isinstance(result, dict) or result.get("verdict") != "fail":
+        return False
+    evidence = result.get("evidence") or {}
+    if not evidence.get("reusedNodes") or evidence.get("kind") != "execution-error":
+        return False
+    text = str(evidence.get("stderrTail") or evidence.get("detail") or "").lower()
+    return any(marker in text for marker in _VANISHED_INPUT_MARKERS)
 
 
 def _node_is_executable(node_obj: dict | None) -> bool:
@@ -5919,6 +5947,7 @@ def _verified_content_rounds(
     dataset_paths_fn=None,
     exec_user_key: str | None = None,
     secrets_fn=None,
+    prior_outputs_fn=None,
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -6134,39 +6163,57 @@ def _verified_content_rounds(
                 secrets = secrets_fn([candidate]) or None
             except Exception:
                 secrets = None
-        progress_queue: _queue.Queue = _queue.Queue()
-
-        def _run_validation(candidate_text=candidate, paths=dataset_paths, secret_values=secrets):
+        # dev/118 commit 4: the outputs recorded for ancestors that passed
+        # earlier in this batch stand in for their re-run (fresh per round).
+        prior_outputs = None
+        if prior_outputs_fn is not None:
             try:
-                result = validation.validate_candidate(
-                    user_key, project_id, spec, node_id, candidate_text,
-                    exec_fn=exec_fn,
-                    available_templates=available,
-                    dataset_paths=paths,
-                    exec_user_key=exec_user_key,
-                    secrets=secret_values,
-                    progress=lambda nid, i, total: progress_queue.put(
-                        ("progress", nid, i, total)
-                    ),
-                )
-            except Exception as exc:  # the validator must never kill the stream
-                result = {
-                    "verdict": "infrastructure",
-                    "evidence": {"kind": "infrastructure", "detail": str(exc)[:300]},
-                }
-            progress_queue.put(("done", result))
+                prior_outputs = prior_outputs_fn() or None
+            except Exception:
+                prior_outputs = None
 
-        thread = threading.Thread(target=_run_validation)
-        thread.start()
-        while True:
-            item = progress_queue.get()
-            if item[0] == "progress":
-                _, nid, index, total = item
-                yield "node_executed", {"nodeId": nid, "index": index, "total": total}
-                continue
-            verdict_result = item[1]
-            break
-        thread.join(timeout=5)
+        def _validate_with(prior, candidate_text=candidate, paths=dataset_paths, secret_values=secrets):
+            progress_queue: _queue.Queue = _queue.Queue()
+
+            def _run_validation():
+                try:
+                    result = validation.validate_candidate(
+                        user_key, project_id, spec, node_id, candidate_text,
+                        exec_fn=exec_fn,
+                        available_templates=available,
+                        dataset_paths=paths,
+                        exec_user_key=exec_user_key,
+                        secrets=secret_values,
+                        prior_outputs=prior,
+                        progress=lambda nid, i, total: progress_queue.put(
+                            ("progress", nid, i, total)
+                        ),
+                    )
+                except Exception as exc:  # the validator must never kill the stream
+                    result = {
+                        "verdict": "infrastructure",
+                        "evidence": {"kind": "infrastructure", "detail": str(exc)[:300]},
+                    }
+                progress_queue.put(("done", result))
+
+            thread = threading.Thread(target=_run_validation)
+            thread.start()
+            while True:
+                item = progress_queue.get()
+                if item[0] == "progress":
+                    _, nid, index, total = item
+                    yield "node_executed", {"nodeId": nid, "index": index, "total": total}
+                    continue
+                thread.join(timeout=5)
+                return item[1]
+
+        verdict_result = yield from _validate_with(prior_outputs)
+        reuse_retried = False
+        if prior_outputs and _looks_like_a_vanished_reused_input(verdict_result):
+            # A reused artifact is gone (the sandbox store moved on): that is
+            # not the candidate's fault. Once, silently, the slice runs whole.
+            verdict_result = yield from _validate_with(None)
+            reuse_retried = True
         yield "round_verdict", {
             "round": rounds_used, "verdict": verdict_result["verdict"],
         }
@@ -6194,6 +6241,10 @@ def _verified_content_rounds(
             attempt["outputDataType"] = round_evidence["outputDataType"]
         if round_evidence.get("durationMs") is not None:
             attempt["durationMs"] = round_evidence["durationMs"]
+        if round_evidence.get("reusedNodes"):
+            attempt["reusedNodes"] = list(round_evidence["reusedNodes"])[:12]
+        if reuse_retried:
+            attempt["reuseRetried"] = True
         attempts.append(attempt)
         if verdict_result["verdict"] != "fail":
             break
