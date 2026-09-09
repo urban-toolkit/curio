@@ -1,6 +1,6 @@
 # dev/119 — Executability is a template fact, not a hand-kept list: `spatial-join` is right to read *not executable* (it has no code — a backend endpoint does its work), `data-summary` and every package Python kind are wrong, and a palette-dragged node's versioned id makes the per-node Solve refuse real code
 
-**Status: PROPOSED (2026-09-09) — awaiting owner approval. No code written.**
+**Status: APPROVED — IN PROGRESS (2026-09-09). Commit 1 (the hotfix) landed on `imp/agentcatalog` as `c43eedaa`: `workflow_spec.normalize_type` strips `@<major>` before the legacy lookup; pins: `parse_workflow_dict` classifies `curio.builtin/data-loading@1` as `code` with the wire id kept on `raw_type`, a versioned data-loading target executes, and the per-node Solve on a `curio.builtin/data-loading@1` node passes instead of answering *not executable*. Backend 1209 passed / 2 skipped. Commits 2–3 pending.**
 
 Date: 2026-09-09
 Branch / tree: `imp/agentcatalog` @ `efa8fdac` (dev/118 closed and live re-tested). Line numbers pinned to that commit. `plans/` is tracked on this branch since `7f990e88`; `plans/urbanagentic/hookable-agents/knowledge-graph/` (a 354 MB site copy) stays untracked by intent.
