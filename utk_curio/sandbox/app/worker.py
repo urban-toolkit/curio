@@ -355,7 +355,6 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     load_from_duckdb = _globals_cache['load_from_duckdb']
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
-    checkIOType      = _globals_cache['checkIOType']
     save_dataset_parquet = _globals_cache['save_dataset_parquet']
 
     # _exec_lock serializes sys.stdout mutation and os.chdir.
@@ -401,19 +400,12 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 t_load = time.perf_counter()
 
                 # Validate and prepare input.
+                # dev/120: no name-keyed I/O check here any more — the type
+                # contract is the template's declared ports, enforced by the
+                # canvas at connect time (see parsers.checkIOType's note).
                 incomingInput = None
                 if input_data is not None and not (isinstance(input_data, str) and input_data == ''):
-                    if data_type == 'outputs':
-                        synthetic = {
-                            'dataType': 'outputs',
-                            'data': [{'dataType': detect_kind(v), 'data': None} for v in input_data],
-                        }
-                        checkIOType(synthetic, node_type)
-                        incomingInput = input_data
-                    else:
-                        synthetic = {'dataType': detect_kind(input_data), 'data': None}
-                        checkIOType(synthetic, node_type)
-                        incomingInput = input_data
+                    incomingInput = input_data
 
                 # Tripwire: if the user code reads `arg` but no input was
                 # delivered, the historical behaviour was to bubble up a
@@ -439,16 +431,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 output = ns['userCode'](incomingInput)
                 t_code = time.perf_counter()
 
-                # Validate output.
+                # Classify output (dev/120: classified, never refused by node name).
                 out_kind = detect_kind(output)
-                if out_kind == 'outputs':
-                    synthetic_out = {
-                        'dataType': 'outputs',
-                        'data': [{'dataType': detect_kind(v), 'data': None} for v in output],
-                    }
-                else:
-                    synthetic_out = {'dataType': out_kind, 'data': None}
-                checkIOType(synthetic_out, node_type, False)
 
                 # Save output to DuckDB, tagged with the session that produced it.
                 result_path = save_to_duckdb(output, node_id=node_type, session_id=session_id)

@@ -527,7 +527,6 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         parseOutput,
         save_memory_mapped_file,
         load_memory_mapped_file,
-        checkIOType,
     )
 
     outputs: dict[str, dict] = {}   # node_id → {"path": ..., "dataType": ...}
@@ -598,7 +597,8 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
 
             # --- serialise exactly like the sandbox ---
             parsed = parseOutput(result)
-            checkIOType(parsed, node.type, False)
+            # dev/120: no name-keyed I/O check — the product never ran one on
+            # this output either; a baseline is minted for what the node returns.
             rel_path = save_memory_mapped_file(parsed)
 
             outputs[node.id] = {"path": rel_path, "dataType": parsed["dataType"]}
@@ -737,10 +737,9 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
             json={
                 "code": indented_code,
                 "file_path": file_path,
-                # Send the on-the-wire namespaced id (`curio.builtin/...`)
-                # so the sandbox's checkIOType matches what the browser
-                # frontend posts; otherwise the programmatic runner would
-                # enable IO validation that the browser path silently skips.
+                # The on-the-wire namespaced id (`curio.builtin/...`), as the
+                # browser posts it: the sandbox tags the artifact and its log
+                # lines with it (no type dispatch happens on it — dev/120).
                 "nodeType": node.raw_type,
                 "dataType": data_type,
                 # The backend resolves these for the browser path; this runner

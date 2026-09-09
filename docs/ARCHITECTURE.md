@@ -428,7 +428,7 @@ When a user clicks the play button on a node, the following sequence occurs:
 
 - Calls `load_from_duckdb(artifact_id)` to reconstruct the upstream Python object directly (DataFrame, GeoDataFrame, scalar, tuple, etc.) from the shared DuckDB database.
 - Exposes the reconstructed object as the variable `input` in the user's code scope.
-- After user code runs, calls `detect_kind(output)` to determine the output type, then `checkIOType(...)` to validate it against the node's declared output constraints.
+- After user code runs, calls `detect_kind(output)` to determine the output type. No type check is keyed on the node's name: a node's type contract is its template's declared ports, enforced by the canvas when an edge is connected (memo dev/120; `checkIOType` remains in the node namespace only as a no-op, for the #158 name contract).
 - Calls `save_to_duckdb(output)` to persist the result and obtain a new artifact ID.
 - Prints a JSON object containing the artifact ID and kind.
 
