@@ -1067,3 +1067,122 @@ def stream_attachment(project_id: str, attachment_id: str):
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Model training (memo dev/122, ``DEC-078``)
+# ---------------------------------------------------------------------------
+#
+# Eight routes, and one shape borrowed from ``provider-models`` on purpose: a
+# capability is ASKED of the endpoint and recorded, and a replay is labelled
+# with the date it was true. There is no provider→capability table here or
+# anywhere else.
+#
+# There is no streaming route and no job worker. A fine-tune belongs to the
+# provider; these routes read what it says.
+
+
+def _training_error(exc) -> tuple:
+    return _error(exc.message, getattr(exc, "status", 400))
+
+
+@agents_bp.route("/training/capability", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def training_capability():
+    """Can this account's endpoint fine-tune, and if not, why not.
+
+    ``?refresh=0`` serves the recording instead of asking again, so opening the
+    panel twice in a minute does not re-probe. A recording always carries the
+    date it was true.
+    """
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    user_key = _user_dir_key(g.user)
+    refresh = (request.args.get("refresh") or "1").strip() not in ("0", "false", "no")
+    try:
+        return jsonify(
+            training_service.capability(g.user, user_key, refresh=refresh)
+        ), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/dataset/preview", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def training_dataset_preview():
+    """What would be sent: rows, bytes, fixtures, licences, destination host.
+
+    POST because it is an action with a body (the split), and because its
+    answer carries the digest a later start must echo.
+    """
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    body = request.get_json(silent=True) or {}
+    split = str(body.get("split") or "train")
+    try:
+        return jsonify(training_service.preview(g.user, split=split)), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/jobs", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def training_start_job():
+    """Consent, upload, submit. The consent record is written first."""
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    body = request.get_json(silent=True) or {}
+    price = body.get("pricePerMTokenTrained")
+    try:
+        return jsonify(training_service.start(
+            g.user,
+            _user_dir_key(g.user),
+            base_model=str(body.get("baseModel") or ""),
+            rows_digest=str(body.get("rowsDigest") or ""),
+            confirmed=bool(body.get("confirmed")),
+            split=str(body.get("split") or "train"),
+            price_per_mtoken=[float(price)] if isinstance(price, (int, float)) else None,
+        )), 201
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/jobs", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def training_list_jobs():
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    return jsonify(training_service.listing(_user_dir_key(g.user))), 200
+
+
+@agents_bp.route("/training/jobs/<job_id>", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def training_job_status(job_id: str):
+    """The endpoint's current word on a job, with the time it was read."""
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    try:
+        return jsonify(
+            training_service.status(g.user, _user_dir_key(g.user), job_id)
+        ), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/jobs/<job_id>/cancel", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def training_cancel_job(job_id: str):
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    try:
+        return jsonify(
+            training_service.cancel(g.user, _user_dir_key(g.user), job_id)
+        ), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
