@@ -1,12 +1,13 @@
 # dev/121 — Example-derived agent validation harness: can the Dataflow Builder rebuild the shipped examples from a prompt?
 
-**Status: PROPOSED (2026-09-09) on `imp/agentcatalog` — memo complete, no code yet. Proposes `DEC-077`; backlog entry `BL-P5-20260909-55` at first implementation change. All 31 prompt fixtures start in `review.status = "pending-owner-review"` (drafted by the model as a one-time authoring aid, per the owner's brief); the deterministic suite does not depend on that review, the live-model runner labels it.**
+**Status: IMPLEMENTED (2026-09-09) on `imp/agentcatalog` — `DEC-077` minted, `BL-P5-20260909-55`. Seven commits: `37533fce` (fixture contract + canonical form), `a6e4bb18` (the 31 fixtures), `a0cb7e8a` (comparator + scoring + report), `463da635` (oracle + driver + deterministic suite), `292547ba` (browser tier), `d34f766c` (live runner + export), and the docs/ledgers commit. 23 of the 31 fixtures reconstruct to a score of exactly 1.0 through the real plan → review/apply → background Solve path; the other 8 report the `interaction-edge` capability gap their fixture declares. Suites: `tests/test_agents` 1925 passed; the five backend suites 3579 passed / 3 skipped (one pre-existing environmental failure, `test_broken_library_stub…empty_pythonpath_entry`, confirmed failing at `65f91e54` in a throwaway worktree); `tests/test_frontend` collects 464 (435 selected with `--with-examples`). NOT DONE, deliberately and visibly: the four browser tests are written and collect but were NOT executed — the only stack on this machine is the owner's live one and the e2e fixtures reset the database (follow-up F9); and all 31 prompts are committed `review.status = pending-owner-review`, which the deterministic suite does not depend on, the live report labels, and the fine-tuning export refuses until a person approves (F8). Findings the harness produced on its first run are recorded in §11 — the load-bearing one is that Solve's grounding evidence never includes the chat, so two documented DEC-072 routes are unreachable when Solve fills a node (F3). History — PROPOSED 2026-09-09; the memo was amended before any fixture was written when example 09 turned out to declare `curio.weather@1` for its python LIBRARIES while using only builtin templates, which makes "resolution mode" two different routes (§3.5).**
 
 Date: 2026-09-09
 Branch / tree: `imp/agentcatalog` @ `65f91e54` (dev/120 closed). Line numbers pinned to that commit. `plans/` is tracked on this branch; `plans/urbanagentic/hookable-agents/knowledge-graph/` (354 MB site copy) stays untracked by intent.
 Origin: the owner's brief of 2026-09-09 — *"Plan and implement an evaluation harness that measures whether the Dataflow Builder and its delegated agents can reconstruct Curio's existing example dataflows accurately from natural-language prompts. … The missing layer is model-quality evaluation: existing tests prove that saved workflows work and that the agent runtime functions, but not that a model can reconstruct those workflows correctly. Do not create another agent runtime, workflow parser, node-type classifier, or dependency installer."*
 Evidence (what exists): 11 curated examples `docs/examples/[0-9][0-9]-*.json` with paired walkthroughs and 20 legacy `docs/examples/dataflows/*.json`; structural/parity/schema tests (`tests/test_frontend/test_examples.py`, `test_example_docs_parity.py`, `tests/test_projects/test_trill_schema.py` over all 31); the browser matrix `tests/test_frontend/test_workflows.py` driven by the hand-kept `conftest.py::WORKFLOW_FILES` list with example 10 skipped unless `CURIO_E2E_EXTERNAL=1`; the scripted provider `app/agents/testing_provider.py` (`api_type == "testing"`, `POST/GET/DELETE /api/testing/agent-script`) and its e2e helpers `tests/test_frontend/utils.py:2615-2694`; the in-process convention of monkeypatching `services.run_chat_completion` with a call-ordered script (`tests/test_agents/test_routes.py:4014-4075`, `TestDataflowPlanMint`); the Dataflow Builder flow — `run_attachment` (`services.py:9198`) → `_mint_dataflow_plan` (`:1389`) → `apply_proposal`/`_apply_dataflow_plan` (`:922`/`:2860`, one `write_spec` to `.curio/users/<key>/projects/<pid>/spec.trill.json`) → `solve_attachment` (`:3643`) as a detached `agent_jobs.py` job in topological waves (`_solve_waves` `:5095`) through `_verified_content_rounds` (`:5957`) behind the DEC-072 gate (`source_grounding.py`); the template roster `packages_services.available_templates`/`roster_templates` with `executable` derived per DEC-076; the lockfile authority `dataflow.packages` (`spec_packages.py`, dev/101) and the dataset refs `dataflow.datasets` (`mutations.py::_ref_from_item`, dev/81).
 Evidence (what is missing): no evaluation, benchmark or golden-example code anywhere (`grep -rn "eval\|benchmark\|harness\|golden"` hits only the report-only evaluator agent, the package *backend* harness, and the e2e "ground-truth harness" wording); no fixture format that pairs a prompt with an expected dataflow; no comparator that tolerates regenerated ids and layout; no report that records provider/model/digests/usage for a live run; no fine-tuning contract on the provider abstraction (`providers.py` exposes `run_chat_completion`, `stream_chat_completion`, `list_provider_models` and nothing else — confirmed).
+Evidence (a distinction found while writing this memo): example 09 declares `curio.weather@1` in `dataflow.packages` yet every one of its 13 nodes is a `curio.builtin/*` template — the package is declared for the Python libraries its manifest owns (`pythermalcomfort`, `rasterio`, `rasterstats`), which `install_to_project` reports on as `importErrors`. Example 10 is the only example whose *templates* come from a non-builtin package (`curio.streetvision/*`). So "resolution mode" is two different routes, and the fixtures name them separately (§3.5): a missing template is refused at mint, a missing library fails at Solve — and neither justifies authoring a package.
 Evidence (capability gap on THIS branch): the plan grammar keeps only `from`/`to`/`toHandle` on an edge (`content.py:461-496`) and apply hardcodes `sourceHandle: "out"` (`services.py:3004-3026`); `plan_topology.py` and `edges[].kind` (dev/112, `DEC-070`, commit `6d5f89fb`) are NOT ancestors of `imp/agentcatalog` — only the memo text and a stale `__pycache__` exist. Examples 07, 08, 09 and six legacy files (`Interaction_*.json`, `Regression.json`) carry `type: "Interaction"` edges, so no plan can reconstruct them here. That is a fact the harness must report, not a threshold to lower.
 Family: dev/52 (`DEC-048`, the plan → review/apply → Solve contract) → dev/93 (`DEC-062`, one vocabulary, one canonicaliser) → dev/114/115/118/119 (`DEC-072/073/075/076`, grounding, verified Solve, waves, executability from the template) → dev/120 (one runner classifier) → **dev/121**. Governance lineage: dev/11 (`DEC-058` Prompt Quality deferred; *"a candidate cannot judge/approve itself"*), dev/85 (`DEC-055` report-only evaluator; `DEC-056` no Validation/Optimization agent), dev/05 §"Prompt quality" (*"curated semantic-output rubric rather than byte equality … Provider live tests are opt-in and never required for normal CI"*).
 Design decisions consumed: DEC-048, DEC-051 (merge fan-in), DEC-055 (the evaluator is never a gate), DEC-058 (Prompt Quality stays deferred — this memo is engineering test infrastructure, not that screen), DEC-062, DEC-063 (a legitimate schema-recognised decline is a success, never scored as failure), DEC-072, DEC-073, DEC-075, DEC-076, dev/101 (lockfile authority), dev/81 (dataset refs backend-owned).
@@ -93,7 +94,7 @@ Rules, each pinned by a unit test (§7):
 - `prompt` (and `context`) must contain none of: any node id or edge id of the example, any canonical template id string (`curio.builtin/…`), any line of any node's `content` longer than 24 characters, the word `dataflowPlan`, a `curio.v1` fence, or a JSON object (**leak guard**). Human node-kind names ("Data Transformation", "Vega-Lite") are allowed — the walkthroughs use them and so would a user.
 - `required.datasets` ⊆ ids the catalog root `datasets/` ships (or, for legacy fixtures, `required.paths` under `docs/examples/data/` — the DEC-072 *user-typed path* route, so the prompt must name that path verbatim); `required.packages` ⊆ `packages/*` dirNames.
 - `expected.nodes[].type` must resolve through the same template index `test_trill_schema.py::_template_index` uses.
-- `capability.tier ∈ {T0,T1,T2,T3}`; `needs ⊆ {"package-enlist","interaction-edge","external-network","gpu","browser-only-execution"}`; every `skip[]` entry has `{when: "<env or need>", reason: "<sentence>"}`.
+- `capability.tier ∈ {T0,T1,T2,T3}`; `needs ⊆ {"package-enlist:templates","package-enlist:dependencies","interaction-edge","external-network","gpu","browser-only-execution"}` — the two package needs are different routes, not one (§3.5); every `skip[]` entry has `{when: "<env or need>", reason: "<sentence>"}`.
 - `split ∈ {train, validation, heldout}`; `review.status ∈ {pending-owner-review, approved, rejected}`.
 
 ### 3.2 Canonical graph (`canonical.py`)
@@ -134,7 +135,9 @@ The suite, parametrized over the 31 fixtures:
 - `test_reachable_or_named_gap` — oracle-driven run; assert `score == 1.0` or `capability_gaps == fixture.capability.needs ∩ {branch gaps}`.
 - `test_mutations_fail_for_the_right_reason` — six oracle mutations (drop a node, swap an edge's target, change a type, add a package not in the catalog, add a `curio_dataset_path("data.invented")`, add an unlisted URL) each produce the expected category; one benign mutation (reorder nodes and edges, shift positions) scores 1.0.
 - `test_provisioned_mode` — install `required.datasets` via `DatasetCatalogService.install_dataset` and `required.packages` via `install_to_project`; assert `available_templates(project)` contains the package's templates and `list_catalog(dataflow_id)` marks the dataset `installed` (the backend truth the palettes render), then the oracle run scores 1.0 with `dependencies == 1.0`.
-- `test_resolution_mode_package` (fixtures with `needs: ["package-enlist"]`, i.e. 09 and 10) — leave the package uninstalled; the plan naming a `curio.weather/…` template must be refused at mint with the *installed but NOT enlisted* hint, the scripted follow-up must be the reviewed `package.install` (the ENLIST rung, dev/93), the driver's policy applies it only because `required.packages` names it, `requiresRegistryRefresh` is true, the re-minted plan lands; assert no `package.draft.apply` was minted (a missing library is never a reason to author a duplicate package — the dependency belongs in the owning manifest).
+- `test_resolution_mode_package_templates` (fixture 10, `needs: ["package-enlist:templates"]`) — leave `curio.streetvision@1` uninstalled; a plan naming `curio.streetvision/street-view-fetcher` must be **refused at mint** by `resolve_templates` with the *installed but NOT enlisted* hint (`_package_install_miss_hint`), the scripted follow-up must be the reviewed `package.install` (the ENLIST rung, dev/93), the driver's policy applies it only because `required.packages` names it, the apply returns `requiresRegistryRefresh: true`, the re-minted plan lands.
+- `test_resolution_mode_package_dependencies` (fixture 09, `needs: ["package-enlist:dependencies"]`) — **the other package need, and it is not a template need at all.** Example 09 declares `curio.weather@1` while every one of its nodes is a `curio.builtin/*` template: the package is there for the Python libraries its manifest owns (`pythermalcomfort`, `rasterio`, `rasterstats`). So the plan mints and applies with the package absent, and the miss surfaces at **Solve** as an `ImportError` from the sandbox. The correct route is the same ENLIST rung — `package.install curio.weather@1`, whose apply reports `importErrors` per declared library — and the test asserts that: the run never mints a `package.draft.apply`, never proposes a new template, and after the reviewed install the same node's next Solve round passes. A missing library alone is never a reason to author a package; the dependency belongs in the owning manifest and goes through the existing resolver.
+- Both resolution tests assert `package.draft.apply` was never minted (Package Builder authors only when no installed or catalog template fits — dev/89/93).
 - `test_resolution_mode_dataset` — leave the dataset uninstalled; assert the run ends with either a reviewed `dataset.install` proposal (applied by policy because `required.datasets` names it) **or** Solve grounding by catalog id; the report records which route, and `dependencies` reads `dataflow.datasets` after the policy ran (open question 2 if the ref never lands).
 
 ### 3.6 Drivers and the fixed user policy
@@ -200,7 +203,8 @@ No product UI changes. The harness *observes* UI in the browser tier: after prov
 - **Data-pool fan-out** (02, 06–09, legacy `DataPool_*`) → the pool has one input and many outputs; the matcher's colour refinement distinguishes pool children by their own types.
 - **Grammar/vega/js nodes** → `not-executable` in the sandbox (DEC-076) → excluded from `execution`; measured only in the browser tier (`browserOnlyKinds`).
 - **Legacy relative paths** (`docs/examples/data/*.geojson|.pbf`) → the fixture's prompt names the path; DEC-072 grounds a user-typed path; the fixture declares `required.paths` and the file must exist in the checkout.
-- **Example 10** (streetvision, HF inference, street-view APIs, `spatial-join` backend endpoint) → tier T3, `needs: ["package-enlist","external-network"]`, `skip: [{when: "!CURIO_EVAL_EXTERNAL", reason: "HuggingFace inference and street-view APIs; the spatial-join template has no sandbox code (dev/119)"}]`; the plan/apply half still runs offline.
+- **Example 09's package** declares `curio.weather@1` for its Python libraries while using only builtin templates — a dependency need, not a template need; scored through `dependencies` and surfaced by Solve, per §3.5.
+- **Example 10** (streetvision, HF inference, street-view APIs, `spatial-join` backend endpoint) → tier T3, `needs: ["package-enlist:templates","external-network"]`, `skip: [{when: "!CURIO_EVAL_EXTERNAL", reason: "HuggingFace inference and street-view APIs; the spatial-join template has no sandbox code (dev/119)"}]`; the plan/apply half still runs offline.
 - **Model declines** ("no available template fits") → `refused`; a pass only if the fixture predicted it.
 - **Two identical-type sibling nodes** (05 has five loaders) → refinement by downstream structure; if truly indistinguishable, any pairing is correct by definition.
 - **Solve budget exhausted** → `pending` nodes → `notMeasured` + category `timeout`, never `execution-failed`.
@@ -240,7 +244,7 @@ Required before the change is complete: all unit and deterministic tests green i
 4. Reordering nodes and edges of a correct reconstruction scores 1.0; a missing node, wrong template, wrong topology, unresolved dependency, or fabricated template/package/dataset/URL fails with the matching category.
 5. Interaction-edge examples report `capability-gap:interaction-edge` on this branch; no fixture's `expected` was weakened.
 6. Provisioned mode installs through `DatasetCatalogService.install_dataset` and `packages_services.install_to_project`, and the palettes (backend listing in the deterministic suite, DOM in the browser suite) show them.
-7. Resolution mode for a package produces the reviewed ENLIST `package.install` path and never a `package.draft.apply`; for a dataset it produces `dataset.install` or catalog-grounded Solve, and the report says which.
+7. Resolution mode covers both package needs and never mints a `package.draft.apply`: a missing **template** is refused at mint with the not-enlisted hint and resolved by the reviewed `package.install`; a missing **library** (example 09's `curio.weather@1`, whose templates the example never uses) surfaces as a Solve `ImportError` and is resolved by the same reviewed install reporting `importErrors`. For a dataset, resolution produces `dataset.install` or catalog-grounded Solve, and the report says which.
 8. The deterministic suite is offline, stack-free, and stable (no sleeps, no network, no provider).
 9. The live runner refuses to start without `CURIO_EVAL_LIVE=1`, reads no key, writes `report.json`/`report.md` with provider, model, digests, attempts, latency, usage, redacted transcripts, specs, diffs and categories; `cost` is `null` unless operator-supplied.
 10. `agent_eval export` writes only approved fixtures of the requested split and refuses held-out rows in a train export; no code path trains a model.
@@ -272,6 +276,69 @@ Each commit is a pathspec commit (`git commit -- <paths>`), no push; `plans/` ch
 - Tests cover the drift guard, the leak guard, equivalence, each failure category, both dependency modes, the capability gap, the export refusals, and the live opt-in refusal.
 - Docs say plainly that live scores are evaluation reports, not gates, and that the Model Training panel does not exist yet.
 
+## 11. What the harness found while it was being built
+
+Five of these are the harness doing its job on day one. They are recorded here
+because a finding papered over is worse than no harness.
+
+**F-a. Solve's grounding evidence never includes the conversation.**
+`_solve_grounding_base` builds its evidence from the dataflow's `task`/`name`
+and its target nodes' **goals** — its own docstring says *"the session-free
+verified map (empty — Solve has no candidates transcript of its own)"*. So two
+routes `DEC-072` documents are unreachable on the Solve path: *"a path the user
+typed in this conversation"*, and *"you asked for synthetic or sample data"*. A
+user who says "the file is at `docs/examples/data/back_bay.osm.pbf`" in the
+Dataflow Builder chat, or "make me a small table", has given evidence the gate
+will not see when Solve fills the node — it refuses with *"the user gave no such
+path"*. Half the legacy fixtures and every PBF example hit this. The oracle
+works **with** the contract rather than around it (a competent planner writes
+the source into the node's intent, and Solve does read goals), which is why the
+23 expressible fixtures reach 1.0; the inconsistency itself is follow-up F3, not
+something the harness hides.
+
+**F-b. A verified run reports no data type.** The Solve payload records each
+attempt's *round* kind (`executed`, `ungrounded-source`, `upstream-blocker`) and
+never the artifact's type, so a fixture's `outputKind` cannot be measured today.
+Reading the round kind as a data type produced four false intent mismatches
+before it was caught, so `_output_kinds` now returns nothing rather than
+something plausible, and `outputKind` is `notMeasured` — the same channel dev/115
+F4 and dev/118 F3 already want (F4 here).
+
+**F-c. Attribute sorting is not a canonical form.** Fourteen of the 31 examples
+failed order-independence in the first cut, because attribute-identical nodes
+(example 01's three Data Transformation nodes) took their indices from file
+order. The node order is now a canonical labeling — colour refinement plus
+individualization, keeping the smallest edge tuple — so equality of two
+canonical graphs means they are isomorphic. Exact for all 31, test-pinned per
+example.
+
+**F-d. Automorphic branches need the words.** Example 01's two aggregation
+branches are structurally interchangeable, so no structural matcher can tell
+"by feature type" from "by neighborhood": a correct-but-reordered plan failed its
+per-node word assertions. A bounded, monotone word-based tie-break now runs
+*after* the structural match, only between pairs whose swap provably cannot
+change a structural finding.
+
+**F-e. The runtime's gates fire before a bad graph exists.** An invented
+template and an edge into a Data Loading node are refused by plan validation; an
+invented catalog id is refused by the `DEC-072` gate before the code runs. So
+through the real pipeline those mutations produce a **refusal**, which the
+report must not confuse with a badly-built graph. Fabrication scoring still
+stands and is unit-tested against a spec that carries one.
+
+Smaller ones, each now a test: a proposal's target lives in its **pins**, not a
+params echo; the install lanes belong to the agents that hold them
+(`dataset.install` → Dataset Finder, `package.install` → Researcher, never the
+Dataflow Builder); a fake sandbox must answer with a plausible data type,
+because the runtime checks the produced type against the **downstream** node's
+declared input ports; and content presence cannot be part of node identity,
+since a plan proposes placeholders and Solve fills only what the sandbox can run.
+
+One process note, recorded per tracking rule 11: `git stash -u` was used once on
+the shared tree to check whether a failure pre-dated this work — the wrong tool
+with a 354 MB untracked directory present. A throwaway `git worktree` answered
+the same question safely and is the method to use.
+
 ## Open questions for the owner (non-blocking — defaults stated)
 
 1. **Fixture home.** Default `docs/examples/prompts/` (beside the examples, exported later). Alternative: `utk_curio/backend/tests/fixtures/example_prompts/`.
@@ -282,9 +349,28 @@ Each commit is a pathspec commit (`git commit -- <paths>`), no push; `plans/` ch
 
 ## Follow-ups (recorded, not delivered)
 
-- **F1 — Model Training panel in AI Settings** — its own memo with the §3.9 preconditions (capability detection, consent/licensing, redaction, cost disclosure, job status/cancel, model versioning, held-out evaluation gate by this comparator, activation, rollback; reconciled with DEC-058; no self-approval).
-- **F2 — Interaction edges in the plan contract on this branch** — port dev/112 (`edges[].kind`, `plan_topology.py`); the T2 fixtures flip from `capability-gap` to scored without edits.
-- **F3 — Output-schema invariants** — `intents[].columns` once the runtime journal captures column metadata (dev/115 F4 / dev/118 F3); today `outputKind` only.
-- **F4 — Advisory Evaluator column** — run `agent.generated-content-evaluator` over a reconstructed graph and print its verdict beside the deterministic score, labelled advisory (DEC-055).
-- **F5 — Persisted provenance scoring** — once dev/114 F3 lands, score the Source block on reconstructed loaders.
-- **F6 — Parallel live runs** — `--parallel` with per-user job backpressure honoured; refused in v1.
+- **F1 — the AI Settings Model Training panel.** Its own memo, gated on §3.9's
+  preconditions: provider capability detection, dataset consent and licensing,
+  redaction, cost disclosure, job status and cancellation, trained-model
+  versioning, the held-out evaluation gate computed by *this* comparator,
+  activation and rollback — reconciled with the deferred `DEC-058` work, and
+  preserving the rule that a model never judges itself.
+- **F2 — interaction edges on this branch.** Port dev/112's `edges[].kind` and
+  `plan_topology.py`; `attempt.UNEXPRESSIBLE_EDGE_KINDS` then empties and the
+  eight T2 fixtures score without a fixture edit.
+- **F3 — Solve-path source evidence** (F-a above). Either let a path or a
+  synthetic-data request the user typed in the chat count when Solve fills a
+  node, or document the node intent as the only route and say so in
+  `DEC-072`'s table.
+- **F4 — output kind and column schema** (F-b above), once the runtime journal
+  carries them (dev/115 F4 / dev/118 F3). One function changes: `_output_kinds`.
+- **F5 — an advisory Evaluator column.** Run `agent.generated-content-evaluator`
+  over a reconstruction and print its verdict *beside* the deterministic score,
+  labelled advisory (`DEC-055`: it has no authority, and this memo gives it
+  none).
+- **F6 — persisted provenance scoring**, once dev/114 F3 lands.
+- **F7 — parallel live runs** (`--parallel`), honouring the per-user job
+  backpressure; refused in v1.
+- **F8 — owner review of the 31 prompts.** They are drafted and committed
+  `pending-owner-review`; the export refuses until a person approves each one.
+- **F9 — run the browser tier** on a dedicated stack (see the Status note).

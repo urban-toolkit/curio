@@ -238,6 +238,13 @@ separate `agent.dataflow-explainer` remains a canvas/full-flow behavior.
 - **Prompt governance services** — drafts, versioned quality evaluations, versioned compliance
   audits/findings, releases, and append-only audit events use stable contracts independent of the
   runtime framework.
+- **Quality measurement** — the example-derived validation harness (dev/121, `DEC-077`) lives in
+  `app/agents/evaluation/` as a pure library: it takes specs, roster snapshots and catalog listings
+  as values and returns a comparison and a score, so the transports (a test driver, an operator
+  tool) stay outside it and the `app/agents` boundary holds. It re-implements nothing — the
+  canonicaliser, the executability derivation, the grounding scanner and the install services are
+  called, not copied — and it grades with deterministic code, so the `DEC-055` report-only
+  evaluator boundary is untouched. Live-model runs write reports, never gates.
 - **Runtime adapters** — direct provider/delegation ports today; the `DEC-021` background-execution
   revisit happened in dev/115 (`DEC-073`) and declined a framework adapter for that slice — the
   criteria that would re-open it are recorded there; the UI contract is unchanged.
