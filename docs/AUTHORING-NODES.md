@@ -65,7 +65,11 @@ Full installation notes, including Docker, are in [USAGE.md](USAGE.md).
 
 A Python node reuses Curio's built-in `code` behavior: Curio renders its
 standard editor, and your Python runs in the sandbox. You never write any
-JavaScript, and you can do the whole thing from the canvas.
+JavaScript, and you can do the whole thing from the canvas. Because the
+template declares a code editor and a Python engine (and no backend handler),
+an agent's **Solve** treats your kind like the built-in ones: it runs the
+node's code in the sandbox and verifies it. There is nothing extra to declare
+(memo dev/119, DEC-076).
 
 ### From the canvas
 

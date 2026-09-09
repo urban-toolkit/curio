@@ -786,14 +786,14 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
       emit("node_started", { nodeId: "n1" });
       emit("node_result", { nodeId: "n1", status: "solved", verdict: "pass", content: "df" });
       emit("node_result", { nodeId: "v1", status: "solved", content: "{}",
-        verification: { status: "not-executable", reason: "vis-vega runs in the browser, not the sandbox — written, not executed" } });
+        verification: { status: "not-executable", reason: "vis-vega has no code the sandbox could run — written, not executed" } });
       emit("solve_wave", { wave: 2, of: 2, nodeIds: ["n2"] });
       emit("node_result", { nodeId: "n2", status: "pending", reason: "the batch's time budget (45 min) was spent — Retry continues from here" });
     });
     expect(screen.getByTestId("solve-wave")).toHaveTextContent("2/2:n2");
     expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:verified|v1:written|n2:pending");
     expect(screen.getByTestId("solve-notices")).toHaveTextContent(
-      "v1:vis-vega runs in the browser, not the sandbox — written, not executed|n2:pending — the batch's time budget (45 min) was spent — Retry continues from here",
+      "v1:vis-vega has no code the sandbox could run — written, not executed|n2:pending — the batch's time budget (45 min) was spent — Retry continues from here",
     );
     expect(screen.getByTestId("solve-errors")).toHaveTextContent("∅"); // notices are not errors
     await act(async () => {

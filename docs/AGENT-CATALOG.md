@@ -360,13 +360,21 @@ again: its recorded output stands in, and if that artifact has meanwhile
 vanished the slice runs whole once, silently, before the result counts. A
 process that dies between waves keeps every persisted wave; Retry continues.
 
-**What cannot run is never called verified.** Vega and Autark specs, merge
-nodes, data pools and node kinds from packages without a runner mapping render
-in the browser. Solve writes them as before and says so — *written — runs in
-the browser, not executed* on the pill, `not executable` in a review's attempt
-trail, and the Node Builder's proposal card reads *Solve writes it, Play renders
-it* instead of promising a run. The same word appears when you ask **Solve this
-node** or validate-node on such a node: nothing runs, nothing is claimed.
+**What cannot run is never called verified.** Whether the sandbox can run a
+node kind is read from its template (memo dev/119, DEC-076): a code editor
+(`hasCode`), a `python` or `javascript` engine, and no `backendHandler`. That
+covers every built-in Python and JavaScript kind and every package template
+that declares the same — nothing to register, no list to keep. A template with
+no code — Vega and Autark specs, merge nodes, data pools, the spatial join
+(its work happens in the browser or through its own backend endpoint) — is
+written as before and labeled honestly: *written — no code to run; renders in
+the browser or its own service* on the pill, `not executable` in a review's
+attempt trail, and the Node Builder's proposal card reads *Solve writes it, the
+browser or its own service renders it* instead of promising a run. The same
+words appear when you ask **Solve this node** or validate-node on such a node:
+nothing runs, nothing is claimed. Without a reachable template roster (the
+end-to-end runner over a raw file) the legacy name tables answer instead, as
+the offline fallback.
 
 **Bounds.** A batch has a time budget (`CURIO_SOLVE_BATCH_DEADLINE`, seconds,
 default 45 minutes), checked at every wave boundary and before every node.

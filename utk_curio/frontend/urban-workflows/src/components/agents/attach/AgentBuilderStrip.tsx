@@ -30,7 +30,7 @@ const STATUS_LABEL: Record<string, string> = {
   verifying: "verifying — running in the sandbox…",
   fixing: "fixing — the run failed, correcting…",
   verified: "solved ✓ verified",
-  written: "written — runs in the browser, not executed",
+  written: "written — no code to run; renders in the browser or its own service",
   solved: "solved",
   failed: "failed",
   skipped: "skipped",

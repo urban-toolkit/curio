@@ -394,9 +394,9 @@ Solve does not just write code, it runs it: every node kind the sandbox can
 execute is generated, run, fixed when it fails and written only when it passed,
 in topological waves — the loaders first, then what depends on them, against
 the code that actually landed. The strip reads *solving wave 2 of 3* while it
-works. Kinds that render in the browser (charts, maps, merges, data pools) are
-written and labeled *runs in the browser, not executed*; nothing claims they
-were verified. A batch stops after 45 minutes by default and leaves what it did
+works. Kinds with no code to run (charts, maps, merges, data pools, the
+spatial join) are written and labeled *no code to run; renders in the browser
+or its own service*; nothing claims they were verified. A batch stops after 45 minutes by default and leaves what it did
 not reach *pending* with the reason; **Retry** continues from there.
 
 The goal box in the dock is shared with your agents: several of them, the

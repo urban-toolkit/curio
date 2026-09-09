@@ -343,8 +343,13 @@ export interface AgentProposalPart {
   summary: string;
   /** The full proposed content (plain text — rendered inert). */
   preview: string;
-  /** Tool-specific revision-safety basis (dev/41 digest pins; dev/48 nodeType/coord/slug pins). */
-  pins: Record<string, string>;
+  /**
+   * Tool-specific revision-safety basis (dev/41 digest pins; dev/48
+   * nodeType/coord/slug pins). `executable` (dev/119, DEC-076) is display,
+   * not a pin: the roster's answer to whether the sandbox can run a
+   * node.create's kind — the card never keeps its own list.
+   */
+  pins: { [key: string]: string | boolean | undefined; nodeType?: string; dirName?: string; executable?: boolean };
   status: AgentProposalStatus;
   /** node.template.create only (dev/48 §3.2b): the model's written reasoning — what the user judges. */
   justification?: string;

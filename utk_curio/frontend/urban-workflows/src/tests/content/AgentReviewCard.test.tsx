@@ -2,7 +2,7 @@ import React from "react";
 import { subscribeConnectionKeysRequests } from "../../components/connectionKeys/connectionKeysRequest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-import { AgentReviewCard } from "../../components/agents/content/AgentReviewCard";
+import { AgentReviewCard, nodeKindExecutable } from "../../components/agents/content/AgentReviewCard";
 import type { AgentProposalPart } from "../../api/agentsApi";
 
 const part = (status: AgentProposalPart["status"] = "pending"): AgentProposalPart => ({
@@ -920,7 +920,7 @@ describe("AgentReviewCard — dev/115 the verification attempt trail", () => {
   it("a data-loading node.create says what Solve will do after Apply", () => {
     render(
       <AgentReviewCard
-        part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/data-loading" },
+        part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/data-loading", executable: true },
           source: { kind: "catalog", label: "Data Catalog · Heat", refs: [{ kind: "catalog", datasetId: "d1", title: "Heat" }] } }}
         onApply={jest.fn()}
       />,
@@ -1005,16 +1005,34 @@ describe("AgentReviewCard — dev/116 connection keys", () => {
 describe("AgentReviewCard — dev/118 every executable kind", () => {
   const source = { kind: "external", label: "x", refs: [{ kind: "external", value: "https://a.org", verification: { status: "verified" } }] };
 
-  it("the node.create effect line depends on the kind", () => {
+  it("the node.create effect line reads the roster's executable flag (dev/119)", () => {
+    // The ROSTER decides, not the name: a python kind the legacy list never
+    // held is executable when its template says so, and a builtin kind whose
+    // template has no code is not.
     const { unmount } = render(
-      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/computation-analysis" }, source }} onApply={jest.fn()} />,
+      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "some.pkg/custom-python@1", executable: true }, source }} onApply={jest.fn()} />,
     );
     expect(screen.getByText(/Solve runs it in the sandbox and fixes errors/)).toBeInTheDocument();
     unmount();
-    render(
-      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/vis-vega" }, source }} onApply={jest.fn()} />,
+    const second = render(
+      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/spatial-join@1", executable: false }, source }} onApply={jest.fn()} />,
     );
-    expect(screen.getByText(/runs in the browser — Solve writes it, Play renders it; it is never called verified/)).toBeInTheDocument();
+    expect(screen.getByText(/has no code to run — Solve writes it, the browser or its own service renders it; it is never called verified/)).toBeInTheDocument();
+    second.unmount();
+    // A part minted before the flag, on a kind the registry has never seen:
+    // the card says nothing rather than guessing.
+    render(
+      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "ghost.pkg/unknown@1" }, source }} onApply={jest.fn()} />,
+    );
+    expect(screen.queryByText(/Solve runs it in the sandbox/)).toBeNull();
+    expect(screen.queryByText(/has no code to run/)).toBeNull();
+  });
+
+  it("nodeKindExecutable falls back to the registry descriptor for parts minted before the flag", () => {
+    expect(nodeKindExecutable({ nodeType: "x", executable: true })).toBe(true);
+    expect(nodeKindExecutable({ nodeType: "x", executable: false })).toBe(false);
+    expect(nodeKindExecutable({ nodeType: "ghost.pkg/unknown@1" })).toBeNull();
+    expect(nodeKindExecutable(undefined)).toBeNull();
   });
 
   it("a not-executable attempt and a reused upstream are said in words", () => {
@@ -1036,13 +1054,13 @@ describe("AgentReviewCard — dev/118 every executable kind", () => {
       <AgentReviewCard
         part={{ ...part(), tool: "node.content.write",
           validation: { verdict: "not-executable", rounds: 1, attempts: [
-            { round: 1, verdict: "not-executable", kind: "not-executable", detail: "vis-vega runs in the browser" },
+            { round: 1, verdict: "not-executable", kind: "not-executable", detail: "vis-vega has no code the sandbox could run" },
           ] } }}
         onApply={jest.fn()}
       />,
     );
     expect(screen.getAllByRole("list", { name: "Verification attempts" })[1]).toHaveTextContent(
-      "Round 1 · not executable — runs in the browser, nothing ran",
+      "Round 1 · not executable — no code to run, nothing ran",
     );
   });
 });

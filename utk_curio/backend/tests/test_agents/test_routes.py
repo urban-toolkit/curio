@@ -2814,7 +2814,8 @@ class TestNodeCreate:
         r = self._run(client, token, alice_project, att_id)
         proposal = self._proposal_from_run(r)
         assert proposal["status"] == "pending"
-        assert proposal["pins"] == {"nodeType": "curio.builtin/computation-analysis"}
+        # dev/119 (DEC-076): the roster's executability rides the card as display.
+        assert proposal["pins"] == {"nodeType": "curio.builtin/computation-analysis", "executable": True}
         assert "contentSha256" not in proposal["pins"]  # no digest for a creation
         assert len(self._spec_nodes(user, alice_project)) == 1  # nothing mutated yet
 

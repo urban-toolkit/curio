@@ -3,7 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import type { AgentProposalPart, AgentSourceRef } from "../../../api/agentsApi";
 import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
-import { isExecutableNodeType } from "../../../utils/executableNodeKinds";
+import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
 import { describePackagePermission } from "../../../utils/packagePermissions";
 import styles from "./AgentReviewCard.module.css";
 import { VerificationChip } from "./verificationChip";
@@ -220,6 +220,20 @@ const OUTCOME_LABEL: Record<string, string> = {
 };
 
 /** What one Apply click does, per proposal kind — stated on the card. */
+/**
+ * dev/119 (DEC-076): can the sandbox run a node.create's kind? The roster's
+ * own flag rides the proposal (`pins.executable`); a part minted before that
+ * flag falls back to the installed registry descriptor (`hasCode`); a kind
+ * the registry has never seen answers null — the card then says nothing.
+ */
+export function nodeKindExecutable(pins: AgentProposalPart["pins"] | undefined): boolean | null {
+  if (typeof pins?.executable === "boolean") return pins.executable;
+  const nodeType = pins?.nodeType;
+  if (typeof nodeType !== "string" || !nodeType) return null;
+  const descriptor = tryGetNodeDescriptor(nodeType);
+  return descriptor ? Boolean(descriptor.hasCode) : null;
+}
+
 const EFFECT_LINE: Record<string, string> = {
   "node.create": "Applying adds this node to the canvas.",
   "project.install":
@@ -616,7 +630,7 @@ export const AgentReviewCard: React.FC<{
                       {attempt.verdict === "pass"
                         ? "pass ✓"
                         : attempt.verdict === "not-executable"
-                          ? "not executable — runs in the browser, nothing ran"
+                          ? "not executable — no code to run, nothing ran"
                           : attempt.verdict}
                       {attempt.kind && attempt.verdict !== "pass" && attempt.verdict !== "not-executable" ? ` · ${attempt.kind}` : ""}
                       {attempt.source === "current content" ? " · the node's current code" : ""}
@@ -782,15 +796,18 @@ export const AgentReviewCard: React.FC<{
         <div className={styles.meta}>
           {EFFECT_LINE[part.tool]}
           {part.tool === "node.create" && part.source ? (
-            // dev/115 (Amendment A2) → dev/118 (DEC-075): Apply places the
-            // node as proposed; the user's Solve runs, fixes and verifies the
-            // code of every executable kind — a browser-rendered kind is
-            // written and Play renders it, and no one calls it verified.
+            // dev/115 (Amendment A2) → dev/118 (DEC-075) → dev/119 (DEC-076):
+            // Apply places the node as proposed; the user's Solve runs, fixes
+            // and verifies the code of every kind the sandbox can run. Whether
+            // it can is the ROSTER's answer (pins.executable, minted from the
+            // template), falling back to the registry descriptor for parts
+            // minted before it; unknown says nothing rather than guessing.
             <>
-              {" "}
-              {isExecutableNodeType(part.pins?.nodeType)
-                ? "Solve runs it in the sandbox and fixes errors before its code is trusted."
-                : "This kind runs in the browser — Solve writes it, Play renders it; it is never called verified."}
+              {nodeKindExecutable(part.pins) === true
+                ? " Solve runs it in the sandbox and fixes errors before its code is trusted."
+                : nodeKindExecutable(part.pins) === false
+                  ? " This kind has no code to run — Solve writes it, the browser or its own service renders it; it is never called verified."
+                  : null}
             </>
           ) : null}
         </div>

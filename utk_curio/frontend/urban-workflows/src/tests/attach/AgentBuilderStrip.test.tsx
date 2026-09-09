@@ -591,7 +591,7 @@ describe("AgentBuilderStrip — dev/118 waves, written kinds and notices", () =>
         }}
       />,
     );
-    expect(screen.getByRole("list", { name: "Plan node progress" })).toHaveTextContent("written — runs in the browser, not executed");
+    expect(screen.getByRole("list", { name: "Plan node progress" })).toHaveTextContent("written — no code to run; renders in the browser or its own service");
     const notes = screen.getByRole("note", { name: "Solve notices" });
     expect(notes.textContent!.match(/time budget/g)).toHaveLength(1);
     expect(screen.queryByText(/^Solve failed/)).toBeNull();

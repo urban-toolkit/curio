@@ -7320,7 +7320,10 @@ def _mint_node_create(
         tool="node.create",
         summary=summary,
         preview=proposed,
-        pins={"nodeType": entry["id"]},
+        # dev/119 (DEC-076): the roster's own answer to "can the sandbox run
+        # this kind" rides the card — display, never a revision pin — so no
+        # frontend file keeps a list of executable kinds.
+        pins={"nodeType": entry["id"], "executable": bool(entry.get("executable"))},
     )
     proposal = {
         "proposalId": proposal_id,
