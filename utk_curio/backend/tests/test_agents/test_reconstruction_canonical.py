@@ -411,9 +411,23 @@ class TestExpectedBlockRoundTrip:
             sources=Sources(dataset_ids=("data.x",)),
         )
         block = graph.as_expected_dict()
-        assert [n["ref"] for n in block["nodes"]] == ["n0", "n1"]
-        assert block["edges"] == [{"from": "n0", "to": "n1", "kind": "data", "slot": 1}]
+        # Default refs are readable and role-derived, so an intent can name a
+        # node a person can find in the walkthrough.
+        assert [n["ref"] for n in block["nodes"]] == ["loader1", "merge1"]
+        assert block["edges"] == [
+            {"from": "loader1", "to": "merge1", "kind": "data", "slot": 1}
+        ]
         assert block["sources"]["datasetIds"] == ["data.x"]
+
+    def test_default_refs_number_each_role_in_canonical_order(self):
+        graph = CanonicalGraph(
+            nodes=(
+                CNode(type=LOADER, role="loader", executable=True, has_content=True),
+                CNode(type=LOADER, role="loader", executable=True, has_content=True),
+                CNode(type=VEGA, role="visualization", executable=False, has_content=True),
+            )
+        )
+        assert graph.default_refs() == ["loader1", "loader2", "visualization1"]
 
     def test_refs_must_name_every_node(self):
         graph = CanonicalGraph(
