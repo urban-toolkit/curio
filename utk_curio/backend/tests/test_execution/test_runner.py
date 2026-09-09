@@ -3,6 +3,8 @@ overlay, honest failure accumulation, journal writes."""
 
 from __future__ import annotations
 
+import pytest
+
 from utk_curio.backend.app.execution import runner, runtime_journal
 
 KEY = "4242"
@@ -194,7 +196,7 @@ class TestDev115RunnerContract:
 
         class _Session:
             @staticmethod
-            def post(url, json=None, timeout=None):
+            def post(url, json=None, timeout=None, headers=None):
                 assert timeout == (runner.SANDBOX_CONNECT_TIMEOUT_S, 300)
                 raise requests.exceptions.ReadTimeout("slow")
 
@@ -206,3 +208,75 @@ class TestDev115RunnerContract:
             assert exc.seconds == 300
         else:
             raise AssertionError("expected ExecutionTimeout")
+
+
+class _Resp:
+    def __init__(self, status=200, body=None):
+        self.status_code = status
+        self.ok = 200 <= status < 300
+        self.text = ""
+        self._body = body if body is not None else {}
+
+    def json(self):
+        return self._body
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise RuntimeError(f"{self.status_code} Client Error")
+
+
+class TestSandboxSharedSecret:
+    """dev/115 field fix (live re-test 2026-09-08): under ``curio start`` the
+    sandbox guards ``/exec`` and ``/get`` with ``CURIO_SANDBOX_TOKEN`` and the
+    runner sent nothing, so every verified Solve round was an ``infrastructure``
+    verdict reading ``401 Client Error: UNAUTHORIZED``. The runner now attaches
+    the same header the API bridge does, and a 401 names the disagreement."""
+
+    def _capture(self, monkeypatch, status=200, body=None):
+        import requests
+
+        seen = {}
+
+        def _post(url, json=None, timeout=None, headers=None):
+            seen["post"] = headers
+            return _Resp(status, body)
+
+        def _get(url, params=None, timeout=None, headers=None):
+            seen["get"] = headers
+            return _Resp(status, body)
+
+        monkeypatch.setattr(requests, "post", _post)
+        monkeypatch.setattr(requests, "get", _get)
+        return seen
+
+    def test_token_rides_exec_and_get_when_the_launcher_set_one(self, monkeypatch):
+        monkeypatch.setenv("CURIO_SANDBOX_TOKEN", "launch-secret")
+        seen = self._capture(monkeypatch, body={"ok": True})
+        assert runner._http_exec("/exec", {"code": "x"}) == {"ok": True}
+        assert seen["post"] == {"X-Curio-Sandbox-Token": "launch-secret"}
+        runner.load_artifact_as_dict("art-1")
+        assert seen["get"] == {"X-Curio-Sandbox-Token": "launch-secret"}
+
+    def test_nothing_is_sent_without_a_token(self, monkeypatch):
+        monkeypatch.delenv("CURIO_SANDBOX_TOKEN", raising=False)
+        seen = self._capture(monkeypatch, body={})
+        runner._http_exec("/exec", {"code": "x"})
+        runner.load_artifact_as_dict("art-1")
+        assert seen["post"] is None and seen["get"] is None
+
+    def test_a_401_names_the_token_disagreement(self, monkeypatch):
+        monkeypatch.setenv("CURIO_SANDBOX_TOKEN", "stale")
+        self._capture(monkeypatch, status=401)
+        with pytest.raises(RuntimeError) as exc:
+            runner._http_exec("/exec", {"code": "x"})
+        assert "CURIO_SANDBOX_TOKEN" in str(exc.value) and "/exec" in str(exc.value)
+        with pytest.raises(RuntimeError) as exc:
+            runner.load_artifact_as_dict("art-1")
+        assert "/get" in str(exc.value)
+
+    def test_the_bridge_and_the_runner_share_one_helper(self):
+        from utk_curio.backend.app.api import routes
+        from utk_curio.backend.app.execution import sandbox_auth
+
+        assert routes._sandbox_headers is sandbox_auth.sandbox_headers
+        assert routes.SANDBOX_TOKEN_HEADER == sandbox_auth.SANDBOX_TOKEN_HEADER

@@ -20,24 +20,12 @@ SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
 SANDBOX_VERSION_TIMEOUT  = 5
 
 
-SANDBOX_TOKEN_HEADER = "X-Curio-Sandbox-Token"
-
-
-def _sandbox_headers(existing):
-    """Merge the shared secret into a caller's headers without clobbering them.
-
-    The sandbox executes arbitrary code, so every guarded route requires this
-    header (see utk_curio/sandbox/app/auth.py). The token is minted per launch
-    by main.py::set_environment_variables and inherited by both processes.
-    Absent (a bare `python -m backend.server`), we send nothing and the sandbox
-    runs in its unauthenticated local-dev mode.
-    """
-    token = os.getenv("CURIO_SANDBOX_TOKEN", "").strip()
-    if not token:
-        return existing
-    headers = dict(existing or {})
-    headers[SANDBOX_TOKEN_HEADER] = token
-    return headers
+# The shared secret lives in execution/sandbox_auth.py so the validation
+# runner sends the same header this bridge does (dev/115 field fix).
+from utk_curio.backend.app.execution.sandbox_auth import (  # noqa: E402
+    SANDBOX_TOKEN_HEADER,
+    sandbox_headers as _sandbox_headers,
+)
 
 
 def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs):

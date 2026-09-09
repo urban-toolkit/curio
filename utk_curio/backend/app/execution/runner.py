@@ -25,6 +25,7 @@ import textwrap
 import time
 
 from utk_curio.backend.app.execution import runtime_journal
+from utk_curio.backend.app.execution.sandbox_auth import sandbox_headers
 from utk_curio.backend.app.execution.workflow_spec import (
     PY_CODE_TYPES,
     WorkflowSpec,
@@ -88,8 +89,11 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
     resp = _req.get(
         f"{_sandbox_url()}/get",
         params={"fileName": artifact_id},
+        headers=sandbox_headers(),
         timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
     )
+    if resp.status_code == 401:
+        raise RuntimeError(_SANDBOX_REJECTED.format(path="/get"))
     if not resp.ok:
         raise AssertionError(
             f"sandbox /get fileName={artifact_id} -> {resp.status_code}\n"
@@ -137,9 +141,20 @@ def resolve_widget_placeholders(code: str) -> str:
     return _WIDGET_RE.sub(_replace, code)
 
 
+#: The sandbox answered 401: the two processes disagree about the shared
+#: secret. Named, so the infrastructure verdict tells the operator what to fix
+#: instead of a bare ``401 Client Error``.
+_SANDBOX_REJECTED = (
+    "the sandbox rejected the backend on {path}: the two processes disagree "
+    "about CURIO_SANDBOX_TOKEN — this usually means one of them was started "
+    "outside 'curio start' or was restarted without the other"
+)
+
+
 def _http_exec(endpoint: str, payload: dict) -> dict:
     """POST one node execution to the sandbox; raises on transport failure
-    (the caller maps that to an INFRASTRUCTURE outcome, never a node error)."""
+    (the caller maps that to an INFRASTRUCTURE outcome, never a node error).
+    Carries the sandbox shared secret like the API bridge does."""
     import requests as _req
 
     seconds = exec_timeout_s()
@@ -147,10 +162,13 @@ def _http_exec(endpoint: str, payload: dict) -> dict:
         resp = _req.post(
             f"{_sandbox_url()}{endpoint}",
             json=payload,
+            headers=sandbox_headers(),
             timeout=(SANDBOX_CONNECT_TIMEOUT_S, seconds),
         )
     except _req.exceptions.Timeout as exc:  # dev/115: the node's behaviour, not ours
         raise ExecutionTimeout(seconds) from exc
+    if resp.status_code == 401:
+        raise RuntimeError(_SANDBOX_REJECTED.format(path=endpoint))
     resp.raise_for_status()
     return resp.json()
 
