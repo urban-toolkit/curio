@@ -1,0 +1,83 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "Vega",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/Vega.json",
+    "sha256": "74303280611f8bcbbb17ea34dfc4fa1537b0d638f17e6e8cbeb733fa639dfab9",
+    "walkthrough": null
+  },
+  "prompt": "Create a small nine-row table of letters and values in a loading step and draw it as a Vega-Lite bar chart.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "visualization1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [],
+      "urls": [
+        "https://vega.github.io/schema/vega-lite/v6.json"
+      ]
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "table"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "heldout",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "notes": "The canonical two-node chart case."
+}

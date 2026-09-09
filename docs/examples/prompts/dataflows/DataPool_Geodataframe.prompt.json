@@ -1,0 +1,88 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "DataPool_Geodataframe",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/DataPool_Geodataframe.json",
+    "sha256": "17b55dc1d7a83862828a8590223b6873b33723e660bbc8661c367c74def13402",
+    "walkthrough": null
+  },
+  "prompt": "Read the accessibility score polygons from the file docs/examples/data/access_score.geojson in this checkout, keeping the coverage, average attribute count, neighborhood and geometry columns, and route them through a fan-out node.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/access_score.geojson"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "pool1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/access_score.geojson"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "coverage",
+        "geometry",
+        "accessibility"
+      ],
+      "outputKind": "geodataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/data-pool"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "notes": "Structural: geometry through the fan-out, reading a user-named path."
+}

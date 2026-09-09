@@ -156,13 +156,28 @@ class CanonicalGraph:
     def interaction_edges(self) -> tuple:
         return tuple(e for e in self.edges if e.kind == "interaction")
 
+    def default_refs(self) -> list:
+        """Readable, deterministic handles over the canonical node order:
+        ``loader1``, ``transform1``, ``transform2``, ``visualization1``...
+
+        Refs are labels a fixture author can read, not identity: they are
+        positional over the canonical order, so recomputing a fixture's
+        expected block with its own refs is a like-for-like comparison.
+        """
+        counters: dict = {}
+        names: list = []
+        for node in self.nodes:
+            counters[node.role] = counters.get(node.role, 0) + 1
+            names.append(f"{node.role}{counters[node.role]}")
+        return names
+
     def as_expected_dict(self, refs: Iterable | None = None) -> dict:
         """The fixture's ``expected`` block for this graph.
 
         Refs are positional (``n0``, ``n1``, ...) over the sorted node order,
         so the same graph always writes the same fixture text.
         """
-        names = list(refs) if refs is not None else [f"n{i}" for i in range(len(self.nodes))]
+        names = list(refs) if refs is not None else self.default_refs()
         if len(names) != len(self.nodes):
             raise ValueError("refs must name every node")
         return {

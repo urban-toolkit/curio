@@ -1,0 +1,104 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "Interaction_Vega_Simple",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/Interaction_Vega_Simple.json",
+    "sha256": "bbe001f29454ad8eb57740b0982190dadc033bb8ad4a7b97510692604fba5570",
+    "walkthrough": null
+  },
+  "prompt": "Make a five-row table of names and values in a loading step, route it through a fan-out, and draw a Vega-Lite bar chart whose selection highlights back through the fan-out.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization1",
+        "kind": "interaction"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [],
+      "urls": [
+        "https://vega.github.io/schema/vega-lite/v6.json"
+      ]
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "table",
+        "value"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/data-pool",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T2",
+    "needs": [
+      "interaction-edge"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "heldout",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "notes": "The smallest interaction-edge case in the corpus."
+}

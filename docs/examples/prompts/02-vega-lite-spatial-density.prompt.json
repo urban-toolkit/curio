@@ -1,0 +1,173 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "02-vega-lite-spatial-density",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/02-vega-lite-spatial-density.json",
+    "sha256": "e5fd666f40798dcc42ce600e450c2234fad4bfabd31de77c735f7ab5a1bb3a8f",
+    "walkthrough": "docs/examples/02-vega-lite-spatial-density.md"
+  },
+  "prompt": "Using the Chicago green roofs inventory and the zip-coded Chicago neighborhood boundary polygons from the Data Catalog, I want to see where vegetated roof area concentrates. Load the roof inventory, fill in its missing values, and chart the distribution of roof sizes as a histogram. Separately, load the boundary polygons and spatially join the roofs into them so each roof carries its zip code, then fan that joined result out so several views can read it: a dot-density map of the roofs, and a bar chart of the ten zip codes with the most vegetated area, which needs its own aggregation step first.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.cityofchicago.green-roofs",
+      "data.urbanlab.chicago-boundary"
+    ],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform2",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "transform2",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "visualization3",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.cityofchicago.green-roofs",
+        "data.urbanlab.chicago-boundary"
+      ],
+      "paths": [],
+      "urls": [
+        "https://vega.github.io/schema/vega-lite/v6.json"
+      ]
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "green roof",
+        "roof"
+      ]
+    },
+    {
+      "ref": "loader2",
+      "mustMention": [
+        "boundary",
+        "polygon",
+        "join"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "transform2",
+      "mustMention": [
+        "top",
+        "zip"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/data-pool",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "notes": "Two loaders, a fan-out, and three charts; one branch needs an aggregation before its chart."
+}

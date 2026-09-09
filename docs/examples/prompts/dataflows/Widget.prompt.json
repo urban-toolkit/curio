@@ -1,0 +1,135 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "Widget",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/Widget.json",
+    "sha256": "1d8442809ee61d48693e9c4f40e3d8336a5c9b3462612461d5fcafb8cb55a822",
+    "walkthrough": null
+  },
+  "prompt": "Make a nine-row table of letters and numbers in a Python computation step, and add a second computation step holding a number-input widget that returns its multiplier. Combine the table and the multiplier into one input, route part of the flow through a fan-out, and in a further computation step multiply the table's numbers by the widget's value. End with a second combining step so the multiplied result can be read alongside the original.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "merge1",
+        "type": "curio.builtin/merge-flow",
+        "role": "merge",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "merge2",
+        "type": "curio.builtin/merge-flow",
+        "role": "merge",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "merge1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "merge1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "merge2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "merge2",
+        "kind": "data"
+      },
+      {
+        "from": "merge1",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "merge2",
+        "to": "pool1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis2",
+      "mustMention": [
+        "multiplier",
+        "widget"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/data-pool",
+      "curio.builtin/merge-flow"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "notes": "The widget-value path plus two merges; the multiplier arrives as a merged input."
+}

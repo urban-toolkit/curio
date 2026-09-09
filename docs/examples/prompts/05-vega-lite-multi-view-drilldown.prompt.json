@@ -1,0 +1,366 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "05-vega-lite-multi-view-drilldown",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/05-vega-lite-multi-view-drilldown.json",
+    "sha256": "07920afc68b774202893592ce0c3eb3daced032ab165ff2957b720604de9d343",
+    "walkthrough": "docs/examples/05-vega-lite-multi-view-drilldown.md"
+  },
+  "prompt": "I want a drill-down over the Chicago 2010 building energy usage table in the Data Catalog, along five independent axes. Each axis should load the data for itself, prepare it, and end in its own Vega-Lite view: energy split by building type; community-level ranking with a scatter; the monthly kilowatt-hour trend by community; a monthly bar chart with a brushable filter; and energy use by building age against the number of stories. Some axes need more than one preparation step before the charts, and one of them ends in several faceted views rather than a single chart.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.cityofchicago.energy-usage-2010"
+    ],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader3",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader4",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader5",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform2",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform3",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform4",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform5",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform6",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform7",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform8",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform9",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform10",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform11",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform12",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform13",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization8",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization9",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "transform2",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "transform3",
+        "kind": "data"
+      },
+      {
+        "from": "loader4",
+        "to": "transform4",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "transform5",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "transform6",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "transform7",
+        "kind": "data"
+      },
+      {
+        "from": "transform3",
+        "to": "transform8",
+        "kind": "data"
+      },
+      {
+        "from": "transform4",
+        "to": "transform9",
+        "kind": "data"
+      },
+      {
+        "from": "transform4",
+        "to": "transform13",
+        "kind": "data"
+      },
+      {
+        "from": "transform5",
+        "to": "transform10",
+        "kind": "data"
+      },
+      {
+        "from": "transform5",
+        "to": "transform11",
+        "kind": "data"
+      },
+      {
+        "from": "transform5",
+        "to": "transform12",
+        "kind": "data"
+      },
+      {
+        "from": "transform6",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "transform7",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform8",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "transform9",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "transform10",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "transform11",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "transform12",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "transform13",
+        "to": "visualization8",
+        "kind": "data"
+      },
+      {
+        "from": "transform13",
+        "to": "visualization9",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.cityofchicago.energy-usage-2010"
+      ],
+      "paths": [],
+      "urls": [
+        "https://vega.github.io/schema/vega-lite/v6.json"
+      ]
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "energy"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "notes": "Five parallel flows, 27 nodes; the point is fan-out breadth, not depth."
+}

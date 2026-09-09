@@ -1,0 +1,368 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "04-vega-lite-multi-flow-dashboard",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/04-vega-lite-multi-flow-dashboard.json",
+    "sha256": "33c4b61aa084c3a608838013d2627f44fb14ac94e3c2c1a36f78b45a97aac908",
+    "walkthrough": "docs/examples/04-vega-lite-multi-flow-dashboard.md"
+  },
+  "prompt": "Build me a red-light violations dashboard from the Chicago red-light violations table in the Data Catalog. Load it once and branch it into six independent stories, each ending in its own Vega-Lite view: a seasonal trend over time; a monthly heatmap paired with a linked daily trend; a stacked area chart by season and year; the top three intersections per year; camera count against compliance; and a spatial brush linked to a top-N bar chart. Three of those views need two prepared tables combined into one input before the chart can read them, and a couple of the branches need a Python computation step rather than a plain transformation.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.cityofchicago.red-light-violations"
+    ],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform2",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform3",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform4",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform5",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform6",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform7",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform8",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform9",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform10",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform11",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "merge1",
+        "type": "curio.builtin/merge-flow",
+        "role": "merge",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "merge2",
+        "type": "curio.builtin/merge-flow",
+        "role": "merge",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "merge3",
+        "type": "curio.builtin/merge-flow",
+        "role": "merge",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "transform2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "transform3",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform4",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform5",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform6",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform7",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform8",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform9",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform10",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform11",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform3",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "transform4",
+        "to": "merge1",
+        "kind": "data"
+      },
+      {
+        "from": "transform5",
+        "to": "merge1",
+        "kind": "data"
+      },
+      {
+        "from": "transform6",
+        "to": "merge2",
+        "kind": "data"
+      },
+      {
+        "from": "transform7",
+        "to": "merge2",
+        "kind": "data"
+      },
+      {
+        "from": "transform8",
+        "to": "merge3",
+        "kind": "data"
+      },
+      {
+        "from": "transform9",
+        "to": "merge3",
+        "kind": "data"
+      },
+      {
+        "from": "transform9",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "transform10",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "transform11",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "merge1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "merge2",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "merge3",
+        "to": "analysis3",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.cityofchicago.red-light-violations"
+      ],
+      "paths": [],
+      "urls": [
+        "https://vega.github.io/schema/vega-lite/v6.json"
+      ]
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "red-light",
+        "violation"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/merge-flow",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "notes": "The largest curated example: 24 nodes, six branches, three merge points. Prompt describes branches, never node types by id."
+}

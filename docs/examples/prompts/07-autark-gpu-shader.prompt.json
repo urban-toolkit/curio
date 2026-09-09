@@ -1,0 +1,135 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "07-autark-gpu-shader",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/07-autark-gpu-shader.json",
+    "sha256": "77c2d9c2c14aedbd8fc21426d4df44c1683c68c0249f2954971c62538c79f6b8",
+    "walkthrough": "docs/examples/07-autark-gpu-shader.md"
+  },
+  "prompt": "For the Chicago Loop I want to know how many minutes of shadow each road gets on the solstice. The OSM extract is in this checkout at docs/examples/data/chicago_loop.osm.pbf. Load the buildings and roads from it with Autark in the browser, then run a batched GPU shader that accumulates shadow minutes per road over the day. Show the result as a thematic map and as a brushable histogram, and link the two so brushing the histogram highlights roads on the map.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/chicago_loop.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization2",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization3",
+        "kind": "interaction"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization4",
+        "kind": "interaction"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/chicago_loop.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "browser",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/data-pool"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "browser-only-execution",
+      "gpu",
+      "interaction-edge"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark GPU compute stages need hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "validation",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "notes": "Needs a bidirectional link between the histogram and the map, which the plan contract on this branch cannot express."
+}

@@ -1,0 +1,181 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "08-autark-spatial-join-regression",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/08-autark-spatial-join-regression.json",
+    "sha256": "8f9ac5449585de1eb31ee1a885b3a046f2613b67891e195bdcc4f5ce7bb310a3",
+    "walkthrough": "docs/examples/08-autark-spatial-join-regression.md"
+  },
+  "prompt": "I want the per-road warming trend for Niteroi between 2001 and 2024. Two files in this checkout hold the inputs: the OSM extract at docs/examples/data/niteroi.osm.pbf and a 24-band land surface temperature raster at docs/examples/data/niteroi_lst_verao_2001_2024.tif. Load the road network and its context layers from the PBF with Autark, reference the raster in a loading step, sample the raster bands onto the roads with a JavaScript computation using DuckDB, then fit an ordinary least squares regression per road on the GPU. Show a 3D map of the roads coloured by their trend and a scatter plot, linked through a shared fan-out so a selection in one highlights the other.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/niteroi.osm.pbf",
+      "docs/examples/data/niteroi_lst_verao_2001_2024.tif"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/js-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "merge1",
+        "type": "curio.builtin/merge-flow",
+        "role": "merge",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "merge1",
+        "kind": "data"
+      },
+      {
+        "from": "visualization4",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "merge1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization2",
+        "kind": "interaction"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization3",
+        "kind": "interaction"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "merge1",
+        "to": "analysis1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/niteroi.osm.pbf",
+        "docs/examples/data/niteroi_lst_verao_2001_2024.tif"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "raster",
+        "temperature"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/data-pool",
+      "curio.builtin/merge-flow"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "gpu",
+      "interaction-edge"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark GPU compute stages need hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "notes": "Mixed grammar, python and javascript; the map/scatter link is an interaction edge."
+}
