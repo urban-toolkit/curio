@@ -280,3 +280,21 @@ class TestSandboxSharedSecret:
 
         assert routes._sandbox_headers is sandbox_auth.sandbox_headers
         assert routes.SANDBOX_TOKEN_HEADER == sandbox_auth.SANDBOX_TOKEN_HEADER
+
+
+class TestDev116SecretsPayload:
+    """dev/116: connection-key values ride the /exec payload under ``secrets``
+    exactly like ``dataset_paths`` — and are absent otherwise."""
+
+    def test_secrets_ride_the_payload_when_given(self, tmp_curio):
+        rec = _RecordingExec()
+        runner.run_through_node(
+            KEY, PID, _chain_spec(["a"]), "a", exec_fn=rec,
+            secrets={"census": "k3y-v4lue-9876"},
+        )
+        assert rec.calls[0][1]["secrets"] == {"census": "k3y-v4lue-9876"}
+
+    def test_payload_has_no_secrets_key_without_them(self, tmp_curio):
+        rec = _RecordingExec()
+        runner.run_through_node(KEY, PID, _chain_spec(["a"]), "a", exec_fn=rec, secrets={})
+        assert "secrets" not in rec.calls[0][1]

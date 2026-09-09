@@ -111,8 +111,10 @@ class TestDev115Passthrough:
         result = validation.validate_candidate(
             KEY, PID, spec, "t", 'p = curio_dataset_path("imported.x@1")\nreturn p',
             exec_fn=_fn, dataset_paths={"imported.x@1": "/store/x.csv"}, exec_user_key="4242",
+            secrets={"census": "k3y-v4lue-9876"},
         )
         assert seen["dataset_paths"] == {"imported.x@1": "/store/x.csv"}
         assert seen["user_key"] == "4242"
+        assert seen["secrets"] == {"census": "k3y-v4lue-9876"}  # dev/116 passthrough
         assert result["verdict"] == "pass"
         assert isinstance(result["evidence"]["durationMs"], int)

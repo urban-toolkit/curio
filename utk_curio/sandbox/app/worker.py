@@ -18,6 +18,9 @@ import contextlib
 import os
 import threading
 
+from utk_curio.common.redaction import redact
+from utk_curio.sandbox.util.secrets import make_curio_secret
+
 _globals_cache: dict = {}
 _exec_lock = threading.Lock()
 
@@ -328,7 +331,7 @@ def _make_curio_dataset_path(dataset_paths):
 
 
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
-                 dataset_paths=None):
+                 dataset_paths=None, secrets=None):
     """
     Execute user code in-process using pre-loaded library globals.
 
@@ -378,6 +381,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 ns = dict(_globals_cache)
                 ns.update(_import_bindings_for(session_id))
                 ns['curio_dataset_path'] = _make_curio_dataset_path(dataset_paths)
+                # dev/116: connection keys, reachable only through this callable.
+                ns['curio_secret'] = make_curio_secret(secrets)
                 # Hoist this node's own top-level imports before defining userCode,
                 # so they are recorded for later nodes in the same session. The
                 # statements stay in the function body too - re-importing is a
@@ -482,10 +487,13 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 flush=True,
             )
 
-        stdout_lines = [line for line in captured_stdout.getvalue().split('\n') if line]
+        # dev/116: a printed key must not ride the response into the runtime
+        # journal, the validation trail or a card.
+        stdout_text = redact(captured_stdout.getvalue(), secrets)
+        stdout_lines = [line for line in stdout_text.split('\n') if line]
         return {
             'stdout': stdout_lines,
-            'stderr': captured_stderr.getvalue(),
+            'stderr': redact(captured_stderr.getvalue(), secrets),
             'output': result,
         }
 

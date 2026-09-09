@@ -45,6 +45,14 @@ _LOCK_NAMESPACE = "connection-keys"
 
 #: The name in ``curio_secret("<name>")`` — lower-case, short, path-safe.
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
+#: Literal ``curio_secret("<name>")`` calls in node code — the ONE regex the
+#: execution resolvers (Play, the validation runner) and the grounding gate
+#: share. Single or double quotes, because users edit generated code. Only a
+#: literal argument can be resolved; a dynamic one is simply not found, and
+#: the sandbox names it as missing.
+SECRET_CALL_RE = re.compile(r"""curio_secret\(\s*(["'])([a-z0-9][a-z0-9_-]{0,39})\1\s*\)""")
+#: Bound the per-execution resolution work (mirrors the sandbox's cap).
+MAX_SECRET_NAMES = 8
 #: A bare hostname (no scheme, path, port or userinfo), already lower-cased.
 HOST_RE = re.compile(r"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$")
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -149,6 +157,21 @@ def normalize_value(value: object) -> str:
     if any(ch in text for ch in "\r\n"):
         raise ConnectionKeyError("the key value must be a single line")
     return text
+
+
+def secret_names(code: object) -> list[str]:
+    """The names *code* reaches through literal ``curio_secret("<name>")``
+    calls, in order, deduplicated, bounded."""
+    if not isinstance(code, str) or "curio_secret" not in code:
+        return []
+    names: list[str] = []
+    for match in SECRET_CALL_RE.finditer(code):
+        name = match.group(2)
+        if name not in names:
+            names.append(name)
+        if len(names) >= MAX_SECRET_NAMES:
+            break
+    return names
 
 
 def suggest_name(host: str) -> str:

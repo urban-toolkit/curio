@@ -310,6 +310,30 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
         return {}
 
 
+def _resolve_exec_secrets(code: str) -> dict:
+    """Resolve the connection keys *code* reaches as ``curio_secret("<name>")``
+    (memo dev/116) to their values — the ``dataset_paths`` twin, minus the disk.
+
+    Best-effort and fail-open like ``_resolve_exec_dataset_paths``: an empty
+    mapping never blocks execution; the sandbox's injected ``curio_secret``
+    names the missing key. Values leave this function only inside the sandbox
+    request body; they are never logged and never echoed to the browser.
+    """
+    from utk_curio.backend.app.users.connection_keys import secret_names
+
+    names = secret_names(code)
+    if not names:
+        return {}
+    try:
+        from utk_curio.backend.app.users.connection_keys import default_store, storage_key_for
+
+        user_key = storage_key_for(getattr(g, "user", None))
+        return default_store().resolve(user_key, names)
+    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
+        print(f"[processPythonCode] connection-key resolution skipped: {e.__class__.__name__}", flush=True)
+        return {}
+
+
 def _exec_user_key():
     """The current user's on-disk storage key, or None when there is no user.
 
@@ -355,6 +379,7 @@ def process_python_code():
     # this route knows it: the sandbox has no notion of who is logged in, and
     # the in-process path ignores it entirely.
     exec_user_key = _exec_user_key()
+    exec_secrets = _resolve_exec_secrets(code)
     t1 = _time.perf_counter()
     response = _sandbox_call(
         'post', '/exec',
@@ -368,6 +393,9 @@ def process_python_code():
             "save_dataset": bool(save_output_dataset),
             "dataset_paths": dataset_paths,
             "user_key": exec_user_key,
+            # dev/116: present only when the code names a saved key — the
+            # request body is otherwise byte-identical to before.
+            **({"secrets": exec_secrets} if exec_secrets else {}),
         }),
         headers={"Content-Type": "application/json"},
     )

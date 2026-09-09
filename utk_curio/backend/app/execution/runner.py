@@ -221,6 +221,7 @@ def run_through_node(
     as_validation: bool = True,
     dataset_paths: dict | None = None,
     exec_user_key: str | None = None,
+    secrets: dict | None = None,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
@@ -319,6 +320,10 @@ def run_through_node(
             payload["dataset_paths"] = dict(dataset_paths)
         if exec_user_key:
             payload["user_key"] = exec_user_key
+        if secrets:
+            # dev/116: the connection keys the candidate names, resolved by the
+            # caller in the request thread; the sandbox injects curio_secret().
+            payload["secrets"] = dict(secrets)
         endpoint = "/exec" if is_py else "/execJs"
         started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         t0 = time.monotonic()

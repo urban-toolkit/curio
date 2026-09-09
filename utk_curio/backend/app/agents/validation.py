@@ -89,6 +89,7 @@ def validate_candidate(
     available_templates: dict | None = None,
     dataset_paths: dict | None = None,
     exec_user_key: str | None = None,
+    secrets: dict | None = None,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
     return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
@@ -99,7 +100,7 @@ def validate_candidate(
         user_key, project_id, spec_dict, node_id,
         candidate_content=candidate_content,
         session_id=session_id, exec_fn=exec_fn, progress=progress,
-        dataset_paths=dataset_paths, exec_user_key=exec_user_key,
+        dataset_paths=dataset_paths, exec_user_key=exec_user_key, secrets=secrets,
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     dataflow = (spec_dict or {}).get("dataflow") or {}

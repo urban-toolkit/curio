@@ -219,3 +219,21 @@ class TestRoutes:
                        json={"host": "x.org", "value": "abcdefgh"}, headers=_h("shared-token"))
         assert r.status_code == 201
         assert ck.default_store().path("guest").is_file()
+
+
+class TestSecretNames:
+    """The ONE call-shape regex the execution resolvers and the gate share."""
+
+    def test_literal_calls_are_found_in_order_deduplicated_and_bounded(self):
+        code = ('k = curio_secret("census")\nt = curio_secret(\'noaa\')\n'
+                'again = curio_secret( "census" )\n')
+        assert ck.secret_names(code) == ["census", "noaa"]
+        many = "\n".join(f'x{i} = curio_secret("k{i}")' for i in range(20))
+        assert len(ck.secret_names(many)) == ck.MAX_SECRET_NAMES
+
+    def test_dynamic_or_malformed_calls_are_not_names(self):
+        assert ck.secret_names('curio_secret(name)') == []
+        assert ck.secret_names('curio_secret("Bad Name")') == []
+        assert ck.secret_names('curio_secret("a" + b)') == []
+        assert ck.secret_names("no calls here") == []
+        assert ck.secret_names(None) == [] and ck.secret_names("") == []

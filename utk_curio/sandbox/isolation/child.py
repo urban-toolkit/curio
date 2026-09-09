@@ -44,6 +44,9 @@ import json
 import os
 import sys
 
+from utk_curio.common.redaction import redact
+from utk_curio.sandbox.util.secrets import make_curio_secret, shape_secrets
+
 RESULT_FILENAME = "result.json"
 
 # Kept in step with protocol.MAX_* so a child never writes a manifest the
@@ -468,6 +471,9 @@ def run_node(request, namespace_factory):
 
     scratch_dir = request["scratch_dir"]
     code = request["code"]
+    # dev/116: taken OUT of the request before anything else runs, so no later
+    # traceback, dump or manifest can carry the values.
+    secrets = shape_secrets(request.pop("secrets", None))
 
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()
@@ -482,6 +488,7 @@ def run_node(request, namespace_factory):
             namespace["curio_dataset_path"] = _make_dataset_path_resolver(
                 request.get("dataset_paths") or {}, scratch_dir
             )
+            namespace["curio_secret"] = make_curio_secret(secrets)
 
             # Replay this session's earlier imports so an upstream node's
             # `import numpy as np` is visible here, matching the in-process
@@ -524,15 +531,18 @@ def run_node(request, namespace_factory):
     except BaseException:  # noqa: BLE001 - mirrors execute_code's catch-all
         captured_stderr.write(traceback.format_exc())
 
+    # dev/116: redacted before the manifest is written — a printed key never
+    # touches the scratch directory or the parent.
+    stdout_text = redact(captured_stdout.getvalue(), secrets)
     stdout_lines = [
         line[:_MAX_STDOUT_LINE_CHARS]
-        for line in captured_stdout.getvalue().split("\n") if line
+        for line in stdout_text.split("\n") if line
     ][:_MAX_STDOUT_LINES]
 
     return {
         "ok": ok,
         "stdout": stdout_lines,
-        "stderr": captured_stderr.getvalue()[:_MAX_STDERR_CHARS],
+        "stderr": redact(captured_stderr.getvalue(), secrets)[:_MAX_STDERR_CHARS],
         "output": output_descriptor,
         "imports": succeeded_imports,
     }

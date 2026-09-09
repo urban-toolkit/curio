@@ -1,6 +1,6 @@
 """dev/116 — the ONE redactor every secret-carrying boundary calls."""
 
-from utk_curio.backend.app.common.redaction import MIN_REDACT_CHARS, redact, redact_all
+from utk_curio.common.redaction import MIN_REDACT_CHARS, redact, redact_all
 
 
 def test_values_are_replaced_by_name_longest_first():
