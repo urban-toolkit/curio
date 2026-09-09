@@ -3850,6 +3850,13 @@ def _solve_events(
     # attachment mirror.
     batch_reason: str | None = None
     extra_parts: list[dict] = []
+    # dev/118 (DEC-075): waves. The spec the loop and the context composer see
+    # is re-read after every wave's persist, so a downstream target executes
+    # against the upstream content that actually ran; the outputs recorded for
+    # passing upstream targets are handed to their dependents' corrections.
+    current: dict = {"spec": spec, "wave": 0}
+    wave_outputs: dict[str, dict] = {}
+    persisted: set[str] = set()
 
     def _flag_requested() -> bool:
         # The durable cancel signal, read lazily at node boundaries only.
@@ -3920,6 +3927,12 @@ def _solve_events(
                 candidate = outcome.get("candidate") or ""
                 results[node_id] = {"status": "solved", **trail}
                 applied_contents.append({"nodeId": node_id, "content": candidate})
+                wave_outputs[node_id] = {
+                    "nodeId": node_id,
+                    "goal": str((nodes_by_id.get(node_id) or {}).get("goal") or "")[:200],
+                    "outputDataType": (outcome.get("evidence") or {}).get("outputDataType") or "",
+                    "wave": current["wave"],
+                }
                 return {"nodeId": node_id, "status": "solved", "content": candidate, **trail}
             evidence = outcome.get("evidence") or {}
             if outcome.get("verdict") == "not-executable" and (outcome.get("candidate") or "").strip():
@@ -3978,9 +3991,18 @@ def _solve_events(
                 )[:220] + " — resolve the source with Dataset Finder (attach it to this node) or give the path"
                 results[node_id] = {"status": "failed", "error": err[:300]}
                 return {"nodeId": node_id, "status": "failed", "error": err[:300]}
-            results[node_id] = {"status": "solved"}
+            result: dict = {"status": "solved"}
+            if not _is_executable(node):
+                # dev/118 (DEC-075): written like before, and SAID to be unexecuted.
+                result["verification"] = {
+                    "status": "not-executable",
+                    "reason": f"{node.get('type')} runs in the browser, not the sandbox — written, not executed",
+                }
+            results[node_id] = result
             applied_contents.append({"nodeId": node_id, "content": text_out})
-            return {"nodeId": node_id, "status": "solved", "content": text_out}
+            return {"nodeId": node_id, "status": "solved", "content": text_out, **(
+                {"verification": result["verification"]} if "verification" in result else {}
+            )}
         if status == "failed":
             err = (text or "")[:300]
             results[node_id] = {"status": "failed", "error": err}
@@ -3991,24 +4013,19 @@ def _solve_events(
         unstarted.append(node_id)
         return None
 
-    def _finish() -> dict:
-        # One batched spec write: contents (re-guarded against the CURRENT
-        # spec under the read-modify-write), statuses, and the exit phase —
-        # plus the transcript card. Idempotent: exactly one persist per batch.
-        if state["finished"]:
-            return payload_out
-        state["finished"] = True
-        cancelled = stop.is_set()
-        spec = _read_spec_or_404(user_key, project_id)
-        record = _record_or_404(spec, attachment_id)
-        session = record.get("builderSession") or {}
-        node_runs = session.get("nodeRuns") or {}
+    def _apply_contents(spec_doc: dict) -> None:
+        """Write every solved content not yet persisted into *spec_doc*,
+        re-guarded against the CURRENT nodes (deleted → skipped; a user edit
+        wins). Shared by the per-wave persist and the final one (dev/118)."""
         current_nodes = {
             n.get("id"): n
-            for n in (spec.get("dataflow") or {}).get("nodes") or []
+            for n in (spec_doc.get("dataflow") or {}).get("nodes") or []
             if isinstance(n, dict)
         }
         for item in applied_contents:
+            if item["nodeId"] in persisted:
+                continue
+            persisted.add(item["nodeId"])
             node = current_nodes.get(item["nodeId"])
             if node is None:
                 results[item["nodeId"]] = {"status": "skipped"}  # deleted meanwhile
@@ -4017,40 +4034,81 @@ def _solve_events(
                 results[item["nodeId"]] = {"status": "skipped"}  # user edit wins
                 continue
             node["content"] = item["content"]
-        applied = [
-            i for i in applied_contents if results.get(i["nodeId"], {}).get("status") == "solved"
-        ]
-        ids_to_ref = {
-            nid: ref for ref, nid in (session.get("nodeIds") or {}).items()
-        }
-        node_states = session.get("nodeStates")
-        for node_id, outcome in results.items():
-            if outcome["status"] == "proposed":
-                # dev/67-6: nothing was written — the node stays pending
-                # until the user applies the content proposal; the plan row
-                # advances to "solving" (a review awaits).
-                ref = ids_to_ref.get(node_id)
-                if node_states is not None and ref is not None:
-                    node_states[ref] = "solving"
-                continue
-            if node_id in node_runs:
-                node_runs[node_id] = outcome["status"] if outcome["status"] != "skipped" else "skipped"
-        session["nodeRuns"] = node_runs
-        session.pop("solvingSince", None)
-        session.pop("solveExecutionId", None)
-        session.pop("cancelRequested", None)
-        if mode == "propose" and return_phase not in (None, "", "solving"):
-            # The propose batch resolved nothing — the session returns to the
-            # phase the solve interrupted (typically "simulating").
-            session["phase"] = return_phase
-        else:
-            session["phase"] = (
-                "ready"
-                if all(s not in ("pending", "failed") for s in node_runs.values())
-                else "applied"
-            )
-        record["builderSession"] = session
-        projects_storage.write_spec(user_key, project_id, spec)
+
+    def _persist_wave(wave_ids: list[str]) -> None:
+        """dev/118 (DEC-075): the wave boundary IS the persist — and the
+        heartbeat. Under the spec lock: the wave's solved contents land (the
+        same guards as the final write), its nodeRuns say what happened, and
+        ``solvingSince`` is refreshed so the stale marker means "no wave
+        completed for 15 minutes". A process that dies between waves leaves
+        every persisted wave in place (DEC-021: nothing replayed; Retry
+        continues). The re-read spec is what the next wave runs against."""
+        with projects_storage.spec_write_lock(user_key, project_id):
+            spec_doc = _read_spec_or_404(user_key, project_id)
+            record = _record_or_404(spec_doc, attachment_id)
+            session = record.get("builderSession") or {}
+            _apply_contents(spec_doc)
+            node_runs = session.get("nodeRuns") or {}
+            for nid in wave_ids:
+                outcome = results.get(nid)
+                if outcome and nid in node_runs and outcome.get("status") in ("solved", "failed", "skipped"):
+                    node_runs[nid] = outcome["status"]
+            session["nodeRuns"] = node_runs
+            if session.get("phase") == "solving":
+                session["solvingSince"] = time.time()
+            record["builderSession"] = session
+            projects_storage.write_spec(user_key, project_id, spec_doc)
+        current["spec"] = spec_doc
+
+    def _finish() -> dict:
+        # One batched spec write: contents (re-guarded against the CURRENT
+        # spec under the read-modify-write), statuses, and the exit phase —
+        # plus the transcript card. Idempotent: exactly one persist per batch.
+        # dev/118: the LAST wave's persist — earlier waves already landed.
+        if state["finished"]:
+            return payload_out
+        state["finished"] = True
+        cancelled = stop.is_set()
+        with projects_storage.spec_write_lock(user_key, project_id):
+            spec = _read_spec_or_404(user_key, project_id)
+            record = _record_or_404(spec, attachment_id)
+            session = record.get("builderSession") or {}
+            node_runs = session.get("nodeRuns") or {}
+            _apply_contents(spec)
+            applied = [
+                i for i in applied_contents if results.get(i["nodeId"], {}).get("status") == "solved"
+            ]
+            ids_to_ref = {
+                nid: ref for ref, nid in (session.get("nodeIds") or {}).items()
+            }
+            node_states = session.get("nodeStates")
+            for node_id, outcome in results.items():
+                if outcome["status"] == "proposed":
+                    # dev/67-6: nothing was written — the node stays pending
+                    # until the user applies the content proposal; the plan row
+                    # advances to "solving" (a review awaits).
+                    ref = ids_to_ref.get(node_id)
+                    if node_states is not None and ref is not None:
+                        node_states[ref] = "solving"
+                    continue
+                if node_id in node_runs:
+                    node_runs[node_id] = outcome["status"] if outcome["status"] != "skipped" else "skipped"
+            session["nodeRuns"] = node_runs
+            session.pop("solvingSince", None)
+            session.pop("solveExecutionId", None)
+            session.pop("cancelRequested", None)
+            if mode == "propose" and return_phase not in (None, "", "solving"):
+                # The propose batch resolved nothing — the session returns to the
+                # phase the solve interrupted (typically "simulating").
+                session["phase"] = return_phase
+            else:
+                session["phase"] = (
+                    "ready"
+                    if all(s not in ("pending", "failed") for s in node_runs.values())
+                    else "applied"
+                )
+            record["builderSession"] = session
+            projects_storage.write_spec(user_key, project_id, spec)
         solved = sum(1 for r in results.values() if r["status"] == "solved")
         proposed = sum(1 for r in results.values() if r["status"] == "proposed")
         if isinstance(session_id, str):
@@ -4178,14 +4236,20 @@ def _solve_events(
                     # dev/67-6: the ONE context composer — the child sees the
                     # node's neighborhood (goals, runtime status, datasets),
                     # not just its own intent.
+                    wave_spec = current["spec"]
+                    upstream_outputs = _upstream_outputs_for(wave_spec, node_id, wave_outputs)
                     inputs = {
                         "nodeType": node.get("type"),
                         "intent": node.get("goal"),
                         "planSiblings": goals[:20],
                         "nodeContext": node_context.compose_node_context(
-                            user_key, project_id, spec, node_id
+                            user_key, project_id, wave_spec, node_id
                         ),
                     }
+                    if upstream_outputs:
+                        # dev/118: what the nodes feeding this one actually
+                        # produced when they ran — a type to write against.
+                        inputs["upstreamOutputs"] = upstream_outputs
                     # dev/114: the seventh DEC-063 application — a data-
                     # loading child is HANDED its grounded sources.
                     from utk_curio.backend.app.packages import services as _pkg
@@ -4200,8 +4264,9 @@ def _solve_events(
                                 extra_texts=(str(node.get("goal") or ""),),
                             )
                         )
-                    if verify and _is_data_loading(node):
-                        # dev/115 (DEC-073): the ONE verified-content loop —
+                    if verify and _is_executable(node):
+                        # dev/115 (DEC-073) → dev/118 (DEC-075): the ONE
+                        # verified-content loop for EVERY executable kind —
                         # every round traced at the node's home (dev/72), the
                         # loop's progress relayed as node_* events, the outcome
                         # folded by _record_outcome.
@@ -4219,11 +4284,12 @@ def _solve_events(
 
                         gen = _verified_content_rounds(
                             user_key, project_id,
-                            spec=spec, node=node, resolution=resolution, config=config,
+                            spec=wave_spec, node=node, resolution=resolution, config=config,
                             parent_execution_id=solve_execution_id, parent_coord=coord,
                             attachment_id=attachment_id, exec_fn=None,
                             grounding_loop_ctx=solve_ctx, grounding_base=solve_ground,
-                            extra_inputs={"planSiblings": goals[:20]},
+                            extra_inputs={"planSiblings": goals[:20],
+                                          **({"upstreamOutputs": upstream_outputs} if upstream_outputs else {})},
                             delegate_runner=_traced,
                             dataset_paths_fn=lambda codes: _filter_dataset_paths(
                                 solve_dataset_paths, codes
@@ -4254,157 +4320,170 @@ def _solve_events(
                     outcome_queue.put((node_id, "failed", f"solve worker error: {exc}", None))
 
             pool = ThreadPoolExecutor(max_workers=_SOLVE_MAX_WORKERS)
+            waves = _solve_waves(spec, list(targets))
             try:
-                for target in targets:
-                    pool.submit(_solve_one, target)
-                remaining = len(targets)
-                while remaining:
-                    node_id, status, text, child = outcome_queue.get()
-                    if status == "started":
-                        yield "node_started", {"nodeId": node_id}
+                for wave_no, wave in enumerate(waves, 1):
+                    current["wave"] = wave_no
+                    if _should_stop():
+                        # Cancelled between waves: nothing here was dispatched.
+                        for nid in wave:
+                            _record_outcome(nid, "unstarted", None, None)
                         continue
-                    if status == "progress":
-                        # dev/115: the verified loop's rounds, live — the strip
-                        # shows "verifying" and each round's verdict.
-                        progress = dict(text)
-                        kind = progress.pop("kind", "")
-                        event_name = _SOLVE_PROGRESS_EVENTS.get(kind)
-                        if event_name:
-                            yield event_name, {"nodeId": node_id, **progress}
-                        continue
-                    remaining -= 1
-                    if mode == "propose" and status == "verified":
-                        # dev/115: an EXECUTED review — the validation block
-                        # (verdict, rounds, attempts) rides the part, PASS or
-                        # FAIL (dev/67-7's labeled choice); a sandbox outage
-                        # mints nothing and the node stays pending.
-                        outcome = text
-                        for c in outcome.get("delegations") or []:
-                            if c is not None:
-                                delegations.append(c)
-                        if outcome.get("verdict") == "infrastructure":
-                            event = _record_outcome(node_id, "verified", outcome, None)
-                            if event is not None:
-                                yield "node_result", event
+                    yield "solve_wave", {"wave": wave_no, "of": len(waves), "nodeIds": list(wave)}
+                    for target in wave:
+                        pool.submit(_solve_one, target)
+                    remaining = len(wave)
+                    while remaining:
+                        node_id, status, text, child = outcome_queue.get()
+                        if status == "started":
+                            yield "node_started", {"nodeId": node_id}
                             continue
-                        validation_block = {
-                            "verdict": outcome.get("verdict"),
-                            "rounds": outcome.get("rounds"),
-                            "evidence": outcome.get("evidence") or {},
-                            "attempts": outcome.get("attempts") or [],
-                        }
-                        part, home_att, mint_text = _mint_content_review_from_delegate(
-                            user_key, project_id,
-                            node_id=node_id,
-                            generated_text=outcome.get("candidate") or "",
-                            parent_attachment_id=attachment_id,
-                            parent_session_id=session_id,
-                            local_turn=True,
-                            validation=validation_block,
-                            grounding_base=solve_ground,
-                        )
-                        if part is not None:
-                            results[node_id] = {
-                                "status": "proposed",
-                                "proposalId": part["proposalId"],
-                                "proposalAttachmentId": home_att,
-                                "verdict": validation_block["verdict"],
-                                "rounds": validation_block["rounds"],
-                                "attempts": validation_block["attempts"],
-                            }
-                            yield "node_result", {
-                                "nodeId": node_id,
-                                "status": "proposed",
-                                "proposalId": part["proposalId"],
-                                "proposalAttachmentId": home_att,
-                                "verdict": validation_block["verdict"],
-                                "rounds": validation_block["rounds"],
-                            }
-                        else:
-                            results[node_id] = {"status": "failed", "error": mint_text[:300]}
-                            yield "node_result", {
-                                "nodeId": node_id, "status": "failed", "error": mint_text[:300],
-                            }
-                        continue
-                    if mode == "propose" and status == "solved":
-                        # dev/67-6 (Simulation Mode: solve): nothing is
-                        # written — the child's content mints a reviewed
-                        # node.content.write proposal through the EXISTING
-                        # machinery (digest-pinned against the current
-                        # content). dev/72: the review lives with the node's
-                        # agent when one exists (find-only — the drain never
-                        # writes the spec beyond the mint's own write).
-                        if child is not None:
-                            delegations.append(child)
-                        # dev/114: the gate runs on the batch base BEFORE the
-                        # mint so the node's failure names the source.
-                        _pnode = nodes_by_id.get(node_id) or {}
-                        _v, _refusal = _gate_generated_content(
-                            user_key, project_id, solve_ctx,
-                            code=content.extract_node_content(text), engine="python",
-                            node_type=_pnode.get("type"), base=solve_ground,
-                        )
-                        if _refusal:
-                            err = ("ungrounded source: " + _refusal.split("Allowed sources:")[0]
-                                   .replace("source grounding refused — ", "").strip())[:220] + \
-                                  " — resolve the source with Dataset Finder (attach it to this node) or give the path"
-                            results[node_id] = {"status": "failed", "error": err[:300]}
-                            yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
+                        if status == "progress":
+                            # dev/115: the verified loop's rounds, live — the strip
+                            # shows "verifying" and each round's verdict.
+                            progress = dict(text)
+                            kind = progress.pop("kind", "")
+                            event_name = _SOLVE_PROGRESS_EVENTS.get(kind)
+                            if event_name:
+                                yield event_name, {"nodeId": node_id, **progress}
                             continue
-                        # dev/73: the shared content→review sequence (also the
-                        # chat loops' — one mint policy, three callers).
-                        part, home_att, mint_text = _mint_content_review_from_delegate(
-                            user_key, project_id,
-                            node_id=node_id,
-                            generated_text=text,
-                            parent_attachment_id=attachment_id,
-                            parent_session_id=session_id,
-                            local_turn=True,
-                        )
-                        if part is not None:
-                            results[node_id] = {
-                                "status": "proposed",
-                                "proposalId": part["proposalId"],
-                                "proposalAttachmentId": home_att,
+                        remaining -= 1
+                        if mode == "propose" and status == "verified":
+                            # dev/115: an EXECUTED review — the validation block
+                            # (verdict, rounds, attempts) rides the part, PASS or
+                            # FAIL (dev/67-7's labeled choice); a sandbox outage
+                            # mints nothing and the node stays pending.
+                            outcome = text
+                            for c in outcome.get("delegations") or []:
+                                if c is not None:
+                                    delegations.append(c)
+                            if outcome.get("verdict") == "infrastructure":
+                                event = _record_outcome(node_id, "verified", outcome, None)
+                                if event is not None:
+                                    yield "node_result", event
+                                continue
+                            validation_block = {
+                                "verdict": outcome.get("verdict"),
+                                "rounds": outcome.get("rounds"),
+                                "evidence": outcome.get("evidence") or {},
+                                "attempts": outcome.get("attempts") or [],
                             }
-                            node = nodes_by_id.get(node_id) or {}
-                            node_label = (node.get('goal') or node_id)[:60]
-                            if home_att != attachment_id and isinstance(session_id, str):
-                                sessions.append_turns(
-                                    user_key, project_id, session_id, attachment_id,
-                                    [sessions.make_turn(
-                                        "agent",
-                                        f"Proposed content for {node_label!r} — "
-                                        "the review lives in the node's Node Builder.",
-                                        content=[content.make_delegation_part(
-                                            capability="node.content.generate",
-                                            coord="agent.node-builder",
-                                            name="Node Builder",
-                                            category="node",
-                                            attachment_id=home_att,
-                                            status="ok",
-                                            summary=f"content proposed for {node_label!r}",
+                            part, home_att, mint_text = _mint_content_review_from_delegate(
+                                user_key, project_id,
+                                node_id=node_id,
+                                generated_text=outcome.get("candidate") or "",
+                                parent_attachment_id=attachment_id,
+                                parent_session_id=session_id,
+                                local_turn=True,
+                                validation=validation_block,
+                                grounding_base=solve_ground,
+                            )
+                            if part is not None:
+                                results[node_id] = {
+                                    "status": "proposed",
+                                    "proposalId": part["proposalId"],
+                                    "proposalAttachmentId": home_att,
+                                    "verdict": validation_block["verdict"],
+                                    "rounds": validation_block["rounds"],
+                                    "attempts": validation_block["attempts"],
+                                }
+                                yield "node_result", {
+                                    "nodeId": node_id,
+                                    "status": "proposed",
+                                    "proposalId": part["proposalId"],
+                                    "proposalAttachmentId": home_att,
+                                    "verdict": validation_block["verdict"],
+                                    "rounds": validation_block["rounds"],
+                                }
+                            else:
+                                results[node_id] = {"status": "failed", "error": mint_text[:300]}
+                                yield "node_result", {
+                                    "nodeId": node_id, "status": "failed", "error": mint_text[:300],
+                                }
+                            continue
+                        if mode == "propose" and status == "solved":
+                            # dev/67-6 (Simulation Mode: solve): nothing is
+                            # written — the child's content mints a reviewed
+                            # node.content.write proposal through the EXISTING
+                            # machinery (digest-pinned against the current
+                            # content). dev/72: the review lives with the node's
+                            # agent when one exists (find-only — the drain never
+                            # writes the spec beyond the mint's own write).
+                            if child is not None:
+                                delegations.append(child)
+                            # dev/114: the gate runs on the batch base BEFORE the
+                            # mint so the node's failure names the source.
+                            _pnode = nodes_by_id.get(node_id) or {}
+                            _v, _refusal = _gate_generated_content(
+                                user_key, project_id, solve_ctx,
+                                code=content.extract_node_content(text), engine="python",
+                                node_type=_pnode.get("type"), base=solve_ground,
+                            )
+                            if _refusal:
+                                err = ("ungrounded source: " + _refusal.split("Allowed sources:")[0]
+                                       .replace("source grounding refused — ", "").strip())[:220] + \
+                                      " — resolve the source with Dataset Finder (attach it to this node) or give the path"
+                                results[node_id] = {"status": "failed", "error": err[:300]}
+                                yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
+                                continue
+                            # dev/73: the shared content→review sequence (also the
+                            # chat loops' — one mint policy, three callers).
+                            part, home_att, mint_text = _mint_content_review_from_delegate(
+                                user_key, project_id,
+                                node_id=node_id,
+                                generated_text=text,
+                                parent_attachment_id=attachment_id,
+                                parent_session_id=session_id,
+                                local_turn=True,
+                            )
+                            if part is not None:
+                                results[node_id] = {
+                                    "status": "proposed",
+                                    "proposalId": part["proposalId"],
+                                    "proposalAttachmentId": home_att,
+                                }
+                                node = nodes_by_id.get(node_id) or {}
+                                node_label = (node.get('goal') or node_id)[:60]
+                                if home_att != attachment_id and isinstance(session_id, str):
+                                    sessions.append_turns(
+                                        user_key, project_id, session_id, attachment_id,
+                                        [sessions.make_turn(
+                                            "agent",
+                                            f"Proposed content for {node_label!r} — "
+                                            "the review lives in the node's Node Builder.",
+                                            content=[content.make_delegation_part(
+                                                capability="node.content.generate",
+                                                coord="agent.node-builder",
+                                                name="Node Builder",
+                                                category="node",
+                                                attachment_id=home_att,
+                                                status="ok",
+                                                summary=f"content proposed for {node_label!r}",
+                                            )],
                                         )],
-                                    )],
-                                )
-                            yield "node_result", {
-                                "nodeId": node_id,
-                                "status": "proposed",
-                                "proposalId": part["proposalId"],
-                                "proposalAttachmentId": home_att,
-                            }
-                        else:
-                            results[node_id] = {
-                                "status": "failed", "error": mint_text[:300]
-                            }
-                            yield "node_result", {
-                                "nodeId": node_id, "status": "failed",
-                                "error": mint_text[:300],
-                            }
-                        continue
-                    event = _record_outcome(node_id, status, text, child)
-                    if event is not None:
-                        yield "node_result", event
+                                    )
+                                yield "node_result", {
+                                    "nodeId": node_id,
+                                    "status": "proposed",
+                                    "proposalId": part["proposalId"],
+                                    "proposalAttachmentId": home_att,
+                                }
+                            else:
+                                results[node_id] = {
+                                    "status": "failed", "error": mint_text[:300]
+                                }
+                                yield "node_result", {
+                                    "nodeId": node_id, "status": "failed",
+                                    "error": mint_text[:300],
+                                }
+                            continue
+                        event = _record_outcome(node_id, status, text, child)
+                        if event is not None:
+                            yield "node_result", event
+                    if wave_no < len(waves):
+                        # dev/118: the wave boundary persists and heartbeats;
+                        # the next wave runs against what actually landed.
+                        _persist_wave(list(wave))
             except GeneratorExit:
                 # Client gone (dev/63): stop dispatch, let in-flight children
                 # finish, fold their results in WITHOUT yielding — the finally
@@ -4960,6 +5039,55 @@ def _run_node_events(
 # dev/67-7: bounded self-correction — initial generation + up to 2 corrective
 # regenerations, each re-validated by actually running the dataflow.
 _VALIDATE_CORRECTION_ROUNDS = 2
+
+
+def _solve_waves(spec: dict | None, targets: list[str]) -> list[list[str]]:
+    """dev/118 (DEC-075): the batch's topological waves over its OWN targets.
+    Depth 0 = no target upstream (an upstream that is not a target already has
+    content, or will be named as a blocker honestly); depth k = one more than
+    the deepest target upstream. Data-flow edges only (Interaction edges carry
+    selection state). Targets caught in a cycle land in one last wave — the
+    runner refuses a cyclic slice by name. Order within a wave is the
+    targets' own."""
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    targets = [t for t in targets if isinstance(t, str)]
+    target_set = set(targets)
+    try:
+        wf = parse_workflow_dict(spec or {})
+        upstream = {t: [u for u in wf.upstream_nodes(t) if u in target_set and u != t] for t in targets}
+    except Exception:
+        return [list(targets)] if targets else []
+    depth: dict[str, int] = {}
+    remaining = list(targets)
+    while remaining:
+        progressed = False
+        for t in list(remaining):
+            ups = upstream.get(t, [])
+            if all(u in depth for u in ups):
+                depth[t] = 1 + max((depth[u] for u in ups), default=-1)
+                remaining.remove(t)
+                progressed = True
+        if not progressed:
+            last = max(depth.values(), default=-1) + 1
+            for t in remaining:
+                depth[t] = last
+            break
+    return [[t for t in targets if depth[t] == d] for d in sorted(set(depth.values()))]
+
+
+def _upstream_outputs_for(spec: dict | None, node_id: str, wave_outputs: dict) -> list[dict]:
+    """dev/118: the recorded outputs of this node's direct upstreams that
+    passed earlier in the batch — data-flow edges only, bounded."""
+    if not wave_outputs:
+        return []
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    try:
+        ups = parse_workflow_dict(spec or {}).upstream_nodes(node_id)
+    except Exception:
+        return []
+    return [wave_outputs[u] for u in ups if u in wave_outputs][:12]
 
 
 def _node_is_executable(node_obj: dict | None) -> bool:

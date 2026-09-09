@@ -717,7 +717,7 @@ class TestVerifiedSolve:
         return "Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
 
     def _setup(self, client, user, token, monkeypatch, *, dl_replies, ca_reply="df = arg[0]\nreturn df.describe()",
-               with_stats=True, exec_outcomes=None, exec_raises=None):
+               with_stats=True, exec_outcomes=None, exec_raises=None, ca_replies=None, ca_gate=None):
         """Applied plan with a data-loading node; scripted children keyed by
         the delegated frame; a fake sandbox keyed by content markers."""
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -734,8 +734,10 @@ class TestVerifiedSolve:
             json={"coord": self.DFB, "target": {"kind": "canvas"}}, headers=_auth(token),
         ).get_json()["attachmentId"]
         dl_script = [r.replace("{DATASET}", dataset_id) for r in dl_replies]
+        ca_script = list(ca_replies or [ca_reply])
         calls: list = []
         dl_calls: list = []
+        ca_calls: list = []
 
         def _fake_run(config, messages, **kwargs):
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
@@ -747,7 +749,10 @@ class TestVerifiedSolve:
             if f'"nodeType": "{DL}"' in frame:
                 dl_calls.append(frame)
                 return dl_script[min(len(dl_calls) - 1, len(dl_script) - 1)]
-            return ca_reply
+            if ca_gate is not None:
+                ca_gate.wait(timeout=10)  # dev/118: hold wave 2 so wave 1's persist is observable
+            ca_calls.append(frame)
+            return ca_script[min(len(ca_calls) - 1, len(ca_script) - 1)]
 
         monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
         exec_payloads: list = []
@@ -772,7 +777,7 @@ class TestVerifiedSolve:
         load = next(n["id"] for n in applied["nodes"] if str(n.get("type", "")).startswith(DL))
         stats = next((n["id"] for n in applied["nodes"] if str(n.get("type", "")).startswith(CA)), None)
         return dict(pid=pid, att=att, load=load, stats=stats, dataset_id=dataset_id, ukey=ukey,
-                    calls=calls, dl_calls=dl_calls, exec_payloads=exec_payloads)
+                    calls=calls, dl_calls=dl_calls, ca_calls=ca_calls, exec_payloads=exec_payloads)
 
     def _solve(self, client, token, ctx, **body):
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve",
@@ -794,13 +799,19 @@ class TestVerifiedSolve:
         assert load["status"] == "solved" and load["verdict"] == "pass" and load["rounds"] == 1
         assert load["attempts"][0]["kind"] == "executed" and load["attempts"][0]["source"] == "generated"
         assert ctx["dataset_id"] in self._node_content(ctx, ctx["load"])
-        # The sandbox ran exactly the data-loading node, with its mapping and the user key.
-        assert len(ctx["exec_payloads"]) == 1
+        # Wave 1 ran the data-loading node, with its mapping and the user key.
         assert ctx["exec_payloads"][0]["dataset_paths"][ctx["dataset_id"]].endswith("heat_tracts.csv")
         assert ctx["exec_payloads"][0]["user_key"] == ctx["ukey"]
-        # The computation sibling solved through the legacy path (v1: data-loading only).
-        assert body["results"][ctx["stats"]]["status"] == "solved"
-        assert "verdict" not in body["results"][ctx["stats"]]
+        # dev/118 (DEC-075): the computation sibling is verified too — in wave
+        # 2, against the loader's WRITTEN content (the slice re-runs the loader
+        # with the code that landed, then the stats node).
+        stats = body["results"][ctx["stats"]]
+        assert stats["status"] == "solved" and stats["verdict"] == "pass" and stats["rounds"] == 1
+        assert len(ctx["exec_payloads"]) == 3
+        assert ctx["dataset_id"] in ctx["exec_payloads"][1]["code"]  # the persisted loader, re-run as the slice
+        assert "describe" in ctx["exec_payloads"][2]["code"]
+        assert ctx["dataset_id"] in self._node_content(ctx, ctx["load"])
+        assert "describe" in self._node_content(ctx, ctx["stats"])
         assert body["builderSession"]["phase"] == "ready"
 
     def test_failure_is_corrected_with_the_traceback_and_fresh_url_evidence(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -907,6 +918,86 @@ class TestVerifiedSolve:
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve",
                         json={"verify": "yes"}, headers=_auth(token))
         assert r.status_code == 400
+
+
+    # ---- dev/118 (DEC-075): waves ---------------------------------------
+
+    def _stream(self, client, token, ctx):
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
+                        json={}, headers=_auth(token))
+        assert r.status_code == 200
+        return _tr.TestStreamedSolve()._sse_events(r)
+
+    def test_waves_run_roots_first_and_hand_the_upstream_type_to_the_correction(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        ctx = self._setup(
+            client, user, token, monkeypatch, dl_replies=[self.LOADER],
+            ca_replies=["bad_stats(arg[0])\nreturn 1", "df = arg[0]\nreturn df.describe()"],
+            exec_outcomes={"bad_stats": "Traceback: NameError: bad_stats"},
+        )
+        events = self._stream(client, token, ctx)
+        names = [k for k, _ in events]
+        waves = [p for k, p in events if k == "solve_wave"]
+        assert [w["wave"] for w in waves] == [1, 2] and all(w["of"] == 2 for w in waves)
+        assert waves[0]["nodeIds"] == [ctx["load"]] and waves[1]["nodeIds"] == [ctx["stats"]]
+        # Order on the wire: wave 1 → the loader's result → wave 2 → the stats result.
+        i_w1, i_w2 = names.index("solve_wave"), names.index("solve_wave", names.index("solve_wave") + 1)
+        results = [(i, p) for i, (k, p) in enumerate(events) if k == "node_result"]
+        assert i_w1 < results[0][0] < i_w2 < results[1][0]
+        assert results[0][1]["nodeId"] == ctx["load"] and results[1][1]["nodeId"] == ctx["stats"]
+        done = events[-1][1]
+        stats = done["results"][ctx["stats"]]
+        assert stats["status"] == "solved" and stats["verdict"] == "pass" and stats["rounds"] == 2
+        assert stats["attempts"][0]["kind"] == "execution-error"
+        # The correction was told what its upstream produced when it ran.
+        correction = ctx["ca_calls"][-1]
+        assert '"upstreamOutputs"' in correction
+        assert '"outputDataType": "dataframe"' in correction and ctx["load"] in correction
+        # The first generation of the stats node saw it too (wave 1 had landed).
+        assert '"upstreamOutputs"' in ctx["ca_calls"][0]
+        assert done["builderSession"]["phase"] == "ready"
+
+    def test_a_wave_is_persisted_before_the_next_wave_starts(self, client, user_and_token, tmp_curio, monkeypatch):
+        import threading
+
+        user, token = user_and_token
+        gate = threading.Event()
+        ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER], ca_gate=gate)
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
+                        json={}, headers=_auth(token))
+        assert r.status_code == 200
+        it = iter(r.response)
+        seen = b""
+        while b"event: solve_wave" not in seen or seen.count(b"event: solve_wave") < 2:
+            seen += next(it)  # wave 2 announced ⇒ wave 1 persisted
+        spec = projects_storage.read_spec(ctx["ukey"], ctx["pid"])
+        loader = next(n for n in spec["dataflow"]["nodes"] if n["id"] == ctx["load"])
+        assert ctx["dataset_id"] in loader["content"]  # landed before wave 2
+        record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == ctx["att"])
+        session = record["builderSession"]
+        assert session["phase"] == "solving" and session["nodeRuns"][ctx["load"]] == "solved"
+        assert session["nodeRuns"][ctx["stats"]] == "pending"
+        assert session["solvingSince"] > 0  # the wave boundary is the heartbeat
+        gate.set()
+        rest = b"".join(it)
+        assert b"event: done" in rest
+        assert "describe" in self._node_content(ctx, ctx["stats"])
+
+    def test_solve_waves_helper(self):
+        spec = {"dataflow": {"nodes": [{"id": n, "type": CA} for n in "abcdex"], "edges": [
+            {"id": "e1", "source": "a", "target": "b"}, {"id": "e2", "source": "a", "target": "c"},
+            {"id": "e3", "source": "b", "target": "d"}, {"id": "e4", "source": "c", "target": "d"},
+            {"id": "e5", "source": "x", "target": "e"},            # x is NOT a target
+            {"id": "e6", "source": "d", "target": "a", "type": "Interaction"},  # ignored
+        ]}}
+        assert services_mod._solve_waves(spec, ["d", "c", "b", "a", "e"]) == [["a", "e"], ["c", "b"], ["d"]]
+        # A cycle among targets lands in one last wave (the runner refuses it by name).
+        cyc = {"dataflow": {"nodes": [{"id": n, "type": CA} for n in "pqr"], "edges": [
+            {"id": "e1", "source": "p", "target": "q"}, {"id": "e2", "source": "q", "target": "p"},
+            {"id": "e3", "source": "q", "target": "r"},
+        ]}}
+        assert services_mod._solve_waves(cyc, ["p", "q", "r"]) == [["p", "q", "r"]]
+        assert services_mod._solve_waves(None, ["a"]) == [["a"]] and services_mod._solve_waves(spec, []) == []
 
 
 class TestDetachedSolveJobs(TestVerifiedSolve):

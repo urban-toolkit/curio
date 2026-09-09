@@ -4597,6 +4597,14 @@ class TestSolve:
     def _applied_plan(self, client, user, token, project_id, monkeypatch, replies=None, install_ncb=True):
         helper = TestDataflowPlanMint()
         att_id, calls = helper._setup(client, user, token, project_id, monkeypatch, replies=replies)
+        # dev/118 (DEC-075): Solve now RUNS every executable node. These
+        # plans are computation nodes; a fake sandbox that passes keeps the
+        # tests about the batch's mechanics, not about the code they generate.
+        monkeypatch.setattr(
+            "utk_curio.backend.app.execution.runner._http_exec",
+            lambda endpoint, payload: {"stdout": [], "stderr": "",
+                                       "output": {"path": "art-1", "dataType": "dataframe"}},
+        )
         if install_ncb:
             client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.NCB}, headers=_auth(token))
         else:
@@ -6150,6 +6158,16 @@ class TestProposeModeSolve:
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply-node",
             json={"ref": ref}, headers=_auth(token),
         ).get_json()["createdNode"]
+        # dev/118 (DEC-075): propose mode now RUNS the computation node too and
+        # mints an EXECUTED review; a fake sandbox that passes keeps this test
+        # about the propose loop.
+        exec_calls: list = []
+
+        def _exec(endpoint, payload):
+            exec_calls.append(payload)
+            return {"stdout": [], "stderr": "", "output": {"path": "art-1", "dataType": "dataframe"}}
+
+        monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
         # Propose-mode solve of exactly that node.
         resp = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/stream",
@@ -6158,6 +6176,8 @@ class TestProposeModeSolve:
         events = TestStreamedSolve()._sse_events(resp)
         result = next(p for k, p in events if k == "node_result")
         assert result["status"] == "proposed"
+        assert result["verdict"] == "pass" and result["rounds"] == 1  # dev/118: an executed review
+        assert len(exec_calls) == 1 and "generated" in exec_calls[0]["code"]
         content_proposal_id = result["proposalId"]
         done = events[-1][1]
         assert done["mode"] == "propose"

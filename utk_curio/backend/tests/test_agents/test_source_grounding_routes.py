@@ -486,11 +486,17 @@ class TestSolveSourceGrounding:
         stats = next(n["id"] for n in nodes_applied if str(n.get("type", "")).startswith(CA))
         assert body["results"][stats]["status"] == "solved"
         assert body["results"][load]["status"] == "failed"
+        # dev/118 (DEC-075): the computation sibling is verified in wave 2 —
+        # its slice runs the (empty, refused) loader first and then the node;
+        # the fake sandbox passes both. In reality an empty upstream is a
+        # blocker the runner names (§6.1); here the point is that NOTHING of
+        # the refused loader's fabricated code reached the sandbox.
+        assert [p["nodeType"] for p in exec_payloads] == [DL, CA]
+        assert "heat_tracts.csv" not in exec_payloads[0]["code"]
         # dev/115: every round was refused by the gate (kind ungrounded-source)
         # and NEVER reached the sandbox; the error names the literal + remedy.
         assert body["results"][load]["verdict"] == "fail"
         assert all(a["kind"] == "ungrounded-source" for a in body["results"][load]["attempts"])
-        assert exec_payloads == []
         assert "ungrounded-source" in body["results"][load]["error"]
         assert "heat_tracts.csv" in body["results"][load]["error"]
         assert "Dataset Finder" in body["results"][load]["error"]
@@ -516,7 +522,11 @@ class TestSolveSourceGrounding:
         body2 = self._solve(client, token, project, att, node_ids=[load])
         assert body2["results"][load]["status"] == "solved"
         assert body2["results"][load]["verdict"] == "pass"  # dev/115: it ran
-        assert len(exec_payloads) == 1
+        # dev/118: two payloads from the first batch's wave 2 (the empty loader
+        # in the stats slice, then stats) + the retried loader = three; the
+        # retry ran exactly one node, the grounded loader.
+        assert len(exec_payloads) == 3 and exec_payloads[-1]["nodeType"] == DL
+        assert path in exec_payloads[-1]["code"]
         spec = projects_storage.read_spec(_user_dir_key(user), project)
         assert path in next(n for n in spec["dataflow"]["nodes"] if n["id"] == load)["content"]
 
