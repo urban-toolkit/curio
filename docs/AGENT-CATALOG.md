@@ -342,6 +342,12 @@ A published dataflow carries key *names*, so whoever installs it saves their
 own key under the same name. The shared guest account, when authentication is
 off, shares one key store with every other guest, and the section says so.
 
+The one path the gate cannot cover is a person typing a key into a node's
+code. The code editor watches for that shape (memo dev/117) and shows a
+non-blocking hint naming the line, with the same **Save as connection key**
+route the Solve cards offer; nothing is refused, rewritten or sent — the
+finding is a name and a line, and it stays in the browser tab.
+
 Today Solve verifies **data-loading nodes**; other node kinds keep the
 generate-and-write path. `verify: false` on the Solve request keeps the legacy
 behaviour for automation. The per-node execution timeout is

@@ -265,6 +265,14 @@ the server only; they are not encrypted at rest. A dataflow you publish carries
 the key *names* — whoever installs it saves their own key under the same name.
 When authentication is off, every guest shares one key store.
 
+The node editor helps you keep it that way. If the code you type or paste
+contains something shaped like an API key — a long token assigned to a name
+like `api_key`, `token` or `Authorization` — a quiet bar above the editor says
+which line looks like a key, and offers **Save as connection key**, which opens
+this section with the host from the code filled in. It is a hint, not a block:
+Play and save work as before, the code is never changed for you, and the
+detected text never leaves your browser. Dismiss it if the value is not a key.
+
 ### Guest users
 
 Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in **`utk_curio/backend/.env`**. The backend loads its `.env` relative to its own package directory ([`config.py`](../utk_curio/backend/config.py)), so a `.env` at the repo root is not read by the app. (Docker Compose does read a root `.env`, but only for interpolating values like `BACKEND_URL` into `docker-compose.yml`.)
