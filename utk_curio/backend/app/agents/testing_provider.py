@@ -83,10 +83,15 @@ def push_replies(*replies: str) -> None:
 
 
 def reset() -> None:
-    """Drop anything still queued and everything captured. Call between tests."""
+    """Drop anything still queued and everything captured. Call between tests.
+
+    Also clears the scripted fine-tuning state (dev/122): one reset means one
+    clean slate, not two things to remember.
+    """
     with _lock:
         _queue.clear()
         _captured.clear()
+    reset_fine_tuning()
 
 
 def captured() -> list:
@@ -138,3 +143,187 @@ def run_scripted_completion(messages: list, usage_out: dict | None = None) -> st
         usage_out["inputTokens"] = int(counts.get("in", DEFAULT_USAGE["in"]))
         usage_out["outputTokens"] = int(counts.get("out", DEFAULT_USAGE["out"]))
     return reply
+
+
+# ---------------------------------------------------------------------------
+# Scripted fine-tuning (memo dev/122)
+# ---------------------------------------------------------------------------
+#
+# The same idea as the scripted completion: the whole training lane — probe,
+# upload, create, poll, cancel — has an in-process answer, so every test of it
+# runs offline and a real fine-tune (money, hours) is never part of a suite.
+# Scripted state lives beside the reply queue and is cleared by ``reset()``.
+
+#: Default probe answer. ``script_fine_tuning`` overrides it per test.
+_DEFAULT_CAPABILITY = {
+    "supported": True,
+    "reason": "Scripted endpoint: fine-tuning is available.",
+    "base_models": ("scripted-base",),
+    "surface": "openai_compatible_v1",
+}
+
+_ft_lock = threading.Lock()
+_ft_capability: dict = dict(_DEFAULT_CAPABILITY)
+_ft_jobs: dict = {}
+_ft_uploads: list = []
+_ft_status_script: deque = deque()
+_ft_counter = [0]
+
+
+def script_fine_tuning(
+    *,
+    supported: bool = True,
+    reason: str | None = None,
+    base_models: tuple = ("scripted-base",),
+    statuses: list | None = None,
+) -> None:
+    """Stage the probe answer and, optionally, a status sequence.
+
+    ``statuses`` is consumed one entry per :func:`scripted_get_fine_tuning_job`
+    call, so a test can walk a job from ``queued`` to ``succeeded`` without a
+    clock. An entry is either a status string or a ``(status, trained_model)``
+    pair.
+    """
+    with _ft_lock:
+        _ft_capability.clear()
+        _ft_capability.update({
+            "supported": supported,
+            "reason": reason or (
+                "Scripted endpoint: fine-tuning is available." if supported
+                else "Scripted endpoint: this endpoint does not offer fine-tuning."
+            ),
+            "base_models": tuple(base_models),
+            "surface": "openai_compatible_v1" if supported else "",
+        })
+        _ft_status_script.clear()
+        for entry in statuses or []:
+            _ft_status_script.append(entry)
+
+
+def reset_fine_tuning() -> None:
+    """Forget every scripted job, upload and staged status."""
+    with _ft_lock:
+        _ft_capability.clear()
+        _ft_capability.update(_DEFAULT_CAPABILITY)
+        _ft_jobs.clear()
+        _ft_uploads.clear()
+        _ft_status_script.clear()
+        _ft_counter[0] = 0
+
+
+def uploaded_training_files() -> list:
+    """``[(filename, bytes)]`` for everything "uploaded" since the last reset.
+
+    This is how a test asserts what would have left the install — the rows, the
+    scrubbing, the row count — without anything leaving it.
+    """
+    with _ft_lock:
+        return [(name, payload) for name, payload in _ft_uploads]
+
+
+def scripted_fine_tuning_capabilities(*, probed_at: str = ""):
+    from utk_curio.backend.app.agents.providers import FineTuningCapabilities
+
+    if not enabled():
+        raise TestingProviderUnavailable(
+            "the scripted provider is only available under CURIO_TESTING"
+        )
+    with _ft_lock:
+        state = dict(_ft_capability)
+    return FineTuningCapabilities(
+        supported=bool(state["supported"]),
+        reason=str(state["reason"]),
+        base_models=tuple(state["base_models"]),
+        surface=str(state["surface"]),
+        probed_at=probed_at,
+    )
+
+
+def scripted_upload_training_file(filename: str, content: bytes) -> str:
+    if not enabled():
+        raise TestingProviderUnavailable(
+            "the scripted provider is only available under CURIO_TESTING"
+        )
+    with _ft_lock:
+        _ft_uploads.append((str(filename), bytes(content)))
+        return f"file-scripted-{len(_ft_uploads)}"
+
+
+def _scripted_job(job_id: str, **fields):
+    from utk_curio.backend.app.agents.providers import FineTuningJob
+
+    state = dict(_ft_jobs.get(job_id) or {})
+    state.update(fields)
+    _ft_jobs[job_id] = state
+    return FineTuningJob(
+        id=job_id,
+        status=str(state.get("status") or "queued"),
+        raw_status=str(state.get("raw_status") or state.get("status") or "queued"),
+        base_model=str(state.get("base_model") or ""),
+        trained_model=state.get("trained_model"),
+        trained_tokens=state.get("trained_tokens"),
+        error=state.get("error"),
+    )
+
+
+def scripted_create_fine_tuning_job(
+    *, training_file: str, base_model: str, suffix: str | None = None
+):
+    if not enabled():
+        raise TestingProviderUnavailable(
+            "the scripted provider is only available under CURIO_TESTING"
+        )
+    with _ft_lock:
+        _ft_counter[0] += 1
+        job_id = f"ftjob-scripted-{_ft_counter[0]}"
+        return _scripted_job(
+            job_id,
+            status="queued",
+            raw_status="validating_files",
+            base_model=base_model,
+            training_file=training_file,
+            suffix=suffix,
+        )
+
+
+def scripted_get_fine_tuning_job(job_id: str):
+    if not enabled():
+        raise TestingProviderUnavailable(
+            "the scripted provider is only available under CURIO_TESTING"
+        )
+    with _ft_lock:
+        if job_id not in _ft_jobs:
+            from utk_curio.backend.app.agents.providers import FineTuningUnavailable
+
+            raise FineTuningUnavailable(f"Could not read job {job_id}: no such job")
+        if _ft_status_script:
+            entry = _ft_status_script.popleft()
+            status, trained = (
+                entry if isinstance(entry, (tuple, list)) else (entry, None)
+            )
+            fields: dict = {"status": str(status), "raw_status": str(status)}
+            if status == "succeeded":
+                suffix = _ft_jobs[job_id].get("suffix") or "scripted"
+                fields["trained_model"] = trained or (
+                    f"ft:{_ft_jobs[job_id].get('base_model') or 'base'}:{suffix}"
+                )
+                fields["trained_tokens"] = 4321
+            return _scripted_job(job_id, **fields)
+        return _scripted_job(job_id)
+
+
+def scripted_cancel_fine_tuning_job(job_id: str):
+    if not enabled():
+        raise TestingProviderUnavailable(
+            "the scripted provider is only available under CURIO_TESTING"
+        )
+    with _ft_lock:
+        state = _ft_jobs.get(job_id) or {}
+        if str(state.get("status")) in ("succeeded", "failed", "cancelled"):
+            from utk_curio.backend.app.agents.providers import FineTuningUnavailable
+
+            raise FineTuningUnavailable(
+                f"Could not cancel job {job_id}: it is already "
+                f"{state.get('status')}"
+            )
+        return _scripted_job(job_id, status="cancelled", raw_status="cancelled")
