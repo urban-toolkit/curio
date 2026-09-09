@@ -409,6 +409,76 @@ class TestExtractContent:
         assert len(parts) == 1
 
 
+class TestDecoratedDisplayParts:
+    """dev/115 A3 — the live gemma4 shape (2026-09-08): the Dataset Finder
+    answered with a candidates fence mid-reply and a suggestedPrompts fence
+    last; only the terminal fence counted, so three external rows were folded
+    into prose and never probed. Earlier VALID display blocks now merge with
+    the terminal one; invalid ones stay text; requests keep the A10 rule."""
+
+    CANDIDATES = (
+        '{"datasetCandidates": {"lanes": {"external": [{"name": "Chicago Community Areas", '
+        '"sourceType": "portal", "url": "https://data.cityofchicago.org/City-Government/Community-Areas/886-vY6S", '
+        '"provider": "City of Chicago", "format": "GeoJSON/CSV", "coverage": "Chicago, IL", '
+        '"requirement": "Open Data (None)", "fit": {"score": 100, "rationale": "Official geometry."}}], '
+        '"catalog": []}}}'
+    )
+
+    def test_candidates_block_before_a_terminal_prompts_block_is_kept_and_stripped(self):
+        reply = (
+            "I searched the catalog; nothing matched. Candidates below.\n\n"
+            f"```curio.v1\n{self.CANDIDATES}\n```\n\n"
+            "Select a row and confirm.\n" + _tail(PROMPTS)
+        )
+        visible, parts = content.extract_content(reply)
+        assert [p["type"] for p in parts] == ["datasetCandidates", "suggestedPrompts"]
+        assert parts[0]["lanes"]["external"][0]["url"].startswith("https://data.cityofchicago.org/")
+        assert "```" not in visible
+        assert "Candidates below." in visible and "Select a row and confirm." in visible
+
+    def test_the_terminal_prompts_block_wins_over_an_earlier_one(self):
+        earlier = '{"suggestedPrompts": {"primary": "old"}}'
+        reply = f"A.\n```curio.v1\n{earlier}\n```\nB.\n" + _tail(PROMPTS)
+        visible, parts = content.extract_content(reply)
+        assert [p["type"] for p in parts] == ["suggestedPrompts"]
+        assert parts[0]["primary"] == PROMPTS["suggestedPrompts"]["primary"]
+        assert visible == "A.\n\nB."
+
+    def test_an_invalid_earlier_block_stays_visible_text(self):
+        reply = "A.\n```curio.v1\n{broken\n```\n" + _tail(PROMPTS)
+        visible, parts = content.extract_content(reply)
+        assert [p["type"] for p in parts] == ["suggestedPrompts"]
+        assert "{broken" in visible  # fail-open: never silently dropped
+
+    def test_valid_candidates_survive_a_broken_terminal_prompts_block(self):
+        # The second live shape: the model's follow-up prompt carried an
+        # unescaped quote, so the terminal block was invalid JSON.
+        broken = ('{"suggestedPrompts": {"primary": "I want the "Community Areas" dataset", '
+                  '"alternatives": ["more"]}}')
+        reply = (
+            "Searched the catalog; nothing matched.\n\n"
+            f"```curio.v1\n{self.CANDIDATES}\n```\n\nPick one.\n"
+            f"```curio.v1\n{broken}\n```"
+        )
+        visible, parts = content.extract_content(reply)
+        assert [p["type"] for p in parts] == ["datasetCandidates"]
+        # The valid block left the text; the broken terminal block stays visible verbatim.
+        assert self.CANDIDATES not in visible
+        assert broken in visible
+        assert "Pick one." in visible
+
+    def test_a_broken_terminal_block_with_no_earlier_valid_block_is_still_fail_open(self):
+        reply = "Answer.\n```curio.v1\n{broken\n```"
+        assert content.extract_content(reply) == (reply, [])
+
+    def test_a10_decorated_request_is_byte_unchanged(self):
+        request = '{"toolRequest": {"tool": "catalog.search", "params": {}}}'
+        reply = f"Searching.\n```curio.v1\n{request}\n```\n" + _tail(PROMPTS)
+        visible, parts = content.extract_content(reply)
+        assert [p["type"] for p in parts] == ["toolRequest"]
+        assert visible == "Searching."
+
+
 class TestDelegateRequestPart:
     """dev/48 §3.4 — the model surface for depth-1 delegation."""
 

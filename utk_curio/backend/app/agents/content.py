@@ -893,20 +893,64 @@ def extract_content(reply: str) -> tuple[str, list[dict]]:
     if body is None:
         return reply, []
     parts = parse_parts(body)
+    candidates = []
+    display_blocks = []
+    if parts is None or parts[0].get("type") not in _REQUEST_TYPES:
+        for match in _ANY_BLOCK_RE.finditer(visible):
+            block_parts = parse_parts(match.group(1))
+            if not block_parts:
+                continue  # an invalid earlier block stays the model's text (fail-open)
+            if len(block_parts) == 1 and block_parts[0].get("type") in _REQUEST_TYPES:
+                candidates.append((match, block_parts))
+            else:
+                display_blocks.append((match, block_parts))
     if parts is None:
-        return reply, []
+        # dev/115 A3 (live gemma4, 2026-09-08, second shape): the TERMINAL
+        # block was broken JSON (an unescaped quote inside a suggested prompt)
+        # while the candidates block before it was valid. The invalid block
+        # stays visible verbatim (fail-open, unchanged), but the valid display
+        # blocks before it are still parts — three probed rows must not vanish
+        # because a follow-up prompt had a stray quote. Requests are not
+        # recovered here (that is _handle_tool_reply's job, #245).
+        if not display_blocks or candidates:
+            return reply, []
+        stripped = reply
+        for match, _ in reversed(display_blocks):
+            stripped = stripped[: match.start()] + stripped[match.end():]
+        merged: list[dict] = []
+        for _, block_parts in display_blocks:
+            merged.extend(block_parts)
+        return stripped.strip(), merged[:MAX_PARTS]
     if parts and parts[0].get("type") in _REQUEST_TYPES:
         return visible, parts
-    candidates = []
-    for match in _ANY_BLOCK_RE.finditer(visible):
-        block_parts = parse_parts(match.group(1))
-        if (block_parts and len(block_parts) == 1
-                and block_parts[0].get("type") in _REQUEST_TYPES):
-            candidates.append((match, block_parts))
     if len(candidates) == 1:
         match, request_parts = candidates[0]
         stripped = (visible[: match.start()] + visible[match.end():]).strip()
         return stripped, request_parts
+    if candidates:
+        return visible, parts  # several request blocks: the conservative boundary
+    if display_blocks:
+        # dev/115 A3 (live gemma4, 2026-09-08) — the DECORATED DISPLAY PARTS:
+        # the Dataset Finder's instruction says "propose ONE datasetCandidates
+        # block … include a suggestedPrompts block", and the model obeyed with
+        # TWO fences — candidates mid-reply, prompts last. Only the terminal
+        # fence counted, so the candidates were folded into prose and never
+        # probed. Every earlier block that parses to display parts merges with
+        # the terminal one (the terminal suggestedPrompts wins), and the fences
+        # leave the visible text. Same conservative boundary as A10: valid
+        # blocks only, requests untouched, MAX_PARTS bound.
+        stripped = visible
+        merged: list[dict] = []
+        for match, _ in reversed(display_blocks):
+            stripped = stripped[: match.start()] + stripped[match.end():]
+        terminal_has_prompts = any(p.get("type") == "suggestedPrompts" for p in parts)
+        for _, block_parts in display_blocks:
+            for part in block_parts:
+                if part.get("type") == "suggestedPrompts" and terminal_has_prompts:
+                    continue
+                merged.append(part)
+        merged.extend(parts)
+        return stripped.strip(), merged[:MAX_PARTS]
     return visible, parts
 
 
