@@ -3630,6 +3630,9 @@ def dismiss_proposal(
 _SOLVE_MAX_WORKERS = 3
 # A hard-crashed solve leaves the transient "solving" phase behind; a marker
 # older than this is treated as stale so the user is never wedged.
+#: dev/118: measured from ``solvingSince``, which every wave boundary
+#: refreshes — so "stale" means "no wave completed for 15 minutes", not "the
+#: batch started 15 minutes ago".
 _SOLVE_STALE_SECONDS = 15 * 60
 # In-flight cancellation (dev/63): solve executionId → stop event. The
 # in-process fast path; the persisted ``cancelRequested`` session flag is the
@@ -3857,6 +3860,12 @@ def _solve_events(
     current: dict = {"spec": spec, "wave": 0}
     wave_outputs: dict[str, dict] = {}
     persisted: set[str] = set()
+    # dev/118: the batch's time budget (§3.6) — a bound, never a failure.
+    deadline_s = solve_batch_deadline_s()
+    deadline_reason = (
+        f"the batch's time budget ({max(1, deadline_s // 60)} min) was spent — "
+        "Retry continues from here"
+    )
 
     def _flag_requested() -> bool:
         # The durable cancel signal, read lazily at node boundaries only.
@@ -3902,6 +3911,14 @@ def _solve_events(
         return _node_is_executable(node_obj)
 
     def _record_outcome(node_id: str, status: str, text, child) -> dict | None:
+        nonlocal batch_reason
+        if status == "deadline":
+            # dev/118: the budget ran out before this node was dispatched — it
+            # stays pending, says why, and the batch names the reason once.
+            results[node_id] = {"status": "pending", "reason": deadline_reason}
+            unstarted.append(node_id)
+            batch_reason = batch_reason or deadline_reason
+            return {"nodeId": node_id, "status": "pending", "reason": deadline_reason}
         """Fold one worker outcome into the batch state — no yields, so it is
         safe on the disconnect drain. Returns the node_result payload, or
         None for an unstarted (cancelled-before-dispatch) target, which stays
@@ -3954,6 +3971,13 @@ def _solve_events(
                 return {"nodeId": node_id, "status": "pending", "error": reason, **trail}
             kind = evidence.get("kind") or "fail"
             raw_detail = str(evidence.get("stderrTail") or evidence.get("detail") or "")
+            if kind == "precondition":
+                # dev/118 (DEC-075): the runner refused the SLICE (the 25-node
+                # bound, a cycle) — a bound on validation, not a failure of the
+                # content: skipped, with the bound named.
+                reason = f"skipped — {raw_detail[:240]}" if raw_detail else "skipped — validation refused the slice"
+                results[node_id] = {"status": "skipped", "reason": reason, **trail}
+                return {"nodeId": node_id, "status": "skipped", "reason": reason, **trail}
             # A refusal's head names the literal; a traceback's tail names the error.
             detail = raw_detail[:200] if kind in _HEAD_FIRST_KINDS else raw_detail[-200:]
             rounds = outcome.get("rounds") or 0
@@ -4120,6 +4144,8 @@ def _solve_events(
                     # the attempt trail — one line per round, bounded.
                     rounds = outcome.get("rounds") or 0
                     line += f" · {outcome['verdict']} after {rounds} round{'s' if rounds != 1 else ''}"
+                if outcome.get("reason") and outcome["status"] in ("pending", "skipped"):
+                    line += f" — {str(outcome['reason'])[:120]}"
                 lines.append(line)
                 if outcome.get("verdict") == "fail":
                     for attempt in (outcome.get("attempts") or [])[:3]:
@@ -4223,6 +4249,9 @@ def _solve_events(
                 try:
                     if _should_stop():
                         outcome_queue.put((node_id, "unstarted", None, None))
+                        return
+                    if _batch_deadline_spent(started, deadline_s):
+                        outcome_queue.put((node_id, "deadline", None, None))
                         return
                     outcome_queue.put((node_id, "started", None, None))
                     node = nodes_by_id.get(node_id)
@@ -4328,6 +4357,14 @@ def _solve_events(
                         # Cancelled between waves: nothing here was dispatched.
                         for nid in wave:
                             _record_outcome(nid, "unstarted", None, None)
+                        continue
+                    if _batch_deadline_spent(started, deadline_s):
+                        # dev/118: out of time before this wave — its targets
+                        # stay pending with the reason; Retry continues.
+                        for nid in wave:
+                            event = _record_outcome(nid, "deadline", None, None)
+                            if event is not None:
+                                yield "node_result", event
                         continue
                     yield "solve_wave", {"wave": wave_no, "of": len(waves), "nodeIds": list(wave)}
                     for target in wave:
@@ -5102,6 +5139,34 @@ def _node_is_executable(node_obj: dict | None) -> bool:
 #: as "refused — budget spent"). ``egress.MAX_CALLS_PER_RUN`` stays the bound
 #: on the MODEL's own web.fetch/web.search calls, a different budget.
 _RUN_EGRESS_CALLS = content._CANDIDATES_MAX_ROWS_PER_LANE * 2
+#: dev/118 (DEC-075): a Solve batch's wall-clock budget. Every node may cost
+#: up to three rounds of a sandbox run each; the budget is what stops a wide
+#: plan from running past any reasonable wait — what it did not reach reverts
+#: to ``pending`` with the reason, and Retry continues from there.
+DEFAULT_SOLVE_BATCH_DEADLINE_S = 45 * 60
+
+
+def solve_batch_deadline_s() -> int:
+    """``CURIO_SOLVE_BATCH_DEADLINE`` in seconds; an unusable value falls back
+    to the default (the ``exec_timeout_s`` pattern)."""
+    import os as _os
+
+    raw = _os.environ.get("CURIO_SOLVE_BATCH_DEADLINE")
+    if raw is None or not str(raw).strip():
+        return DEFAULT_SOLVE_BATCH_DEADLINE_S
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return DEFAULT_SOLVE_BATCH_DEADLINE_S
+    return value if value > 0 else DEFAULT_SOLVE_BATCH_DEADLINE_S
+
+
+def _batch_deadline_spent(started: float, deadline_s: int) -> bool:
+    """Whether a batch begun at monotonic *started* has used its budget —
+    checked at every wave boundary and before every node dispatch."""
+    return (time.monotonic() - started) >= deadline_s
+
+
 #: dev/116: the verified loop's own egress budget — per failed round up to five
 #: real requests (the gate's probe, the composed request and its redirect, the
 #: keyed probe), over the first round plus the corrections, with slack.
@@ -6131,6 +6196,10 @@ def _verified_content_rounds(
             attempt["durationMs"] = round_evidence["durationMs"]
         attempts.append(attempt)
         if verdict_result["verdict"] != "fail":
+            break
+        if round_evidence.get("kind") == "precondition":
+            # dev/118: the runner refused the SLICE (bound, cycle) — no
+            # correction of the content can change that; one round says so.
             break
         previous_attempt = candidate
         previous_error = round_evidence.get("stderrTail") or round_evidence.get("detail") or ""

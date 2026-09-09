@@ -983,6 +983,78 @@ class TestVerifiedSolve:
         assert b"event: done" in rest
         assert "describe" in self._node_content(ctx, ctx["stats"])
 
+    def test_the_batch_deadline_reverts_undispatched_targets_to_pending_with_the_reason(self, client, user_and_token, tmp_curio, monkeypatch):
+        # dev/118 (DEC-075): the budget is checked at every wave boundary and
+        # before every dispatch. Here it runs out after wave 1: the loader is
+        # solved and persisted, the stats node is pending WITH the reason, the
+        # batch names it once, and the phase says applied (Retry continues).
+        import itertools
+
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER])
+        checks = itertools.count()
+        monkeypatch.setattr(services_mod, "_batch_deadline_spent", lambda started, deadline_s: next(checks) >= 2)
+        events = self._stream(client, token, ctx)
+        done = events[-1][1]
+        assert done["results"][ctx["load"]]["status"] == "solved"
+        stats = done["results"][ctx["stats"]]
+        assert stats["status"] == "pending" and "time budget" in stats["reason"] and "Retry" in stats["reason"]
+        assert done["reason"] == stats["reason"]
+        assert done["notAttempted"] == [ctx["stats"]] and done["cancelled"] is False
+        assert done["builderSession"]["nodeRuns"][ctx["stats"]] == "pending"
+        assert done["builderSession"]["phase"] == "applied"
+        assert [p for k, p in events if k == "solve_wave"] == [
+            {"wave": 1, "of": 2, "nodeIds": [ctx["load"]]},
+        ]  # wave 2 was never announced
+        pending_event = next(p for k, p in events if k == "node_result" and p["nodeId"] == ctx["stats"])
+        assert pending_event["status"] == "pending" and "time budget" in pending_event["reason"]
+        assert len(ctx["exec_payloads"]) == 1  # only the loader ran
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        card = next(p for t in reversed(turns) for p in (t.get("content") or []) if p.get("type") == "card")
+        assert any(line.startswith("reason: the batch's time budget") for line in card["lines"])
+        assert any("pending — the batch's time budget" in line for line in card["lines"])
+
+    def test_a_slice_bound_refusal_is_skipped_never_failed(self, client, user_and_token, tmp_curio, monkeypatch):
+        # dev/118 (DEC-075): the runner's 25-node slice bound (and a cycle) is
+        # a precondition on validation, not a failure of the content.
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER])
+        from utk_curio.backend.app.agents import validation as _validation
+
+        original = _validation.validate_candidate
+
+        def _bounded(user_key, project_id, spec, node_id, candidate, **kw):
+            if node_id == ctx["stats"]:
+                return {"verdict": "fail", "evidence": {
+                    "kind": "precondition",
+                    "detail": "the upstream slice has 30 nodes (validation bound 25) — run the dataflow manually instead",
+                }}
+            return original(user_key, project_id, spec, node_id, candidate, **kw)
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.validation.validate_candidate", _bounded)
+        body = self._solve(client, token, ctx)
+        stats = body["results"][ctx["stats"]]
+        assert stats["status"] == "skipped" and stats["reason"].startswith("skipped — the upstream slice has 30 nodes")
+        assert stats["rounds"] == 1  # a bound is not corrected — one round says so
+        assert "not fixed" not in json.dumps(stats)
+        assert body["results"][ctx["load"]]["status"] == "solved"
+        assert body["builderSession"]["nodeRuns"][ctx["stats"]] == "skipped"
+        assert body["builderSession"]["phase"] == "ready"  # nothing pending or failed
+        assert self._node_content(ctx, ctx["stats"]) == ""
+
+    def test_solve_batch_deadline_env(self, monkeypatch):
+        monkeypatch.delenv("CURIO_SOLVE_BATCH_DEADLINE", raising=False)
+        assert services_mod.solve_batch_deadline_s() == services_mod.DEFAULT_SOLVE_BATCH_DEADLINE_S == 45 * 60
+        monkeypatch.setenv("CURIO_SOLVE_BATCH_DEADLINE", "600")
+        assert services_mod.solve_batch_deadline_s() == 600
+        for bad in ("soon", "0", "-5", " "):
+            monkeypatch.setenv("CURIO_SOLVE_BATCH_DEADLINE", bad)
+            assert services_mod.solve_batch_deadline_s() == 45 * 60
+        assert services_mod._batch_deadline_spent(0.0, 1) is True  # monotonic() is far past 1 s
+        import time as _t
+        assert services_mod._batch_deadline_spent(_t.monotonic(), 3600) is False
+
     def test_solve_waves_helper(self):
         spec = {"dataflow": {"nodes": [{"id": n, "type": CA} for n in "abcdex"], "edges": [
             {"id": "e1", "source": "a", "target": "b"}, {"id": "e2", "source": "a", "target": "c"},
