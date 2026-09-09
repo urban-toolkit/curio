@@ -244,7 +244,10 @@ def run_through_node(
       False with ``infrastructure`` set and no node blamed.
 
     Returns ``{ok, target, order, nodes: {id: {status, stderrTail,
-    stdoutTail, output, executed}}, blocker, infrastructure, error}``.
+    stdoutTail, output, executed}}, blocker, infrastructure, error,
+    notExecutable}``. ``notExecutable`` (dev/118): the TARGET's kind runs in
+    the browser, not the sandbox — nothing was executed and nothing is
+    claimed; the caller reports a labeled outcome, never a pass.
     """
     exec_fn = exec_fn or _http_exec
     spec = parse_workflow_dict(spec_dict)
@@ -257,9 +260,21 @@ def run_through_node(
         "blocker": None,
         "infrastructure": None,
         "error": None,
+        "notExecutable": False,
     }
     if node_id not in by_id:
         report["error"] = f"node {node_id!r} is not in the saved dataflow"
+        return report
+    target = by_id[node_id]
+    if target.category != "code":
+        # dev/118: the overlay used to be computed and then skipped with the
+        # rest of the pass-through handling, ending ``ok: True`` — a "pass" on
+        # content nobody ran. Refuse first, by name.
+        report["notExecutable"] = True
+        report["error"] = (
+            f"node {node_id!r} ({target.raw_type}) runs in the browser, not the "
+            "sandbox — Solve cannot execute it; Play the dataflow to see it"
+        )
         return report
     wanted = _ancestor_slice(spec, node_id)
     ordered = [n for n in spec.topo_sorted_nodes() if n.id in wanted]

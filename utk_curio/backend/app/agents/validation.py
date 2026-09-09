@@ -12,7 +12,7 @@ Verdicts:
 - ``fail`` — the target (``execution-error``), an upstream node
   (``upstream-blocker``), a precondition (cycle/bound/missing node), or a
   ``type-mismatch`` with a named consumer.
-- ``infrastructure`` — the sandbox was unreachable: never a content failure;
+- ``infrastructure``; ``not-executable`` (dev/118: the target's kind runs in the browser — nothing executed, nothing claimed) — the sandbox was unreachable: never a content failure;
   the caller leaves the node's state untouched.
 """
 
@@ -117,6 +117,11 @@ def validate_candidate(
     if report.get("infrastructure"):
         evidence.update({"kind": "infrastructure", "detail": report["infrastructure"]})
         return {"verdict": "infrastructure", "evidence": evidence}
+    if report.get("notExecutable"):
+        # dev/118 (DEC-075): a browser-rendered kind. Not a failure of the
+        # content and not a pass — a labeled outcome with nothing executed.
+        evidence.update({"kind": "not-executable", "detail": report.get("error")})
+        return {"verdict": "not-executable", "evidence": evidence}
     target_record = report["nodes"].get(node_id) or {}
     if not report["ok"]:
         blocker = report.get("blocker")

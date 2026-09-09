@@ -78,6 +78,18 @@ def normalize_type(node_type: str) -> str:
     return NAMESPACED_TO_LEGACY.get(node_type, node_type)
 
 
+def is_executable_kind(node_type: str) -> bool:
+    """dev/118 (DEC-075): whether the sandbox can RUN a node of this kind —
+    the ``code`` category (the six Python kinds + JS computation). Grammar,
+    data-pool, passive and unknown package kinds render in the browser; a
+    verification claim about them would be a claim about nothing. Accepts
+    namespaced ids with or without an ``@version`` suffix."""
+    if not isinstance(node_type, str) or not node_type:
+        return False
+    bare = node_type.split("@", 1)[0]
+    return classify_node(normalize_type(bare)) == "code"
+
+
 def classify_node(node_type: str) -> str:
     """Classify a workflow node type string into a test category.
 

@@ -298,3 +298,45 @@ class TestDev116SecretsPayload:
         rec = _RecordingExec()
         runner.run_through_node(KEY, PID, _chain_spec(["a"]), "a", exec_fn=rec, secrets={})
         assert "secrets" not in rec.calls[0][1]
+
+
+class TestDev118NotExecutableTarget:
+    """dev/118 (DEC-075): a browser-rendered TARGET is refused by name before
+    anything runs — it used to fall into the pass-through branch and end
+    ``ok: True`` with its candidate never sent, a pass on nothing."""
+
+    def test_executable_kinds(self):
+        from utk_curio.backend.app.execution.workflow_spec import is_executable_kind
+
+        for kind in ("curio.builtin/data-loading", "curio.builtin/computation-analysis@1",
+                     "curio.builtin/js-computation", "DATA_LOADING", "curio.builtin/data-export@1"):
+            assert is_executable_kind(kind) is True, kind
+        for kind in ("curio.builtin/vis-vega", "curio.builtin/autk-grammar@1", "curio.builtin/data-pool",
+                     "curio.builtin/merge-flow", "curio.builtin/vis-simple", "some.pkg/custom-node@1", "", None):
+            assert is_executable_kind(kind) is False, kind
+
+    def test_a_browser_rendered_target_is_refused_before_anything_runs(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec(
+            [_node("a"), _node("v", node_type="curio.builtin/vis-vega", content='{"mark": "bar"}')],
+            [{"id": "e1", "source": "a", "target": "v"}],
+        )
+        report = runner.run_through_node(KEY, PID, spec, "v", exec_fn=rec, candidate_content='{"mark": "line"}')
+        assert report["ok"] is False and report["notExecutable"] is True
+        assert report["blocker"] is None and report["infrastructure"] is None
+        assert "runs in the browser" in report["error"] and "'v'" in report["error"]
+        assert rec.calls == []  # not even the upstream ran
+        assert report["order"] == [] and report["nodes"] == {}
+
+    def test_an_upstream_pass_through_node_still_forwards(self, tmp_curio):
+        # The refusal is about the TARGET only: a merge upstream of a code
+        # target keeps its pass-through forwarding.
+        rec = _RecordingExec()
+        spec = _spec(
+            [_node("a"), _node("m", node_type="curio.builtin/merge-flow", content=""), _node("c")],
+            [{"id": "e1", "source": "a", "target": "m"}, {"id": "e2", "source": "m", "target": "c"}],
+        )
+        report = runner.run_through_node(KEY, PID, spec, "c", exec_fn=rec)
+        assert report["ok"] is True and report["notExecutable"] is False
+        assert report["nodes"]["m"]["status"] == "pass-through"
+        assert [c[1]["nodeType"] for c in rec.calls] == ["curio.builtin/computation-analysis"] * 2

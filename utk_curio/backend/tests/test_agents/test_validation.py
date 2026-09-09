@@ -118,3 +118,24 @@ class TestDev115Passthrough:
         assert seen["secrets"] == {"census": "k3y-v4lue-9876"}  # dev/116 passthrough
         assert result["verdict"] == "pass"
         assert isinstance(result["evidence"]["durationMs"], int)
+
+
+class TestNotExecutable:
+    """dev/118 (DEC-075): the fourth verdict — a browser-rendered kind is
+    neither a pass nor a content failure."""
+
+    def test_browser_rendered_target_is_not_executable(self, tmp_curio):
+        calls = []
+
+        def _fn(endpoint, payload):
+            calls.append(payload)
+            return {"stdout": [], "stderr": "", "output": {"path": "art", "dataType": "dataframe"}}
+
+        spec = _spec([_node("a"), _node("v", node_type="curio.builtin/vis-vega", content="{}", goal="plot it")],
+                     [{"id": "e1", "source": "a", "target": "v"}])
+        result = validation.validate_candidate(KEY, PID, spec, "v", '{"mark": "bar"}', exec_fn=_fn)
+        assert result["verdict"] == "not-executable"
+        assert result["evidence"]["kind"] == "not-executable"
+        assert "runs in the browser" in result["evidence"]["detail"]
+        assert result["evidence"]["goal"] == "plot it"
+        assert result["evidence"]["executedNodes"] == [] and calls == []

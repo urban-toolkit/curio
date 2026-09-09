@@ -3891,6 +3891,9 @@ def _solve_events(
             _pkg_services.canonical_template_id((node_obj or {}).get("type"))
         )
 
+    def _is_executable(node_obj: dict) -> bool:  # dev/118 (DEC-075)
+        return _node_is_executable(node_obj)
+
     def _record_outcome(node_id: str, status: str, text, child) -> dict | None:
         """Fold one worker outcome into the batch state — no yields, so it is
         safe on the disconnect drain. Returns the node_result payload, or
@@ -3919,6 +3922,15 @@ def _solve_events(
                 applied_contents.append({"nodeId": node_id, "content": candidate})
                 return {"nodeId": node_id, "status": "solved", "content": candidate, **trail}
             evidence = outcome.get("evidence") or {}
+            if outcome.get("verdict") == "not-executable" and (outcome.get("candidate") or "").strip():
+                # dev/118 (DEC-075): a browser-rendered kind — written like the
+                # legacy path writes, and SAID to be unexecuted, never "verified".
+                candidate = outcome.get("candidate") or ""
+                verification = {"status": "not-executable", "reason": str(evidence.get("detail") or "")[:300]}
+                results[node_id] = {"status": "solved", "verification": verification, **trail}
+                applied_contents.append({"nodeId": node_id, "content": candidate})
+                return {"nodeId": node_id, "status": "solved", "content": candidate,
+                        "verification": verification, **trail}
             if outcome.get("verdict") == "infrastructure":
                 reason = (
                     "not verified — sandbox unreachable: "
@@ -4948,6 +4960,14 @@ def _run_node_events(
 # dev/67-7: bounded self-correction — initial generation + up to 2 corrective
 # regenerations, each re-validated by actually running the dataflow.
 _VALIDATE_CORRECTION_ROUNDS = 2
+
+
+def _node_is_executable(node_obj: dict | None) -> bool:
+    """dev/118 (DEC-075): the ONE executability predicate the batch, the
+    per-node Solve and validate-node consult — the sandbox can run this kind."""
+    from utk_curio.backend.app.execution.workflow_spec import is_executable_kind
+
+    return is_executable_kind(str((node_obj or {}).get("type") or ""))
 #: dev/115 F6 closure (2026-09-09): a run's egress budget describes what the
 #: run legitimately does — every external candidate row the card may carry,
 #: each allowed one redirect (a normal answer, not a cost the user should read
@@ -5062,20 +5082,35 @@ def _solve_node_events(
         )
         return st, tx, ch
 
-    outcome = yield from _verified_content_rounds(
-        user_key, project_id,
-        spec=spec, node=node, resolution=resolution, config=config,
-        parent_execution_id=execution_id, parent_coord=coord,
-        attachment_id=attachment_id, exec_fn=exec_fn,
-        grounding_loop_ctx={"granted": [], "manifest": manifest,
-                            "attachment_id": attachment_id, "session_id": session_id},
-        grounding_base=grounding_base,
-        start_from_current=True,
-        delegate_runner=_traced,
-        dataset_paths_fn=lambda codes: _filter_dataset_paths(dataset_paths, codes),
-        exec_user_key=user_key,
-        secrets_fn=_exec_secrets_resolver(user_key),
-    )
+    if not _node_is_executable(node):
+        # dev/118 (DEC-075): a browser-rendered kind (Vega, Autark, merge, data
+        # pool, an unknown package). No round, no sandbox, no generation —
+        # nothing this loop could verify; say so and change nothing.
+        reason = (
+            f"{label!r} ({node.get('type')}) runs in the browser, not the sandbox — "
+            "Solve cannot execute it; Play the dataflow to see it"
+        )
+        outcome = {
+            "verdict": "not-executable",
+            "evidence": {"kind": "not-executable", "detail": reason},
+            "rounds": 0, "candidate": "", "delegations": [],
+            "roundsTrace": [f"not executable — {reason}"], "attempts": [],
+        }
+    else:
+        outcome = yield from _verified_content_rounds(
+            user_key, project_id,
+            spec=spec, node=node, resolution=resolution, config=config,
+            parent_execution_id=execution_id, parent_coord=coord,
+            attachment_id=attachment_id, exec_fn=exec_fn,
+            grounding_loop_ctx={"granted": [], "manifest": manifest,
+                                "attachment_id": attachment_id, "session_id": session_id},
+            grounding_base=grounding_base,
+            start_from_current=True,
+            delegate_runner=_traced,
+            dataset_paths_fn=lambda codes: _filter_dataset_paths(dataset_paths, codes),
+            exec_user_key=user_key,
+            secrets_fn=_exec_secrets_resolver(user_key),
+        )
     verdict = outcome["verdict"]
     attempts = outcome["attempts"]
     rounds = outcome["rounds"]
@@ -5156,6 +5191,12 @@ def _solve_node_events(
             "nothing was run, corrected, or written. Retry when it is back."
         )
         card_kind = "error"
+    elif verdict == "not-executable":
+        text = (
+            f"Not executable: {label!r} runs in the browser, not the sandbox — Solve "
+            "cannot run it. Play the dataflow to see it. Nothing was changed."
+        )
+        card_kind = "result"
     else:
         text = (
             f"Not fixed after {rounds} attempt{'s' if rounds != 1 else ''}: {label!r} still "
@@ -5182,7 +5223,7 @@ def _solve_node_events(
                         execution_id,
                         {"coord": coord, "provider": getattr(config, "api_type", None),
                          "model": getattr(config, "model", None), "tools": [], "intentEdited": False},
-                        {}, started, "ok" if verdict == "pass" else "error",
+                        {}, started, "ok" if verdict in ("pass", "not-executable") else "error",
                         delegations=[c for c in outcome["delegations"] if c is not None],
                     ),
                 )],
@@ -6042,9 +6083,11 @@ def _validate_events(
             "nodeId": node_id,
             "attempts": outcome["attempts"],
         }
-        if done["verdict"] in ("pass", "fail") and candidate:
+        if done["verdict"] in ("pass", "fail", "not-executable") and candidate:
             # PASS or FAIL, the user decides — the proposal carries the
             # validation block so the review is informed, never gatekept.
+            # dev/118: NOT-EXECUTABLE (a browser-rendered kind) is proposed
+            # too, labeled — nothing ran, and the block says so.
             # dev/72: the review lives with the NODE's agent when it exists —
             # per-node proposals stop contending for the builder's one slot.
             mint_attachment = home_attachment_id or attachment_id
@@ -6068,7 +6111,7 @@ def _validate_events(
                 done["proposalAttachmentId"] = mint_attachment
                 trace_card = {
                     "type": "card",
-                    "kind": "result" if done["verdict"] == "pass" else "error",
+                    "kind": "result" if done["verdict"] in ("pass", "not-executable") else "error",
                     "title": f"Solve trace · {done['verdict'].upper()}",
                     "lines": (
                         [f"dependencies executed: {len(done['evidence'].get('executedNodes') or [])} node(s)"]
@@ -6107,7 +6150,7 @@ def _validate_events(
                                 name="Node Builder",
                                 category="node",
                                 attachment_id=home_attachment_id,
-                                status="ok" if done["verdict"] == "pass" else "failed",
+                                status="ok" if done["verdict"] in ("pass", "not-executable") else "failed",
                                 summary=f"Solve {label!r}: {done['verdict']} "
                                 f"({rounds_used} round{'s' if rounds_used != 1 else ''})",
                             )],
@@ -6123,7 +6166,10 @@ def _validate_events(
         fresh_record = _record_or_404(fresh, attachment_id)
         fresh_session = fresh_record.get("builderSession") or {}
         if ref and isinstance(fresh_session.get("nodeStates"), dict):
-            if done["verdict"] == "pass":
+            if done["verdict"] in ("pass", "not-executable"):
+                # dev/118: a browser-rendered kind proceeds like a pass in the
+                # plan's ledger (Simulation Mode auto-approves it); the
+                # proposal's validation block carries the honest label.
                 fresh_session["nodeStates"][ref] = "validated"
             elif done["verdict"] == "fail":
                 fresh_session["nodeStates"][ref] = "failed"

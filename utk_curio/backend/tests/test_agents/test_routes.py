@@ -6899,6 +6899,38 @@ class TestValidateNode:
         assert done["proposalId"]
         assert "Traceback" in done["evidence"]["stderrTail"]
 
+    def test_a_browser_rendered_plan_node_is_proposed_as_not_executable(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # dev/118 (DEC-075): a data-pool (or Vega) plan node used to validate
+        # as PASS with nothing executed. The generation is still proposed —
+        # labeled — and the plan ledger proceeds as for a pass.
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        calls = self._fake_exec(monkeypatch)
+        pool_plan = helper._plan_tail(
+            nodes=[{"ref": "p", "nodeType": "curio.builtin/data-pool", "title": "Pool", "intent": "hold the data"}],
+            edges=[],
+        )
+        att_id, ref, _, _ = self._setup_plan_node(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + pool_plan, "{}"],
+        )
+        events = self._validate(client, token, alice_project, att_id, {"ref": ref})
+        done = events[-1][1]
+        assert done["verdict"] == "not-executable" and done["rounds"] == 1
+        assert done["evidence"]["kind"] == "not-executable"
+        assert "runs in the browser" in done["evidence"]["detail"]
+        assert calls == []  # nothing reached the sandbox
+        assert done["builderSession"]["nodeStates"][ref] == "validated"  # the plan proceeds
+        assert done["proposalId"]
+        session = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{done['proposalAttachmentId']}/session",
+            headers=_auth(token),
+        ).get_json()
+        part = next(q for t in reversed(session["turns"]) for q in (t.get("content") or [])
+                    if q.get("type") == "proposal" and q.get("proposalId") == done["proposalId"])
+        assert part["validation"]["verdict"] == "not-executable"
+        assert part["validation"]["attempts"][0]["kind"] == "not-executable"
+
     def test_preflight_guards(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()

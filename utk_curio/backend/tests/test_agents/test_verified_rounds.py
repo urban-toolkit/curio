@@ -24,6 +24,7 @@ KEY = "4242"
 PID = "p-rounds"
 DL = "curio.builtin/data-loading"
 CA = "curio.builtin/computation-analysis"
+VEGA = "curio.builtin/vis-vega"
 NOAA = "https://api.noaa.gov/climate/v1/data"
 
 
@@ -559,6 +560,23 @@ class TestConnectionKeys:
         assert all(not (kw.get("params") or kw.get("headers")) for kw in probes)
 
 
+class TestNotExecutableKinds:
+    """dev/118 (DEC-075): the loop returns the runner's honest outcome for a
+    browser-rendered kind after one round — no correction, no sandbox."""
+
+    def test_the_loop_returns_not_executable_after_one_round(self, app, tmp_curio):
+        node = {"id": "n1", "type": VEGA, "goal": "plot it", "content": ""}
+        exec_fn = _Exec()
+        events, outcome, inputs = _rounds(app, node, replies=['{"mark": "bar"}'], exec_fn=exec_fn)
+        assert outcome["verdict"] == "not-executable" and outcome["rounds"] == 1
+        assert outcome["evidence"]["kind"] == "not-executable"
+        assert exec_fn.calls == [] and len(inputs) == 1  # generated once, never run, never corrected
+        attempt = outcome["attempts"][0]
+        assert attempt["verdict"] == "not-executable" and attempt["kind"] == "not-executable"
+        assert "runs in the browser" in attempt["detail"]
+        assert [k for k, _ in events if k == "round_verdict"] == ["round_verdict"]
+
+
 class TestExecDatasetPaths:
     def _service(self, monkeypatch, resolved, raise_exc=False):
         calls = []
@@ -1021,7 +1039,8 @@ class TestSolveNode:
     NCB = "agent.node-content-builder@1.0.0"
     LOADER = 'import pandas as pd\ndataset_path = curio_dataset_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
 
-    def _setup(self, client, user, token, monkeypatch, *, content, child_replies=(), exec_outcomes=None):
+    def _setup(self, client, user, token, monkeypatch, *, content, child_replies=(), exec_outcomes=None,
+               node_type=DL):
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         ukey = _user_dir_key(user)
@@ -1029,7 +1048,7 @@ class TestSolveNode:
         dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
         content = content.replace("{DATASET}", dataset_id)
         body = {"name": "p", "spec": {"dataflow": {"nodes": [
-            {"id": "n1", "type": DL, "goal": "load the heat data", "content": content, "x": 0, "y": 0}],
+            {"id": "n1", "type": node_type, "goal": "load the heat data", "content": content, "x": 0, "y": 0}],
             "edges": [], "packages": []}}, "outputs": []}
         pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
         for coord in (self.NB, self.NCB):
@@ -1135,6 +1154,27 @@ class TestSolveNode:
                            headers=_auth(token)).get_json()["turns"]
         assert turns[-1]["error"] is True and "Not fixed after 3 attempts" in turns[-1]["text"]
         assert len(turns[-1]["content"][0]["lines"]) == 3
+
+    def test_a_browser_rendered_node_is_not_executable_and_nothing_runs(self, client, user_and_token, tmp_curio, monkeypatch):
+        # dev/118 (DEC-075): the per-node Solve accepted any kind and, for a
+        # Vega node, reported a PASS on content the runner never sent.
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, content='{"mark": "bar"}', node_type=VEGA)
+        events = self._solve_node(client, token, ctx)
+        done = events[-1][1]
+        assert done["verdict"] == "not-executable" and done["rounds"] == 0
+        assert [k for k, _ in events] == ["solve_node_started", "done"]  # no round, no run
+        assert ctx["calls"] == [] and ctx["payloads"] == []  # no generation, no sandbox
+        assert "unchanged" not in done and "written" not in done and "proposalId" not in done
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        assert turns[-1]["text"].startswith("Not executable:")
+        assert "runs in the browser" in turns[-1]["text"]
+        assert turns[-1].get("error") is not True
+        assert turns[-1]["content"][0]["title"].startswith("Solve · NOT-EXECUTABLE")
+        node = next(n for n in client.get(f"/api/projects/{ctx['pid']}", headers=_auth(token)).get_json()
+                    ["spec"]["dataflow"]["nodes"] if n["id"] == "n1")
+        assert node["content"] == '{"mark": "bar"}'  # untouched
 
     def test_preflight(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
