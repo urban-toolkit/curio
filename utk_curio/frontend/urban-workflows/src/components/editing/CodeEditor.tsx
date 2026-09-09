@@ -19,6 +19,13 @@ import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft"
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
+import { CredentialHint } from "./CredentialHint";
+import {
+    credentialLiterals,
+    findingsKey,
+    firstHostInCode,
+    type CredentialFinding,
+} from "../../services/connectionKeys/credentialLiterals";
 import { usePackageBackendRun } from "../../hook/usePackageBackendRun";
 import { ICodeData } from "../../types";
 
@@ -34,6 +41,28 @@ type CodeEditorProps = {
     defaultValue?: any;
     floatCode?: any;
 };
+
+/** dev/117: how long after the last keystroke the code is scanned for a credential literal. */
+export const CREDENTIAL_SCAN_DEBOUNCE_MS = 300;
+const CREDENTIAL_MARKER_OWNER = "curio-credential";
+
+/** Best-effort Monaco warning markers for the findings; skipped when the
+ * Monaco build (or the test fake) has no setModelMarkers. Never an error
+ * squiggle: nothing is wrong with the syntax. */
+function setCredentialMarkers(monaco: any, editor: any, findings: CredentialFinding[]): void {
+    const setMarkers = monaco?.editor?.setModelMarkers;
+    const model = editor?.getModel?.();
+    if (typeof setMarkers !== "function" || !model) return;
+    const severity = monaco?.MarkerSeverity?.Warning ?? 4;
+    setMarkers.call(monaco.editor, model, CREDENTIAL_MARKER_OWNER, findings.map((f) => ({
+        severity,
+        message: "Looks like an API key — use a connection key (curio_secret) instead.",
+        startLineNumber: f.line,
+        startColumn: 1,
+        endLineNumber: f.line,
+        endColumn: 1e6,
+    })));
+}
 
 function CodeEditor({
     setOutputCallback,
@@ -67,6 +96,42 @@ function CodeEditor({
     const replacedCodeDirtyBypass = useRef(false);
     const outputRef = useRef<HTMLDivElement>(null);
 
+    // dev/117: a credential-shaped literal in the code gets a hint — never a
+    // block. Typing is scanned after a short pause; content that arrives whole
+    // (dataset drop, LLM apply, collab, provenance) is scanned at once.
+    const hintLanguage = unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION ? "javascript" : "python";
+    const [credentialFindings, setCredentialFindings] = useState<CredentialFinding[]>([]);
+    const [credentialHost, setCredentialHost] = useState<string | null>(null);
+    const [dismissedFindingsKey, setDismissedFindingsKey] = useState<string | null>(null);
+    const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const mountedRef = useRef(true);
+    const monacoRef = useRef<Monaco | null>(null);
+    const editorInstanceRef = useRef<any>(null);
+    const scanNow = (value: string) => {
+        if (!mountedRef.current) return;
+        const found = credentialLiterals(value, hintLanguage);
+        setCredentialFindings(found);
+        setCredentialHost(found.length ? firstHostInCode(value) : null);
+    };
+    const scheduleScan = (value: string) => {
+        if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+        scanTimerRef.current = setTimeout(() => scanNow(value), CREDENTIAL_SCAN_DEBOUNCE_MS);
+    };
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+            setCredentialMarkers(monacoRef.current, editorInstanceRef.current, []);
+        };
+    }, []);
+    useEffect(() => {
+        setCredentialMarkers(monacoRef.current, editorInstanceRef.current, credentialFindings);
+    }, [credentialFindings]);
+    const currentFindingsKey = findingsKey(credentialFindings);
+    const showCredentialHint =
+        credentialFindings.length > 0 && dismissedFindingsKey !== currentFindingsKey;
+
     // The Monaco model is the source of truth while the user types; `code`
     // only mirrors it. Content flows INTO the editor exclusively through this
     // hook: it applies `defaultValue` when a genuinely new external string
@@ -79,6 +144,7 @@ function CodeEditor({
         onExternalApply: (value) => {
             setCode(value);
             sendCodeToWidgets(value); // will resolve markers for templated boxes
+            scanNow(value); // dev/117: content that arrived whole is scanned at once
         },
     });
     const codeRef = useRef<string>("");
@@ -92,6 +158,7 @@ function CodeEditor({
     const handleCodeChange = (value, event) => {
         setCode(value);
         markNodeStale(data.nodeId);
+        scheduleScan(typeof value === "string" ? value : ""); // dev/117
     };
 
     // ------------------------------------------------------------------
@@ -115,6 +182,8 @@ function CodeEditor({
 
     const handleEditorMount = (editor: any, monaco: Monaco) => {
         attachEditor(editor);
+        monacoRef.current = monaco;
+        editorInstanceRef.current = editor;
         editor.onDidBlurEditorText(proposeOnBlur);
         // Ctrl/Cmd+Enter. Registered here rather than on the window because
         // Monaco owns the chord while the editor has focus — and already bound
@@ -349,6 +418,14 @@ function CodeEditor({
 
     return (
         <div className="nowheel nodrag" style={{ height: "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff", userSelect: "none" }}>
+            {showCredentialHint ? (
+                <CredentialHint
+                    findings={credentialFindings}
+                    readOnly={readOnly}
+                    host={credentialHost}
+                    onDismiss={() => setDismissedFindingsKey(currentFindingsKey)}
+                />
+            ) : null}
             {pendingProposal && (
                 <div
                     style={{
