@@ -18,7 +18,7 @@ This guide is in seven parts, plus operator notes:
 - [4. Importing, publishing, and sharing](#4-importing-publishing-and-sharing): authoring your own definitions.
 - [5. The provider](#5-the-provider): which model answers, and where it is set.
 - [6. Writing your own agent](#6-writing-your-own-agent): the manifest contract and capabilities.
-- [7. Measuring the agents against the shipped examples](#7-measuring-the-agents-against-the-shipped-examples): whether a model can rebuild an example from a prompt, and what that measurement may not do.
+- [7. Measuring the agents against the shipped examples](#7-measuring-the-agents-against-the-shipped-examples): whether a model can rebuild an example from a prompt, what that measurement may not do, and how to train a model on those examples.
 - [Operator notes](#operator-notes): the provider requirement and launcher flags.
 
 ---
@@ -637,16 +637,69 @@ figure is computed unless you supply a rate, for the same reason the usage
 ledger computes none: Curio has no price table and would have to invent the
 numbers.
 
-**Fine-tuning is not part of this.** The fixture format is designed so approved
-prompts can later be exported as prompt → expected-dataflow pairs with explicit
-train, validation and held-out splits (`agent_eval export`), and the export
-refuses two things: a prompt no person has approved, and a training export that
-would draw on the held-out or validation splits. There is no training verb,
-there is no fine-tuning job contract in the provider layer, and **AI Settings
-has no Model Training panel** — building one needs provider capability
-detection, dataset consent and licensing, redaction, cost disclosure, job
-status and cancellation, trained-model versioning, an evaluation gate,
-activation and rollback settled first.
+### Training a model on these examples
+
+The fixtures are also how you can make a model *better* at planning Curio
+dataflows, in **AI Settings → Model training** (memo `dev/122`).
+
+**It tells you first whether your endpoint can do this at all.** Nobody
+maintains a list of which providers support fine-tuning — that list would drift
+the moment one shipped or retired the feature, exactly as a list of model ids
+would. Curio asks the endpoint you configured. So the section reads
+*Unavailable* with a different sentence for each real reason: an Anthropic key
+(its API publishes Messages, Batches, Token Counting, Models, Files and Skills,
+and no tuning endpoint), a local Ollama or LM Studio (chat routes only), or a
+key without the scope to list tuning jobs — which says the endpoint may still
+support tuning, because the fix there is a different key. When the endpoint
+cannot be asked at all, the last answer it gave is replayed with the date it
+was true.
+
+**What gets sent, and what does not.** Only fixtures that are on the `train`
+split *and* approved by a person. Each row is one training example: the system
+turn a real run carries, the fixture's prompt, and the plan block the runtime's
+own parser accepts — so the model is taught the shape the product actually
+takes, and an example whose graph the plan contract cannot express (the eight
+with a bidirectional link) is excluded with that as its reason rather than
+taught in a weakened form. Every row is scrubbed and then re-checked; anything
+still resembling a credential stops the upload rather than being sent redacted.
+
+Before anything moves you see the row count, the byte count, the examples by
+name, their licences, and the **host** it would go to — the endpoint you
+configured, never a third party Curio chose. A row carries the prompt, the
+expected graph shape and the plan text, all authored in this repository, plus
+dataset and package **identifiers**: no dataset row, column, geometry or file
+is included, which is why the datasets' own licences are not implicated.
+Consent is a tick plus the digest of that exact set, and it is recorded before
+the first byte leaves.
+
+**The provider owns the job.** A fine-tune takes minutes to hours, so Curio
+holds its id and asks the endpoint when you look; the status you see always
+carries the time it was read. Closing the panel or restarting the server loses
+nothing. Cancel asks the endpoint and reports what it says. Trained tokens are
+shown as the provider reported them, and no dollar figure appears unless you
+supply a rate — the same reason the usage ledger computes none.
+
+**A trained model cannot be switched on until you have evaluated it.** Not
+because Curio judges it: there is no pass mark here, and inventing one would be
+Curio deciding for you. The rule is narrower and enforceable — an evaluation of
+**that exact model**, on the **held-out** examples it never trained on, whose
+fixture digests still match the corpus. Four refusals, each naming what to fix.
+The scores come from the same deterministic comparator as everything else in
+part 7, so no model and no agent is anywhere in the approval path, and a
+candidate never judges itself. Switching over records the model you were using,
+so going back is one click.
+
+```bash
+export CURIO_EVAL_LIVE=1
+python -m utk_curio.tools.agent_eval run \
+    --model ft:your-base:curio-plans:abc --gate-for train-20260909T161200Z-a1b2
+```
+
+Two honest limits. The training data is Curio's own examples, so this teaches
+the *shape* of a Curio dataflow, not your domain — training on your own
+dataflows needs a consent surface that does not exist yet. And nothing here
+trains a model locally: if your endpoint cannot fine-tune, Curio cannot do it
+for you.
 
 ---
 

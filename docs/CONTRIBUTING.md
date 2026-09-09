@@ -263,6 +263,22 @@ python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
 See [AGENT-CATALOG.md](AGENT-CATALOG.md#7-measuring-the-agents-against-the-shipped-examples)
 for what the score means and what it deliberately does not do.
 
+The same fixtures drive **Model training** (AI Settings → Model training, memo
+`dev/122`). Its whole lane — the capability probe, the training set, consent,
+the job, the evaluation gate, activation and rollback — runs offline against
+the scripted provider, so none of these tests costs money or waits on a
+fine-tune:
+
+```bash
+pytest utk_curio/backend/tests/test_agents/test_fine_tuning_provider.py \
+       utk_curio/backend/tests/test_agents/test_training_dataset.py \
+       utk_curio/backend/tests/test_agents/test_training_routes.py \
+       utk_curio/backend/tests/test_agents/test_training_gate.py
+```
+
+A real fine-tune is owner-run: it costs money, takes hours, and needs an
+endpoint that offers the feature.
+
 ### Frontend Unit Tests
 
 The frontend uses Jest and React Testing Library for component and TypeScript unit tests.
