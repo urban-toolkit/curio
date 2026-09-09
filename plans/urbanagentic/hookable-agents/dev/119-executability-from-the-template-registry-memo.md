@@ -155,7 +155,7 @@ Not a change to what Solve does with an executable node. Not a new execution pat
 
 ## Follow-ups (recorded, not delivered)
 
-- **F1** The e2e suite's `tests/test_frontend/workflow_spec.py` is a drifted copy of the app module — import the app module as its docstring claims; assert `spatial-join`/`data-summary` in the matrix (example 10 is skipped offline).
+- **F1** The e2e suite's `tests/test_frontend/workflow_spec.py` is a drifted copy of the app module — import the app module as its docstring claims; assert `spatial-join`/`data-summary` in the matrix (example 10 is skipped offline). **CLOSED by dev/120 (2026-09-09, `0b3ebc11`): the dev/67-7 shim restored, identity test-pinned, phantoms dropped.**
 - **F2** Validation through the package sandbox for `backendHandler` templates (dev/91).
-- **F3** `sandbox/util/parsers.py:checkIOType` matches legacy ids only and is dead code for the namespaced ids every caller sends.
+- **F3** `sandbox/util/parsers.py:checkIOType` matches legacy ids only and is dead code for the namespaced ids every caller sends. **CLOSED by dev/120 (2026-09-09, `b534f667`): validators retired; the name stays as a seeded no-op.**
 - **F4** `docs/examples/10-street-vision-cv-analysis.json:71` still carries the pre-#262 workaround comment about the spatial-join tag column.
