@@ -4948,6 +4948,12 @@ def _run_node_events(
 # dev/67-7: bounded self-correction — initial generation + up to 2 corrective
 # regenerations, each re-validated by actually running the dataflow.
 _VALIDATE_CORRECTION_ROUNDS = 2
+#: dev/115 F6 closure (2026-09-09): a run's egress budget describes what the
+#: run legitimately does — every external candidate row the card may carry,
+#: each allowed one redirect (a normal answer, not a cost the user should read
+#: as "refused — budget spent"). ``egress.MAX_CALLS_PER_RUN`` stays the bound
+#: on the MODEL's own web.fetch/web.search calls, a different budget.
+_RUN_EGRESS_CALLS = content._CANDIDATES_MAX_ROWS_PER_LANE * 2
 #: dev/116: the verified loop's own egress budget — per failed round up to five
 #: real requests (the gate's probe, the composed request and its redirect, the
 #: keyed probe), over the first round plus the corrections, with slack.
@@ -7036,7 +7042,7 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
     budget = (
         _run_egress_budget(loop_ctx)
         if loop_ctx is not None
-        else egress.CallBudget(egress.MAX_CALLS_PER_RUN)
+        else egress.CallBudget(_RUN_EGRESS_CALLS)
     )
     for part in parts:
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
@@ -7066,7 +7072,7 @@ def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
     gate's probes, so ``MAX_CALLS_PER_RUN`` means the run's total."""
     budget = loop_ctx.get("_egress_budget")
     if budget is None:
-        budget = egress.CallBudget(int(loop_ctx.get("_egress_limit") or egress.MAX_CALLS_PER_RUN))
+        budget = egress.CallBudget(int(loop_ctx.get("_egress_limit") or _RUN_EGRESS_CALLS))
         loop_ctx["_egress_budget"] = budget
     return budget
 

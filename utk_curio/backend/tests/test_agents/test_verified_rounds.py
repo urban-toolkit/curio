@@ -1142,3 +1142,35 @@ class TestSolveNode:
         base = f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve-node"
         assert client.post(base, json={}, headers=_auth(token)).status_code == 400
         assert client.post(base, json={"nodeId": "ghost"}, headers=_auth(token)).status_code == 404
+
+
+class TestRunEgressBudget:
+    """dev/115 F6 closed (2026-09-09): the run budget is sized for every
+    external candidate row plus one redirect each, so the last row of a full
+    card is checked instead of "refused — budget spent"."""
+
+    def test_a_full_card_with_a_redirect_per_row_is_probed_to_the_last_row(self, monkeypatch):
+        from utk_curio.backend.app.agents import content, egress
+
+        rows = content._CANDIDATES_MAX_ROWS_PER_LANE
+        assert services_mod._RUN_EGRESS_CALLS == rows * 2
+        calls: list[str] = []
+
+        def _request(method, url, **kw):
+            calls.append(url)
+            if url.endswith("/final"):
+                return 200, {"Content-Type": "application/json"}, b'{"ok": true}', None
+            return 302, {"Location": url + "/final"}, b"", url + "/final"
+
+        monkeypatch.setattr(egress, "_default_request", _request)
+        monkeypatch.setattr(egress, "check_url", lambda url, **kw: (True, ""))
+        part = {"type": "datasetCandidates", "lanes": {"external": [
+            {"name": f"row {i}", "url": f"https://data{i}.example.gov/api/v1"} for i in range(rows)
+        ]}}
+        loop_ctx: dict = {}
+        services_mod._verify_candidate_parts([part], loop_ctx)
+        statuses = [r["verification"]["status"] for r in part["lanes"]["external"]]
+        assert statuses == ["verified"] * rows  # the last row too
+        assert len(calls) == rows * 2 and loop_ctx["_egress_budget"].used == rows * 2
+        # One more request would be the (2n+1)th: the bound still means something.
+        assert loop_ctx["_egress_budget"].exhausted
