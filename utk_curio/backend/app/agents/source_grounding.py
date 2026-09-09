@@ -74,6 +74,29 @@ _URL_SCHEMES = ("http://", "https://")
 DATASET_PATH_CALL_RE = re.compile(
     r"""curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
 )
+# dev/116 (DEC-074): connection keys. The call shape is owned by
+# users/connection_keys (ONE regex); a credential-shaped literal is what the
+# gate refuses so a pasted key never executes, never reaches the journal and
+# never lands in a proposal.
+from utk_curio.backend.app.users.connection_keys import (  # noqa: E402
+    SECRET_CALL_RE,
+    secret_names as _secret_names,
+)
+
+_CRED_NAME_RE = re.compile(
+    r"^(?:api[_-]?key|apikey|key|token|access[_-]?token|secret|api[_-]?secret|"
+    r"password|passwd|auth(?:orization)?|bearer|client[_-]?secret|x[_-]api[_-]key)$",
+    re.IGNORECASE,
+)
+#: A value that looks like a credential: long, one token, no spaces — and not
+#: a URL or a path (those are sources, judged by the other rules).
+_CRED_VALUE_RE = re.compile(r"^(?:Bearer\s+)?[A-Za-z0-9_\-.~+/=]{20,}$")
+_CRED_LITERAL_FALLBACK_RE = re.compile(
+    r"""(?P<name>api[_-]?key|apikey|key|token|access[_-]?token|secret|password|authorization|x-api-key)"""
+    r"""["']?\s*[:=]\s*["'](?P<value>(?:Bearer\s+)?[A-Za-z0-9_\-.~+/=]{20,})["']""",
+    re.IGNORECASE,
+)
+
 _STRING_LITERAL_RE = re.compile(
     r"""(?P<q>['"])(?P<body>(?:\\.|(?!(?P=q)).)*)(?P=q)""", re.DOTALL
 )
@@ -101,6 +124,20 @@ class CatalogRef:
     path: str
 
 
+@dataclass(frozen=True)
+class SecretRef:
+    """A saved connection key as the gate and the delegate see it: the name
+    code uses, the host it is for, how the API expects it — never the value."""
+
+    name: str
+    host: str
+    delivery: str = "code"
+
+    @property
+    def use_line(self) -> str:
+        return f'api_key = curio_secret("{self.name}")'
+
+
 @dataclass
 class GroundingContext:
     """Everything the verdict needs, supplied by the caller."""
@@ -118,6 +155,11 @@ class GroundingContext:
     #: Grant-aware corrective routes to name in a refusal (DEC-067): each is
     #: named ONLY when the refusing run can actually take it.
     hints: list[str] = field(default_factory=list)
+    #: dev/116: the user's saved connection keys, by name — refs only.
+    secrets: dict[str, SecretRef] = field(default_factory=dict)
+    #: dev/116: resolves names → values for a keyed probe (the ONE reader of
+    #: values on the agent path); None when no store is reachable.
+    secret_values: Callable[[list[str]], dict] | None = None
 
 
 @dataclass
@@ -407,6 +449,95 @@ def composed_requests(code: object) -> list[str]:
     return out
 
 
+def secret_calls(code: object) -> list[tuple[str, int]]:
+    """``(name, line)`` for every literal ``curio_secret("<name>")`` call."""
+    if not isinstance(code, str) or "curio_secret" not in code:
+        return []
+    out: list[tuple[str, int]] = []
+    seen: set[str] = set()
+    for match in SECRET_CALL_RE.finditer(code):
+        name = match.group(2)
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append((name, code.count("\n", 0, match.start()) + 1))
+    return out
+
+
+def secret_names(code: object) -> list[str]:
+    return _secret_names(code)
+
+
+def _is_credential_value(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(_CRED_VALUE_RE.match(value.strip()))
+        and classify_literal(value) is None
+    )
+
+
+def credential_literals(code: object, engine: str | None = "python") -> list[tuple[str, int]]:
+    """``(name, line)`` for every credential-shaped literal: a long single
+    token assigned to, keyed by, or passed as a name like ``api_key``,
+    ``token``, ``Authorization``. The value itself is never returned."""
+    if not isinstance(code, str) or not code.strip():
+        return []
+    found: list[tuple[str, int]] = []
+    parsed = _parse_python(code) if (engine or "python") == "python" else None
+    if parsed is not None:
+        tree, offset = parsed
+        for node in ast.walk(tree):
+            line = max(1, getattr(node, "lineno", 1) - offset)
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if (isinstance(target, ast.Name) and _CRED_NAME_RE.match(target.id)
+                            and isinstance(node.value, ast.Constant)
+                            and _is_credential_value(node.value.value)):
+                        found.append((target.id, line))
+            elif isinstance(node, ast.Dict):
+                for key, value in zip(node.keys, node.values):
+                    if (isinstance(key, ast.Constant) and isinstance(key.value, str)
+                            and _CRED_NAME_RE.match(key.value)
+                            and isinstance(value, ast.Constant)
+                            and _is_credential_value(value.value)):
+                        found.append((key.value, line))
+            elif isinstance(node, ast.Call):
+                for kw in node.keywords:
+                    if (kw.arg and _CRED_NAME_RE.match(kw.arg)
+                            and isinstance(kw.value, ast.Constant)
+                            and _is_credential_value(kw.value.value)):
+                        found.append((kw.arg, line))
+    else:
+        for match in _CRED_LITERAL_FALLBACK_RE.finditer(code):
+            if _is_credential_value(match.group("value")):
+                found.append((match.group("name"), code.count("\n", 0, match.start()) + 1))
+    unique: list[tuple[str, int]] = []
+    for item in found:
+        if item not in unique:
+            unique.append(item)
+    return unique[:MAX_REFS]
+
+
+def _host_of(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    try:
+        return (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def secret_for_host(ctx: "GroundingContext", url: str) -> "SecretRef | None":
+    """The saved key bound to *url*'s host, if any."""
+    host = _host_of(url)
+    if not host:
+        return None
+    for ref in (ctx.secrets or {}).values():
+        if ref.host == host:
+            return ref
+    return None
+
+
 # --------------------------------------------------------------------------
 # Context helpers (pure over texts the caller gathered)
 # --------------------------------------------------------------------------
@@ -563,12 +694,19 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
                 "verification": evidence,
             })
         elif http_status in (401, 403):
-            source_refs.append({
+            gated = {
                 "kind": "external",
                 "value": ref.literal[:_VALUE_MAX_CHARS],
                 "verification": evidence,
                 "requirement": "credential-gated",
-            })
+            }
+            saved = secret_for_host(ctx, ref.literal)
+            if saved is not None:
+                gated["hint"] = (
+                    f"a connection key {saved.name!r} is saved for this host — use "
+                    f"{saved.use_line}"
+                )
+            source_refs.append(gated)
         else:
             detail = evidence.get("detail") or ""
             if http_status == 400:
@@ -582,6 +720,34 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
             else:
                 why = detail or "unreachable"
             violations.append(f"{where}: {why} — only a URL the runtime verified may be fetched")
+    # dev/116: connection keys by name — known names are grounded refs, an
+    # unknown name is refused with the saved names listed (DEC-067).
+    saved_names = sorted((ctx.secrets or {}).keys())
+    for name, line in secret_calls(code):
+        saved = (ctx.secrets or {}).get(name)
+        if saved is None:
+            listed = f"saved: {', '.join(saved_names)}" if saved_names else "none saved"
+            violations.append(
+                f"curio_secret({name!r}) (line {line}): no connection key named {name!r} "
+                f"({listed}) — save one under Settings → Connection keys, then keep "
+                "the call as written"
+            )
+        else:
+            source_refs.append({
+                "kind": "secret",
+                "value": f'curio_secret("{name}")',
+                "name": name,
+                "host": saved.host,
+                "delivery": saved.delivery,
+            })
+    # A pasted key never executes, never reaches the journal, never lands in a
+    # proposal: the literal is refused and the saved-key route is named.
+    for name, line in credential_literals(code, engine):
+        violations.append(
+            f"{name} (line {line}): a credential literal in node code — save it as a "
+            "connection key (Settings → Connection keys) and write "
+            'curio_secret("<name>") instead; a key value is never written into a node'
+        )
     if not refs and ctx.is_data_loading:
         if ctx.synthetic_requested:
             source_refs.append({"kind": "synthetic"})
@@ -624,6 +790,8 @@ def _ref_label(ref: dict) -> str:
         return f"External · {ref.get('value')} · {status}{gate}"
     if kind == "user-path":
         return f"User-provided path · {ref.get('value')}"
+    if kind == "secret":
+        return f"Connection key · {ref.get('name')} · {ref.get('host')}"
     if kind == "synthetic":
         return "Synthetic · generated in the node, no external source"
     return str(kind)

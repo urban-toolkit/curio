@@ -61,7 +61,7 @@ def _drive(gen):
         return events, stop.value
 
 
-def _rounds(app, node, *, replies, exec_fn, start_from_current=False, spec=None):
+def _rounds(app, node, *, replies, exec_fn, start_from_current=False, spec=None, **extra):
     spec = spec or _spec(node)
     projects_storage.write_spec(KEY, PID, spec)
     delegate_inputs: list[dict] = []
@@ -78,7 +78,7 @@ def _rounds(app, node, *, replies, exec_fn, start_from_current=False, spec=None)
             parent_execution_id="exec-1", parent_coord="agent.dataflow-builder@1.0.0",
             attachment_id="att-1", exec_fn=exec_fn,
             grounding_loop_ctx={"granted": [], "manifest": None},
-            start_from_current=start_from_current, delegate_runner=_delegate,
+            start_from_current=start_from_current, delegate_runner=_delegate, **extra,
         )
         events, outcome = _drive(gen)
     return events, outcome, delegate_inputs
@@ -311,6 +311,149 @@ class TestFieldFixes20260908:
         assert not services_mod._is_prose_decline("import pandas as pd")
         assert not services_mod._is_prose_decline("")
         assert not services_mod._is_prose_decline("x " * 300)
+
+
+class TestConnectionKeys:
+    """dev/116 (DEC-074) on the agent path: the loop resolves a saved key per
+    round, the builder is handed `availableSecrets` with the `use` line, an
+    unknown name and a pasted key are refused before the sandbox, a keyed
+    composed probe is redacted evidence, and a credential decline carries a
+    concrete remedy."""
+
+    VALUE = "n0aa-k3y-v4lue-0123456789"
+
+    def _save(self, name="census", host="api.noaa.gov", delivery="query:key"):
+        from utk_curio.backend.app.users.connection_keys import default_store
+
+        default_store().put(KEY, name, host, self.VALUE, delivery)
+
+    def _fixed(self):
+        return (f'import requests\nurl = "{NOAA}"\n'
+                'params = {"get": "NAME", "key": curio_secret("census")}\n'
+                'r = requests.get(url, params=params)\nr.raise_for_status()\nreturn r.json()')
+
+    def test_a_saved_key_is_offered_resolved_per_round_and_probed_redacted(self, app, tmp_curio, monkeypatch):
+        self._save()
+        probes: list[tuple] = []
+
+        def _verify(url, **kw):
+            probes.append((url, kw.get("params"), kw.get("headers")))
+            if kw.get("params"):
+                return {"status": "verified", "httpStatus": 200, "contentType": "application/json",
+                        "finalUrl": f"{url}&key={self.VALUE}", "checkedAt": "now"}
+            if "?" in url:
+                return {"status": "verified", "httpStatus": 200, "contentType": "text/html",
+                        "pageTitle": "Missing Key", "checkedAt": "now"}
+            return {"status": "verified", "httpStatus": 200, "contentType": "application/json", "checkedAt": "now"}
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        current = (f'import requests\nurl = "{NOAA}"\nparams = {{"get": "NAME"}}\n'
+                   'r = requests.get(url, params=params)\nreturn r.json()')
+        node = {"id": "n1", "type": DL, "goal": "fetch", "content": current}
+        # The fake sandbox: the request without the key fails, with it passes.
+        exec_fn = _Exec(fail_markers=('params = {"get": "NAME"}\n',),
+                        stderr="requests.exceptions.JSONDecodeError: Expecting value")
+        events, outcome, inputs = _rounds(
+            app, node, replies=[self._fixed()], exec_fn=exec_fn, start_from_current=True,
+            secrets_fn=services_mod._exec_secrets_resolver(KEY),
+        )
+        assert outcome["verdict"] == "pass" and outcome["rounds"] == 2
+        # Round 1 (current content, no key named) carried no secrets; round 2 did.
+        assert "secrets" not in exec_fn.calls[0]
+        assert exec_fn.calls[1]["secrets"] == {"census": self.VALUE}
+        # The correction was told about the key in the executable form.
+        grounding = inputs[0]["sourceGrounding"]
+        assert grounding["availableSecrets"] == [{
+            "name": "census", "host": "api.noaa.gov", "delivery": "query:key",
+            "use": 'api_key = curio_secret("census")',
+        }]
+        assert "connection key" in grounding["rule"]
+        # The composed request was probed bare AND with the key; the keyed
+        # outcome is redacted and never a verified source.
+        composed = inputs[0]["urlEvidence"][0]
+        assert composed["keyed"] == "census" and composed["keyedDelivery"] == "query:key"
+        assert self.VALUE not in json.dumps(composed)
+        assert "«redacted:census»" in composed["keyedVerification"]["finalUrl"]
+        assert "answers data" in composed["keyedNote"]
+        keyed_probe = next(p for p in probes if p[1])
+        assert keyed_probe[1] == {"key": self.VALUE}
+        # Grounding: the passing candidate's Source block names the key.
+        # (verified_urls holds the bare base URL only — never a keyed URL.)
+        assert all(self.VALUE not in u for u in inputs[0]["sourceGrounding"]["verifiedUrls"])
+
+    def test_an_unknown_name_is_refused_before_the_sandbox_with_the_saved_names(self, app, tmp_curio, monkeypatch):
+        self._save()
+        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source",
+                            lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"})
+        node = {"id": "n1", "type": DL, "goal": "fetch", "content": ""}
+        bad = f'import requests\nreturn requests.get("{NOAA}", params={{"key": curio_secret("noaa")}}).json()'
+        exec_fn = _Exec()
+        events, outcome, inputs = _rounds(app, node, replies=[bad, self._fixed()], exec_fn=exec_fn)
+        assert outcome["verdict"] == "pass" and outcome["rounds"] == 2
+        first = outcome["attempts"][0]
+        assert first["kind"] == "ungrounded-source"
+        assert "curio_secret('noaa')" in first["detail"] and "saved: census" in first["detail"]
+        assert len(exec_fn.calls) == 1  # the refused candidate never ran
+        assert "no connection key named 'noaa'" in inputs[1]["validationError"]
+
+    def test_a_pasted_key_literal_is_refused_before_the_sandbox(self, app, tmp_curio, monkeypatch):
+        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source",
+                            lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"})
+        node = {"id": "n1", "type": DL, "goal": "fetch", "content": ""}
+        pasted = (f'import requests\napi_key = "{self.VALUE}"\n'
+                  f'return requests.get("{NOAA}", params={{"key": api_key}}).json()')
+        exec_fn = _Exec()
+        events, outcome, inputs = _rounds(app, node, replies=[pasted, pasted], exec_fn=exec_fn)
+        assert outcome["verdict"] == "fail"
+        assert all(a["kind"] == "ungrounded-source" for a in outcome["attempts"])
+        assert "credential literal" in outcome["attempts"][0]["detail"]
+        assert exec_fn.calls == []  # never executed, never journaled
+        assert self.VALUE not in outcome["attempts"][0]["detail"]
+
+    def test_a_credential_decline_carries_a_concrete_remedy(self, app, tmp_curio, monkeypatch):
+        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source",
+                            lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"})
+        current = (f'import requests\nurl = "{NOAA}"\nparams = {{"get": "NAME"}}\n'
+                   'r = requests.get(url, params=params)\nreturn r.json()')
+        node = {"id": "n1", "type": DL, "goal": "fetch", "content": current}
+        exec_fn = _Exec(fail_markers=("NAME",), stderr="requests.exceptions.JSONDecodeError: Expecting value")
+        decline = "The NOAA API requires an API key; none is available."
+        events, outcome, inputs = _rounds(app, node, replies=[decline], exec_fn=exec_fn, start_from_current=True)
+        assert outcome["verdict"] == "fail" and outcome["evidence"]["kind"] == "source-missing"
+        assert outcome["evidence"]["remedy"] == {
+            "kind": "connection-key", "host": "api.noaa.gov", "suggestedName": "noaa",
+        }
+        assert outcome["attempts"][1]["remedy"]["kind"] == "connection-key"
+        assert "add a connection key for api.noaa.gov" in services_mod._source_missing_remedy(
+            outcome["evidence"]["remedy"])
+        # With a key already saved for the host, the remedy is to Solve again.
+        self._save(host="api.noaa.gov")
+        events, outcome, inputs = _rounds(app, node, replies=[decline], exec_fn=exec_fn, start_from_current=True)
+        assert outcome["evidence"]["remedy"] == {"kind": "use-connection-key", "host": "api.noaa.gov", "name": "census"}
+        # A decline about something else carries no remedy.
+        events, outcome, inputs = _rounds(app, node, replies=["No dataset in the catalog matches."],
+                                          exec_fn=exec_fn, start_from_current=True)
+        assert "remedy" not in outcome["evidence"]
+
+    def test_delivery_code_names_the_key_without_a_keyed_probe(self, app, tmp_curio, monkeypatch):
+        self._save(delivery="code")
+        probes: list = []
+
+        def _verify(url, **kw):
+            probes.append(kw)
+            return {"status": "verified", "httpStatus": 200, "contentType": "application/json", "checkedAt": "now"}
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        current = (f'import requests\nurl = "{NOAA}"\nparams = {{"get": "NAME"}}\n'
+                   'r = requests.get(url, params=params)\nreturn r.json()')
+        node = {"id": "n1", "type": DL, "goal": "fetch", "content": current}
+        exec_fn = _Exec(fail_markers=('params = {"get": "NAME"}\n',), stderr="ValueError: no data")
+        events, outcome, inputs = _rounds(app, node, replies=[self._fixed()], exec_fn=exec_fn, start_from_current=True,
+                                          secrets_fn=services_mod._exec_secrets_resolver(KEY))
+        composed = inputs[0]["urlEvidence"][0]
+        assert composed["keyed"] == "census" and "keyedVerification" not in composed
+        assert "the code does not use it yet" in composed["keyedNote"]
+        assert all(not (kw.get("params") or kw.get("headers")) for kw in probes)
 
 
 class TestExecDatasetPaths:

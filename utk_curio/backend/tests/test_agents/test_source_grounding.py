@@ -257,3 +257,83 @@ class TestRefusalText:
         assert len(payload["refs"]) == sg.MAX_REFS
         assert "…and 38 more" in payload["label"]
         assert len(payload["label"]) <= 200
+
+
+class TestConnectionKeys:
+    """dev/116: curio_secret("<name>") refs, credential literals, the
+    credential-gated hint — pure, no store."""
+
+    CENSUS = sg.SecretRef("census", "api.census.gov", "query:key")
+
+    def test_secret_calls_and_hosts(self):
+        code = 'a = 1\nk = curio_secret("census")\nt = curio_secret(\'noaa\')\nk2 = curio_secret("census")'
+        assert sg.secret_calls(code) == [("census", 2), ("noaa", 3)]
+        assert sg.secret_names(code) == ["census", "noaa"]
+        ctx = _ctx(secrets={"census": self.CENSUS})
+        assert sg.secret_for_host(ctx, "https://API.census.gov/data/2022?x=1") is self.CENSUS
+        assert sg.secret_for_host(ctx, "https://other.gov/") is None
+        assert sg.secret_for_host(ctx, "not a url") is None
+
+    def test_known_name_is_a_grounded_ref_with_its_label(self):
+        ctx = _ctx(is_data_loading=True, secrets={"census": self.CENSUS},
+                   verified_urls={"https://api.census.gov/data": {"status": "verified"}})
+        code = ('import requests\nr = requests.get("https://api.census.gov/data", '
+                'params={"key": curio_secret("census")})\nreturn r.json()')
+        verdict = sg.check_grounding(code, "python", ctx)
+        assert verdict.ok, verdict.violations
+        secret = next(r for r in verdict.source["refs"] if r["kind"] == "secret")
+        assert secret == {"kind": "secret", "value": 'curio_secret("census")', "name": "census",
+                          "host": "api.census.gov", "delivery": "query:key"}
+        assert "Connection key · census · api.census.gov" in verdict.source["label"]
+
+    def test_unknown_name_is_refused_with_the_saved_names(self):
+        ctx = _ctx(is_data_loading=True, secrets={"census": self.CENSUS},
+                   verified_urls={"https://api.census.gov/data": {"status": "verified"}})
+        code = 'import requests\nreturn requests.get("https://api.census.gov/data", params={"key": curio_secret("noaa")}).json()'
+        verdict = sg.check_grounding(code, "python", ctx)
+        assert not verdict.ok
+        assert "curio_secret('noaa') (line 2)" in verdict.violations[0]
+        assert "saved: census" in verdict.violations[0]
+        # No keys saved at all: said plainly.
+        verdict = sg.check_grounding(code, "python", _ctx(is_data_loading=True,
+                                     verified_urls={"https://api.census.gov/data": {"status": "verified"}}))
+        assert "none saved" in verdict.violations[0]
+
+    def test_credential_literals_are_found_by_shape_never_returned(self):
+        value = "AbCdEf0123456789xyzXYZ-_"
+        code = (f'api_key = "{value}"\n'
+                f'params = {{"get": "NAME", "key": "{value}"}}\n'
+                f'r = requests.get(u, headers={{"Authorization": "Bearer {value}"}}, token="{value}")\n'
+                'short = "abc"\n'
+                'key = "https://api.census.gov/data"\n'          # a URL is a source, not a credential
+                'dataset = "imported.census-acs@1"\n')          # a catalog id is short and not credential-named
+        found = sg.credential_literals(code, "python")
+        assert sorted(found) == sorted([("api_key", 1), ("key", 2), ("Authorization", 3), ("token", 3)])
+        assert value not in repr(found)
+        # Regex fallback for non-python content / syntax errors.
+        assert sg.credential_literals(f'const key = "{value}"', "javascript") == [("key", 1)]
+        assert sg.credential_literals("", "python") == []
+
+    def test_a_pasted_key_is_refused_and_the_route_named(self):
+        ctx = _ctx(is_data_loading=True,
+                   verified_urls={"https://api.census.gov/data": {"status": "verified"}})
+        code = ('import requests\napi_key = "AbCdEf0123456789xyzXYZ-_"\n'
+                'return requests.get("https://api.census.gov/data", params={"key": api_key}).json()')
+        verdict = sg.check_grounding(code, "python", ctx)
+        assert not verdict.ok
+        assert "api_key (line 2): a credential literal" in verdict.violations[0]
+        assert 'curio_secret("<name>")' in verdict.violations[0]
+        assert "AbCdEf0123456789" not in verdict.violations[0]
+
+    def test_credential_gated_endpoint_hints_at_the_saved_key(self):
+        probe = lambda url: {"status": "unreachable", "httpStatus": 401, "detail": "the endpoint answered 401"}
+        with_key = _ctx(is_data_loading=True, probe=probe, secrets={"census": self.CENSUS})
+        verdict = sg.check_grounding('import requests\nreturn requests.get("https://api.census.gov/data").json()',
+                                     "python", with_key)
+        assert verdict.ok
+        ref = verdict.source["refs"][0]
+        assert ref["requirement"] == "credential-gated"
+        assert ref["hint"] == "a connection key 'census' is saved for this host — use api_key = curio_secret(\"census\")"
+        without = sg.check_grounding('import requests\nreturn requests.get("https://api.census.gov/data").json()',
+                                     "python", _ctx(is_data_loading=True, probe=probe))
+        assert "hint" not in without.source["refs"][0]

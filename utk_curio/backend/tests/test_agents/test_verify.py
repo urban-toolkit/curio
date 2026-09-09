@@ -104,6 +104,22 @@ class TestGenericGate:
         )
         assert "bodySample" not in ok and "pageTitle" not in ok
 
+    def test_a_keyed_probe_reports_a_redirect_against_the_request_it_made(self):
+        # dev/116: with params appended, "finalUrl" appears only on a real
+        # redirect — never merely because the probe's URL grew a query string.
+        seen = []
+
+        def _fn(method, url, headers=None):
+            seen.append((url, headers))
+            return 200, {"Content-Type": "application/json"}, b"[]", None
+
+        outcome = verify.verify_external_source(
+            "https://data.example.gov/data", request_fn=_fn, resolver=_resolver(),
+            params={"key": "s3cr3t-value-0123"}, headers={"X-Api-Key": "hdr-value-0123"},
+        )
+        assert outcome["status"] == "verified" and "finalUrl" not in outcome
+        assert seen == [("https://data.example.gov/data?key=s3cr3t-value-0123", {"X-Api-Key": "hdr-value-0123"})]
+
     def test_no_url_is_loudly_unverified(self):
         outcome = verify.verify_external_source(None)
         assert outcome["status"] == "unverified"

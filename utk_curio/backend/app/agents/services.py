@@ -3932,18 +3932,20 @@ def _solve_events(
             # A refusal's head names the literal; a traceback's tail names the error.
             detail = raw_detail[:200] if kind in _HEAD_FIRST_KINDS else raw_detail[-200:]
             rounds = outcome.get("rounds") or 0
+            remedy_payload = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
             remedy = (
                 " — resolve the source with Dataset Finder (attach it to this node) or give the path"
                 if kind == "ungrounded-source" else
-                " — provide what it names (a key, a path or a URL) in the chat, then Solve again"
+                _source_missing_remedy(remedy_payload)
                 if kind == "source-missing" else ""
             )
             err = (
                 f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''} — "
                 f"{kind}: {detail[:200 - len(remedy)] if remedy else detail}{remedy}"
             )[:300]
-            results[node_id] = {"status": "failed", "error": err, **trail}
-            return {"nodeId": node_id, "status": "failed", "error": err, **trail}
+            extra = {"remedy": remedy_payload} if remedy_payload else {}
+            results[node_id] = {"status": "failed", "error": err, **trail, **extra}
+            return {"nodeId": node_id, "status": "failed", "error": err, **trail, **extra}
         if status == "solved":
             # The child replies with response formatting around the code —
             # only the executable content is written (dev/57).
@@ -4215,6 +4217,7 @@ def _solve_events(
                                 solve_dataset_paths, codes
                             ),
                             exec_user_key=user_key,
+                            secrets_fn=_exec_secrets_resolver(user_key),
                         )
                         try:
                             while True:
@@ -5061,6 +5064,7 @@ def _solve_node_events(
         delegate_runner=_traced,
         dataset_paths_fn=lambda codes: _filter_dataset_paths(dataset_paths, codes),
         exec_user_key=user_key,
+        secrets_fn=_exec_secrets_resolver(user_key),
     )
     verdict = outcome["verdict"]
     attempts = outcome["attempts"]
@@ -5147,6 +5151,10 @@ def _solve_node_events(
             f"Not fixed after {rounds} attempt{'s' if rounds != 1 else ''}: {label!r} still "
             "fails — the attempts are listed below; nothing was written."
         )
+        remedy_payload = (outcome.get("evidence") or {}).get("remedy")
+        if isinstance(remedy_payload, dict):
+            done["remedy"] = remedy_payload
+            text += _source_missing_remedy(remedy_payload).replace(" — ", " ", 1).capitalize() + "."
         card_kind = "error"
     card = {
         "type": "card", "kind": card_kind,
@@ -5356,6 +5364,21 @@ def _content_sha(text: str) -> str:
 #: Attempt kinds whose detail is read from the HEAD (a refusal names the
 #: literal, a decline names the missing input); a traceback reads from its tail.
 _HEAD_FIRST_KINDS = ("ungrounded-source", "source-missing")
+
+
+def _source_missing_remedy(remedy: dict | None) -> str:
+    """The one sentence a ``source-missing`` failure ends with (dev/116)."""
+    if isinstance(remedy, dict) and remedy.get("kind") == "connection-key" and remedy.get("host"):
+        return (
+            f" — add a connection key for {remedy['host']} (Settings → Connection keys), "
+            "then Solve again"
+        )
+    if isinstance(remedy, dict) and remedy.get("kind") == "use-connection-key" and remedy.get("host"):
+        return (
+            f" — a connection key {remedy.get('name')!r} is saved for {remedy['host']}; "
+            "Solve again so the builder uses it"
+        )
+    return " — provide what it names (a key, a path or a URL), then Solve again"
 _PROSE_DECLINE_MAX_CHARS = 400
 _CODE_MARKERS = ("import ", "return ", " = ", "(", "def ", "{")
 
@@ -5414,10 +5437,109 @@ def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]
         note = _endpoint_note(verdict)
         if note:
             entry["note"] = note
+        keyed = _keyed_probe(candidate, url, how, ctx) if how == "composed" else None
+        if keyed:
+            entry.update(keyed)
         out.append(entry)
         if len(out) >= _CORRECTION_URL_PROBES:
             break
     return out
+
+
+def _keyed_probe(candidate: str, url: str, how: str, ctx) -> dict | None:
+    """dev/116: when a saved connection key is bound to the composed request's
+    host and the API's ``delivery`` is known (``query:<p>`` / ``header:<H>``),
+    probe the SAME request with the key and report what the keyed request
+    answers — redacted, never cached, never a verified source. ``delivery:
+    code`` only names the key (the run is the evidence)."""
+    saved = source_grounding.secret_for_host(ctx, url)
+    if saved is None:
+        return None
+    result: dict = {"keyed": saved.name, "keyedDelivery": saved.delivery}
+    in_code = saved.name in source_grounding.secret_names(candidate)
+    if not saved.delivery.startswith(("query:", "header:")):
+        result["keyedNote"] = (
+            f"a connection key {saved.name!r} is saved for this host"
+            + ("" if in_code else f" — the code does not use it yet: {saved.use_line}")
+            + "; the code decides how the API receives it"
+        )
+        return result
+    resolver = getattr(ctx, "secret_values", None)
+    if resolver is None:
+        return result
+    try:
+        values = resolver([saved.name]) or {}
+    except Exception:
+        values = {}
+    value = values.get(saved.name)
+    if not value:
+        return result
+    kind, _, target = saved.delivery.partition(":")
+    kwargs = {"params": {target: value}} if kind == "query" else {"headers": {target: value}}
+    try:
+        outcome = ctx.probe(url, **kwargs)
+    except Exception as exc:
+        outcome = {"status": "unverified", "detail": str(exc)[:200]}
+    from utk_curio.common.redaction import redact
+
+    outcome = {
+        k: (redact(v, {saved.name: value}) if isinstance(v, str) else v)
+        for k, v in (outcome or {}).items()
+    }
+    result["keyedVerification"] = outcome
+    status = outcome.get("status")
+    content_type = str(outcome.get("contentType") or "").lower()
+    sent = f"as {kind} {target!r}"
+    if status == "verified" and content_type and "json" not in content_type:
+        result["keyedNote"] = (
+            f"even with the saved key {saved.name!r} sent {sent}, the request answered "
+            f"{content_type.split(';')[0]}{' (' + str(outcome.get('pageTitle')) + ')' if outcome.get('pageTitle') else ''}"
+            " — the key or the way it is sent is wrong; say so instead of guessing parameters"
+        )
+    elif status == "verified":
+        result["keyedNote"] = (
+            f"with the saved key {saved.name!r} sent {sent} the request answers data — "
+            f"the code must send it the same way: {saved.use_line}"
+            + ("" if in_code else " (the code does not use it yet)")
+        )
+    else:
+        result["keyedNote"] = (
+            f"with the saved key {saved.name!r} sent {sent}: {status}"
+            + (f" {outcome.get('httpStatus')}" if outcome.get("httpStatus") else "")
+        )
+    return result
+
+
+_CREDENTIAL_DECLINE_RE = _re.compile(
+    r"api[ _-]?key|\bkey\b|token|credential|sign[- ]?in|log[- ]?in|unauthori[sz]ed|missing key|forbidden",
+    _re.IGNORECASE,
+)
+
+
+def _decline_remedy(decline: str, previous_attempt: str | None, ctx) -> dict | None:
+    """dev/116: a decline about a credential + a host from the failed attempt
+    → a concrete remedy the card can act on."""
+    if not decline or not _CREDENTIAL_DECLINE_RE.search(decline):
+        return None
+    host = ""
+    for url in source_grounding.composed_requests(previous_attempt or ""):
+        host = source_grounding._host_of(url)
+        if host:
+            break
+    if not host:
+        for ref in source_grounding.scan_sources(previous_attempt or "", "python"):
+            if ref.kind == "url":
+                host = source_grounding._host_of(ref.literal)
+                if host:
+                    break
+    if not host:
+        return None
+    from utk_curio.backend.app.users.connection_keys import suggest_name
+
+    saved = source_grounding.secret_for_host(ctx, f"https://{host}/") if ctx is not None else None
+    if saved is not None:
+        return {"kind": "use-connection-key", "host": host, "name": saved.name}
+    return {"kind": "connection-key", "host": host, "suggestedName": suggest_name(host)}
 
 
 def _endpoint_note(verdict: dict) -> str:
@@ -5480,6 +5602,7 @@ def _verified_content_rounds(
     delegate_runner=None,
     dataset_paths_fn=None,
     exec_user_key: str | None = None,
+    secrets_fn=None,
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -5626,6 +5749,13 @@ def _verified_content_rounds(
                     "source": "current content" if use_current else "generated",
                 })
                 if declined:
+                    # dev/116: when the decline is about a credential and the
+                    # failed attempt named a host, the remedy is concrete —
+                    # add a connection key for that host (or use the saved one).
+                    remedy = _decline_remedy(candidate, previous_attempt, grounding_ctx)
+                    if remedy:
+                        verdict_result["evidence"]["remedy"] = remedy
+                        attempts[-1]["remedy"] = remedy
                     # A decline names an input nobody in this loop can supply
                     # (a key, a path, a URL). Asking the same builder again
                     # with the same inputs only repeats it — the user is the
@@ -5646,9 +5776,17 @@ def _verified_content_rounds(
                 dataset_paths = dataset_paths_fn([candidate, *slice_codes]) or None
             except Exception:
                 dataset_paths = None
+        # dev/116: the connection keys THIS candidate names, resolved per round
+        # so a correction that adopts curio_secret("<name>") runs with it.
+        secrets = None
+        if secrets_fn is not None:
+            try:
+                secrets = secrets_fn([candidate]) or None
+            except Exception:
+                secrets = None
         progress_queue: _queue.Queue = _queue.Queue()
 
-        def _run_validation(candidate_text=candidate, paths=dataset_paths):
+        def _run_validation(candidate_text=candidate, paths=dataset_paths, secret_values=secrets):
             try:
                 result = validation.validate_candidate(
                     user_key, project_id, spec, node_id, candidate_text,
@@ -5656,6 +5794,7 @@ def _verified_content_rounds(
                     available_templates=available,
                     dataset_paths=paths,
                     exec_user_key=exec_user_key,
+                    secrets=secret_values,
                     progress=lambda nid, i, total: progress_queue.put(
                         ("progress", nid, i, total)
                     ),
@@ -5775,6 +5914,7 @@ def _validate_events(
             },
             dataset_paths_fn=lambda codes: _exec_dataset_paths(project_id, *codes),
             exec_user_key=user_key,
+            secrets_fn=_exec_secrets_resolver(user_key),
         )
         rounds_used = outcome["rounds"]
         candidate = outcome["candidate"]
@@ -6934,21 +7074,29 @@ def _grounding_context(
         catalog_ids = base.get("catalog_ids") or {}
         texts = list(base.get("texts") or [])
         verified = dict(base.get("verified") or {})
+        secrets = dict(base["secrets"]) if "secrets" in base else _connection_key_refs(user_key)
     else:
         catalog_paths, catalog_ids = _catalog_grounding_refs(project_id)
         texts, verified = _session_grounding_evidence(user_key, project_id, loop_ctx)
+        secrets = _connection_key_refs(user_key)
     texts.extend(t for t in extra_texts if isinstance(t, str) and t.strip())
     budget = _run_egress_budget(loop_ctx)
     cache: dict = loop_ctx.setdefault("_probe_cache", {})
 
-    def _probe(url: str) -> dict:
-        if url in cache:
+    def _probe(url: str, *, headers=None, params=None) -> dict:
+        keyed = bool(headers or params)
+        if not keyed and url in cache:
             return cache[url]
         if budget.exhausted:
             return {
                 "status": "unverified",
                 "detail": "the egress budget was spent before this URL — not checked",
             }
+        if keyed:
+            # dev/116: a probe carrying a connection key is evidence for ONE
+            # correction — never cached under the bare URL, never a verified
+            # source (the caller redacts the outcome).
+            return verify.verify_external_source(url, budget=budget, headers=headers, params=params)
         result = verify.verify_external_source(url, budget=budget)
         cache[url] = result
         if result.get("status") == "verified":
@@ -6975,6 +7123,13 @@ def _grounding_context(
     hints.append(
         'declare "synthetic": true in the params ONLY when the user asked for made-up data'
     )
+    if secrets:
+        hints.append(
+            "a saved connection key by name — " + "; ".join(
+                ref.use_line for ref in list(secrets.values())[:6]
+            )
+        )
+    secret_values = _exec_secrets_resolver(user_key)
     return source_grounding.GroundingContext(
         catalog_paths=catalog_paths,
         catalog_ids=catalog_ids,
@@ -6984,6 +7139,10 @@ def _grounding_context(
         is_data_loading=is_data_loading,
         probe=_probe,
         hints=hints,
+        secrets=secrets,
+        secret_values=lambda names: secret_values(
+            [f'curio_secret("{n}")' for n in names]
+        ),
     )
 
 
@@ -7029,10 +7188,20 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
         }
         for ref in list(ctx.catalog_ids.values())[:24]
     ]
+    secrets = [
+        {
+            "name": ref.name,
+            "host": ref.host,
+            "delivery": ref.delivery,
+            "use": ref.use_line,
+        }
+        for ref in list((ctx.secrets or {}).values())[:24]
+    ]
     return {
         "catalogDatasets": datasets,
         "userPaths": sorted(ctx.user_paths)[:24],
         "verifiedUrls": sorted(ctx.verified_urls)[:24],
+        "availableSecrets": secrets,
         "syntheticRequested": bool(ctx.synthetic_requested),
         "rule": (
             "Load catalog datasets ONLY through their `use` line "
@@ -7043,11 +7212,60 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
             "refuses ungrounded content. If none of these fits the intent, return "
             "a one-line explanation of what source is missing instead of code."
             + (
+                " A key-gated host is reachable ONLY through a saved connection key: "
+                "copy its `use` line (curio_secret(\"<name>\") — the sandbox resolves "
+                "it) and send the value the way `delivery` says (query:<param> / "
+                "header:<Name> / code = as the API documents). Never write a key "
+                "value into the code; if the host needs a key and availableSecrets "
+                "lists none for it, return the one-line explanation naming the host."
+                if secrets else
+                " A key-gated host has no saved connection key here: do not invent one — "
+                "return the one-line explanation naming the host that needs a key."
+            )
+            + (
                 " The user asked for synthetic data: build it inline and say so."
                 if ctx.synthetic_requested else ""
             )
         ),
     }
+
+
+def _connection_key_refs(user_key: str) -> dict:
+    """dev/116: the user's saved connection keys as ``SecretRef``s (names,
+    hosts, delivery — never values). Read in the request thread; a missing or
+    unreadable store is simply no keys."""
+    from utk_curio.backend.app.users.connection_keys import default_store
+
+    try:
+        return {
+            ref.name: source_grounding.SecretRef(ref.name, ref.host, ref.delivery)
+            for ref in default_store().list(user_key)
+        }
+    except Exception:
+        return {}
+
+
+def _exec_secrets_resolver(user_key: str):
+    """dev/116: ``codes -> {name: value}`` for the ``curio_secret("<name>")``
+    calls in *codes* — the ONE reader of values on the agent path. The user
+    key is captured here (request thread); the store needs no request context,
+    so a job thread may call the closure per round (dev/115 lesson 1)."""
+    from utk_curio.backend.app.users.connection_keys import default_store, secret_names
+
+    def _resolve(codes) -> dict:
+        names: list[str] = []
+        for code in codes or ():
+            for name in secret_names(code):
+                if name not in names:
+                    names.append(name)
+        if not names:
+            return {}
+        try:
+            return default_store().resolve(user_key, names)
+        except Exception:
+            return {}
+
+    return _resolve
 
 
 def _solve_grounding_base(
@@ -7068,6 +7286,7 @@ def _solve_grounding_base(
         "catalog_ids": by_id,
         "texts": [t for t in texts if t.strip()],
         "verified": {},
+        "secrets": _connection_key_refs(user_key),
     }
 
 

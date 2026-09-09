@@ -179,13 +179,16 @@ def _peer_address(resp) -> str | None:
         return None
 
 
-def _default_request(method: str, url: str, *, trusted_host=None):
+def _default_request(method: str, url: str, *, trusted_host=None, headers=None):
     """One non-redirecting HTTP request; returns (status, headers, body_bytes,
-    location). Import stays local so tests never need requests installed."""
+    location). Import stays local so tests never need requests installed.
+    ``headers`` (dev/116): a keyed probe's ``Authorization``/API-key header —
+    sent, never logged."""
     import requests
 
     resp = requests.request(
-        method, url, timeout=TIMEOUT_S, allow_redirects=False, stream=True
+        method, url, timeout=TIMEOUT_S, allow_redirects=False, stream=True,
+        headers=dict(headers) if headers else None,
     )
     try:
         # ── Rebinding check ────────────────────────────────────────────────
@@ -228,6 +231,29 @@ def _default_request(method: str, url: str, *, trusted_host=None):
         resp.close()
 
 
+def _accepts_kw(request_fn, name: str) -> bool:
+    """Whether *request_fn* takes the keyword *name* (or ``**kwargs``)."""
+    import inspect
+
+    try:
+        params = inspect.signature(request_fn).parameters
+    except (TypeError, ValueError):
+        return False
+    if name in params:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+
+def with_params(url: str, params: dict | None) -> str:
+    """*url* with *params* appended to its query string (``urlencode``, the
+    encoding ``requests`` uses) — the request a keyed probe actually makes."""
+    if not params:
+        return url
+    from urllib.parse import urlencode
+
+    return url + ("&" if "?" in url else "?") + urlencode(params)
+
+
 def _accepts_trusted_host(request_fn) -> bool:
     """Whether *request_fn* takes a ``trusted_host`` keyword.
 
@@ -253,6 +279,8 @@ def fetch(
     audit: list | None = None,
     trusted_host: tuple[str, int | None] | None = None,
     budget: "CallBudget | None" = None,
+    headers: dict | None = None,
+    params: dict | None = None,
 ) -> EgressResult:
     """Fetch one URL under the full policy. Raises :class:`EgressRefused` on
     a policy violation (any hop); transport errors propagate (the caller maps
@@ -263,6 +291,9 @@ def fetch(
     off the provider host falls back to the full default-deny policy."""
     request_fn = request_fn or _default_request
     started = time.monotonic()
+    # dev/116: a keyed probe's query parameters join the URL BEFORE the policy
+    # check, so every hop is judged on the request actually made.
+    url = with_params(url, params)
     current = url
     redirects = 0
     while True:
@@ -276,12 +307,12 @@ def fetch(
         # host the operator exempted. Decided by signature rather than by
         # catching TypeError, which would also swallow a TypeError raised
         # inside the callable and then call it a second time.
+        call_kwargs = {}
         if _accepts_trusted_host(request_fn):
-            status, headers, body, location = request_fn(
-                method, current, trusted_host=trusted_host
-            )
-        else:
-            status, headers, body, location = request_fn(method, current)
+            call_kwargs["trusted_host"] = trusted_host
+        if headers and _accepts_kw(request_fn, "headers"):
+            call_kwargs["headers"] = dict(headers)
+        status, resp_headers, body, location = request_fn(method, current, **call_kwargs)
         if status in (301, 302, 303, 307, 308) and location:
             redirects += 1
             if redirects > MAX_REDIRECTS:
@@ -293,7 +324,7 @@ def fetch(
         if truncated:
             text += _TRUNCATION_MARKER
         content_type = str(
-            headers.get("Content-Type") or headers.get("content-type") or ""
+            resp_headers.get("Content-Type") or resp_headers.get("content-type") or ""
         )
         result = EgressResult(
             url=url,
