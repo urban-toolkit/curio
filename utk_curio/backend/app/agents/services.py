@@ -4948,6 +4948,10 @@ def _run_node_events(
 # dev/67-7: bounded self-correction — initial generation + up to 2 corrective
 # regenerations, each re-validated by actually running the dataflow.
 _VALIDATE_CORRECTION_ROUNDS = 2
+#: dev/116: the verified loop's own egress budget — per failed round up to five
+#: real requests (the gate's probe, the composed request and its redirect, the
+#: keyed probe), over the first round plus the corrections, with slack.
+_LOOP_EGRESS_CALLS = 4 * (1 + _VALIDATE_CORRECTION_ROUNDS) + 2
 _VALIDATE_STALE_SECONDS = 15 * 60
 
 
@@ -5363,7 +5367,25 @@ def _content_sha(text: str) -> str:
 
 #: Attempt kinds whose detail is read from the HEAD (a refusal names the
 #: literal, a decline names the missing input); a traceback reads from its tail.
-_HEAD_FIRST_KINDS = ("ungrounded-source", "source-missing")
+_HEAD_FIRST_KINDS = ("ungrounded-source", "source-missing", "repeated-attempt")
+
+
+def _same_code(a: str, b: str) -> bool:
+    """Byte-different but code-identical: comments, blank lines and spacing
+    stripped through the tokenizer (a string literal with a '#' survives)."""
+    import io
+    import tokenize
+
+    def _norm(code: str) -> str:
+        try:
+            tokens = tokenize.generate_tokens(io.StringIO(code).readline)
+            skip = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT,
+                    tokenize.DEDENT, tokenize.ENCODING, tokenize.ENDMARKER}
+            return " ".join(t.string for t in tokens if t.type not in skip and t.string.strip())
+        except (tokenize.TokenError, SyntaxError, IndentationError):
+            return "\n".join(l.strip() for l in code.splitlines() if l.strip() and not l.strip().startswith("#"))
+
+    return bool(a and b) and _norm(a) == _norm(b)
 
 
 def _source_missing_remedy(remedy: dict | None) -> str:
@@ -5420,6 +5442,16 @@ def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]
     out: list[dict] = []
     known = getattr(ctx, "verified_urls", None)
     for url, how in targets:
+        if how == "composed":
+            placeholder = _placeholder_probe(url, ctx)
+            if placeholder is not None:
+                # The code sends a saved key itself (curio_secret(...) as a
+                # parameter): probe ONLY with the value swapped in — a bare probe
+                # would send the placeholder text and answer nothing useful.
+                out.append(placeholder)
+                if len(out) >= _CORRECTION_URL_PROBES:
+                    break
+                continue
         already_known = isinstance(known, dict) and url in known
         try:
             verdict = ctx.probe(url)
@@ -5444,6 +5476,50 @@ def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]
         if len(out) >= _CORRECTION_URL_PROBES:
             break
     return out
+
+
+def _placeholder_probe(url: str, ctx) -> dict | None:
+    """dev/116 live fix (2026-09-09): a composed request whose parameters carry
+    ``curio_secret("<name>")`` placeholders. The saved values are sent in their
+    place through the keyed (uncached, never-verified) probe path and the
+    outcome is redacted; the entry shows the call, never the value."""
+    bare, secret_params = source_grounding.split_secret_params(url)
+    if not secret_params:
+        return None
+    shown = source_grounding.display_composed_url(url)
+    names = sorted(set(secret_params.values()))
+    entry: dict = {
+        "url": shown,
+        "request": "the URL composed from the code's url + params; the saved key was sent in place of curio_secret(...)",
+        "keyed": ", ".join(names),
+    }
+    resolver = getattr(ctx, "secret_values", None)
+    values: dict = {}
+    if resolver is not None:
+        try:
+            values = resolver(names) or {}
+        except Exception:
+            values = {}
+    missing = [n for n in names if not values.get(n)]
+    if missing:
+        entry["verification"] = {
+            "status": "unverified",
+            "detail": f"no connection key named {', '.join(repr(m) for m in missing)} is saved — not probed",
+        }
+        return entry
+    params = {param: values[name] for param, name in secret_params.items()}
+    try:
+        outcome = ctx.probe(bare, params=params) or {}
+    except Exception as exc:
+        outcome = {"status": "unverified", "detail": str(exc)[:200]}
+    from utk_curio.common.redaction import redact
+
+    outcome = {k: (redact(v, values) if isinstance(v, str) else v) for k, v in outcome.items()}
+    entry["verification"] = outcome
+    note = _endpoint_note(outcome)
+    if note:
+        entry["note"] = note
+    return entry
 
 
 def _keyed_probe(candidate: str, url: str, how: str, ctx) -> dict | None:
@@ -5658,6 +5734,16 @@ def _verified_content_rounds(
         available = None  # arity metadata unavailable: type check fails open
     # ONE grounding context per loop: the same catalog/verified-URL evidence for
     # every round, one probe budget, and the sourceGrounding inputs derive from it.
+    # dev/116 live fix (2026-09-09): the budget is the LOOP's own — a failed
+    # round spends up to five calls (gate probe, composed request + redirect,
+    # keyed probe) and the run-wide four starved every correction of its
+    # evidence. The probe cache and the verified map stay shared with the
+    # caller's context (a batch probes a base URL once).
+    shared = grounding_loop_ctx
+    grounding_loop_ctx = dict(shared)
+    grounding_loop_ctx["_probe_cache"] = shared.setdefault("_probe_cache", {})
+    grounding_loop_ctx["_verified_urls"] = shared.setdefault("_verified_urls", {})
+    grounding_loop_ctx["_egress_budget"] = egress.CallBudget(_LOOP_EGRESS_CALLS)
     grounding_ctx = None
     dataflow = (spec or {}).get("dataflow") or {}
     try:
@@ -5765,6 +5851,30 @@ def _verified_content_rounds(
                 previous_error = refusal
                 url_evidence = []
                 continue
+        # A repeat is judged AFTER the gate: a refused candidate keeps its own kind.
+        if not use_current and previous_attempt is not None and _same_code(candidate, previous_attempt):
+            # dev/116 live fix (2026-09-09): the correction changed only
+            # comments or spacing — running it again would fail the same
+            # way. Not run; the next round is told so, in plain words.
+            detail = (
+                "the correction repeated the previous attempt (only comments or spacing "
+                "changed) — not run again; change the request that failed: "
+                + (previous_error or "")[:400]
+            )
+            verdict_result = {
+                "verdict": "fail",
+                "evidence": {"kind": "repeated-attempt", "detail": detail[:2000]},
+            }
+            yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+            rounds_trace.append(f"round {rounds_used}: fail — repeated the previous attempt")
+            attempts.append({
+                "round": rounds_used, "contentSha256": _content_sha(candidate),
+                "verdict": "fail", "kind": "repeated-attempt",
+                "detail": detail[:_ATTEMPT_DETAIL_CHARS], "source": "generated",
+            })
+            previous_attempt = candidate
+            previous_error = detail
+            continue  # url_evidence: unchanged — same request, same answer
         dataset_paths = None
         if dataset_paths_fn is not None:
             try:
@@ -6956,7 +7066,7 @@ def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
     gate's probes, so ``MAX_CALLS_PER_RUN`` means the run's total."""
     budget = loop_ctx.get("_egress_budget")
     if budget is None:
-        budget = egress.CallBudget(egress.MAX_CALLS_PER_RUN)
+        budget = egress.CallBudget(int(loop_ctx.get("_egress_limit") or egress.MAX_CALLS_PER_RUN))
         loop_ctx["_egress_budget"] = budget
     return budget
 

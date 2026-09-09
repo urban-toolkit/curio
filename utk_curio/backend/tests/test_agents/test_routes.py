@@ -6887,7 +6887,9 @@ class TestValidateNode:
         self._fake_exec(monkeypatch, fail_markers=("always_bad",))
         att_id, ref, _, _ = self._setup_plan_node(
             client, user, token, alice_project, monkeypatch,
-            replies=["Plan.\n" + helper._plan_tail(), "always_bad()"],
+            # Three DIFFERENT failing corrections: a comment-only repeat is not
+            # run again (dev/116 live fix).
+            replies=["Plan.\n" + helper._plan_tail(), "always_bad()", "always_bad(1)", "always_bad(2)"],
         )
         events = self._validate(client, token, alice_project, att_id, {"ref": ref})
         done = events[-1][1]

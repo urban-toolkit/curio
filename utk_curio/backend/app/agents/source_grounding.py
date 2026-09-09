@@ -358,17 +358,72 @@ def _const_value(node: ast.AST):
     return None
 
 
-def _dict_literal(node: ast.AST) -> dict | None:
+#: dev/116 live fix (2026-09-09): a ``curio_secret("<name>")`` used as a
+#: request parameter is composable — as a PLACEHOLDER. The composed URL carries
+#: it; the keyed probe swaps the saved value in (never the bare probe, never the
+#: display). ``<``/``:``/``>`` survive urlencode as %3C/%3A/%3E.
+SECRET_SENTINEL = "<curio_secret:{name}>"
+_SENTINEL_RE = re.compile(r"^<curio_secret:([a-z0-9][a-z0-9_-]{0,39})>$")
+_ENCODED_SENTINEL_RE = re.compile(r"%3Ccurio_secret%3A([a-z0-9][a-z0-9_-]{0,39})%3E")
+
+
+def _secret_call_name(node: ast.AST) -> str | None:
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
+    if name != "curio_secret" or not node.args:
+        return None
+    arg = node.args[0]
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and SECRET_CALL_RE.match(
+        f'curio_secret("{arg.value}")'
+    ):
+        return arg.value
+    return None
+
+
+def _dict_literal(node: ast.AST, names: dict | None = None) -> dict | None:
     if not isinstance(node, ast.Dict):
         return None
     out: dict = {}
     for key, value in zip(node.keys, node.values):
         k = _const_value(key) if key is not None else None
         v = _const_value(value)
+        if v is None:
+            secret = _secret_call_name(value)
+            if secret is not None:
+                v = SECRET_SENTINEL.format(name=secret)
+            elif isinstance(value, ast.Name) and names and _SENTINEL_RE.match(str(names.get(value.id, ""))):
+                v = names[value.id]
         if k is None or v is None:
             return None  # a computed key/value: the request is not composable here
         out[str(k)] = v
     return out
+
+
+def split_secret_params(url: str) -> tuple[str, dict[str, str]]:
+    """``(url without the placeholder parameters, {param: secret name})`` for a
+    composed URL. Everything else in the query string stays as it was."""
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    keep: list[tuple[str, str]] = []
+    secrets: dict[str, str] = {}
+    for key, value in parse_qsl(parts.query, keep_blank_values=True):
+        match = _SENTINEL_RE.match(value)
+        if match:
+            secrets[key] = match.group(1)
+        else:
+            keep.append((key, value))
+    if not secrets:
+        return url, {}
+    bare = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(keep), parts.fragment))
+    return bare, secrets
+
+
+def display_composed_url(url: str) -> str:
+    """The composed URL for people: the placeholder reads as the call it was."""
+    return _ENCODED_SENTINEL_RE.sub(lambda m: f'curio_secret("{m.group(1)}")', url)
 
 
 def composed_requests(code: object) -> list[str]:
@@ -401,8 +456,12 @@ def composed_requests(code: object) -> list[str]:
             _prefix, template, dynamic = _joined_str_parts(node.value)
             if not dynamic:
                 strings.setdefault(name, template)
+        elif _secret_call_name(node.value) is not None:
+            # ``api_key = curio_secret("census")`` — a placeholder the request
+            # composer carries by name.
+            strings.setdefault(name, SECRET_SENTINEL.format(name=_secret_call_name(node.value)))
         else:
-            literal = _dict_literal(node.value)
+            literal = _dict_literal(node.value, strings)
             if literal is not None:
                 dicts.setdefault(name, literal)
 
@@ -418,7 +477,7 @@ def composed_requests(code: object) -> list[str]:
     def _dict_of(node: ast.AST | None) -> dict | None:
         if node is None:
             return None
-        literal = _dict_literal(node)
+        literal = _dict_literal(node, strings)
         if literal is not None:
             return literal
         if isinstance(node, ast.Name):

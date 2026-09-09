@@ -178,7 +178,9 @@ class TestVerifiedRounds:
     def test_exhaustion_keeps_every_attempt(self, app, tmp_curio):
         node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
         exec_fn = _Exec(fail_markers=("always_bad",))
-        _, outcome, inputs = _rounds(app, node, replies=["always_bad()"] * 3, exec_fn=exec_fn)
+        # Three DIFFERENT failing corrections (a comment-only repeat is not run
+        # again — see TestConnectionKeys' live Census shape).
+        _, outcome, inputs = _rounds(app, node, replies=[f"always_bad({i})" for i in range(3)], exec_fn=exec_fn)
         assert outcome["verdict"] == "fail" and outcome["rounds"] == 3
         assert len(outcome["attempts"]) == 3 and len(inputs) == 3
         assert all(a["kind"] == "execution-error" for a in outcome["attempts"])
@@ -403,7 +405,8 @@ class TestConnectionKeys:
         pasted = (f'import requests\napi_key = "{self.VALUE}"\n'
                   f'return requests.get("{NOAA}", params={{"key": api_key}}).json()')
         exec_fn = _Exec()
-        events, outcome, inputs = _rounds(app, node, replies=[pasted, pasted], exec_fn=exec_fn)
+        pasted_again = pasted.replace("api_key", "token")  # a different literal, the same offence
+        events, outcome, inputs = _rounds(app, node, replies=[pasted, pasted_again], exec_fn=exec_fn)
         assert outcome["verdict"] == "fail"
         assert all(a["kind"] == "ungrounded-source" for a in outcome["attempts"])
         assert "credential literal" in outcome["attempts"][0]["detail"]
@@ -434,6 +437,106 @@ class TestConnectionKeys:
         events, outcome, inputs = _rounds(app, node, replies=["No dataset in the catalog matches."],
                                           exec_fn=exec_fn, start_from_current=True)
         assert "remedy" not in outcome["evidence"]
+
+    def test_the_live_census_shape_probes_the_placeholder_request_with_the_key_and_skips_a_comment_only_repeat(self, app, tmp_curio, monkeypatch):
+        # dev/116 live re-test (2026-09-09): round 2 sent the key as
+        # params["key"] = api_key with api_key = curio_secret("census") and got
+        # Census's real 400 ("invalid 'in' argument"); round 3 changed comments
+        # only. The harness now probes the composed request WITH the saved
+        # value and refuses to run a repeat.
+        self._save()
+        probes: list[tuple] = []
+
+        def _verify(url, **kw):
+            probes.append((url, kw.get("params")))
+            if kw.get("params"):
+                return {"status": "unreachable", "httpStatus": 400, "contentType": "text/plain",
+                        "detail": "the endpoint answered 400", "bodySample": "error: invalid 'in' argument",
+                        "finalUrl": f"{url}&key={self.VALUE}", "checkedAt": "now"}
+            return {"status": "verified", "httpStatus": 200, "contentType": "application/json", "checkedAt": "now"}
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        current = (f'import requests\nurl = "{NOAA}"\nparams = {{"get": "NAME"}}\n'
+                   'r = requests.get(url, params=params)\nreturn r.json()')
+        round2 = (f'import requests\nurl = "{NOAA}"\napi_key = curio_secret("census")\n'
+                  'params = {"get": "NAME", "in": "state:17,county:031", "key": api_key}\n'
+                  'r = requests.get(url, params=params)\nif r.status_code != 200:\n'
+                  '    raise Exception(f"Census API request failed with status code {r.status_code}: {r.text}")\n'
+                  'return r.json()')
+        round3 = round2.replace('params = {', '# The previous attempt failed with 400.\n# Let\'s ensure the naming is exact.\nparams = {')
+        node = {"id": "n1", "type": DL, "goal": "fetch", "content": current}
+        exec_fn = _Exec(fail_markers=('params = {"get": "NAME"}\n', "county:031"),
+                        stderr="Exception: Census API request failed with status code 400: error: invalid 'in' argument")
+        events, outcome, inputs = _rounds(
+            app, node, replies=[round2, round3], exec_fn=exec_fn, start_from_current=True,
+            secrets_fn=services_mod._exec_secrets_resolver(KEY),
+        )
+        assert outcome["verdict"] == "fail" and outcome["rounds"] == 3
+        kinds = [a["kind"] for a in outcome["attempts"]]
+        assert kinds == ["execution-error", "execution-error", "repeated-attempt"]
+        assert len(exec_fn.calls) == 2  # the repeat never reached the sandbox
+        assert exec_fn.calls[1]["secrets"] == {"census": self.VALUE}
+        # Round 2's failure: the composed request was probed WITH the key (bare
+        # URL + params), shown with the call in place of the value, redacted.
+        evidence = inputs[1]["urlEvidence"]
+        composed = evidence[0]
+        assert composed["keyed"] == "census"
+        assert composed["url"].endswith('&key=curio_secret("census")')
+        assert composed["verification"]["httpStatus"] == 400
+        assert "invalid 'in' argument" in composed["note"]
+        assert self.VALUE not in json.dumps(evidence)
+        assert "«redacted:census»" in composed["verification"]["finalUrl"]
+        keyed_probe = next(p for p in probes if p[1] and "county" in p[0])
+        assert keyed_probe[0] == f"{NOAA}?get=NAME&in=state%3A17%2Ccounty%3A031"
+        assert keyed_probe[1] == {"key": self.VALUE}
+        # No bare probe of the placeholder request, no verified-URL pollution.
+        assert all("curio_secret" not in p[0] and self.VALUE not in p[0] for p in probes)
+        assert inputs[1]["sourceGrounding"]["verifiedUrls"] == [NOAA]
+        # The repeat is named for the user and stays out of the sandbox.
+        third = outcome["attempts"][2]
+        assert "repeated the previous attempt" in third["detail"]
+        assert "invalid 'in' argument" in third["detail"]
+
+    def test_the_loop_has_its_own_egress_budget_shared_cache(self, app, tmp_curio, monkeypatch):
+        # dev/116 live fix: the run-wide budget of 4 was spent by round 1's
+        # evidence and every later correction read "budget spent". The loop
+        # now budgets for all its rounds; the probe cache is still shared.
+        probes: list[str] = []
+
+        def _verify(url, **kw):
+            probes.append(url)
+            return {"status": "verified", "httpStatus": 200, "contentType": "application/json", "checkedAt": "now"}
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        node = {"id": "n1", "type": DL, "goal": "fetch", "content": ""}
+        hosts = ["https://a.example.gov/v1", "https://b.example.gov/v1", "https://c.example.gov/v1"]
+        replies = [f'import requests\nr = requests.get("{h}", params={{"q": {i}}})\nreturn r.json()' for i, h in enumerate(hosts)]
+        exec_fn = _Exec(fail_markers=("params",), stderr="HTTPError: 400 Client Error")
+        shared_ctx: dict = {"granted": [], "manifest": None}
+        projects_storage.write_spec(KEY, PID, _spec(node))
+        with app.test_request_context():
+            gen = services_mod._verified_content_rounds(
+                KEY, PID, spec=_spec(node), node=node, resolution=_Resolution(), config=None,
+                parent_execution_id="e", parent_coord="agent.dataflow-builder@1.0.0",
+                attachment_id="att-1", exec_fn=exec_fn, grounding_loop_ctx=shared_ctx,
+                delegate_runner=lambda inputs: ("ok", replies[min(len(probes) // 2, 2)], {"executionId": "c"}),
+            )
+            _events, outcome = _drive(gen)
+        assert outcome["verdict"] == "fail" and outcome["rounds"] == 3
+        # Six real probes (a gate probe + a composed probe per round) — none starved.
+        assert len(probes) >= 6
+        assert all("budget" not in json.dumps(a) for a in outcome["attempts"])
+        # The caller's context kept the shared cache (and never a budget of its own spent).
+        assert len(shared_ctx["_probe_cache"]) >= 6
+        assert "_egress_budget" not in shared_ctx
+
+    def test_same_code_ignores_comments_and_spacing_only(self):
+        a = 'x = 1\n# c\nreturn x'
+        assert services_mod._same_code(a, 'x = 1\n\n\nreturn x  # done')
+        assert services_mod._same_code(a, 'x  =  1\nreturn x')
+        assert not services_mod._same_code(a, 'x = 2\nreturn x')
+        assert not services_mod._same_code(a, 'x = "# not a comment"\nreturn x')
+        assert not services_mod._same_code("", "")
 
     def test_delivery_code_names_the_key_without_a_keyed_probe(self, app, tmp_curio, monkeypatch):
         self._save(delivery="code")
@@ -711,7 +814,7 @@ class TestVerifiedSolve:
         # one would be refused by the gate before the sandbox — a different row).
         ctx = self._setup(
             client, user, token, monkeypatch, with_stats=False,
-            dl_replies=[self.LOADER.replace("return df", "always_bad()\nreturn df")],
+            dl_replies=[self.LOADER.replace("return df", f"always_bad({i})\nreturn df") for i in range(3)],
             exec_outcomes={"always_bad": "Traceback: NameError: always_bad"},
         )
         body = self._solve(client, token, ctx, verify=True)

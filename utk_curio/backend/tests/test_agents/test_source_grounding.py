@@ -89,6 +89,32 @@ class TestComposedRequests:
         assert sg.composed_requests(dynamic) == []
         assert sg.composed_requests("") == [] and sg.composed_requests("def (") == []
 
+    def test_a_secret_call_in_the_params_is_composed_as_a_placeholder(self):
+        # dev/116 live fix: round 2 of the Census run put the saved key in the
+        # params as a name bound to curio_secret("census") — composable, as a
+        # placeholder the keyed probe swaps the value into.
+        via_name = ('url = "https://api.census.gov/data/2022/acs/acs5"\n'
+                    'api_key = curio_secret("census")\n'
+                    'params = {"get": "NAME", "in": "state:17", "key": api_key}\n'
+                    'r = requests.get(url, params=params)')
+        direct = 'r = requests.get("https://x.org/v1", params={"q": 1, "token": curio_secret("noaa")})'
+        assert sg.composed_requests(via_name) == [
+            "https://api.census.gov/data/2022/acs/acs5?get=NAME&in=state%3A17&key=%3Ccurio_secret%3Acensus%3E"
+        ]
+        assert sg.composed_requests(direct) == ["https://x.org/v1?q=1&token=%3Ccurio_secret%3Anoaa%3E"]
+        # A value bound to something else stays non-composable.
+        assert sg.composed_requests('k = os.environ["K"]\nr = requests.get("https://x.org/v1", params={"key": k})') == []
+
+    def test_split_and_display_of_placeholder_params(self):
+        composed = "https://api.census.gov/data/2022/acs/acs5?get=NAME&in=state%3A17&key=%3Ccurio_secret%3Acensus%3E"
+        bare, secrets = sg.split_secret_params(composed)
+        assert bare == "https://api.census.gov/data/2022/acs/acs5?get=NAME&in=state%3A17"
+        assert secrets == {"key": "census"}
+        assert sg.split_secret_params("https://x.org/v1?q=1") == ("https://x.org/v1?q=1", {})
+        assert sg.display_composed_url(composed) == (
+            'https://api.census.gov/data/2022/acs/acs5?get=NAME&in=state%3A17&key=curio_secret("census")'
+        )
+
     def test_bounded_and_deduplicated(self):
         code = "\n".join(f'r{i} = requests.get("https://x.org/{i % 2}", params={{"a": 1}})' for i in range(10))
         assert sg.composed_requests(code) == ["https://x.org/0?a=1", "https://x.org/1?a=1"]
