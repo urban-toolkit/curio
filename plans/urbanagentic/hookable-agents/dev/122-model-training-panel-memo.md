@@ -1,6 +1,6 @@
 # dev/122 — Model Training in AI Settings: fine-tune on the approved fixtures, or say plainly why you cannot
 
-**Status: PROPOSED (2026-09-09) on `imp/agentcatalog` — memo complete, no code yet. Proposes `DEC-078`; backlog entry `BL-P5-20260909-56` at the first implementation change. Delivers dev/121 F1 (the Model Training panel and its nine preconditions) and consumes dev/121's export, whose held-out split has had no consumer until now. The panel is functional or absent: where the configured endpoint has no fine-tuning surface it reports **Unavailable** with the endpoint's own reason, and it never simulates a job.**
+**Status: IMPLEMENTED (2026-09-09) on `imp/agentcatalog` — `DEC-078` minted, `BL-P5-20260909-56`. Six commits: `9473e87a` (the provider contract: probe + four primitives + the scripted lane + recording), `fa9cb604` (the training set, consent, and the 31 fixtures' `consent` declarations), `087f4231` (records, service, six routes), `c3b06458` (the gate, activation, rollback, and `agent_eval --model/--gate-for`), `2f621127` (the AI Settings section), and the docs/ledgers commit. Closes dev/121 F1. Suites: `tests/test_agents` 2089 passed; the four backend suites 3278 passed / 3 skipped (the one pre-existing environmental failure aside, confirmed failing at `65f91e54`); full jest 2364 passed across 203 suites; `tsc --noEmit` clean. NOT DONE, deliberately and visibly: **no real fine-tune has run.** One costs money, takes hours, and needs an endpoint that offers the feature, so it is owner-gated (F7) — every tier here runs offline against the scripted provider. And the 31 prompts are still `pending-owner-review`, so a training run cannot legitimately start until the owner approves them (F6); the preview says exactly that instead of offering an empty upload. Findings en route are in §11. Neither `OQ-009` nor `OQ-010` was closed by this work. History — PROPOSED 2026-09-09; the memo was corrected before implementation on two points the research turned up: provider calls bypass the agents' egress chokepoint by design (and `egress.fetch` cannot express a file upload at all), and dev/87's audit-before-export rule applies here and is adopted rather than argued away.**
 
 Date: 2026-09-09
 Branch / tree: `imp/agentcatalog` @ `0d53d203` (dev/121 closed). Line numbers pinned to that commit. `plans/` is tracked on this branch; `plans/urbanagentic/hookable-agents/knowledge-graph/` (354 MB site copy) stays untracked by intent.
@@ -346,11 +346,60 @@ Each commit is a pathspec commit, no push; `plans/` changes ride separate `track
 4. **Whether one in-flight job per account is too strict.** Default: keep it; a fine-tune costs money and the failure mode of a double-click is worse than the inconvenience.
 5. **Validation split.** Default: v1 sends only the train split and does not pass a `validation_file`; the validation split stays for offline comparison. Passing it to the provider is F5.
 
+## 11. What implementing it turned up
+
+**F-a. The verbose plan parser takes the plan object, not a reply.** The first
+cut of the training-set builder checked its targets by handing the whole
+assistant reply to ``content.parse_dataflow_plan_verbose``, and twelve fixtures
+"failed to parse" for a reason that was the harness's rather than theirs. The
+check is now the runtime's own two steps — ``extract_plan_attempt`` (fence-
+agnostic, as a live run is) then the verbose parser — which is also the more
+honest check, because it is exactly what a live reply goes through.
+
+**F-b. dev/121's live runner read camelCase keys the API never sends.**
+``GET /api/auth/me`` answers in snake_case (``users/schemas.py``'s
+``UserOut.to_dict``) and never returns the key at all, only
+``has_llm_api_key``. So a live evaluation report would have carried an empty
+provider record — and the test's fake had been written to match the bug rather
+than the API, which is why nothing caught it. Fixed on both sides, with the
+reason recorded in the fake so the next reader does not "fix" it back.
+
+**F-c. A terminal job showed no gate.** ``status()`` returned early for a
+finished job (correctly — the provider has said its last word) and skipped the
+gate computation with it, so a succeeded job displayed nothing about whether it
+could be activated. The gate is now computed on every read, because whether a
+model may be activated depends on the corpus as it is *now*.
+
+**F-d. Guessed names cost two rounds.** ``packages.manifest`` exposes
+``load_packageage_manifest`` (via ``services._catalog_manifests``), not
+``parse_manifest``, and a ``PackageManifest``'s id field is ``package_id``. Both
+were guessed from the shapes rather than read, and both failed loudly at the
+first request — cheap, but avoidable by reading first.
+
+**F-e. A traversal attempt never reaches the handler.** ``..%2F..%2Fetc%2Fpasswd``
+is refused by Werkzeug's routing before any Curio code runs, which is the right
+outcome but the wrong test. The test that earns its place uses an id that *does*
+reach the handler while not being a job id, and pins that it is refused with a
+400 rather than becoming a filename.
+
 ## Follow-ups (recorded, not delivered)
 
-- **F1 — Gemini `tunedModels`** as a second job surface, if demand appears.
-- **F2 — user-authored training data**: enable `consent.dataContent: "user-content"` with its own consent surface, licence capture, and a redaction pass over node code (this is the one that needs real care).
-- **F3 — a second corpus**: fixtures generated from a user's own dataflows, which is where the fine-tuning story becomes genuinely valuable and where F2's consent work is the prerequisite.
-- **F4 — evaluation before and after**: run the gate against the base model too, so the report shows both without Curio drawing a conclusion.
-- **F5 — pass the validation split** to endpoints that accept a `validation_file`.
-- **F6 — training the instruction, not the model**: the same fixtures could measure a prompt change; that is the `DEC-058` Prompt Quality surface's job, not this one's.
+- **F1 — Gemini `tunedModels`** as a second job surface, if demand appears. Note
+  for whoever takes it: ``list_provider_models`` deliberately filters tuning-only
+  Gemini models *out*, so that lane needs the filter's inverse rather than its
+  reuse.
+- **F2 — user-authored training data.** Enable `consent.dataContent:
+  "user-content"` with its own consent surface, licence capture, and a redaction
+  pass over node code. This is the one that needs real care, and it is the half
+  of `OQ-010` this memo deliberately did not answer.
+- **F3 — a second corpus** built from a user's own dataflows, where the
+  fine-tuning story becomes genuinely valuable. Gated on F2.
+- **F4 — evaluate the base model too**, so a report shows both without Curio
+  drawing a conclusion.
+- **F5 — pass the validation split** to endpoints that accept a
+  `validation_file`.
+- **F6 — owner approval of the 31 prompts.** Until then the preview refuses and
+  says so; no training run can legitimately start.
+- **F7 — an owner-run live fine-tune** against a real endpoint, mirrored by the
+  deterministic tests above (the dev/115 A3 discipline: a live failure the
+  mirror did not predict is a new fixture, not a tweak).

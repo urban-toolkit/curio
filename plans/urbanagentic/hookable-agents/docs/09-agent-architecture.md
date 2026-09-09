@@ -245,6 +245,14 @@ separate `agent.dataflow-explainer` remains a canvas/full-flow behavior.
   canonicaliser, the executability derivation, the grounding scanner and the install services are
   called, not copied — and it grades with deterministic code, so the `DEC-055` report-only
   evaluator boundary is untouched. Live-model runs write reports, never gates.
+- **Fine-tuning** — the provider port gained a tuning surface (dev/122, `DEC-078`): a capability
+  probe plus upload/create/status/cancel, implemented for the OpenAI-compatible family and
+  refusing with the endpoint's own reason elsewhere. It follows the model-catalog doctrine
+  (asked, recorded, replayed with the date it was true) rather than a provider table, and it
+  introduces no queue or lease — the provider owns the long-running job, so `OQ-009` is
+  untouched. `app/agents/training/` is pure except for its service seam, and nothing in it
+  grades anything: the activation gate is dev/121's deterministic comparator, so `DEC-055`'s
+  report-only boundary holds and a candidate never judges itself.
 - **Runtime adapters** — direct provider/delegation ports today; the `DEC-021` background-execution
   revisit happened in dev/115 (`DEC-073`) and declined a framework adapter for that slice — the
   criteria that would re-open it are recorded there; the UI contract is unchanged.

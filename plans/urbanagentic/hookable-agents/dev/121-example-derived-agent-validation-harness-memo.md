@@ -349,7 +349,12 @@ the same question safely and is the method to use.
 
 ## Follow-ups (recorded, not delivered)
 
-- **F1 — the AI Settings Model Training panel.** Its own memo, gated on §3.9's
+- **F1 — the AI Settings Model Training panel.** **CLOSED by dev/122 (2026-09-09,
+  `DEC-078`, commits `9473e87a`…`2f621127`): the memo settled all nine
+  preconditions and the panel ships — capability probed per endpoint, consent
+  recorded before any upload, the provider owning the job, and activation
+  refused until a held-out evaluation of that exact model id exists, computed by
+  this comparator. A real fine-tune is owner-gated.** Its own memo, gated on §3.9's
   preconditions: provider capability detection, dataset consent and licensing,
   redaction, cost disclosure, job status and cancellation, trained-model
   versioning, the held-out evaluation gate computed by *this* comparator,
