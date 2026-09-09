@@ -220,7 +220,7 @@ Not an env var (`os.environ` is readable by node code — the survey's decisive 
 
 - **F1** T4: encrypted-at-rest store behind `ConnectionKeyStore` (one class swap); migrate the LLM key column into it.
 - **F2** Streetvision's browser-posted Google Maps key → a connection key.
-- **F3** dev/115 F6 (egress budget starvation) — unchanged here; a keyed probe adds one call per failed round.
+- **F3** dev/115 F6 (egress budget starvation) — CLOSED 2026-09-09: the loop owns `_LOOP_EGRESS_CALLS` (`ab87e8fb`) and the run budget is `_RUN_EGRESS_CALLS` = candidate cap × 2 (run-budget option, owner's choice).
 - **F4** Editor-side hint when a user types a credential literal into node code.
 
 ## Live re-test (2026-09-09, gemma4, `curio start` stack, a real Census key saved through Settings → Connection keys)
