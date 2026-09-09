@@ -3586,14 +3586,16 @@ def solve_attachment(
     attachment_id: str,
     config: ProviderConfig,
     node_ids: list[str] | None = None,
+    verify: bool = True,
 ) -> dict:
     """The dev/52 Solve batch (DEC-048), blocking form: drains the streaming
     batch (dev/63 — one implementation) and returns its terminal payload,
     minus the stream-only keys, so the response is byte-compatible. Always
-    write mode — propose mode (dev/67-6) is the streaming route's."""
+    write mode — propose mode (dev/67-6) is the streaming route's.
+    ``verify`` (dev/115): data-loading nodes execute before they are final."""
     payload: dict | None = None
     for kind, data in solve_attachment_stream(
-        user_key, project_id, attachment_id, config, node_ids
+        user_key, project_id, attachment_id, config, node_ids, verify=verify
     ):
         if kind == "done":
             payload = dict(data)
@@ -3634,6 +3636,7 @@ def solve_attachment_stream(
     config: ProviderConfig,
     node_ids: list[str] | None = None,
     mode: str = "write",
+    verify: bool = True,
 ):
     """The dev/52 Solve batch (DEC-048) as an event stream (dev/63): ONE
     explicit, authenticated user action authorizes filling the applied plan's
@@ -3663,6 +3666,14 @@ def solve_attachment_stream(
     and the session returns to its pre-solve phase. The single-activeProposal
     model means a multi-node propose batch supersedes all but the last —
     the 67-9 sequence solves one node at a time by design.
+
+    ``verify`` (dev/115, DEC-073): a data-loading node's content is not final
+    until it has EXECUTED — the worker drives the one verified-content loop
+    (generate → gate → run in the sandbox → correct with the traceback → run
+    again, ≤2 corrections) and only code that passed is written (write mode)
+    or minted (propose mode, with the validation block); exhaustion is
+    ``failed`` with the attempt trail, a sandbox outage leaves the node
+    ``pending`` with the reason. ``verify=False`` keeps the legacy path.
     """
     import threading
     import time as _time
@@ -3707,7 +3718,7 @@ def solve_attachment_stream(
     return _solve_events(
         user_key, project_id, attachment_id, config, targets, nodes_by_id,
         manifest, coord, session_id, solve_execution_id, stop,
-        spec=spec, mode=mode, return_phase=return_phase,
+        spec=spec, mode=mode, return_phase=return_phase, verify=verify,
     )
 
 
@@ -3727,6 +3738,7 @@ def _solve_events(
     spec: dict | None = None,
     mode: str = "write",
     return_phase: str | None = None,
+    verify: bool = True,
 ):
     """The solve batch body (dev/63). Workers report through a thread-safe
     queue — they never touch the response; the generator drains it between
@@ -3772,6 +3784,19 @@ def _solve_events(
     # context; ONE egress budget for the batch's probes.
     solve_ground = _solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
     solve_ctx: dict = {"granted": [], "manifest": manifest}
+    # dev/115: the sandbox's ``{datasetId: path}`` mapping for every catalog id
+    # this project can load, resolved ONCE here (request thread — workers hold
+    # no ``g``); each verified run receives the subset its code references.
+    solve_dataset_paths = (
+        _resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
+        if verify else {}
+    )
+    from utk_curio.backend.app.packages import services as _pkg_services
+
+    def _is_data_loading(node_obj: dict) -> bool:
+        return source_grounding.is_data_loading_type(
+            _pkg_services.canonical_template_id((node_obj or {}).get("type"))
+        )
 
     def _record_outcome(node_id: str, status: str, text, child) -> dict | None:
         """Fold one worker outcome into the batch state — no yields, so it is
@@ -3781,6 +3806,49 @@ def _solve_events(
         state machine."""
         if child is not None:
             delegations.append(child)
+        if status == "verified":
+            # dev/115 (DEC-073): the verified-content loop's outcome. Only
+            # code that PASSED is written; exhaustion is failed with the
+            # trail; a sandbox outage is pending with the reason — never a
+            # content failure, never silently written.
+            outcome = text
+            for c in outcome.get("delegations") or []:
+                if c is not None:
+                    delegations.append(c)
+            trail = {
+                "verdict": outcome.get("verdict"),
+                "rounds": outcome.get("rounds"),
+                "attempts": outcome.get("attempts") or [],
+            }
+            if outcome.get("verdict") == "pass":
+                candidate = outcome.get("candidate") or ""
+                results[node_id] = {"status": "solved", **trail}
+                applied_contents.append({"nodeId": node_id, "content": candidate})
+                return {"nodeId": node_id, "status": "solved", "content": candidate, **trail}
+            evidence = outcome.get("evidence") or {}
+            if outcome.get("verdict") == "infrastructure":
+                reason = (
+                    "not verified — sandbox unreachable: "
+                    + str(evidence.get("detail") or "")[:160]
+                    + " — nothing was run or written; Retry when the sandbox is back"
+                )[:300]
+                results[node_id] = {"status": "pending", "reason": reason, **trail}
+                return {"nodeId": node_id, "status": "pending", "error": reason, **trail}
+            kind = evidence.get("kind") or "fail"
+            raw_detail = str(evidence.get("stderrTail") or evidence.get("detail") or "")
+            # A refusal's head names the literal; a traceback's tail names the error.
+            detail = raw_detail[:200] if kind == "ungrounded-source" else raw_detail[-200:]
+            rounds = outcome.get("rounds") or 0
+            remedy = (
+                " — resolve the source with Dataset Finder (attach it to this node) or give the path"
+                if kind == "ungrounded-source" else ""
+            )
+            err = (
+                f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''} — "
+                f"{kind}: {detail[:200 - len(remedy)] if remedy else detail}{remedy}"
+            )[:300]
+            results[node_id] = {"status": "failed", "error": err, **trail}
+            return {"nodeId": node_id, "status": "failed", "error": err, **trail}
         if status == "solved":
             # The child replies with response formatting around the code —
             # only the executable content is written (dev/57).
@@ -3877,10 +3945,21 @@ def _solve_events(
         solved = sum(1 for r in results.values() if r["status"] == "solved")
         proposed = sum(1 for r in results.values() if r["status"] == "proposed")
         if isinstance(session_id, str):
-            lines = [
-                f"{node_id[:8]} · {outcome['status']}"
-                for node_id, outcome in list(results.items())[:10]
-            ]
+            lines: list[str] = []
+            for node_id, outcome in list(results.items())[:10]:
+                line = f"{node_id[:8]} · {outcome['status']}"
+                if outcome.get("verdict"):
+                    # dev/115: the verified loop's verdict and, on failure,
+                    # the attempt trail — one line per round, bounded.
+                    rounds = outcome.get("rounds") or 0
+                    line += f" · {outcome['verdict']} after {rounds} round{'s' if rounds != 1 else ''}"
+                lines.append(line)
+                if outcome.get("verdict") == "fail":
+                    for attempt in (outcome.get("attempts") or [])[:3]:
+                        raw = str(attempt.get("stderrTail") or attempt.get("detail") or "")
+                        why = raw[:100] if attempt.get("kind") == "ungrounded-source" else raw[-100:]
+                        lines.append(f"  round {attempt.get('round')}: {attempt.get('kind')} — {why}")
+            lines = lines[:24]
             if cancelled:
                 lines.append(f"cancelled — {len(unstarted)} node(s) not attempted")
             if batch_reason:
@@ -4009,6 +4088,43 @@ def _solve_events(
                                 extra_texts=(str(node.get("goal") or ""),),
                             )
                         )
+                    if verify and _is_data_loading(node):
+                        # dev/115 (DEC-073): the ONE verified-content loop —
+                        # every round traced at the node's home (dev/72), the
+                        # loop's progress relayed as node_* events, the outcome
+                        # folded by _record_outcome.
+                        def _traced(delegate_inputs, _node_id=node_id):
+                            st, tx, ch, _h = _run_delegate_traced(
+                                user_key, project_id, resolution.coord,
+                                "node.content.generate", delegate_inputs, config,
+                                parent_execution_id=solve_execution_id,
+                                parent_coord=coord,
+                                attachment_id=attachment_id,
+                                node_id=_node_id,
+                                home_create=False,  # workers never write the spec
+                            )
+                            return st, tx, ch
+
+                        gen = _verified_content_rounds(
+                            user_key, project_id,
+                            spec=spec, node=node, resolution=resolution, config=config,
+                            parent_execution_id=solve_execution_id, parent_coord=coord,
+                            attachment_id=attachment_id, exec_fn=None,
+                            grounding_loop_ctx=solve_ctx, grounding_base=solve_ground,
+                            extra_inputs={"planSiblings": goals[:20]},
+                            delegate_runner=_traced,
+                            dataset_paths_fn=lambda codes: _filter_dataset_paths(
+                                solve_dataset_paths, codes
+                            ),
+                            exec_user_key=user_key,
+                        )
+                        try:
+                            while True:
+                                kind, data = next(gen)
+                                outcome_queue.put((node_id, "progress", {"kind": kind, **data}, None))
+                        except StopIteration as stop_iter:
+                            outcome_queue.put((node_id, "verified", stop_iter.value, None))
+                        return
                     status, text, child, _home = _run_delegate_traced(
                         user_key, project_id, resolution.coord,
                         "node.content.generate", inputs, config,
@@ -4034,7 +4150,68 @@ def _solve_events(
                     if status == "started":
                         yield "node_started", {"nodeId": node_id}
                         continue
+                    if status == "progress":
+                        # dev/115: the verified loop's rounds, live — the strip
+                        # shows "verifying" and each round's verdict.
+                        progress = dict(text)
+                        kind = progress.pop("kind", "")
+                        event_name = _SOLVE_PROGRESS_EVENTS.get(kind)
+                        if event_name:
+                            yield event_name, {"nodeId": node_id, **progress}
+                        continue
                     remaining -= 1
+                    if mode == "propose" and status == "verified":
+                        # dev/115: an EXECUTED review — the validation block
+                        # (verdict, rounds, attempts) rides the part, PASS or
+                        # FAIL (dev/67-7's labeled choice); a sandbox outage
+                        # mints nothing and the node stays pending.
+                        outcome = text
+                        for c in outcome.get("delegations") or []:
+                            if c is not None:
+                                delegations.append(c)
+                        if outcome.get("verdict") == "infrastructure":
+                            event = _record_outcome(node_id, "verified", outcome, None)
+                            if event is not None:
+                                yield "node_result", event
+                            continue
+                        validation_block = {
+                            "verdict": outcome.get("verdict"),
+                            "rounds": outcome.get("rounds"),
+                            "evidence": outcome.get("evidence") or {},
+                            "attempts": outcome.get("attempts") or [],
+                        }
+                        part, home_att, mint_text = _mint_content_review_from_delegate(
+                            user_key, project_id,
+                            node_id=node_id,
+                            generated_text=outcome.get("candidate") or "",
+                            parent_attachment_id=attachment_id,
+                            parent_session_id=session_id,
+                            local_turn=True,
+                            validation=validation_block,
+                        )
+                        if part is not None:
+                            results[node_id] = {
+                                "status": "proposed",
+                                "proposalId": part["proposalId"],
+                                "proposalAttachmentId": home_att,
+                                "verdict": validation_block["verdict"],
+                                "rounds": validation_block["rounds"],
+                                "attempts": validation_block["attempts"],
+                            }
+                            yield "node_result", {
+                                "nodeId": node_id,
+                                "status": "proposed",
+                                "proposalId": part["proposalId"],
+                                "proposalAttachmentId": home_att,
+                                "verdict": validation_block["verdict"],
+                                "rounds": validation_block["rounds"],
+                            }
+                        else:
+                            results[node_id] = {"status": "failed", "error": mint_text[:300]}
+                            yield "node_result", {
+                                "nodeId": node_id, "status": "failed", "error": mint_text[:300],
+                            }
+                        continue
                     if mode == "propose" and status == "solved":
                         # dev/67-6 (Simulation Mode: solve): nothing is
                         # written — the child's content mints a reviewed
@@ -4748,6 +4925,54 @@ def validate_node_stream(
         home_attachment_id=home_attachment_id,
         home_session_id=home_session_id,
     )
+
+
+#: dev/115: the verified loop's progress, relayed on the Solve stream.
+_SOLVE_PROGRESS_EVENTS = {
+    "generation_round": "node_round",
+    "node_executed": "node_executed",
+    "round_verdict": "node_verdict",
+}
+
+
+def _resolve_catalog_execution_paths(project_id: str, dataset_ids: list) -> dict:
+    """dev/115: ``{datasetId: absolutePath}`` for every id a Solve batch may
+    load — resolved ONCE in the request thread the way ``/processPythonCode``
+    does (contained paths only); fail-open to ``{}``."""
+    ids = [str(i) for i in dataset_ids if i][:64]
+    if not ids:
+        return {}
+    try:
+        from flask import g, has_request_context
+
+        from utk_curio.backend.app.datasets.application.catalog_service import (
+            DatasetCatalogService,
+        )
+
+        user = getattr(g, "user", None) if has_request_context() else None
+        return dict(
+            DatasetCatalogService(user).resolve_execution_paths(ids, dataflow_id=project_id) or {}
+        )
+    except Exception:
+        log.warning("Could not resolve catalog execution paths for project %s",
+                    project_id, exc_info=True)
+        return {}
+
+
+def _filter_dataset_paths(mapping: dict, codes: list) -> dict:
+    """The subset of a precomputed mapping that *codes* reference — pure, so a
+    worker thread can call it."""
+    if not mapping:
+        return {}
+    out: dict = {}
+    for code in codes:
+        if not isinstance(code, str) or "curio_dataset_path" not in code:
+            continue
+        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
+            dataset_id = match.group(2)
+            if dataset_id in mapping:
+                out[dataset_id] = mapping[dataset_id]
+    return out
 
 
 #: dev/115: how many URLs a failed round probes for the correction's evidence.
@@ -6832,6 +7057,7 @@ def _mint_content_review_from_delegate(
     parent_session_id,
     local_turn: bool = False,
     parent_loop_ctx: dict | None = None,
+    validation: dict | None = None,
 ) -> tuple[dict | None, str | None, str]:
     """dev/73: the ONE content→review sequence (the Solve drain's, extracted):
     a successful ``node.content.generate`` delegation becomes a reviewed
@@ -6886,6 +7112,10 @@ def _mint_content_review_from_delegate(
             f"({(p_error or 'unknown error')[:200]}) — report this honestly: "
             "nothing was changed and nothing awaits review"
         )
+    if validation:
+        # dev/115: an EXECUTED review carries its verdict and attempt trail —
+        # stamped before the turn is written so the persisted part has it.
+        part["validation"] = dict(validation)
     if isinstance(home_sess, str) and (local_turn or home_att != parent_attachment_id):
         try:
             sessions.append_turns(

@@ -653,11 +653,15 @@ def solve_attachment(project_id: str, attachment_id: str):
         isinstance(node_ids, list) and all(isinstance(n, str) for n in node_ids)
     ):
         return _error("'nodeIds' must be a list of node id strings when present")
+    verify = body.get("verify", True)
+    if not isinstance(verify, bool):
+        return _error("'verify' must be a boolean when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
         config = resolve_provider_config(g.user)
         payload = agents_services.solve_attachment(
-            _user_dir_key(g.user), project_id, attachment_id, config, node_ids
+            _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
+            verify=verify,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -675,7 +679,10 @@ def solve_attachment(project_id: str, attachment_id: str):
 def solve_attachment_stream(project_id: str, attachment_id: str):
     """The Solve batch as Server-Sent Events (dev/63, the DEC-021 user
     slice): ``solve_started`` → ``node_started``/``node_result`` per target →
-    ``done`` (the blocking payload + ``cancelled``/``notAttempted``).
+    ``done`` (the blocking payload + ``cancelled``/``notAttempted``). dev/115:
+    a verified data-loading node also streams ``node_round`` /
+    ``node_executed`` / ``node_verdict`` while its code runs in the sandbox;
+    ``verify: false`` in the body keeps the legacy unexecuted write.
     Validation errors (409/404/…) return normal JSON statuses before any
     streaming starts; the persisted session stays the single truth."""
     from utk_curio.backend.app.agents.provider_config import (
@@ -692,12 +699,15 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
     mode = body.get("mode", "write")
     if mode not in ("write", "propose"):
         return _error("'mode' must be 'write' or 'propose' when present")
+    verify = body.get("verify", True)
+    if not isinstance(verify, bool):
+        return _error("'verify' must be a boolean when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
         config = resolve_provider_config(g.user)
         events = agents_services.solve_attachment_stream(
             _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
-            mode=mode,
+            mode=mode, verify=verify,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

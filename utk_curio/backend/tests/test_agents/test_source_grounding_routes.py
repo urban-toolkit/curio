@@ -470,6 +470,15 @@ class TestSolveSourceGrounding:
                 return 'import pandas as pd\ndf = pd.read_csv("heat_tracts.csv")\nreturn df'
             return "df = arg[0]\nreturn df.describe()"
 
+        # dev/115: Solve now RUNS data-loading candidates; a fake sandbox that
+        # passes keeps this test about grounding (the gate refuses before any run).
+        exec_payloads = []
+
+        def _exec(endpoint, payload):
+            exec_payloads.append(payload)
+            return {"stdout": [], "stderr": "", "output": {"path": "art-1", "dataType": "dataframe"}}
+
+        monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
         att, applied, calls = self._applied_plan(client, user, token, project, monkeypatch, child)
         body = self._solve(client, token, project, att)
         nodes_applied = applied["appliedGraph"]["nodes"]
@@ -477,7 +486,12 @@ class TestSolveSourceGrounding:
         stats = next(n["id"] for n in nodes_applied if str(n.get("type", "")).startswith(CA))
         assert body["results"][stats]["status"] == "solved"
         assert body["results"][load]["status"] == "failed"
-        assert body["results"][load]["error"].startswith("ungrounded source:")
+        # dev/115: every round was refused by the gate (kind ungrounded-source)
+        # and NEVER reached the sandbox; the error names the literal + remedy.
+        assert body["results"][load]["verdict"] == "fail"
+        assert all(a["kind"] == "ungrounded-source" for a in body["results"][load]["attempts"])
+        assert exec_payloads == []
+        assert "ungrounded-source" in body["results"][load]["error"]
         assert "heat_tracts.csv" in body["results"][load]["error"]
         assert "Dataset Finder" in body["results"][load]["error"]
         spec = projects_storage.read_spec(_user_dir_key(user), project)
@@ -501,6 +515,8 @@ class TestSolveSourceGrounding:
         _script(monkeypatch, [lambda calls: child2(calls[-1][-1]["content"])])
         body2 = self._solve(client, token, project, att, node_ids=[load])
         assert body2["results"][load]["status"] == "solved"
+        assert body2["results"][load]["verdict"] == "pass"  # dev/115: it ran
+        assert len(exec_payloads) == 1
         spec = projects_storage.read_spec(_user_dir_key(user), project)
         assert path in next(n for n in spec["dataflow"]["nodes"] if n["id"] == load)["content"]
 
