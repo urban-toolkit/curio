@@ -111,6 +111,11 @@ class DependencyDiff:
 @dataclass(frozen=True)
 class Comparison:
     matching: tuple = ()          # (expected index, actual index) pairs
+    #: Matched nodes the example filled but the reconstruction left empty.
+    #: Reported, not scored: the plan contract leaves content to Solve and to
+    #: separate reviewed content steps, so an empty grammar node is a stage of
+    #: the workflow rather than a wrong node -- but a reader should see it.
+    content_missing: tuple = ()
     unmatched_expected: tuple = ()
     unmatched_actual: tuple = ()
     templates: TemplateDiff = field(default_factory=TemplateDiff)
@@ -122,6 +127,8 @@ class Comparison:
 
     @property
     def exact(self) -> bool:
+        """Structural exactness. ``content_missing`` is not part of it: see
+        the field's own note."""
         return not (
             self.unmatched_expected
             or self.unmatched_actual
@@ -440,8 +447,15 @@ def compare_graphs(
         notes = notes + (
             "a canonical labeling hit its budget; this comparison is best-effort",
         )
+    content_missing = tuple(
+        expected.nodes[expected_index].type
+        for expected_index, actual_index in sorted(mapping.items())
+        if expected.nodes[expected_index].has_content
+        and not actual.nodes[actual_index].has_content
+    )
     return Comparison(
         matching=tuple(sorted(mapping.items())),
+        content_missing=content_missing,
         unmatched_expected=unmatched_expected,
         unmatched_actual=unmatched_actual,
         templates=_template_diff(expected, actual),

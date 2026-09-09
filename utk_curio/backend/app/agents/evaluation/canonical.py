@@ -92,15 +92,24 @@ TemplateIndex = Mapping[str, TemplateFacts]
 
 @dataclass(frozen=True)
 class CNode:
-    """One node, stripped to what is comparable."""
+    """One node, stripped to what is comparable.
+
+    ``has_content`` is deliberately NOT part of identity (``compare=False``).
+    A plan proposes typed placeholders and Solve fills the ones the sandbox can
+    run (``DEC-048``/``DEC-075``), so a freshly reconstructed Vega-Lite or
+    Autark node is legitimately empty until a separate reviewed content step
+    writes its spec. Making emptiness an identity difference would report every
+    such node as the wrong node. The comparator still reports the empty ones
+    (``Comparison.content_missing``) so nothing is hidden.
+    """
 
     type: str
     role: str
     executable: bool
-    has_content: bool
+    has_content: bool = field(default=False, compare=False)
 
     def sort_key(self) -> tuple:
-        return (self.type, self.role, not self.executable, not self.has_content)
+        return (self.type, self.role, not self.executable)
 
 
 @dataclass(frozen=True)
@@ -141,6 +150,11 @@ class CanonicalGraph:
     datasets: frozenset = field(default_factory=frozenset)
     packages: frozenset = field(default_factory=frozenset)
     sources: Sources = field(default_factory=Sources)
+    #: The original node index of each canonical node, in canonical order.
+    #: Lets a caller reach back to the spec (the oracle needs each node's own
+    #: code); excluded from equality, since it describes provenance rather than
+    #: shape.
+    origins: tuple = field(default=(), compare=False)
     #: Whether the canonical labeling search finished (it always does for the
     #: shipped corpus). Excluded from equality on purpose: it describes how the
     #: value was computed, not what the graph is -- but a report says so, and a
@@ -468,5 +482,6 @@ def canonical_graph_from_spec(
         datasets=declared_datasets,
         packages=declared_packages,
         sources=sources or Sources(),
+        origins=tuple(order),
         exact_labeling=exact,
     )

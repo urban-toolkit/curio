@@ -21,6 +21,11 @@ Nothing here re-implements a production path. Canonical node types come from
 vocabulary (``DEC-062``).
 """
 
+from utk_curio.backend.app.agents.evaluation.attempt import (  # noqa: F401
+    UNEXPRESSIBLE_EDGE_KINDS,
+    AttemptScore,
+    score_attempt,
+)
 from utk_curio.backend.app.agents.evaluation.canonical import (  # noqa: F401
     CanonicalGraph,
     CEdge,
@@ -45,6 +50,8 @@ from utk_curio.backend.app.agents.evaluation.fixtures import (  # noqa: F401
 )
 
 __all__ = [
+    "UNEXPRESSIBLE_EDGE_KINDS",
+    "AttemptScore",
     "CEdge",
     "CNode",
     "CanonicalGraph",
@@ -59,6 +66,7 @@ __all__ = [
     "load_fixtures",
     "referenced_sources",
     "role_for_template",
+    "score_attempt",
     "sha256_of_file",
     "validate_fixture_dict",
 ]

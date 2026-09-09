@@ -40,6 +40,7 @@ CATEGORIES = (
     "dependency-unresolved",
     "dependency-unrequested",
     "intent-mismatch",
+    "content-missing",
     "execution-failed",
     "refused",
     "timeout",
@@ -296,6 +297,12 @@ def score_reconstruction(
         or comparison.dependencies.packages_extra
     ):
         categories.append("dependency-unrequested")
+    if comparison.content_missing:
+        # Reported, never scored: see Comparison.content_missing.
+        categories.append("content-missing")
+        notes.append(
+            f"{len(comparison.content_missing)} node(s) the example filled came back empty"
+        )
     if any(o.satisfied is False for o in intent_outcomes):
         categories.append("intent-mismatch")
     if any(o.measured and not o.passed for o in execution_outcomes):
