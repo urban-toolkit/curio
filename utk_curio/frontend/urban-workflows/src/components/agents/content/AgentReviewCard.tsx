@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import type { AgentProposalPart, AgentSourceRef } from "../../../api/agentsApi";
 import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
+import { isExecutableNodeType } from "../../../utils/executableNodeKinds";
 import { describePackagePermission } from "../../../utils/packagePermissions";
 import styles from "./AgentReviewCard.module.css";
 import { VerificationChip } from "./verificationChip";
@@ -611,10 +612,21 @@ export const AgentReviewCard: React.FC<{
                 {part.validation.attempts.map((attempt) => (
                   <li key={attempt.round}>
                     <span className={styles.attemptHead}>
-                      Round {attempt.round} · {attempt.verdict === "pass" ? "pass ✓" : attempt.verdict}
-                      {attempt.kind && attempt.verdict !== "pass" ? ` · ${attempt.kind}` : ""}
+                      Round {attempt.round} ·{" "}
+                      {attempt.verdict === "pass"
+                        ? "pass ✓"
+                        : attempt.verdict === "not-executable"
+                          ? "not executable — runs in the browser, nothing ran"
+                          : attempt.verdict}
+                      {attempt.kind && attempt.verdict !== "pass" && attempt.verdict !== "not-executable" ? ` · ${attempt.kind}` : ""}
                       {attempt.source === "current content" ? " · the node's current code" : ""}
                     </span>
+                    {attempt.reusedNodes?.length ? (
+                      <span className={styles.attemptDetail}>
+                        {" "}· reused {attempt.reusedNodes.length} upstream result{attempt.reusedNodes.length === 1 ? "" : "s"}
+                        {attempt.reuseRetried ? " (re-run whole once)" : ""}
+                      </span>
+                    ) : null}
                     {attempt.verdict === "pass" ? (
                       <span className={styles.attemptDetail}>
                         {attempt.outputDataType ? ` output: ${attempt.outputDataType}` : ""}
@@ -770,11 +782,15 @@ export const AgentReviewCard: React.FC<{
         <div className={styles.meta}>
           {EFFECT_LINE[part.tool]}
           {part.tool === "node.create" && part.source ? (
-            // dev/115 (Amendment A2): Apply places the node as proposed; the
-            // user's Solve is what runs, fixes, and verifies its code.
+            // dev/115 (Amendment A2) → dev/118 (DEC-075): Apply places the
+            // node as proposed; the user's Solve runs, fixes and verifies the
+            // code of every executable kind — a browser-rendered kind is
+            // written and Play renders it, and no one calls it verified.
             <>
               {" "}
-              Solve runs it in the sandbox and fixes errors before its code is trusted.
+              {isExecutableNodeType(part.pins?.nodeType)
+                ? "Solve runs it in the sandbox and fixes errors before its code is trusted."
+                : "This kind runs in the browser — Solve writes it, Play renders it; it is never called verified."}
             </>
           ) : null}
         </div>

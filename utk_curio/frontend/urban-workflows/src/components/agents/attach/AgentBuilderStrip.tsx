@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import type { AgentAttachment, AgentRemedy } from "../../../api/agentsApi";
+import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../api/agentsApi";
 import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { AgentRunStatusLine } from "./AgentRunStatusLine";
@@ -30,6 +30,7 @@ const STATUS_LABEL: Record<string, string> = {
   verifying: "verifying — running in the sandbox…",
   fixing: "fixing — the run failed, correcting…",
   verified: "solved ✓ verified",
+  written: "written — runs in the browser, not executed",
   solved: "solved",
   failed: "failed",
   skipped: "skipped",
@@ -56,6 +57,10 @@ export const AgentBuilderStrip: React.FC<{
   solveErrors?: Record<string, string>;
   /** dev/116: the live batch's per-node remedies — rendered ONCE per host. */
   solveRemedies?: Record<string, AgentRemedy>;
+  /** dev/118: the live batch's current wave — "solving wave 2 of 3 — 4 nodes". */
+  solveWave?: AgentSolveWave;
+  /** dev/118: per-node notices that are not errors — ONE line per distinct text. */
+  solveNotices?: Record<string, string>;
   /** dev/63: cancel the running solve — in-flight children finish; the rest
    * revert to pending. Omitted → no Cancel control. */
   onCancelSolve?: () => Promise<void>;
@@ -77,6 +82,8 @@ export const AgentBuilderStrip: React.FC<{
   solveProgress,
   solveErrors,
   solveRemedies,
+  solveWave,
+  solveNotices,
   onCancelSolve,
   onComposePrompt,
   onApplyProposal,
@@ -116,9 +123,15 @@ export const AgentBuilderStrip: React.FC<{
           ? "Stepping"
           : null;
   const batchDone = entries.filter(
-    ([, s]) => s === "solved" || s === "verified" || s === "failed" || s === "skipped",
+    ([, s]) => s === "solved" || s === "verified" || s === "written" || s === "failed" || s === "skipped",
   ).length;
-  const batchDetail = entries.length > 0 ? `${batchDone}/${entries.length} nodes` : undefined;
+  const nodesDetail = entries.length > 0 ? `${batchDone}/${entries.length} nodes` : undefined;
+  // dev/118: the wave in words when the batch runs in waves.
+  const waveDetail =
+    solveWave && solveWave.of > 1
+      ? `wave ${solveWave.wave} of ${solveWave.of} — ${solveWave.nodeIds.length} node${solveWave.nodeIds.length === 1 ? "" : "s"}`
+      : null;
+  const batchDetail = [waveDetail, nodesDetail].filter(Boolean).join(" · ") || undefined;
   // Elapsed is strip-local observation time: builderSession persists no batch
   // start timestamp, so a panel reopened mid-run shows time since this strip
   // observed the batch (the dev/80 client-measured posture — nothing
@@ -185,6 +198,7 @@ export const AgentBuilderStrip: React.FC<{
       : null;
   // One line per DISTINCT reason (six identical node failures → one line).
   const solveReasons = Array.from(new Set(Object.values(solveErrors ?? {}).filter(Boolean)));
+  const solveNoticeLines = Array.from(new Set(Object.values(solveNotices ?? {}).filter(Boolean)));
   // dev/116: one action per host, whatever the number of nodes that need it.
   const remedies = Object.values(solveRemedies ?? {}).filter(
     (r, i, all) => r && r.host && all.findIndex((o) => o.kind === r.kind && o.host === r.host) === i,
@@ -290,6 +304,13 @@ export const AgentBuilderStrip: React.FC<{
         <div className={styles.error} aria-live="polite">
           {solveReasons.map((r) => (
             <div key={r}>{r}</div>
+          ))}
+        </div>
+      ) : null}
+      {solveNoticeLines.length ? (
+        <div className={styles.hint} role="note" aria-label="Solve notices">
+          {solveNoticeLines.map((n) => (
+            <div key={n}>{n}</div>
           ))}
         </div>
       ) : null}

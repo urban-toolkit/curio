@@ -121,6 +121,12 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
    * remedy) — a `source-missing` failure that asks for a connection key.
    * Cleared with solveErrors. */
   solveRemedies: Record<string, Record<string, import("../../../api/agentsApi").AgentRemedy>>;
+  /** dev/118: the LIVE batch's current wave (attachmentId → wave), from `solve_wave`. */
+  solveWave: Record<string, import("../../../api/agentsApi").AgentSolveWave>;
+  /** dev/118: per-node notices that are not errors (attachmentId → nodeId →
+   * text): a target left pending by the batch's time budget, a skipped slice
+   * bound, a browser-rendered kind written unexecuted. Cleared with solveErrors. */
+  solveNotices: Record<string, Record<string, string>>;
   /** Cancel the running solve (dev/63): in-flight children finish and
    * persist; undispatched targets revert to pending. */
   cancelSolve: (attachmentId: string) => Promise<void>;
@@ -164,6 +170,8 @@ export const AgentAttachmentsProvider: React.FC<{
   const [solveRemedies, setSolveRemedies] = useState<
     Record<string, Record<string, import("../../../api/agentsApi").AgentRemedy>>
   >({});
+  const [solveWave, setSolveWave] = useState<Record<string, import("../../../api/agentsApi").AgentSolveWave>>({});
+  const [solveNotices, setSolveNotices] = useState<Record<string, Record<string, string>>>({});
   // dev/115: the per-node Solve's narration, and the background jobs this
   // client is already attached to (never attach twice to one execution).
   const [solveNodeActivity, setSolveNodeActivity] = useState<Record<string, string>>({});
@@ -663,6 +671,14 @@ export const AgentAttachmentsProvider: React.FC<{
           [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: status },
         }));
       return (name: string, payload: Record<string, unknown>) => {
+        if (name === "solve_wave") {
+          // dev/118 (DEC-075): the batch runs in topological waves.
+          const wave = typeof payload.wave === "number" ? payload.wave : 0;
+          const of = typeof payload.of === "number" ? payload.of : 0;
+          const ids = Array.isArray(payload.nodeIds) ? payload.nodeIds.filter((x): x is string => typeof x === "string") : [];
+          setSolveWave((prev) => ({ ...prev, [attachmentId]: { wave, of, nodeIds: ids } }));
+          return;
+        }
         const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : null;
         if (!nodeId) return;
         if (name === "node_started") mark(nodeId, "solving");
@@ -672,7 +688,22 @@ export const AgentAttachmentsProvider: React.FC<{
           mark(nodeId, payload.verdict === "pass" ? "verified" : payload.verdict === "fail" ? "fixing" : "solving");
         else if (name === "node_result") {
           const status = typeof payload.status === "string" ? payload.status : "failed";
-          mark(nodeId, status === "solved" && payload.verdict === "pass" ? "verified" : status);
+          const verification = payload.verification as { status?: unknown; reason?: unknown } | undefined;
+          const notExecutable = status === "solved" && verification?.status === "not-executable";
+          // dev/118: a browser-rendered kind is WRITTEN, never "verified".
+          mark(nodeId, notExecutable ? "written" : status === "solved" && payload.verdict === "pass" ? "verified" : status);
+          const notice =
+            notExecutable && typeof verification?.reason === "string"
+              ? verification.reason
+              : (status === "pending" || status === "skipped") && typeof payload.reason === "string"
+                ? `${status} — ${payload.reason}`
+                : null;
+          if (notice) {
+            setSolveNotices((prev) => ({
+              ...prev,
+              [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: notice },
+            }));
+          }
           if (typeof payload.error === "string" && payload.error) {
             const reason = payload.error;
             setSolveErrors((prev) => ({
@@ -717,6 +748,10 @@ export const AgentAttachmentsProvider: React.FC<{
         const { [attachmentId]: _gone, ...rest } = prev;
         return rest;
       });
+      setSolveNotices((prev) => {
+        const { [attachmentId]: _gone, ...rest } = prev;
+        return rest;
+      });
       setSolveRemedies((prev) => {
         const { [attachmentId]: _cleared, ...rest } = prev;
         return rest;
@@ -733,6 +768,10 @@ export const AgentAttachmentsProvider: React.FC<{
       } finally {
         solveAbortRef.current.delete(attachmentId);
         setSolveProgress((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
+        setSolveWave((prev) => {
           const { [attachmentId]: _gone, ...rest } = prev;
           return rest;
         });
@@ -782,6 +821,10 @@ export const AgentAttachmentsProvider: React.FC<{
       } finally {
         solveAbortRef.current.delete(attachmentId);
         setSolveProgress((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
+        setSolveWave((prev) => {
           const { [attachmentId]: _gone, ...rest } = prev;
           return rest;
         });
@@ -941,6 +984,8 @@ export const AgentAttachmentsProvider: React.FC<{
       solveProgress,
       solveErrors,
       solveRemedies,
+      solveWave,
+      solveNotices,
       cancelSolve,
       solveNode,
       solveNodeActivity,
@@ -975,6 +1020,8 @@ export const AgentAttachmentsProvider: React.FC<{
       solveProgress,
       solveErrors,
       solveRemedies,
+      solveWave,
+      solveNotices,
       cancelSolve,
       solveNode,
       solveNodeActivity,

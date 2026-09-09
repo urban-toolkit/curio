@@ -561,3 +561,39 @@ describe("AgentBuilderStrip — dev/116 missing connection keys", () => {
     expect(screen.queryByRole("group", { name: "Missing connection keys" })).toBeNull();
   });
 });
+
+
+describe("AgentBuilderStrip — dev/118 waves, written kinds and notices", () => {
+  it("names the wave on the status line while solving", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "solving", nodeRuns: { a: "solved", b: "pending", c: "pending" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveProgress={{ b: "verifying" }}
+        solveWave={{ wave: 2, of: 3, nodeIds: ["b", "c"] }}
+      />,
+    );
+    expect(screen.getByText(/wave 2 of 3 — 2 nodes/)).toBeInTheDocument();
+    expect(screen.getByText(/1\/3 nodes/)).toBeInTheDocument();
+  });
+
+  it("a written-not-executed pill says so in words, and notices render once per text, not as errors", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { v: "solved", p: "pending", q: "pending" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveProgress={{ v: "written" }}
+        solveNotices={{
+          p: "pending — the batch's time budget (45 min) was spent — Retry continues from here",
+          q: "pending — the batch's time budget (45 min) was spent — Retry continues from here",
+        }}
+      />,
+    );
+    expect(screen.getByRole("list", { name: "Plan node progress" })).toHaveTextContent("written — runs in the browser, not executed");
+    const notes = screen.getByRole("note", { name: "Solve notices" });
+    expect(notes.textContent!.match(/time budget/g)).toHaveLength(1);
+    expect(screen.queryByText(/^Solve failed/)).toBeNull();
+  });
+});

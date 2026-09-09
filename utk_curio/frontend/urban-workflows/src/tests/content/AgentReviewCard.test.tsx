@@ -1000,3 +1000,49 @@ describe("AgentReviewCard — dev/116 connection keys", () => {
     expect(screen.getByText(/A connection key "census" is saved for api.census.gov — Solve again/)).toBeInTheDocument();
   });
 });
+
+
+describe("AgentReviewCard — dev/118 every executable kind", () => {
+  const source = { kind: "external", label: "x", refs: [{ kind: "external", value: "https://a.org", verification: { status: "verified" } }] };
+
+  it("the node.create effect line depends on the kind", () => {
+    const { unmount } = render(
+      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/computation-analysis" }, source }} onApply={jest.fn()} />,
+    );
+    expect(screen.getByText(/Solve runs it in the sandbox and fixes errors/)).toBeInTheDocument();
+    unmount();
+    render(
+      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/vis-vega" }, source }} onApply={jest.fn()} />,
+    );
+    expect(screen.getByText(/runs in the browser — Solve writes it, Play renders it; it is never called verified/)).toBeInTheDocument();
+  });
+
+  it("a not-executable attempt and a reused upstream are said in words", () => {
+    render(
+      <AgentReviewCard
+        part={{ ...part(), tool: "node.content.write",
+          validation: { verdict: "pass", rounds: 2, attempts: [
+            { round: 1, verdict: "fail", kind: "execution-error", detail: "boom", reusedNodes: ["load"] },
+            { round: 2, verdict: "pass", kind: "executed", outputDataType: "dataframe", reusedNodes: ["load"], reuseRetried: true },
+          ] } }}
+        onApply={jest.fn()}
+      />,
+    );
+    const list = screen.getByRole("list", { name: "Verification attempts" });
+    expect(list).toHaveTextContent("Round 1 · fail · execution-error");
+    expect(list.textContent!.match(/reused 1 upstream result/g)).toHaveLength(2);
+    expect(list).toHaveTextContent("(re-run whole once)");
+    render(
+      <AgentReviewCard
+        part={{ ...part(), tool: "node.content.write",
+          validation: { verdict: "not-executable", rounds: 1, attempts: [
+            { round: 1, verdict: "not-executable", kind: "not-executable", detail: "vis-vega runs in the browser" },
+          ] } }}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getAllByRole("list", { name: "Verification attempts" })[1]).toHaveTextContent(
+      "Round 1 · not executable — runs in the browser, nothing ran",
+    );
+  });
+});

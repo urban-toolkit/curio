@@ -88,6 +88,7 @@
 .status_fixing { color: var(--curio-warning-text); }
 .status_verified { color: var(--curio-success-text); font-weight: 600; }
 .status_proposed { color: var(--curio-text-secondary); }
+.status_written { color: var(--curio-text-secondary); font-style: italic; }
 
 .actions {
   display: flex;

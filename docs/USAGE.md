@@ -390,6 +390,15 @@ The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
 strip adds planning phases, per-node progress, **Solve** (fill in the planned
 nodes in one batch) and **Simulation Mode** (walk the plan without executing).
 
+Solve does not just write code, it runs it: every node kind the sandbox can
+execute is generated, run, fixed when it fails and written only when it passed,
+in topological waves — the loaders first, then what depends on them, against
+the code that actually landed. The strip reads *solving wave 2 of 3* while it
+works. Kinds that render in the browser (charts, maps, merges, data pools) are
+written and labeled *runs in the browser, not executed*; nothing claims they
+were verified. A batch stops after 45 minutes by default and leaves what it did
+not reach *pending* with the reason; **Retry** continues from there.
+
 The goal box in the dock is shared with your agents: several of them, the
 Dataflow Task Planner most of all, are written around knowing what the dataflow
 is for. It is saved with the project.

@@ -153,6 +153,8 @@ export const AgentDockOverlay: React.FC = () => {
               solveProgress={ctx.solveProgress[selected.attachmentId]}
               solveErrors={ctx.solveErrors[selected.attachmentId]}
               solveRemedies={ctx.solveRemedies[selected.attachmentId]}
+              solveWave={ctx.solveWave[selected.attachmentId]}
+              solveNotices={ctx.solveNotices[selected.attachmentId]}
               onCancelSolve={() => ctx.cancelSolve(selected.attachmentId)}
               // dev/115 (Amendment A2): the per-node Solve from the node's own agent.
               onSolveNode={

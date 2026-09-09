@@ -583,6 +583,17 @@ export interface AgentValidationAttempt {
   endpointEvidence?: string;
   /** dev/116: a credential decline's concrete remedy. */
   remedy?: AgentRemedy;
+  /** dev/118: ancestors whose earlier output stood in for a re-run. */
+  reusedNodes?: string[];
+  /** dev/118: a vanished reused artifact made the slice run whole once (not a round). */
+  reuseRetried?: boolean;
+}
+
+/** dev/118 (DEC-075): one topological wave of a Solve batch, from `solve_wave`. */
+export interface AgentSolveWave {
+  wave: number;
+  of: number;
+  nodeIds: string[];
 }
 
 /** One node's outcome on the Solve payload (dev/63; dev/115 adds the verdict). */
@@ -598,6 +609,9 @@ export interface AgentSolveNodeResult {
   proposalAttachmentId?: string | null;
   /** dev/116: present when the failure asks for a connection key. */
   remedy?: AgentRemedy;
+  /** dev/118: a browser-rendered kind was written, not executed. `reason`
+   * above also carries the batch's time budget or a slice bound (pending/skipped). */
+  verification?: { status: "not-executable" | string; reason?: string };
 }
 
 export interface AgentSolveResult {

@@ -102,6 +102,14 @@ const Harness: React.FC = () => {
           .map(([n, e]) => `${n}:${e}`)
           .join("|") || "∅"}
       </div>
+      <div data-testid="solve-wave">
+        {ctx.solveWave["a1"] ? `${ctx.solveWave["a1"].wave}/${ctx.solveWave["a1"].of}:${ctx.solveWave["a1"].nodeIds.join(",")}` : "∅"}
+      </div>
+      <div data-testid="solve-notices">
+        {Object.entries(ctx.solveNotices["a1"] ?? {})
+          .map(([n, e]) => `${n}:${e}`)
+          .join("|") || "∅"}
+      </div>
       <div data-testid="selected">{ctx.selectedId ?? "none"}</div>
       <div data-testid="hydrating">{ctx.hydratingId ?? "none"}</div>
       <div data-testid="turns">{turns.map((t) => `${t.role}:${t.text}`).join("|")}</div>
@@ -757,6 +765,42 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     await act(async () => {
       finish({ attachmentId: "a1", executionId: "e2", results: {}, appliedContents: [], builderSession: { phase: "ready" } });
     });
+  });
+
+  it("dev/118: waves, written-not-executed pills and pending/skipped notices ride the stream and clear on done", async () => {
+    let emit: (name: string, payload: Record<string, unknown>) => void = () => undefined;
+    let finish: (r: Awaited<ReturnType<typeof api.solveAttachmentStream>>) => void = () => undefined;
+    api.solveAttachmentStream.mockImplementation(
+      (_p: string, _a: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        emit = onEvent;
+        return new Promise((res) => {
+          finish = res;
+        }) as ReturnType<typeof api.solveAttachmentStream>;
+      },
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("solve"));
+    await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
+    act(() => {
+      emit("solve_wave", { wave: 1, of: 2, nodeIds: ["n1", "v1"] });
+      emit("node_started", { nodeId: "n1" });
+      emit("node_result", { nodeId: "n1", status: "solved", verdict: "pass", content: "df" });
+      emit("node_result", { nodeId: "v1", status: "solved", content: "{}",
+        verification: { status: "not-executable", reason: "vis-vega runs in the browser, not the sandbox — written, not executed" } });
+      emit("solve_wave", { wave: 2, of: 2, nodeIds: ["n2"] });
+      emit("node_result", { nodeId: "n2", status: "pending", reason: "the batch's time budget (45 min) was spent — Retry continues from here" });
+    });
+    expect(screen.getByTestId("solve-wave")).toHaveTextContent("2/2:n2");
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:verified|v1:written|n2:pending");
+    expect(screen.getByTestId("solve-notices")).toHaveTextContent(
+      "v1:vis-vega runs in the browser, not the sandbox — written, not executed|n2:pending — the batch's time budget (45 min) was spent — Retry continues from here",
+    );
+    expect(screen.getByTestId("solve-errors")).toHaveTextContent("∅"); // notices are not errors
+    await act(async () => {
+      finish({ attachmentId: "a1", executionId: "e1", results: {}, appliedContents: [], builderSession: { phase: "applied" } });
+    });
+    expect(screen.getByTestId("solve-wave")).toHaveTextContent("∅"); // the wave clears with the overlay
+    expect(screen.getByTestId("solve-notices")).not.toHaveTextContent("∅"); // notices stay until the next solve
   });
 
   it("overlays per-node progress, applies solved content live, and clears on done", async () => {

@@ -269,12 +269,13 @@ before.
 ### Solve is the engineering loop — and it runs in the background
 
 Grounding says where a data-loading node's source may come from; it does not
-say the code works. **Solve** does (memo dev/115, DEC-073). When you ask to
-solve a data-loading node — the Dataflow Builder's **Solve** over an applied
-plan, or **Solve this node** in the chat of an agent attached to the node — the
-runtime executes the node's code in the sandbox exactly as Play would (same
-dataset-path mapping, a fetch-sized timeout aligned to the sandbox's own wall
-clock), and only code that ran successfully lands:
+say the code works. **Solve** does (memo dev/115, DEC-073; every executable
+kind since memo dev/118, DEC-075). When you ask to solve a node — the Dataflow
+Builder's **Solve** over an applied plan, or **Solve this node** in the chat of
+an agent attached to the node — the runtime executes the node's code in the
+sandbox exactly as Play would (same dataset-path mapping, a fetch-sized timeout
+aligned to the sandbox's own wall clock), and only code that ran successfully
+lands:
 
 | The run… | Then |
 |---|---|
@@ -348,9 +349,34 @@ non-blocking hint naming the line, with the same **Save as connection key**
 route the Solve cards offer; nothing is refused, rewritten or sent — the
 finding is a name and a line, and it stays in the browser tab.
 
-Today Solve verifies **data-loading nodes**; other node kinds keep the
-generate-and-write path. `verify: false` on the Solve request keeps the legacy
-behaviour for automation. The per-node execution timeout is
+**Every executable kind, in waves.** Solve verifies every node kind the
+sandbox can run — the Python kinds and JavaScript computation. A batch runs the
+plan the way Play would: in topological waves, roots first, each wave's nodes
+in parallel. A wave's verified content is written at the wave boundary, so the
+next wave generates and executes against the upstream code that actually ran,
+and a downstream correction is told what its upstreams produced (`upstreamOutputs`,
+the output data type). An upstream that passed earlier in the batch is not run
+again: its recorded output stands in, and if that artifact has meanwhile
+vanished the slice runs whole once, silently, before the result counts. A
+process that dies between waves keeps every persisted wave; Retry continues.
+
+**What cannot run is never called verified.** Vega and Autark specs, merge
+nodes, data pools and node kinds from packages without a runner mapping render
+in the browser. Solve writes them as before and says so — *written — runs in
+the browser, not executed* on the pill, `not executable` in a review's attempt
+trail, and the Node Builder's proposal card reads *Solve writes it, Play renders
+it* instead of promising a run. The same word appears when you ask **Solve this
+node** or validate-node on such a node: nothing runs, nothing is claimed.
+
+**Bounds.** A batch has a time budget (`CURIO_SOLVE_BATCH_DEADLINE`, seconds,
+default 45 minutes), checked at every wave boundary and before every node.
+What it did not reach stays *pending* with the reason, the Solve card names it
+once, and Retry continues from there. A node whose upstream slice exceeds the
+validation bound (25 nodes) or contains a cycle is *skipped* with the bound
+named — a bound on validation, never a failure of the content — and no
+correction is spent on it. The stale-run marker (15 minutes) is measured from
+the last completed wave. `verify: false` on the Solve request keeps the legacy
+write for every kind. The per-node execution timeout is
 `CURIO_VALIDATION_EXEC_TIMEOUT` (seconds, default 300).
 
 ---
