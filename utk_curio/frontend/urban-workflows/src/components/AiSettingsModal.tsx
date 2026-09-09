@@ -5,6 +5,7 @@ import styles from "./AiSettingsModal.module.css";
 import { useUserContext } from "../providers/UserProvider";
 import { agentsApi, ProviderDefault } from "../api/agentsApi";
 import { ConnectionKeysSection } from "./connectionKeys/ConnectionKeysSection";
+import { ModelTrainingSection } from "./training/ModelTrainingSection";
 import type { ConnectionKeysFocus } from "./connectionKeys/connectionKeysRequest";
 
 interface Props {
@@ -555,6 +556,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
 
             {/* dev/116 (DEC-074): API keys a data-loading node reaches by name. */}
             <ConnectionKeysSection focus={focus} />
+            {/* dev/122 (DEC-078): fine-tune this model on Curio's own approved
+                examples — or say, in the endpoint's own words, that it cannot. */}
+            <ModelTrainingSection />
 
             {error && <p className={modal.error}>{error}</p>}
             {success && <p className={modal.success}>Settings saved.</p>}
