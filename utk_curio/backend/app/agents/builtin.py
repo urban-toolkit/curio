@@ -90,6 +90,12 @@ class BuiltinAgentSpec:
     # byte-identical; composites that mint mutation proposals declare
     # "review-before-apply".
     review_policy: str = "report-only"
+    # runtime.execution (dev/115, DEC-073): "background" declares that a SERVER
+    # path of this agent outlives the HTTP request — the Dataflow Builder's
+    # Solve runs as a detached, re-attachable job. The dock projects a running
+    # indicator from the live job (docs/11:178). Every other built-in stays
+    # "foreground" byte-identically.
+    execution: str = "foreground"
 
     def target_kinds(self) -> tuple[str, ...]:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
@@ -277,7 +283,9 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.researcher"),
                      # dev/106: Solve/Validate hard-invoke node.content.generate.
                      requires_agents=("agent.node-content-builder",),
-                     review_policy="review-before-apply"),
+                     review_policy="review-before-apply",
+                     # dev/115 (DEC-073): Solve is a detached background job.
+                     execution="background"),
     # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
     # Net-new instruction. Deviations recorded in the memo: roster-generated
     # manifest (foreground, no settingsDefaults); the dev/16 installedPackages
@@ -404,7 +412,7 @@ def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
         "inputs": {"reads": list(spec.reads), "requiredConfig": []},
         # Typed tool requirements (dev/41) — all optional declarations.
         "tools": [{"id": t} for t in spec.tools],
-        "runtime": {"execution": "foreground", "reviewPolicy": spec.review_policy},
+        "runtime": {"execution": spec.execution, "reviewPolicy": spec.review_policy},
         "providerRequirements": {"capabilities": ["structured-output"]},
         "provenance": {"publisher": "curio", "license": "MIT", "trust": "built-in"},
     }

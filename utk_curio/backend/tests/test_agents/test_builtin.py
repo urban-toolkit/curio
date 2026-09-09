@@ -309,6 +309,25 @@ class TestDatasetFinderComposite:
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
 
 
+class TestBackgroundExecutionRoster:
+    """dev/115 (DEC-073): the Dataflow Builder alone declares
+    ``runtime.execution: "background"`` — its Solve outlives the request as a
+    detached job; every other built-in stays foreground byte-identically."""
+
+    def test_only_the_dataflow_builder_is_background(self):
+        background = [
+            spec.agent_id for spec in builtin.BUILTIN_AGENTS if spec.execution == "background"
+        ]
+        assert background == ["agent.dataflow-builder"]
+        dfb = builtin.build_builtin_manifest(builtin.get_builtin_spec("agent.dataflow-builder@1.0.0"))
+        assert dfb["runtime"] == {"execution": "background", "reviewPolicy": "review-before-apply"}
+        for spec in builtin.BUILTIN_AGENTS:
+            if spec.agent_id != "agent.dataflow-builder":
+                assert builtin.build_builtin_manifest(spec)["runtime"]["execution"] == "foreground"
+        # And the field parses through the manifest contract.
+        assert builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0") is not None
+
+
 class TestRequiresAgentsRoster:
     """dev/106 roster-wide invariant: hard dependencies are declared delegates
     and resolve to a roster agent."""

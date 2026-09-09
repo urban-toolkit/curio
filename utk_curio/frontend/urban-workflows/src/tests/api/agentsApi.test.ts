@@ -494,3 +494,72 @@ describe("agentsApi", () => {
     );
   });
 });
+describe("dev/115 — per-node Solve and background-job re-attach streams", () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  function streamResponse(frames: string[]) {
+    const encoder = new TextEncoder();
+    const chunks = frames.map((f) => encoder.encode(f));
+    let i = 0;
+    return {
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({}),
+      body: {
+        getReader: () => ({
+          read: () =>
+            Promise.resolve(
+              i < chunks.length ? { done: false, value: chunks[i++] } : { done: true, value: undefined },
+            ),
+        }),
+      },
+    } as unknown as Response;
+  }
+
+  it("solveNodeStream posts the node id and resolves with the done payload", async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      streamResponse([
+        'event: solve_node_started\ndata: {"nodeId": "n1", "hasContent": true}\n\n',
+        'event: generation_round\ndata: {"round": 1}\n\n',
+        'event: round_verdict\ndata: {"round": 1, "verdict": "pass"}\n\n',
+        'event: done\ndata: {"nodeId": "n1", "verdict": "pass", "rounds": 1, "unchanged": true, "attempts": []}\n\n',
+      ]),
+    );
+    const seen: string[] = [];
+    const done = await agentsApi.solveNodeStream("p1", "att-1", "n1", (n) => seen.push(n));
+    expect(seen).toEqual(["solve_node_started", "generation_round", "round_verdict"]);
+    expect(done).toMatchObject({ verdict: "pass", unchanged: true });
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/agents/projects/p1/attachments/att-1/solve-node"),
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ nodeId: "n1" }) }),
+    );
+  });
+
+  it("attachJobStream is a GET that replays, tails, and resolves with done (or null)", async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      streamResponse([
+        'event: job\ndata: {"executionId": "e1", "kind": "solve-batch", "status": "running"}\n\n',
+        'event: solve_started\ndata: {"executionId": "e1", "targets": ["n1"]}\n\n',
+        'event: node_verdict\ndata: {"nodeId": "n1", "round": 1, "verdict": "pass"}\n\n',
+        'event: done\ndata: {"attachmentId": "a1", "executionId": "e1", "results": {"n1": {"status": "solved", "verdict": "pass"}}, "appliedContents": [], "builderSession": {"phase": "ready"}}\n\n',
+      ]),
+    );
+    const seen: string[] = [];
+    const done = await agentsApi.attachJobStream("p1", "att-1", (n) => seen.push(n));
+    expect(seen).toEqual(["job", "solve_started", "node_verdict"]);
+    expect(done).toMatchObject({ executionId: "e1" });
+    const init = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe("GET");
+    expect(init.body).toBeUndefined();
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+    expect((global.fetch as jest.Mock).mock.calls[0][0]).toContain("/attachments/att-1/jobs/stream");
+    // An errored job's replay ends without done → null, no throw.
+    global.fetch = jest.fn().mockResolvedValue(
+      streamResponse(['event: job\ndata: {"executionId": "e2", "status": "error"}\n\n']),
+    );
+    expect(await agentsApi.attachJobStream("p1", "att-1", () => undefined)).toBeNull();
+  });
+});

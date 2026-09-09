@@ -397,3 +397,24 @@
     color: var(--curio-text-secondary);
     overflow-wrap: anywhere;
 }
+
+/* dev/115 — the verification attempt trail (collapsed by default). */
+.attempts {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-size: 0.74rem;
+}
+
+.attemptHead {
+    font-weight: 600;
+}
+
+.attemptDetail {
+    color: var(--curio-text-secondary);
+}
+
+.attemptError summary {
+    cursor: pointer;
+    color: var(--curio-danger-text);
+    overflow-wrap: anywhere;
+}

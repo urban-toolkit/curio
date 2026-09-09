@@ -591,6 +591,39 @@ export const AgentReviewCard: React.FC<{
               <pre>{part.validation.evidence.stderrTail}</pre>
             </details>
           ) : null}
+          {part.validation.attempts && part.validation.attempts.length > 0 ? (
+            // dev/115 (Amendments A1/A2): the engineering loop's trail — every
+            // round the runtime ran (or refused before running), how it
+            // failed, and that a fix followed. Collapsed by default; plain text.
+            <details className={styles.validationDetails}>
+              <summary>
+                Verification · {part.validation.attempts.length} attempt
+                {part.validation.attempts.length === 1 ? "" : "s"}
+              </summary>
+              <ol className={styles.attempts} aria-label="Verification attempts">
+                {part.validation.attempts.map((attempt) => (
+                  <li key={attempt.round}>
+                    <span className={styles.attemptHead}>
+                      Round {attempt.round} · {attempt.verdict === "pass" ? "pass ✓" : attempt.verdict}
+                      {attempt.kind && attempt.verdict !== "pass" ? ` · ${attempt.kind}` : ""}
+                      {attempt.source === "current content" ? " · the node's current code" : ""}
+                    </span>
+                    {attempt.verdict === "pass" ? (
+                      <span className={styles.attemptDetail}>
+                        {attempt.outputDataType ? ` output: ${attempt.outputDataType}` : ""}
+                        {typeof attempt.durationMs === "number" ? ` · ${(attempt.durationMs / 1000).toFixed(1)} s` : ""}
+                      </span>
+                    ) : attempt.detail || attempt.stderrTail ? (
+                      <details className={styles.attemptError}>
+                        <summary>{(attempt.detail ?? attempt.stderrTail ?? "").slice(0, 120)}</summary>
+                        <pre>{attempt.stderrTail ?? attempt.detail}</pre>
+                      </details>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ) : null}
         </div>
       ) : null}
       {part.tool === "dataflow.plan.write" && part.plan && pending && onApplyPlanNode ? (
@@ -721,7 +754,17 @@ export const AgentReviewCard: React.FC<{
       {planEffectLine(part) ? (
         <div className={styles.meta}>{planEffectLine(part)}</div>
       ) : EFFECT_LINE[part.tool] ? (
-        <div className={styles.meta}>{EFFECT_LINE[part.tool]}</div>
+        <div className={styles.meta}>
+          {EFFECT_LINE[part.tool]}
+          {part.tool === "node.create" && part.source ? (
+            // dev/115 (Amendment A2): Apply places the node as proposed; the
+            // user's Solve is what runs, fixes, and verifies its code.
+            <>
+              {" "}
+              Solve runs it in the sandbox and fixes errors before its code is trusted.
+            </>
+          ) : null}
+        </div>
       ) : null}
       {pending && (onApply || onDismiss) ? (
         <div className={styles.actions}>

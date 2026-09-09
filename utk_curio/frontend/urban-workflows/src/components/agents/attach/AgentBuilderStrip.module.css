@@ -82,6 +82,12 @@
 .status_solved { color: var(--curio-success-text); }
 .status_failed { color: var(--curio-danger-text); }
 .status_skipped { color: var(--curio-warning-text); }
+/* dev/115: the verified loop's live states. */
+.status_generating { color: var(--curio-role-running-fg); }
+.status_verifying { color: var(--curio-role-running-fg); font-style: italic; }
+.status_fixing { color: var(--curio-warning-text); }
+.status_verified { color: var(--curio-success-text); font-weight: 600; }
+.status_proposed { color: var(--curio-text-secondary); }
 
 .actions {
   display: flex;

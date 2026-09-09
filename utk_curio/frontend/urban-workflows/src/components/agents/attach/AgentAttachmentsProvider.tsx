@@ -120,6 +120,15 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** Cancel the running solve (dev/63): in-flight children finish and
    * persist; undispatched targets revert to pending. */
   cancelSolve: (attachmentId: string) => Promise<void>;
+  /** dev/115 (Amendment A2): the per-node Solve — run the node's current
+   * code, fix, re-run; lands an executed review (or writes an empty node). */
+  solveNode: (attachmentId: string, nodeId: string) => Promise<Record<string, unknown>>;
+  /** dev/115: transient narration of the running per-node Solve. */
+  solveNodeActivity: Record<string, string>;
+  /** dev/115 (DEC-021 slice): re-attach to the attachment's running background
+   * job (a Solve that outlived a closed panel or a reload) — replays, tails,
+   * and refreshes the session when it finishes. */
+  attachSolveJob: (attachmentId: string) => Promise<void>;
   /** Dismiss a pending review proposal without applying it. */
   dismissProposal: (attachmentId: string, proposalId: string) => Promise<void>;
 }
@@ -148,6 +157,10 @@ export const AgentAttachmentsProvider: React.FC<{
   // dev/63: the live solve's per-node overlay + its abort handle.
   const [solveProgress, setSolveProgress] = useState<Record<string, Record<string, string>>>({});
   const [solveErrors, setSolveErrors] = useState<Record<string, Record<string, string>>>({});
+  // dev/115: the per-node Solve's narration, and the background jobs this
+  // client is already attached to (never attach twice to one execution).
+  const [solveNodeActivity, setSolveNodeActivity] = useState<Record<string, string>>({});
+  const attachedJobsRef = useRef<Set<string>>(new Set());
   // dev/67-9: the running simulation's narration line, per attachment.
   const [simulationActivity, setSimulationActivity] = useState<Record<string, string>>({});
   const solveAbortRef = useRef<Map<string, AbortController>>(new Map());
@@ -631,6 +644,48 @@ export const AgentAttachmentsProvider: React.FC<{
     [state.reload],
   );
 
+  // dev/115: ONE handler for the Solve stream, whether the batch was started
+  // here or re-attached — node_started/node_result (dev/63) plus the verified
+  // loop's rounds (node_round → generating, node_executed → verifying,
+  // node_verdict → verified | fixing) so the pills say what is happening.
+  const solveEventHandler = useCallback(
+    (attachmentId: string) => {
+      const mark = (nodeId: string, status: string) =>
+        setSolveProgress((prev) => ({
+          ...prev,
+          [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: status },
+        }));
+      return (name: string, payload: Record<string, unknown>) => {
+        const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : null;
+        if (!nodeId) return;
+        if (name === "node_started") mark(nodeId, "solving");
+        else if (name === "node_round") mark(nodeId, "generating");
+        else if (name === "node_executed") mark(nodeId, "verifying");
+        else if (name === "node_verdict")
+          mark(nodeId, payload.verdict === "pass" ? "verified" : payload.verdict === "fail" ? "fixing" : "solving");
+        else if (name === "node_result") {
+          const status = typeof payload.status === "string" ? payload.status : "failed";
+          mark(nodeId, status === "solved" && payload.verdict === "pass" ? "verified" : status);
+          if (typeof payload.error === "string" && payload.error) {
+            const reason = payload.error;
+            setSolveErrors((prev) => ({
+              ...prev,
+              [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: reason },
+            }));
+          }
+          if (payload.status === "solved" && typeof payload.content === "string") {
+            notifyAgentCanvasMutation({
+              kind: "node-content-applied",
+              nodeId,
+              content: payload.content,
+            });
+          }
+        }
+      };
+    },
+    [],
+  );
+
   const solveAttachment = useCallback(
     async (attachmentId: string, nodeIds?: string[]) => {
       const pid = projectRef.current;
@@ -642,11 +697,6 @@ export const AgentAttachmentsProvider: React.FC<{
       // end either way; the overlay is display-only.
       const controller = new AbortController();
       solveAbortRef.current.set(attachmentId, controller);
-      const mark = (nodeId: string, status: string) =>
-        setSolveProgress((prev) => ({
-          ...prev,
-          [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: status },
-        }));
       // dev/106: a fresh batch starts with a clean reason slate.
       setSolveErrors((prev) => {
         const { [attachmentId]: _gone, ...rest } = prev;
@@ -656,27 +706,7 @@ export const AgentAttachmentsProvider: React.FC<{
         const result = await agentsApi.solveAttachmentStream(
           pid,
           attachmentId,
-          (name, payload) => {
-            const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : null;
-            if (name === "node_started" && nodeId) mark(nodeId, "solving");
-            else if (name === "node_result" && nodeId) {
-              mark(nodeId, typeof payload.status === "string" ? payload.status : "failed");
-              if (typeof payload.error === "string" && payload.error) {
-                const reason = payload.error;
-                setSolveErrors((prev) => ({
-                  ...prev,
-                  [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: reason },
-                }));
-              }
-              if (payload.status === "solved" && typeof payload.content === "string") {
-                notifyAgentCanvasMutation({
-                  kind: "node-content-applied",
-                  nodeId,
-                  content: payload.content,
-                });
-              }
-            }
-          },
+          solveEventHandler(attachmentId),
           nodeIds,
           controller.signal,
         );
@@ -688,6 +718,96 @@ export const AgentAttachmentsProvider: React.FC<{
           return rest;
         });
         // The solve result turn + the builder session both refresh.
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
+  // dev/115 (DEC-021 slice): re-attach to a running background Solve — the
+  // batch kept going while the panel was closed or the page reloaded; the
+  // stream replays what happened and tails the rest. One attach per
+  // execution; the session refetch at the end is the truth.
+  const attachSolveJob = useCallback(
+    async (attachmentId: string) => {
+      const pid = projectRef.current;
+      if (!pid) return;
+      const attachment = state.attachments.find((a) => a.attachmentId === attachmentId);
+      const job = attachment?.liveJob;
+      if (!job || job.status !== "running" || attachedJobsRef.current.has(job.executionId)) return;
+      attachedJobsRef.current.add(job.executionId);
+      const controller = new AbortController();
+      solveAbortRef.current.set(attachmentId, controller);
+      try {
+        if (job.kind === "solve-batch") {
+          await agentsApi.attachJobStream(pid, attachmentId, solveEventHandler(attachmentId), controller.signal);
+        } else {
+          await agentsApi.attachJobStream(
+            pid, attachmentId,
+            (name, payload) => {
+              const round = typeof payload.round === "number" ? payload.round : null;
+              const line =
+                name === "generation_round" ? `Round ${round ?? "?"} — generating…`
+                : name === "node_executed" ? `Round ${round ?? ""} — running in the sandbox…`.replace("Round  — ", "")
+                : name === "round_verdict" ? `Round ${round ?? "?"} — ${payload.verdict === "pass" ? "passed" : "failed, fixing…"}`
+                : null;
+              if (line) setSolveNodeActivity((prev) => ({ ...prev, [attachmentId]: line }));
+            },
+            controller.signal,
+          );
+        }
+      } catch {
+        // A dropped re-attach is display-only; the job runs on the server.
+      } finally {
+        solveAbortRef.current.delete(attachmentId);
+        setSolveProgress((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
+        setSolveNodeActivity((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, solveEventHandler, state.attachments, state.reload],
+  );
+
+  // Opening a chat whose attachment carries a running job re-attaches to it.
+  useEffect(() => {
+    if (!selectedId) return;
+    const attachment = state.attachments.find((a) => a.attachmentId === selectedId);
+    if (attachment?.liveJob?.status === "running") void attachSolveJob(selectedId);
+  }, [selectedId, state.attachments, attachSolveJob]);
+
+  // dev/115 (Amendment A2): the per-node Solve from the node's own agent.
+  const solveNode = useCallback(
+    async (attachmentId: string, nodeId: string) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      setSolveNodeActivity((prev) => ({ ...prev, [attachmentId]: "Starting — running the node's current code…" }));
+      try {
+        return await agentsApi.solveNodeStream(pid, attachmentId, nodeId, (name, payload) => {
+          const round = typeof payload.round === "number" ? payload.round : null;
+          const line =
+            name === "generation_round"
+              ? round === 1 ? "Round 1 — running the current code…" : `Round ${round} — generating a fix…`
+              : name === "node_executed" ? "Running in the sandbox…"
+              : name === "round_verdict"
+                ? `Round ${round ?? "?"} — ${payload.verdict === "pass" ? "passed ✓" : payload.verdict === "fail" ? "failed — fixing…" : "not verified (sandbox unreachable)"}`
+                : null;
+          if (line) setSolveNodeActivity((prev) => ({ ...prev, [attachmentId]: line }));
+        });
+      } finally {
+        setSolveNodeActivity((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
         hydratedRef.current.delete(attachmentId);
         await hydrateSession(attachmentId);
         await state.reload();
@@ -802,6 +922,9 @@ export const AgentAttachmentsProvider: React.FC<{
       solveProgress,
       solveErrors,
       cancelSolve,
+      solveNode,
+      solveNodeActivity,
+      attachSolveJob,
       applyPlanNode,
       savePlanGoal,
       applyPlanEdges,
@@ -832,6 +955,9 @@ export const AgentAttachmentsProvider: React.FC<{
       solveProgress,
       solveErrors,
       cancelSolve,
+      solveNode,
+      solveNodeActivity,
+      attachSolveJob,
       applyPlanNode,
       savePlanGoal,
       applyPlanEdges,

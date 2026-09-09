@@ -24,6 +24,8 @@ jest.mock("../../api/agentsApi", () => ({
     applyProposal: jest.fn(),
     dismissProposal: jest.fn(),
     solveAttachmentStream: jest.fn(),
+    solveNodeStream: jest.fn(),
+    attachJobStream: jest.fn(),
     cancelSolve: jest.fn(),
     applyPlanNode: jest.fn(),
     savePlanGoal: jest.fn(),
@@ -88,6 +90,8 @@ const Harness: React.FC = () => {
         run-simulation
       </button>
       <button onClick={() => void ctx.cancelSolve("a1")}>cancel-solve</button>
+      <button onClick={() => void ctx.solveNode("a1", "n1").catch(() => undefined)}>solve-node</button>
+      <div data-testid="solve-node-activity">{ctx.solveNodeActivity["a1"] ?? "∅"}</div>
       <div data-testid="solve-progress">
         {Object.entries(ctx.solveProgress["a1"] ?? {})
           .map(([n, st]) => `${n}:${st}`)
@@ -1043,5 +1047,101 @@ describe("AgentAttachmentsProvider run status (memo dev/80)", () => {
     });
     expect(snapshots.some((s) => s.hasExecution)).toBe(true);
     expect(snapshots.filter((s) => s.hasExecution && s.phase !== "done")).toEqual([]);
+  });
+});
+
+
+describe("AgentAttachmentsProvider — dev/115 verified Solve as a background job", () => {
+  it("the verified loop's stream events drive the pills: generating → verifying → verified", async () => {
+    let emit: (name: string, payload: Record<string, unknown>) => void = () => undefined;
+    let finish: (r: Awaited<ReturnType<typeof api.solveAttachmentStream>>) => void = () => undefined;
+    api.solveAttachmentStream.mockImplementation(
+      (_p: string, _a: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        emit = onEvent;
+        return new Promise((res) => {
+          finish = res;
+        }) as ReturnType<typeof api.solveAttachmentStream>;
+      },
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("solve"));
+    await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
+    act(() => {
+      emit("node_started", { nodeId: "n1" });
+      emit("node_round", { nodeId: "n1", round: 1 });
+    });
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:generating");
+    act(() => emit("node_executed", { nodeId: "n1", index: 0, total: 1 }));
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:verifying");
+    act(() => emit("node_verdict", { nodeId: "n1", round: 1, verdict: "fail" }));
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:fixing");
+    act(() => {
+      emit("node_verdict", { nodeId: "n1", round: 2, verdict: "pass" });
+      emit("node_result", { nodeId: "n1", status: "solved", verdict: "pass", content: "df" });
+    });
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:verified");
+    await act(async () => {
+      finish({ attachmentId: "a1", executionId: "e1", results: { n1: { status: "solved", verdict: "pass" } },
+               appliedContents: [{ nodeId: "n1", content: "df" }], builderSession: { phase: "ready" } });
+    });
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("∅");
+  });
+
+  it("opening a chat whose attachment carries a running job re-attaches once and refreshes on done", async () => {
+    api.listAttachments.mockResolvedValue({
+      attachments: [{ ...attachment, liveJob: { executionId: "e9", kind: "solve-batch", status: "running", startedAt: 1 } }],
+    });
+    let finish: (r: Record<string, unknown> | null) => void = () => undefined;
+    api.attachJobStream.mockImplementation(
+      (_p: string, _a: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        onEvent("job", { executionId: "e9", kind: "solve-batch", status: "running" });
+        onEvent("solve_started", { executionId: "e9", targets: ["n1"] });
+        onEvent("node_executed", { nodeId: "n1", index: 0, total: 1 });
+        return new Promise((res) => {
+          finish = res;
+        });
+      },
+    );
+    renderProvider();
+    await waitFor(() => expect(api.listAttachments).toHaveBeenCalled());
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(api.attachJobStream).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:verifying");
+    // Re-opening does not attach twice to the same execution.
+    fireEvent.click(screen.getByText("close"));
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("selected")).toHaveTextContent("a1"));
+    expect(api.attachJobStream).toHaveBeenCalledTimes(1);
+    const sessionCalls = api.getSession.mock.calls.length;
+    await act(async () => {
+      finish({ attachmentId: "a1", executionId: "e9", results: {}, appliedContents: [], builderSession: { phase: "ready" } });
+    });
+    // The session and the listing refresh once the job finished.
+    await waitFor(() => expect(api.getSession.mock.calls.length).toBeGreaterThan(sessionCalls));
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("∅");
+  });
+
+  it("solveNode narrates the rounds and clears on done", async () => {
+    let finish: (r: Record<string, unknown>) => void = () => undefined;
+    api.solveNodeStream.mockImplementation(
+      (_p: string, _a: string, _n: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        onEvent("solve_node_started", { nodeId: "n1", hasContent: true });
+        onEvent("generation_round", { round: 1 });
+        onEvent("round_verdict", { round: 1, verdict: "fail" });
+        onEvent("generation_round", { round: 2 });
+        return new Promise((res) => {
+          finish = res;
+        });
+      },
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("solve-node"));
+    await waitFor(() => expect(api.solveNodeStream).toHaveBeenCalledWith("p1", "a1", "n1", expect.any(Function)));
+    expect(screen.getByTestId("solve-node-activity")).toHaveTextContent("Round 2 — generating a fix…");
+    await act(async () => {
+      finish({ nodeId: "n1", verdict: "pass", rounds: 2, proposalId: "p2" });
+    });
+    expect(screen.getByTestId("solve-node-activity")).toHaveTextContent("∅");
+    expect(api.getSession).toHaveBeenCalled();
   });
 });

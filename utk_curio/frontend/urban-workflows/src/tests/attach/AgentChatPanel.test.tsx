@@ -1131,3 +1131,43 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
     );
   });
 });
+
+describe("AgentChatPanel — dev/115 the per-node Solve row", () => {
+  const nodeAttachment: AgentAttachment = {
+    ...attachment,
+    coord: "agent.node-builder@1.0.0",
+    name: "Node Builder",
+    target: { kind: "node" as const, targetId: "n1" },
+  };
+
+  it("offers Solve this node for a node-attached agent and reports the outcome", async () => {
+    const onSolveNode = jest.fn().mockResolvedValue({ verdict: "pass", rounds: 2, proposalId: "p9" });
+    renderPanel({ attachment: nodeAttachment, targetName: "Data Loading", onSolveNode });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    expect(row).toHaveTextContent(/only code that passed lands/);
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    expect(onSolveNode).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(within(row).getByRole("status")).toHaveTextContent(/corrected code ran successfully/),
+    );
+  });
+
+  it("a live per-node job shows Solving with the background copy and the narration", () => {
+    renderPanel({
+      attachment: { ...nodeAttachment, liveJob: { executionId: "e2", kind: "solve-node", status: "running", startedAt: 1 } },
+      onSolveNode: jest.fn(),
+      solveNodeActivity: "Round 2 — generating a fix…",
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    expect(within(row).getByRole("button", { name: "Solving…" })).toBeDisabled();
+    expect(row).toHaveTextContent("Solve keeps running if you close this panel.");
+    expect(row).toHaveTextContent("Round 2 — generating a fix…");
+  });
+
+  it("no row for canvas attachments or without the callback", () => {
+    renderPanel({ attachment: nodeAttachment });
+    expect(screen.queryByRole("group", { name: "Solve this node" })).toBeNull();
+    renderPanel({ onSolveNode: jest.fn() }); // canvas target
+    expect(screen.queryByRole("group", { name: "Solve this node" })).toBeNull();
+  });
+});

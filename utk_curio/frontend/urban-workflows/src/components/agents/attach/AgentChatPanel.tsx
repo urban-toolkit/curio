@@ -22,6 +22,7 @@ import type {
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import { attachmentDisplayName, TITLE_MAX_CHARS } from "./attachmentDisplayName";
 import { AgentBuilderStrip } from "./AgentBuilderStrip";
+import { NodeSolveRow } from "./NodeSolveRow";
 import { AgentChatCard } from "../content/AgentChatCard";
 import { AgentDatasetCandidatesCard } from "../content/AgentDatasetCandidatesCard";
 import { AgentDelegationEntry } from "../content/AgentDelegationEntry";
@@ -125,6 +126,12 @@ export const AgentChatPanel: React.FC<{
   solveErrors?: Record<string, string>;
   /** dev/63: cancel the running solve. */
   onCancelSolve?: () => Promise<void>;
+  /** dev/115 (Amendment A2): the per-node Solve — offered when this agent is
+   * attached to a node; runs the node's current code in the sandbox, fixes
+   * errors, re-runs, and lands an executed review. Omitted → no row. */
+  onSolveNode?: () => Promise<unknown>;
+  /** dev/115: the running per-node Solve's narration. */
+  solveNodeActivity?: string | null;
   /** dev/72: opens ANOTHER attachment's chat — the delegation entries' and
    * plan-row chips' icon-links route through this. Omitted → entries inert. */
   onOpenAgentChat?: (attachmentId: string) => void;
@@ -161,6 +168,8 @@ export const AgentChatPanel: React.FC<{
   onCancelSimulate,
   simulationActivity,
   onSolve,
+  onSolveNode,
+  solveNodeActivity = null,
   solveProgress,
   solveErrors,
   onCancelSolve,
@@ -555,6 +564,13 @@ export const AgentChatPanel: React.FC<{
 
       {/* The dev/52 builder strip: Dataflow Builder attachments only — every
           other agent's chat is pixel-identical. */}
+      {onSolveNode && attachment.target.kind === "node" ? (
+        <NodeSolveRow
+          onSolveNode={onSolveNode}
+          activity={solveNodeActivity}
+          live={attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-node"}
+        />
+      ) : null}
       {onSolve && attachment.coord.startsWith("agent.dataflow-builder@") ? (
         <AgentBuilderStrip
           attachment={attachment}

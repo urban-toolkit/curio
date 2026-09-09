@@ -18,7 +18,22 @@ const PHASE_RANK: Record<string, number> = {
   simulating: 2, // dev/67-5: per-node create/solve in progress
   applied: 2,
   solving: 2,
+  interrupted: 2, // dev/115: the server stopped mid-solve — Retry continues
   ready: 3,
+};
+
+/** dev/115: what a live pill state means, in words (never colour alone). */
+const STATUS_LABEL: Record<string, string> = {
+  solving: "solving",
+  generating: "generating…",
+  verifying: "verifying — running in the sandbox…",
+  fixing: "fixing — the run failed, correcting…",
+  verified: "solved ✓ verified",
+  solved: "solved",
+  failed: "failed",
+  skipped: "skipped",
+  pending: "pending",
+  proposed: "review pending",
 };
 
 /**
@@ -87,8 +102,9 @@ export const AgentBuilderStrip: React.FC<{
   // dev/83: the shared running-status line (dot + elapsed + fraction) replaces
   // the bare "solving…" note — one status language with the reply meta lines.
   // One fixed label per batch kind; the fraction counts terminal node states.
+  const liveJob = attachment.liveJob?.status === "running" ? attachment.liveJob : null;
   const activeBatchLabel =
-    solving || phase === "solving"
+    solving || phase === "solving" || liveJob?.kind === "solve-batch"
       ? "Solving"
       : simBusy === "auto"
         ? "Building"
@@ -96,7 +112,7 @@ export const AgentBuilderStrip: React.FC<{
           ? "Stepping"
           : null;
   const batchDone = entries.filter(
-    ([, s]) => s === "solved" || s === "failed" || s === "skipped",
+    ([, s]) => s === "solved" || s === "verified" || s === "failed" || s === "skipped",
   ).length;
   const batchDetail = entries.length > 0 ? `${batchDone}/${entries.length} nodes` : undefined;
   // Elapsed is strip-local observation time: builderSession persists no batch
@@ -209,6 +225,7 @@ export const AgentBuilderStrip: React.FC<{
         : unresolved === 0
           ? "No pending nodes"
           : null;
+  const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
   const runDisabledReason =
     unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
 
@@ -255,7 +272,7 @@ export const AgentBuilderStrip: React.FC<{
             <li key={nodeId} className={styles.nodeRun}>
               <span className={styles.nodeId}>{nodeId.slice(0, 8)}</span>
               <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>
-                {status}
+                {STATUS_LABEL[status] ?? status}
               </span>
             </li>
           ))}
@@ -363,21 +380,29 @@ export const AgentBuilderStrip: React.FC<{
         <button
           type="button"
           className={styles.solve}
-          disabled={solving || phase === "solving" || Boolean(solveDisabledReason)}
-          title={solveDisabledReason ?? undefined}
+          disabled={solveRunning || Boolean(solveDisabledReason)}
+          title={
+            solveDisabledReason ??
+            (phase === "interrupted"
+              ? "A new execution linked to the interrupted one — nothing is replayed"
+              : "Data-loading nodes run in the sandbox and are fixed before their code is written")
+          }
           onClick={() => void solve(failed.length && !pending.length ? failed : undefined)}
         >
-          {solving || phase === "solving"
+          {solveRunning
             ? "Solving…"
-            : failed.length && !pending.length
-              ? `Retry ${failed.length} failed`
-              : "Solve"}
+            : phase === "interrupted"
+              ? `Retry ${unresolved} interrupted`
+              : failed.length && !pending.length
+                ? `Retry ${failed.length} failed`
+                : "Solve"}
         </button>
-        {onCancelSolve && (solving || phase === "solving") ? (
+        {onCancelSolve && solveRunning ? (
           <button
             type="button"
             className={styles.run}
             disabled={cancelling}
+            title="Stops after the current node finishes — a running fetch cannot be aborted"
             onClick={() => void cancel()}
           >
             {cancelling ? "Cancelling…" : "Cancel"}
@@ -395,6 +420,16 @@ export const AgentBuilderStrip: React.FC<{
       </div>
       {solveDisabledReason && phase !== "ready" ? (
         <div className={styles.hint}>{solveDisabledReason}</div>
+      ) : null}
+      {solveRunning ? (
+        // dev/115 (DEC-021 slice): the batch is a background job.
+        <div className={styles.hint}>Solve keeps running if you close this panel.</div>
+      ) : null}
+      {phase === "interrupted" ? (
+        <div className={styles.hint} role="status">
+          Solve was interrupted — the server stopped while it was running. Finished nodes kept
+          their content; nothing was replayed. Retry continues from what is still pending.
+        </div>
       ) : null}
       {simulationActivity ? (
         <div className={styles.hint} aria-live="polite">{simulationActivity}</div>

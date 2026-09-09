@@ -124,6 +124,22 @@ export interface AgentAttachment {
   /** The Dataflow Builder orchestration session (dev/52 DR-2) — drives the
    * phase-aware builder panel; absent for every other agent. */
   builderSession?: AgentBuilderSession | null;
+  /** dev/115 (DEC-073): the background job this server process holds for the
+   * attachment — a Solve batch or a per-node Solve that outlives the request.
+   * Null when none runs; the dock's running indicator and the chat panel's
+   * re-attach derive from it. */
+  liveJob?: AgentLiveJob | null;
+}
+
+/** dev/115: the liveness projection of a detached agent job — no event bodies. */
+export interface AgentLiveJob {
+  executionId: string;
+  kind: "solve-batch" | "solve-node" | string;
+  status: "running" | "done" | "error" | string;
+  startedAt: number;
+  heartbeatAt?: number;
+  finishedAt?: number | null;
+  events?: number;
 }
 
 /** The activeProposal mirror row (dev/41; dev/67-5/8/9 extensions). */
@@ -144,7 +160,13 @@ export interface AgentProposalSummary {
 /** dev/52 DR-2: the persisted Plan → Solve state riding the attachment.
  * dev/67-5 adds the per-node Simulation Mode ledger. */
 export interface AgentBuilderSession {
-  phase: "idle" | "plan_review" | "simulating" | "applied" | "solving" | "ready";
+  /** dev/115: `interrupted` — the server stopped while solving (DEC-021);
+   * Retry starts a new execution linked to it, nothing is replayed. */
+  phase: "idle" | "plan_review" | "simulating" | "applied" | "solving" | "ready" | "interrupted";
+  /** dev/115: when the session was reconciled to `interrupted`, and the
+   * execution that expired with the process. */
+  interruptedAt?: number;
+  interruptedExecutionId?: string;
   planProposalId?: string;
   appliedPlanId?: string;
   /** Plan-created node id → its solve status. */
@@ -368,7 +390,11 @@ export interface AgentProposalPart {
       blockerLabel?: string;
       warnings?: string;
       goal?: string;
+      durationMs?: number;
     };
+    /** dev/115: the attempt trail — one row per round the runtime executed
+     * (or refused before executing): what ran, how it failed, what fixed it. */
+    attempts?: AgentValidationAttempt[];
   };
   /** dataflow.plan.write only (dev/52): the plan's display copy for the review card. */
   plan?: {
@@ -525,10 +551,37 @@ export interface AgentPlanEdgesResult {
 
 /** dev/52 Solve response: per-node outcomes + live-canvas content payloads.
  * dev/63 adds the streamed batch's cancellation facts. */
+/** dev/115: one round of the verified-content loop, as the cards render it. */
+export interface AgentValidationAttempt {
+  round: number;
+  verdict: "pass" | "fail" | "infrastructure" | string;
+  kind?: string;
+  detail?: string;
+  stderrTail?: string;
+  outputDataType?: string;
+  durationMs?: number;
+  contentSha256?: string;
+  /** "current content" (round 0 ran the node as it was) or "generated". */
+  source?: string;
+}
+
+/** One node's outcome on the Solve payload (dev/63; dev/115 adds the verdict). */
+export interface AgentSolveNodeResult {
+  status: "solved" | "failed" | "skipped" | "pending" | "proposed" | string;
+  error?: string;
+  /** dev/115: a sandbox outage leaves the node pending with this reason. */
+  reason?: string;
+  verdict?: "pass" | "fail" | "infrastructure" | string;
+  rounds?: number;
+  attempts?: AgentValidationAttempt[];
+  proposalId?: string;
+  proposalAttachmentId?: string | null;
+}
+
 export interface AgentSolveResult {
   attachmentId: string;
   executionId: string;
-  results: Record<string, { status: "solved" | "failed" | "skipped"; error?: string }>;
+  results: Record<string, AgentSolveNodeResult>;
   appliedContents: Array<{ nodeId: string; content: string }>;
   builderSession: AgentBuilderSession;
   /** dev/63: true when the batch was cancelled (endpoint or disconnect). */
@@ -585,14 +638,17 @@ async function postSseStream(
   body: unknown,
   onFrame: (event: string, payload: Record<string, unknown>) => void,
   signal?: AbortSignal,
+  /** dev/115: the jobs re-attach stream is a GET (no body). */
+  method: "POST" | "GET" = "POST",
 ): Promise<void> {
   const token = getToken();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {};
+  if (method === "POST") headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${BACKEND_URL}${path}`, {
-    method: "POST",
+    method,
     headers,
-    body: JSON.stringify(body),
+    ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
     signal,
   });
   if (!res.ok) {
@@ -1140,6 +1196,66 @@ export const agentsApi = {
       signal,
     );
     if (result === null) throw new Error("validation ended without a result");
+    return result;
+  },
+
+  /**
+   * dev/115 (DEC-073, Amendment A2): the per-node Solve — run the node's
+   * CURRENT code in the sandbox, fix what fails, run again; a node with
+   * content lands as an already-executed content review, an empty node is
+   * written on PASS. Streams `solve_node_started` → `generation_round` /
+   * `node_executed` / `round_verdict` → `done`. Detached on the server:
+   * closing the stream does not stop the run (`attachJobStream` re-attaches).
+   */
+  async solveNodeStream(
+    projectId: string,
+    attachmentId: string,
+    nodeId: string,
+    onEvent: (name: string, payload: Record<string, unknown>) => void,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
+    let result: Record<string, unknown> | null = null;
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve-node`,
+      { nodeId },
+      (event, payload) => {
+        if (event === "done") result = payload;
+        else if (event === "error")
+          throw new Error((payload as { error?: string }).error || "solve failed");
+        else onEvent(event, payload);
+      },
+      signal,
+    );
+    if (result === null) throw new Error("solve-node ended without a result");
+    return result;
+  },
+
+  /**
+   * dev/115 (DEC-021 single-process slice): re-attach to the attachment's
+   * background job — replays every event so far (a leading `job` event
+   * carries the liveness projection), then tails live ones. Resolves with
+   * the `done` payload when the job finishes, or null when the replay ended
+   * without one (an errored job). 404 when there is nothing to attach to.
+   */
+  async attachJobStream(
+    projectId: string,
+    attachmentId: string,
+    onEvent: (name: string, payload: Record<string, unknown>) => void,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown> | null> {
+    let result: Record<string, unknown> | null = null;
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/jobs/stream`,
+      undefined,
+      (event, payload) => {
+        if (event === "done") result = payload;
+        else if (event === "error")
+          throw new Error((payload as { error?: string }).error || "the background job failed");
+        else onEvent(event, payload);
+      },
+      signal,
+      "GET",
+    );
     return result;
   },
 

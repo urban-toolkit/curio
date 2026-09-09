@@ -864,3 +864,52 @@ describe("AgentReviewCard — dev/114 (DEC-072) the Source block", () => {
     expect(container.textContent).toContain("<img src=x");
   });
 });
+
+describe("AgentReviewCard — dev/115 the verification attempt trail", () => {
+  const executed: AgentProposalPart = {
+    ...part(),
+    tool: "node.content.write",
+    summary: "Replace the content of node 'n1'",
+    validation: {
+      verdict: "pass",
+      rounds: 2,
+      evidence: { kind: "executed", outputDataType: "dataframe", durationMs: 4120 },
+      attempts: [
+        { round: 1, verdict: "fail", kind: "execution-error", source: "current content",
+          detail: "node 'n1' failed", stderrTail: "requests.exceptions.HTTPError: 400 Client Error" },
+        { round: 2, verdict: "pass", kind: "executed", source: "generated", outputDataType: "dataframe", durationMs: 4120 },
+      ],
+    },
+  };
+
+  it("lists every round under a collapsed disclosure, errors nested", () => {
+    render(<AgentReviewCard part={executed} onApply={jest.fn()} />);
+    const summary = screen.getByText("Verification · 2 attempts");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    const list = screen.getByRole("list", { name: "Verification attempts" });
+    expect(list).toHaveTextContent("Round 1 · fail · execution-error · the node's current code");
+    expect(list).toHaveTextContent("Round 2 · pass ✓");
+    expect(list).toHaveTextContent("output: dataframe · 4.1 s");
+    expect(list).toHaveTextContent("400 Client Error");
+    // PASS still enables Apply: the code on the card is the code that ran.
+    expect(screen.getByRole("button", { name: "Apply" })).not.toBeDisabled();
+  });
+
+  it("a data-loading node.create says what Solve will do after Apply", () => {
+    render(
+      <AgentReviewCard
+        part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/data-loading" },
+          source: { kind: "catalog", label: "Data Catalog · Heat", refs: [{ kind: "catalog", datasetId: "d1", title: "Heat" }] } }}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getByText(/Applying adds this node to the canvas\./)).toHaveTextContent(
+      /Solve runs it in the sandbox and fixes errors before its code is trusted/,
+    );
+  });
+
+  it("no trail renders without attempts (older validation blocks unchanged)", () => {
+    render(<AgentReviewCard part={{ ...executed, validation: { verdict: "pass", rounds: 1 } }} onApply={jest.fn()} />);
+    expect(screen.queryByText(/Verification · /)).toBeNull();
+  });
+});

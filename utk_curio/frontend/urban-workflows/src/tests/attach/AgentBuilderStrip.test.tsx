@@ -473,3 +473,60 @@ describe("AgentBuilderStrip missing specialist (dev/106)", () => {
     expect(screen.queryByRole("group", { name: "Missing specialist" })).toBeNull();
   });
 });
+
+describe("AgentBuilderStrip — dev/115 verified Solve as a background job", () => {
+  it("an interrupted session says so and offers a linked Retry", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({
+          phase: "interrupted",
+          appliedPlanId: "p1",
+          interruptedExecutionId: "dead0000",
+          nodeRuns: { "node-aaaa-1": "pending", "node-bbbb-2": "solved" },
+        })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(/Solve was interrupted/);
+    expect(screen.getByRole("status")).toHaveTextContent(/nothing was replayed/);
+    const retry = screen.getByRole("button", { name: "Retry 1 interrupted" });
+    expect(retry).not.toBeDisabled();
+    expect(retry).toHaveAttribute("title", expect.stringContaining("linked to the interrupted one"));
+  });
+
+  it("the live pills speak the verified loop's states in words", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "solving", appliedPlanId: "p1",
+          nodeRuns: { "node-aaaa-1": "pending", "node-bbbb-2": "pending", "node-cccc-3": "pending" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveProgress={{ "node-aaaa-1": "verifying", "node-bbbb-2": "fixing", "node-cccc-3": "verified" }}
+      />,
+    );
+    expect(screen.getByText("verifying — running in the sandbox…")).toBeInTheDocument();
+    expect(screen.getByText("fixing — the run failed, correcting…")).toBeInTheDocument();
+    expect(screen.getByText("solved ✓ verified")).toBeInTheDocument();
+    // The background-job copy and the honest cancel title.
+    expect(screen.getByText("Solve keeps running if you close this panel.")).toBeInTheDocument();
+  });
+
+  it("a running background job (reattached) shows Solving even before the strip's own click", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={{
+          ...attachment({ phase: "solving", appliedPlanId: "p1", nodeRuns: { "node-aaaa-1": "pending" } }),
+          liveJob: { executionId: "e1", kind: "solve-batch", status: "running", startedAt: 1 },
+        }}
+        onSolve={jest.fn()}
+        onCancelSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Solving…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveAttribute(
+      "title", expect.stringContaining("a running fetch cannot be aborted"),
+    );
+  });
+});
