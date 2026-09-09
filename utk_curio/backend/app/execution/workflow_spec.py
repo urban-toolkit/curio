@@ -33,20 +33,24 @@ GRAMMAR_TYPES = {"VIS_VEGA", "AUTK_GRAMMAR"}
 # Python-content code nodes — the only ones that can be Python-seeded /
 # Python-exec'd by the programmatic runner. JS_COMPUTATION is a CODE node
 # but its content is JavaScript, so it must be excluded from this set.
+# dev/120: every member must have a namespaced spelling in NAMESPACED_TO_LEGACY
+# (test-pinned) — a legacy name no canvas can produce is a phantom, and two
+# (CONSTANTS, FLOW_SWITCH) lived here after main had already removed them.
+# These tables are the OFFLINE FALLBACK (DEC-076): the template roster decides
+# executability whenever it is reachable; do not grow them.
 PY_CODE_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
-    "DATA_EXPORT", "COMPUTATION_ANALYSIS", "CONSTANTS",
-    "FLOW_SWITCH",
+    "DATA_EXPORT", "COMPUTATION_ANALYSIS",
 }
 CODE_TYPES = PY_CODE_TYPES | {"JS_COMPUTATION"}
 
 # Subset of CODE_TYPES whose frontend component passes ``code={true}``
 # to ``NodeEditor``, meaning they render a "code" tab with a Monaco editor.
-# The remaining CODE_TYPES (DATA_EXPORT, CONSTANTS) use
-# ``code={false}`` and have no code tab.
+# The remaining CODE_TYPES member (DATA_EXPORT) uses ``code={false}`` and has
+# no code tab.
 CODE_EDITOR_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
-    "COMPUTATION_ANALYSIS", "FLOW_SWITCH",
+    "COMPUTATION_ANALYSIS",
     "JS_COMPUTATION",
 }
 
