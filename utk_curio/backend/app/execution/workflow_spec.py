@@ -74,7 +74,17 @@ NAMESPACED_TO_LEGACY: dict[str, str] = {
 
 
 def normalize_type(node_type: str) -> str:
-    """Return the legacy uppercase id for *node_type*, or pass-through."""
+    """Return the legacy uppercase id for *node_type*, or pass-through.
+
+    dev/119 hotfix: palette-dragged nodes persist the VERSIONED canonical id
+    (``curio.builtin/data-loading@1``, the trill contract's own words); the
+    lookup used to see the ``@1`` and fall through to "passive", so the runner
+    refused a user's real Data Loading code as not executable while the gate
+    (which did strip the version) had said it was. Strip first, like
+    ``packages/spec_packages.unversioned_node_type``.
+    """
+    if isinstance(node_type, str) and "@" in node_type:
+        node_type = node_type.split("@", 1)[0]
     return NAMESPACED_TO_LEGACY.get(node_type, node_type)
 
 

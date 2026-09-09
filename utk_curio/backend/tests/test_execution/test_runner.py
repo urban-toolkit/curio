@@ -400,3 +400,31 @@ class TestDev118EmptyUpstream:
         report2 = runner.run_through_node(KEY, PID, spec2, "t", exec_fn=rec2, strict_upstream=True,
                                           prior_outputs={"a": {"path": "art-a", "dataType": "dataframe"}})
         assert report2["ok"] is True and report2["nodes"]["a"]["status"] == "reused"
+
+
+class TestDev119VersionedIds:
+    """dev/119 hotfix: a palette-dragged node's versioned id classifies like
+    its unversioned twin — the runner and the gate agree."""
+
+    def test_normalize_type_strips_the_version(self):
+        from utk_curio.backend.app.execution.workflow_spec import classify_node, normalize_type, parse_workflow_dict
+
+        assert normalize_type("curio.builtin/data-loading@1") == "DATA_LOADING"
+        assert normalize_type("curio.builtin/vis-vega@2") == "VIS_VEGA"
+        assert normalize_type("some.pkg/custom@1") == "some.pkg/custom"
+        assert classify_node(normalize_type("curio.builtin/js-computation@1")) == "code"
+        wf = parse_workflow_dict({"dataflow": {"nodes": [
+            {"id": "a", "type": "curio.builtin/data-loading@1", "content": "x"},
+            {"id": "v", "type": "curio.builtin/vis-vega@1", "content": "{}"},
+        ], "edges": []}})
+        by_id = {n.id: n for n in wf.nodes}
+        assert by_id["a"].category == "code" and by_id["a"].type == "DATA_LOADING"
+        assert by_id["a"].raw_type == "curio.builtin/data-loading@1"  # the wire id survives for the sandbox
+        assert by_id["v"].category == "grammar"
+
+    def test_a_versioned_data_loading_target_executes(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec([_node("a", node_type="curio.builtin/data-loading@1", content="return 1")], [])
+        report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
+        assert report["ok"] is True and report["notExecutable"] is False
+        assert rec.calls[0][1]["nodeType"] == "curio.builtin/data-loading@1"

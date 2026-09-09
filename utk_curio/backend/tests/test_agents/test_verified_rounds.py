@@ -1415,6 +1415,17 @@ class TestSolveNode:
         assert turns[-1]["error"] is True and "Not fixed after 3 attempts" in turns[-1]["text"]
         assert len(turns[-1]["content"][0]["lines"]) == 3
 
+    def test_a_palette_dragged_versioned_node_is_solved_not_refused(self, client, user_and_token, tmp_curio, monkeypatch):
+        # dev/119 hotfix (live defect): the canvas persists versioned ids; the
+        # runner classified them passive and the per-node Solve answered
+        # "not executable" on a user's real Data Loading code.
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, content=self.LOADER, node_type=DL + "@1")
+        events = self._solve_node(client, token, ctx)
+        done = events[-1][1]
+        assert done["verdict"] == "pass" and done["unchanged"] is True and done["rounds"] == 1
+        assert len(ctx["payloads"]) == 1 and ctx["payloads"][0]["nodeType"] == DL + "@1"
+
     def test_a_browser_rendered_node_is_not_executable_and_nothing_runs(self, client, user_and_token, tmp_curio, monkeypatch):
         # dev/118 (DEC-075): the per-node Solve accepted any kind and, for a
         # Vega node, reported a PASS on content the runner never sent.
