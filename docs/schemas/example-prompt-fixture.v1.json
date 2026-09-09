@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "title": "Curio example prompt fixture (v1)",
+  "description": "One reviewed, checked-in pairing of a natural-language prompt with a shipped example dataflow, used by the example-derived agent validation harness (memo dev/121, DEC-077). The evaluated model receives `prompt` (and `context`) and nothing else: `expected`, `required`, `intents` and `source` are the harness's answer key and must never be sent to it. The format is also the fine-tuning export unit -- `split` and `review` govern that, and held-out fixtures are never training data.",
+  "type": "object",
+  "required": ["fixtureId", "version", "source", "prompt", "required", "expected", "execution", "capability", "thresholds", "split", "review"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string"},
+    "fixtureId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      "description": "Stable id; the example's file stem (curated) or its basename without .json (legacy)."
+    },
+    "version": {"type": "integer", "minimum": 1, "description": "Fixture format revision; bump when the meaning of a field changes."},
+    "source": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "pattern": "^docs/examples/.+\\.json$", "description": "Repo-relative path of the example this fixture describes."},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Digest of that file. A drift guard: an example edit fails the unit suite until a human re-reviews the fixture."},
+        "walkthrough": {"type": ["string", "null"], "description": "The companion Markdown, when the example has one."}
+      }
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 40,
+      "maxLength": 4000,
+      "description": "What a person would type. Must leak no implementation: no node or edge id, no canonical template id, no line of node content, no plan-grammar token, no JSON. Human node-kind names (\"Data Transformation\", \"Vega-Lite\") are fine -- the walkthroughs use them."
+    },
+    "context": {"type": ["string", "null"], "maxLength": 2000, "description": "Optional second turn-level context string, sent verbatim with the prompt."},
+    "required": {
+      "type": "object",
+      "required": ["datasets", "packages"],
+      "additionalProperties": false,
+      "description": "The dependency source of truth, copied from the example's own dataflow.datasets and dataflow.packages (dev/81, dev/101), plus repo-relative paths for the legacy examples that still read a committed file.",
+      "properties": {
+        "datasets": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$"}, "uniqueItems": true},
+        "packages": {"type": "array", "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*@(0|[1-9][0-9]{0,3})$"}, "uniqueItems": true},
+        "paths": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "description": "Repo-relative data files the prompt must name verbatim (the DEC-072 user-typed-path route)."}
+      }
+    },
+    "expected": {
+      "type": "object",
+      "required": ["nodes", "edges", "sources"],
+      "additionalProperties": false,
+      "description": "The example, normalized. Recomputed and compared by the unit suite -- never hand-edited into disagreement with the source file.",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["ref", "type", "role"],
+            "additionalProperties": false,
+            "properties": {
+              "ref": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,32}$", "description": "Harness-local handle. Never sent to the model; the runtime mints its own refs and ids."},
+              "type": {"type": "string", "description": "Canonical unversioned template id (<packageId>/<templateId>)."},
+              "role": {"type": "string", "enum": ["loader", "transform", "analysis", "visualization", "grammar", "pool", "merge", "export", "endpoint", "presentation"]},
+              "executable": {"type": "boolean", "description": "Whether the sandbox can run this kind (derived per DEC-076; informational in the fixture)."},
+              "hasContent": {"type": "boolean"}
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "kind"],
+            "additionalProperties": false,
+            "properties": {
+              "from": {"type": "string"},
+              "to": {"type": "string"},
+              "kind": {"type": "string", "enum": ["data", "interaction"]},
+              "slot": {"type": ["integer", "null"], "minimum": 0, "maximum": 4, "description": "Merge-flow input index parsed from targetHandle in_N; null for a single-input port."}
+            }
+          }
+        },
+        "sources": {
+          "type": "object",
+          "required": ["datasetIds", "paths", "urls"],
+          "additionalProperties": false,
+          "description": "What the example's node code actually reads, scanned with the production grounding regexes -- the fabrication baseline.",
+          "properties": {
+            "datasetIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+            "paths": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+            "urls": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+          }
+        }
+      }
+    },
+    "intents": {
+      "type": "array",
+      "description": "Per-node meaning checks. `mustMention` matches case-insensitively against the reconstructed node's goal/intent text; `outputKind` against the kind Solve recorded (absent -> notMeasured, excluded from the score's denominator).",
+      "items": {
+        "type": "object",
+        "required": ["ref"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {"type": "string"},
+          "mustMention": {"type": "array", "items": {"type": "string", "minLength": 2}, "uniqueItems": true},
+          "outputKind": {"type": ["string", "null"], "enum": ["dataframe", "geodataframe", "raster", "json", "value", "list", "str", "image", null]},
+          "slotOrderMatters": {"type": "boolean", "default": false, "description": "Set on a merge target whose input order changes the result; otherwise slot mismatches on that node are not penalised."}
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"type": "string", "enum": ["sandbox", "browser", "none"], "description": "sandbox: Solve can verify the executable nodes. browser: the graph only runs in the page (grammars, widgets). none: nothing is executed."},
+        "browserOnlyKinds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "description": "Canonical types excluded from the execution score because they render in the browser."},
+        "notes": {"type": ["string", "null"]}
+      }
+    },
+    "capability": {
+      "type": "object",
+      "required": ["tier", "needs", "skip"],
+      "additionalProperties": false,
+      "properties": {
+        "tier": {"type": "string", "enum": ["T0", "T1", "T2", "T3"], "description": "T0 offline and fully expressible; T1 needs a reviewed local install; T2 needs a contract capability this branch lacks; T3 needs the network or hardware."},
+        "needs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "enum": ["package-enlist:templates", "package-enlist:dependencies", "interaction-edge", "external-network", "gpu", "browser-only-execution"]},
+          "description": "package-enlist:templates and package-enlist:dependencies are DIFFERENT routes: a template the plan cannot name until the package is enlisted, versus a library the node code imports whose owning manifest declares it. Neither justifies authoring a package."
+        },
+        "skip": {
+          "type": "array",
+          "description": "Every exclusion is visible and justified. An empty list means the fixture always runs.",
+          "items": {
+            "type": "object",
+            "required": ["when", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "when": {"type": "string", "minLength": 3, "description": "The condition, e.g. \"!CURIO_EVAL_EXTERNAL\" or a `needs` entry."},
+              "reason": {"type": "string", "minLength": 10},
+              "scope": {"type": "string", "enum": ["all", "execution", "browser"], "default": "execution"}
+            }
+          }
+        }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "required": ["pass"],
+      "additionalProperties": false,
+      "description": "Per-fixture bars. Dimension weights are harness constants, not fixture data.",
+      "properties": {
+        "pass": {"type": "number", "minimum": 0, "maximum": 1},
+        "templates": {"type": "number", "minimum": 0, "maximum": 1},
+        "topology": {"type": "number", "minimum": 0, "maximum": 1},
+        "dependencies": {"type": "number", "minimum": 0, "maximum": 1},
+        "intents": {"type": "number", "minimum": 0, "maximum": 1},
+        "execution": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "split": {"type": "string", "enum": ["train", "validation", "heldout"], "description": "Fine-tuning export split. Immutable once approved; a heldout fixture is never training data (DEC-077)."},
+    "review": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "description": "A model may draft a prompt from the example and its walkthrough as a one-time authoring aid; a human reviews and commits it. The deterministic suite does not depend on the review; the live report labels it; the export refuses anything not approved.",
+      "properties": {
+        "status": {"type": "string", "enum": ["pending-owner-review", "approved", "rejected"]},
+        "draftedBy": {"type": ["string", "null"]},
+        "reviewedBy": {"type": ["string", "null"]},
+        "reviewedAt": {"type": ["string", "null"], "format": "date-time"}
+      }
+    },
+    "notes": {"type": ["string", "null"]}
+  }
+}
