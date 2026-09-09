@@ -619,6 +619,9 @@ export const AgentReviewCard: React.FC<{
                         <pre>{attempt.stderrTail ?? attempt.detail}</pre>
                       </details>
                     ) : null}
+                    {attempt.verdict !== "pass" && attempt.endpointEvidence ? (
+                      <span className={styles.attemptEndpoint}>Endpoint: {attempt.endpointEvidence}</span>
+                    ) : null}
                   </li>
                 ))}
               </ol>

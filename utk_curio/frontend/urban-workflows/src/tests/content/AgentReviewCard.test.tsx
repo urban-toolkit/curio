@@ -895,6 +895,27 @@ describe("AgentReviewCard — dev/115 the verification attempt trail", () => {
     expect(screen.getByRole("button", { name: "Apply" })).not.toBeDisabled();
   });
 
+  it("a failed round names what the endpoint actually answered (dev/115 field fix)", () => {
+    const withEndpoint = {
+      ...executed,
+      validation: {
+        ...executed.validation,
+        verdict: "pass",
+        rounds: 2,
+        attempts: [
+          { ...executed.validation!.attempts![0],
+            endpointEvidence: 'https://api.census.gov/data/2022/acs/acs5?get=NAME → verified 200: answered an HTML page titled "Missing Key"' },
+          executed.validation!.attempts![1],
+        ],
+      },
+    };
+    render(<AgentReviewCard part={withEndpoint} onApply={jest.fn()} />);
+    const list = screen.getByRole("list", { name: "Verification attempts" });
+    expect(list).toHaveTextContent('Endpoint: https://api.census.gov/data/2022/acs/acs5?get=NAME → verified 200: answered an HTML page titled "Missing Key"');
+    // A passing round never carries one.
+    expect(list.textContent!.match(/Endpoint:/g)).toHaveLength(1);
+  });
+
   it("a data-loading node.create says what Solve will do after Apply", () => {
     render(
       <AgentReviewCard

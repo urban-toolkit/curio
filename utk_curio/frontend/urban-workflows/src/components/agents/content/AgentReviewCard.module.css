@@ -418,3 +418,9 @@
     color: var(--curio-danger-text);
     overflow-wrap: anywhere;
 }
+
+.attemptEndpoint {
+    display: block;
+    color: var(--curio-text-secondary);
+    overflow-wrap: anywhere;
+}

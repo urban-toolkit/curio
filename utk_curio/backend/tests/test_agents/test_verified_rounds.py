@@ -184,6 +184,135 @@ class TestVerifiedRounds:
         assert all(a["kind"] == "execution-error" for a in outcome["attempts"])
 
 
+class TestFieldFixes20260908:
+    """Live re-test against gemma4 (dev/115 A3, 2026-09-08), Task 3. The
+    placed Census node ran and failed; both correction rounds were refused as
+    "no grounded source" because the content builder — correctly — declined
+    to write code: the URL the gate had verified BY PROBE that same run never
+    reached the correction's ``verifiedUrls``, the swallowed HTTP error left
+    no http marker for the URL evidence, and the builder's one-line decline
+    was gated as if it were code."""
+
+    DUCK = ("_duckdb.InvalidInputException: Invalid Input Error: "
+            "Need a DataFrame with at least one column")
+
+    def _census_node(self):
+        code = (f'import requests\nimport pandas as pd\nr = requests.get("{NOAA}", '
+                'params={"for": "community area:*"})\nreturn pd.DataFrame(r.json())')
+        return {"id": "n1", "type": DL, "goal": "fetch ACS", "content": code}
+
+    def test_a_url_the_gate_verified_reaches_the_correction_and_is_probed(self, app, tmp_curio, monkeypatch):
+        probes: list[str] = []
+
+        def _verify(url, **kw):
+            probes.append(url)
+            return {"status": "verified", "httpStatus": 200, "checkedAt": "now"}
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        node = self._census_node()
+        exec_fn = _Exec(fail_markers=("community area",), stderr=self.DUCK)
+        fixed = f'import requests\nr = requests.get("{NOAA}")\nreturn r.json()'
+        events, outcome, inputs = _rounds(
+            app, node, replies=[fixed], exec_fn=exec_fn, start_from_current=True,
+        )
+        assert outcome["verdict"] == "pass" and outcome["rounds"] == 2
+        assert outcome["attempts"][0]["kind"] == "execution-error"
+        correction = inputs[0]
+        composed = f"{NOAA}?for=community+area%3A%2A"
+        # The gate's probe verified the base URL; the correction is told so —
+        # and ONLY so: the composed query it probed is evidence, not a source.
+        assert correction["sourceGrounding"]["verifiedUrls"] == [NOAA]
+        # A data-loading failure re-probes what the code fetched — the real
+        # composed request first, then the base — even when the traceback
+        # never says "http" (the swallowed-error field case).
+        assert [e["url"] for e in correction["urlEvidence"]] == [composed, NOAA]
+        assert correction["urlEvidence"][1]["verification"]["status"] == "verified"
+        assert probes == [NOAA, composed]  # the base re-used the gate's cache
+        assert self.DUCK in correction["validationError"]
+
+    def test_a_non_loading_node_still_needs_an_http_marker_for_url_evidence(self, app):
+        ctx = type("Ctx", (), {"probe": lambda self, u: {"status": "verified"}, "is_data_loading": False})()
+        code = f'import requests\nreturn requests.get("{NOAA}").json()'
+        assert services_mod._correction_url_evidence(code, "KeyError: 'col'", ctx) == []
+        ctx.is_data_loading = True
+        assert services_mod._correction_url_evidence(code, "KeyError: 'col'", ctx)[0]["url"] == NOAA
+
+    def test_the_builders_one_line_decline_is_recorded_in_its_words(self, app, tmp_curio, monkeypatch):
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"},
+        )
+        node = self._census_node()
+        exec_fn = _Exec(fail_markers=("community area",), stderr=self.DUCK)
+        decline = "Missing source for ACS Census data in catalogDatasets or verifiedUrls."
+        events, outcome, inputs = _rounds(
+            app, node, replies=[decline, decline], exec_fn=exec_fn, start_from_current=True,
+        )
+        # A decline ENDS the loop: the missing input (a key, a path, a URL) is
+        # the user's to supply, and re-asking the same builder only repeats it.
+        assert outcome["verdict"] == "fail" and outcome["rounds"] == 2
+        assert len(inputs) == 1 and len(outcome["attempts"]) == 2
+        second = outcome["attempts"][1]
+        assert second["kind"] == "source-missing"
+        assert second["detail"] == f"the content builder declined: {decline}"
+        assert outcome["evidence"] == {"kind": "source-missing",
+                                       "detail": f"the content builder declined: {decline}"}
+        assert len(exec_fn.calls) == 1  # prose never reached the sandbox
+
+    def test_the_composed_request_is_probed_and_its_answer_joins_the_trail(self, app, tmp_curio, monkeypatch):
+        # Round 2 of the live run: the base URL verifies 200, the composed
+        # request redirects to an HTML "Missing Key" page, and the model
+        # re-sent the same params because nothing told it otherwise.
+        composed = (f"{NOAA}?get=NAME%2CB19013_001E&for=tract%3A%2A")
+        probes: list[str] = []
+
+        def _verify(url, **kw):
+            probes.append(url)
+            if "?" in url:
+                return {"status": "verified", "httpStatus": 200, "contentType": "text/html",
+                        "finalUrl": "https://api.noaa.gov/missing_key.html",
+                        "pageTitle": "Missing Key", "checkedAt": "now"}
+            return {"status": "verified", "httpStatus": 200, "contentType": "application/json",
+                    "checkedAt": "now"}
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        code = ('import requests\nimport pandas as pd\n'
+                f'url = "{NOAA}"\n'
+                'params = {"get": "NAME,B19013_001E", "for": "tract:*"}\n'
+                'r = requests.get(url, params=params)\nr.raise_for_status()\nreturn pd.DataFrame(r.json())')
+        node = {"id": "n1", "type": DL, "goal": "fetch ACS", "content": code}
+        exec_fn = _Exec(fail_markers=("tract",),
+                        stderr="requests.exceptions.JSONDecodeError: Expecting value: line 1 column 1 (char 0)")
+        decline = "The Census API answers a Missing Key page: an API key for api.census.gov is required."
+        events, outcome, inputs = _rounds(
+            app, node, replies=[decline, decline], exec_fn=exec_fn, start_from_current=True,
+        )
+        assert outcome["verdict"] == "fail"
+        evidence = inputs[0]["urlEvidence"]
+        assert [e["url"] for e in evidence] == [composed, NOAA]  # the real request first
+        assert evidence[0]["request"].startswith("the URL composed")
+        assert 'an HTML page titled "Missing Key"' in evidence[0]["note"]
+        assert "missing_key.html" in evidence[0]["note"]
+        assert "note" not in evidence[1]  # a JSON 200 needs no reading
+        first = outcome["attempts"][0]
+        assert first["kind"] == "execution-error"
+        assert first["endpointEvidence"].startswith(f"{NOAA}?get=NAME")
+        assert "Missing Key" in first["endpointEvidence"]
+        # The decline carries no endpoint line (nothing ran) and ends the loop.
+        assert outcome["rounds"] == 2 and "endpointEvidence" not in outcome["attempts"][1]
+        assert outcome["attempts"][1]["detail"] == f"the content builder declined: {decline}"
+        # Probes: the gate's base probe, then the composed request — nothing more.
+        assert probes == [NOAA, composed]
+
+    def test_prose_decline_predicate(self):
+        assert services_mod._is_prose_decline("No verified URL covers ACS indicators.")
+        assert not services_mod._is_prose_decline("df = pd.read_csv('x.csv')\nreturn df")
+        assert not services_mod._is_prose_decline("return arg[0]")
+        assert not services_mod._is_prose_decline("import pandas as pd")
+        assert not services_mod._is_prose_decline("")
+        assert not services_mod._is_prose_decline("x " * 300)
+
+
 class TestExecDatasetPaths:
     def _service(self, monkeypatch, resolved, raise_exc=False):
         calls = []

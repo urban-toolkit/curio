@@ -52,6 +52,34 @@ def _sample_shape(body: str, content_type: str) -> dict:
     return {}
 
 
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
+_PAGE_TITLE_MAX = 80
+_BODY_SAMPLE_MAX = 120
+
+
+def _body_evidence(body: str, content_type: str) -> dict:
+    """What a NON-data answer looked like, bounded and tag-free: the page title
+    of an HTML answer (a "Missing Key" page, a login page), the head of a
+    plain-text one (an API's error sentence). JSON answers are described by
+    :func:`_sample_shape` instead. Never the data itself — a short, stripped
+    fragment the correction and the card can name (dev/115 field fix)."""
+    lowered = (content_type or "").lower()
+    if "json" in lowered or not body:
+        return {}
+    if "html" in lowered or body.lstrip()[:1] == "<":
+        match = _TITLE_RE.search(body)
+        title = " ".join(_TAG_RE.sub(" ", match.group(1)).split()) if match else ""
+        return {"pageTitle": title[:_PAGE_TITLE_MAX]} if title else {}
+    sample = " ".join(_TAG_RE.sub(" ", body[: _BODY_SAMPLE_MAX * 4]).split())
+    return {"bodySample": sample[:_BODY_SAMPLE_MAX]} if sample else {}
+
+
+def _redirect_evidence(url: str, result) -> dict:
+    final = getattr(result, "final_url", None)
+    return {"finalUrl": final[:_DETAIL_MAX]} if isinstance(final, str) and final and final != url else {}
+
+
 def verify_endpoint(url: str, *, request_fn=None, resolver=None, budget=None) -> dict:
     """The GENERIC probe — the universal gate for any dataset API URL."""
     try:
@@ -70,6 +98,8 @@ def verify_endpoint(url: str, *, request_fn=None, resolver=None, budget=None) ->
             "httpStatus": result.status,
             "contentType": result.content_type[:100],
             **_sample_shape(result.body, result.content_type),
+            **_body_evidence(result.body, result.content_type),
+            **_redirect_evidence(url, result),
             "checkedAt": _now(),
             # The body the probe already read. Private (stripped before the
             # outcome reaches a card) and present so a refinement can enrich
@@ -79,7 +109,10 @@ def verify_endpoint(url: str, *, request_fn=None, resolver=None, budget=None) ->
     return {
         "status": "unreachable",
         "httpStatus": result.status,
+        "contentType": result.content_type[:100],
         "detail": f"the endpoint answered {result.status}",
+        **_body_evidence(result.body, result.content_type),
+        **_redirect_evidence(url, result),
         "checkedAt": _now(),
     }
 

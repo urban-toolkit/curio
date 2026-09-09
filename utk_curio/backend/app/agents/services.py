@@ -3930,11 +3930,13 @@ def _solve_events(
             kind = evidence.get("kind") or "fail"
             raw_detail = str(evidence.get("stderrTail") or evidence.get("detail") or "")
             # A refusal's head names the literal; a traceback's tail names the error.
-            detail = raw_detail[:200] if kind == "ungrounded-source" else raw_detail[-200:]
+            detail = raw_detail[:200] if kind in _HEAD_FIRST_KINDS else raw_detail[-200:]
             rounds = outcome.get("rounds") or 0
             remedy = (
                 " — resolve the source with Dataset Finder (attach it to this node) or give the path"
-                if kind == "ungrounded-source" else ""
+                if kind == "ungrounded-source" else
+                " — provide what it names (a key, a path or a URL) in the chat, then Solve again"
+                if kind == "source-missing" else ""
             )
             err = (
                 f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''} — "
@@ -4050,8 +4052,10 @@ def _solve_events(
                 if outcome.get("verdict") == "fail":
                     for attempt in (outcome.get("attempts") or [])[:3]:
                         raw = str(attempt.get("stderrTail") or attempt.get("detail") or "")
-                        why = raw[:100] if attempt.get("kind") == "ungrounded-source" else raw[-100:]
+                        why = raw[:100] if attempt.get("kind") in _HEAD_FIRST_KINDS else raw[-100:]
                         lines.append(f"  round {attempt.get('round')}: {attempt.get('kind')} — {why}")
+                        if attempt.get("endpointEvidence"):
+                            lines.append(f"    endpoint: {str(attempt['endpointEvidence'])[:200]}")
             lines = lines[:24]
             if cancelled:
                 lines.append(f"cancelled — {len(unstarted)} node(s) not attempted")
@@ -5066,12 +5070,14 @@ def _solve_node_events(
     trail_lines = []
     for attempt in attempts[:6]:
         raw = str(attempt.get("stderrTail") or attempt.get("detail") or "")
-        why = raw[:100] if attempt.get("kind") == "ungrounded-source" else raw[-100:]
+        why = raw[:100] if attempt.get("kind") in _HEAD_FIRST_KINDS else raw[-100:]
         line = f"round {attempt.get('round')} · {attempt.get('verdict')} · {attempt.get('kind')}"
         if attempt.get("verdict") == "pass":
             line += f" · {attempt.get('outputDataType') or '?'}"
         elif why:
             line += f" — {why}"
+        if attempt.get("verdict") != "pass" and attempt.get("endpointEvidence"):
+            line += f" · endpoint: {str(attempt['endpointEvidence'])[:200]}"
         trail_lines.append(line)
     unchanged = (
         verdict == "pass" and rounds == 1 and attempts
@@ -5347,28 +5353,112 @@ def _content_sha(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
+#: Attempt kinds whose detail is read from the HEAD (a refusal names the
+#: literal, a decline names the missing input); a traceback reads from its tail.
+_HEAD_FIRST_KINDS = ("ungrounded-source", "source-missing")
+_PROSE_DECLINE_MAX_CHARS = 400
+_CODE_MARKERS = ("import ", "return ", " = ", "(", "def ", "{")
+
+
+def _is_prose_decline(candidate: str) -> bool:
+    """A short, single-line reply with no code shape — the content builder's
+    sanctioned "what source is missing" line rather than content."""
+    text = (candidate or "").strip()
+    if not text or "\n" in text or len(text) > _PROSE_DECLINE_MAX_CHARS:
+        return False
+    return not any(marker in text for marker in _CODE_MARKERS)
+
+
 def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]:
     """dev/115: when a failed run names an HTTP problem, re-probe the URLs the
     candidate fetches (DEC-053, budgeted through the grounding context) so the
     correction is grounded in the endpoint's real answer — not a guess about
     why a 400 happened."""
-    lowered = (error_text or "").lower()
-    if not any(marker in lowered for marker in ("http", "status", "urlerror", "connection", "timeout")):
-        return []
     if ctx is None or ctx.probe is None:
         return []
+    lowered = (error_text or "").lower()
+    named_http = any(
+        marker in lowered for marker in ("http", "status", "urlerror", "connection", "timeout")
+    )
+    # A data-loading node that fetches and then fails is an endpoint question
+    # whatever the traceback says: the field case wrapped the request in a
+    # bare ``except`` and returned an empty frame, so the only error named was
+    # DuckDB's "need at least one column" (dev/115 field fix, 2026-09-08).
+    if not named_http and not getattr(ctx, "is_data_loading", False):
+        return []
+    # The requests the loader actually made come first: a parameterised API's
+    # base answers 200 while the composed query is what fails.
+    targets = [(url, "composed") for url in source_grounding.composed_requests(candidate)]
+    targets += [
+        (ref.literal, "literal")
+        for ref in source_grounding.scan_sources(candidate, "python")
+        if ref.kind == "url" and ref.literal not in {u for u, _ in targets}
+    ]
     out: list[dict] = []
-    for ref in source_grounding.scan_sources(candidate, "python"):
-        if ref.kind != "url":
-            continue
+    known = getattr(ctx, "verified_urls", None)
+    for url, how in targets:
+        already_known = isinstance(known, dict) and url in known
         try:
-            verdict = ctx.probe(ref.literal)
+            verdict = ctx.probe(url)
         except Exception as exc:  # a broken prober is absence, never a claim
             verdict = {"status": "unverified", "detail": str(exc)[:200]}
-        out.append({"url": ref.literal, "verification": verdict})
+        if how == "composed" and isinstance(known, dict) and not already_known:
+            # Evidence for the correction, NOT a new grounded source: a
+            # composed query is a derivative of its (already gated) base URL,
+            # and a 200 HTML "Missing Key" page must never be listed as a URL
+            # the builder may fetch.
+            known.pop(url, None)
+        entry = {"url": url, "verification": verdict}
+        if how == "composed":
+            entry["request"] = "the URL composed from the code's url + params"
+        note = _endpoint_note(verdict)
+        if note:
+            entry["note"] = note
+        out.append(entry)
         if len(out) >= _CORRECTION_URL_PROBES:
             break
     return out
+
+
+def _endpoint_note(verdict: dict) -> str:
+    """A deterministic reading of a probe outcome for the correction and the
+    card — only what the outcome itself shows, never a guess."""
+    if not isinstance(verdict, dict):
+        return ""
+    status = verdict.get("status")
+    content_type = str(verdict.get("contentType") or "")
+    final_url = verdict.get("finalUrl")
+    title = verdict.get("pageTitle")
+    sample = verdict.get("bodySample")
+    where = f" after redirecting to {final_url}" if final_url else ""
+    if status == "verified" and content_type and "json" not in content_type.lower():
+        what = f'an HTML page titled "{title}"' if title else f"{content_type.split(';')[0]} content"
+        return (
+            f"answered {what}{where} — not data. Read the page title: a key or "
+            "sign-in requirement cannot be fixed by changing parameters; say what is missing."
+        )
+    if status == "unreachable" and verdict.get("httpStatus"):
+        said = f': "{sample}"' if sample else (f' ("{title}")' if title else "")
+        return f"the request itself answered {verdict['httpStatus']}{where}{said}"
+    return ""
+
+
+def _url_evidence_summary(url_evidence: list[dict]) -> str:
+    """One line for the attempt trail: what the endpoint actually answered."""
+    parts: list[str] = []
+    for entry in url_evidence[:2]:
+        verdict = entry.get("verification") or {}
+        head = str(entry.get("url") or "")
+        head = head if len(head) <= 90 else head[:87] + "…"
+        status = verdict.get("status", "unverified")
+        http = verdict.get("httpStatus")
+        bit = f"{head} → {status}" + (f" {http}" if http else "")
+        if entry.get("note"):
+            bit += f": {entry['note']}"
+        elif verdict.get("detail"):
+            bit += f": {verdict['detail']}"
+        parts.append(bit)
+    return "; ".join(parts)[:_ATTEMPT_DETAIL_CHARS * 2]
 
 
 def _verified_content_rounds(
@@ -5514,18 +5604,33 @@ def _verified_content_rounds(
             gate = source_grounding.check_grounding(candidate, "python", grounding_ctx)
             if not gate.ok:
                 refusal = source_grounding.refusal_text(gate, grounding_ctx)
+                kind = "ungrounded-source"
+                declined = not use_current and _is_prose_decline(candidate)
+                if declined:
+                    # The delegate followed its rule ("return a one-line
+                    # explanation of what source is missing instead of code").
+                    # Record ITS words as the attempt, not a gate verdict on
+                    # prose (dev/115 field fix, 2026-09-08).
+                    refusal = f"the content builder declined: {candidate.strip()}"
+                    kind = "source-missing"
                 verdict_result = {
                     "verdict": "fail",
-                    "evidence": {"kind": "ungrounded-source", "detail": refusal[:2000]},
+                    "evidence": {"kind": kind, "detail": refusal[:2000]},
                 }
                 yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
                 rounds_trace.append(f"round {rounds_used}: fail — {refusal[:160]}")
                 attempts.append({
                     "round": rounds_used, "contentSha256": _content_sha(candidate),
-                    "verdict": "fail", "kind": "ungrounded-source",
+                    "verdict": "fail", "kind": kind,
                     "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
                     "source": "current content" if use_current else "generated",
                 })
+                if declined:
+                    # A decline names an input nobody in this loop can supply
+                    # (a key, a path, a URL). Asking the same builder again
+                    # with the same inputs only repeats it — the user is the
+                    # correction; stop and say so.
+                    break
                 previous_attempt = candidate
                 previous_error = refusal
                 url_evidence = []
@@ -5606,6 +5711,10 @@ def _verified_content_rounds(
         previous_attempt = candidate
         previous_error = round_evidence.get("stderrTail") or round_evidence.get("detail") or ""
         url_evidence = _correction_url_evidence(candidate, previous_error, grounding_ctx)
+        if url_evidence:
+            # The endpoint's real answer joins the trail the card shows, so a
+            # key-gated API reads as such instead of as a JSON decode error.
+            attempt["endpointEvidence"] = _url_evidence_summary(url_evidence)
     return {
         "verdict": verdict_result["verdict"] if verdict_result else "fail",
         "evidence": (verdict_result or {}).get("evidence") or {},
@@ -6844,6 +6953,12 @@ def _grounding_context(
         cache[url] = result
         if result.get("status") == "verified":
             loop_ctx.setdefault("_verified_urls", {})[url] = result
+            # The context's own map too: a URL the gate verified THIS run is
+            # evidence the next correction round is handed (dev/115 field fix,
+            # 2026-09-08 — the current content's Census URL passed the gate by
+            # probe, the correction saw an empty ``verifiedUrls`` and the
+            # content builder rightly declined to write code).
+            verified[url] = result
         return result
 
     hints: list[str] = []

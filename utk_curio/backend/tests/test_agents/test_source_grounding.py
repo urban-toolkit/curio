@@ -58,6 +58,44 @@ class TestScanner:
         assert len(refs) == 3
 
 
+class TestComposedRequests:
+    """dev/115 field fix: the request the loader MAKES, composed from literal
+    url + params, so the correction probes what the server actually saw."""
+
+    CENSUS = ('import requests\nurl = "https://api.census.gov/data/2022/acs/acs5"\n'
+              'params = {"get": "NAME,B19013_001E", "for": "tract:*", "in": "state:17 place:16085"}\n'
+              'response = requests.get(url, params=params)\nreturn response.json()')
+
+    def test_url_and_params_through_names_compose_the_real_request(self):
+        assert sg.composed_requests(self.CENSUS) == [
+            "https://api.census.gov/data/2022/acs/acs5?get=NAME%2CB19013_001E&for=tract%3A%2A&in=state%3A17+place%3A16085"
+        ]
+
+    def test_inline_literals_query_suffix_and_session_get(self):
+        code = ('s = requests.Session()\n'
+                'r = s.get("https://x.org/api?fmt=json", params={"q": 1, "flag": True})\n'
+                'r2 = requests.request("GET", "https://y.org/v1", params={"a": "b"})')
+        assert sg.composed_requests(code) == [
+            "https://x.org/api?fmt=json&q=1&flag=True",
+            "https://y.org/v1?a=b",
+        ]
+
+    def test_dynamic_pieces_are_never_composed(self):
+        dynamic = ('key = os.environ["K"]\nurl = "https://x.org/api"\n'
+                   'r = requests.get(url, params={"key": key})\n'          # computed value
+                   'r2 = requests.get(f"https://x.org/{v}", params={"a": 1})\n'  # dynamic url
+                   'r3 = requests.get("https://x.org/plain")\n'            # no params: nothing to compose
+                   'r4 = requests.get("not a url", params={"a": 1})')
+        assert sg.composed_requests(dynamic) == []
+        assert sg.composed_requests("") == [] and sg.composed_requests("def (") == []
+
+    def test_bounded_and_deduplicated(self):
+        code = "\n".join(f'r{i} = requests.get("https://x.org/{i % 2}", params={{"a": 1}})' for i in range(10))
+        assert sg.composed_requests(code) == ["https://x.org/0?a=1", "https://x.org/1?a=1"]
+        many = "\n".join(f'r{i} = requests.get("https://x.org/{i}", params={{"a": 1}})' for i in range(10))
+        assert len(sg.composed_requests(many)) == sg.MAX_COMPOSED_REQUESTS
+
+
 class TestCatalogIdForm:
     """main's loader recipe emits the portable ``curio_dataset_path("<id>")``
     call (resolved by the sandbox at run time) — grounded by dataset id."""

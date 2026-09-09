@@ -563,6 +563,8 @@ export interface AgentValidationAttempt {
   contentSha256?: string;
   /** "current content" (round 0 ran the node as it was) or "generated". */
   source?: string;
+  /** dev/115 field fix: what the fetched endpoint actually answered when the round failed. */
+  endpointEvidence?: string;
 }
 
 /** One node's outcome on the Solve payload (dev/63; dev/115 adds the verdict). */

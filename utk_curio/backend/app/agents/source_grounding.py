@@ -305,6 +305,108 @@ def scan_sources(code: object, engine: str | None = "python") -> list[SourceRef]
     return unique
 
 
+MAX_COMPOSED_REQUESTS = 4
+_REQUEST_METHODS = ("get", "request")
+
+
+def _const_value(node: ast.AST):
+    """A JSON-ish constant (str/int/float/bool) or None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, float, bool)):
+        return node.value
+    return None
+
+
+def _dict_literal(node: ast.AST) -> dict | None:
+    if not isinstance(node, ast.Dict):
+        return None
+    out: dict = {}
+    for key, value in zip(node.keys, node.values):
+        k = _const_value(key) if key is not None else None
+        v = _const_value(value)
+        if k is None or v is None:
+            return None  # a computed key/value: the request is not composable here
+        out[str(k)] = v
+    return out
+
+
+def composed_requests(code: object) -> list[str]:
+    """dev/115 field fix (2026-09-08): the requests a loader actually MAKES —
+    ``requests.get(url, params={...})`` with the URL and the params both
+    literal (directly or through a name bound once to a literal) — composed
+    into the URL the server saw, in order, bounded and deduplicated.
+
+    The base URL of a parameterised API almost always answers 200 while the
+    composed request is what fails (the Census API redirects a key-less query
+    to an HTML "Missing Key" page); probing the composed request is the
+    evidence a correction needs. Anything dynamic is skipped — a guess is
+    never composed."""
+    if not isinstance(code, str) or not code.strip():
+        return []
+    parsed = _parse_python(code)
+    if parsed is None:
+        return []
+    tree, _offset = parsed
+    strings: dict[str, str] = {}
+    dicts: dict[str, dict] = {}
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            continue
+        name = node.targets[0].id
+        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            strings.setdefault(name, node.value.value)
+        elif isinstance(node.value, ast.JoinedStr):
+            _prefix, template, dynamic = _joined_str_parts(node.value)
+            if not dynamic:
+                strings.setdefault(name, template)
+        else:
+            literal = _dict_literal(node.value)
+            if literal is not None:
+                dicts.setdefault(name, literal)
+
+    def _string_of(node: ast.AST | None) -> str | None:
+        if node is None:
+            return None
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Name):
+            return strings.get(node.id)
+        return None
+
+    def _dict_of(node: ast.AST | None) -> dict | None:
+        if node is None:
+            return None
+        literal = _dict_literal(node)
+        if literal is not None:
+            return literal
+        if isinstance(node, ast.Name):
+            return dicts.get(node.id)
+        return None
+
+    from urllib.parse import urlencode
+
+    out: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in _REQUEST_METHODS:
+            continue
+        positional = list(node.args)
+        if node.func.attr == "request":
+            positional = positional[1:]  # ("GET", url, ...)
+        keywords = {kw.arg: kw.value for kw in node.keywords if kw.arg}
+        url = _string_of(positional[0] if positional else keywords.get("url"))
+        params = _dict_of(keywords.get("params"))
+        if not url or params is None or classify_literal(url) != "url":
+            continue
+        composed = url.strip() + ("&" if "?" in url else "?") + urlencode(params)
+        if composed not in out:
+            out.append(composed)
+        if len(out) >= MAX_COMPOSED_REQUESTS:
+            break
+    return out
+
+
 # --------------------------------------------------------------------------
 # Context helpers (pure over texts the caller gathered)
 # --------------------------------------------------------------------------
