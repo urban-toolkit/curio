@@ -266,6 +266,44 @@ nothing is proposed until you send it. In the Dataset Finder's chat the same
 card composes the reviewed `dataset.install` or the hand-off to Node Builder, as
 before.
 
+### Solve is the engineering loop — and it runs in the background
+
+Grounding says where a data-loading node's source may come from; it does not
+say the code works. **Solve** does (memo dev/115, DEC-073). When you ask to
+solve a data-loading node — the Dataflow Builder's **Solve** over an applied
+plan, or **Solve this node** in the chat of an agent attached to the node — the
+runtime executes the node's code in the sandbox exactly as Play would (same
+dataset-path mapping, a fetch-sized timeout aligned to the sandbox's own wall
+clock), and only code that ran successfully lands:
+
+| The run… | Then |
+|---|---|
+| passes | An empty plan node gets the content written. A node that already had content is untouched: "verified — no change needed". |
+| fails | The failure goes back to the content generator with the traceback, the previous attempt, the grounded sources, and a fresh probe of the URL it fetched (a `400` after a reachable base URL is a wrong request shape, not a dead endpoint). The corrected code is grounded again and re-run — at most two corrections. A node that had content receives the fix as a content review **that has already run**; applying it puts the code that passed on the node. |
+| still fails after three attempts | Nothing is written. The node shows *failed*, and the Solve card lists every attempt — round, verdict, kind, the error, and what ran — under a collapsed **Verification · N attempts** disclosure, which the content review also carries. |
+| cannot run (sandbox unreachable) | The node stays *pending* with the reason — never *failed*: an outage is not a content failure. |
+
+Apply itself never executes anything and is never blocked by verification: a
+proposal's Apply places the node as proposed, and the card says that Solve is
+what runs it. Nothing ever claims a node works until a passing run is on record.
+
+**The run outlives the request.** A Solve is a detached job on the server:
+closing the chat panel or reloading the page does not stop it. The agent's badge
+shows a running dot while the job is live; opening the chat re-attaches to the
+live progress (the strip's pills read *generating*, *verifying — running in the
+sandbox*, *fixing*, *solved ✓ verified*). Cancel stops after the current node
+finishes — a running fetch cannot be aborted. If the server itself stops
+mid-Solve, the session is marked **interrupted** the next time it is read: nodes
+that finished keep their content, nothing is replayed, and **Retry** starts a
+new execution linked to the interrupted one. This is the single-process form of
+the runtime's lease model; a multi-instance deployment still needs a durable
+job owner and is not claimed.
+
+Today Solve verifies **data-loading nodes**; other node kinds keep the
+generate-and-write path. `verify: false` on the Solve request keeps the legacy
+behaviour for automation. The per-node execution timeout is
+`CURIO_VALIDATION_EXEC_TIMEOUT` (seconds, default 300).
+
 ---
 
 ## 4. Importing, publishing, and sharing
