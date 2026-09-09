@@ -21,6 +21,7 @@ This guide is for students getting their first taste of open-source work and for
   * [TL;DR](#tldr)
   * [One-Time Setup](#one-time-setup)
   * [Backend and Sandbox Tests](#backend-and-sandbox-tests)
+  * [Agent Reconstruction Tests](#agent-reconstruction-tests)
   * [Frontend Unit Tests](#frontend-unit-tests)
   * [Frontend E2E Tests](#frontend-e2e-tests)
   * [Database Migrations](#database-migrations)
@@ -231,6 +232,36 @@ playwright install chromium
 pytest utk_curio/backend/tests/
 pytest utk_curio/sandbox/tests/
 ```
+
+### Agent Reconstruction Tests
+
+Separate from the suites above, these ask whether a *model* can rebuild one of
+the shipped example dataflows from a plain-language prompt. Every example has a
+reviewed prompt fixture under `docs/examples/prompts/`; the deterministic tiers
+run offline in seconds and need no stack:
+
+```bash
+pytest utk_curio/backend/tests/test_agents/test_example_fixtures.py \
+       utk_curio/backend/tests/test_agents/test_reconstruction_canonical.py \
+       utk_curio/backend/tests/test_agents/test_reconstruction_scoring.py \
+       utk_curio/backend/tests/test_agents/test_example_reconstruction.py
+
+python -m utk_curio.tools.agent_eval list      # the fixtures and their splits
+```
+
+Editing an example fails these tests on purpose: a fixture pins the example's
+digest, so someone has to re-read the prompt and the expected graph before the
+pin moves. The browser tier is opt-in with the other example-dependent tests
+(`--with-examples`), and a live-model evaluation needs two opt-ins and writes a
+report rather than passing or failing:
+
+```bash
+export CURIO_EVAL_LIVE=1
+python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
+```
+
+See [AGENT-CATALOG.md](AGENT-CATALOG.md#7-measuring-the-agents-against-the-shipped-examples)
+for what the score means and what it deliberately does not do.
 
 ### Frontend Unit Tests
 

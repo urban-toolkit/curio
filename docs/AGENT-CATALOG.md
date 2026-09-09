@@ -10,7 +10,7 @@ This guide covers what an agent is, where its state lives, the three surfaces
 you manage agents from, which layer each action writes, and how to write one of
 your own.
 
-This guide is in six parts, plus operator notes:
+This guide is in seven parts, plus operator notes:
 
 - [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): the storage layers, agent ids, and what ships built in.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, and walkthroughs.
@@ -18,6 +18,7 @@ This guide is in six parts, plus operator notes:
 - [4. Importing, publishing, and sharing](#4-importing-publishing-and-sharing): authoring your own definitions.
 - [5. The provider](#5-the-provider): which model answers, and where it is set.
 - [6. Writing your own agent](#6-writing-your-own-agent): the manifest contract and capabilities.
+- [7. Measuring the agents against the shipped examples](#7-measuring-the-agents-against-the-shipped-examples): whether a model can rebuild an example from a prompt, and what that measurement may not do.
 - [Operator notes](#operator-notes): the provider requirement and launcher flags.
 
 ---
@@ -576,6 +577,79 @@ Once written, import the package through the drawer's **Import agent** button
 
 ---
 
+## 7. Measuring the agents against the shipped examples
+
+Curio's tests prove two things that sound like the same thing and are not: that
+a *saved* dataflow still loads, renders and runs, and that the agent runtime
+does what its contract says. Neither asks whether a **model** can build one of
+those dataflows when a person describes it. That question has its own harness
+(memo `dev/121`).
+
+Every shipped example — the eleven curated ones and the twenty legacy
+structural dataflows — has a **prompt fixture** under
+[`docs/examples/prompts/`](examples/prompts/README.md): a reviewed
+natural-language prompt paired with the example's digest, its declared datasets
+and packages, its normalized expected graph, node intents, an execution mode, a
+capability tier and scoring thresholds. During an evaluation the agent receives
+the prompt and nothing else — never the example JSON, the node ids, the code or
+the expected graph, which a test enforces.
+
+The run itself is the ordinary product path: an empty project, the Dataflow
+Builder attached, one message, the plan's review card, Apply, then Solve. What
+lands on disk is compared **semantically** — canonical template ids and their
+roles, topology with edge kinds and merge slots, the declared dataset and
+package references, absence of invented templates/packages/datasets/paths/URLs,
+node intents, and Solve's own verdicts. Regenerated ids, layout, formatting and
+behaviourally equivalent code are ignored by construction; a graph built in a
+different order scores the same.
+
+Three things the harness will not do:
+
+- **It does not weaken an expectation to pass.** A construct the agent contract
+  cannot express is reported as a named *capability gap*. Eight fixtures need
+  one today: a brushable chart that highlights its map is a bidirectional link,
+  and the plan contract carries no edge kind, so no plan can build those edges
+  yet. The expected graphs keep them.
+- **It does not gate anything on a model.** A live-model run writes an
+  evaluation report, opt-in and never in CI. Nothing in Curio passes or fails
+  because of those numbers.
+- **It does not let an agent grade an agent.** The comparison is deterministic
+  code. The Generated Content Evaluator remains advisory and has no authority
+  here, and a candidate never judges itself.
+
+```bash
+# the deterministic tiers (offline, no stack, seconds)
+pytest utk_curio/backend/tests/test_agents/test_example_fixtures.py        utk_curio/backend/tests/test_agents/test_example_reconstruction.py
+
+# what the fixtures say
+python -m utk_curio.tools.agent_eval list
+
+# a live evaluation against a running stack, with your own model
+export CURIO_EVAL_LIVE=1
+python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
+```
+
+The report lands in `.curio/eval/<runId>/` as `report.json` (the machine
+record: provider, model, prompt and instruction digests, attempts, latency,
+token usage, redacted transcripts, the generated dataflow, the diff, the score
+and its failure categories) and `report.md` (the same thing as a table). No USD
+figure is computed unless you supply a rate, for the same reason the usage
+ledger computes none: Curio has no price table and would have to invent the
+numbers.
+
+**Fine-tuning is not part of this.** The fixture format is designed so approved
+prompts can later be exported as prompt → expected-dataflow pairs with explicit
+train, validation and held-out splits (`agent_eval export`), and the export
+refuses two things: a prompt no person has approved, and a training export that
+would draw on the held-out or validation splits. There is no training verb,
+there is no fine-tuning job contract in the provider layer, and **AI Settings
+has no Model Training panel** — building one needs provider capability
+detection, dataset consent and licensing, redaction, cost disclosure, job
+status and cancellation, trained-model versioning, an evaluation gate,
+activation and rollback settled first.
+
+---
+
 ## Operator notes
 
 ### An unconfigured install has no provider
@@ -649,3 +723,4 @@ automatically and there is no cleanup job to schedule.
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): the dataset catalog, the closest peer to this one.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#agent-routes): the agent HTTP API reference and backend module layout.
 - [`utk_curio/backend/app/agents/`](../utk_curio/backend/app/agents/): the implementation.
+- [`docs/examples/prompts/README.md`](examples/prompts/README.md): the prompt fixtures behind [part 7](#7-measuring-the-agents-against-the-shipped-examples), and how to write one.
