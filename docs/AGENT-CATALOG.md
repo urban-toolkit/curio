@@ -299,6 +299,49 @@ new execution linked to the interrupted one. This is the single-process form of
 the runtime's lease model; a multi-instance deployment still needs a durable
 job owner and is not claimed.
 
+### Key-gated APIs — connection keys
+
+Many data APIs answer only with a key (the Census API, for one, redirects a
+key-less query to a "Missing Key" page). A key must never be a literal in node
+code: the code is saved into the dataflow, replayed in every proposal preview,
+recorded by the runtime journal on every run and exported with the project.
+Curio's answer is a **connection key** (memo dev/116, DEC-074): you save the
+key once under a name bound to a host — **AI Settings → Connection keys**,
+through a masked field that never reads the value back — and node code
+reaches it only as
+
+```python
+api_key = curio_secret("census")
+```
+
+The runtime resolves the names the code uses at execution time — for Play and
+for Solve alike — and hands the values to the sandbox inside the execution
+request, where they exist only as that callable in the node's namespace: never
+an environment variable (node code can read `os.environ`), never a file, never
+a log line. A key a node prints is redacted before the output leaves the
+sandbox. The saved dataflow, the journal, the proposals and the chat carry the
+name only.
+
+What the agents see is the name, never the value. A content builder's grounded
+inputs list `availableSecrets` with the one line to copy and how the API
+expects the key (`query:<param>`, `header:<Name>`, or "in the code"); the
+grounding gate accepts `curio_secret("<name>")` for a saved name (the Source
+block reads *Connection key · census · api.census.gov*), refuses an unknown
+name listing the saved ones, and refuses a credential-shaped literal before
+anything runs. When a saved key is bound to the host a failing request targets,
+Solve probes that request *with* the key and tells the correction what the
+keyed request answered, redacted. When no key exists, the content builder
+declines in one line and the node's failure ends with a concrete remedy —
+**Add key for api.census.gov** — which opens the settings section with the
+host filled in; save the key and Solve again.
+
+What this is not: encryption at rest. The store is a 0600 file under the
+user's own directory (unreadable by isolated node code), the same posture as
+the LLM key today; an encrypted store remains the deployment-tier remainder.
+A published dataflow carries key *names*, so whoever installs it saves their
+own key under the same name. The shared guest account, when authentication is
+off, shares one key store with every other guest, and the section says so.
+
 Today Solve verifies **data-loading nodes**; other node kinds keep the
 generate-and-write path. `verify: false` on the Solve request keeps the legacy
 behaviour for automation. The per-node execution timeout is

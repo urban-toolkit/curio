@@ -241,6 +241,30 @@ The following providers are supported:
 
 Settings are stored per user in the database and apply across all of their projects.
 
+### Connection keys
+
+The same panel holds **Connection keys**: API keys a data-loading node reaches
+by name. Save a key once — name, host, how the API expects it (in the code, as
+a query parameter, or as a header) and the key itself in a masked field that is
+never read back — then write, in the node's code:
+
+```python
+api_key = curio_secret("census")
+```
+
+Curio resolves the name when the node runs (on Play and when an agent's Solve
+runs it) and hands the value to the sandbox for that run only. The key never
+appears in your saved dataflow, in proposals, in the chat or in the run log; a
+key the code prints is redacted. Running a node that names a key you have not
+saved fails with one sentence naming the key. When an agent's Solve hits an
+endpoint that wants a key you have not saved, the failure offers **Add key for
+<host>**, which opens this section with the host filled in.
+
+Keys are stored per account in your own directory as a plain file readable by
+the server only; they are not encrypted at rest. A dataflow you publish carries
+the key *names* — whoever installs it saves their own key under the same name.
+When authentication is off, every guest shares one key store.
+
 ### Guest users
 
 Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in **`utk_curio/backend/.env`**. The backend loads its `.env` relative to its own package directory ([`config.py`](../utk_curio/backend/config.py)), so a `.env` at the repo root is not read by the app. (Docker Compose does read a root `.env`, but only for interpolating values like `BACKEND_URL` into `docker-compose.yml`.)
