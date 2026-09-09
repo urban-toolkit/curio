@@ -1,0 +1,418 @@
+⏺ Bash(cd utk_curio/backend && grep -n "def _run_policy\|def _prepare_run\|def _persist_exchange\|def        
+  run_attachment\|def stream_attachment\|def _generate\|title" app/agents/services.py | sed -n '1,20p')      
+  ⎿  534:        # Conversation title (memo dev/25): the custom portion only — the                           
+     535:        # client composes "<name>: <title>" at display time.                                        
+     536:        "title": record.get("title") or None,                                                       
+     537:        "titleEdited": bool(record.get("titleEdited")),                                             
+     602:def update_attachment_title(                                                                        
+     603:    user_key: str, project_id: str, attachment_id: str, title: str                                  
+     605:    """Manually rename the conversation (memo dev/25). A manual title always                        
+     609:        record = attachments.set_title(spec, attachment_id, title, edited=True)                     
+     645:    # An auto-generated title describes the conversation that was just cleared                      
+     646:    # — drop it so the next first message regenerates one. A manual title is                        
+     648:    if record.get("title") and not record.get("titleEdited"):                                       
+     649:        attachments.set_title(spec, attachment_id, None, edited=False)                              
+     685:# ── conversation titles (memo dev/25) ────────────────────────────────────────                     
+     687:    "Summarize the user's request as a short descriptive title of three or "                        
+     688:    "four words. Reply with the title only — no quotes and no trailing period."                     
+     690:# A 3–4 word title needs very few tokens; keep the utility call cheap.                              
+     694:def sanitize_title(raw: object) -> str | None:                                                      
+     695:    """Normalize LLM title output to plain display text, or ``None`` to discard.                    
+     710:def _generate_conversation_title(                                                                   
+     713:    """Best-effort auto title from the first user message (memo dev/25).                            
+                                                               
+
+⏺ Bash(sed -n '710,760p' app/agents/services.py; grep -n "def _prepare_run\|def _run_policy\|def             
+  _persist_exchange\|def run_attachment\|def stream_attachment" app/agents/services.py)                      
+  ⎿  def _generate_conversation_title(                                                                       
+         user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig            
+     ) -> None:                                                                                              
+         """Best-effort auto title from the first user message (memo dev/25).                                
+                                                                                                             
+         Runs after the reply is persisted so it never delays the answer; a provider                         
+         failure or rejected output leaves the attachment untitled, silently. The                            
+         precondition (untitled, not manually edited) is re-checked on a fresh spec                          
+         read so a manual rename that landed mid-run wins.                                                   
+         """                                                                                                 
+         try:                                                                                                
+             raw = run_chat_completion(                                                                      
+                 config,                                                                                     
+                 [                                                                                           
+                     {"role": "system", "content": TITLE_PROMPT},                                            
+                     {"role": "user", "content": message},                                                   
+                 ],                                                                                          
+                 max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,                                                  
+             )                                                                                               
+             title = sanitize_title(raw)                                                                     
+             if title is None:                                                                               
+                 return                                                                                      
+             spec = projects_storage.read_spec(user_key, project_id)                                         
+             if spec is None:                                                                                
+                 return                                                                                      
+             record = attachments.get_attachment(spec, attachment_id)                                        
+             if record is None or record.get("title") or record.get("titleEdited"):                          
+                 return                                                                                      
+             attachments.set_title(spec, attachment_id, title, edited=False)                                 
+             projects_storage.write_spec(user_key, project_id, spec)                                         
+         except Exception:                                                                                   
+             pass  # a missing title is a cosmetic gap, never a run error                                                                                             
+                                                                                                             
+     def _run_policy(user_key: str, project_id: str, coord: str, spec: dict) -> dict:                        
+         """Admission + dispatch inputs from the effective policy (memo dev/24).                             
+                                                                                                             
+         ``template_limit`` applies only when the project scope is the tightest                              
+         source; the account counter is gated at the account-effective value."""                             
+         acct = account_settings.read_record(user_key)["settings"]                                           
+         record = project_agents.agent_defaults(spec).get(coord) or {}                                       
+         acc_eff = policy.effective(acct)                                                                    
+         full_eff = policy.effective(acct, record.get("settings") or {})                                     
+         runs = full_eff["quotas"]["runsPerDay"]                                                             
+         return {                                                                                            
+             "admit": {                                                                                      
+                 "account_limit": acc_eff["quotas"]["runsPerDay"]["value"],                                  
+                 "template_key": f"{project_id}/{coord}",                                                    
+                 "template_limit": runs["value"] if runs["source"] == "project" else None,                   
+                 "daily_budget_usd": full_eff["cost"]["dailyBudgetUsd"]["value"],                            
+                 "estimated_cost_per_run_usd": full_eff["cost"]["estimatedCostPerRunUsd"]["value"],          
+     744:def _run_policy(user_key: str, project_id: str, coord: str, spec: dict) -> dict:                    
+     766:def _prepare_run(                                                                                   
+     807:def _persist_exchange(                                                                              
+     833:def run_attachment(                                                                                 
+     866:def stream_attachment(    
+
+⏺ Bash(sed -n '744,935p' app/agents/services.py)                                                             
+  ⎿  def _run_policy(user_key: str, project_id: str, coord: str, spec: dict) -> dict:                        
+         """Admission + dispatch inputs from the effective policy (memo dev/24).                             
+                                                                                                             
+         ``template_limit`` applies only when the project scope is the tightest                              
+         source; the account counter is gated at the account-effective value."""                             
+         acct = account_settings.read_record(user_key)["settings"]                                           
+         record = project_agents.agent_defaults(spec).get(coord) or {}                                       
+         acc_eff = policy.effective(acct)                                                                    
+         full_eff = policy.effective(acct, record.get("settings") or {})                                     
+         runs = full_eff["quotas"]["runsPerDay"]                                                             
+         return {                                                                                            
+             "admit": {                                                                                      
+                 "account_limit": acc_eff["quotas"]["runsPerDay"]["value"],                                  
+                 "template_key": f"{project_id}/{coord}",                                                    
+                 "template_limit": runs["value"] if runs["source"] == "project" else None,                   
+                 "daily_budget_usd": full_eff["cost"]["dailyBudgetUsd"]["value"],                            
+                 "estimated_cost_per_run_usd": full_eff["cost"]["estimatedCostPerRunUsd"]["value"],          
+             },                                                                                              
+             "max_output_tokens": full_eff["resources"]["maxOutputTokens"]["value"],                         
+         }                                                                                                   
+              
+     def _prepare_run(                                                                                       
+         user_key: str, project_id: str, attachment_id: str, message: str                                    
+     ) -> tuple[str, str | None, list, dict, bool]: 
+      """Shared run/stream setup: resolve the attachment, its instruction (intent                         
+         override → prompt source, dev/19), the provider messages including the                              
+         bounded session context (dev/20), and the effective run policy (dev/24).                            
+         Returns ``(coord, session_id, messages, run_policy, wants_title)``;                                 
+         ``session_id`` is None for a record without one (stateless fallback), and                           
+         ``wants_title`` is True when this message is the conversation's first —                             
+         an untitled, never-manually-renamed attachment with no prior user turn —                            
+         so a title should be auto-generated after the reply (memo dev/25)."""                               
+         spec = _read_spec_or_404(user_key, project_id)                                                      
+         record = _record_or_404(spec, attachment_id)                                                        
+         coord = record.get("coord", "")                                                                     
+         instruction = record.get("intent") or _resolve_instruction_text(user_key, coord)                    
+         if instruction is None:                                                                             
+             raise AgentServiceError(                                                                        
+                 f"no instruction prompt available for {coord!r} (not materialized)", 422                    
+             )                                                                                               
+         # Migration parity (dev/06): the legacy call sites composed the system                              
+         # preamble + the prompt; an edited intent replaces the instruction portion                          
+         # only, so the preamble still applies.                                                              
+         preamble = _resolve_prompt_text(user_key, coord, "system")                                          
+         system_content = f"{preamble}\n\n{instruction}" if preamble else instruction                        
+         session_id = record.get("sessionId")                                                                
+         if not isinstance(session_id, str):                                                                 
+             session_id = None                                                                               
+         prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []                 
+         messages = [                                                                                        
+             {"role": "system", "content": system_content},                                                  
+             *sessions.context_messages(prior),                                                              
+             {"role": "user", "content": message},                                                           
+         ]                                                                                                   
+         wants_title = (                                                                                     
+             not record.get("title")                                                                         
+             and not record.get("titleEdited")                                                               
+             and not any(t.get("role") == "user" for t in prior)                                             
+         )                                                                                                   
+         return coord, session_id, messages, _run_policy(user_key, project_id, coord, spec), wants_title     
+                
+
+     def _persist_exchange(                                                                                  
+         user_key: str,                                                                                      
+         project_id: str,                                                                                    
+         session_id: str | None,                                                                             
+         attachment_id: str,                                                                                 
+         message: str,                                                                                       
+         reply: str,                                                                                         
+         *,                                                                                                  
+         error: bool = False,                                                                                
+     ) -> None:                                                                                              
+         """Persist one exchange to the session (no-op without a session id). Error                          
+         markers are display-only history, excluded from future context (dev/20)."""                         
+         if session_id is None:                                                                              
+             return                                                                                          
+         sessions.append_turns(                                                                              
+             user_key,                                                                                       
+             project_id,                                                                                     
+             session_id,                                                                                     
+             attachment_id,                                                                                  
+             [                                                                                               
+                 sessions.make_turn("user", message),                                                        
+                 sessions.make_turn("agent", reply, error=error),                                            
+             ],                                                                                              
+         )                                                                                                   
+                                                                                                             
+                  
+     def run_attachment(                                                                                     
+         user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig            
+     ) -> dict:                                                                                              
+         """Run one turn of an attached agent through the provider port.                                     
+                                                                                                             
+         Session-aware (dev/20): the system turn is the attachment's intent override                         
+         (dev/19) or the resolved instruction prompt, followed by a bounded window of                        
+         the session's prior turns, then the new user message. Both sides of the                             
+         exchange persist to the session file so a reload restores the conversation;                         
+         a provider failure persists the user turn plus a display-only error marker                          
+         (excluded from future context) so history matches what the user saw.                                
+         """                                                                                                 
+         coord, session_id, messages, run_policy, wants_title = _prepare_run(                                
+             user_key, project_id, attachment_id, message                                                    
+         )                                                                                                   
+         # Admission after validation (an invalid request never consumes quota) and                          
+         # before provider dispatch (a denied run never reaches a provider).                                 
+         quotas.admit(user_key, **run_policy["admit"])                                                       
+         try:                                                                                                
+             reply = run_chat_completion(                                                                    
+                 config, messages, max_output_tokens=run_policy["max_output_tokens"]                         
+             )                                                                                               
+         except Exception as exc:                                                                            
+             _persist_exchange(                                                                              
+                 user_key, project_id, session_id, attachment_id, message, f"(error) {exc}", error=True      
+             )                                                                                               
+             raise AgentServiceError(f"agent run failed: {exc}", 502) from exc                               
+         _persist_exchange(user_key, project_id, session_id, attachment_id, message, reply)                  
+         if wants_title:                                                                                     
+             _generate_conversation_title(user_key, project_id, attachment_id, message, config)              
+         return {"attachmentId": attachment_id, "coord": coord, "reply": reply}                              
+
+
+     def stream_attachment(                                                                                  
+         user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig            
+     ):                                                                                                      
+         """Streaming twin of :func:`run_attachment` (memo dev/22).                                          
+                                                                                                             
+         Validates eagerly (404/422 raise before any streaming starts), then returns                         
+         a generator of ``("delta", text)`` events ending in ``("done", full_reply)``                        
+         — or ``("error", message)`` on a provider failure. Persistence semantics are                        
+         identical to ``run_attachment``: the full exchange is written once at                               
+         completion; a failure persists the user turn plus a display-only error                              
+         marker. Nothing is persisted per-delta.                                                             
+         """                                                                                                 
+         coord, session_id, messages, run_policy, wants_title = _prepare_run(                                
+             user_key, project_id, attachment_id, message                                                    
+         )                                                                                                 
+         # Eager admission: a quota/budget denial surfaces as a plain 429 before any                         
+         # streaming begins, and consumes/persists nothing.                                                  
+         quotas.admit(user_key, **run_policy["admit"])                                                       
+                                                                                                             
+         def _events():                                                                                      
+             parts: list[str] = []                                                                           
+             try:                                                                                            
+                 for delta in stream_chat_completion(                                                        
+                     config, messages, max_output_tokens=run_policy["max_output_tokens"]                     
+                 ):                                                                                          
+                     parts.append(delta)                                                                     
+                     yield ("delta", delta)                                                                  
+             except Exception as exc:  # provider failure mid-stream                                         
+                 _persist_exchange(                                                                          
+                     user_key,                                                                               
+                     project_id,                                                                             
+                     session_id,                                                                             
+                     attachment_id,                                                                          
+                     message,                                                                                
+                     f"(error) {exc}",                                                                       
+                     error=True,                                                                             
+                 )                                                                                           
+                 yield ("error", f"agent run failed: {exc}")                                                 
+                 return                                                                                      
+             reply = "".join(parts)                                                                          
+             _persist_exchange(user_key, project_id, session_id, attachment_id, message, reply)              
+             # Title before the done frame: the reply text already streamed via                              
+             # deltas, and the client's post-send refresh must see the title.                                
+             if wants_title:                                                                                 
+                 _generate_conversation_title(user_key, project_id, attachment_id, message, config)          
+             yield ("done", reply)                                                                           
+                                                                                                             
+         return _events()   
+
+
+⏺ Bash(python3 - << 'EOF'                                                                                    
+  p = "app/agents/providers.py"                                                                              
+  s = open(p).read()                                                                                         
+                                                                                                             
+  # Helper + non-streaming signature.                                                                        
+  s = s.replace(                                                                                             
+      '''def run_chat_completion(                                                                            
+      config: ProviderConfig, messages: list, max_output_tokens: int | None = None                           
+  ) -> str:''',                                                                                              
+      '''def _capture_usage(usage_out: dict | None, input_tokens, output_tokens) -> None:                    
+      """Record Actual token usage into the caller's sink (memo dev/37).                                     
+                                                                                                             
+      Best-effort: only populated when the provider reports both counts; the sink                            
+      stays empty otherwise. Never estimated (memo dev/11's labeling rule)."""                               
+      if usage_out is None:                                                                                  
+          return                                                                                             
+      if isinstance(input_tokens, int) and isinstance(output_tokens, int):                                   
+          usage_out["inputTokens"] = input_tokens                                                            
+          usage_out["outputTokens"] = output_tokens                                                          
+                                                                                                             
+                                                                                                             
+  def run_chat_completion(                                                                                   
+      config: ProviderConfig,                                                                                
+      messages: list,                                                                                        
+      max_output_tokens: int | None = None,                                                                  
+      usage_out: dict | None = None,                                                                         
+  ) -> str:''',                                                                                              
+  )                                                                                                          
+     
+# anthropic non-stream                                                                                     
+  s = s.replace(                                                                                             
+      '''            max_tokens=max_output_tokens or 4096,                                                   
+          )                                                                                                  
+          return resp.content[0].text''',                                                                    
+      '''            max_tokens=max_output_tokens or 4096,                                                   
+          )                                                                                                  
+          usage = getattr(resp, "usage", None)                                                               
+          _capture_usage(                                                                                    
+              usage_out, getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None)         
+          )                                                                                                  
+          return resp.content[0].text''',                                                                    
+  )                                                                                                          
+                                                                                                             
+  # gemini non-stream                                                                                        
+  s = s.replace(                                                                                             
+      '''        response = chat.send_message(last_user_msg, **send_kwargs)                                  
+          return response.text''',                                                                           
+      '''        response = chat.send_message(last_user_msg, **send_kwargs)                                  
+          meta = getattr(response, "usage_metadata", None)                                                   
+          _capture_usage(                                                                                    
+              usage_out,                                                                                     
+              getattr(meta, "prompt_token_count", None),                                                     
+              getattr(meta, "candidates_token_count", None),                                                 
+          )                                                                                                  
+          return response.text''',                                                                           
+  )                                                                                                          
+       
+  # openai non-stream                                                                                        
+  s = s.replace(                                                                                             
+      '''        completion = client.chat.completions.create(**create_kwargs)                                
+          return completion.choices[0].message.content''',                                                   
+      '''        completion = client.chat.completions.create(**create_kwargs)                                
+          usage = getattr(completion, "usage", None)                                                         
+          _capture_usage(                                                                                    
+              usage_out, getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None)    
+          )                                                                                                  
+          return completion.choices[0].message.content''',                                                   
+  )                                                                                                          
+                                                                                                             
+  # streaming signature                                                                                      
+  s = s.replace(                                                                                             
+      '''def stream_chat_completion(                                                                         
+      config: ProviderConfig, messages: list, max_output_tokens: int | None = None                           
+  ):''',                                                                                                     
+      '''def stream_chat_completion(                                                                         
+      config: ProviderConfig,                                                                                
+      messages: list,                                                                                        
+      max_output_tokens: int | None = None,                                                                  
+      usage_out: dict | None = None,                                                                         
+  ):''',                                                                                                     
+  )      
+# anthropic stream: final message usage after the text loop.                                               
+  s = s.replace(  
+     '''        ) as stream:                                                                                
+              for text in stream.text_stream:                                                                
+                  if text:                                                                                   
+                      yield text''',                                                                         
+      '''        ) as stream:                                                                                
+              for text in stream.text_stream:                                                                
+                  if text:                                                                                   
+                      yield text                                                                             
+              try:                                                                                           
+                  usage = getattr(stream.get_final_message(), "usage", None)                                 
+                  _capture_usage(                                                                            
+                      usage_out,                                                                             
+                      getattr(usage, "input_tokens", None),                                                  
+                      getattr(usage, "output_tokens", None),                                                 
+                  )                                                                                          
+              except Exception:                                                                              
+                  pass  # usage is best-effort; the reply already streamed''',                               
+  )                                                                                                          
+                                                                                                             
+  # gemini stream: last chunk carries the aggregated usage metadata.                                         
+  s = s.replace(                                                                                             
+      '''        for chunk in chat.send_message(last_user_msg, stream=True, **send_kwargs):                  
+              text = getattr(chunk, "text", "")                                                              
+              if text:                                                                                       
+                  yield text''',                                                                             
+      '''        last_chunk = None                                                                           
+          for chunk in chat.send_message(last_user_msg, stream=True, **send_kwargs):                         
+              last_chunk = chunk                                                                             
+              text = getattr(chunk, "text", "")                                                              
+              if text:                                                                                       
+                  yield text                                                                                 
+          meta = getattr(last_chunk, "usage_metadata", None)                                                 
+          _capture_usage(                                                                                    
+              usage_out,                                                                                     
+              getattr(meta, "prompt_token_count", None),                                                     
+              getattr(meta, "candidates_token_count", None),                                                 
+          )''',                                                                                              
+  )  
+# openai stream: request usage in the final chunk and capture it.                                          
+  s = s.replace(                                                                                             
+      '''        create_kwargs = {"model": config.model, "messages": messages, "stream": True}               
+          if max_output_tokens:                                                                              
+              create_kwargs["max_tokens"] = max_output_tokens                                                
+          stream = client.chat.completions.create(**create_kwargs)                                           
+          for chunk in stream:                                                                               
+              choices = getattr(chunk, "choices", None) or []                                                
+              delta = choices[0].delta if choices else None                                                  
+              text = getattr(delta, "content", None) if delta is not None else None 
+              if text:                                                                                       
+                  yield text''',                                                                             
+      '''        create_kwargs = {                                                                           
+              "model": config.model,                                                                         
+              "messages": messages,                                                                          
+              "stream": True,                                                                                
+              "stream_options": {"include_usage": True},                                                     
+          }                                                                                                  
+          if max_output_tokens:                                                                              
+              create_kwargs["max_tokens"] = max_output_tokens                                                
+          stream = client.chat.completions.create(**create_kwargs)                                           
+          for chunk in stream:                                                                               
+              usage = getattr(chunk, "usage", None)                                                          
+              if usage is not None:                                                                          
+                  _capture_usage(                                                                            
+                      usage_out,                                                                             
+                      getattr(usage, "prompt_tokens", None),                                                 
+                      getattr(usage, "completion_tokens", None),                                             
+                  )                                                                                          
+              choices = getattr(chunk, "choices", None) or []                                                
+              delta = choices[0].delta if choices else None                                                  
+              text = getattr(delta, "content", None) if delta is not None else None                          
+              if text:                                                                                       
+                  yield text''',                                                                             
+  )                                                                                                          
+  open(p, "w").write(s)                                                                                      
+  print("providers patched")                                                                                 
+  EOF                                                                                                        
+  python3 -m pytest tests/test_agents/test_providers.py -q 2>&1 | tail -3)                                   
+  ⎿  providers patched                                                                                       
+     FAILED tests/test_agents/test_providers.py::TestStreaming::test_openai_compatible_streams_deltas        
+     FAILED tests/test_agents/test_providers.py::TestStreaming::test_stopping_iteration_stops_consumption    
+     2 failed, 9 passed in 0.37s  

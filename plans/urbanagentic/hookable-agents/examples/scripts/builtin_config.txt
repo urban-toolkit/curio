@@ -1,0 +1,160 @@
+ Bash command                                                                                                      
+                                                                                                                   
+   python3 - << 'EOF'                                                                                              
+   p = "app/agents/builtin.py"                                                                                     
+   s = open(p).read()                                                                                              
+                                                                                                                   
+   # 1. Spec fields.                                                                                               
+   s = s.replace(                                                                                                  
+       '''    prompt_file: str  # filename in llm-prompts/                                                         
+       capabilities: tuple[str, ...]                                                                               
+       roles: tuple[str, ...] = field(default_factory=tuple)''',                                                   
+       '''    prompt_file: str  # instruction filename in llm-prompts/                                             
+       capabilities: tuple[str, ...]                                                                               
+       roles: tuple[str, ...] = field(default_factory=tuple)                                                       
+       # System preamble filename in llm-prompts/ — the dev/05 roster's "System                                    
+       # file" column: default_preamble.txt for all but the syntax agent. Every                                    
+       # legacy call site composed preamble + prompt, so migration parity                                          
+       # (dev/06) requires the asset and its runtime composition.                                                  
+       preamble_file: str = "default_preamble.txt"                                                                 
+       # inputs.reads — the context the agent consumes, grounded in what each                                      
+       # legacy call site actually passed (dev/06 migration map).                                                  
+       reads: tuple[str, ...] = field(default_factory=tuple)''',                                                   
+   )                                                                                                               
+                                                                                                                   
+   # 2. Roster reads (+ the one preamble override).                                                                
+   R = [                                                                                                           
+       ('"chat_prompt.txt", ("conversation.respond", "attachment.refine"), ("chat",),\n                            
+   targets=("node", "canvas")),',                                                                                  
+        '"chat_prompt.txt", ("conversation.respond", "attachment.refine"), ("chat",),\n                            
+   targets=("node", "canvas"), reads=("userMessage",)),'),                                                         
+       ('"debug_prompt.txt", ("code.debug.diagnose", "code.fix.propose"), ("debug",),\n                            
+   targets=("node", "canvas")),',                                                                                  
+        '"debug_prompt.txt", ("code.debug.diagnose", "code.fix.propose"), ("debug",),\n                            
+   targets=("node", "canvas"), reads=("dataflowContext",)),'),                                                     
+       ('"explanation_prompt.txt", ("dataflow.explain",), ("explanation",)),',                                     
+        '"explanation_prompt.txt", ("dataflow.explain",), ("explanation",),\n                                      
+   reads=("dataflowContext",)),'),                                                                                 
+       ('("node.explain", "node.output.interpret"), ("explanation",)),',                                           
+        '("node.explain", "node.output.interpret"), ("explanation",),\n                          
+reads=("nodeContext",)),'),
+       ('"new_content_prompt.txt", ("node.content.generate",), ("authoring",)),',
+        '"new_content_prompt.txt", ("node.content.generate",), ("authoring",),\n                     reads=("dataflowContext", "nodeId", "subtask", "workflowGoal")),'),
+       ('"new_subtask_from_exec_prompt.txt", ("execution.followup.plan",), ("planning",)),',
+        '"new_subtask_from_exec_prompt.txt", ("execution.followup.plan",), ("planning",),\n                     reads=("nodeContent", "nodeType", "currentTask")),'),
+       ('"new_subtasks_prompt.txt", ("workflow.plan.create",), ("planning",)),',
+        '"new_subtasks_prompt.txt", ("workflow.plan.create",), ("planning",),\n                     reads=("currentTask", "dataflowContext")),'),
+       ('"new_connection_prompt.txt", ("connection.propose",), ("authoring",)),',
+        '"new_connection_prompt.txt", ("connection.propose",), ("authoring",),\n                     reads=("workflowGoal", "nodeId", "subtask", "connectionSide", "dataflowContext")),'),
+       ('"workflow_suggestions_prompt.txt", ("workflow.suggest",), ("planning",)),',
+        '"workflow_suggestions_prompt.txt", ("workflow.suggest",), ("planning",),\n                     reads=("dataflowContext", "workflowGoal")),'),
+       ('"evaluate_coherence_subtasks_prompt.txt", ("workflow.coherence.validate",), ("validation",)),',
+        '"evaluate_coherence_subtasks_prompt.txt", ("workflow.coherence.validate",), ("validation",),\n                     reads=("workflowGoal", "dataflowContext")),'),
+       ('"syntax_analysis_prompt.txt", ("code.syntax.analyze",), ("validation",)),',
+        '"syntax_analysis_prompt.txt", ("code.syntax.analyze",), ("validation",),\n                     preamble_file="syntax_analysis_preamble.txt", reads=("codeContext",)),'),
+       ('"task_refresh_prompt.txt", ("workflow.plan.refresh",), ("planning",)),',
+        '"task_refresh_prompt.txt", ("workflow.plan.refresh",), ("planning",),\n                     reads=("currentTask", "keywords", "dataflowContext")),'),
+       ('"keywords_binding_prompt.txt", ("workflow.keyword.bind",), ("planning",)),',
+        '"keywords_binding_prompt.txt", ("workflow.keyword.bind",), ("planning",),\n                     reads=("keywords", "dataflowContext")),'),
+   ]
+   for old, new in R:
+       assert old in s, old[:60]
+       s = s.replace(old, new, 1)
+
+   # 3. Manifest builder: system asset + inputs.
+   s = s.replace(
+       '''        "prompts": {"instruction": {"path": f"prompts/{spec.prompt_file}", "variables": []}},
+           "compatibleTargets": [{"kind": k, "requires": []} for k in spec.target_kinds()],''',
+       '''        "prompts": {
+               "system": {"path": f"prompts/{spec.preamble_file}", "variables": []},
+               "instruction": {"path": f"prompts/{spec.prompt_file}", "variables": []},                            
+           },                                                                                                      
+           "compatibleTargets": [{"kind": k, "requires": []} for k in spec.target_kinds()],                        
+           "inputs": {"reads": list(spec.reads), "requiredConfig": []},''',                                        
+   )                                                                                                               
+                                                                                                                   
+   # 4. Generalized prompt reader.                                                                                 
+   s = s.replace(                                                                                                  
+       '''def read_instruction_text(coord: str) -> str | None:                                                     
+       """Read a built-in's instruction prompt text from ``llm-prompts/``, or None."""                             
+       spec = _by_coord().get(coord)                                                                               
+       if spec is None:                                                                                            
+           return None                                                                                             
+       path = PROMPT_SOURCE_DIR / spec.prompt_file                                                                 
+       return path.read_text(encoding="utf-8") if path.is_file() else None''',                                     
+       '''def read_prompt_text(coord: str, name: str) -> str | None:                                               
+       """Read a built-in's prompt asset text from ``llm-prompts/``, or None.                                      
+                                                                                                                   
+       ``name`` is the manifest prompt key: ``"instruction"`` (the agent's task                                    
+       prompt) or ``"system"`` (its preamble).                                                                     
+       """                                                                                                         
+       spec = _by_coord().get(coord)                                                                               
+       if spec is None:                                                                                            
+           return None                                                                                             
+       filename = spec.prompt_file if name == "instruction" else spec.preamble_file                                
+       path = PROMPT_SOURCE_DIR / filename                                                                         
+       return path.read_text(encoding="utf-8") if path.is_file() else None                                         
+                                                                                                                   
+                                                                                                                   
+   def read_instruction_text(coord: str) -> str | None:                                                            
+       """Read a built-in's instruction prompt text from ``llm-prompts/``, or None."""                             
+       return read_prompt_text(coord, "instruction")''',                                                           
+   )                                                                                                               
+   open(p, "w").write(s)                                                                                           
+   print("builtin.py patched")                                                                                     
+   EOF                                                                                                             
+   Extend roster with preamble + reads                                                                             
+                                                                                                                   
+ Contains brace with quote character (expansion obfuscation)
+
+ ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Bash command                                                                                                      
+                                                                                                                   
+   python3 - << 'EOF'                                                                                              
+   p = "plans/urbanagentic/hookable-agents/dev/05-agents-catalog-implementation-blueprint.md"                      
+   s = open(p).read()                                                                                              
+                                                                                                                   
+   old_header = "| Agent ID | Semantic capabilities | Instruction file | System file | Hook | Output/review        
+   contract |\n| --- | --- | --- | --- | --- | --- |"                                                              
+   new_header = "| Agent ID | Semantic capabilities | Instruction file | System file | `inputs.reads` | Hook |     
+   Output/review contract |\n| --- | --- | --- | --- | --- | --- | --- |"                                          
+   assert old_header in s                                                                                          
+   s = s.replace(old_header, new_header, 1)                                                                        
+                                                                                                                   
+   READS = {                                                                                                       
+       "agent.chat-agent": "`userMessage`",                                                                        
+       "agent.debug-agent": "`dataflowContext`",                                                                   
+       "agent.dataflow-explainer": "`dataflowContext`",                                                            
+       "agent.node-explainer": "`nodeContext`",                                                                    
+       "agent.node-content-builder": "`dataflowContext`, `nodeId`, `subtask`, `workflowGoal`",                     
+       "agent.execution-subtask-planner": "`nodeContent`, `nodeType`, `currentTask`",                              
+       "agent.dataflow-task-planner": "`currentTask`, `dataflowContext`",                                          
+       "agent.connection-builder": "`workflowGoal`, `nodeId`, `subtask`, `connectionSide`, `dataflowContext`",     
+       "agent.workflow-suggester": "`dataflowContext`, `workflowGoal`",                                            
+       "agent.plan-coherence-validator": "`workflowGoal`, `dataflowContext`",                                      
+       "agent.generated-content-evaluator": "*(blocked with the contract — `OQ-007`)*",                            
+       "agent.syntax-analysis-agent": "`codeContext`",                                                             
+       "agent.task-refresh-agent": "`currentTask`, `keywords`, `dataflowContext`",                                 
+       "agent.keyword-binding-agent": "`keywords`, `dataflowContext`",                                             
+   }                                                                                                               
+                                                                                                                   
+   import re                                                                                                       
+   count = 0                                                                                                       
+   lines = s.split("\n")                                                                                           
+   for i, line in enumerate(lines):                                                                                
+       for agent, reads in READS.items():                                                                          
+           if line.startswith(f"| `{agent}` |"):                                                                   
+               cells = line.split(" | ")                                                                           
+               # cells: ['| `agent...`', caps, instruction, system, hook, 'contract |']                            
+               assert len(cells) == 6, (agent, len(cells))
+               cells.insert(4, reads)
+               lines[i] = " | ".join(cells)
+               count += 1
+   s = "\n".join(lines)
+   assert count == 14, count
+   open(p, "w").write(s)
+   print(f"dev/05 roster table: inputs column added to {count} rows")
+   EOF
+   Add inputs column to the canonical roster table
+
+ Contains brace with quote character (expansion obfuscation)

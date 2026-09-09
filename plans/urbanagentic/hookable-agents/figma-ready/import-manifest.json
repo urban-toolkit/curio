@@ -1,0 +1,74 @@
+{
+  "name": "Hookable Agents UI",
+  "createdFor": "Urban Agentic",
+  "frame": { "width": 1672, "height": 941 },
+  "fonts": ["Rubik", "Roboto Mono"],
+  "assets": [
+    {
+      "name": "Agent Catalog drawer",
+      "path": "../svg-concepts/01-agents-catalog-drawer.svg",
+      "figmaPage": "01 Agent Catalog",
+      "description": "Historical Curio Agent Catalog drawer concept; lifecycle actions require regeneration from the current plan."
+    },
+    {
+      "name": "Dataflow with attached agents",
+      "path": "../svg-concepts/02-main-dataflow-attached-agents.svg",
+      "figmaPage": "02 Attached Agents",
+      "description": "Attached-agent dock tiles under nodes plus the canvas-level Dataflow Builder dock."
+    },
+    {
+      "name": "Attach Dataset Finder to Data Loading",
+      "path": "../svg-concepts/03-attachment-dataset-finder-to-data-load.svg",
+      "figmaPage": "03 Attach · Dataset Finder",
+      "description": "Dataset Finder attached to the Data Loading node; suggested external sources review with green attachment path."
+    },
+    {
+      "name": "Attach Node Explainer to node",
+      "path": "../svg-concepts/04-attachment-node-explainer-to-node.svg",
+      "figmaPage": "04 Attach · Node Explainer",
+      "description": "Node Explainer hook selected on a Python Computation node with blue attachment path."
+    },
+    {
+      "name": "Attach Dataflow Builder to canvas",
+      "path": "../svg-concepts/05-attachment-dataflow-builder-to-canvas.svg",
+      "figmaPage": "05 Attach · Dataflow Builder",
+      "description": "Canvas-level hook with dashed orange boundary and the Dataflow Builder dock."
+    },
+    {
+      "name": "Agent refinement sidebar",
+      "path": "../svg-concepts/06-agent-refinement-sidebar-open.svg",
+      "figmaPage": "06 Refinement",
+      "description": "Historical attached Node Explainer unified-chat/refinement drawer; governed settings move to the six-screen settings shell."
+    },
+    {
+      "name": "Dataset Finder overview",
+      "path": "../svg-concepts/07-dataset-finder-overview.svg",
+      "figmaPage": "07 Dataset Finder Overview",
+      "description": "Historical Dataset Finder session showing external-source and Data Catalog paths."
+    },
+    {
+      "name": "Dataset review",
+      "path": "../svg-concepts/08-dataset-review-modal.svg",
+      "figmaPage": "08 Dataset Review",
+      "description": "Historical Node Builder-generated dataset review concept; current review belongs in unified chat."
+    },
+    {
+      "name": "Datasets in palette",
+      "path": "../svg-concepts/09-datasets-created-in-palette.svg",
+      "figmaPage": "09 Datasets Palette",
+      "description": "Curio DATA palette with external/catalog source provenance."
+    },
+    {
+      "name": "Dataflow Builder orchestration",
+      "path": "../svg-concepts/10-dataflow-builder-orchestration.svg",
+      "figmaPage": "10 Orchestration",
+      "description": "Historical orchestration concept; any auto-install copy requires regeneration as explicit Install in project."
+    },
+    {
+      "name": "Agents palette",
+      "path": "../svg-concepts/11-agents-palette.svg",
+      "figmaPage": "11 Agents Palette",
+      "description": "Historical palette concept; regeneration must show only active-project templates."
+    }
+  ]
+}

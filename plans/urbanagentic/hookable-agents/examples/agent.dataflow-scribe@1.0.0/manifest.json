@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../../../docs/schemas/agent-package.v1.json",
+  "id": "agent.dataflow-scribe",
+  "name": "Dataflow Scribe",
+  "category": "canvas",
+  "version": "1.0.0",
+  "purpose": "Draft README-style documentation of the current dataflow.",
+  "roles": ["documentation"],
+  "capabilities": [
+    { "id": "dataflow.document", "contractVersion": "1" },
+    { "id": "dataflow.explain", "contractVersion": "1" }
+  ],
+  "delegatesTo": [],
+  "prompts": {
+    "system": { "path": "prompts/preamble.txt", "variables": [] },
+    "instruction": { "path": "prompts/instruction.txt", "variables": [] }
+  },
+  "compatibleTargets": [
+    { "kind": "canvas", "requires": [] },
+    { "kind": "node", "requires": [] }
+  ],
+  "inputs": { "reads": ["dataflowContext"], "requiredConfig": [] },
+  "outputs": ["documentation"],
+  "runtime": { "execution": "foreground", "reviewPolicy": "report-only" },
+  "providerRequirements": { "capabilities": [] },
+  "tools": [],
+  "settingsDefaults": { "profileId": "interactive-report", "profileVersion": "1" },
+  "provenance": { "publisher": "example", "license": "MIT" }
+}

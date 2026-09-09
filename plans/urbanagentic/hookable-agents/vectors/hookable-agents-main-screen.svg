@@ -1,0 +1,341 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <style>
+      .ui { font-family: Inter, Arial, Helvetica, sans-serif; }
+      .nav-text { font-family: Inter, Arial, Helvetica, sans-serif; fill: #fff; font-size: 14px; font-weight: 600; }
+      .title { font-family: Inter, Arial, Helvetica, sans-serif; fill: #111827; font-size: 18px; font-weight: 700; }
+      .section { font-family: Inter, Arial, Helvetica, sans-serif; fill: #111827; font-size: 13px; font-weight: 700; }
+      .text { font-family: Inter, Arial, Helvetica, sans-serif; fill: #111827; font-size: 13px; }
+      .small { font-family: Inter, Arial, Helvetica, sans-serif; fill: #4B5563; font-size: 12px; }
+      .tiny { font-family: Inter, Arial, Helvetica, sans-serif; fill: #6B7280; font-size: 10.5px; }
+      .micro { font-family: Inter, Arial, Helvetica, sans-serif; fill: #6B7280; font-size: 9.5px; }
+      .panel { fill: #fff; stroke: #D1D5DB; stroke-width: 1; }
+      .card { fill: #fff; stroke: #D1D5DB; stroke-width: 1; }
+      .node { fill: #fff; stroke: #C9D0DA; stroke-width: 1.2; }
+      .input { fill: #fff; stroke: #D1D5DB; stroke-width: 1; }
+      .shadow { filter: drop-shadow(0 2px 6px rgba(17, 24, 39, .16)); }
+      .orange { fill: #FF6F00; }
+      .orange-stroke { stroke: #FF6F00; }
+      .green { fill: #16A34A; }
+      .green-stroke { stroke: #16A34A; }
+      .blue { fill: #2563EB; }
+      .blue-stroke { stroke: #2563EB; }
+      .purple { fill: #7C3AED; }
+      .purple-stroke { stroke: #7C3AED; }
+      .line { stroke: #111827; stroke-width: 1.8; fill: none; marker-end: url(#arrow-dark); }
+      .flow-orange { stroke: #FF6F00; stroke-width: 2.2; stroke-dasharray: 6 6; fill: none; marker-end: url(#arrow-orange); }
+      .flow-green { stroke: #16A34A; stroke-width: 2.2; stroke-dasharray: 6 6; fill: none; marker-end: url(#arrow-green); }
+      .flow-blue { stroke: #2563EB; stroke-width: 2.2; stroke-dasharray: 6 6; fill: none; marker-end: url(#arrow-blue); }
+    </style>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#DDE2EA"/>
+    </pattern>
+    <marker id="arrow-dark" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#111827"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#FF6F00"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#16A34A"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/>
+    </marker>
+    <symbol id="bot-head" viewBox="0 0 28 28">
+      <rect x="5" y="8" width="18" height="14" rx="5" fill="currentColor"/>
+      <rect x="9" y="12" width="3.5" height="3.5" rx="1.7" fill="#fff"/>
+      <rect x="15.5" y="12" width="3.5" height="3.5" rx="1.7" fill="#fff"/>
+      <path d="M11 18 C13 19.5 15 19.5 17 18" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>
+      <path d="M14 8 V4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="14" cy="3.5" r="2" fill="currentColor"/>
+    </symbol>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="900" fill="#F7F8FA"/>
+
+  <!-- Top navigation -->
+  <rect x="0" y="0" width="1600" height="52" fill="#050505"/>
+  <g transform="translate(15 13)">
+    <path d="M0 8 L12 1 L24 8 L24 21 L12 28 L0 21 Z" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M6 8 L12 12 L18 8" fill="none" stroke="#FF6F00" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <text x="50" y="33" class="nav-text" style="font-size:25px;font-weight:700">curio</text>
+  <text x="164" y="31" class="nav-text">File</text>
+  <text x="222" y="31" class="nav-text">View</text>
+  <text x="287" y="31" class="nav-text">Data</text>
+  <text x="350" y="31" class="nav-text">Provenance</text>
+  <text x="465" y="31" class="nav-text">Agents</text>
+  <rect x="462" y="47" width="58" height="4" fill="#FF6F00"/>
+  <circle cx="1394" cy="26" r="14" fill="#D4A381" stroke="#fff" stroke-width="1.2"/>
+  <text x="1418" y="31" class="nav-text" style="font-size:13px">Karla P.</text>
+  <line x1="1505" y1="12" x2="1505" y2="40" stroke="#6B7280"/>
+  <text x="1525" y="31" class="nav-text" style="font-size:13px">Logout</text>
+
+  <!-- Left Agents Catalog -->
+  <rect x="0" y="52" width="320" height="848" class="panel"/>
+  <text x="20" y="84" class="title">Agents Catalog</text>
+  <text x="20" y="106" class="small">Reusable agents attach to Curio hooks.</text>
+  <rect x="20" y="124" width="280" height="34" rx="6" class="input"/>
+  <circle cx="38" cy="141" r="6" fill="none" stroke="#6B7280" stroke-width="1.4"/>
+  <path d="M43 146 L49 152" stroke="#6B7280" stroke-width="1.4" stroke-linecap="round"/>
+  <text x="60" y="145" class="tiny">Search agents</text>
+
+  <g transform="translate(20 170)">
+    <rect x="0" y="0" width="34" height="25" rx="5" fill="#111827"/>
+    <text x="17" y="17" class="tiny" text-anchor="middle" fill="#fff">All</text>
+    <rect x="42" y="0" width="42" height="25" rx="5" fill="#ECFDF5" stroke="#A7F3D0"/>
+    <text x="63" y="17" class="tiny" text-anchor="middle" fill="#166534">Data</text>
+    <rect x="92" y="0" width="45" height="25" rx="5" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <text x="114" y="17" class="tiny" text-anchor="middle" fill="#1D4ED8">Node</text>
+    <rect x="145" y="0" width="57" height="25" rx="5" fill="#FFF4E8" stroke="#FED7AA"/>
+    <text x="173" y="17" class="tiny" text-anchor="middle" fill="#C2410C">Canvas</text>
+    <rect x="210" y="0" width="66" height="25" rx="5" fill="#F5F3FF" stroke="#DDD6FE"/>
+    <text x="243" y="17" class="tiny" text-anchor="middle" fill="#6D28D9">Explain</text>
+  </g>
+
+  <!-- Agent cards -->
+  <g class="shadow" transform="translate(20 214)">
+    <rect width="280" height="98" rx="8" fill="#F0FDF4" stroke="#16A34A" stroke-width="1.5"/>
+    <g color="#16A34A" transform="translate(14 15)"><use href="#bot-head" width="28" height="28"/></g>
+    <text x="52" y="26" class="section">Dataset Finder</text>
+    <text x="52" y="45" class="small">Find datasets for a loading step.</text>
+    <rect x="52" y="58" width="92" height="22" rx="5" fill="#fff" stroke="#BBF7D0"/>
+    <text x="98" y="73" class="tiny" text-anchor="middle" fill="#166534">Hook: Data Load</text>
+    <rect x="152" y="58" width="103" height="22" rx="5" fill="#fff" stroke="#BBF7D0"/>
+    <text x="203" y="73" class="tiny" text-anchor="middle" fill="#166534">Review datasets</text>
+  </g>
+
+  <g class="shadow" transform="translate(20 326)">
+    <rect width="280" height="98" rx="8" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.6"/>
+    <g color="#2563EB" transform="translate(14 15)"><use href="#bot-head" width="28" height="28"/></g>
+    <text x="52" y="26" class="section">Node Explainer</text>
+    <text x="52" y="45" class="small">Explain code, output, and lineage.</text>
+    <rect x="52" y="58" width="78" height="22" rx="5" fill="#fff" stroke="#BFDBFE"/>
+    <text x="91" y="73" class="tiny" text-anchor="middle" fill="#1D4ED8">Hook: Node</text>
+    <rect x="138" y="58" width="116" height="22" rx="5" fill="#fff" stroke="#BFDBFE"/>
+    <text x="196" y="73" class="tiny" text-anchor="middle" fill="#1D4ED8">No destructive edits</text>
+  </g>
+
+  <g class="shadow" transform="translate(20 438)">
+    <rect width="280" height="98" rx="8" fill="#FFF4E8" stroke="#FF6F00" stroke-width="1.5"/>
+    <g color="#FF6F00" transform="translate(14 15)"><use href="#bot-head" width="28" height="28"/></g>
+    <text x="52" y="26" class="section">Dataflow Builder</text>
+    <text x="52" y="45" class="small">Plan, revise, and solve a workflow.</text>
+    <rect x="52" y="58" width="91" height="22" rx="5" fill="#fff" stroke="#FED7AA"/>
+    <text x="97" y="73" class="tiny" text-anchor="middle" fill="#C2410C">Hook: Canvas</text>
+    <rect x="151" y="58" width="103" height="22" rx="5" fill="#fff" stroke="#FED7AA"/>
+    <text x="202" y="73" class="tiny" text-anchor="middle" fill="#C2410C">Confirm changes</text>
+  </g>
+
+  <g transform="translate(20 566)">
+    <text x="0" y="0" class="section">More agents</text>
+    <g transform="translate(0 18)">
+      <rect width="280" height="62" rx="7" class="card"/>
+      <g color="#7C3AED" transform="translate(12 15)"><use href="#bot-head" width="24" height="24"/></g>
+      <text x="46" y="24" class="text" style="font-weight:700">Evaluator Agent</text>
+      <text x="46" y="43" class="tiny">Checks code, outputs, and assumptions.</text>
+    </g>
+    <g transform="translate(0 90)">
+      <rect width="280" height="62" rx="7" class="card"/>
+      <g color="#0F766E" transform="translate(12 15)"><use href="#bot-head" width="24" height="24"/></g>
+      <text x="46" y="24" class="text" style="font-weight:700">Visualization Agent</text>
+      <text x="46" y="43" class="tiny">Creates maps, charts, and dashboards.</text>
+    </g>
+    <g transform="translate(0 162)">
+      <rect width="280" height="62" rx="7" class="card"/>
+      <g color="#7C3AED" transform="translate(12 15)"><use href="#bot-head" width="24" height="24"/></g>
+      <text x="46" y="24" class="text" style="font-weight:700">Workflow Explainer</text>
+      <text x="46" y="43" class="tiny">Documents the whole dataflow.</text>
+    </g>
+  </g>
+
+  <!-- Workspace tab bar -->
+  <rect x="320" y="52" width="960" height="52" fill="#fff" stroke="#D1D5DB"/>
+  <rect x="338" y="65" width="246" height="39" fill="#fff" stroke="#D1D5DB"/>
+  <text x="360" y="89" class="small">Heat Vulnerability Analysis</text>
+  <text x="564" y="89" class="small">x</text>
+  <text x="606" y="88" class="text" style="font-size:20px">+</text>
+  <rect x="1004" y="64" width="78" height="32" rx="4" class="input"/>
+  <text x="1032" y="85" class="small">Save</text>
+  <rect x="1094" y="64" width="78" height="32" rx="4" class="input"/>
+  <text x="1122" y="85" class="small">Share</text>
+  <rect x="1184" y="64" width="78" height="32" rx="4" fill="#111827"/>
+  <text x="1214" y="85" class="nav-text" style="font-size:12px">Run</text>
+
+  <!-- Main canvas -->
+  <rect x="320" y="104" width="960" height="796" fill="#FBFBFC"/>
+  <rect x="320" y="104" width="960" height="796" fill="url(#grid)" opacity=".85"/>
+
+  <!-- Canvas-level hook boundary -->
+  <rect x="382" y="154" width="816" height="676" rx="8" fill="none" stroke="#FF6F00" stroke-width="2" stroke-dasharray="9 7" opacity=".75"/>
+  <rect x="430" y="124" width="684" height="58" rx="8" fill="#FFF4E8" stroke="#FF6F00" stroke-width="1.7" class="shadow"/>
+  <g color="#FF6F00" transform="translate(448 139)"><use href="#bot-head" width="30" height="30"/></g>
+  <text x="488" y="149" class="section">Dataflow Builder attached to canvas</text>
+  <text x="488" y="168" class="small">Mission: identify census tracts with high heat vulnerability.</text>
+  <rect x="954" y="137" width="66" height="30" rx="5" fill="#fff" stroke="#FED7AA"/>
+  <text x="987" y="157" class="tiny" text-anchor="middle" fill="#C2410C">Replan</text>
+  <rect x="1030" y="137" width="66" height="30" rx="5" fill="#FF6F00"/>
+  <text x="1063" y="157" class="tiny" text-anchor="middle" fill="#fff">Solve</text>
+
+  <!-- Canvas tool palette -->
+  <g class="shadow" transform="translate(338 214)">
+    <rect width="58" height="344" rx="7" fill="#fff" stroke="#D1D5DB"/>
+    <circle cx="29" cy="34" r="9" fill="none" stroke="#111827" stroke-width="1.5"/>
+    <path d="M35 40 L42 47" stroke="#111827" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="29" y="68" class="micro" text-anchor="middle">Search</text>
+    <ellipse cx="29" cy="105" rx="11" ry="4" fill="none" stroke="#111827" stroke-width="1.4"/>
+    <path d="M18 105 V121 C18 126 40 126 40 121 V105" fill="none" stroke="#111827" stroke-width="1.4"/>
+    <text x="29" y="143" class="micro" text-anchor="middle">Data</text>
+    <rect x="20" y="176" width="18" height="18" fill="none" stroke="#111827" stroke-width="1.4"/>
+    <path d="M29 176 V194 M20 185 H38" stroke="#111827" stroke-width="1.4"/>
+    <text x="29" y="216" class="micro" text-anchor="middle">Nodes</text>
+    <path d="M20 254 L41 264 L31 269 L26 281 Z" fill="none" stroke="#111827" stroke-width="1.4"/>
+    <text x="29" y="307" class="micro" text-anchor="middle">Select</text>
+  </g>
+
+  <!-- Dataflow connections -->
+  <path class="line" d="M620 284 C650 284 652 284 684 284"/>
+  <path class="line" d="M880 284 C910 284 920 365 940 450"/>
+  <path class="line" d="M785 340 C770 385 735 415 710 455"/>
+  <path class="line" d="M810 520 C845 520 860 512 888 512"/>
+  <path class="line" d="M685 598 C685 640 684 660 684 704"/>
+  <path class="line" d="M1005 568 C982 652 850 700 794 736"/>
+
+  <!-- Nodes -->
+  <g class="shadow" transform="translate(410 230)">
+    <rect width="210" height="108" rx="8" class="node"/>
+    <rect x="0" y="0" width="210" height="30" rx="8" fill="#F9FAFB"/>
+    <rect x="14" y="11" width="50" height="18" rx="4" fill="#ECFDF5" stroke="#BBF7D0"/>
+    <text x="39" y="24" class="micro" text-anchor="middle" fill="#166534">DATA</text>
+    <text x="14" y="55" class="section">Load climate + census</text>
+    <text x="14" y="76" class="tiny">NOAA heat index, ACS age,</text>
+    <text x="14" y="92" class="tiny">income, tree canopy.</text>
+    <circle cx="210" cy="54" r="7" fill="#16A34A"/>
+  </g>
+  <g transform="translate(410 348)" class="shadow">
+    <rect width="150" height="30" rx="6" fill="#ECFDF5" stroke="#16A34A" stroke-width="1.3"/>
+    <g color="#16A34A" transform="translate(10 5)"><use href="#bot-head" width="20" height="20"/></g>
+    <text x="38" y="20" class="tiny" fill="#166534">Dataset Finder</text>
+  </g>
+
+  <g class="shadow" transform="translate(684 230)">
+    <rect width="196" height="108" rx="8" class="node"/>
+    <rect x="0" y="0" width="196" height="30" rx="8" fill="#F9FAFB"/>
+    <rect x="14" y="11" width="66" height="18" rx="4" fill="#F3F4F6" stroke="#D1D5DB"/>
+    <text x="47" y="24" class="micro" text-anchor="middle">PYTHON</text>
+    <text x="14" y="55" class="section">Clean and normalize</text>
+    <text x="14" y="76" class="tiny">Align tract IDs, filter nulls,</text>
+    <text x="14" y="92" class="tiny">standardize indicators.</text>
+  </g>
+
+  <g class="shadow" transform="translate(560 455)">
+    <rect width="250" height="126" rx="8" fill="#fff" stroke="#2563EB" stroke-width="1.8"/>
+    <rect x="0" y="0" width="250" height="30" rx="8" fill="#EFF6FF"/>
+    <rect x="14" y="11" width="66" height="18" rx="4" fill="#fff" stroke="#BFDBFE"/>
+    <text x="47" y="24" class="micro" text-anchor="middle" fill="#1D4ED8">PYTHON</text>
+    <text x="14" y="55" class="section">Compute vulnerability index</text>
+    <text x="14" y="77" class="tiny">Weighted score from exposure,</text>
+    <text x="14" y="93" class="tiny">sensitivity, and adaptive capacity.</text>
+    <rect x="14" y="103" width="96" height="16" rx="4" fill="#EFF6FF"/>
+    <text x="62" y="115" class="micro" text-anchor="middle" fill="#1D4ED8">selected target</text>
+    <circle cx="250" cy="63" r="7" fill="#2563EB"/>
+  </g>
+  <g transform="translate(560 593)" class="shadow">
+    <rect width="142" height="31" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.8"/>
+    <g color="#2563EB" transform="translate(10 5)"><use href="#bot-head" width="20" height="20"/></g>
+    <text x="38" y="20" class="tiny" fill="#1D4ED8">Node Explainer</text>
+  </g>
+  <g transform="translate(710 593)" class="shadow">
+    <rect width="104" height="31" rx="6" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1.2"/>
+    <g color="#7C3AED" transform="translate(10 5)"><use href="#bot-head" width="20" height="20"/></g>
+    <text x="38" y="20" class="tiny" fill="#6D28D9">Evaluator</text>
+  </g>
+
+  <g class="shadow" transform="translate(888 455)">
+    <rect width="230" height="112" rx="8" class="node"/>
+    <rect x="0" y="0" width="230" height="30" rx="8" fill="#F9FAFB"/>
+    <rect x="14" y="11" width="50" height="18" rx="4" fill="#ECFEFF" stroke="#99F6E4"/>
+    <text x="39" y="24" class="micro" text-anchor="middle" fill="#0F766E">MAP</text>
+    <text x="14" y="55" class="section">Map priority areas</text>
+    <text x="14" y="76" class="tiny">Choropleth with tract ranking</text>
+    <text x="14" y="92" class="tiny">and uncertainty layer.</text>
+  </g>
+
+  <g class="shadow" transform="translate(562 704)">
+    <rect width="232" height="108" rx="8" class="node"/>
+    <rect x="0" y="0" width="232" height="30" rx="8" fill="#F9FAFB"/>
+    <rect x="14" y="11" width="64" height="18" rx="4" fill="#FEF3C7" stroke="#FDE68A"/>
+    <text x="46" y="24" class="micro" text-anchor="middle" fill="#92400E">REPORT</text>
+    <text x="14" y="55" class="section">Explain results</text>
+    <text x="14" y="76" class="tiny">Ranked findings, assumptions,</text>
+    <text x="14" y="92" class="tiny">and suggested next questions.</text>
+  </g>
+
+  <!-- Attachment preview flows -->
+  <path class="flow-green" d="M300 262 C345 262 355 286 410 286"/>
+  <rect x="336" y="247" width="154" height="24" rx="5" fill="#ECFDF5" stroke="#16A34A"/>
+  <text x="413" y="263" class="tiny" text-anchor="middle" fill="#166534">attach to Data Load</text>
+
+  <path class="flow-blue" d="M300 374 C426 374 455 516 560 516"/>
+  <rect x="354" y="406" width="132" height="24" rx="5" fill="#EFF6FF" stroke="#2563EB"/>
+  <text x="420" y="422" class="tiny" text-anchor="middle" fill="#1D4ED8">attach to node</text>
+
+  <path class="flow-orange" d="M300 486 C366 486 362 150 430 150"/>
+  <rect x="325" y="530" width="166" height="24" rx="5" fill="#FFF4E8" stroke="#FF6F00"/>
+  <text x="408" y="546" class="tiny" text-anchor="middle" fill="#C2410C">attach to whole canvas</text>
+
+  <!-- Right refinement sidebar -->
+  <rect x="1280" y="52" width="320" height="848" class="panel"/>
+  <g transform="translate(1300 78)">
+    <text x="0" y="0" class="title">Node Explainer</text>
+    <text x="0" y="23" class="small">Attached agent refinement</text>
+    <rect x="0" y="42" width="280" height="40" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.4"/>
+    <g color="#2563EB" transform="translate(12 8)"><use href="#bot-head" width="24" height="24"/></g>
+    <text x="46" y="25" class="small" fill="#1D4ED8">Target: Compute vulnerability index</text>
+
+    <text x="0" y="118" class="section">Inspect</text>
+    <rect x="0" y="133" width="280" height="112" rx="8" class="card"/>
+    <text x="14" y="157" class="small" style="font-weight:700">Can read</text>
+    <text x="14" y="178" class="tiny">- node code and generated output</text>
+    <text x="14" y="196" class="tiny">- upstream datasets and lineage</text>
+    <text x="14" y="214" class="tiny">- current run errors and warnings</text>
+    <text x="14" y="232" class="tiny">- mission notes from the canvas</text>
+
+    <text x="0" y="277" class="section">Configure behavior</text>
+    <rect x="0" y="292" width="280" height="132" rx="8" class="card"/>
+    <circle cx="17" cy="317" r="7" fill="#2563EB"/>
+    <circle cx="17" cy="317" r="3" fill="#fff"/>
+    <text x="34" y="321" class="small">Planner-friendly summary</text>
+    <circle cx="17" cy="350" r="7" fill="#fff" stroke="#9CA3AF"/>
+    <text x="34" y="354" class="small">Technical code review</text>
+    <circle cx="17" cy="383" r="7" fill="#fff" stroke="#9CA3AF"/>
+    <text x="34" y="387" class="small">Public-facing explanation</text>
+    <rect x="14" y="404" width="115" height="20" rx="4" fill="#F3F4F6"/>
+    <text x="72" y="418" class="micro" text-anchor="middle">Review: suggestions only</text>
+
+    <text x="0" y="456" class="section">Prompt and context notes</text>
+    <rect x="0" y="471" width="280" height="128" rx="8" fill="#fff" stroke="#D1D5DB"/>
+    <text x="14" y="494" class="tiny">Explain how the index was computed.</text>
+    <text x="14" y="513" class="tiny">Call out assumptions, indicators, and</text>
+    <text x="14" y="532" class="tiny">which tracts need human review before</text>
+    <text x="14" y="551" class="tiny">policy recommendations are made.</text>
+    <line x1="14" y1="575" x2="266" y2="575" stroke="#E5E7EB"/>
+    <text x="14" y="592" class="micro">Uses selected node context automatically</text>
+
+    <text x="0" y="631" class="section">Run history</text>
+    <rect x="0" y="646" width="280" height="58" rx="8" fill="#F9FAFB" stroke="#D1D5DB"/>
+    <circle cx="18" cy="673" r="5" fill="#16A34A"/>
+    <text x="34" y="672" class="tiny">Last explanation passed review</text>
+    <text x="34" y="690" class="micro">2 minutes ago, 420 tokens</text>
+
+    <rect x="0" y="734" width="136" height="36" rx="6" fill="#fff" stroke="#D1D5DB"/>
+    <text x="68" y="757" class="small" text-anchor="middle">Run now</text>
+    <rect x="146" y="734" width="134" height="36" rx="6" fill="#FF6F00"/>
+    <text x="213" y="757" class="small" text-anchor="middle" fill="#fff">Save refinement</text>
+  </g>
+
+  <!-- Selection relation from tab to sidebar -->
+  <path d="M702 610 C930 610 1100 498 1280 498" fill="none" stroke="#2563EB" stroke-width="1.6" stroke-dasharray="5 6"/>
+</svg>
+

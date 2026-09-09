@@ -1,0 +1,1467 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hookable Agents PNG Concepts</title>
+  <style>
+    :root {
+      --nav: #191a1d;
+      --panel: #ffffff;
+      --canvas: #f4f5f7;
+      --grid: rgba(95, 99, 110, .28);
+      --border: #d7d9de;
+      --border-strong: #a4a8b1;
+      --text: #25262c;
+      --muted: #747782;
+      --orange: #ff6f00;
+      --orange-soft: #fff3e7;
+      --green: #2ebd25;
+      --green-soft: #effdee;
+      --blue: #1f73e8;
+      --blue-soft: #edf5ff;
+      --purple: #7d49e6;
+      --purple-soft: #f4efff;
+      --shadow: 0 3px 12px rgba(35, 37, 44, .14);
+      --font: Inter, Arial, Helvetica, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #111;
+      font-family: var(--font);
+      color: var(--text);
+    }
+
+    .screen {
+      position: relative;
+      width: 1672px;
+      height: 941px;
+      overflow: hidden;
+      background: var(--canvas);
+    }
+
+    .screen + .screen { margin-top: 32px; }
+
+    .topbar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1672px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      padding: 0 18px;
+      background: var(--nav);
+      color: white;
+      z-index: 10;
+      box-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+    }
+
+    .brand {
+      width: 116px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -.2px;
+    }
+
+    .mark {
+      width: 28px;
+      height: 24px;
+      position: relative;
+      border: 3px solid white;
+      border-radius: 7px;
+      transform: rotate(-25deg);
+    }
+
+    .mark:before {
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: -8px;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--orange);
+      border: 2px solid var(--nav);
+    }
+
+    .nav-item {
+      color: #f5f5f6;
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 52px;
+      height: 52px;
+      padding: 0 4px;
+    }
+
+    .nav-item.active {
+      color: white;
+      border-bottom: 4px solid var(--orange);
+    }
+
+    .top-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      font-size: 14px;
+      color: #f2f2f3;
+    }
+
+    .circle-avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #8a5b3b, #e1b38f);
+      border: 2px solid white;
+    }
+
+    .tabs-row {
+      position: absolute;
+      top: 52px;
+      left: 0;
+      right: 512px;
+      height: 52px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      z-index: 3;
+    }
+
+    .file-tab {
+      position: absolute;
+      left: 15px;
+      top: 13px;
+      width: 212px;
+      height: 39px;
+      border: 1px solid var(--border);
+      border-bottom-color: white;
+      background: white;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px 0 20px;
+      font-size: 13px;
+    }
+
+    .tab-plus {
+      position: absolute;
+      left: 250px;
+      top: 23px;
+      font-size: 22px;
+      color: #555;
+    }
+
+    .toolbar-buttons {
+      position: absolute;
+      right: 20px;
+      top: 12px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .small-button {
+      height: 32px;
+      min-width: 74px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .small-button.dark {
+      background: #111216;
+      color: white;
+      border-color: #111216;
+    }
+
+    .canvas {
+      position: absolute;
+      left: 0;
+      top: 104px;
+      right: 512px;
+      bottom: 40px;
+      background:
+        radial-gradient(circle at 2px 2px, var(--grid) 1.25px, transparent 1.5px) 0 0 / 20px 20px,
+        #f7f8fa;
+      overflow: hidden;
+    }
+
+    .canvas-title {
+      position: absolute;
+      left: 70px;
+      top: 20px;
+      font-size: 31px;
+      font-weight: 800;
+      color: #24252c;
+    }
+
+    .left-palette {
+      position: absolute;
+      left: 70px;
+      top: 112px;
+      width: 142px;
+      border-radius: 7px;
+      background: #18191d;
+      box-shadow: var(--shadow);
+      color: white;
+      overflow: hidden;
+    }
+
+    .palette-section {
+      padding: 17px 10px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, .12);
+    }
+
+    .palette-title {
+      text-align: center;
+      margin-bottom: 14px;
+      color: #a6a9b0;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 1px;
+    }
+
+    .tool-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px 10px;
+    }
+
+    .tool {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      color: #f2f3f4;
+      font-size: 11px;
+      min-height: 46px;
+    }
+
+    .tool-icon {
+      width: 30px;
+      height: 24px;
+      border-radius: 5px;
+      display: grid;
+      place-items: center;
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .zoom-controls {
+      position: absolute;
+      left: 20px;
+      bottom: 24px;
+      width: 39px;
+      background: white;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    .zoom-controls div {
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-bottom: 1px solid var(--border);
+      font-size: 22px;
+      font-weight: 600;
+    }
+
+    .zoom-controls div:last-child { border-bottom: 0; }
+
+    .node {
+      position: absolute;
+      width: 286px;
+      min-height: 158px;
+      background: white;
+      border: 1px solid #bfc3ca;
+      border-radius: 7px;
+      box-shadow: var(--shadow);
+      overflow: visible;
+    }
+
+    .node.selected { border: 2px solid var(--orange); }
+    .node.green-target { border: 2px solid var(--green); }
+    .node.blue-target { border: 2px solid var(--blue); }
+
+    .node-header {
+      height: 35px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+      color: #6e717a;
+      font-size: 12px;
+      font-weight: 800;
+      border-bottom: 1px solid #e0e2e6;
+    }
+
+    .node-number {
+      width: 17px;
+      height: 17px;
+      border: 1px solid #b6bac2;
+      border-radius: 2px;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      color: #535762;
+      background: #fff;
+      margin-right: auto;
+    }
+
+    .pill {
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .pill.data { color: #e25b2c; background: #ffe8dc; }
+    .pill.package { color: #276bd8; background: #dbeafe; }
+    .pill.output { color: #258a2a; background: #dcfce7; }
+    .pill.node { color: #9a6406; background: #ffefc9; }
+    .pill.canvas { color: #c2410c; background: #ffedd5; }
+    .pill.explain { color: #6d28d9; background: #f1e9ff; }
+    .pill.viz { color: #0f766e; background: #d9fbf3; }
+
+    .node-body { padding: 18px 18px 12px; }
+
+    .node h3 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      line-height: 1.18;
+      color: #1f2025;
+    }
+
+    .node p {
+      margin: 0 0 12px;
+      color: #4d515b;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .node-output {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      color: #383b43;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .node-output span {
+      color: #4e5360;
+      font-weight: 500;
+    }
+
+    .node-footer {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      border-top: 1px solid #e1e3e7;
+      color: #363942;
+      font-size: 16px;
+    }
+
+    .node-dot {
+      position: absolute;
+      right: 10px;
+      top: 27px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .port {
+      position: absolute;
+      right: -9px;
+      top: 75px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #8b8e95;
+      border: 2px solid white;
+    }
+
+    .port.in {
+      left: -9px;
+      right: auto;
+    }
+
+    .agent-tabs {
+      position: absolute;
+      left: 10px;
+      bottom: -39px;
+      display: flex;
+      gap: 8px;
+      z-index: 2;
+    }
+
+    .agent-tab {
+      height: 30px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 10px 0 8px;
+      border-radius: 7px;
+      background: white;
+      border: 1px solid var(--border);
+      box-shadow: 0 2px 7px rgba(30, 32, 38, .12);
+      color: #282b32;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .agent-tab.green {
+      border-color: #77dc78;
+      background: var(--green-soft);
+      color: #176b1b;
+    }
+
+    .agent-tab.blue {
+      border-color: #7db2ff;
+      background: var(--blue-soft);
+      color: #1250aa;
+    }
+
+    .agent-tab.purple {
+      border-color: #bca7ff;
+      background: var(--purple-soft);
+      color: #5d2ab8;
+    }
+
+    .agent-tab.selected {
+      outline: 2px solid var(--blue);
+      outline-offset: 1px;
+    }
+
+    .bot-icon {
+      width: 18px;
+      height: 16px;
+      border-radius: 6px;
+      position: relative;
+      background: currentColor;
+      flex: 0 0 auto;
+    }
+
+    .bot-icon:before,
+    .bot-icon:after {
+      content: "";
+      position: absolute;
+      top: 5px;
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: white;
+    }
+
+    .bot-icon:before { left: 5px; }
+    .bot-icon:after { right: 5px; }
+
+    .connection {
+      position: absolute;
+      height: 0;
+      border-top: 2px solid #1d1f25;
+      transform-origin: left center;
+      z-index: 0;
+    }
+
+    .connection:after {
+      content: "";
+      position: absolute;
+      right: -1px;
+      top: -6px;
+      width: 0;
+      height: 0;
+      border-top: 6px solid transparent;
+      border-bottom: 6px solid transparent;
+      border-left: 10px solid #1d1f25;
+    }
+
+    .canvas-note {
+      position: absolute;
+      left: 324px;
+      top: 22px;
+      width: 460px;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 14px;
+      border: 1.6px solid var(--orange);
+      border-radius: 6px;
+      background: #fff8f1;
+      color: #1f2025;
+      font-size: 12px;
+      box-shadow: 0 2px 8px rgba(255, 111, 0, .08);
+    }
+
+    .canvas-note strong { color: #f06400; }
+
+    .composition-note {
+      position: absolute;
+      left: 326px;
+      top: 86px;
+      width: 456px;
+      height: 64px;
+      padding: 15px 18px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: white;
+      box-shadow: 0 2px 8px rgba(30, 32, 38, .08);
+    }
+
+    .composition-note b {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .composition-note span {
+      font-size: 12px;
+      color: #4c505a;
+    }
+
+    .canvas-dock {
+      position: absolute;
+      left: 430px;
+      top: 168px;
+      width: 540px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 14px;
+      border: 1.6px solid var(--orange);
+      border-radius: 8px;
+      background: var(--orange-soft);
+      box-shadow: var(--shadow);
+      z-index: 3;
+    }
+
+    .canvas-dock .dock-copy {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .canvas-dock b {
+      display: block;
+      color: #9a3b00;
+      font-size: 13px;
+      margin-bottom: 3px;
+    }
+
+    .canvas-dock span {
+      display: block;
+      color: #61310e;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dock-button {
+      height: 28px;
+      padding: 0 12px;
+      display: grid;
+      place-items: center;
+      border-radius: 5px;
+      border: 1px solid #fdba74;
+      background: white;
+      color: #9a3b00;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .dock-button.primary {
+      border-color: var(--orange);
+      background: var(--orange);
+      color: white;
+    }
+
+    .canvas-boundary {
+      position: absolute;
+      left: 360px;
+      top: 145px;
+      width: 820px;
+      height: 610px;
+      border: 2px dashed rgba(255, 111, 0, .8);
+      border-radius: 10px;
+      background: rgba(255, 111, 0, .025);
+      z-index: 0;
+    }
+
+    .drawer {
+      position: absolute;
+      top: 52px;
+      right: 0;
+      width: 512px;
+      height: 889px;
+      background: white;
+      border-left: 1px solid var(--border-strong);
+      box-shadow: -4px 0 18px rgba(30, 32, 38, .12);
+      z-index: 4;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .drawer-header {
+      height: 72px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 24px;
+      background: white;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .drawer-header h2 {
+      margin: 0;
+      flex: 1;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .drawer-header p {
+      margin: 6px 0 0;
+      font-size: 12px;
+      color: #565b66;
+      font-weight: 500;
+    }
+
+    .drawer-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #f8f9fb;
+      display: grid;
+      place-items: center;
+      font-size: 21px;
+      color: #1f2025;
+    }
+
+    .drawer-body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background: #f3f4f6;
+    }
+
+    .catalog-controls {
+      padding: 18px 22px 14px;
+      background: white;
+      border-bottom: 1px solid #e4e6ea;
+    }
+
+    .search-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .search-box {
+      height: 42px;
+      flex: 1;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: white;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 13px;
+      color: #9296a0;
+      font-size: 13px;
+    }
+
+    .sort-box {
+      width: 120px;
+      height: 42px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      background: white;
+    }
+
+    .category-tabs {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      color: #747782;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .category-tabs span {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+    }
+
+    .category-tabs span.active {
+      background: #18191d;
+      color: white;
+    }
+
+    .category-tabs span:not(.active) {
+      background: white;
+      border-color: var(--border);
+      color: #4e525c;
+    }
+
+    .catalog-list {
+      padding: 18px 22px 0;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .catalog-label {
+      color: #858996;
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 1.5px;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+    }
+
+    .agent-card {
+      position: relative;
+      min-height: 64px;
+      display: grid;
+      grid-template-columns: 46px 1fr 12px;
+      gap: 12px;
+      align-items: center;
+      padding: 10px;
+      margin-bottom: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: white;
+      box-shadow: 0 1px 4px rgba(35, 37, 44, .05);
+    }
+
+    .agent-card.selected {
+      border: 2px solid var(--orange);
+      padding: 9px;
+      box-shadow: 0 2px 10px rgba(255, 111, 0, .14);
+    }
+
+    .agent-card.selected:before {
+      content: "";
+      position: absolute;
+      left: -1px;
+      top: 10px;
+      bottom: 10px;
+      width: 4px;
+      border-radius: 0 5px 5px 0;
+      background: var(--orange);
+    }
+
+    .agent-icon {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      border: 1px solid #d8dce3;
+      background: #fafafa;
+      font-size: 21px;
+      color: #1f2025;
+    }
+
+    .agent-card h3 {
+      margin: 0 0 4px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 13px;
+      line-height: 1.1;
+    }
+
+    .agent-card p {
+      margin: 0;
+      color: #5f6470;
+      font-size: 10.5px;
+      line-height: 1.32;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .agent-detail {
+      background: white;
+      border-top: 1px solid var(--border);
+      padding: 14px 22px 18px;
+      min-height: 194px;
+    }
+
+    .detail-head {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .detail-head h3 {
+      margin: 0 0 5px;
+      font-size: 17px;
+    }
+
+    .detail-head p {
+      margin: 0;
+      font-size: 12px;
+      color: #4f535d;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 62px 1fr;
+      gap: 7px 10px;
+      font-size: 11px;
+      margin-bottom: 14px;
+    }
+
+    .detail-grid b { color: #1f2025; }
+    .detail-grid span { color: #4f535d; }
+
+    .drawer-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .drawer-button {
+      height: 40px;
+      border-radius: 6px;
+      border: 1px solid #1c1d21;
+      background: white;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .drawer-button.primary {
+      background: var(--orange);
+      color: white;
+      border-color: var(--orange);
+    }
+
+    .workflow-status {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      right: 512px;
+      height: 40px;
+      background: white;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 0 24px;
+      color: #4d515b;
+      font-size: 12px;
+      z-index: 3;
+    }
+
+    .workflow-status b { color: #1e2026; }
+    .ready-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .flow-callout {
+      position: absolute;
+      min-width: 190px;
+      padding: 10px 12px;
+      border-radius: 7px;
+      background: white;
+      border: 1.5px solid;
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      z-index: 5;
+    }
+
+    .flow-callout.green { border-color: var(--green); color: #176b1b; }
+    .flow-callout.blue { border-color: var(--blue); color: #1250aa; }
+    .flow-callout.orange { border-color: var(--orange); color: #9a3b00; }
+    .flow-callout b { display: block; margin-bottom: 4px; color: inherit; }
+
+    .flow-line {
+      position: absolute;
+      height: 0;
+      border-top: 3px dashed;
+      transform-origin: left center;
+      z-index: 5;
+    }
+
+    .flow-line:after {
+      content: "";
+      position: absolute;
+      right: -2px;
+      top: -7px;
+      width: 0;
+      height: 0;
+      border-top: 7px solid transparent;
+      border-bottom: 7px solid transparent;
+      border-left: 11px solid currentColor;
+    }
+
+    .flow-line.green { color: var(--green); border-top-color: var(--green); }
+    .flow-line.blue { color: var(--blue); border-top-color: var(--blue); }
+    .flow-line.orange { color: var(--orange); border-top-color: var(--orange); }
+
+    .refinement-drawer .drawer-body {
+      background: white;
+      padding: 22px;
+      display: block;
+      overflow: hidden;
+    }
+
+    .selected-agent-banner {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 0 12px;
+      border-radius: 7px;
+      background: var(--blue-soft);
+      border: 1.4px solid #7db2ff;
+      color: #1250aa;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 22px;
+    }
+
+    .ref-section {
+      margin-bottom: 22px;
+    }
+
+    .ref-section h3 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      color: #1f2025;
+    }
+
+    .inspect-box,
+    .configure-box,
+    .prompt-box,
+    .history-box {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: white;
+      padding: 14px;
+    }
+
+    .inspect-box {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .inspect-box b {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 12px;
+    }
+
+    .inspect-box p,
+    .history-box p {
+      margin: 0 0 7px;
+      color: #555a65;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .radio-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 13px;
+      color: #383c45;
+      font-size: 12px;
+    }
+
+    .radio {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1.5px solid #9aa0aa;
+    }
+
+    .radio.active {
+      border: 4px solid var(--blue);
+    }
+
+    .prompt-box {
+      height: 128px;
+      color: #4d525d;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .screen-label {
+      position: absolute;
+      left: 22px;
+      top: 116px;
+      z-index: 6;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: rgba(24, 25, 29, .9);
+      color: white;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+  </style>
+</head>
+<body>
+
+<template id="topbar-template">
+  <div class="topbar">
+    <div class="brand"><div class="mark"></div><span>curio</span></div>
+    <div class="nav-item">File</div>
+    <div class="nav-item">View</div>
+    <div class="nav-item">Data</div>
+    <div class="nav-item">Provenance</div>
+    <div class="nav-item active">Agents</div>
+    <div class="top-actions">
+      <span>⌕</span><span>♟</span><span>?</span><span>⚙</span>
+      <span style="height:24px;width:1px;background:#777"></span>
+      <span class="circle-avatar"></span><span>Karla P.</span>
+      <span style="height:24px;width:1px;background:#777"></span><span>Logout</span>
+    </div>
+  </div>
+</template>
+
+<template id="shared-shell-template">
+  <div class="tabs-row">
+    <div class="file-tab"><span>Heat Vulnerability Analysis</span><span>×</span></div>
+    <div class="tab-plus">+</div>
+    <div class="toolbar-buttons">
+      <div class="small-button">▣ Save</div>
+      <div class="small-button">⌘ Share</div>
+      <div class="small-button dark">▶ Run</div>
+      <div class="small-button" style="min-width:32px">↻</div>
+    </div>
+  </div>
+  <div class="canvas">
+    <div class="canvas-title">Heat_Vulnerability_Autark</div>
+    <div class="left-palette">
+      <div class="palette-section">
+        <div class="palette-title">BUILT-IN</div>
+        <div class="tool-grid">
+          <div class="tool"><div class="tool-icon">⇧</div><span>Upload</span></div>
+          <div class="tool"><div class="tool-icon">⇩</div><span>Download</span></div>
+          <div class="tool"><div class="tool-icon">◎</div><span>Search</span></div>
+          <div class="tool"><div class="tool-icon">▣</div><span>Data</span></div>
+          <div class="tool"><div class="tool-icon">⌘</div><span>Nodes</span></div>
+          <div class="tool"><div class="tool-icon">▤</div><span>Layout</span></div>
+        </div>
+      </div>
+      <div class="palette-section">
+        <div class="tool-grid">
+          <div class="tool"><div class="tool-icon">PY</div><span>Python</span></div>
+          <div class="tool"><div class="tool-icon">JS</div><span>JS</span></div>
+          <div class="tool"><div class="tool-icon">▥</div><span>AUTK</span></div>
+          <div class="tool"><div class="tool-icon">⌁</div><span>VEGA</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="zoom-controls"><div>+</div><div>−</div><div>⌗</div><div>▣</div></div>
+    <div class="canvas-note"><span style="font-size:18px;color:var(--orange)">▲</span><span><strong>Composed from reusable agents</strong> - review connections before running</span></div>
+    <div class="composition-note"><b>Example composition: heat vulnerability analysis</b><span>This workflow is assembled from hookable agents attached to nodes and the canvas.</span></div>
+  </div>
+  <div class="workflow-status">
+    <span><b>Workflow:</b> <em>Heat Vulnerability Analysis</em></span>
+    <span><b>Status:</b> <span class="ready-dot"></span>Ready</span>
+    <span>Last saved: <em>2 minutes ago</em></span>
+    <span>3 attached agents</span>
+  </div>
+</template>
+
+<template id="drawer-catalog-template">
+  <aside class="drawer catalog-drawer">
+    <div class="drawer-header">
+      <div class="drawer-icon">☷</div>
+      <div>
+        <h2>Agent Catalog</h2>
+        <p>Reusable agents for Curio workflows.</p>
+      </div>
+      <div style="font-size:24px;color:#1f2025">×</div>
+    </div>
+    <div class="drawer-body">
+      <div class="catalog-controls">
+        <div class="search-row">
+          <div class="search-box">⌕ <span>Search agents...</span></div>
+          <div class="sort-box">Sort: New ▾</div>
+        </div>
+        <div class="category-tabs">
+          <span class="active">All</span><span>Data</span><span>Node</span><span>Canvas</span><span>Viz</span><span>Evaluate</span>
+        </div>
+      </div>
+      <div class="catalog-list">
+        <div class="catalog-label">Browse agents</div>
+        <div class="agent-card selected">
+          <div class="agent-icon">⌕</div>
+          <div>
+            <h3>Dataset Finder <span class="pill data">Data</span></h3>
+            <p>reads: mission + catalog · outputs: dataset candidates<br>hook: Data Load · review required · est. 600 tokens</p>
+          </div>
+          <div class="status-dot"></div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-icon">☷</div>
+          <div>
+            <h3>Node Explainer <span class="pill explain">Explain</span></h3>
+            <p>reads: node code + output · outputs: explanation<br>hook: Node · suggestions only · est. 450 tokens</p>
+          </div>
+          <div class="status-dot"></div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-icon">✦</div>
+          <div>
+            <h3>Dataflow Builder <span class="pill canvas">Canvas</span></h3>
+            <p>reads: mission + graph · outputs: plan and revisions<br>hook: Canvas · confirm changes · est. 1.2k tokens</p>
+          </div>
+          <div class="status-dot"></div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-icon">▣</div>
+          <div>
+            <h3>Create Node Agent <span class="pill node">Node</span></h3>
+            <p>reads: schema + mission · outputs: node definition<br>hook: Canvas or connection · review required</p>
+          </div>
+          <div class="status-dot"></div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-icon">⌁</div>
+          <div>
+            <h3>Generate Map Agent <span class="pill viz">Viz</span></h3>
+            <p>reads: layers + data · outputs: map view<br>hook: Viz node · review required</p>
+          </div>
+          <div class="status-dot"></div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-icon">✓</div>
+          <div>
+            <h3>Evaluator Agent <span class="pill explain">Evaluate</span></h3>
+            <p>reads: workflow · outputs: evaluation report<br>hook: Node or Canvas · est. 900 tokens</p>
+          </div>
+          <div class="status-dot"></div>
+        </div>
+      </div>
+      <div class="agent-detail">
+        <div class="detail-head">
+          <div class="agent-icon">⌕</div>
+          <div>
+            <h3>Dataset Finder</h3>
+            <p>Finds internal or external datasets relevant to a user question.</p>
+          </div>
+        </div>
+        <div class="detail-grid">
+          <b>Reads</b><span>mission, data catalog, selected region</span>
+          <b>Actions</b><span>search catalogs, rank candidates</span>
+          <b>Output</b><span>dataset candidates with metadata and rationale</span>
+          <b>Review</b><span>required before adding datasets to workflow</span>
+        </div>
+        <div class="drawer-actions">
+          <div class="drawer-button">Add to selected node</div>
+          <div class="drawer-button primary">Attach agent</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</template>
+
+<template id="refinement-drawer-template">
+  <aside class="drawer refinement-drawer">
+    <div class="drawer-header">
+      <div class="drawer-icon">☷</div>
+      <div>
+        <h2>Node Explainer</h2>
+        <p>Attached agent refinement.</p>
+      </div>
+      <div style="font-size:24px;color:#1f2025">×</div>
+    </div>
+    <div class="drawer-body">
+      <div class="selected-agent-banner"><span class="bot-icon"></span><span>Target: Compute vulnerability index</span></div>
+      <div class="ref-section">
+        <h3>Inspect</h3>
+        <div class="inspect-box">
+          <div>
+            <b>Can read</b>
+            <p>node code and generated output</p>
+            <p>upstream datasets and lineage</p>
+            <p>current run errors</p>
+          </div>
+          <div>
+            <b>Can change</b>
+            <p>explanation text</p>
+            <p>suggested fixes</p>
+            <p>documentation notes</p>
+          </div>
+        </div>
+      </div>
+      <div class="ref-section">
+        <h3>Configure behavior</h3>
+        <div class="configure-box">
+          <div class="radio-row"><span class="radio active"></span><span>Planner-friendly summary</span></div>
+          <div class="radio-row"><span class="radio"></span><span>Technical code review</span></div>
+          <div class="radio-row"><span class="radio"></span><span>Public-facing explanation</span></div>
+          <span class="pill explain">Review: suggestions only</span>
+        </div>
+      </div>
+      <div class="ref-section">
+        <h3>Prompt and context notes</h3>
+        <div class="prompt-box">
+          Explain how the index was computed. Call out assumptions, indicators, and which tracts need human review before policy recommendations are made.
+          <br><br>
+          Uses selected node context automatically.
+        </div>
+      </div>
+      <div class="ref-section">
+        <h3>Run history</h3>
+        <div class="history-box">
+          <p><span class="ready-dot"></span>Last explanation passed review.</p>
+          <p>2 minutes ago · 420 tokens</p>
+        </div>
+      </div>
+      <div class="drawer-actions">
+        <div class="drawer-button">Run now</div>
+        <div class="drawer-button primary">Save refinement</div>
+      </div>
+    </div>
+  </aside>
+</template>
+
+<template id="base-nodes-template">
+  <div class="connection" style="left:356px;top:376px;width:82px"></div>
+  <div class="connection" style="left:594px;top:376px;width:56px"></div>
+  <div class="connection" style="left:836px;top:376px;width:52px"></div>
+  <div class="connection" style="left:982px;top:476px;width:1px;height:98px;border-top:0;border-left:2px solid #1d1f25"></div>
+  <div class="connection" style="left:263px;top:574px;width:145px"></div>
+  <div class="connection" style="left:594px;top:634px;width:56px"></div>
+  <div class="node data-node" style="left:270px;top:300px">
+    <div class="node-header"><span>−</span><span style="margin:auto">Data Loading</span><span class="pill data">DATA</span><span class="pill package">PACKAGE</span></div>
+    <span class="node-dot"></span><span class="port"></span>
+    <div class="node-body">
+      <h3>Load climate + census data</h3>
+      <p>Loads heat index, ACS demographics, tree canopy, and tract geometry.</p>
+      <div class="node-output">OUT <span>Joined source tables</span></div>
+    </div>
+    <div class="node-footer"><span>☷</span><span>&lt;/&gt;</span></div>
+  </div>
+  <div class="node" style="left:438px;top:300px;width:156px;min-height:120px;opacity:.98">
+    <div class="node-header"><span class="node-number">2</span><span class="pill data">DATA</span></div>
+    <div class="node-body">
+      <h3>Preview dataset</h3>
+      <p>Profiles schemas and suggests join keys.</p>
+      <div class="node-output">OUT <span>Profile</span></div>
+    </div>
+    <div class="node-footer"><span>☷</span><span>&lt;/&gt;</span></div>
+  </div>
+  <div class="node compute-node" style="left:650px;top:300px">
+    <div class="node-header"><span class="node-number">3</span><span class="pill node">PYTHON</span><span class="pill output">OUTPUT</span></div>
+    <span class="node-dot"></span><span class="port in"></span><span class="port"></span>
+    <div class="node-body">
+      <h3>Compute vulnerability index</h3>
+      <p>Computes exposure, sensitivity, and adaptive capacity scores.</p>
+      <div class="node-output">OUT <span>Indicator dataset</span></div>
+    </div>
+    <div class="node-footer"><span>☷</span><span>&lt;/&gt;</span></div>
+  </div>
+  <div class="node" style="left:888px;top:300px;width:192px;min-height:120px">
+    <div class="node-header"><span class="node-number">4</span><span class="pill viz">VEGA</span></div>
+    <span class="node-dot"></span><span class="port in"></span>
+    <div class="node-body">
+      <h3>Generate map</h3>
+      <p>Creates a tract-level priority map.</p>
+      <div class="node-output">OUT <span>Map view</span></div>
+    </div>
+    <div class="node-footer"><span>☷</span><span>&lt;/&gt;</span></div>
+  </div>
+  <div class="node" style="left:408px;top:558px">
+    <div class="node-header"><span class="node-number">5</span><span class="pill explain">EVALUATE</span></div>
+    <span class="port in"></span><span class="port"></span>
+    <div class="node-body">
+      <h3>Evaluate workflow</h3>
+      <p>Checks code, data types, assumptions, and incomplete outputs.</p>
+      <div class="node-output">OUT <span>Evaluation report</span></div>
+    </div>
+    <div class="node-footer"><span>☷</span><span>&lt;/&gt;</span></div>
+  </div>
+  <div class="node" style="left:650px;top:558px">
+    <div class="node-header"><span class="node-number">6</span><span class="pill explain">EXPLAIN</span></div>
+    <span class="port in"></span>
+    <div class="node-body">
+      <h3>Explain results</h3>
+      <p>Summarizes priority areas, assumptions, and next questions.</p>
+      <div class="node-output">OUT <span>Report text</span></div>
+    </div>
+    <div class="node-footer"><span>☷</span><span>&lt;/&gt;</span></div>
+  </div>
+</template>
+
+<section id="catalog-drawer" class="screen">
+  <div class="screen-label">01 · Agents Catalog drawer</div>
+</section>
+
+<section id="dataflow-attached" class="screen">
+  <div class="screen-label">02 · Dataflow with attached agents</div>
+</section>
+
+<section id="attach-dataset-finder" class="screen">
+  <div class="screen-label">03 · Attach Dataset Finder to Data Load</div>
+</section>
+
+<section id="attach-node-explainer" class="screen">
+  <div class="screen-label">04 · Attach Node Explainer to node</div>
+</section>
+
+<section id="attach-dataflow-builder" class="screen">
+  <div class="screen-label">05 · Attach Dataflow Builder to canvas</div>
+</section>
+
+<section id="refinement-sidebar" class="screen">
+  <div class="screen-label">06 · Refinement sidebar open</div>
+</section>
+
+<script>
+  const screens = [...document.querySelectorAll('.screen')];
+  const topbar = document.querySelector('#topbar-template').content;
+  const shell = document.querySelector('#shared-shell-template').content;
+  const catalog = document.querySelector('#drawer-catalog-template').content;
+  const refinement = document.querySelector('#refinement-drawer-template').content;
+  const nodes = document.querySelector('#base-nodes-template').content;
+
+  function mountBase(screen, withCatalog = true) {
+    screen.prepend(topbar.cloneNode(true));
+    screen.append(shell.cloneNode(true));
+    screen.querySelector('.canvas').append(nodes.cloneNode(true));
+    if (withCatalog) screen.append(catalog.cloneNode(true));
+  }
+
+  function addTabs(screen, options = {}) {
+    const dataNode = screen.querySelector('.data-node');
+    const computeNode = screen.querySelector('.compute-node');
+    const dataTabs = document.createElement('div');
+    dataTabs.className = 'agent-tabs';
+    dataTabs.innerHTML = '<div class="agent-tab green"><span class="bot-icon"></span>Dataset Finder</div>';
+    dataNode.append(dataTabs);
+
+    const computeTabs = document.createElement('div');
+    computeTabs.className = 'agent-tabs';
+    computeTabs.innerHTML = `
+      <div class="agent-tab blue ${options.selected ? 'selected' : ''}"><span class="bot-icon"></span>Node Explainer</div>
+      <div class="agent-tab purple"><span class="bot-icon"></span>Evaluator</div>
+    `;
+    computeNode.append(computeTabs);
+  }
+
+  function addDock(screen) {
+    const canvas = screen.querySelector('.canvas');
+    const dock = document.createElement('div');
+    dock.className = 'canvas-dock';
+    dock.innerHTML = `
+      <span class="bot-icon" style="color:var(--orange);width:22px;height:20px"></span>
+      <div class="dock-copy"><b>Dataflow Builder attached to canvas</b><span>Mission: identify high heat vulnerability tracts and explain the evidence.</span></div>
+      <div class="dock-button">Replan</div>
+      <div class="dock-button primary">Solve</div>
+    `;
+    canvas.append(dock);
+  }
+
+  screens.forEach((screen) => {
+    if (screen.id === 'refinement-sidebar') {
+      mountBase(screen, false);
+      screen.append(refinement.cloneNode(true));
+      addTabs(screen, { selected: true });
+      addDock(screen);
+      const line = document.createElement('div');
+      line.className = 'flow-line blue';
+      line.style.cssText = 'left:792px;top:500px;width:475px;transform:rotate(-10deg)';
+      screen.querySelector('.canvas').append(line);
+      return;
+    }
+    mountBase(screen, true);
+  });
+
+  addTabs(document.querySelector('#dataflow-attached'));
+  addDock(document.querySelector('#dataflow-attached'));
+
+  const datasetScreen = document.querySelector('#attach-dataset-finder');
+  datasetScreen.querySelector('.data-node').classList.add('green-target');
+  datasetScreen.querySelector('.catalog-drawer .agent-card.selected h3').innerHTML = 'Dataset Finder <span class="pill data">Data</span>';
+  addTabs(datasetScreen);
+  datasetScreen.querySelector('.canvas').insertAdjacentHTML('beforeend', `
+    <div class="flow-callout green" style="left:388px;top:248px"><b>Compatible hook found</b>Drop here to attach Dataset Finder.</div>
+    <div class="flow-line green" style="left:890px;top:250px;width:330px;transform:rotate(162deg)"></div>
+  `);
+
+  const nodeScreen = document.querySelector('#attach-node-explainer');
+  nodeScreen.querySelector('.compute-node').classList.add('blue-target');
+  nodeScreen.querySelectorAll('.agent-card').forEach(card => card.classList.remove('selected'));
+  nodeScreen.querySelectorAll('.agent-card')[1].classList.add('selected');
+  addTabs(nodeScreen, { selected: true });
+  nodeScreen.querySelector('.canvas').insertAdjacentHTML('beforeend', `
+    <div class="flow-callout blue" style="left:665px;top:248px"><b>Node hook selected</b>Attach explainer to this compute node.</div>
+    <div class="flow-line blue" style="left:942px;top:360px;width:238px;transform:rotate(180deg)"></div>
+  `);
+
+  const builderScreen = document.querySelector('#attach-dataflow-builder');
+  builderScreen.querySelectorAll('.agent-card').forEach(card => card.classList.remove('selected'));
+  builderScreen.querySelectorAll('.agent-card')[2].classList.add('selected');
+  builderScreen.querySelector('.canvas').insertAdjacentHTML('afterbegin', '<div class="canvas-boundary"></div>');
+  addDock(builderScreen);
+  builderScreen.querySelector('.canvas').insertAdjacentHTML('beforeend', `
+    <div class="flow-callout orange" style="left:430px;top:116px"><b>Canvas hook active</b>Attach Dataflow Builder to plan and revise the whole graph.</div>
+    <div class="flow-line orange" style="left:930px;top:170px;width:310px;transform:rotate(175deg)"></div>
+  `);
+
+  const catalogScreen = document.querySelector('#catalog-drawer');
+  catalogScreen.querySelector('.canvas-note strong').textContent = 'Browse hookable agents';
+  catalogScreen.querySelector('.canvas-note span:last-child').innerHTML = '<strong>Browse hookable agents</strong> - select an agent to inspect compatible hooks';
+
+  const detailScreen = document.querySelector('#dataflow-attached');
+  detailScreen.querySelector('.catalog-drawer .agent-detail .detail-head h3').textContent = 'Attached agents are visible';
+  detailScreen.querySelector('.catalog-drawer .agent-detail .detail-head p').textContent = 'Tabs below nodes and a canvas dock identify where each agent belongs.';
+</script>
+</body>
+</html>
+
