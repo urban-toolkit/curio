@@ -47,6 +47,12 @@ _SHARED_SESSION_CLASSES = (
     # using it for the other five; a truncation between chapters would
     # invalidate the session token the browser is still holding.
     "TestCurioStressTour",
+    # dev/121: each reconstruction class holds one class-scoped session and
+    # stubs its own project per test; truncating between methods would
+    # invalidate the token the browser is still holding.
+    "TestPaletteShowsWhatWasProvisioned",
+    "TestReviewCardAndApply",
+    "TestSolveProgressAndReconnection",
 )
 
 _SQLA_MUTABLE_TABLES = (
