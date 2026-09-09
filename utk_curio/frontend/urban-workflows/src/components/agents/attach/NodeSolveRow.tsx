@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import styles from "./AgentBuilderStrip.module.css";
+import type { AgentRemedy } from "../../../api/agentsApi";
+import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
 
 /**
  * dev/115 (DEC-073, Amendment A2): the per-node Solve row — rendered in a
@@ -17,6 +19,7 @@ export const NodeSolveRow: React.FC<{
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [remedy, setRemedy] = useState<AgentRemedy | null>(null);
   const running = busy || live;
 
   const solve = async () => {
@@ -24,10 +27,12 @@ export const NodeSolveRow: React.FC<{
     setBusy(true);
     setError(null);
     setNotice(null);
+    setRemedy(null);
     try {
       const done = (await onSolveNode()) as
-        | { verdict?: string; rounds?: number; unchanged?: boolean; written?: boolean; proposalId?: string }
+        | { verdict?: string; rounds?: number; unchanged?: boolean; written?: boolean; proposalId?: string; remedy?: AgentRemedy }
         | undefined;
+      if (done?.remedy) setRemedy(done.remedy);
       if (done?.verdict === "pass" && done.unchanged) setNotice("Verified — the node's code ran successfully; no change needed.");
       else if (done?.verdict === "pass" && done.written) setNotice("Solved — the code ran successfully and was written to the node.");
       else if (done?.verdict === "pass") setNotice("Solved — the corrected code ran successfully; review and apply it below.");
@@ -63,6 +68,11 @@ export const NodeSolveRow: React.FC<{
         <div className={styles.hint} aria-live="polite">{activity}</div>
       ) : null}
       {notice ? <div className={styles.hint} role="status">{notice}</div> : null}
+      {remedy ? (
+        <div className={styles.actions}>
+          <AddKeyAction remedy={remedy} />
+        </div>
+      ) : null}
       {error ? <div className={styles.error}>{error}</div> : null}
     </div>
   );

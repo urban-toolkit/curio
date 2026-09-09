@@ -424,3 +424,8 @@
     color: var(--curio-text-secondary);
     overflow-wrap: anywhere;
 }
+
+.attemptRemedy {
+    display: inline-block;
+    margin-top: 4px;
+}

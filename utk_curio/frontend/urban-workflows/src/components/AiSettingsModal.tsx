@@ -4,10 +4,13 @@ import modal from "./modal-content.module.css";
 import styles from "./AiSettingsModal.module.css";
 import { useUserContext } from "../providers/UserProvider";
 import { agentsApi, ProviderDefault } from "../api/agentsApi";
+import { ConnectionKeysSection } from "./connectionKeys/ConnectionKeysSection";
+import type { ConnectionKeysFocus } from "./connectionKeys/connectionKeysRequest";
 
 interface Props {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: () => void;  /** dev/116: open on the Connection keys section, host prefilled. */
+  focus?: ConnectionKeysFocus | null;
 }
 
 type UiMode = "openai" | "anthropic" | "gemini" | "custom";
@@ -86,8 +89,8 @@ function uiModeFromSaved(apiType: string | null, baseUrl: string | null): UiMode
   return "openai";
 }
 
-const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
-  const { user, updateLlmConfig } = useUserContext();
+const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => {
+  const { user, updateLlmConfig, isSharedGuest } = useUserContext();
 
   const [uiMode, setUiMode] = useState<UiMode>("openai");
   const [baseUrl, setBaseUrl] = useState("");
@@ -311,6 +314,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               AI features for guest accounts are configured by whoever runs this
               Curio. If they are unavailable, ask them to set a guest API key.
             </p>
+            {/* dev/116: the shared guest (auth off) may still save connection
+                keys — into the one store every guest shares; said plainly. */}
+            {isSharedGuest ? <ConnectionKeysSection focus={focus} sharedGuest /> : null}
             <div className={modal.buttonRow}>
               <button className={modal.ghostBtn} onClick={onClose}>Close</button>
             </div>
@@ -546,6 +552,9 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 </button>
               )}
             </div>
+
+            {/* dev/116 (DEC-074): API keys a data-loading node reaches by name. */}
+            <ConnectionKeysSection focus={focus} />
 
             {error && <p className={modal.error}>{error}</p>}
             {success && <p className={modal.success}>Settings saved.</p>}

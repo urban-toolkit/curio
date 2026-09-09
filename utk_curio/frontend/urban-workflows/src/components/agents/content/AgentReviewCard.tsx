@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import type { AgentProposalPart, AgentSourceRef } from "../../../api/agentsApi";
+import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
 import { describePackagePermission } from "../../../utils/packagePermissions";
 import styles from "./AgentReviewCard.module.css";
 import { VerificationChip } from "./verificationChip";
@@ -13,6 +14,7 @@ const SOURCE_KIND_LABEL: Record<string, string> = {
   external: "External source",
   "user-path": "User-provided path",
   synthetic: "Synthetic data",
+  secret: "Connection key",
   mixed: "Several sources",
 };
 
@@ -24,7 +26,12 @@ function sourceRefText(ref: AgentSourceRef): string {
         ref.datasetId ? ` · ${ref.datasetId}` : ""
       }`;
     case "external":
-      return `${ref.value ?? ""}${ref.requirement === "credential-gated" ? " · credential-gated" : ""}`;
+      return `${ref.value ?? ""}${ref.requirement === "credential-gated" ? " · credential-gated" : ""}${
+        ref.hint ? ` — ${ref.hint}` : ""
+      }`;
+    case "secret":
+      // dev/116: the key the code reaches by name — never its value.
+      return `Connection key · ${ref.name ?? ""}${ref.host ? ` · ${ref.host}` : ""}`;
     case "user-path":
       return `${ref.value ?? ""} — not checked by Curio`;
     case "synthetic":
@@ -621,6 +628,9 @@ export const AgentReviewCard: React.FC<{
                     ) : null}
                     {attempt.verdict !== "pass" && attempt.endpointEvidence ? (
                       <span className={styles.attemptEndpoint}>Endpoint: {attempt.endpointEvidence}</span>
+                    ) : null}
+                    {attempt.verdict !== "pass" && attempt.remedy ? (
+                      <AddKeyAction remedy={attempt.remedy} className={styles.attemptRemedy} />
                     ) : null}
                   </li>
                 ))}

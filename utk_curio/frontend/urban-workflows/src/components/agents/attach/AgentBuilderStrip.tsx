@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import type { AgentAttachment } from "../../../api/agentsApi";
+import type { AgentAttachment, AgentRemedy } from "../../../api/agentsApi";
+import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { AgentRunStatusLine } from "./AgentRunStatusLine";
 import { BUILDER_TEMPLATES } from "./builderTemplates";
@@ -53,6 +54,8 @@ export const AgentBuilderStrip: React.FC<{
   /** dev/106: the live batch's per-node failure reasons (nodeId → text) —
    * rendered ONCE per distinct reason under the pills, never per node. */
   solveErrors?: Record<string, string>;
+  /** dev/116: the live batch's per-node remedies — rendered ONCE per host. */
+  solveRemedies?: Record<string, AgentRemedy>;
   /** dev/63: cancel the running solve — in-flight children finish; the rest
    * revert to pending. Omitted → no Cancel control. */
   onCancelSolve?: () => Promise<void>;
@@ -73,6 +76,7 @@ export const AgentBuilderStrip: React.FC<{
   onSolve,
   solveProgress,
   solveErrors,
+  solveRemedies,
   onCancelSolve,
   onComposePrompt,
   onApplyProposal,
@@ -181,6 +185,10 @@ export const AgentBuilderStrip: React.FC<{
       : null;
   // One line per DISTINCT reason (six identical node failures → one line).
   const solveReasons = Array.from(new Set(Object.values(solveErrors ?? {}).filter(Boolean)));
+  // dev/116: one action per host, whatever the number of nodes that need it.
+  const remedies = Object.values(solveRemedies ?? {}).filter(
+    (r, i, all) => r && r.host && all.findIndex((o) => o.kind === r.kind && o.host === r.host) === i,
+  );
 
   const simulate = async (mode: "step" | "auto") => {
     if (!onSimulate || simBusy) return;
@@ -282,6 +290,13 @@ export const AgentBuilderStrip: React.FC<{
         <div className={styles.error} aria-live="polite">
           {solveReasons.map((r) => (
             <div key={r}>{r}</div>
+          ))}
+        </div>
+      ) : null}
+      {remedies.length ? (
+        <div className={styles.actions} role="group" aria-label="Missing connection keys">
+          {remedies.map((r) => (
+            <AddKeyAction key={`${r.kind}:${r.host}`} remedy={r} />
           ))}
         </div>
       ) : null}

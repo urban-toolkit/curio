@@ -530,3 +530,34 @@ describe("AgentBuilderStrip — dev/115 verified Solve as a background job", () 
     );
   });
 });
+
+
+describe("AgentBuilderStrip — dev/116 missing connection keys", () => {
+  it("renders one Add key action per host, whatever the number of failed nodes", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "failed", b: "failed", c: "failed" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveErrors={{ a: "not fixed — source-missing", b: "not fixed — source-missing" }}
+        solveRemedies={{
+          a: { kind: "connection-key", host: "api.census.gov", suggestedName: "census" },
+          b: { kind: "connection-key", host: "api.census.gov", suggestedName: "census" },
+          c: { kind: "use-connection-key", host: "api.noaa.gov", name: "noaa" },
+        }}
+      />,
+    );
+    const group = screen.getByRole("group", { name: "Missing connection keys" });
+    expect(within(group).getAllByRole("button", { name: /Add key for/ })).toHaveLength(1);
+    expect(group).toHaveTextContent("Add key for api.census.gov");
+    expect(group).toHaveTextContent(/A connection key "noaa" is saved for api.noaa.gov — Solve again/);
+  });
+
+  it("no group without remedies", () => {
+    render(
+      <AgentBuilderStrip attachment={attachment({ phase: "applied", nodeRuns: { a: "failed" } })}
+        onSolve={jest.fn()} onComposePrompt={jest.fn()} solveErrors={{ a: "boom" }} />,
+    );
+    expect(screen.queryByRole("group", { name: "Missing connection keys" })).toBeNull();
+  });
+});

@@ -117,6 +117,10 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
    * attachment's next solve starts — NOT on done, so the strip can show why
    * the pills say failed. The Solve turn's card is the durable record. */
   solveErrors: Record<string, Record<string, string>>;
+  /** dev/116: the LIVE batch's per-node remedies (attachmentId → nodeId →
+   * remedy) — a `source-missing` failure that asks for a connection key.
+   * Cleared with solveErrors. */
+  solveRemedies: Record<string, Record<string, import("../../../api/agentsApi").AgentRemedy>>;
   /** Cancel the running solve (dev/63): in-flight children finish and
    * persist; undispatched targets revert to pending. */
   cancelSolve: (attachmentId: string) => Promise<void>;
@@ -157,6 +161,9 @@ export const AgentAttachmentsProvider: React.FC<{
   // dev/63: the live solve's per-node overlay + its abort handle.
   const [solveProgress, setSolveProgress] = useState<Record<string, Record<string, string>>>({});
   const [solveErrors, setSolveErrors] = useState<Record<string, Record<string, string>>>({});
+  const [solveRemedies, setSolveRemedies] = useState<
+    Record<string, Record<string, import("../../../api/agentsApi").AgentRemedy>>
+  >({});
   // dev/115: the per-node Solve's narration, and the background jobs this
   // client is already attached to (never attach twice to one execution).
   const [solveNodeActivity, setSolveNodeActivity] = useState<Record<string, string>>({});
@@ -673,6 +680,14 @@ export const AgentAttachmentsProvider: React.FC<{
               [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: reason },
             }));
           }
+          const remedy = payload.remedy;
+          if (remedy && typeof remedy === "object" && typeof (remedy as { kind?: unknown }).kind === "string") {
+            const typed = remedy as import("../../../api/agentsApi").AgentRemedy;
+            setSolveRemedies((prev) => ({
+              ...prev,
+              [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: typed },
+            }));
+          }
           if (payload.status === "solved" && typeof payload.content === "string") {
             notifyAgentCanvasMutation({
               kind: "node-content-applied",
@@ -700,6 +715,10 @@ export const AgentAttachmentsProvider: React.FC<{
       // dev/106: a fresh batch starts with a clean reason slate.
       setSolveErrors((prev) => {
         const { [attachmentId]: _gone, ...rest } = prev;
+        return rest;
+      });
+      setSolveRemedies((prev) => {
+        const { [attachmentId]: _cleared, ...rest } = prev;
         return rest;
       });
       try {
@@ -921,6 +940,7 @@ export const AgentAttachmentsProvider: React.FC<{
       solveAttachment,
       solveProgress,
       solveErrors,
+      solveRemedies,
       cancelSolve,
       solveNode,
       solveNodeActivity,
@@ -954,6 +974,7 @@ export const AgentAttachmentsProvider: React.FC<{
       solveAttachment,
       solveProgress,
       solveErrors,
+      solveRemedies,
       cancelSolve,
       solveNode,
       solveNodeActivity,

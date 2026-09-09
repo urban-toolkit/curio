@@ -288,7 +288,7 @@ export interface AgentDelegationPart {
 
 /** dev/114: one grounded source reference on a proposal. */
 export interface AgentSourceRef {
-  kind: "catalog" | "external" | "user-path" | "synthetic" | string;
+  kind: "catalog" | "external" | "user-path" | "synthetic" | "secret" | string;
   /** The literal the code uses: a path, a curio_dataset_path("<id>") call, or a URL. */
   value?: string;
   datasetId?: string;
@@ -298,6 +298,22 @@ export interface AgentSourceRef {
   verification?: AgentDatasetCandidateRow["verification"];
   /** external only: "credential-gated" when the endpoint answered 401/403. */
   requirement?: string;
+  /** external only (dev/116): a saved connection key is bound to this host. */
+  hint?: string;
+  /** secret only (dev/116): the connection key the code reaches by name. */
+  name?: string;
+  host?: string;
+  delivery?: string;
+}
+
+/** dev/116: what a `source-missing` failure asks the user for. */
+export interface AgentRemedy {
+  kind: "connection-key" | "use-connection-key" | string;
+  host?: string;
+  /** connection-key: a name the settings form can suggest. */
+  suggestedName?: string;
+  /** use-connection-key: the saved key the builder did not use. */
+  name?: string;
 }
 
 /** dev/114: the proposal's source block — bounded plain data. */
@@ -565,6 +581,8 @@ export interface AgentValidationAttempt {
   source?: string;
   /** dev/115 field fix: what the fetched endpoint actually answered when the round failed. */
   endpointEvidence?: string;
+  /** dev/116: a credential decline's concrete remedy. */
+  remedy?: AgentRemedy;
 }
 
 /** One node's outcome on the Solve payload (dev/63; dev/115 adds the verdict). */
@@ -578,6 +596,8 @@ export interface AgentSolveNodeResult {
   attempts?: AgentValidationAttempt[];
   proposalId?: string;
   proposalAttachmentId?: string | null;
+  /** dev/116: present when the failure asks for a connection key. */
+  remedy?: AgentRemedy;
 }
 
 export interface AgentSolveResult {

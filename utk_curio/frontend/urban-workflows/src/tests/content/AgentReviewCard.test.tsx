@@ -1,4 +1,5 @@
 import React from "react";
+import { subscribeConnectionKeysRequests } from "../../components/connectionKeys/connectionKeysRequest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import { AgentReviewCard } from "../../components/agents/content/AgentReviewCard";
@@ -932,5 +933,70 @@ describe("AgentReviewCard — dev/115 the verification attempt trail", () => {
   it("no trail renders without attempts (older validation blocks unchanged)", () => {
     render(<AgentReviewCard part={{ ...executed, validation: { verdict: "pass", rounds: 1 } }} onApply={jest.fn()} />);
     expect(screen.queryByText(/Verification · /)).toBeNull();
+  });
+});
+
+
+describe("AgentReviewCard — dev/116 connection keys", () => {
+  it("a secret ref reads as a connection key by name — never a value", () => {
+    render(
+      <AgentReviewCard
+        part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/data-loading" },
+          source: { kind: "mixed", label: "External · … · Connection key · census", refs: [
+            { kind: "external", value: "https://api.census.gov/data", verification: { status: "verified", httpStatus: 200 } },
+            { kind: "secret", value: 'curio_secret("census")', name: "census", host: "api.census.gov", delivery: "query:key" },
+          ] } }}
+        onApply={jest.fn()}
+      />,
+    );
+    const block = screen.getByRole("group", { name: "Data source" });
+    expect(block).toHaveTextContent("Connection key · census · api.census.gov");
+    expect(block).not.toHaveTextContent("query:key");
+  });
+
+  it("a credential-gated external ref shows the saved-key hint", () => {
+    render(
+      <AgentReviewCard
+        part={{ ...part(), tool: "node.create",
+          source: { kind: "external", label: "x", refs: [
+            { kind: "external", value: "https://api.census.gov/data", requirement: "credential-gated",
+              hint: "a connection key 'census' is saved for this host — use api_key = curio_secret(\"census\")",
+              verification: { status: "unreachable", httpStatus: 401 } },
+          ] } }}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent(/credential-gated — a connection key 'census' is saved/);
+  });
+
+  it("a failed attempt with a missing-key remedy offers Add key for the host, which asks for the settings form", () => {
+    const seen: unknown[] = [];
+    const off = subscribeConnectionKeysRequests((f) => seen.push(f));
+    const failed: AgentProposalPart = {
+      ...part(), tool: "node.content.write",
+      validation: { verdict: "fail", rounds: 2, evidence: { kind: "source-missing", detail: "the content builder declined: needs a key" },
+        attempts: [
+          { round: 1, verdict: "fail", kind: "execution-error", detail: "node failed", stderrTail: "JSONDecodeError" },
+          { round: 2, verdict: "fail", kind: "source-missing", detail: "the content builder declined: The Census API requires an API key",
+            remedy: { kind: "connection-key", host: "api.census.gov", suggestedName: "census" } },
+        ] },
+    };
+    render(<AgentReviewCard part={failed} onApply={jest.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add key for api.census.gov" }));
+    expect(seen).toEqual([{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }]);
+    off();
+  });
+
+  it("a use-connection-key remedy is a sentence, not a button", () => {
+    const failed: AgentProposalPart = {
+      ...part(), tool: "node.content.write",
+      validation: { verdict: "fail", rounds: 2, attempts: [
+        { round: 2, verdict: "fail", kind: "source-missing", detail: "declined",
+          remedy: { kind: "use-connection-key", host: "api.census.gov", name: "census" } },
+      ] },
+    };
+    render(<AgentReviewCard part={failed} onApply={jest.fn()} />);
+    expect(screen.queryByRole("button", { name: /Add key/ })).toBeNull();
+    expect(screen.getByText(/A connection key "census" is saved for api.census.gov — Solve again/)).toBeInTheDocument();
   });
 });

@@ -1171,3 +1171,28 @@ describe("AgentChatPanel — dev/115 the per-node Solve row", () => {
     expect(screen.queryByRole("group", { name: "Solve this node" })).toBeNull();
   });
 });
+
+
+describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
+  it("a source-missing outcome with a remedy offers Add key for the host", async () => {
+    const { subscribeConnectionKeysRequests } = await import("../../components/connectionKeys/connectionKeysRequest");
+    const seen: unknown[] = [];
+    const off = subscribeConnectionKeysRequests((f) => seen.push(f));
+    const onSolveNode = jest.fn().mockResolvedValue({
+      verdict: "fail", rounds: 2,
+      remedy: { kind: "connection-key", host: "api.census.gov", suggestedName: "census" },
+    });
+    renderPanel({
+      attachment: { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder", target: { kind: "node" as const, targetId: "n1" } },
+      targetName: "Data Loading",
+      onSolveNode,
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    const add = await within(row).findByRole("button", { name: "Add key for api.census.gov" });
+    expect(within(row).getByRole("status")).toHaveTextContent(/Not fixed after 2 attempts/);
+    fireEvent.click(add);
+    expect(seen).toEqual([{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }]);
+    off();
+  });
+});

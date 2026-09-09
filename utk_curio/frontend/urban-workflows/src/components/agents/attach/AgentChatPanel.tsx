@@ -124,6 +124,8 @@ export const AgentChatPanel: React.FC<{
   solveProgress?: Record<string, string>;
   /** dev/106: the live batch's per-node failure reasons (nodeId → text). */
   solveErrors?: Record<string, string>;
+  /** dev/116: the live batch's per-node remedies (a missing connection key). */
+  solveRemedies?: Record<string, import("../../../api/agentsApi").AgentRemedy>;
   /** dev/63: cancel the running solve. */
   onCancelSolve?: () => Promise<void>;
   /** dev/115 (Amendment A2): the per-node Solve — offered when this agent is
@@ -172,6 +174,7 @@ export const AgentChatPanel: React.FC<{
   solveNodeActivity = null,
   solveProgress,
   solveErrors,
+  solveRemedies,
   onCancelSolve,
   onOpenAgentChat,
   delegateExists,
@@ -577,6 +580,7 @@ export const AgentChatPanel: React.FC<{
           onSolve={onSolve}
           solveProgress={solveProgress}
           solveErrors={solveErrors}
+          solveRemedies={solveRemedies}
           onCancelSolve={onCancelSolve}
           onComposePrompt={composePrompt}
           onApplyProposal={onApplyProposal}

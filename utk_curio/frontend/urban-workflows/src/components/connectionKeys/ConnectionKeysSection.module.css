@@ -1,0 +1,104 @@
+/* dev/116 — Settings → Connection keys. Tokens only; the field/button
+   vocabulary is ../modal-content.module.css. */
+.section {
+    margin-top: 12px;
+    border-top: 1px solid var(--curio-border);
+    padding-top: 12px;
+}
+
+.summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--curio-text-primary);
+    font-size: var(--curio-font-size-md);
+}
+
+.intro {
+    margin: 6px 0 10px;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+}
+
+.shared {
+    margin: 0 0 10px;
+    color: var(--curio-warning-text);
+    font-size: var(--curio-font-size-sm);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--curio-font-size-sm);
+    margin-bottom: 10px;
+}
+
+.table caption {
+    text-align: left;
+    color: var(--curio-text-muted);
+    font-size: var(--curio-font-size-sm);
+    padding-bottom: 4px;
+}
+
+.table th,
+.table td {
+    text-align: left;
+    padding: 4px 8px 4px 0;
+    border-bottom: 1px solid var(--curio-border);
+    color: var(--curio-text-secondary);
+    vertical-align: top;
+}
+
+.table th {
+    color: var(--curio-text-muted);
+    font-weight: 500;
+}
+
+.name {
+    color: var(--curio-text-primary);
+    font-weight: 600;
+}
+
+.skeleton {
+    color: var(--curio-text-muted);
+    font-size: var(--curio-font-size-sm);
+}
+
+.empty {
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-sm);
+    margin: 0 0 10px;
+}
+
+.row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.row > * {
+    flex: 1 1 140px;
+}
+
+.removeBtn {
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-secondary);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.removeBtn:hover:not(:disabled) {
+    color: var(--curio-text-primary);
+}
+
+.confirm {
+    color: var(--curio-danger-text);
+    font-size: var(--curio-font-size-sm);
+}
+
+.confirm button {
+    margin-left: 6px;
+}

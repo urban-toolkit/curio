@@ -8,6 +8,7 @@ import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
 import { composeAgentRunContext } from "./agentRunContext";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { ConnectionKeysModalHost } from "../../connectionKeys/ConnectionKeysModalHost";
 
 /**
  * Canvas overlay for CANVAS-target agents: a persistent dock centered at the
@@ -79,6 +80,8 @@ export const AgentDockOverlay: React.FC = () => {
 
   return (
     <>
+      {/* dev/116: "Add key for <host>" from any card opens Settings → Connection keys here. */}
+      <ConnectionKeysModalHost />
       <AgentDock
         attachments={canvasAttachments}
         selectedId={ctx.selectedId}
@@ -149,6 +152,7 @@ export const AgentDockOverlay: React.FC = () => {
               onSolve={(nodeIds) => ctx.solveAttachment(selected.attachmentId, nodeIds)}
               solveProgress={ctx.solveProgress[selected.attachmentId]}
               solveErrors={ctx.solveErrors[selected.attachmentId]}
+              solveRemedies={ctx.solveRemedies[selected.attachmentId]}
               onCancelSolve={() => ctx.cancelSolve(selected.attachmentId)}
               // dev/115 (Amendment A2): the per-node Solve from the node's own agent.
               onSolveNode={
