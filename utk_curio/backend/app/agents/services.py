@@ -3973,6 +3973,13 @@ def _solve_events(
                 return {"nodeId": node_id, "status": "pending", "error": reason, **trail}
             kind = evidence.get("kind") or "fail"
             raw_detail = str(evidence.get("stderrTail") or evidence.get("detail") or "")
+            if evidence.get("upstreamEmpty"):
+                # dev/118 live fix: the upstream has no content (it failed, or
+                # is not a target) — this node waits, pending with the reason;
+                # Retry runs it once the upstream is solved or filled.
+                reason = f"waiting — {raw_detail[:240]}" if raw_detail else "waiting — an upstream node has no content yet"
+                results[node_id] = {"status": "pending", "reason": reason, **trail}
+                return {"nodeId": node_id, "status": "pending", "reason": reason, **trail}
             if kind == "precondition":
                 # dev/118 (DEC-075): the runner refused the SLICE (the 25-node
                 # bound, a cycle) — a bound on validation, not a failure of the
@@ -5418,6 +5425,12 @@ def _solve_node_events(
             "cannot run it. Play the dataflow to see it. Nothing was changed."
         )
         card_kind = "result"
+    elif (outcome.get("evidence") or {}).get("upstreamEmpty"):
+        text = (
+            f"Not verified: {(outcome.get('evidence') or {}).get('detail') or 'an upstream node has no content yet'} "
+            f"— {label!r} waits for it; solve or fill that node, then Solve this one again. Nothing was changed."
+        )
+        card_kind = "result"
     else:
         text = (
             f"Not fixed after {rounds} attempt{'s' if rounds != 1 else ''}: {label!r} still "
@@ -6248,9 +6261,10 @@ def _verified_content_rounds(
         attempts.append(attempt)
         if verdict_result["verdict"] != "fail":
             break
-        if round_evidence.get("kind") == "precondition":
-            # dev/118: the runner refused the SLICE (bound, cycle) — no
-            # correction of the content can change that; one round says so.
+        if round_evidence.get("kind") == "precondition" or round_evidence.get("upstreamEmpty"):
+            # dev/118: the runner refused the SLICE (bound, cycle), or an
+            # upstream has no content yet — no correction of THIS content can
+            # change that; one round says so.
             break
         previous_attempt = candidate
         previous_error = round_evidence.get("stderrTail") or round_evidence.get("detail") or ""

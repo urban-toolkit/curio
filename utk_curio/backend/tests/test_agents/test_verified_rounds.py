@@ -638,6 +638,39 @@ class TestSameBatchReuse:
         assert outcome["attempts"][0]["kind"] == "execution-error"
 
 
+class TestEmptyUpstreamWaits:
+    """dev/118 live fix (2026-09-09, gemma4 Task 2): a dependent whose upstream
+    ended empty (a declined loader) used to run against None and "pass" by
+    coding around it. Now it waits — one round, no correction, pending."""
+
+    def test_the_loop_stops_after_one_round_and_names_the_upstream(self, app, tmp_curio):
+        node_t = {"id": "t", "type": CA, "goal": "stats", "content": ""}
+        spec = {"dataflow": {"nodes": [{"id": "a", "type": DL, "goal": "load", "content": ""}, node_t],
+                             "edges": [{"id": "e1", "source": "a", "target": "t"}], "name": "wf", "task": "t"}}
+        exec_fn = _Exec()
+        events, outcome, inputs = _rounds(app, node_t, replies=["df = arg[0]\nreturn df"], exec_fn=exec_fn, spec=spec)
+        assert outcome["verdict"] == "fail" and outcome["rounds"] == 1 and len(inputs) == 1
+        assert outcome["evidence"]["kind"] == "upstream-blocker" and outcome["evidence"]["upstreamEmpty"] is True
+        assert exec_fn.calls == []  # nothing ran
+
+    def test_a_dependent_of_a_failed_loader_waits_pending_with_the_reason(self, client, user_and_token, tmp_curio, monkeypatch):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        # The loader declines (no source) → empty; the stats node must not run
+        # against None and "pass".
+        ctx = helper._setup(client, user, token, monkeypatch,
+                            dl_replies=["No catalog dataset covers the tract heat data."])
+        body = helper._solve(client, token, ctx)
+        assert body["results"][ctx["load"]]["status"] == "failed"
+        stats = body["results"][ctx["stats"]]
+        assert stats["status"] == "pending" and stats["reason"].startswith("waiting — upstream node")
+        assert stats["rounds"] == 1
+        assert ctx["exec_payloads"] == []  # neither the empty loader nor the stats node ran
+        assert body["builderSession"]["nodeRuns"][ctx["stats"]] == "pending"  # Retry after the loader is fixed
+        assert body["builderSession"]["phase"] == "applied"
+        assert helper._node_content(ctx, ctx["stats"]) == ""
+
+
 class TestExecDatasetPaths:
     def _service(self, monkeypatch, resolved, raise_exc=False):
         calls = []

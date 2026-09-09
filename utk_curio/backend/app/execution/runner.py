@@ -223,6 +223,7 @@ def run_through_node(
     exec_user_key: str | None = None,
     secrets: dict | None = None,
     prior_outputs: dict | None = None,
+    strict_upstream: bool = False,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
@@ -316,6 +317,20 @@ def run_through_node(
             content_text = candidate_content
         is_code = node.category == "code"
         is_py = node.type in PY_CODE_TYPES
+        if strict_upstream and is_code and node.id != node_id and not (content_text or "").strip():
+            # dev/118 live fix (2026-09-09), VALIDATION runs only: an upstream
+            # code node with NO content used to run as a seed-only body, hand
+            # None downstream, and let a dependent "pass" by coding around
+            # None — a hollow pass. It is a blocker, by name, before anything
+            # runs. A plain Run (dev/71) keeps Play's semantics: it runs what
+            # is there.
+            report["nodes"][node.id] = {"status": "empty", "executed": False}
+            report["blocker"] = node.id
+            report["upstreamEmpty"] = True
+            report["error"] = (
+                f"upstream node {node.id!r} has no content yet — solve or fill it first"
+            )
+            return report
         if not is_code:
             # Pass-through semantics (merge/vis/pool) — same as the e2e runner.
             upstreams = spec.upstream_nodes(node.id)

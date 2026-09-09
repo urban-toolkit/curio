@@ -103,6 +103,7 @@ def validate_candidate(
         session_id=session_id, exec_fn=exec_fn, progress=progress,
         dataset_paths=dataset_paths, exec_user_key=exec_user_key, secrets=secrets,
         prior_outputs=prior_outputs,
+        strict_upstream=True,  # dev/118: an empty upstream is a blocker, never None downstream
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]
@@ -145,6 +146,10 @@ def validate_candidate(
                 "stderrTail": blocker_record.get("stderrTail", ""),
                 "detail": report.get("error"),
             })
+            if report.get("upstreamEmpty"):
+                # dev/118: the upstream has no content — nothing to correct
+                # here; the dependent waits for it.
+                evidence["upstreamEmpty"] = True
         elif blocker == node_id:
             evidence.update({
                 "kind": "execution-error",

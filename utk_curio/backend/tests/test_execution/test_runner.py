@@ -370,3 +370,33 @@ class TestDev118PriorOutputs:
         )
         assert report["ok"] is True and report["nodes"]["a"]["executed"] is True
         assert len(rec.calls) == 1
+
+
+class TestDev118EmptyUpstream:
+    """dev/118 live fix: an upstream code node with no content is a blocker by
+    name before anything runs — never a seed-only body handing None downstream."""
+
+    def test_an_empty_upstream_blocks_before_execution(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec([_node("a", content=""), _node("t")], [{"id": "e1", "source": "a", "target": "t"}])
+        report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec, strict_upstream=True)
+        assert report["ok"] is False and report["blocker"] == "a" and report["upstreamEmpty"] is True
+        assert "has no content yet" in report["error"] and "'a'" in report["error"]
+        assert report["nodes"]["a"] == {"status": "empty", "executed": False}
+        assert rec.calls == []
+        # A plain Run (dev/71) keeps Play's semantics and runs the empty body.
+        rec_run = _RecordingExec()
+        assert runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec_run)["ok"] is True
+        assert len(rec_run.calls) == 2
+
+    def test_the_target_may_be_empty_only_through_its_candidate(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec([_node("a"), _node("t", content="")], [{"id": "e1", "source": "a", "target": "t"}])
+        report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec, candidate_content="return arg", strict_upstream=True)
+        assert report["ok"] is True and "upstreamEmpty" not in {k for k, v in report.items() if v}
+        # A reused empty upstream never reaches the check either.
+        rec2 = _RecordingExec()
+        spec2 = _spec([_node("a", content=""), _node("t")], [{"id": "e1", "source": "a", "target": "t"}])
+        report2 = runner.run_through_node(KEY, PID, spec2, "t", exec_fn=rec2, strict_upstream=True,
+                                          prior_outputs={"a": {"path": "art-a", "dataType": "dataframe"}})
+        assert report2["ok"] is True and report2["nodes"]["a"]["status"] == "reused"

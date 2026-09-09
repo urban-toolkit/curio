@@ -159,3 +159,14 @@ class TestPriorOutputs:
         assert result["evidence"]["executedNodes"] == ["t"]
         assert result["evidence"]["output"] == {"path": "art-t", "dataType": "dataframe"}
         assert payloads[0]["file_path"] == "art-a"
+
+
+class TestEmptyUpstream:
+    def test_empty_upstream_is_an_upstream_blocker_flagged_empty(self, tmp_curio):
+        spec = _spec([_node("a", content="", goal="load the tracts"), _node("t")],
+                     [{"id": "e1", "source": "a", "target": "t"}])
+        result = validation.validate_candidate(KEY, PID, spec, "t", "return arg", exec_fn=lambda e, p: {"stdout": [], "stderr": "", "output": {"path": "x", "dataType": "dataframe"}})
+        assert result["verdict"] == "fail"
+        assert result["evidence"]["kind"] == "upstream-blocker" and result["evidence"]["upstreamEmpty"] is True
+        assert result["evidence"]["blocker"] == "a" and result["evidence"]["blockerLabel"] == "load the tracts"
+        assert result["evidence"]["executedNodes"] == []

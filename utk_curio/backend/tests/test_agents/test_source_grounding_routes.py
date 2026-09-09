@@ -484,15 +484,13 @@ class TestSolveSourceGrounding:
         nodes_applied = applied["appliedGraph"]["nodes"]
         load = next(n["id"] for n in nodes_applied if str(n.get("type", "")).startswith(DL))
         stats = next(n["id"] for n in nodes_applied if str(n.get("type", "")).startswith(CA))
-        assert body["results"][stats]["status"] == "solved"
         assert body["results"][load]["status"] == "failed"
-        # dev/118 (DEC-075): the computation sibling is verified in wave 2 —
-        # its slice runs the (empty, refused) loader first and then the node;
-        # the fake sandbox passes both. In reality an empty upstream is a
-        # blocker the runner names (§6.1); here the point is that NOTHING of
-        # the refused loader's fabricated code reached the sandbox.
-        assert [p["nodeType"] for p in exec_payloads] == [DL, CA]
-        assert "heat_tracts.csv" not in exec_payloads[0]["code"]
+        # dev/118 live fix: the computation sibling WAITS for the refused
+        # loader (pending, reason named) instead of running against an empty
+        # upstream — and NOTHING of the fabricated code reached the sandbox.
+        assert body["results"][stats]["status"] == "pending"
+        assert body["results"][stats]["reason"].startswith("waiting — upstream node")
+        assert exec_payloads == []
         # dev/115: every round was refused by the gate (kind ungrounded-source)
         # and NEVER reached the sandbox; the error names the literal + remedy.
         assert body["results"][load]["verdict"] == "fail"
@@ -503,7 +501,7 @@ class TestSolveSourceGrounding:
         spec = projects_storage.read_spec(_user_dir_key(user), project)
         nodes = {n["id"]: n for n in spec["dataflow"]["nodes"]}
         assert nodes[load]["content"] == ""  # nothing fabricated reached the spec
-        assert nodes[stats]["content"]
+        assert nodes[stats]["content"] == ""  # it waited
         # The data-loading child was HANDED the catalog's real path.
         dl_frame = next(c[-1]["content"] for c in calls if f'"nodeType": "{DL}"' in c[-1]["content"])
         assert '"sourceGrounding"' in dl_frame and dataset_id in dl_frame and "heat_tracts.csv" in dl_frame
@@ -525,7 +523,7 @@ class TestSolveSourceGrounding:
         # dev/118: two payloads from the first batch's wave 2 (the empty loader
         # in the stats slice, then stats) + the retried loader = three; the
         # retry ran exactly one node, the grounded loader.
-        assert len(exec_payloads) == 3 and exec_payloads[-1]["nodeType"] == DL
+        assert len(exec_payloads) == 1 and exec_payloads[-1]["nodeType"] == DL  # the retried loader alone
         assert path in exec_payloads[-1]["code"]
         spec = projects_storage.read_spec(_user_dir_key(user), project)
         assert path in next(n for n in spec["dataflow"]["nodes"] if n["id"] == load)["content"]
