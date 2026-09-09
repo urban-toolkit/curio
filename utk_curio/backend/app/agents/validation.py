@@ -87,13 +87,19 @@ def validate_candidate(
     exec_fn=None,
     progress=None,
     available_templates: dict | None = None,
+    dataset_paths: dict | None = None,
+    exec_user_key: str | None = None,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
-    return ``{"verdict", "evidence"}`` (see module docstring)."""
+    return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
+    ``dataset_paths`` / ``exec_user_key`` ride through to the runner so the
+    Data Catalog's ``curio_dataset_path("<id>")`` loaders resolve exactly as
+    on Play."""
     report = runner.run_through_node(
         user_key, project_id, spec_dict, node_id,
         candidate_content=candidate_content,
         session_id=session_id, exec_fn=exec_fn, progress=progress,
+        dataset_paths=dataset_paths, exec_user_key=exec_user_key,
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     dataflow = (spec_dict or {}).get("dataflow") or {}
@@ -138,6 +144,8 @@ def validate_candidate(
         return {"verdict": "fail", "evidence": evidence}
     output_data_type = (target_record.get("output") or {}).get("dataType", "")
     evidence["outputDataType"] = output_data_type
+    if target_record.get("durationMs") is not None:
+        evidence["durationMs"] = target_record["durationMs"]
     # Successful runs may still carry benign warnings — evidence, not verdict.
     if target_record.get("stderrTail"):
         evidence["warnings"] = target_record["stderrTail"][-1000:]

@@ -96,3 +96,23 @@ class TestValidateCandidate:
         )
         assert result["verdict"] == "infrastructure"
         assert result["evidence"]["kind"] == "infrastructure"
+
+
+class TestDev115Passthrough:
+    def test_dataset_paths_and_user_key_reach_the_runner_and_duration_is_evidence(self, tmp_curio):
+        seen = {}
+
+        def _fn(endpoint, payload):
+            seen.update(payload)
+            return {"stdout": [], "stderr": "", "output": {"path": "art", "dataType": "dataframe"}}
+
+        spec = _spec([_node("t", node_type="curio.builtin/data-loading",
+                            content='p = curio_dataset_path("imported.x@1")')], [])
+        result = validation.validate_candidate(
+            KEY, PID, spec, "t", 'p = curio_dataset_path("imported.x@1")\nreturn p',
+            exec_fn=_fn, dataset_paths={"imported.x@1": "/store/x.csv"}, exec_user_key="4242",
+        )
+        assert seen["dataset_paths"] == {"imported.x@1": "/store/x.csv"}
+        assert seen["user_key"] == "4242"
+        assert result["verdict"] == "pass"
+        assert isinstance(result["evidence"]["durationMs"], int)

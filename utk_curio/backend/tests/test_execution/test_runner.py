@@ -133,3 +133,76 @@ class TestRunThroughNode:
         exec_fn = _RecordingExec()
         runner.run_through_node(KEY, PID, spec, "a", exec_fn=exec_fn)
         assert exec_fn.calls[0][1]["save_dataset"] is False
+
+
+class TestDev115RunnerContract:
+    """dev/115: the validation runner runs a node the way Play does — the
+    dataset-path mapping and the user key ride the payload, a hang is the
+    node's failure (never infrastructure), the timeout is one env-driven
+    constant aligned to the sandbox wall clock, and durations are measured."""
+
+    def test_dataset_paths_and_user_key_ride_the_payload_when_given(self, tmp_curio):
+        rec = _RecordingExec()
+        runner.run_through_node(
+            KEY, PID, _chain_spec(["a"]), "a", exec_fn=rec,
+            dataset_paths={"imported.x@1": "/store/x.csv"}, exec_user_key="4242",
+        )
+        payload = rec.calls[0][1]
+        assert payload["dataset_paths"] == {"imported.x@1": "/store/x.csv"}
+        assert payload["user_key"] == "4242"
+
+    def test_payload_is_byte_compatible_without_them(self, tmp_curio):
+        rec = _RecordingExec()
+        runner.run_through_node(KEY, PID, _chain_spec(["a"]), "a", exec_fn=rec)
+        payload = rec.calls[0][1]
+        assert "dataset_paths" not in payload and "user_key" not in payload
+
+    def test_execution_timeout_is_the_nodes_failure(self, tmp_curio):
+        def _hang(endpoint, payload):
+            raise runner.ExecutionTimeout(300)
+
+        report = runner.run_through_node(KEY, PID, _chain_spec(["a"]), "a", exec_fn=_hang)
+        assert report["ok"] is False
+        assert report["infrastructure"] is None  # NOT a transport failure
+        assert report["blocker"] == "a"
+        record = report["nodes"]["a"]
+        assert record["status"] == "error"
+        assert "did not finish within 300 s" in record["stderrTail"]
+        assert "add one and bound the fetch" in record["stderrTail"]
+        # The journal saw a real, failed execution.
+        journal = runtime_journal.read_record(KEY, PID, "a")
+        assert journal["status"] == "error"
+
+    def test_duration_is_measured(self, tmp_curio):
+        rec = _RecordingExec()
+        report = runner.run_through_node(KEY, PID, _chain_spec(["a"]), "a", exec_fn=rec)
+        assert isinstance(report["nodes"]["a"]["durationMs"], int)
+        assert report["nodes"]["a"]["durationMs"] >= 0
+
+    def test_exec_timeout_env_override_and_fallback(self, monkeypatch):
+        monkeypatch.delenv("CURIO_VALIDATION_EXEC_TIMEOUT", raising=False)
+        assert runner.exec_timeout_s() == runner.DEFAULT_EXEC_TIMEOUT_S == 300
+        monkeypatch.setenv("CURIO_VALIDATION_EXEC_TIMEOUT", "45")
+        assert runner.exec_timeout_s() == 45
+        monkeypatch.setenv("CURIO_VALIDATION_EXEC_TIMEOUT", "soon")
+        assert runner.exec_timeout_s() == 300
+        monkeypatch.setenv("CURIO_VALIDATION_EXEC_TIMEOUT", "0")
+        assert runner.exec_timeout_s() == 300
+
+    def test_http_exec_maps_requests_timeout(self, monkeypatch):
+        import requests
+
+        class _Session:
+            @staticmethod
+            def post(url, json=None, timeout=None):
+                assert timeout == (runner.SANDBOX_CONNECT_TIMEOUT_S, 300)
+                raise requests.exceptions.ReadTimeout("slow")
+
+        monkeypatch.delenv("CURIO_VALIDATION_EXEC_TIMEOUT", raising=False)
+        monkeypatch.setattr(requests, "post", _Session.post)
+        try:
+            runner._http_exec("/exec", {"code": "x"})
+        except runner.ExecutionTimeout as exc:
+            assert exc.seconds == 300
+        else:
+            raise AssertionError("expected ExecutionTimeout")

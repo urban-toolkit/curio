@@ -33,7 +33,43 @@ from utk_curio.backend.app.execution.workflow_spec import (
 
 SANDBOX_CONNECT_TIMEOUT_S = 30
 SANDBOX_GET_TIMEOUT_S = int(os.environ.get("CURIO_E2E_SANDBOX_GET_TIMEOUT", "300"))
-SANDBOX_EXEC_TIMEOUT_S = 120
+# dev/115: ONE execution timeout for validation runs, aligned to the sandbox's
+# own wall clock (supervisor DEFAULT_WALL_TIMEOUT_SECONDS = 300) — the old
+# hardcoded 120 s cut every real data fetch short of the limit the sandbox
+# itself would have enforced. Env-overridable; the interactive route's 600 s
+# stays the upper reference.
+DEFAULT_EXEC_TIMEOUT_S = 300
+SANDBOX_EXEC_TIMEOUT_S = DEFAULT_EXEC_TIMEOUT_S  # kept name; read via exec_timeout_s()
+
+
+def exec_timeout_s() -> int:
+    """The per-node sandbox execution timeout for validation runs, in seconds
+    (``CURIO_VALIDATION_EXEC_TIMEOUT``; an unusable value falls back to the
+    default rather than raising — a bad env var must not break every run)."""
+    raw = os.environ.get("CURIO_VALIDATION_EXEC_TIMEOUT")
+    if raw is None or not str(raw).strip():
+        return DEFAULT_EXEC_TIMEOUT_S
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return DEFAULT_EXEC_TIMEOUT_S
+    return value if value > 0 else DEFAULT_EXEC_TIMEOUT_S
+
+
+class ExecutionTimeout(Exception):
+    """dev/115: the sandbox did not answer within the execution timeout.
+
+    Distinct from a transport failure on purpose: a node that hangs (a fetch
+    without a timeout, an endpoint that never answers) is the CANDIDATE's
+    behaviour and must be reported as the node's failure so the correction
+    loop can fix it — never as ``infrastructure``, which leaves the node
+    untouched and teaches nothing."""
+
+    def __init__(self, seconds: int):
+        super().__init__(f"the node did not finish within {seconds} s")
+        self.seconds = seconds
+
+
 # A validation run is a bounded, interactive slice — not a batch platform.
 VALIDATION_NODE_LIMIT = 25
 _STDERR_TAIL_CHARS = 4000
@@ -106,11 +142,15 @@ def _http_exec(endpoint: str, payload: dict) -> dict:
     (the caller maps that to an INFRASTRUCTURE outcome, never a node error)."""
     import requests as _req
 
-    resp = _req.post(
-        f"{_sandbox_url()}{endpoint}",
-        json=payload,
-        timeout=SANDBOX_EXEC_TIMEOUT_S,
-    )
+    seconds = exec_timeout_s()
+    try:
+        resp = _req.post(
+            f"{_sandbox_url()}{endpoint}",
+            json=payload,
+            timeout=(SANDBOX_CONNECT_TIMEOUT_S, seconds),
+        )
+    except _req.exceptions.Timeout as exc:  # dev/115: the node's behaviour, not ours
+        raise ExecutionTimeout(seconds) from exc
     resp.raise_for_status()
     return resp.json()
 
@@ -161,9 +201,19 @@ def run_through_node(
     node_limit: int = VALIDATION_NODE_LIMIT,
     progress=None,
     as_validation: bool = True,
+    dataset_paths: dict | None = None,
+    exec_user_key: str | None = None,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
+
+    dev/115: ``dataset_paths`` (``{datasetId: absolutePath}`` for the code's
+    ``curio_dataset_path("<id>")`` calls) and ``exec_user_key`` ride the
+    payload exactly as the interactive ``/processPythonCode`` sends them —
+    without them the Data Catalog's portable loader form failed under
+    validation while working on Play. A sandbox execution timeout is the
+    NODE's failure (``ExecutionTimeout`` → error record, blocker), never
+    infrastructure.
 
     - ``candidate_content`` overlays the target's content in memory — the
       saved spec is NEVER mutated here; only an approved Apply writes.
@@ -247,14 +297,32 @@ def run_through_node(
         }
         if session_id:
             payload["session_id"] = session_id
+        if dataset_paths:
+            payload["dataset_paths"] = dict(dataset_paths)
+        if exec_user_key:
+            payload["user_key"] = exec_user_key
         endpoint = "/exec" if is_py else "/execJs"
+        started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        t0 = time.monotonic()
         try:
             result = exec_fn(endpoint, payload)
+        except ExecutionTimeout as exc:
+            # dev/115: a hang is the candidate's behaviour — reported as the
+            # node's own failure so the correction loop sees it.
+            result = {
+                "stdout": [],
+                "stderr": (
+                    f"{exc} (sandbox execution timeout) — the code hung or the "
+                    "request has no timeout; add one and bound the fetch"
+                ),
+                "output": {"path": "", "dataType": ""},
+            }
         except Exception as exc:
             # Sandbox down / transport error: infrastructure, never the node.
             report["infrastructure"] = str(exc)[:300]
             report["error"] = f"sandbox unreachable: {str(exc)[:300]}"
             return report
+        duration_ms = int((time.monotonic() - t0) * 1000)
         out = result.get("output") or {}
         ok = bool(str(out.get("path") or ""))
         stderr_text = str(result.get("stderr") or "")
@@ -273,13 +341,14 @@ def run_through_node(
                 "path": str(out.get("path") or ""),
                 "dataType": str(out.get("dataType") or ""),
             },
+            "durationMs": duration_ms,
         }
         report["nodes"][node.id] = record
         runtime_journal.record_execution(
             user_key, project_id, node.id,
             code=content_text, stdout=stdout_raw, stderr=stderr_text, output=out,
-            started_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            duration_ms=0, validation=as_validation,
+            started_at=started_at,
+            duration_ms=duration_ms, validation=as_validation,
         )
         if not ok:
             report["blocker"] = node.id

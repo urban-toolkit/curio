@@ -4750,6 +4750,329 @@ def validate_node_stream(
     )
 
 
+#: dev/115: how many URLs a failed round probes for the correction's evidence.
+_CORRECTION_URL_PROBES = 2
+#: dev/115: bounded attempt-trail fields (the card renders them inert).
+_ATTEMPT_DETAIL_CHARS = 300
+_ATTEMPT_STDERR_CHARS = 1200
+
+
+def _exec_dataset_paths(project_id: str, *codes: str) -> dict:
+    """dev/115: the ``{datasetId: absolutePath}`` mapping the sandbox needs for
+    every ``curio_dataset_path("<id>")`` call in *codes* — resolved the way
+    ``/processPythonCode`` resolves it (``resolve_execution_paths``, contained
+    paths only). Fail-open to ``{}``: an unmapped id raises a clear per-id
+    error inside the sandbox, which the correction loop then sees. Needs the
+    request context (``g.user``); a Solve batch precomputes it in the request
+    thread and hands the mapping to its workers."""
+    ids: list[str] = []
+    for code in codes:
+        if not isinstance(code, str) or "curio_dataset_path" not in code:
+            continue
+        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
+            dataset_id = match.group(2)
+            if dataset_id not in ids:
+                ids.append(dataset_id)
+            if len(ids) >= 32:
+                break
+    if not ids:
+        return {}
+    try:
+        from flask import g, has_request_context
+
+        from utk_curio.backend.app.datasets.application.catalog_service import (
+            DatasetCatalogService,
+        )
+
+        user = getattr(g, "user", None) if has_request_context() else None
+        resolved = DatasetCatalogService(user).resolve_execution_paths(
+            ids, dataflow_id=project_id
+        )
+        return dict(resolved or {})
+    except Exception:  # resolution must never fail a validation run
+        log.warning(
+            "Could not resolve dataset paths for a validation run (project %s)",
+            project_id, exc_info=True,
+        )
+        return {}
+
+
+def _content_sha(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]:
+    """dev/115: when a failed run names an HTTP problem, re-probe the URLs the
+    candidate fetches (DEC-053, budgeted through the grounding context) so the
+    correction is grounded in the endpoint's real answer — not a guess about
+    why a 400 happened."""
+    lowered = (error_text or "").lower()
+    if not any(marker in lowered for marker in ("http", "status", "urlerror", "connection", "timeout")):
+        return []
+    if ctx is None or ctx.probe is None:
+        return []
+    out: list[dict] = []
+    for ref in source_grounding.scan_sources(candidate, "python"):
+        if ref.kind != "url":
+            continue
+        try:
+            verdict = ctx.probe(ref.literal)
+        except Exception as exc:  # a broken prober is absence, never a claim
+            verdict = {"status": "unverified", "detail": str(exc)[:200]}
+        out.append({"url": ref.literal, "verification": verdict})
+        if len(out) >= _CORRECTION_URL_PROBES:
+            break
+    return out
+
+
+def _verified_content_rounds(
+    user_key: str,
+    project_id: str,
+    *,
+    spec: dict,
+    node: dict,
+    resolution,
+    config: ProviderConfig,
+    parent_execution_id: str,
+    parent_coord: str,
+    attachment_id: str | None,
+    exec_fn,
+    grounding_loop_ctx: dict,
+    grounding_base: dict | None = None,
+    start_from_current: bool = False,
+    extra_inputs: dict | None = None,
+    delegate_runner=None,
+    dataset_paths_fn=None,
+    exec_user_key: str | None = None,
+):
+    """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
+
+    The dev/67-7 round loop extracted from ``_validate_events`` so every
+    caller — validate-node, Simulation Mode, and Solve — runs the same policy:
+
+    - round 0 either delegates ``node.content.generate`` or, with
+      ``start_from_current``, executes the node's CURRENT content as-is (the
+      per-node Solve on code the user just applied: if it passes, nothing is
+      generated, nothing changes);
+    - every candidate passes the DEC-072 grounding gate BEFORE it runs — a
+      refused candidate is a failed round (``kind: ungrounded-source``) whose
+      refusal text is the correction's error, and it never reaches the sandbox;
+    - a run's ``dataset_paths`` are resolved for the candidate + its slice;
+    - a failed round feeds the next generation ``previousAttempt``,
+      ``validationError``, ``sourceGrounding`` (data-loading nodes) and — when
+      the failure names an HTTP problem — fresh probe evidence for the URLs
+      the candidate fetches;
+    - at most ``_VALIDATE_CORRECTION_ROUNDS`` corrections.
+
+    A generator: yields ``("generation_round", …)``, ``("node_executed", …)``
+    and ``("round_verdict", …)`` exactly as the validate-node stream always
+    did, and RETURNS the outcome dict ``{verdict, evidence, rounds, candidate,
+    delegations, roundsTrace, attempts}`` (``outcome = yield from …``).
+    ``attempts`` is the bounded trail the cards render: one row per round
+    with the content digest, verdict, kind, detail, stderr tail, and output.
+    """
+    import queue as _queue
+    import threading
+
+    from utk_curio.backend.app.agents import validation
+    from utk_curio.backend.app.packages import services as packages_services
+
+    run_delegate = delegate_runner or (
+        lambda inputs: delegation.run_delegate(
+            user_key, project_id, resolution.coord,
+            "node.content.generate", inputs, config,
+            parent_execution_id=parent_execution_id,
+            parent_coord=parent_coord,
+            attachment_id=attachment_id,
+        )
+    )
+    node_id = node.get("id")
+    node_type = node.get("type")
+    is_data_loading = source_grounding.is_data_loading_type(
+        packages_services.canonical_template_id(node_type)
+    )
+    try:
+        available = {
+            t["id"]: t for t in packages_services.available_templates(user_key, project_id)
+        }
+    except Exception:
+        available = None  # arity metadata unavailable: type check fails open
+    # ONE grounding context per loop: the same catalog/verified-URL evidence for
+    # every round, one probe budget, and the sourceGrounding inputs derive from it.
+    grounding_ctx = None
+    dataflow = (spec or {}).get("dataflow") or {}
+    try:
+        # The node's goal and the dataflow's mission are human-authored intent
+        # (a plan goal saying "synthetic sample data" authorizes inline data).
+        grounding_ctx = _grounding_context(
+            user_key, project_id, grounding_loop_ctx, node_type=node_type,
+            base=grounding_base,
+            extra_texts=(str(node.get("goal") or ""), str(dataflow.get("task") or "")),
+        )
+    except Exception:
+        log.warning("Grounding context unavailable for node %s", node_id, exc_info=True)
+    verdict_result: dict | None = None
+    rounds_used = 0
+    candidate = ""
+    delegations: list = []
+    rounds_trace: list[str] = []
+    attempts: list[dict] = []
+    previous_attempt: str | None = None
+    previous_error: str | None = None
+    url_evidence: list[dict] = []
+    for round_index in range(1 + _VALIDATE_CORRECTION_ROUNDS):
+        rounds_used = round_index + 1
+        yield "generation_round", {"round": rounds_used}
+        use_current = (
+            round_index == 0 and start_from_current and str(node.get("content") or "").strip()
+        )
+        if use_current:
+            candidate = str(node.get("content") or "")
+        else:
+            inputs = {
+                "nodeType": node_type,
+                "intent": node.get("goal"),
+                "nodeContext": node_context.compose_node_context(
+                    user_key, project_id, spec, node_id
+                ),
+            }
+            if is_data_loading and grounding_ctx is not None:
+                # dev/114's seventh DEC-063 application, on every caller.
+                inputs["sourceGrounding"] = _source_grounding_inputs(grounding_ctx)
+            if extra_inputs:
+                inputs.update({k: v for k, v in extra_inputs.items() if k not in inputs})
+            if previous_attempt is not None:
+                # The NCB instruction's self-correction contract: fix
+                # precisely the failure, grounded in the real traceback.
+                inputs["previousAttempt"] = previous_attempt[:6000]
+                inputs["validationError"] = (previous_error or "")[:2000]
+                if url_evidence:
+                    inputs["urlEvidence"] = url_evidence
+            status, text, child = run_delegate(inputs)
+            delegations.append(child)
+            if status != "ok":
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "generation-error", "detail": (text or "")[:300]},
+                }
+                attempts.append({
+                    "round": rounds_used, "verdict": "fail", "kind": "generation-error",
+                    "detail": (text or "")[:_ATTEMPT_DETAIL_CHARS],
+                })
+                break
+            candidate = content.extract_node_content(text)
+        # DEC-072: the gate runs BEFORE the sandbox does — a fabricated path
+        # or an unverified URL never executes, and the refusal is the error
+        # the next round corrects.
+        if grounding_ctx is not None:
+            gate = source_grounding.check_grounding(candidate, "python", grounding_ctx)
+            if not gate.ok:
+                refusal = source_grounding.refusal_text(gate, grounding_ctx)
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "ungrounded-source", "detail": refusal[:2000]},
+                }
+                yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                rounds_trace.append(f"round {rounds_used}: fail — {refusal[:160]}")
+                attempts.append({
+                    "round": rounds_used, "contentSha256": _content_sha(candidate),
+                    "verdict": "fail", "kind": "ungrounded-source",
+                    "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                    "source": "current content" if use_current else "generated",
+                })
+                previous_attempt = candidate
+                previous_error = refusal
+                url_evidence = []
+                continue
+        dataset_paths = None
+        if dataset_paths_fn is not None:
+            try:
+                slice_codes = [
+                    str(n.get("content") or "")
+                    for n in ((spec.get("dataflow") or {}).get("nodes") or [])
+                    if isinstance(n, dict)
+                ]
+                dataset_paths = dataset_paths_fn([candidate, *slice_codes]) or None
+            except Exception:
+                dataset_paths = None
+        progress_queue: _queue.Queue = _queue.Queue()
+
+        def _run_validation(candidate_text=candidate, paths=dataset_paths):
+            try:
+                result = validation.validate_candidate(
+                    user_key, project_id, spec, node_id, candidate_text,
+                    exec_fn=exec_fn,
+                    available_templates=available,
+                    dataset_paths=paths,
+                    exec_user_key=exec_user_key,
+                    progress=lambda nid, i, total: progress_queue.put(
+                        ("progress", nid, i, total)
+                    ),
+                )
+            except Exception as exc:  # the validator must never kill the stream
+                result = {
+                    "verdict": "infrastructure",
+                    "evidence": {"kind": "infrastructure", "detail": str(exc)[:300]},
+                }
+            progress_queue.put(("done", result))
+
+        thread = threading.Thread(target=_run_validation)
+        thread.start()
+        while True:
+            item = progress_queue.get()
+            if item[0] == "progress":
+                _, nid, index, total = item
+                yield "node_executed", {"nodeId": nid, "index": index, "total": total}
+                continue
+            verdict_result = item[1]
+            break
+        thread.join(timeout=5)
+        yield "round_verdict", {
+            "round": rounds_used, "verdict": verdict_result["verdict"],
+        }
+        round_evidence = (verdict_result.get("evidence") or {})
+        rounds_trace.append(
+            f"round {rounds_used}: {verdict_result['verdict']}"
+            + (
+                f" — {(round_evidence.get('stderrTail') or round_evidence.get('detail') or '')[-160:]}"
+                if verdict_result["verdict"] != "pass"
+                else f" — output {round_evidence.get('outputDataType') or '?'}"
+            )
+        )
+        attempt = {
+            "round": rounds_used,
+            "contentSha256": _content_sha(candidate),
+            "verdict": verdict_result["verdict"],
+            "kind": round_evidence.get("kind"),
+            "source": "current content" if use_current else "generated",
+        }
+        if round_evidence.get("detail"):
+            attempt["detail"] = str(round_evidence["detail"])[:_ATTEMPT_DETAIL_CHARS]
+        if round_evidence.get("stderrTail"):
+            attempt["stderrTail"] = str(round_evidence["stderrTail"])[-_ATTEMPT_STDERR_CHARS:]
+        if round_evidence.get("outputDataType"):
+            attempt["outputDataType"] = round_evidence["outputDataType"]
+        if round_evidence.get("durationMs") is not None:
+            attempt["durationMs"] = round_evidence["durationMs"]
+        attempts.append(attempt)
+        if verdict_result["verdict"] != "fail":
+            break
+        previous_attempt = candidate
+        previous_error = round_evidence.get("stderrTail") or round_evidence.get("detail") or ""
+        url_evidence = _correction_url_evidence(candidate, previous_error, grounding_ctx)
+    return {
+        "verdict": verdict_result["verdict"] if verdict_result else "fail",
+        "evidence": (verdict_result or {}).get("evidence") or {},
+        "rounds": rounds_used,
+        "candidate": candidate,
+        "delegations": delegations,
+        "roundsTrace": rounds_trace,
+        "attempts": attempts,
+    }
+
+
 def _validate_events(
     user_key: str,
     project_id: str,
@@ -4766,22 +5089,13 @@ def _validate_events(
     home_attachment_id: str | None = None,
     home_session_id: str | None = None,
 ):
-    """The validate-node body: threaded validation runs drain a queue so
-    upstream executions stream live (the dev/63 pattern); the finally clears
-    the in-flight guard on every exit, disconnect included."""
-    import queue as _queue
-    import threading
-
-    from utk_curio.backend.app.agents import validation
-    from utk_curio.backend.app.packages import services as packages_services
-
+    """The validate-node body over the ONE verified-content loop (dev/115):
+    the loop streams its rounds live; this body owns the framing turns, the
+    reviewed mint with the validation block, the per-node ledger, and the
+    finally that clears the in-flight guard on every exit, disconnect
+    included."""
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
-    verdict_result: dict | None = None
-    rounds_used = 0
-    candidate = ""
-    delegations: list = []
-    rounds_trace: list[str] = []  # dev/72: the consolidated per-round story
     label = (node.get("goal") or node_id)[:60]
     if isinstance(home_session_id, str):
         try:
@@ -4797,97 +5111,27 @@ def _validate_events(
             pass
     try:
         yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
-        try:
-            available = {
-                t["id"]: t
-                for t in packages_services.available_templates(user_key, project_id)
-            }
-        except Exception:
-            available = None  # arity metadata unavailable: type check fails open
-        previous_attempt: str | None = None
-        previous_error: str | None = None
-        for round_index in range(1 + _VALIDATE_CORRECTION_ROUNDS):
-            rounds_used = round_index + 1
-            yield "generation_round", {"round": rounds_used}
-            inputs = {
-                "nodeType": node.get("type"),
-                "intent": node.get("goal"),
-                "nodeContext": node_context.compose_node_context(
-                    user_key, project_id, spec, node_id
-                ),
-            }
-            if previous_attempt is not None:
-                # The NCB instruction's self-correction contract: fix
-                # precisely the failure, grounded in the real traceback.
-                inputs["previousAttempt"] = previous_attempt[:6000]
-                inputs["validationError"] = (previous_error or "")[:2000]
-            status, text, child = delegation.run_delegate(
-                user_key, project_id, resolution.coord,
-                "node.content.generate", inputs, config,
-                parent_execution_id=execution_id,
-                parent_coord=coord,
-                attachment_id=attachment_id,
-            )
-            delegations.append(child)
-            if status != "ok":
-                verdict_result = {
-                    "verdict": "fail",
-                    "evidence": {"kind": "generation-error", "detail": (text or "")[:300]},
-                }
-                break
-            candidate = content.extract_node_content(text)
-            progress_queue: _queue.Queue = _queue.Queue()
-
-            def _run_validation():
-                try:
-                    result = validation.validate_candidate(
-                        user_key, project_id, spec, node_id, candidate,
-                        exec_fn=exec_fn,
-                        available_templates=available,
-                        progress=lambda nid, i, total: progress_queue.put(
-                            ("progress", nid, i, total)
-                        ),
-                    )
-                except Exception as exc:  # the validator must never kill the stream
-                    result = {
-                        "verdict": "infrastructure",
-                        "evidence": {"kind": "infrastructure", "detail": str(exc)[:300]},
-                    }
-                progress_queue.put(("done", result))
-
-            thread = threading.Thread(target=_run_validation)
-            thread.start()
-            while True:
-                item = progress_queue.get()
-                if item[0] == "progress":
-                    _, nid, index, total = item
-                    yield "node_executed", {"nodeId": nid, "index": index, "total": total}
-                    continue
-                verdict_result = item[1]
-                break
-            thread.join(timeout=5)
-            yield "round_verdict", {
-                "round": rounds_used, "verdict": verdict_result["verdict"],
-            }
-            round_evidence = (verdict_result.get("evidence") or {})
-            rounds_trace.append(
-                f"round {rounds_used}: {verdict_result['verdict']}"
-                + (
-                    f" — {(round_evidence.get('stderrTail') or round_evidence.get('detail') or '')[-160:]}"
-                    if verdict_result["verdict"] != "pass"
-                    else f" — output {round_evidence.get('outputDataType') or '?'}"
-                )
-            )
-            if verdict_result["verdict"] != "fail":
-                break
-            previous_attempt = candidate
-            evidence = verdict_result.get("evidence") or {}
-            previous_error = evidence.get("stderrTail") or evidence.get("detail") or ""
+        outcome = yield from _verified_content_rounds(
+            user_key, project_id,
+            spec=spec, node=node, resolution=resolution, config=config,
+            parent_execution_id=execution_id, parent_coord=coord,
+            attachment_id=attachment_id, exec_fn=exec_fn,
+            grounding_loop_ctx={
+                "attachment_id": attachment_id, "session_id": session_id,
+                "granted": [], "manifest": None,
+            },
+            dataset_paths_fn=lambda codes: _exec_dataset_paths(project_id, *codes),
+            exec_user_key=user_key,
+        )
+        rounds_used = outcome["rounds"]
+        candidate = outcome["candidate"]
+        rounds_trace = outcome["roundsTrace"]
         done: dict = {
-            "verdict": verdict_result["verdict"] if verdict_result else "fail",
-            "evidence": (verdict_result or {}).get("evidence") or {},
+            "verdict": outcome["verdict"],
+            "evidence": outcome["evidence"],
             "rounds": rounds_used,
             "nodeId": node_id,
+            "attempts": outcome["attempts"],
         }
         if done["verdict"] in ("pass", "fail") and candidate:
             # PASS or FAIL, the user decides — the proposal carries the
@@ -4907,6 +5151,9 @@ def _validate_events(
                     "verdict": done["verdict"],
                     "rounds": rounds_used,
                     "evidence": done["evidence"],
+                    # dev/115: the attempt trail — every round's error and
+                    # fix, rendered as a collapsed list on the card.
+                    "attempts": done["attempts"],
                 }
                 done["proposalId"] = part["proposalId"]
                 done["proposalAttachmentId"] = mint_attachment
