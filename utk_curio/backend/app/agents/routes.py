@@ -1186,3 +1186,38 @@ def training_cancel_job(job_id: str):
         ), 200
     except training_service.TrainingServiceError as exc:
         return _training_error(exc)
+
+
+@agents_bp.route("/training/jobs/<job_id>/activate", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def training_activate(job_id: str):
+    """Point the account at a trained model — refused without an evaluation.
+
+    The four refusals live in ``training/gate.py``; this route only carries
+    them. Curio does not decide that a trained model is better: it refuses to
+    let you activate one you have not evaluated on data it never trained on.
+    """
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    try:
+        return jsonify(
+            training_service.activate(g.user, _user_dir_key(g.user), job_id)
+        ), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/jobs/<job_id>/rollback", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def training_rollback(job_id: str):
+    """Put the account back on the model it had before this activation."""
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    try:
+        return jsonify(
+            training_service.rollback(g.user, _user_dir_key(g.user), job_id)
+        ), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)

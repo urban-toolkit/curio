@@ -136,10 +136,13 @@ class LiveRun:
     # ── provider identity, never the key ───────────────────────────────────
     def provider_record(self) -> ProviderRecord:
         me = self.client.json("/api/auth/me")
-        base_url = str(me.get("llmBaseUrl") or "")
+        # The users domain answers in snake_case (``users/schemas.py``'s
+        # ``UserOut.to_dict``), and it never returns the key at all — only
+        # ``has_llm_api_key``.
+        base_url = str(me.get("llm_base_url") or "")
         host = urllib.parse.urlparse(base_url).netloc if base_url else ""
-        api_type = str(me.get("llmApiType") or "")
-        model = str(me.get("llmModel") or "")
+        api_type = str(me.get("llm_api_type") or "")
+        model = str(me.get("llm_model") or "")
         if not api_type and not model:
             raise LiveEvalRefused(
                 "the evaluation account has no provider or model configured; set "

@@ -109,6 +109,22 @@ def cmd_list(args) -> int:
     return 0
 
 
+def _switch_account_model(client, model: str) -> str:
+    """Point the evaluation account at *model*; return the previous value.
+
+    This is how a model that is not active gets measured at all: the provider
+    config is an account setting, so evaluating a trained model means the
+    account points at it for the duration. The switch is the tool's, it is
+    always restored in a ``finally``, and the training panel reports an
+    account left on a trained model with no activation record — so an
+    interrupted run is visible rather than silent.
+    """
+    me = client.json("/api/auth/me")
+    previous = str(me.get("llm_model") or "")
+    client.json("/api/auth/me", method="PATCH", payload={"llm_model": model})
+    return previous
+
+
 def cmd_run(args) -> int:
     try:
         live_mod.require_opt_in()
@@ -136,24 +152,110 @@ def cmd_run(args) -> int:
             print("--price-per-mtoken takes IN,OUT", file=sys.stderr)
             return 2
         price = (float(parts[0]), float(parts[1]))
+    if args.gate_for and not args.model:
+        print(
+            "--gate-for needs --model: an activation gate is about one exact "
+            "trained model id",
+            file=sys.stderr,
+        )
+        return 2
+    if args.gate_for:
+        # A gate is only a gate on the held-out split: measuring on what a
+        # model trained on measures memorisation (DEC-077).
+        fixtures = [f for f in fixtures if f.split == "heldout"]
+        if not fixtures:
+            print("no held-out fixtures to evaluate", file=sys.stderr)
+            return 1
+        tiers = tuple({f.tier for f in fixtures})
+
     report = RunReport(run_id=new_run_id(), mode="live", price_per_mtoken=price)
+    client = live_mod.HttpClient(base_url=args.backend_url, token=args.token)
     run = live_mod.LiveRun(
-        client=live_mod.HttpClient(base_url=args.backend_url, token=args.token),
+        client=client,
         templates=template_index(),
         report=report,
         attempts_per_fixture=max(1, args.attempts),
         include_external=args.include_external,
         tiers=tiers,
     )
+    previous_model = None
     try:
+        if args.model:
+            previous_model = _switch_account_model(client, args.model)
+            report.notes.append(
+                f"evaluated model {args.model!r} through a temporary account "
+                f"switch (previous: {previous_model or 'the deployment default'})"
+            )
         run.run(fixtures, examples=_examples_for(fixtures))
     except live_mod.LiveEvalRefused as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 3
+    finally:
+        if previous_model is not None:
+            try:
+                client.json(
+                    "/api/auth/me", method="PATCH",
+                    payload={"llm_model": previous_model},
+                )
+            except Exception as exc:  # noqa: BLE001 - say so, do not hide it
+                print(
+                    f"WARNING: could not restore the account's model to "
+                    f"{previous_model!r}: {exc}. The training panel will report "
+                    "an account left on a trained model with no activation.",
+                    file=sys.stderr,
+                )
+
     json_path, markdown_path = report.write(Path(args.out))
     print(markdown_path.read_text(encoding="utf-8"))
     print(f"\nwrote {json_path}\nwrote {markdown_path}")
+
+    if args.gate_for:
+        gate_path = _write_gate(args, fixtures, report, client)
+        print(f"wrote {gate_path}")
     return 0
+
+
+def _write_gate(args, fixtures, report, client) -> Path:
+    """Write the activation gate record beside its training job.
+
+    What it pins is what the gate checks: the exact model, the split, the
+    fixture digests, the run id, and the per-fixture scores — computed by the
+    deterministic comparator, never by a model.
+    """
+    from utk_curio.backend.app.agents.training.gate import (
+        GATE_SPLIT,
+        GateRecord,
+        write_gate,
+    )
+
+    scores = {}
+    categories = {}
+    for attempt in report.attempts:
+        scores[attempt.fixture_id] = round(attempt.total, 4)
+        categories[attempt.fixture_id] = list(attempt.categories)
+    gate = GateRecord(
+        trained_model=args.model,
+        split=GATE_SPLIT,
+        run_id=report.run_id,
+        fixture_digests={f.fixture_id: f.fixture_sha256() for f in fixtures},
+        scores=scores,
+        categories=categories,
+        evaluated_via="agent_eval --model (temporary account switch)",
+        provider=report.provider.as_dict(),
+    )
+    user_key = _user_key_for(client)
+    return write_gate(user_key, args.gate_for, gate)
+
+
+def _user_key_for(client) -> str:
+    """The storage key for the evaluation account, as the backend spells it."""
+    me = client.json("/api/auth/me")
+    if me.get("is_guest"):
+        return "guest"
+    identifier = me.get("id")
+    if identifier is None:
+        raise SystemExit("the evaluation account has no id; cannot place the gate record")
+    return str(identifier)
 
 
 def cmd_export(args) -> int:
@@ -207,6 +309,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--price-per-mtoken", default="",
                      help="IN,OUT rate for an operator-supplied cost estimate")
     run.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    run.add_argument("--model", default="",
+                     help="evaluate this model instead of the account's saved "
+                          "one (a temporary account switch, always restored)")
+    run.add_argument("--gate-for", default="",
+                     help="write an activation gate record for this training "
+                          "job id; forces the held-out split and needs --model")
     run.set_defaults(func=cmd_run)
 
     exporter = sub.add_parser(

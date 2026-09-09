@@ -162,11 +162,16 @@ class TestLiveRunnerRefusals:
     def test_the_provider_record_keeps_the_host_and_never_a_key(self):
         class _Client(live_mod.HttpClient):
             def json(self, path, *, method="GET", payload=None):
+                # The real shape: users/schemas.py answers in snake_case and
+                # never returns the key at all. The first cut of this fake used
+                # camelCase, which let the live runner ship with a provider
+                # record that would have been empty against the real backend
+                # (found by dev/122).
                 return {
-                    "llmApiType": "openai_compatible",
-                    "llmBaseUrl": "http://192.168.1.9:11434/v1",
-                    "llmModel": "gemma-4",
-                    "llmApiKey": "sk-should-never-be-read",
+                    "llm_api_type": "openai_compatible",
+                    "llm_base_url": "http://192.168.1.9:11434/v1",
+                    "llm_model": "gemma-4",
+                    "has_llm_api_key": True,
                 }
 
         run = live_mod.LiveRun(
@@ -177,7 +182,8 @@ class TestLiveRunnerRefusals:
         record = run.provider_record()
         assert record.base_url_host == "192.168.1.9:11434"
         assert record.model == "gemma-4"
-        assert "sk-should-never-be-read" not in json.dumps(record.as_dict())
+        assert record.api_type == "openai_compatible"
+        assert "apiKey" not in json.dumps(record.as_dict())
 
     def test_the_fixture_budget_is_bounded_and_defaulted(self):
         assert live_mod.fixture_budget_s({}) == live_mod.DEFAULT_FIXTURE_BUDGET_S

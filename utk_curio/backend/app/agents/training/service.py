@@ -21,6 +21,7 @@ from utk_curio.backend.app.agents.evaluation.fixtures import load_fixtures
 from utk_curio.backend.app.agents.evaluation.report import scrub
 from utk_curio.backend.app.agents.training import consent as consent_mod
 from utk_curio.backend.app.agents.training import dataset as dataset_mod
+from utk_curio.backend.app.agents.training import gate as gate_mod
 from utk_curio.backend.app.agents.training import records as records_mod
 
 #: The suffix a trained model carries, so it is recognisable in the endpoint's
@@ -274,7 +275,12 @@ def status(user, user_key: str, job_id: str, *, price_per_mtoken=None) -> dict:
     if record is None:
         raise TrainingServiceError(f"no training job {job_id}", 404)
     if not record.provider_job_id or record.terminal:
-        return record.as_dict()
+        # A terminal job is not re-asked — the provider has said its last word
+        # — but the gate is still computed, because whether this model may be
+        # activated depends on the corpus as it is NOW.
+        payload = record.as_dict()
+        payload["gate"] = _gate_payload(user_key, record)
+        return payload
     config = _provider_config(user)
     try:
         job = providers.get_fine_tuning_job(config, record.provider_job_id)
@@ -283,6 +289,7 @@ def status(user, user_key: str, job_id: str, *, price_per_mtoken=None) -> dict:
         # rather than becoming a fabricated status.
         payload = record.as_dict()
         payload["statusError"] = str(exc)
+        payload["gate"] = _gate_payload(user_key, record)
         return payload
     records_mod.fold_provider_status(record, job)
     record.cost = records_mod.estimate_cost(record, price_per_mtoken)
@@ -297,7 +304,9 @@ def status(user, user_key: str, job_id: str, *, price_per_mtoken=None) -> dict:
             base_model=job.base_model,
         )
     records_mod.write(user_key, record)
-    return record.as_dict()
+    payload = record.as_dict()
+    payload["gate"] = _gate_payload(user_key, record)
+    return payload
 
 
 def cancel(user, user_key: str, job_id: str) -> dict:
@@ -318,6 +327,151 @@ def cancel(user, user_key: str, job_id: str) -> dict:
     records_mod.fold_provider_status(record, job)
     records_mod.write(user_key, record)
     return record.as_dict()
+
+
+def _set_account_model(user, model: str) -> str:
+    """Point the account at *model*; return what it pointed at before.
+
+    Writes through the users domain's own patch path — the same one AI Settings
+    writes — so there is exactly one place an account's model changes, and a
+    guest is refused there rather than here.
+    """
+    from utk_curio.backend.app.users.schemas import UserPatchIn
+    from utk_curio.backend.app.users.services import patch_me
+
+    previous = getattr(user, "llm_model", None) or ""
+    try:
+        patch_me(user, UserPatchIn(llm_model=model))
+    except Exception as exc:  # noqa: BLE001 - AuthError carries its own status
+        raise TrainingServiceError(
+            f"could not change the account's model: {exc}",
+            getattr(exc, "status", 400),
+        ) from exc
+    return previous
+
+
+def activate(user, user_key: str, job_id: str) -> dict:
+    """Point the account at a trained model — once it has been evaluated.
+
+    The gate is checked against the corpus as it is *now*, so an evaluation
+    that describes examples which have since moved cannot authorise anything.
+    """
+    record = _read_or_refuse(user_key, job_id)
+    if record is None:
+        raise TrainingServiceError(f"no training job {job_id}", 404)
+    if record.status != "succeeded":
+        raise TrainingServiceError(
+            f"this job is {record.status}; there is nothing to activate yet", 409
+        )
+    fixtures = load_fixtures()
+    try:
+        checked = gate_mod.check(
+            gate=gate_mod.read_gate(user_key, job_id),
+            trained_model=record.trained_model,
+            corpus_digests=gate_mod.heldout_digests(fixtures),
+        )
+    except gate_mod.GateRefused as refusal:
+        raise TrainingServiceError(str(refusal), 409) from refusal
+
+    previous = _set_account_model(user, str(record.trained_model))
+    record.activation = {
+        "activatedAt": records_mod._now(),
+        "previousModel": previous,
+        "rolledBackAt": None,
+    }
+    record.evaluation = gate_mod.summary(checked)
+    record.append(
+        "activated", model=record.trained_model, previousModel=previous,
+        runId=checked.run_id,
+    )
+    records_mod.write(user_key, record)
+    return record.as_dict()
+
+
+def rollback(user, user_key: str, job_id: str) -> dict:
+    """Put the account back on the model it had before this activation."""
+    record = _read_or_refuse(user_key, job_id)
+    if record is None:
+        raise TrainingServiceError(f"no training job {job_id}", 404)
+    if not record.activated:
+        raise TrainingServiceError(
+            "this job's model is not active, so there is nothing to roll back", 409
+        )
+    previous = record.activation.get("previousModel") or ""
+    _set_account_model(user, previous)
+    record.activation = {
+        **record.activation,
+        "rolledBackAt": records_mod._now(),
+    }
+    record.append("rolled-back", restoredModel=previous)
+    records_mod.write(user_key, record)
+    payload = record.as_dict()
+    if not previous:
+        # Honest: an empty previous model means the account inherits the
+        # deployment default again, which is a different thing from a model.
+        payload["rollbackNote"] = (
+            "the account had no model of its own before, so it now inherits the "
+            "deployment's default again"
+        )
+    else:
+        payload["rollbackNote"] = (
+            f"the account is back on {previous!r}; if the endpoint no longer "
+            "serves it, AI Settings will show it as not listed"
+        )
+    return payload
+
+
+def account_model_check(user, user_key: str) -> dict:
+    """Whether the account is on a trained model nobody recorded activating.
+
+    An evaluation switches the account's model temporarily (that is how a model
+    is measured before it is activated). If that switch is interrupted, the
+    account is left on a trained model with no activation record — which this
+    reports so the panel can say so, rather than leaving it silent.
+    """
+    from utk_curio.backend.app.agents import model_catalog
+
+    config = _provider_config(user)
+    current = getattr(user, "llm_model", None) or ""
+    trained = {
+        row["model"]: row
+        for row in model_catalog.trained_models(
+            user_key, config.api_type, config.base_url
+        )
+    }
+    if current not in trained:
+        return {"model": current, "trainedInCurio": False, "unrecorded": False}
+    activated = any(
+        record.activated and record.trained_model == current
+        for record in records_mod.list_records(user_key)
+    )
+    return {
+        "model": current,
+        "trainedInCurio": True,
+        "unrecorded": not activated,
+        "jobId": trained[current].get("jobId"),
+    }
+
+
+def _gate_payload(user_key: str, record) -> dict | None:
+    """The gate's numbers when one exists, or the reason it does not satisfy
+    activation — so the panel can show what is missing instead of a disabled
+    button with no explanation."""
+    if not record.trained_model:
+        return None
+    try:
+        found = gate_mod.read_gate(user_key, record.job_id)
+    except records_mod.TrainingRecordError as exc:
+        return {"satisfied": False, "reason": str(exc)}
+    try:
+        checked = gate_mod.check(
+            gate=found,
+            trained_model=record.trained_model,
+            corpus_digests=gate_mod.heldout_digests(load_fixtures()),
+        )
+    except gate_mod.GateRefused as refusal:
+        return {"satisfied": False, "reason": str(refusal)}
+    return {"satisfied": True, **gate_mod.summary(checked)}
 
 
 def listing(user_key: str) -> dict:
