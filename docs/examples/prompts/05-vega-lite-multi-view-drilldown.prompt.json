@@ -362,5 +362,16 @@
     "reviewedBy": null,
     "reviewedAt": null
   },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.cityofchicago.energy-usage-2010",
+        "licence": "Open Data"
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
   "notes": "Five parallel flows, 27 nodes; the point is fan-out breadth, not depth."
 }

@@ -273,5 +273,24 @@
     "reviewedBy": null,
     "reviewedAt": null
   },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.urbanlab.milan-census-gt65",
+        "licence": "ISTAT open data"
+      },
+      {
+        "datasetId": "data.urbanlab.milan-era5-weather",
+        "licence": "Copernicus licence"
+      },
+      {
+        "datasetId": "data.urbanlab.milan-mrt",
+        "licence": "Research use"
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
   "notes": "The python-library resolution route: every node is a builtin template, but the libraries live in a package manifest."
 }

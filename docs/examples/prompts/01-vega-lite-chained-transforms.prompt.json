@@ -153,5 +153,16 @@
     "reviewedBy": null,
     "reviewedAt": null
   },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.projectsidewalk.chicago-labels",
+        "licence": "Project Sidewalk API terms"
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
   "notes": "The walkthrough's diagram is the shape: one loader, a shared cleanup, two parallel aggregations, two charts."
 }

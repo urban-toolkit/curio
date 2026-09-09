@@ -132,5 +132,10 @@
     "reviewedBy": null,
     "reviewedAt": null
   },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
   "notes": "Grammar-only: nothing here runs in the sandbox. GPU shader work, so execution is opt-in."
 }

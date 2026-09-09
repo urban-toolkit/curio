@@ -6852,6 +6852,25 @@ _NO_NOTE_TEMPLATE_LINE = (
 )
 
 
+def roster_block(templates: list, *, notes_agent: bool = False) -> str | None:
+    """The roster listing a run's system turn carries, for a caller outside a run.
+
+    A thin public wrapper over :func:`_available_templates_block`, added by memo
+    dev/122 so the training-set builder composes its system turn with the SAME
+    formatter a live run uses. Building a training example against a
+    hand-written roster paragraph would teach the model a prompt shape the
+    runtime never sends — a second vocabulary of exactly the kind ``DEC-062``
+    exists to prevent.
+
+    ``templates`` is a roster row list as ``packages_services.available_templates``
+    returns it. There is no project here, so the log line's project id reads
+    ``"training"``.
+    """
+    return _available_templates_block(
+        "training", {"available": list(templates)}, notes_agent=notes_agent
+    )
+
+
 def _available_templates_block(
     project_id: str, landscape: dict | None, *, notes_agent: bool = False
 ) -> str | None:
