@@ -347,6 +347,18 @@ def pytest_addoption(parser):
         help="record the walkthrough screencasts (slow; needs a browser)",
     )
     parser.addoption(
+        "--live-eval",
+        action="store_true",
+        dest="live_eval",
+        default=False,
+        help=(
+            "run the live-model reconstruction evaluation (memo dev/121): it "
+            "calls the account's configured provider once per fixture and "
+            "writes an evaluation REPORT, never a pass/fail gate. Also needs "
+            "CURIO_EVAL_LIVE=1 and a running stack; never part of CI"
+        ),
+    )
+    parser.addoption(
         "--with-examples",
         action="store_true",
         dest="examples",
@@ -372,6 +384,11 @@ def pytest_configure(config):
         "markers",
         "examples: needs a stack seeded with the examples; needs --with-examples",
     )
+    config.addinivalue_line(
+        "markers",
+        "live_eval: calls a real model and reports on it; needs --live-eval "
+        "and CURIO_EVAL_LIVE=1 (memo dev/121 — a report, not a gate)",
+    )
     excluded = []
     if not config.option.longrun:
         excluded.append("not externalapi")
@@ -379,6 +396,8 @@ def pytest_configure(config):
         excluded.append("not video")
     if not config.option.examples:
         excluded.append("not examples")
+    if not config.option.live_eval:
+        excluded.append("not live_eval")
     if not excluded:
         return
     existing = getattr(config.option, "markexpr", "") or ""
