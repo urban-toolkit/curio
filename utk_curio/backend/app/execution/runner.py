@@ -224,6 +224,7 @@ def run_through_node(
     secrets: dict | None = None,
     prior_outputs: dict | None = None,
     strict_upstream: bool = False,
+    templates: dict | None = None,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
@@ -252,7 +253,7 @@ def run_through_node(
     claimed; the caller reports a labeled outcome, never a pass.
     """
     exec_fn = exec_fn or _http_exec
-    spec = parse_workflow_dict(spec_dict)
+    spec = parse_workflow_dict(spec_dict, templates=templates)
     by_id = {n.id: n for n in spec.nodes}
     report: dict = {
         "ok": False,
@@ -274,8 +275,8 @@ def run_through_node(
         # content nobody ran. Refuse first, by name.
         report["notExecutable"] = True
         report["error"] = (
-            f"node {node_id!r} ({target.raw_type}) runs in the browser, not the "
-            "sandbox — Solve cannot execute it; Play the dataflow to see it"
+            f"node {node_id!r} ({target.raw_type}) has no code the sandbox could run — "
+            "it works in the browser or through its own service; Play the dataflow to see it"
         )
         return report
     wanted = _ancestor_slice(spec, node_id)
@@ -316,7 +317,7 @@ def run_through_node(
         if candidate_content is not None and node.id == node_id:
             content_text = candidate_content
         is_code = node.category == "code"
-        is_py = node.type in PY_CODE_TYPES
+        is_py = node.engine != "javascript"  # dev/119: the template's engine routes the run
         if strict_upstream and is_code and node.id != node_id and not (content_text or "").strip():
             # dev/118 live fix (2026-09-09), VALIDATION runs only: an upstream
             # code node with NO content used to run as a seed-only body, hand

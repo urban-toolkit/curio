@@ -324,7 +324,7 @@ class TestDev118NotExecutableTarget:
         report = runner.run_through_node(KEY, PID, spec, "v", exec_fn=rec, candidate_content='{"mark": "line"}')
         assert report["ok"] is False and report["notExecutable"] is True
         assert report["blocker"] is None and report["infrastructure"] is None
-        assert "runs in the browser" in report["error"] and "'v'" in report["error"]
+        assert "no code the sandbox could run" in report["error"] and "'v'" in report["error"]
         assert rec.calls == []  # not even the upstream ran
         assert report["order"] == [] and report["nodes"] == {}
 
@@ -428,3 +428,77 @@ class TestDev119VersionedIds:
         report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
         assert report["ok"] is True and report["notExecutable"] is False
         assert rec.calls[0][1]["nodeType"] == "curio.builtin/data-loading@1"
+
+
+class TestDev119RosterClassification:
+    """dev/119 (DEC-076): with a roster snapshot the template's own facts
+    decide what the sandbox runs and on which engine; the legacy tables are
+    only the offline fallback."""
+
+    ROSTER = {
+        "curio.builtin/data-loading": {"executable": True, "engine": "python"},
+        "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},
+        "curio.builtin/spatial-join": {"executable": False, "engine": "python"},
+        "some.pkg/custom-python": {"executable": True, "engine": "python"},
+        "some.pkg/custom-js": {"executable": True, "engine": "javascript"},
+        "some.pkg/surface": {"executable": False, "engine": "python"},
+    }
+
+    def test_parse_classifies_from_the_roster_with_legacy_fallback(self):
+        from utk_curio.backend.app.execution.workflow_spec import is_executable_kind, parse_workflow_dict
+
+        wf = parse_workflow_dict({"dataflow": {"nodes": [
+            {"id": "p", "type": "some.pkg/custom-python@1", "content": "x"},
+            {"id": "j", "type": "some.pkg/custom-js@2", "content": "x"},
+            {"id": "s", "type": "some.pkg/surface@1", "content": "x"},
+            {"id": "sj", "type": "curio.builtin/spatial-join@1", "content": ""},
+            {"id": "v", "type": "curio.builtin/vis-vega@1", "content": "{}"},  # not in the roster → legacy
+            {"id": "u", "type": "unknown.pkg/thing@1", "content": "x"},       # unknown → legacy passive
+        ], "edges": []}}, templates=self.ROSTER)
+        by_id = {n.id: n for n in wf.nodes}
+        assert by_id["p"].category == "code" and by_id["p"].engine == "python"
+        assert by_id["j"].category == "code" and by_id["j"].engine == "javascript"
+        assert by_id["s"].category == "passive" and by_id["sj"].category == "passive"
+        assert by_id["v"].category == "grammar" and by_id["u"].category == "passive"
+        assert is_executable_kind("some.pkg/custom-python@1", self.ROSTER) is True
+        assert is_executable_kind("some.pkg/custom-python@1") is False  # no roster: legacy has no such kind
+        assert is_executable_kind("curio.builtin/spatial-join", self.ROSTER) is False
+
+    def test_the_roster_overrides_a_legacy_code_name(self):
+        # A template whose NAME the legacy table calls code but whose manifest
+        # has no code: the roster wins — an impostor never reaches the sandbox.
+        from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+        roster = {"curio.builtin/data-loading": {"executable": False, "engine": "python"}}
+        wf = parse_workflow_dict({"dataflow": {"nodes": [
+            {"id": "a", "type": "curio.builtin/data-loading@1", "content": "x"}], "edges": []}}, templates=roster)
+        assert wf.nodes[0].category == "passive"
+
+    def test_a_package_python_kind_executes_and_a_js_kind_takes_the_js_endpoint(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec(
+            [_node("p", node_type="some.pkg/custom-python@1", content="return 1"),
+             _node("j", node_type="some.pkg/custom-js@2", content="return 2")],
+            [{"id": "e1", "source": "p", "target": "j"}],
+        )
+        report = runner.run_through_node(KEY, PID, spec, "j", exec_fn=rec, templates=self.ROSTER)
+        assert report["ok"] is True and report["notExecutable"] is False
+        assert [(ep, c["nodeType"]) for ep, c in rec.calls] == [
+            ("/exec", "some.pkg/custom-python@1"), ("/execJs", "some.pkg/custom-js@2")]
+        # Without the roster the same kinds are unknown → the target is refused.
+        rec2 = _RecordingExec()
+        report = runner.run_through_node(KEY, PID, spec, "j", exec_fn=rec2)
+        assert report["ok"] is False and report["notExecutable"] is True and rec2.calls == []
+
+    def test_spatial_join_is_refused_by_the_roster_with_the_service_wording(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec(
+            [_node("a", node_type="curio.builtin/data-loading@1", content="return 1"),
+             _node("sj", node_type="curio.builtin/spatial-join@1", content="")],
+            [{"id": "e1", "source": "a", "target": "sj"}],
+        )
+        report = runner.run_through_node(KEY, PID, spec, "sj", exec_fn=rec, templates=self.ROSTER)
+        assert report["ok"] is False and report["notExecutable"] is True
+        assert "no code the sandbox could run" in report["error"]
+        assert "through its own service" in report["error"] and "Play the dataflow" in report["error"]
+        assert rec.calls == []

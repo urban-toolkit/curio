@@ -88,16 +88,15 @@ def normalize_type(node_type: str) -> str:
     return NAMESPACED_TO_LEGACY.get(node_type, node_type)
 
 
-def is_executable_kind(node_type: str) -> bool:
-    """dev/118 (DEC-075): whether the sandbox can RUN a node of this kind —
-    the ``code`` category (the six Python kinds + JS computation). Grammar,
-    data-pool, passive and unknown package kinds render in the browser; a
-    verification claim about them would be a claim about nothing. Accepts
-    namespaced ids with or without an ``@version`` suffix."""
+def is_executable_kind(node_type: str, templates: dict | None = None) -> bool:
+    """dev/118 (DEC-075) → dev/119 (DEC-076): whether the sandbox can RUN a
+    node of this kind. With a roster snapshot the template's own facts decide
+    (``executable``); without one the legacy ``code`` category is the offline
+    fallback. Accepts namespaced ids with or without an ``@version`` suffix."""
     if not isinstance(node_type, str) or not node_type:
         return False
-    bare = node_type.split("@", 1)[0]
-    return classify_node(normalize_type(bare)) == "code"
+    category, _engine = _classify_with_roster(node_type, templates)
+    return category == "code"
 
 
 def classify_node(node_type: str) -> str:
@@ -131,6 +130,9 @@ class NodeSpec:
     in_type: str         # "DEFAULT", "DATAFRAME", etc.
     out_type: str
     category: str        # "code" | "grammar" | "datapool" | "passive"
+    #: dev/119: the template's engine when a roster classified this node —
+    #: "python" | "javascript"; the legacy tables' answer otherwise.
+    engine: str = "python"
 
     @property
     def has_play_button(self) -> bool:
@@ -308,26 +310,52 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
 
 
 
-def parse_workflow_dict(data: dict, *, name: str = "") -> WorkflowSpec:
+def _classify_with_roster(raw_type: str, templates: dict | None) -> tuple[str, str]:
+    """dev/119 (DEC-076): ``(category, engine)`` for a node type. With a
+    roster snapshot (``{canonical_id: {"executable", "engine"}}``, unversioned
+    keys) the template's own facts decide; without one — or for a type the
+    roster does not know — the legacy tables answer, as the offline fallback."""
+    legacy = normalize_type(raw_type)
+    legacy_category = classify_node(legacy)
+    legacy_engine = "javascript" if legacy == "JS_COMPUTATION" else "python"
+    if not templates:
+        return legacy_category, legacy_engine
+    key = raw_type.split("@", 1)[0] if isinstance(raw_type, str) else raw_type
+    row = templates.get(key)
+    if not isinstance(row, dict):
+        return legacy_category, legacy_engine
+    engine = row.get("engine") or legacy_engine
+    if row.get("executable"):
+        return "code", engine
+    # Known to the roster and not executable: never "code", whatever the
+    # legacy table thought (data-pool and grammar kinds keep their categories).
+    return (legacy_category if legacy_category != "code" else "passive"), engine
+
+
+def parse_workflow_dict(data: dict, *, name: str = "", templates: dict | None = None) -> WorkflowSpec:
     """Build a :class:`WorkflowSpec` from an in-memory project spec dict —
     the app-side entry (`projects_storage.read_spec` output); byte-equivalent
-    field mapping to :func:`parse_workflow`."""
+    field mapping to :func:`parse_workflow`. ``templates`` (dev/119): the
+    roster snapshot that classifies executability; None → the legacy tables."""
     dataflow = (data or {}).get("dataflow") or {}
-    nodes = [
-        NodeSpec(
+    nodes = []
+    for n in dataflow.get("nodes") or []:
+        if not (isinstance(n, dict) and n.get("id")):
+            continue
+        raw_type = n.get("type", "")
+        category, engine = _classify_with_roster(raw_type, templates)
+        nodes.append(NodeSpec(
             id=n["id"],
-            type=normalize_type(n.get("type", "")),
-            raw_type=n.get("type", ""),
+            type=normalize_type(raw_type),
+            raw_type=raw_type,
             x=float(n.get("x", 0) or 0),
             y=float(n.get("y", 0) or 0),
             content=n.get("content", ""),
             in_type=n.get("in", "DEFAULT"),
             out_type=n.get("out", "DEFAULT"),
-            category=classify_node(normalize_type(n.get("type", ""))),
-        )
-        for n in dataflow.get("nodes") or []
-        if isinstance(n, dict) and n.get("id")
-    ]
+            category=category,
+            engine=engine,
+        ))
     edges = [
         {
             "id": e.get("id"),

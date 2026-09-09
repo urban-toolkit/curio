@@ -3907,8 +3907,10 @@ def _solve_events(
             _pkg_services.canonical_template_id((node_obj or {}).get("type"))
         )
 
-    def _is_executable(node_obj: dict) -> bool:  # dev/118 (DEC-075)
-        return _node_is_executable(node_obj)
+    batch_templates = _roster_templates(user_key, project_id)  # dev/119: ONE snapshot per batch
+
+    def _is_executable(node_obj: dict) -> bool:  # dev/118 (DEC-075) → dev/119 (DEC-076)
+        return _node_is_executable(node_obj, batch_templates)
 
     def _record_outcome(node_id: str, status: str, text, child) -> dict | None:
         nonlocal batch_reason
@@ -4029,7 +4031,7 @@ def _solve_events(
                 # dev/118 (DEC-075): written like before, and SAID to be unexecuted.
                 result["verification"] = {
                     "status": "not-executable",
-                    "reason": f"{node.get('type')} runs in the browser, not the sandbox — written, not executed",
+                    "reason": f"{node.get('type')} has no code the sandbox could run — written, not executed",
                 }
             results[node_id] = result
             applied_contents.append({"nodeId": node_id, "content": text_out})
@@ -5162,12 +5164,21 @@ def _looks_like_a_vanished_reused_input(result: dict | None) -> bool:
     return any(marker in text for marker in _VANISHED_INPUT_MARKERS)
 
 
-def _node_is_executable(node_obj: dict | None) -> bool:
-    """dev/118 (DEC-075): the ONE executability predicate the batch, the
-    per-node Solve and validate-node consult — the sandbox can run this kind."""
+def _node_is_executable(node_obj: dict | None, templates: dict | None = None) -> bool:
+    """dev/118 (DEC-075) → dev/119 (DEC-076): the ONE executability predicate
+    the batch, the per-node Solve and validate-node consult. With the roster
+    snapshot the template's own facts decide; without one the legacy tables
+    are the fallback."""
     from utk_curio.backend.app.execution.workflow_spec import is_executable_kind
 
-    return is_executable_kind(str((node_obj or {}).get("type") or ""))
+    return is_executable_kind(str((node_obj or {}).get("type") or ""), templates)
+
+
+def _roster_templates(user_key: str, project_id: str) -> dict | None:
+    """dev/119: the roster snapshot for a project, or None when unreachable."""
+    from utk_curio.backend.app.packages import services as _pkg
+
+    return _pkg.roster_templates(user_key, project_id)
 #: dev/115 F6 closure (2026-09-09): a run's egress budget describes what the
 #: run legitimately does — every external candidate row the card may carry,
 #: each allowed one redirect (a normal answer, not a cost the user should read
@@ -5264,6 +5275,7 @@ def solve_node_stream(
         user_key, project_id, attachment_id, config, spec, node, resolution,
         record.get("coord", ""), record.get("sessionId"), execution_id, exec_fn,
         manifest=manifest, grounding_base=base, dataset_paths=dataset_paths,
+        templates=_roster_templates(user_key, project_id),
     )
     job = agent_jobs.start_job(
         user_key=user_key, project_id=project_id, attachment_id=attachment_id,
@@ -5288,6 +5300,7 @@ def _solve_node_events(
     manifest,
     grounding_base: dict,
     dataset_paths: dict,
+    templates: dict | None = None,
 ):
     """The per-node Solve body (dev/115 A2) over the ONE verified loop."""
     node_id = node.get("id")
@@ -5310,13 +5323,14 @@ def _solve_node_events(
         )
         return st, tx, ch
 
-    if not _node_is_executable(node):
-        # dev/118 (DEC-075): a browser-rendered kind (Vega, Autark, merge, data
-        # pool, an unknown package). No round, no sandbox, no generation —
-        # nothing this loop could verify; say so and change nothing.
+    if not _node_is_executable(node, templates):
+        # dev/118 (DEC-075) → dev/119: a kind with no code the sandbox could
+        # run (Vega, Autark, merge, data pool, spatial join, an unknown
+        # package). No round, no sandbox, no generation — nothing this loop
+        # could verify; say so and change nothing.
         reason = (
-            f"{label!r} ({node.get('type')}) runs in the browser, not the sandbox — "
-            "Solve cannot execute it; Play the dataflow to see it"
+            f"{label!r} ({node.get('type')}) has no code the sandbox could run — it works "
+            "in the browser or through its own service; Play the dataflow to see it"
         )
         outcome = {
             "verdict": "not-executable",
@@ -5421,8 +5435,8 @@ def _solve_node_events(
         card_kind = "error"
     elif verdict == "not-executable":
         text = (
-            f"Not executable: {label!r} runs in the browser, not the sandbox — Solve "
-            "cannot run it. Play the dataflow to see it. Nothing was changed."
+            f"Not executable: {label!r} has no code the sandbox could run — it works in the "
+            "browser or through its own service. Play the dataflow to see it. Nothing was changed."
         )
         card_kind = "result"
     elif (outcome.get("evidence") or {}).get("upstreamEmpty"):
@@ -6014,6 +6028,12 @@ def _verified_content_rounds(
         }
     except Exception:
         available = None  # arity metadata unavailable: type check fails open
+    # dev/119 (DEC-076): the same roster classifies executability for the runner.
+    loop_templates = (
+        {tid: {"executable": bool(row.get("executable")), "engine": row.get("engine") or "python"}
+         for tid, row in available.items()}
+        if available else None
+    )
     # ONE grounding context per loop: the same catalog/verified-URL evidence for
     # every round, one probe budget, and the sourceGrounding inputs derive from it.
     # dev/116 live fix (2026-09-09): the budget is the LOOP's own — a failed
@@ -6198,6 +6218,7 @@ def _verified_content_rounds(
                         exec_user_key=exec_user_key,
                         secrets=secret_values,
                         prior_outputs=prior,
+                        templates=loop_templates,
                         progress=lambda nid, i, total: progress_queue.put(
                             ("progress", nid, i, total)
                         ),

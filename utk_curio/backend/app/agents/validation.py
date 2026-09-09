@@ -12,7 +12,7 @@ Verdicts:
 - ``fail`` — the target (``execution-error``), an upstream node
   (``upstream-blocker``), a precondition (cycle/bound/missing node), or a
   ``type-mismatch`` with a named consumer.
-- ``infrastructure``; ``not-executable`` (dev/118: the target's kind runs in the browser — nothing executed, nothing claimed) — the sandbox was unreachable: never a content failure;
+- ``infrastructure``; ``not-executable`` (dev/118 → dev/119: the target's template has no code the sandbox could run — nothing executed, nothing claimed) — the sandbox was unreachable: never a content failure;
   the caller leaves the node's state untouched.
 """
 
@@ -91,6 +91,7 @@ def validate_candidate(
     exec_user_key: str | None = None,
     secrets: dict | None = None,
     prior_outputs: dict | None = None,
+    templates: dict | None = None,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
     return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
@@ -104,6 +105,7 @@ def validate_candidate(
         dataset_paths=dataset_paths, exec_user_key=exec_user_key, secrets=secrets,
         prior_outputs=prior_outputs,
         strict_upstream=True,  # dev/118: an empty upstream is a blocker, never None downstream
+        templates=templates,  # dev/119: the roster classifies executability
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]

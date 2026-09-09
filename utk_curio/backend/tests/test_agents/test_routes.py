@@ -6938,7 +6938,7 @@ class TestValidateNode:
         done = events[-1][1]
         assert done["verdict"] == "not-executable" and done["rounds"] == 1
         assert done["evidence"]["kind"] == "not-executable"
-        assert "runs in the browser" in done["evidence"]["detail"]
+        assert "no code the sandbox could run" in done["evidence"]["detail"]
         assert calls == []  # nothing reached the sandbox
         assert done["builderSession"]["nodeStates"][ref] == "validated"  # the plan proceeds
         assert done["proposalId"]

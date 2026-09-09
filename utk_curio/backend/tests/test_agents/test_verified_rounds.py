@@ -573,7 +573,7 @@ class TestNotExecutableKinds:
         assert exec_fn.calls == [] and len(inputs) == 1  # generated once, never run, never corrected
         attempt = outcome["attempts"][0]
         assert attempt["verdict"] == "not-executable" and attempt["kind"] == "not-executable"
-        assert "runs in the browser" in attempt["detail"]
+        assert "no code the sandbox could run" in attempt["detail"]
         assert [k for k, _ in events if k == "round_verdict"] == ["round_verdict"]
 
 
@@ -715,6 +715,19 @@ TEMPLATES = [
     {"id": "computation-analysis", "label": "Computation Analysis", "category": "computation",
      "engine": "python", "editor": "code", "description": "Analyze.",
      "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
+     "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+    # dev/119 (DEC-076): the roster, not a name list, says what the sandbox runs.
+    {"id": "data-summary", "label": "Data Summary", "category": "computation", "engine": "python",
+     "editor": "code", "description": "Summarize.",
+     "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+     "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+    {"id": "spatial-join", "label": "Spatial Join", "category": "computation", "engine": "python",
+     "editor": "none", "hasCode": False, "description": "Join by geometry through the spatial-join service.",
+     "inputPorts": [{"types": ["GEODATAFRAME"], "cardinality": "2"}],
+     "outputPorts": [{"types": ["GEODATAFRAME"], "cardinality": "1"}]},
+    {"id": "custom-js", "label": "Custom JS", "category": "computation", "engine": "javascript",
+     "editor": "code", "description": "A JS kind the legacy tables never heard of.",
+     "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
      "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
 ]
 
@@ -1329,15 +1342,19 @@ class TestSolveNode:
         payloads: list = []
         outcomes = exec_outcomes or {}
 
+        endpoints: list = []
+
         def _exec(endpoint, payload):
             payloads.append(payload)
+            endpoints.append(endpoint)
             for marker, stderr in outcomes.items():
                 if marker in payload["code"]:
                     return {"stdout": [], "stderr": stderr, "output": {"path": "", "dataType": "str"}}
             return {"stdout": [], "stderr": "", "output": {"path": "art-1", "dataType": "dataframe"}}
 
         monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
-        return dict(pid=pid, att=att, ukey=ukey, dataset_id=dataset_id, calls=calls, payloads=payloads)
+        return dict(pid=pid, att=att, ukey=ukey, dataset_id=dataset_id, calls=calls, payloads=payloads,
+                    endpoints=endpoints)
 
     def _solve_node(self, client, token, ctx, node_id="n1"):
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve-node",
@@ -1426,6 +1443,38 @@ class TestSolveNode:
         assert done["verdict"] == "pass" and done["unchanged"] is True and done["rounds"] == 1
         assert len(ctx["payloads"]) == 1 and ctx["payloads"][0]["nodeType"] == DL + "@1"
 
+    def test_a_roster_kind_the_legacy_tables_never_heard_of_is_verified(self, client, user_and_token, tmp_curio, monkeypatch):
+        # dev/119 (DEC-076): a JS kind known only to the installed package —
+        # the roster says executable/javascript, so it runs, on /execJs.
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, content="return [1, 2, 3];",
+                          node_type="curio.builtin/custom-js@1")
+        events = self._solve_node(client, token, ctx)
+        done = events[-1][1]
+        assert done["verdict"] == "pass" and done["unchanged"] is True and done["rounds"] == 1
+        assert ctx["endpoints"] == ["/execJs"] and ctx["payloads"][0]["nodeType"] == "curio.builtin/custom-js@1"
+
+    def test_data_summary_is_verified_through_the_roster(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, content=self.LOADER,
+                          node_type="curio.builtin/data-summary@1")
+        done = self._solve_node(client, token, ctx)[-1][1]
+        assert done["verdict"] == "pass" and done["rounds"] == 1 and ctx["endpoints"] == ["/exec"]
+
+    def test_spatial_join_is_not_executable_by_its_manifest(self, client, user_and_token, tmp_curio, monkeypatch):
+        # dev/119 live premise: spatial-join has no code — the browser POSTs to
+        # its own service. The roster says so; the runner never sees it.
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, content="", node_type="curio.builtin/spatial-join@1")
+        events = self._solve_node(client, token, ctx)
+        done = events[-1][1]
+        assert done["verdict"] == "not-executable" and done["rounds"] == 0
+        assert ctx["calls"] == [] and ctx["payloads"] == []
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        assert "no code the sandbox could run" in turns[-1]["text"]
+        assert "through its own service" in turns[-1]["text"]
+
     def test_a_browser_rendered_node_is_not_executable_and_nothing_runs(self, client, user_and_token, tmp_curio, monkeypatch):
         # dev/118 (DEC-075): the per-node Solve accepted any kind and, for a
         # Vega node, reported a PASS on content the runner never sent.
@@ -1440,7 +1489,7 @@ class TestSolveNode:
         turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
                            headers=_auth(token)).get_json()["turns"]
         assert turns[-1]["text"].startswith("Not executable:")
-        assert "runs in the browser" in turns[-1]["text"]
+        assert "no code the sandbox could run" in turns[-1]["text"]
         assert turns[-1].get("error") is not True
         assert turns[-1]["content"][0]["title"].startswith("Solve · NOT-EXECUTABLE")
         node = next(n for n in client.get(f"/api/projects/{ctx['pid']}", headers=_auth(token)).get_json()

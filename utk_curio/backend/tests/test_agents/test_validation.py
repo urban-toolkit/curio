@@ -136,7 +136,7 @@ class TestNotExecutable:
         result = validation.validate_candidate(KEY, PID, spec, "v", '{"mark": "bar"}', exec_fn=_fn)
         assert result["verdict"] == "not-executable"
         assert result["evidence"]["kind"] == "not-executable"
-        assert "runs in the browser" in result["evidence"]["detail"]
+        assert "no code the sandbox could run" in result["evidence"]["detail"]
         assert result["evidence"]["goal"] == "plot it"
         assert result["evidence"]["executedNodes"] == [] and calls == []
 

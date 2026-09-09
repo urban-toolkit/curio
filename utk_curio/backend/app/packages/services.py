@@ -713,9 +713,43 @@ def _template_entry(package_id: str, template) -> dict:
         # agent when none of the available templates is one, so it never
         # reaches for a code template (or a canvas node's type) to hold a note.
         "presentation": bool(template.behavior and template.editor == "none"),
+        # dev/119 (DEC-076): the schema-required facts the runner's
+        # executability is derived from — a hand-kept list of legacy names is
+        # the drift DEC-062 exists to prevent. ``executable`` is THE derivation:
+        # an editable code surface, an engine the sandbox runs, and no package
+        # backend handler (dev/91's separate execution path).
+        "engine": template.engine,
+        "editor": template.editor,
+        "hasCode": bool(template.has_code),
+        "backendHandler": bool(template.backend_handler),
+        "executable": template_is_executable(template),
         "inputs": inputs,
         "maxIncomingEdges": max_incoming,
     }
+
+
+def template_is_executable(template) -> bool:
+    """dev/119 (DEC-076): whether the sandbox can RUN a node of this template.
+    Derived from the manifest's required fields, never from its name."""
+    return bool(
+        getattr(template, "has_code", False)
+        and getattr(template, "engine", None) in ("python", "javascript")
+        and not getattr(template, "backend_handler", None)
+    )
+
+
+def roster_templates(user_key: str, project_id: str) -> dict | None:
+    """dev/119: ``{canonical_id: {"executable", "engine"}}`` for every template
+    the project can use — the snapshot the runner, the loop and the batch
+    classify against. ``None`` when the roster is unreachable (callers fall
+    back to the legacy tables)."""
+    try:
+        return {
+            t["id"]: {"executable": bool(t.get("executable")), "engine": t.get("engine") or "python"}
+            for t in available_templates(user_key, project_id)
+        }
+    except Exception:
+        return None
 
 
 def installed_templates_not_in_project(user_key: str, project_id: str) -> list[dict]:
