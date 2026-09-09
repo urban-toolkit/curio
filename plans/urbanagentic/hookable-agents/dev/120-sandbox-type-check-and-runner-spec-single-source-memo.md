@@ -1,6 +1,6 @@
 # dev/120 — Retire the sandbox's name-keyed I/O check; restore the runner spec's single source
 
-**Status: PROPOSED (2026-09-09). Awaiting owner approval; no code written.**
+**Status: APPROVED — IN PROGRESS (2026-09-09). Owner decision on the §3.2 question: keep `checkIOType` seeded in the node namespace as a documented no-op (the #158 pin stands unchanged); the validators behind it still go. Commit 1 landed as `0b3ebc11`: the shim restored (12 re-exported names, defines nothing — AST-pinned), `CONSTANTS`/`FLOW_SWITCH` out of `PY_CODE_TYPES`/`CODE_EDITOR_TYPES`, `tests/test_execution/test_workflow_spec_single_source.py` (identity of ten names, no-definition, version strip through the shim, every `CODE_TYPES` member reachable from `NAMESPACED_TO_LEGACY`). Backend `test_execution`+`test_agents`+`test_backend`+`test_packages` 2084 passed / 5 skipped (the environmental stub test aside); `tests/test_frontend` collects 428 tests without a stack. Commit 2 pending.**
 
 Date: 2026-09-09
 Branch / tree: `imp/agentcatalog` @ `9d220db2` (dev/119 closed). Line numbers pinned to that commit. `plans/` is tracked on this branch; `plans/urbanagentic/hookable-agents/knowledge-graph/` (354 MB site copy) stays untracked by intent.
@@ -27,11 +27,11 @@ Backlog: `BL-P5-20260909-54` at closure; closes dev/119 F1 and F2.
 - `utk_curio/sandbox/util/parsers.py`: delete `checkIOType`, `validate_input`, `validate_output`, `check_dataframe_input`, `check_transformation_input`, `check_valid_output`.
 - `utk_curio/sandbox/app/worker.py`: remove the import (`:229`), the seeded name (`:258`), the cache read (`:358`) and the three calls (`:411,415,451`). `node_type` stays: it tags the artifact (`save_to_duckdb(node_id=node_type)`) and the log lines.
 - `utk_curio/sandbox/isolation/zygote.py`: remove the import (`:100`) and the seeded name (`:124`).
-- `utk_curio/backend/tests/test_sandbox_namespace.py:103`: drop `checkIOType` from `EXPECTED_SEEDED_NAMES` (see §3.2 for why this is not a #158 regression).
+- `utk_curio/backend/tests/test_sandbox_namespace.py:103`: the `checkIOType` pin STAYS (owner decision 2026-09-09); a new assertion pins that the seeded name is the no-op and returns `None` for any arguments.
 - `utk_curio/backend/tests/test_frontend/utils.py`: remove the import (`:530`) and the replay call (`:601`); rewrite the comment at `:740-745` (the id is sent for artifact tagging and logs).
 - `utk_curio/backend/tests/test_frontend/workflow_spec.py`: back to the dev/67-7 shim — a re-export of the app module's public names, extended with `normalize_type`, `classify_node`, `parse_workflow_dict`, `is_executable_kind`.
 - `utk_curio/backend/app/execution/workflow_spec.py`: drop `CONSTANTS` and `FLOW_SWITCH` from `PY_CODE_TYPES` and `CODE_EDITOR_TYPES` and the comment at `:45`.
-- New unit tests (backend suite, no stack): identity of the shim; no phantom in the legacy tables; `checkIOType` absent from the seeded namespace on both paths.
+- New unit tests (backend suite, no stack): identity of the shim; no phantom in the legacy tables; `checkIOType` seeded on both paths as the no-op.
 - Docs: `docs/ARCHITECTURE.md:431` (the wrapper paragraph — also names `python_wrapper.txt`, which exists; only the `checkIOType` sentence changes).
 - Ledgers at closure: DEC-062 and DEC-076 notes, dev/00 row, `BL-P5-20260909-54`, `3.1`, dev/119 F1/F2 closure.
 
@@ -68,9 +68,7 @@ Tests (new file `tests/test_execution/test_workflow_spec_single_source.py`):
 
 ### 3.2 Commit 2 — the name-keyed I/O check retired (F1)
 
-Delete the six functions in `parsers.py`; remove the worker's and the zygote's import, seed and calls; remove the replay call in the e2e utils.
-
-**Why dropping the seeded name is not a #158 regression.** #158 was the loss of *library* names node code used through the old star import (`np`, `wkt`, `Path`, …). `checkIOType` was a worker-internal validator that leaked with them; it has no user-facing contract (undocumented in USAGE/AUTHORING, absent from every example, every generated prompt and every template body), and calling it from node code with a namespaced type is a no-op today. The namespace pin exists to protect what nodes use; it should not fossilise an internal helper. The test gains the inverse assertion: `"checkIOType" not in worker._globals_cache` and not in the zygote's seeded dict, with this reasoning in the docstring.
+Delete the five validators (`validate_input`, `validate_output`, `check_dataframe_input`, `check_transformation_input`, `check_valid_output`) from `parsers.py`; `checkIOType` itself STAYS as a documented no-op (**owner decision 2026-09-09**: the #158 namespace contract is kept whole — a node that ever called the leaked name keeps working) — `def checkIOType(data, nodeType, input=True) -> None: return None`, docstring naming dev/120 and why. Remove the worker's three calls (`worker.py:411,415,451`) — the seed (`worker.py:258`, `zygote.py:124`) and the import stay; remove the replay call in the e2e utils. `test_sandbox_namespace.py` keeps its pin and adds: the seeded `checkIOType` is the no-op (`is parsers.checkIOType`, returns `None` for a refused-looking payload such as a `DATA_EXPORT` output).
 
 The e2e utils comment becomes: *"The on-the-wire namespaced id, as the browser posts it: the sandbox tags the artifact and its log lines with it (no type dispatch happens on it — dev/120)."*
 
@@ -98,14 +96,14 @@ None — no user-facing surface changes. A node whose output the dead check woul
 
 - **Importing the e2e package from the backend suite.** `tests/test_frontend/__init__.py` exists; the identity test must not trigger Playwright fixtures — import the shim module directly, and if `test_frontend/conftest.py` is auto-loaded by that import, load the shim via `importlib` from its path instead. Verified at implementation.
 - **A trill with a versioned id under the e2e fixtures.** `normalize_type` now strips the version: seed injection and `PY_CODE_TYPES` membership behave as for unversioned ids. No curated example is versioned; behaviour for them is byte-identical.
-- **Node code that called `checkIOType`.** None exists in the repo, the examples or the prompts; after commit 2 such code raises `NameError` like any undefined name — a loud, honest failure rather than a silent no-op.
+- **Node code that called `checkIOType`.** None exists in the repo, the examples or the prompts; the name stays seeded as a no-op (owner decision), so such code keeps working exactly as it does today — where the call was already a no-op for every namespaced id.
 - **Isolated child vs in-process.** Both seeding sites change together (worker `_globals_cache`, zygote `_seed`); the inverse assertion covers both.
 - **Legacy-id trill files.** Old files with uppercase types still normalise through `normalize_type` (pass-through) and classify as before; nothing in this memo touches that path.
 
 ## 7. Testing Strategy
 
 - `tests/test_execution/test_workflow_spec_single_source.py` (new): shim identity (three names), no phantom in `CODE_TYPES`, versioned-id normalisation through the shim.
-- `tests/test_sandbox_namespace.py`: `checkIOType` removed from `EXPECTED_SEEDED_NAMES`; new inverse assertion on both seeding paths with the #158 reasoning.
+- `tests/test_sandbox_namespace.py`: the `checkIOType` pin stays; new assertion that the seeded name is the no-op on both seeding paths (owner decision).
 - `sandbox/tests`: a worker-level test that a Data Loading node returning a JSON value executes and reports `dataType: json` (the case the dormant rule would have refused) — pins that no name-keyed check silently returns.
 - Existing: `test_runner.py`, `test_verified_rounds.py`, `test_available_templates.py` unchanged and green; `tests/test_frontend` collection still imports (a `pytest --collect-only utk_curio/backend/tests/test_frontend` run, no stack needed).
 - Required before close: backend suite (without the Playwright directory) green except the known environmental stub test; `--collect-only` of the e2e directory green; one headed/headless e2e smoke (`test_alive.py`) with the stack booted by the fixture.
@@ -114,8 +112,8 @@ None — no user-facing surface changes. A node whose output the dead check woul
 
 1. `tests/test_frontend/workflow_spec.py` contains no class or function definitions — only the re-export — and the identity test proves it.
 2. `CONSTANTS` and `FLOW_SWITCH` appear nowhere in the repository.
-3. `grep -rn checkIOType utk_curio docs` returns nothing.
-4. A node's namespace (in-process and isolated) no longer contains `checkIOType`; every other pinned name is still present.
+3. `grep -rn checkIOType utk_curio docs` finds only the no-op definition, its two seeds, the namespace pin and this memo's docs sentence — no call site.
+4. A node's namespace (in-process and isolated) still contains `checkIOType`, and it is a no-op: no argument makes it raise; every other pinned name is still present.
 5. A Data Loading node returning JSON executes in the sandbox and reports `dataType: json`.
 6. `docs/ARCHITECTURE.md` describes the sandbox as it is.
 7. The e2e directory collects; `test_alive.py` passes with the fixture-booted stack.
@@ -123,7 +121,7 @@ None — no user-facing surface changes. A node whose output the dead check woul
 ## 9. Recommended Commit Breakdown
 
 - **Commit 1 — F2**: the shim restored; phantoms removed from the app module; the single-source tests.
-- **Commit 2 — F1**: `checkIOType` and its validators deleted from `parsers.py`; worker + zygote calls and seeds removed; namespace pin updated with the inverse assertion; the e2e replay call and comment; the JSON-loader sandbox test; `docs/ARCHITECTURE.md`.
+- **Commit 2 — F1**: the validators deleted from `parsers.py` and `checkIOType` reduced to the documented no-op; the worker's three calls removed (seeds stay); namespace test pins the no-op; the e2e replay call and comment; the JSON-loader sandbox test; `docs/ARCHITECTURE.md`.
 - **Tracking**: memo status, DEC-062/076 notes, dev/00 row, `BL-P5-20260909-54`, `3.1`, dev/119 F1/F2 closure — as separate short `tracking …` commits, pathspec-scoped to `plans/urbanagentic/hookable-agents/dev` and `docs/`.
 
 ## 10. Engineering Quality Checklist
