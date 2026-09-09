@@ -831,6 +831,85 @@ def run_node(project_id: str, attachment_id: str):
 
 
 @agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/solve-node", methods=["POST"]
+)
+@require_auth
+def solve_node(project_id: str, attachment_id: str):
+    """dev/115 (DEC-073, Amendment A2): the per-node Solve — the user's
+    explicit ask to run, fix, and re-run ONE node's code from the node's own
+    agent. Body: ``{"nodeId": "<node id>"}``. Round 0 executes the current
+    content; corrections run the shared loop; a node that had content lands
+    as an already-executed content review, an empty one is written on PASS.
+    Detached: the response subscribes to the job (replay + tail); closing it
+    does not stop the run — ``GET …/jobs/stream`` re-attaches."""
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
+    body = request.get_json(silent=True) or {}
+    node_id = body.get("nodeId")
+    if not isinstance(node_id, str) or not node_id:
+        return _error("'nodeId' is required")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        config = resolve_provider_config(g.user)
+        events = agents_services.solve_node_stream(
+            _user_dir_key(g.user), project_id, attachment_id, config, node_id=node_id,
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except ProviderConfigError as exc:
+        return _error(str(exc), 400)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+
+    def _sse():
+        for kind, payload in events:
+            data = {"error": payload} if kind == "error" else payload
+            yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    return Response(
+        stream_with_context(_sse()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/jobs/stream", methods=["GET"]
+)
+@require_auth
+def attach_job_stream(project_id: str, attachment_id: str):
+    """dev/115 (DEC-021 single-process slice): re-attach to the attachment's
+    background job — the running Solve batch or per-node Solve, or the most
+    recent finished one still within the replay window. Replays every event
+    so far, then tails live ones; 404 when there is nothing to attach to."""
+    from utk_curio.backend.app.agents import agent_jobs
+
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    job = agent_jobs.latest_job(_user_dir_key(g.user), attachment_id)
+    if job is None or job.project_id != project_id:
+        return _error("no background job for this attachment", 404)
+    events = agent_jobs.subscribe(job)
+
+    def _sse():
+        yield f"event: job\ndata: {json.dumps(job.to_payload())}\n\n"
+        for kind, payload in events:
+            data = {"error": payload} if kind == "error" else payload
+            yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    return Response(
+        stream_with_context(_sse()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@agents_bp.route(
     "/projects/<project_id>/attachments/<attachment_id>/validate-node", methods=["POST"]
 )
 @require_auth

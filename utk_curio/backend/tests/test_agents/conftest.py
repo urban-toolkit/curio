@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents import provider_config
+from utk_curio.backend.app.agents import agent_jobs, provider_config
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     app,
     client,
@@ -34,3 +34,13 @@ def _default_provider(monkeypatch):
     monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "http://127.0.0.1:9/v1")
     monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "test-model")
     monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "test-key")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_agent_jobs():
+    """dev/115: the detached-job registry is process state — every test starts
+    with none and leaves none behind (a leaked live job would hit the
+    per-attachment guard or the per-user cap in an unrelated test)."""
+    agent_jobs.reset_registry()
+    yield
+    agent_jobs.reset_registry()

@@ -4935,6 +4935,15 @@ class TestStreamedSolve:
             if kind == "node_result":
                 break
         gen.close()  # the client vanished mid-stream (GeneratorExit)
+        # dev/115 (DEC-021 single-process slice): the client's disconnect only
+        # UNSUBSCRIBES — the batch runs on as a detached job and finishes on
+        # its own; the persisted session is the truth once it has.
+        from utk_curio.backend.app.agents import agent_jobs
+
+        job = agent_jobs.latest_job(_user_dir_key(user), att_id)
+        assert job is not None
+        job.thread.join(timeout=10)
+        assert job.status == "done"
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
         record = next(
             a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id
@@ -4963,25 +4972,47 @@ class TestStreamedSolve:
         user, token = user_and_token
         helper = TestSolve()
         att_id, applied, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        import threading
+
+        from utk_curio.backend.app.agents import agent_jobs
+
         key = _user_dir_key(user)
         spec = projects_storage.read_spec(key, alice_project)
         record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
-        record["builderSession"]["phase"] = "solving"  # a solve owned by another worker
-        record["builderSession"]["solvingSince"] = 1.0
-        projects_storage.write_spec(key, alice_project, spec)
-        r = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
-            headers=_auth(token),
+        # dev/115: a "solving" session is live only while THIS process holds
+        # its job (single-process lease); simulate the running batch with a
+        # registered job that blocks until released.
+        gate = threading.Event()
+
+        def _events():
+            gate.wait(timeout=10)
+            yield "done", {}
+
+        job = agent_jobs.start_job(
+            user_key=key, project_id=alice_project, attachment_id=att_id,
+            kind="solve-batch", job_id="live-solve", events=_events(),
         )
-        assert r.status_code == 200 and r.get_json()["cancelRequested"] is True
-        spec = projects_storage.read_spec(key, alice_project)
-        record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
-        assert record["builderSession"]["cancelRequested"] is True
-        # Idempotent while "running".
-        assert client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
-            headers=_auth(token),
-        ).status_code == 200
+        record["builderSession"]["phase"] = "solving"
+        record["builderSession"]["solvingSince"] = 1.0
+        record["builderSession"]["solveExecutionId"] = "live-solve"
+        projects_storage.write_spec(key, alice_project, spec)
+        try:
+            r = client.post(
+                f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
+                headers=_auth(token),
+            )
+            assert r.status_code == 200 and r.get_json()["cancelRequested"] is True
+            spec = projects_storage.read_spec(key, alice_project)
+            record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
+            assert record["builderSession"]["cancelRequested"] is True
+            # Idempotent while "running".
+            assert client.post(
+                f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
+                headers=_auth(token),
+            ).status_code == 200
+        finally:
+            gate.set()
+            job.thread.join(timeout=5)
 
 
 class TestPlanCorrectionRounds:

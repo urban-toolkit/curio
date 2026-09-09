@@ -9,6 +9,8 @@ the traceback plus fresh URL evidence, and the attempt trail is recorded.
 from __future__ import annotations
 
 import json
+import threading
+import time
 
 import pytest
 
@@ -512,3 +514,256 @@ class TestVerifiedSolve:
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve",
                         json={"verify": "yes"}, headers=_auth(token))
         assert r.status_code == 400
+
+
+class TestDetachedSolveJobs(TestVerifiedSolve):
+    """dev/115 commit 3: the Solve batch outlives the request, re-attaches,
+    reconciles to `interrupted` after a dead process, and Retry is linked."""
+
+    def _slow_setup(self, client, user, token, monkeypatch, gate):
+        """A batch whose data-loading child blocks on *gate* — the request can
+        be dropped while the job is mid-flight."""
+        ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER], with_stats=False)
+        original = services_mod.run_chat_completion
+
+        def _blocking(config, messages, **kwargs):
+            frame = (messages[-1].get("content") or "") if messages else ""
+            if "[delegated task" in frame:
+                gate.wait(timeout=10)
+            return original(config, messages, **kwargs)
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _blocking)
+        return ctx
+
+    def _events(self, r):
+        return _tr.TestStreamedSolve()._sse_events(r)
+
+    def test_dropping_the_request_does_not_stop_the_batch_and_the_stream_reattaches(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents import agent_jobs
+
+        user, token = user_and_token
+        gate = threading.Event()
+        ctx = self._slow_setup(client, user, token, monkeypatch, gate)
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
+                        json={}, headers=_auth(token))
+        assert r.status_code == 200
+        it = iter(r.response)
+        first = next(it)  # solve_started reached us; the child is blocked
+        assert b"event: solve_started" in first
+        r.close()  # the browser tab closes
+        job = agent_jobs.live_job(ctx["ukey"], ctx["att"])
+        assert job is not None and job.live
+        # The card shows the live job while it runs.
+        cards = client.get(f"/api/agents/projects/{ctx['pid']}/attachments", headers=_auth(token)).get_json()["attachments"]
+        card = next(c for c in cards if c["attachmentId"] == ctx["att"])
+        assert card["liveJob"]["executionId"] == job.job_id and card["liveJob"]["status"] == "running"
+        gate.set()
+        # Re-attach: replays solve_started … and tails to done.
+        r2 = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/jobs/stream",
+                        headers=_auth(token))
+        events = self._events(r2)
+        names = [k for k, _ in events]
+        assert names[0] == "job" and "solve_started" in names and names[-1] == "done"
+        done = events[-1][1]
+        assert done["results"][ctx["load"]]["status"] == "solved"
+        assert ctx["dataset_id"] in self._node_content(ctx, ctx["load"])  # the job finished the write
+        assert done["builderSession"]["phase"] == "ready"
+        # After it finished, the card carries no live job and the stream still replays.
+        cards = client.get(f"/api/agents/projects/{ctx['pid']}/attachments", headers=_auth(token)).get_json()["attachments"]
+        assert next(c for c in cards if c["attachmentId"] == ctx["att"])["liveJob"] is None
+        r3 = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/jobs/stream",
+                        headers=_auth(token))
+        assert [k for k, _ in self._events(r3)][-1] == "done"
+
+    def test_no_job_is_a_404(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER], with_stats=False)
+        r = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/jobs/stream",
+                       headers=_auth(token))
+        assert r.status_code == 404
+
+    def test_dead_process_session_is_reconciled_and_retry_is_linked(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER], with_stats=False)
+        # Simulate a process that died mid-Solve: the session says "solving"
+        # under an execution id nobody holds.
+        from utk_curio.backend.app.agents import attachments as att_mod
+
+        spec = projects_storage.read_spec(ctx["ukey"], ctx["pid"])
+        record = att_mod.get_attachment(spec, ctx["att"])
+        record["builderSession"].update({
+            "phase": "solving", "solveExecutionId": "dead0000dead", "solvingSince": time.time() - 5,
+        })
+        projects_storage.write_spec(ctx["ukey"], ctx["pid"], spec)
+        cards = client.get(f"/api/agents/projects/{ctx['pid']}/attachments", headers=_auth(token)).get_json()["attachments"]
+        session = next(c for c in cards if c["attachmentId"] == ctx["att"])["builderSession"]
+        assert session["phase"] == "interrupted"
+        assert session["interruptedExecutionId"] == "dead0000dead"
+        assert "solveExecutionId" not in session
+        # The transcript says so, once, and names the no-replay rule.
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        interrupted = [t for t in turns if "Solve was interrupted" in (t.get("text") or "")]
+        assert len(interrupted) == 1
+        assert "never a replay" in interrupted[0]["content"][0]["lines"][1]
+        # Cancel has nothing to cancel.
+        assert client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/cancel",
+                           headers=_auth(token)).status_code == 409
+        # Retry: a NEW execution, linked, nothing replayed (the child runs once).
+        body = self._solve(client, token, ctx)
+        assert body["results"][ctx["load"]]["status"] == "solved"
+        assert body["executionId"] != "dead0000dead"
+        assert "interruptedExecutionId" not in body["builderSession"]
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        solve_turn = next(t for t in reversed(turns) if (t.get("text") or "").startswith("Solved"))
+        assert solve_turn["execution"]["retryOf"] == "dead0000dead"
+        assert len(ctx["dl_calls"]) == 1
+
+    def test_a_second_solve_while_one_runs_is_refused_before_anything_persists(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        gate = threading.Event()
+        ctx = self._slow_setup(client, user, token, monkeypatch, gate)
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
+                        json={}, headers=_auth(token))
+        next(iter(r.response))
+        r.close()
+        r2 = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve",
+                         json={}, headers=_auth(token))
+        assert r2.status_code == 409
+        gate.set()
+        events = self._events(client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/jobs/stream",
+                                         headers=_auth(token)))
+        assert [k for k, _ in events][-1] == "done"
+
+
+class TestSolveNode:
+    """dev/115 Amendment A2: the per-node Solve from the node's own agent —
+    round 0 runs the current code; a node with content lands as an executed
+    review; an empty node is written on PASS; exhaustion mints nothing."""
+
+    NB = "agent.node-builder@1.0.0"
+    NCB = "agent.node-content-builder@1.0.0"
+    LOADER = 'import pandas as pd\ndataset_path = curio_dataset_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
+
+    def _setup(self, client, user, token, monkeypatch, *, content, child_replies=(), exec_outcomes=None):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        ukey = _user_dir_key(user)
+        _tr.TestNodeCreate()._write_builtin_package(ukey, templates=TEMPLATES)
+        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
+        content = content.replace("{DATASET}", dataset_id)
+        body = {"name": "p", "spec": {"dataflow": {"nodes": [
+            {"id": "n1", "type": DL, "goal": "load the heat data", "content": content, "x": 0, "y": 0}],
+            "edges": [], "packages": []}}, "outputs": []}
+        pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
+        for coord in (self.NB, self.NCB):
+            client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
+        att = client.post(f"/api/agents/projects/{pid}/attachments",
+                          json={"coord": self.NB, "target": {"kind": "node", "targetId": "n1"}},
+                          headers=_auth(token)).get_json()["attachmentId"]
+        script = [r.replace("{DATASET}", dataset_id) for r in child_replies]
+        calls: list = []
+
+        def _fake_run(config, messages, **kwargs):
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return script[min(len(calls) - 1, len(script) - 1)] if script else "df = arg[0]\nreturn df"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        payloads: list = []
+        outcomes = exec_outcomes or {}
+
+        def _exec(endpoint, payload):
+            payloads.append(payload)
+            for marker, stderr in outcomes.items():
+                if marker in payload["code"]:
+                    return {"stdout": [], "stderr": stderr, "output": {"path": "", "dataType": "str"}}
+            return {"stdout": [], "stderr": "", "output": {"path": "art-1", "dataType": "dataframe"}}
+
+        monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
+        return dict(pid=pid, att=att, ukey=ukey, dataset_id=dataset_id, calls=calls, payloads=payloads)
+
+    def _solve_node(self, client, token, ctx, node_id="n1"):
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve-node",
+                        json={"nodeId": node_id}, headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        return _tr.TestStreamedSolve()._sse_events(r)
+
+    def _content(self, ctx):
+        spec = projects_storage.read_spec(ctx["ukey"], ctx["pid"])
+        return next(n for n in spec["dataflow"]["nodes"] if n["id"] == "n1")["content"]
+
+    def test_passing_current_content_is_verified_without_a_change(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, content=self.LOADER)
+        events = self._solve_node(client, token, ctx)
+        names = [k for k, _ in events]
+        assert names[0] == "solve_node_started" and names[-1] == "done"
+        done = events[-1][1]
+        assert done["verdict"] == "pass" and done["unchanged"] is True and done["rounds"] == 1
+        assert done["attempts"][0]["source"] == "current content"
+        assert ctx["calls"] == []  # nothing regenerated
+        assert ctx["payloads"][0]["dataset_paths"][ctx["dataset_id"]].endswith("heat.csv")
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        assert "no change needed" in turns[-1]["text"]
+        assert turns[-1]["content"][0]["title"].startswith("Solve · PASS")
+
+    def test_failing_current_content_is_fixed_into_an_executed_review(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        bad = 'import pandas as pd\ndataset_path = curio_dataset_path("{DATASET}")\ndf = pd.read_csv(dataset_path, sep="|||")\nbad_sep()\nreturn df'
+        ctx = self._setup(client, user, token, monkeypatch, content=bad, child_replies=[self.LOADER],
+                          exec_outcomes={"bad_sep": "Traceback: ParserError: bad separator"})
+        events = self._solve_node(client, token, ctx)
+        done = events[-1][1]
+        assert done["verdict"] == "pass" and done["rounds"] == 2 and "unchanged" not in done
+        assert [a["verdict"] for a in done["attempts"]] == ["fail", "pass"]
+        assert done["attempts"][0]["source"] == "current content"
+        assert "ParserError" in done["attempts"][0]["stderrTail"]
+        # The correction saw the failing current code and its traceback.
+        correction = ctx["calls"][0][-1]["content"]
+        assert '"previousAttempt"' in correction and "ParserError" in correction
+        # The node itself is untouched — the fix is an EXECUTED review.
+        assert "bad_sep" in self._content(ctx)
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        part = next(p for t in reversed(turns) for p in (t.get("content") or [])
+                    if p.get("type") == "proposal" and p.get("proposalId") == done["proposalId"])
+        assert part["tool"] == "node.content.write"
+        assert part["validation"]["verdict"] == "pass"
+        assert part["validation"]["attempts"][1]["kind"] == "executed"
+        assert "bad_sep" not in part["preview"]
+        # Applying it puts the code that ran on the node.
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/proposals/{done['proposalId']}/apply",
+                        headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        assert "bad_sep" not in self._content(ctx) and ctx["dataset_id"] in self._content(ctx)
+
+    def test_empty_node_is_written_directly_on_pass(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, content="", child_replies=[self.LOADER])
+        done = self._solve_node(client, token, ctx)[-1][1]
+        assert done["verdict"] == "pass" and done["written"] is True
+        assert ctx["dataset_id"] in self._content(ctx)
+
+    def test_exhaustion_mints_nothing_and_says_so(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        bad = self.LOADER.replace("return df", "always_bad()\nreturn df")
+        ctx = self._setup(client, user, token, monkeypatch, content=bad, child_replies=[bad],
+                          exec_outcomes={"always_bad": "Traceback: NameError: always_bad"})
+        done = self._solve_node(client, token, ctx)[-1][1]
+        assert done["verdict"] == "fail" and done["rounds"] == 3 and "proposalId" not in done
+        assert self._content(ctx) == bad.replace("{DATASET}", ctx["dataset_id"])
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        assert turns[-1]["error"] is True and "Not fixed after 3 attempts" in turns[-1]["text"]
+        assert len(turns[-1]["content"][0]["lines"]) == 3
+
+    def test_preflight(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch, content=self.LOADER)
+        base = f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve-node"
+        assert client.post(base, json={}, headers=_auth(token)).status_code == 400
+        assert client.post(base, json={"nodeId": "ghost"}, headers=_auth(token)).status_code == 404

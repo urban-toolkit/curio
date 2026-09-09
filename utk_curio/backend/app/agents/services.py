@@ -28,7 +28,7 @@ from utk_curio.backend.app.agents import (
     storage,
     tools,
 )
-from utk_curio.backend.app.agents import egress, node_context, source_grounding, verify
+from utk_curio.backend.app.agents import agent_jobs, egress, node_context, source_grounding, verify
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES, AgentManifest
 from utk_curio.backend.app.agents.providers import (
@@ -649,6 +649,48 @@ def _read_spec_or_404(user_key: str, project_id: str) -> dict:
     return spec
 
 
+def _reconcile_solve_session(user_key: str, project_id: str, spec: dict, record: dict) -> bool:
+    """dev/115 (DEC-021, single-process): a builder session left ``solving``
+    by an execution this process does not hold becomes ``interrupted`` — the
+    transcript says so once, nothing is re-run, and the caller's *spec* is
+    persisted when anything changed. Runs wherever a builder session is read
+    for action (attachment listing, Solve, cancel)."""
+    session = record.get("builderSession")
+    if not isinstance(session, dict):
+        return False
+    before = session.get("solveExecutionId")
+    if not agent_jobs.reconcile_builder_session(session):
+        return False
+    record["builderSession"] = session
+    projects_storage.write_spec(user_key, project_id, spec)
+    session_id = record.get("sessionId")
+    if isinstance(session_id, str):
+        try:
+            pending = sum(
+                1 for status in (session.get("nodeRuns") or {}).values()
+                if status in ("pending", "failed")
+            )
+            sessions.append_turns(
+                user_key, project_id, session_id, record.get("attachmentId"),
+                [sessions.make_turn(
+                    "agent",
+                    "Solve was interrupted — the server stopped while it was running. "
+                    "Nothing was replayed; finished nodes kept their content. "
+                    f"{pending} node{'s' if pending != 1 else ''} still need solving — Retry continues.",
+                    content=[{
+                        "type": "card", "kind": "error", "title": "Solve interrupted",
+                        "lines": [
+                            f"execution {str(before or '')[:8]} expired with the process",
+                            "Retry starts a new execution linked to it (DEC-021: never a replay)",
+                        ],
+                    }],
+                )],
+            )
+        except Exception:
+            pass
+    return True
+
+
 def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
     """Attachment record + a resolved name/hooks for its source template (best-effort).
 
@@ -687,6 +729,9 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         # The Dataflow Builder orchestration session (dev/52 DR-2) — drives
         # the phase-aware builder panel; absent for every other agent.
         "builderSession": record.get("builderSession"),
+        # dev/115: the running background job this process holds for the
+        # attachment (Solve batch / per-node Solve), or null.
+        "liveJob": _live_job_payload(user_key, record),
     }
 
 
@@ -724,9 +769,21 @@ def _proposal_summary(proposal: object) -> dict | None:
     return summary
 
 
+def _live_job_payload(user_key: str, record: dict) -> dict | None:
+    """dev/115: the attachment's running background job, if this process
+    holds one — the dock's running indicator (docs/11:178)."""
+    job = agent_jobs.live_job(user_key, str(record.get("attachmentId") or ""))
+    return job.to_payload() if job is not None else None
+
+
 def list_project_attachments(user_key: str, project_id: str) -> list[dict]:
     spec = _read_spec_or_404(user_key, project_id)
-    return [_attachment_card(spec, r, user_key) for r in attachments.list_attachments(spec)]
+    records = attachments.list_attachments(spec)
+    # dev/115 (DEC-021): a session left "solving" by a process that is gone is
+    # reconciled to "interrupted" the first time anyone reads it.
+    for record in records:
+        _reconcile_solve_session(user_key, project_id, spec, record)
+    return [_attachment_card(spec, r, user_key) for r in records]
 
 
 def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> dict:
@@ -3618,6 +3675,7 @@ def request_solve_cancel(user_key: str, project_id: str, attachment_id: str) -> 
     """
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
+    _reconcile_solve_session(user_key, project_id, spec, record)
     session = record.get("builderSession") or {}
     if session.get("phase") != "solving":
         raise AgentServiceError("no solve is running for this attachment", 409)
@@ -3680,12 +3738,18 @@ def solve_attachment_stream(
 
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
+    _reconcile_solve_session(user_key, project_id, spec, record)
     session = record.get("builderSession") or {}
     if not session.get("appliedPlanId"):
         raise AgentServiceError("nothing to solve — apply a plan first", 409)
     now = _time.time()
     if session.get("phase") == "solving" and now - float(session.get("solvingSince") or 0) < _SOLVE_STALE_SECONDS:
         raise AgentServiceError("a solve is already running for this plan", 409)
+    try:
+        # dev/115: refuse BEFORE persisting any in-flight state.
+        agent_jobs.check_can_start(user_key, attachment_id)
+    except agent_jobs.JobRefused as exc:
+        raise AgentServiceError(str(exc), exc.status)
     node_runs: dict = session.get("nodeRuns") or {}
     targets = [
         node_id
@@ -3703,6 +3767,10 @@ def solve_attachment_stream(
         if isinstance(n, dict)
     }
     solve_execution_id = uuid.uuid4().hex
+    # dev/115 (DEC-021): a Solve after an interruption is a NEW execution
+    # linked to the expired one — recorded, never replayed.
+    retry_of = session.pop("interruptedExecutionId", None) if session.get("phase") == "interrupted" else None
+    session.pop("interruptedAt", None)
     # The in-flight guard + cancellation identity persist before any provider
     # work; the cancel endpoint finds the run through ``solveExecutionId``.
     session["phase"] = "solving"
@@ -3715,11 +3783,29 @@ def solve_attachment_stream(
     manifest = _resolve_definition(user_key, record.get("coord", ""))
     coord = record.get("coord", "")
     session_id = record.get("sessionId")
-    return _solve_events(
+    # dev/115: everything that needs the REQUEST context is resolved here —
+    # the job thread holds no ``g``: the batch's grounding base (catalog refs,
+    # mission + plan texts) and the sandbox's dataset-path mapping.
+    solve_ground = _solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
+    solve_dataset_paths = (
+        _resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
+        if verify else {}
+    )
+    events = _solve_events(
         user_key, project_id, attachment_id, config, targets, nodes_by_id,
         manifest, coord, session_id, solve_execution_id, stop,
         spec=spec, mode=mode, return_phase=return_phase, verify=verify,
+        grounding_base=solve_ground, dataset_paths=solve_dataset_paths,
+        retry_of=retry_of if isinstance(retry_of, str) else None,
     )
+    # dev/115 (DEC-021, single-process slice): the batch runs as a detached
+    # job — the request only SUBSCRIBES (replay + tail); a disconnect no
+    # longer ends the Solve, and a reload re-attaches through the jobs stream.
+    job = agent_jobs.start_job(
+        user_key=user_key, project_id=project_id, attachment_id=attachment_id,
+        kind="solve-batch", job_id=solve_execution_id, events=events,
+    )
+    return agent_jobs.subscribe(job)
 
 
 def _solve_events(
@@ -3739,6 +3825,9 @@ def _solve_events(
     mode: str = "write",
     return_phase: str | None = None,
     verify: bool = True,
+    grounding_base: dict | None = None,
+    dataset_paths: dict | None = None,
+    retry_of: str | None = None,
 ):
     """The solve batch body (dev/63). Workers report through a thread-safe
     queue — they never touch the response; the generator drains it between
@@ -3782,14 +3871,18 @@ def _solve_events(
     # dev/114: ONE grounding base per batch (catalog paths, mission + plan
     # texts), built here in the request thread — workers hold no request
     # context; ONE egress budget for the batch's probes.
-    solve_ground = _solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
+    # dev/115: the request thread resolved these (the generator body runs in
+    # the job thread, which holds no request context); computing them here is
+    # only the fallback for a direct caller.
+    solve_ground = (
+        grounding_base if grounding_base is not None
+        else _solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
+    )
     solve_ctx: dict = {"granted": [], "manifest": manifest}
-    # dev/115: the sandbox's ``{datasetId: path}`` mapping for every catalog id
-    # this project can load, resolved ONCE here (request thread — workers hold
-    # no ``g``); each verified run receives the subset its code references.
     solve_dataset_paths = (
-        _resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
-        if verify else {}
+        dataset_paths if dataset_paths is not None
+        else (_resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
+              if verify else {})
     )
     from utk_curio.backend.app.packages import services as _pkg_services
 
@@ -3987,6 +4080,7 @@ def _solve_events(
                             {"coord": coord, "provider": config.api_type,
                              "model": config.model, "tools": [], "intentEdited": False},
                             {}, started, "ok", delegations=delegations,
+                            retry_of=retry_of,
                         ),
                     )
                 ],
@@ -4188,6 +4282,7 @@ def _solve_events(
                             parent_session_id=session_id,
                             local_turn=True,
                             validation=validation_block,
+                            grounding_base=solve_ground,
                         )
                         if part is not None:
                             results[node_id] = {
@@ -4847,6 +4942,230 @@ def _run_node_events(
 # regenerations, each re-validated by actually running the dataflow.
 _VALIDATE_CORRECTION_ROUNDS = 2
 _VALIDATE_STALE_SECONDS = 15 * 60
+
+
+def solve_node_stream(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    *,
+    node_id: str,
+    exec_fn=None,
+):
+    """dev/115 (DEC-073, Amendment A2): the per-node Solve — the user's
+    explicit ask to run, fix, and re-run ONE node's code from the node's own
+    agent (any attachment whose manifest resolves ``node.content.generate``).
+
+    Round 0 executes the node's CURRENT content as-is; corrections run the
+    shared loop. A node that already had content lands as a reviewed
+    ``node.content.write`` that has already passed (DEC-006 — an existing
+    node's content changes only through review); an EMPTY node is written
+    directly on PASS; exhaustion mints nothing and says so; a sandbox outage
+    says "not verified". Detached like the batch: the request subscribes.
+
+    Eager validation (404/409 stay JSON); the generator yields
+    ``solve_node_started`` → the loop's ``generation_round`` /
+    ``node_executed`` / ``round_verdict`` → ``done {verdict, rounds,
+    attempts, unchanged?, written?, proposalId?, proposalAttachmentId?}``.
+    """
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    if not isinstance(node_id, str) or not node_id:
+        raise AgentServiceError("a nodeId is required", 422)
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    if node is None:
+        raise AgentServiceError(f"node {node_id!r} not found in the saved spec", 404)
+    manifest = _resolve_definition(user_key, record.get("coord", ""))
+    resolution = delegation.resolve(
+        user_key, project_id, manifest, "node.content.generate"
+    ) if manifest is not None else delegation.Resolution("unresolvable")
+    if resolution.outcome != "ok":
+        raise AgentServiceError(
+            "no installed agent declares node.content.generate — install the "
+            "Node Content Builder first",
+            409,
+        )
+    try:
+        agent_jobs.check_can_start(user_key, attachment_id)
+    except agent_jobs.JobRefused as exc:
+        raise AgentServiceError(str(exc), exc.status)
+    execution_id = uuid.uuid4().hex
+    # Request-context pieces, resolved before the job thread starts.
+    base = _solve_grounding_base(user_key, project_id, spec, {node_id: node}, [node_id])
+    dataset_paths = _resolve_catalog_execution_paths(project_id, list(base.get("catalog_ids") or {}))
+    events = _solve_node_events(
+        user_key, project_id, attachment_id, config, spec, node, resolution,
+        record.get("coord", ""), record.get("sessionId"), execution_id, exec_fn,
+        manifest=manifest, grounding_base=base, dataset_paths=dataset_paths,
+    )
+    job = agent_jobs.start_job(
+        user_key=user_key, project_id=project_id, attachment_id=attachment_id,
+        kind="solve-node", job_id=execution_id, events=events,
+    )
+    return agent_jobs.subscribe(job)
+
+
+def _solve_node_events(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    spec: dict,
+    node: dict,
+    resolution,
+    coord: str,
+    session_id,
+    execution_id: str,
+    exec_fn,
+    *,
+    manifest,
+    grounding_base: dict,
+    dataset_paths: dict,
+):
+    """The per-node Solve body (dev/115 A2) over the ONE verified loop."""
+    node_id = node.get("id")
+    label = (node.get("goal") or node_id)[:60]
+    started = time.monotonic()
+    had_content = bool(str(node.get("content") or "").strip())
+    yield "solve_node_started", {
+        "nodeId": node_id, "executionId": execution_id, "hasContent": had_content,
+    }
+
+    def _traced(delegate_inputs):
+        st, tx, ch, _h = _run_delegate_traced(
+            user_key, project_id, resolution.coord,
+            "node.content.generate", delegate_inputs, config,
+            parent_execution_id=execution_id,
+            parent_coord=coord,
+            attachment_id=attachment_id,
+            node_id=node_id,
+            home_create=False,
+        )
+        return st, tx, ch
+
+    outcome = yield from _verified_content_rounds(
+        user_key, project_id,
+        spec=spec, node=node, resolution=resolution, config=config,
+        parent_execution_id=execution_id, parent_coord=coord,
+        attachment_id=attachment_id, exec_fn=exec_fn,
+        grounding_loop_ctx={"granted": [], "manifest": manifest,
+                            "attachment_id": attachment_id, "session_id": session_id},
+        grounding_base=grounding_base,
+        start_from_current=True,
+        delegate_runner=_traced,
+        dataset_paths_fn=lambda codes: _filter_dataset_paths(dataset_paths, codes),
+        exec_user_key=user_key,
+    )
+    verdict = outcome["verdict"]
+    attempts = outcome["attempts"]
+    rounds = outcome["rounds"]
+    done: dict = {"nodeId": node_id, "verdict": verdict, "rounds": rounds,
+                  "attempts": attempts, "evidence": outcome["evidence"]}
+    trail_lines = []
+    for attempt in attempts[:6]:
+        raw = str(attempt.get("stderrTail") or attempt.get("detail") or "")
+        why = raw[:100] if attempt.get("kind") == "ungrounded-source" else raw[-100:]
+        line = f"round {attempt.get('round')} · {attempt.get('verdict')} · {attempt.get('kind')}"
+        if attempt.get("verdict") == "pass":
+            line += f" · {attempt.get('outputDataType') or '?'}"
+        elif why:
+            line += f" — {why}"
+        trail_lines.append(line)
+    unchanged = (
+        verdict == "pass" and rounds == 1 and attempts
+        and attempts[0].get("source") == "current content"
+    )
+    parts: list = []
+    if verdict == "pass" and unchanged:
+        text = f"Verified {label!r}: its current code ran successfully — no change needed."
+        done["unchanged"] = True
+        card_kind = "result"
+    elif verdict == "pass" and not had_content:
+        # An empty node (a plan placeholder solved from its own agent) is
+        # written directly on PASS — parity with the Dataflow Builder's Solve.
+        written = False
+        try:
+            fresh = _read_spec_or_404(user_key, project_id)
+            target = next(
+                (n for n in (fresh.get("dataflow") or {}).get("nodes") or []
+                 if isinstance(n, dict) and n.get("id") == node_id), None,
+            )
+            if target is not None and not str(target.get("content") or "").strip():
+                target["content"] = outcome["candidate"]
+                projects_storage.write_spec(user_key, project_id, fresh)
+                written = True
+        except Exception:
+            written = False
+        done["written"] = written
+        text = (
+            f"Solved {label!r}: the code ran successfully after {rounds} round"
+            f"{'s' if rounds != 1 else ''} and was written to the node."
+            if written else
+            f"Solved {label!r}: the code ran successfully, but the node gained content meanwhile — nothing written."
+        )
+        card_kind = "result"
+    elif verdict == "pass":
+        part, home_att, _mint_text = _mint_content_review_from_delegate(
+            user_key, project_id,
+            node_id=node_id,
+            generated_text=outcome["candidate"],
+            parent_attachment_id=attachment_id,
+            parent_session_id=session_id,
+            local_turn=False,
+            validation={"verdict": verdict, "rounds": rounds,
+                        "evidence": outcome["evidence"], "attempts": attempts},
+            grounding_base=grounding_base,
+        )
+        if part is not None:
+            done["proposalId"] = part["proposalId"]
+            done["proposalAttachmentId"] = home_att
+            if home_att == attachment_id:
+                parts.append(part)
+            text = (
+                f"Solved {label!r}: the corrected code ran successfully after {rounds} "
+                f"round{'s' if rounds != 1 else ''} — review and apply it below."
+            )
+        else:
+            text = f"Solved {label!r} but the review could not be minted — nothing was changed."
+        card_kind = "result"
+    elif verdict == "infrastructure":
+        text = (
+            f"Not verified: the sandbox was unreachable while solving {label!r} — "
+            "nothing was run, corrected, or written. Retry when it is back."
+        )
+        card_kind = "error"
+    else:
+        text = (
+            f"Not fixed after {rounds} attempt{'s' if rounds != 1 else ''}: {label!r} still "
+            "fails — the attempts are listed below; nothing was written."
+        )
+        card_kind = "error"
+    card = {
+        "type": "card", "kind": card_kind,
+        "title": f"Solve · {verdict.upper()} after {rounds} round{'s' if rounds != 1 else ''}",
+        "lines": trail_lines[:10],
+    }
+    if isinstance(session_id, str):
+        try:
+            sessions.append_turns(
+                user_key, project_id, session_id, attachment_id,
+                [sessions.make_turn(
+                    "agent", text, error=(card_kind == "error"),
+                    content=[card, *parts],
+                    execution=_execution_record(
+                        execution_id,
+                        {"coord": coord, "provider": getattr(config, "api_type", None),
+                         "model": getattr(config, "model", None), "tools": [], "intentEdited": False},
+                        {}, started, "ok" if verdict == "pass" else "error",
+                        delegations=[c for c in outcome["delegations"] if c is not None],
+                    ),
+                )],
+            )
+        except Exception:
+            pass
+    yield "done", done
 
 
 def validate_node_stream(
@@ -5613,6 +5932,7 @@ def _execution_record(
     tool_calls: list | None = None,
     delegations: list | None = None,
     refused_rounds: int = 0,
+    retry_of: str | None = None,
 ) -> dict:
     """Assemble the per-run execution record persisted on the agent turn.
 
@@ -5638,6 +5958,10 @@ def _execution_record(
         # — auditable beside toolCalls[].status so a run that leaned on the
         # free corrections is legible after the fact.
         record["refusedRounds"] = refused_rounds
+    if retry_of:
+        # dev/115 (DEC-021): a retry after an interruption is a NEW execution
+        # linked to the one that expired — nothing was replayed.
+        record["retryOf"] = retry_of
     return record
 
 
@@ -6187,6 +6511,7 @@ def _mint_node_content_write(
         user_key, project_id, loop_ctx,
         code=proposed, engine=(entry or {}).get("engine"),
         node_type=node.get("type"), params=params,
+        base=loop_ctx.get("_grounding_base"),
     )
     if refusal:
         return _refuse_params(refusal)
@@ -7058,6 +7383,7 @@ def _mint_content_review_from_delegate(
     local_turn: bool = False,
     parent_loop_ctx: dict | None = None,
     validation: dict | None = None,
+    grounding_base: dict | None = None,
 ) -> tuple[dict | None, str | None, str]:
     """dev/73: the ONE content→review sequence (the Solve drain's, extracted):
     a successful ``node.content.generate`` delegation becomes a reviewed
@@ -7100,6 +7426,10 @@ def _mint_content_review_from_delegate(
         if k in ("message", "_verified_urls", "_egress_budget", "_probe_cache", "granted", "manifest")
     }
     mint_ctx.update({"attachment_id": home_att, "session_id": home_sess})
+    if grounding_base is not None:
+        # dev/115: a job thread holds no request context — the gate grounds
+        # against the batch's precomputed catalog refs, not a live listing.
+        mint_ctx["_grounding_base"] = grounding_base
     p_status, p_error, part = _mint_node_content_write(
         user_key, project_id,
         mint_ctx,
