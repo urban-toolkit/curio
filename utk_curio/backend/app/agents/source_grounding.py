@@ -83,6 +83,10 @@ from utk_curio.backend.app.users.connection_keys import (  # noqa: E402
     secret_names as _secret_names,
 )
 
+# KEEP IN SYNC with the editor's twin (dev/117):
+# frontend/urban-workflows/src/services/connectionKeys/credentialLiterals.ts —
+# both sides assert the same fixture list (test_source_grounding.py ↔
+# credentialLiterals.test.ts).
 _CRED_NAME_RE = re.compile(
     r"^(?:api[_-]?key|apikey|key|token|access[_-]?token|secret|api[_-]?secret|"
     r"password|passwd|auth(?:orization)?|bearer|client[_-]?secret|x[_-]api[_-]key)$",

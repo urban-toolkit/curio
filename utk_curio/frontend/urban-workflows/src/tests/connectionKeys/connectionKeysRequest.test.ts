@@ -26,3 +26,16 @@ describe("connectionKeysRequest (dev/116)", () => {
     expect(remedyFocus(null)).toBeNull();
   });
 });
+
+describe("suggestName / hostOf (dev/117: one implementation for every caller)", () => {
+  it("names a key after the host's second-level label", async () => {
+    const { suggestName, hostOf } = await import("../../components/connectionKeys/connectionKeysRequest");
+    expect(suggestName("https://api.census.gov/data")).toBe("census");
+    expect(suggestName("api.census.gov")).toBe("census");
+    expect(suggestName("data.cityofchicago.org")).toBe("cityofchicago");
+    expect(suggestName("localhost")).toBe("localhost");
+    expect(suggestName("")).toBe("");
+    expect(hostOf("https://user@API.Census.gov:8443/data?x=1")).toBe("api.census.gov");
+    expect(hostOf("api.census.gov.")).toBe("api.census.gov");
+  });
+});

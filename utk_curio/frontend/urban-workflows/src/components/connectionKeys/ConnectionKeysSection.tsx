@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import modal from "../modal-content.module.css";
 import styles from "./ConnectionKeysSection.module.css";
 import { connectionKeysApi, type ConnectionKeyRef } from "../../api/connectionKeysApi";
-import type { ConnectionKeysFocus } from "./connectionKeysRequest";
+import { suggestName, type ConnectionKeysFocus } from "./connectionKeysRequest";
 
 type DeliveryKind = "code" | "query" | "header";
 
@@ -25,18 +25,6 @@ function deliveryText(delivery: string): string {
   return "in the code";
 }
 
-function suggestName(host: string): string {
-  const bare = host
-    .trim()
-    .toLowerCase()
-    .replace(/^[a-z]+:\/\//, "")
-    .split(/[/?#:@]/)
-    .filter(Boolean)
-    .pop() ?? "";
-  const labels = bare.split(".").filter(Boolean);
-  const label = labels.length >= 2 ? labels[labels.length - 2] : labels[0] ?? "";
-  return label.replace(/[^a-z0-9_-]/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
-}
 
 function formatUsed(ts: number | null): string {
   if (!ts) return "never used";

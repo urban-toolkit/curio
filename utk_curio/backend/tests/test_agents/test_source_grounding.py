@@ -363,3 +363,35 @@ class TestConnectionKeys:
         without = sg.check_grounding('import requests\nreturn requests.get("https://api.census.gov/data").json()',
                                      "python", _ctx(is_data_loading=True, probe=probe))
         assert "hint" not in without.source["refs"][0]
+
+    # dev/117: the SAME fixtures the editor's TypeScript twin asserts
+    # (frontend/urban-workflows/src/tests/services/connectionKeys/credentialLiterals.test.ts).
+    # Change both or neither.
+    _VALUE = "AbCdEf0123456789xyzXYZ-_"
+    SHARED_POSITIVE = [
+        (f'api_key = "{_VALUE}"', ["api_key"]),
+        (f'params = {{"get": "NAME", "key": "{_VALUE}"}}', ["key"]),
+        (f'headers = {{"Authorization": "Bearer {_VALUE}"}}', ["Authorization"]),
+        (f'r = requests.get(u, token="{_VALUE}")', ["token"]),
+        (f"ACCESS_TOKEN = '{_VALUE}'", ["ACCESS_TOKEN"]),
+    ]
+    SHARED_NEGATIVE = [
+        'key = "https://api.census.gov/data/2022/acs/acs5"',
+        'key = "/data/exports/census_tracts_2022_final.csv"',
+        'key = "census_tracts_2022_final_export.csv"',
+        'dataset = "imported.census-acs@1"',
+        'api_key = curio_secret("census")',
+        'api_key = os.environ["CENSUS_KEY"]',
+        'key = "short"',
+        f'monkey = "{_VALUE}"',
+        'params = {"get": "NAME,B19013_001E,B01003_001E"}',
+    ]
+
+    def test_shared_fixtures_with_the_editor_detector(self):
+        for code, names in self.SHARED_POSITIVE:
+            found = sg.credential_literals(code, "python")
+            assert [n for n, _ in found] == names, code
+            assert all(line == 1 for _, line in found)
+            assert self._VALUE not in repr(found)
+        for code in self.SHARED_NEGATIVE:
+            assert sg.credential_literals(code, "python") == [], code
