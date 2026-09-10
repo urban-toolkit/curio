@@ -362,7 +362,16 @@ the same question safely and is the method to use.
   versioning, the held-out evaluation gate computed by *this* comparator,
   activation and rollback — reconciled with the deferred `DEC-058` work, and
   preserving the rule that a model never judges itself.
-- **F2 — interaction edges on this branch.** Port dev/112's `edges[].kind` and
+- **F2 — interaction edges on this branch.** **CLOSED by dev/125 (2026-09-10,
+  `BL-P5-20260910-59`): dev/112's `edges[].kind` and `plan_topology.py` are
+  ported, `attempt.UNEXPRESSIBLE_EDGE_KINDS` is empty, and all eight T2
+  fixtures reconstruct to exactly 1.0 with no fixture's expected graph edited —
+  the prediction this follow-up made, verified. Closing it also exposed two
+  defects the gap had been hiding, both dead code paths until fixture 08 first
+  reached Solve: the fake sandbox's declared-content lookup matched by equality
+  against code the runtime wraps and indents, so it had never once fired; and
+  the word heuristic it silently fell through to read "raster" out of a JS
+  comment.** Port dev/112's `edges[].kind` and
   `plan_topology.py`; `attempt.UNEXPRESSIBLE_EDGE_KINDS` then empties and the
   eight T2 fixtures score without a fixture edit.
 - **F3 — Solve-path source evidence** (F-a above). Either let a path or a

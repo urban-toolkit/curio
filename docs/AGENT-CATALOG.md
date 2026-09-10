@@ -223,6 +223,30 @@ click that re-checks the target has not drifted since the proposal was minted.
 Dismissing it leaves nothing behind. See
 [ARCHITECTURE.md](ARCHITECTURE.md#agent-routes) for the endpoints behind this.
 
+### What a dataflow plan may change
+
+A Dataflow Builder plan may add nodes, add connections, and remove — each part
+optional, so a plan that only rewires a connection is valid and no filler node
+is ever needed to make one (memo `dev/125`, applying `DEC-070`). Two rules make
+the result trustworthy:
+
+- **A connection carries a kind.** `interaction` is the Trill's feedback link —
+  a visualization and a data-pool node, `in/out` at both ends, bidirectional on
+  the canvas, carrying selections rather than data. It is refused anywhere
+  else, by a message that names the node it was aimed at.
+- **Data connections must stay a DAG.** A plan whose data edge would close a
+  cycle is refused when it is proposed, with the loop written out and the fix
+  named; the check runs again at Apply against your live canvas, so a cycle you
+  drew in the meantime stops the apply rather than being written. A cycle the
+  plan did not create is *reported*, never blamed on the plan.
+
+Every removed connection is named on the card, and every applied result ends
+with a `Topology:` verdict — `acyclic`, or the path of a cycle still present —
+which the agent is instructed to read before it claims a repair. Before this,
+an agent asked to fix a cycle could diagnose it correctly, propose the right
+repair, and silently rebuild the same cycle on every round, because the kind it
+asked for had nowhere to live in the contract.
+
 ### Required agents
 
 An agent may declare that it requires others. The drawer discloses this before
@@ -606,10 +630,12 @@ different order scores the same.
 Three things the harness will not do:
 
 - **It does not weaken an expectation to pass.** A construct the agent contract
-  cannot express is reported as a named *capability gap*. Eight fixtures need
-  one today: a brushable chart that highlights its map is a bidirectional link,
-  and the plan contract carries no edge kind, so no plan can build those edges
-  yet. The expected graphs keep them.
+  cannot express is reported as a named *capability gap*. Eight fixtures needed
+  one — a brushable chart that highlights its map is a bidirectional link, and
+  the plan contract carried no edge kind, so no plan could build those edges.
+  Their expected graphs kept them, and when the contract learned edge kinds
+  (memo `dev/125`) the same eight began scoring with **no fixture edited**.
+  That is the whole point of naming a gap instead of lowering a bar.
 - **It does not gate anything on a model.** A live-model run writes an
   evaluation report, opt-in and never in CI. Nothing in Curio passes or fails
   because of those numbers.
@@ -711,9 +737,10 @@ was true.
 split *and* approved by a person. Each row is one training example: the system
 turn a real run carries, the fixture's prompt, and the plan block the runtime's
 own parser accepts — so the model is taught the shape the product actually
-takes, and an example whose graph the plan contract cannot express (the eight
-with a bidirectional link) is excluded with that as its reason rather than
-taught in a weakened form. Every row is scrubbed and then re-checked; anything
+takes, and an example whose graph the plan contract cannot express is excluded
+with that as its reason rather than taught in a weakened form. (The eight with
+a bidirectional link were that case until `dev/125`; the rule did not change,
+the contract did, so the same rule now includes them.) Every row is scrubbed and then re-checked; anything
 still resembling a credential stops the upload rather than being sent redacted.
 
 Before anything moves you see the row count, the byte count, the examples by
