@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import styles from "./AgentBuilderStrip.module.css";
 import type { AgentRemedy } from "../../../api/agentsApi";
 import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
+import { OpenDatasetFinderAction } from "./OpenDatasetFinderAction";
 
 /**
  * dev/115 (DEC-073, Amendment A2): the per-node Solve row — rendered in a
@@ -15,7 +16,10 @@ export const NodeSolveRow: React.FC<{
   activity?: string | null;
   /** True while the server holds a running per-node Solve for this attachment. */
   live?: boolean;
-}> = ({ onSolveNode, activity = null, live = false }) => {
+  /** dev/126: open a chat by attachment id — the awaiting-selection remedy's
+   * action opens this node's own Dataset Finder. */
+  onOpenChat?: (attachmentId: string) => void;
+}> = ({ onSolveNode, activity = null, live = false, onOpenChat }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -37,6 +41,11 @@ export const NodeSolveRow: React.FC<{
       else if (done?.verdict === "pass" && done.written) setNotice("Solved — the code ran successfully and was written to the node.");
       else if (done?.verdict === "pass") setNotice("Solved — the corrected code ran successfully; review and apply it below.");
       else if (done?.verdict === "infrastructure") setNotice("Not verified — the sandbox was unreachable; nothing was changed.");
+      else if (done?.verdict === "awaiting-source")
+        setNotice(
+          "Awaiting a source — this node's Dataset Finder has candidates for you to " +
+            "confirm. Nothing was generated or written.",
+        );
       else if (done?.verdict === "fail")
         setNotice(`Not fixed after ${done.rounds ?? "?"} attempts — the trail is in the transcript; nothing was written.`);
     } catch (e) {
@@ -71,6 +80,8 @@ export const NodeSolveRow: React.FC<{
       {remedy ? (
         <div className={styles.actions}>
           <AddKeyAction remedy={remedy} />
+          {/* dev/126: a data-loading node whose source is with the user. */}
+          <OpenDatasetFinderAction remedy={remedy} onOpenChat={onOpenChat} />
         </div>
       ) : null}
       {error ? <div className={styles.error}>{error}</div> : null}

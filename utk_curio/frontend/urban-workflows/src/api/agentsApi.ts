@@ -306,14 +306,35 @@ export interface AgentSourceRef {
   delivery?: string;
 }
 
-/** dev/116: what a `source-missing` failure asks the user for. */
+/** dev/116: what a `source-missing` failure asks the user for.
+ *  dev/126 adds `dataset-selection`: the node's source is with the user —
+ *  its Dataset Finder holds candidates awaiting a selection. */
 export interface AgentRemedy {
-  kind: "connection-key" | "use-connection-key" | string;
+  kind: "connection-key" | "use-connection-key" | "dataset-selection" | string;
   host?: string;
   /** connection-key: a name the settings form can suggest. */
   suggestedName?: string;
   /** use-connection-key: the saved key the builder did not use. */
   name?: string;
+  /** dataset-selection (dev/126): the chat to open, and the node it resolves. */
+  attachmentId?: string;
+  nodeId?: string;
+}
+
+/** dev/126: one confirmed candidate — identifiers ONLY. The server resolves
+ *  the key against the rows it proposed itself, so a client can never
+ *  introduce a source the runtime did not verify. */
+export interface AgentDatasetPick {
+  lane: "catalog" | "external";
+  key: string;
+}
+
+/** dev/126: the recorded selection for a node. */
+export interface AgentDatasetSelection {
+  attachmentId: string;
+  nodeId?: string;
+  status: "resolved" | "awaiting-install" | "candidates-pending" | string;
+  picks: AgentDatasetCandidateRow[];
 }
 
 /** dev/114: the proposal's source block — bounded plain data. */
@@ -505,6 +526,11 @@ export interface AgentApplyResult {
     removedNodeIds?: string[];
     removedEdgeIds?: string[];
   };
+  /** dev/126: the plan-node agents this apply attached (Node Builder on every
+   * created node, Dataset Finder on every data-loading one) — and anything it
+   * could not, with the reason. */
+  attachedAgents?: AgentAttachedAgentRow[];
+  skippedAgents?: AgentAttachedAgentRow[];
   /** dataflow.plan.write: the builder session after apply. */
   builderSession?: AgentBuilderSession | null;
   /** package.install / package.draft.apply: the installed package. */
@@ -546,7 +572,20 @@ export interface AgentPlanNodeApplyResult {
   edgeStates?: Record<string, string>;
   /** dev/71: the auto-attached Node Builder's attachment id (null = skipped). */
   attachedAgentId?: string | null;
+  /** dev/126: every agent this apply gave the created node(s) — and anything
+   * it could not, with the reason. Both apply paths report it. */
+  attachedAgents?: AgentAttachedAgentRow[];
+  skippedAgents?: AgentAttachedAgentRow[];
   builderSession?: AgentBuilderSession | null;
+}
+
+/** dev/126: one plan-node agent attachment an apply made (or could not). */
+export interface AgentAttachedAgentRow {
+  nodeId: string;
+  agentId: string;
+  attachmentId?: string | null;
+  status: "attached" | "existing" | "skipped" | string;
+  reason?: string;
 }
 
 /** dev/67-8 apply-edges response: per-edge outcomes + the bridge payload. */
@@ -948,6 +987,20 @@ export const agentsApi = {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-node`,
       { method: "POST", body: JSON.stringify({ ref }) },
+    );
+  },
+
+  /** dev/126: record the user's confirmed dataset selection for the node this
+   * Dataset Finder is attached to. The picks carry identifiers only — the
+   * server resolves them against the candidates it proposed. */
+  recordDatasetSelection(
+    projectId: string,
+    attachmentId: string,
+    picks: AgentDatasetPick[],
+  ): Promise<AgentDatasetSelection> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/dataset-selection`,
+      { method: "POST", body: JSON.stringify({ picks }) },
     );
   },
 

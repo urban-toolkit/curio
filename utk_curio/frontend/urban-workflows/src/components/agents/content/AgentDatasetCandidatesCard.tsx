@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import type {
   AgentDatasetCandidateRow,
   AgentDatasetCandidatesPart,
+  AgentDatasetPick,
+  AgentDatasetSelection,
 } from "../../../api/agentsApi";
 import styles from "./AgentDatasetCandidatesCard.module.css";
 import { VerificationChip } from "./verificationChip";
@@ -75,10 +77,56 @@ export const AgentDatasetCandidatesCard: React.FC<{
   onComposePrompt?: (prompt: string) => void;
   /** dev/114: the host agent's chat — decides the confirmation prompt's shape. */
   variant?: CandidatesVariant;
-}> = ({ part, tintClassName, onComposePrompt, variant = "finder" }) => {
+  /** dev/126: record the confirmed selection for the node this Dataset Finder
+   * is attached to. Present only there; without it the card keeps its
+   * dev/114 behavior exactly (select → prompt). */
+  onRecordSelection?: (picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
+}> = ({ part, tintClassName, onComposePrompt, variant = "finder", onRecordSelection }) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [recording, setRecording] = useState(false);
+  const [recorded, setRecorded] = useState<AgentDatasetSelection | null>(null);
+  const [recordError, setRecordError] = useState<string | null>(null);
 
   const rowKey = (lane: string, index: number) => `${lane}:${index}`;
+
+  /** The server addresses rows by identifier: a catalog row's datasetId, an
+   * external row's url. A row with neither cannot be confirmed. */
+  const picksFor = (keys: Set<string>): AgentDatasetPick[] => {
+    const out: AgentDatasetPick[] = [];
+    (["catalog", "external"] as const).forEach((lane) => {
+      (part.lanes[lane] ?? []).forEach((row, i) => {
+        if (!keys.has(rowKey(lane, i))) return;
+        const key = lane === "catalog" ? row.datasetId : row.url;
+        if (key) out.push({ lane, key });
+      });
+    });
+    return out;
+  };
+
+  const confirm = async () => {
+    if (!onRecordSelection || recording) return;
+    const picks = picksFor(selected);
+    if (!picks.length) return;
+    setRecording(true);
+    setRecordError(null);
+    try {
+      setRecorded(await onRecordSelection(picks));
+    } catch (e) {
+      setRecordError(e instanceof Error ? e.message : "the selection could not be recorded");
+    } finally {
+      setRecording(false);
+    }
+  };
+
+  const recordedNote = (selection: AgentDatasetSelection): string => {
+    if (selection.status === "resolved") {
+      return "Source recorded for this node — Solve it to build the loader from this source.";
+    }
+    if (selection.status === "awaiting-install") {
+      return "Source recorded — install the dataset from the Data Catalog, then Solve the node.";
+    }
+    return "Nothing selectable was confirmed — the runtime could not reach it. Pick another row.";
+  };
 
   const toggle = (lane: "external" | "catalog", index: number) => {
     const key = rowKey(lane, index);
@@ -154,6 +202,25 @@ export const AgentDatasetCandidatesCard: React.FC<{
           </ul>
         </div>
       ))}
+      {onRecordSelection ? (
+        <div className={styles.confirmRow}>
+          <button
+            type="button"
+            className={styles.confirm}
+            disabled={recording || picksFor(selected).length === 0}
+            title="Records this source for the node. Solve then builds the loader from exactly this source — nothing else is accepted."
+            onClick={() => void confirm()}
+          >
+            {recording ? "Recording…" : "Confirm source for this node"}
+          </button>
+          {recorded ? (
+            <span className={styles.recorded} role="status">{recordedNote(recorded)}</span>
+          ) : null}
+          {recordError ? (
+            <span className={styles.recordError} role="alert">{recordError}</span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 };

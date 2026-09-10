@@ -170,6 +170,9 @@ export const AgentDockOverlay: React.FC = () => {
               // delegated agent's chat; existence-checked against the live
               // list so a detached home never renders a dead link.
               onOpenAgentChat={ctx.openChat}
+              onRecordDatasetSelection={(picks) =>
+                ctx.recordDatasetSelection(selected.attachmentId, picks)
+              }
               delegateExists={(id) =>
                 ctx.attachments.some((a) => a.attachmentId === id)
               }

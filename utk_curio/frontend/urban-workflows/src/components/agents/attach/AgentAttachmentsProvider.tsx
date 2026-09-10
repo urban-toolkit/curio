@@ -11,6 +11,8 @@ import { useFlowContext } from "../../../providers/FlowProvider";
 import {
   agentsApi,
   type AgentApplyResult,
+  type AgentDatasetPick,
+  type AgentDatasetSelection,
   type AgentSessionTurn,
   type AgentUsage,
 } from "../../../api/agentsApi";
@@ -64,6 +66,12 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** dev/67-5: apply ONE planned node (Simulation Mode: create) — the
    * proposal stays pending; the created node reaches the live canvas. */
   applyPlanNode: (attachmentId: string, proposalId: string, ref: string) => Promise<void>;
+  /** dev/126: record the confirmed dataset selection for a node (through its
+   * Dataset Finder attachment) — what the node's next Solve reads. */
+  recordDatasetSelection: (
+    attachmentId: string,
+    picks: AgentDatasetPick[],
+  ) => Promise<AgentDatasetSelection>;
   /** dev/67-9: run the Simulation Mode driver (step or auto) — canvas
    * mutations from the stream apply live; resolves with the done payload. */
   runSimulation: (
@@ -483,6 +491,23 @@ export const AgentAttachmentsProvider: React.FC<{
         // Success appends the result turn + statuses; a 409 marked it stale —
         // either way the transcript and listing are the truth: refresh both
         // (dropping the once-guard so the session refetches).
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
+  const recordDatasetSelection = useCallback(
+    async (attachmentId: string, picks: AgentDatasetPick[]) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      try {
+        return await agentsApi.recordDatasetSelection(pid, attachmentId, picks);
+      } finally {
+        // The record lives on the attachment and the confirmation is logged
+        // as a turn: refresh both, exactly as an apply does.
         hydratedRef.current.delete(attachmentId);
         await hydrateSession(attachmentId);
         await state.reload();
@@ -991,6 +1016,7 @@ export const AgentAttachmentsProvider: React.FC<{
       solveNodeActivity,
       attachSolveJob,
       applyPlanNode,
+      recordDatasetSelection,
       savePlanGoal,
       applyPlanEdges,
       validateNode,
@@ -1027,6 +1053,7 @@ export const AgentAttachmentsProvider: React.FC<{
       solveNodeActivity,
       attachSolveJob,
       applyPlanNode,
+      recordDatasetSelection,
       savePlanGoal,
       applyPlanEdges,
       validateNode,

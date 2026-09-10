@@ -141,6 +141,11 @@ export const AgentChatPanel: React.FC<{
   /** dev/72: opens ANOTHER attachment's chat — the delegation entries' and
    * plan-row chips' icon-links route through this. Omitted → entries inert. */
   onOpenAgentChat?: (attachmentId: string) => void;
+  /** dev/126: record the confirmed dataset selection for this attachment's
+   * node (Dataset Finder on a node only). */
+  onRecordDatasetSelection?: (
+    picks: import("../../../api/agentsApi").AgentDatasetPick[],
+  ) => Promise<import("../../../api/agentsApi").AgentDatasetSelection>;
   /** dev/72: live-existence check for a delegation home (stale → no link). */
   delegateExists?: (attachmentId: string) => boolean;
   onSaveIntent?: (intent: string | null) => Promise<void>;
@@ -183,6 +188,7 @@ export const AgentChatPanel: React.FC<{
   solveNotices,
   onCancelSolve,
   onOpenAgentChat,
+  onRecordDatasetSelection,
   delegateExists,
   onSaveIntent,
   onSaveTitle,
@@ -576,6 +582,7 @@ export const AgentChatPanel: React.FC<{
       {onSolveNode && attachment.target.kind === "node" ? (
         <NodeSolveRow
           onSolveNode={onSolveNode}
+          onOpenChat={onOpenAgentChat}
           activity={solveNodeActivity}
           live={attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-node"}
         />
@@ -587,6 +594,7 @@ export const AgentChatPanel: React.FC<{
           solveProgress={solveProgress}
           solveErrors={solveErrors}
           solveRemedies={solveRemedies}
+          onOpenChat={onOpenAgentChat}
           solveWave={solveWave}
           solveNotices={solveNotices}
           onCancelSolve={onCancelSolve}
@@ -724,6 +732,16 @@ export const AgentChatPanel: React.FC<{
                         // the confirmation asks the builder to build.
                         variant={
                           attachment.coord.startsWith("agent.node-builder@") ? "builder" : "finder"
+                        }
+                        // dev/126: a Dataset Finder attached to a NODE can
+                        // record the confirmed source for it — that record is
+                        // what the node's next Solve reads.
+                        onRecordSelection={
+                          onRecordDatasetSelection &&
+                          attachment.coord.startsWith("agent.dataset-finder@") &&
+                          attachment.target.kind === "node"
+                            ? onRecordDatasetSelection
+                            : undefined
                         }
                       />
                     ))}

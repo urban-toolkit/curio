@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../api/agentsApi";
 import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
+import { OpenDatasetFinderAction } from "./OpenDatasetFinderAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { AgentRunStatusLine } from "./AgentRunStatusLine";
 import { BUILDER_TEMPLATES } from "./builderTemplates";
@@ -55,8 +56,13 @@ export const AgentBuilderStrip: React.FC<{
   /** dev/106: the live batch's per-node failure reasons (nodeId → text) —
    * rendered ONCE per distinct reason under the pills, never per node. */
   solveErrors?: Record<string, string>;
-  /** dev/116: the live batch's per-node remedies — rendered ONCE per host. */
+  /** dev/116: the live batch's per-node remedies — rendered ONCE per host.
+   * dev/126: a `dataset-selection` remedy is rendered per NODE instead (each
+   * one opens a different chat). */
   solveRemedies?: Record<string, AgentRemedy>;
+  /** dev/126: open a node's Dataset Finder chat (the awaiting-selection
+   * remedy's action). Omitted → the reason line stands alone. */
+  onOpenChat?: (attachmentId: string) => void;
   /** dev/118: the live batch's current wave — "solving wave 2 of 3 — 4 nodes". */
   solveWave?: AgentSolveWave;
   /** dev/118: per-node notices that are not errors — ONE line per distinct text. */
@@ -82,6 +88,7 @@ export const AgentBuilderStrip: React.FC<{
   solveProgress,
   solveErrors,
   solveRemedies,
+  onOpenChat,
   solveWave,
   solveNotices,
   onCancelSolve,
@@ -200,6 +207,11 @@ export const AgentBuilderStrip: React.FC<{
   const solveReasons = Array.from(new Set(Object.values(solveErrors ?? {}).filter(Boolean)));
   const solveNoticeLines = Array.from(new Set(Object.values(solveNotices ?? {}).filter(Boolean)));
   // dev/116: one action per host, whatever the number of nodes that need it.
+  // dev/126: one button per node awaiting a selection, deduplicated by the
+  // chat it opens (two nodes never share a Dataset Finder attachment).
+  const selectionRemedies = Object.entries(solveRemedies ?? {}).filter(
+    ([, r]) => r?.kind === "dataset-selection" && r.attachmentId,
+  );
   const remedies = Object.values(solveRemedies ?? {}).filter(
     (r, i, all) => r && r.host && all.findIndex((o) => o.kind === r.kind && o.host === r.host) === i,
   );
@@ -318,6 +330,20 @@ export const AgentBuilderStrip: React.FC<{
         <div className={styles.actions} role="group" aria-label="Missing connection keys">
           {remedies.map((r) => (
             <AddKeyAction key={`${r.kind}:${r.host}`} remedy={r} />
+          ))}
+        </div>
+      ) : null}
+      {selectionRemedies.length && onOpenChat ? (
+        <div className={styles.actions} role="group" aria-label="Nodes awaiting a dataset selection">
+          {selectionRemedies.map(([nodeId, r]) => (
+            <OpenDatasetFinderAction
+              key={r.attachmentId}
+              remedy={r}
+              onOpenChat={onOpenChat}
+              // One awaiting node needs no disambiguation; several do, and the
+              // short node id is what the pills above already show.
+              nodeLabel={selectionRemedies.length > 1 ? nodeId.slice(0, 8) : undefined}
+            />
           ))}
         </div>
       ) : null}

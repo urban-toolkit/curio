@@ -563,6 +563,71 @@ describe("AgentBuilderStrip — dev/116 missing connection keys", () => {
 });
 
 
+describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () => {
+  const remedy = (attachmentId: string) => ({
+    kind: "dataset-selection",
+    attachmentId,
+    nodeId: "n",
+  });
+
+  it("offers one button per node, each opening that node's Dataset Finder", () => {
+    const onOpenChat = jest.fn();
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "pending" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveErrors={{
+          a: "awaiting your dataset selection — 3 candidate(s) awaiting your selection",
+        }}
+        solveRemedies={{ a: remedy("att-a"), b: remedy("att-b") }}
+        onOpenChat={onOpenChat}
+      />,
+    );
+    // The reason is announced once, under the pills, as every reason is.
+    expect(screen.getByText(/awaiting your dataset selection/)).toBeInTheDocument();
+    const group = screen.getByRole("group", { name: "Nodes awaiting a dataset selection" });
+    const buttons = within(group).getAllByRole("button", { name: /Open Dataset Finder/ });
+    expect(buttons).toHaveLength(2);
+    // Two awaiting nodes are disambiguated by the short id the pills show.
+    expect(buttons[0]).toHaveAccessibleName(/Open Dataset Finder for a/);
+    fireEvent.click(buttons[0]);
+    expect(onOpenChat).toHaveBeenCalledWith("att-a");
+  });
+
+  it("a single awaiting node needs no disambiguation", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "pending" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveRemedies={{ a: remedy("att-a") }}
+        onOpenChat={jest.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Open Dataset Finder for this node" }),
+    ).toBeInTheDocument();
+    // A dataset-selection remedy is never rendered as a connection key.
+    expect(screen.queryByRole("group", { name: "Missing connection keys" })).toBeNull();
+  });
+
+  it("without a way to open a chat the reason stands alone", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "pending" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveErrors={{ a: "awaiting your dataset selection — 1 candidate(s)" }}
+        solveRemedies={{ a: remedy("att-a") }}
+      />,
+    );
+    expect(screen.queryByRole("group", { name: "Nodes awaiting a dataset selection" })).toBeNull();
+    expect(screen.getByText(/awaiting your dataset selection/)).toBeInTheDocument();
+  });
+});
+
+
 describe("AgentBuilderStrip — dev/118 waves, written kinds and notices", () => {
   it("names the wave on the status line while solving", () => {
     render(

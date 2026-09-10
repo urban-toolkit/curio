@@ -1195,4 +1195,114 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
     expect(seen).toEqual([{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }]);
     off();
   });
+
+  // dev/126: the awaiting-selection remedy — the twin of the key remedy. The
+  // node's source is with the user, so the row offers the chat that holds the
+  // candidates instead of a failure message with advice in it.
+  it("an awaiting-source outcome offers the node's Dataset Finder", async () => {
+    const onOpenAgentChat = jest.fn();
+    const onSolveNode = jest.fn().mockResolvedValue({
+      verdict: "awaiting-source",
+      rounds: 3,
+      remedy: { kind: "dataset-selection", attachmentId: "att-df", nodeId: "n1" },
+    });
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.node-builder@1.0.0",
+        name: "Node Builder",
+        target: { kind: "node" as const, targetId: "n1" },
+      },
+      targetName: "Data Loading",
+      onSolveNode,
+      onOpenAgentChat,
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    const open = await within(row).findByRole("button", {
+      name: "Open Dataset Finder for this node",
+    });
+    expect(within(row).getByRole("status")).toHaveTextContent(/Awaiting a source/);
+    expect(within(row).getByRole("status")).toHaveTextContent(/Nothing was generated or written/);
+    fireEvent.click(open);
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-df");
+  });
+
+  it("a Dataset Finder on a node can record the confirmed source", async () => {
+    const onRecordDatasetSelection = jest
+      .fn()
+      .mockResolvedValue({ attachmentId: "att-df", nodeId: "n1", status: "resolved", picks: [] });
+    renderPanel({
+      attachment: {
+        ...attachment,
+        attachmentId: "att-df",
+        coord: "agent.dataset-finder@1.0.0",
+        name: "Dataset Finder",
+        target: { kind: "node" as const, targetId: "n1" },
+      },
+      turns: [
+        {
+          role: "agent" as const,
+          text: "2 candidates",
+          content: [
+            {
+              type: "datasetCandidates" as const,
+              lanes: {
+                external: [
+                  {
+                    name: "Chicago areas",
+                    sourceType: "portal",
+                    url: "https://data.example.org/areas.geojson",
+                  },
+                ],
+                catalog: [],
+              },
+            },
+          ],
+        },
+      ],
+      onRecordDatasetSelection,
+    });
+    const card = screen.getByRole("group", { name: "Dataset candidates" });
+    const confirm = within(card).getByRole("button", { name: /Confirm source for this node/ });
+    expect(confirm).toBeDisabled();  // nothing selected yet
+    fireEvent.click(within(card).getByRole("checkbox", { name: "Select Chicago areas" }));
+    fireEvent.click(confirm);
+    await screen.findByText(/Source recorded for this node/);
+    // Identifiers ONLY: the server resolves the url against its own rows.
+    expect(onRecordDatasetSelection).toHaveBeenCalledWith([
+      { lane: "external", key: "https://data.example.org/areas.geojson" },
+    ]);
+  });
+
+  it("a Dataset Finder on the canvas offers no per-node confirm", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.dataset-finder@1.0.0",
+        name: "Dataset Finder",
+        target: { kind: "canvas" as const },
+      },
+      turns: [
+        {
+          role: "agent" as const,
+          text: "candidates",
+          content: [
+            {
+              type: "datasetCandidates" as const,
+              lanes: {
+                external: [{ name: "Chicago areas", sourceType: "portal" }],
+                catalog: [],
+              },
+            },
+          ],
+        },
+      ],
+      onRecordDatasetSelection: jest.fn(),
+    });
+    const card = screen.getByRole("group", { name: "Dataset candidates" });
+    expect(
+      within(card).queryByRole("button", { name: /Confirm source for this node/ }),
+    ).toBeNull();
+  });
 });

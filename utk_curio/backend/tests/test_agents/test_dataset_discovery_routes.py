@@ -274,3 +274,93 @@ class TestConfirmedSourceReachesTheBuilder:
         assert "confirmedSource" in frame
         assert "https://data.example.org/areas.geojson" in frame
         assert len(h.discover_calls) == 1  # resolved: no second discovery
+
+
+class TestSelectionEndpoint:
+    """dev/126: the client sends KEYS; the server resolves them against the
+    candidates it proposed itself."""
+
+    def _await_candidates(self, client, user, token, monkeypatch, **kw):
+        h = _Harness(client, user, token, monkeypatch, **kw)
+        h.solve()
+        return h, h.finder_attachment_id()
+
+    def _select(self, h, finder_id, picks):
+        return h.client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{finder_id}/dataset-selection",
+            json={"picks": picks}, headers=_auth(h.token),
+        )
+
+    def test_a_confirmed_external_row_is_recorded_and_re_probed(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h, finder_id = self._await_candidates(client, user, token, monkeypatch)
+        probed: list = []
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **k: (probed.append(url), {"status": "verified", "detail": "200"})[1],
+        )
+        r = self._select(h, finder_id, [
+            {"lane": "external", "key": "https://data.example.org/areas.geojson"},
+        ])
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        assert body["status"] == dr.STATE_RESOLVED
+        assert body["nodeId"] == h.load
+        assert probed == ["https://data.example.org/areas.geojson"]  # re-probed NOW
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_RESOLVED
+        turn = next(
+            t for t in reversed(h.session_turns(finder_id))
+            if (t.get("text") or "").startswith("Source recorded")
+        )
+        assert "Chicago community areas" in turn["text"]
+
+    def test_a_key_the_runtime_never_proposed_is_refused(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h, finder_id = self._await_candidates(client, user, token, monkeypatch)
+        r = self._select(h, finder_id, [
+            {"lane": "external", "key": "https://evil.example.net/steal.json"},
+        ])
+        assert r.status_code == 422
+        assert "not a external candidate" in r.get_json()["error"]
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+
+    def test_an_unreachable_pick_does_not_resolve_the_node(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h, finder_id = self._await_candidates(client, user, token, monkeypatch)
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **k: {"status": "unreachable", "detail": "404"},
+        )
+        body = self._select(h, finder_id, [
+            {"lane": "external", "key": "https://data.example.org/areas.geojson"},
+        ]).get_json()
+        assert body["status"] == dr.STATE_CANDIDATES_PENDING
+        assert body["picks"][0]["verification"]["status"] == "unreachable"
+
+    def test_a_selection_on_the_wrong_attachment_is_refused(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h, _finder_id = self._await_candidates(client, user, token, monkeypatch)
+        r = self._select(h, h.att, [{"lane": "external", "key": "x"}])
+        assert r.status_code == 400
+        assert "Dataset Finder attachment" in r.get_json()["error"]
+        assert self._select(h, "ghost", [{"lane": "external", "key": "x"}]).status_code == 404
+
+    def test_the_body_must_carry_picks(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h, finder_id = self._await_candidates(client, user, token, monkeypatch)
+        r = h.client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{finder_id}/dataset-selection",
+            json={}, headers=_auth(h.token),
+        )
+        assert r.status_code == 400
+        assert "picks" in r.get_json()["error"]

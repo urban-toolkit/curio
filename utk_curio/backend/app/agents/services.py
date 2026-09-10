@@ -979,6 +979,102 @@ def update_attachment_title(
     return _attachment_card(spec, record, user_key)
 
 
+def record_dataset_selection(
+    user_key: str, project_id: str, attachment_id: str, picks: object
+) -> dict:
+    """dev/126: record the user's confirmed dataset selection for a node.
+
+    The picks are ``{lane, key}`` pairs — a catalog row's ``datasetId`` or an
+    external row's ``url`` — resolved against the LATEST ``datasetCandidates``
+    part persisted in this attachment's own session. The client therefore sends
+    identifiers only: a source the runtime never proposed (and never probed)
+    cannot enter through this endpoint. External picks are re-probed at
+    confirmation time through the ``DEC-053`` chokepoint, and the verdict is
+    what the record keeps — an unreachable pick does not resolve the node.
+    """
+    from utk_curio.backend.app.agents import dataset_resolution
+
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    if record.get("coord", "").split("@", 1)[0] != dataset_resolution.FINDER_AGENT_ID:
+        raise AgentServiceError(
+            "a dataset selection belongs to a Dataset Finder attachment", 400
+        )
+    target = record.get("target") or {}
+    if target.get("kind") != "node":
+        raise AgentServiceError(
+            "a dataset selection belongs to a Dataset Finder attached to a node", 400
+        )
+    session_id = record.get("sessionId")
+    turns = (
+        sessions.read_turns(user_key, project_id, session_id)
+        if isinstance(session_id, str) else []
+    )
+    part = next(
+        (
+            p for turn in reversed(turns) for p in (turn.get("content") or [])
+            if isinstance(p, dict) and p.get("type") == "datasetCandidates"
+        ),
+        None,
+    )
+    try:
+        rows = dataset_resolution.resolve_picks(part, picks)
+    except dataset_resolution.DatasetResolutionError as exc:
+        raise AgentServiceError(str(exc), 422) from exc
+    # Re-probe the external picks: the card may be minutes or days old, and the
+    # record must carry what is true NOW (the row keeps its own mint-time
+    # verdict in the transcript either way).
+    budget = egress.CallBudget(_RUN_EGRESS_CALLS)
+    for row in rows:
+        if row["lane"] == "external" and row.get("url"):
+            row["verification"] = verify.verify_external_source(row["url"], budget=budget)
+    with projects_storage.spec_write_lock(user_key, project_id):
+        fresh = _read_spec_or_404(user_key, project_id)
+        state = dataset_resolution.record_selection(fresh, attachment_id, rows)
+        if state is None:
+            raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
+        projects_storage.write_spec(user_key, project_id, fresh)
+    if isinstance(session_id, str):
+        try:
+            names = ", ".join(str(r.get("name") or r.get("datasetId") or r.get("url")) for r in rows)
+            lines = [
+                f"{r['lane']} · {r.get('name') or r.get('datasetId') or r.get('url')}"
+                + (f" · {(r.get('verification') or {}).get('status')}"
+                   if r["lane"] == "external" else
+                   (" · installed" if r.get("installed") else " · not installed yet"))
+                for r in rows[:8]
+            ]
+            sessions.append_turns(
+                user_key, project_id, session_id, attachment_id,
+                [sessions.make_turn(
+                    "agent",
+                    f"Source recorded for this node: {names}."
+                    + (" The dataset must be installed from the Data Catalog before "
+                       "Solve can load it."
+                       if state["status"] == dataset_resolution.STATE_AWAITING_INSTALL else
+                       " Solve the node to build its loader from this source."
+                       if state["status"] == dataset_resolution.STATE_RESOLVED else
+                       " Nothing selectable was confirmed — the runtime could not reach it."),
+                    content=[{
+                        "type": "card",
+                        "kind": "result" if state["status"] != dataset_resolution.STATE_CANDIDATES_PENDING
+                        else "error",
+                        "title": "Dataset selection recorded",
+                        "lines": lines,
+                    }],
+                )],
+            )
+        except Exception:  # noqa: BLE001
+            log.warning("Could not log the dataset selection for %s", attachment_id,
+                        exc_info=True)
+    return {
+        "attachmentId": attachment_id,
+        "nodeId": target.get("targetId"),
+        "status": state["status"],
+        "picks": rows,
+    }
+
+
 def _record_or_404(spec: dict, attachment_id: str) -> dict:
     record = attachments.get_attachment(spec, attachment_id)
     if record is None:
@@ -3519,13 +3615,21 @@ def _apply_dataset_install(
     spec = _read_spec_or_404(user_key, project_id)
     proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
     proposal["status"] = "applied"
+    # dev/126: a node that was waiting for exactly this dataset is resolved by
+    # this install — the reviewed lane is what "awaiting-install" waited for.
+    from utk_curio.backend.app.agents import dataset_resolution
+
+    resolved_nodes = dataset_resolution.mark_dataset_installed(spec, dataset_id)
     projects_storage.write_spec(user_key, project_id, spec)
     name = str(item.get("title") or dataset_id)
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
         f"Applied: dataset installed ({name}).",
         "Applied: dataset installed",
-        [name, dataset_id, f"proposal {proposal_id[:8]}"],
+        [name, dataset_id,
+         *([f"{len(resolved_nodes)} node(s) waiting for it can now be solved"]
+           if resolved_nodes else []),
+         f"proposal {proposal_id[:8]}"],
     )
     return {
         "attachmentId": attachment_id,

@@ -474,6 +474,35 @@ def update_attachment(project_id: str, attachment_id: str):
 
 
 @agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/dataset-selection",
+    methods=["POST"],
+)
+@require_auth
+def record_dataset_selection(project_id: str, attachment_id: str):
+    """dev/126: record the confirmed dataset selection for this node.
+
+    ``{"picks": [{"lane": "catalog"|"external", "key": "<datasetId>|<url>"}]}``
+    — identifiers only, resolved server-side against the candidates the runtime
+    itself proposed in this attachment's session; anything else is a 422. The
+    node's next Solve reads the record instead of asking the model what the
+    user picked.
+    """
+    body = request.get_json(silent=True) or {}
+    if "picks" not in body:
+        return _error("body must include 'picks'")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.record_dataset_selection(
+            _user_dir_key(g.user), project_id, attachment_id, body.get("picks")
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
     "/projects/<project_id>/attachments/<attachment_id>/session", methods=["GET"]
 )
 @require_auth
