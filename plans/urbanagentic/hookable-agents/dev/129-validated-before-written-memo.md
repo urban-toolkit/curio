@@ -1,7 +1,18 @@
 # dev/129 — Nothing unvalidated reaches a node, nothing stops trying before its budget, and every recorded execution error feeds the fix
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `7f2b0baf`. Every line number and every
-piece of evidence below was read on that commit.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-65`, and **no new
+`DEC`**: it applies `DEC-075`'s honesty rule where dev/118 left it permissive, `DEC-063`'s
+supply-the-input rule, `DEC-072`'s pre-sandbox refusal shape and `DEC-052`'s journal. Six commits:
+`19696d10` (this memo), `46660444` (the document validators and the write gate), `f2495657` (time
+is the bound), `e7c05fe4` (the journal as an input to resolution), `71b2760d` (the dev/111 port),
+plus a tracking commit for the prompts, docs and ledgers. Every line number and every piece of
+evidence below was read on `7f2b0baf`.**
+
+**Suites: `tests/test_agents` + `tests/test_execution` 2392 passed (2363 before);
+`tests/test_projects` 304; jest 2412 across 207 suites; `tsc --noEmit` clean.**
+
+**Two things changed from the plan while building — §12 — and the loose end the owner asked about
+(§0) is closed on this branch by commit 5.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `7f2b0baf` (dev/128 commit 5).
@@ -374,3 +385,25 @@ either written valid or reported unwritten with the validator's reason.
   in the input schema") is a candidate for the same gate.
 - **F4** dev/128 F1 (a tuple-returning code upstream) and F3 (an unconnected merge slot) remain.
 - **F5** Owner live re-run of `00708324` and `623b6620`.
+
+---
+
+## 12. What changed while building
+
+1. **The attempt cap did not become a "target"; it became a ceiling ABOVE the budget.** §3C
+   proposed reporting a configured attempt target while letting the clock run past it. Implemented
+   differently, because the suite proved the first shape wrong: every pre-dev/127 test pins the
+   attempt count to bound its scripted replies, and a loop that ignored the cap read replies nobody
+   wrote (one test started passing on the fallback). So `CURIO_SOLVE_MAX_ATTEMPTS` stays a REAL cap
+   and its default moves to 40 — above what a quarter hour of rounds affords — which makes the
+   clock the normal stop without taking the bound away from a deployment or a test.
+2. **A repeat escalates with a hard stop at eight, not "only an implausible run".** The memo left
+   the hard count vague; the implementation names it (`_MAX_REPEATED_ATTEMPTS_HARD = 8`) and
+   rewrites the correction's text at each repeat, so the escalation is visible in the trail rather
+   than implicit in the prompt.
+
+Everything else in §3 landed as written: the three-answer validator routed by canonical template
+id, the invalid document as a ROUND (inheriting the trail, the budget and the correction contract),
+the unchecked document NOT written with the node left pending, the verification chip's stronger
+claim, `runtime_journal.last_failure` with the digest match that refuses to "fix" code the node no
+longer holds, and the dev/111 port with its two rules intact.
