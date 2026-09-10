@@ -617,21 +617,63 @@ Three things the harness will not do:
   code. The Generated Content Evaluator remains advisory and has no authority
   here, and a candidate never judges itself.
 
+### Evaluation mode
+
+The place to ask it is **AI Settings → Evaluation mode**, because that is where
+the model is chosen. Pick an example, read the prompt that will be sent, and
+run it.
+
+What happens is the ordinary product, not a test harness: the run creates a
+**project of its own** (yours is untouched), installs and attaches the Dataflow
+Builder through the normal install flow with the agents it requires, sends the
+prompt through the normal runtime with **your** configured model, applies the
+plan through the same endpoint the Apply button uses, and solves. Then the
+dataflow it built is compared with the saved example — server-side, so the
+reference never reaches the model. The panel names each step while it happens
+(*waiting for the model*, *solving the nodes*), and the run keeps going if you
+close the panel.
+
+Applying a plan without you clicking is an automated approval, so it is granted
+narrowly rather than quietly: only inside the project that run created, only
+for the plan and the installs the example requires, refused for anything a
+person should decide, and recorded per apply. Your normal review policy is
+unchanged everywhere else.
+
+When it finishes you get the overall accuracy, a score per category, the
+failure categories, and a link to **the project it built** — the graph is how
+you understand the number. An unmeasured category says so rather than reading
+as zero.
+
+A model configured by the launcher counts: if the deployment was started with
+`--llm-provider`, `--llm-base-url` and `--llm-model`, the panel says so and runs
+against it. With nothing configured anywhere it says so and offers no Run.
+
+**Approving a prompt happens here too.** Each prompt was drafted by a model and
+needs a person's approval before it can be exported; the panel that shows you
+the prompt is where you record that, and where you can withdraw it.
+
 ```bash
 # the deterministic tiers (offline, no stack, seconds)
-pytest utk_curio/backend/tests/test_agents/test_example_fixtures.py        utk_curio/backend/tests/test_agents/test_example_reconstruction.py
+pytest utk_curio/backend/tests/test_agents/test_example_fixtures.py \
+       utk_curio/backend/tests/test_agents/test_example_reconstruction.py \
+       utk_curio/backend/tests/test_agents/test_evaluation_service.py
 
 # what the fixtures say
 python -m utk_curio.tools.agent_eval list
 
-# a live evaluation against a running stack, with your own model
+# the same evaluation against a REMOTE stack, from a terminal
 export CURIO_EVAL_LIVE=1
 python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
 ```
 
-The report lands in `.curio/eval/<runId>/` as `report.json` (the machine
-record: provider, model, prompt and instruction digests, attempts, latency,
-token usage, redacted transcripts, the generated dataflow, the diff, the score
+A run started from the panel is recorded per account under
+`.curio/users/<key>/agents/evaluation/`, with the fixture, the provider and
+model, the prompt and agent digests, the generated project id, the phases it
+went through, its latency and token usage, the comparison and the score — and
+never a key. The command-line runner writes its own report to
+`.curio/eval/<runId>/` as `report.json` (the machine record: provider,
+model, prompt and instruction digests, attempts, latency, token usage,
+redacted transcripts, the generated dataflow, the diff, the score
 and its failure categories) and `report.md` (the same thing as a table). No USD
 figure is computed unless you supply a rate, for the same reason the usage
 ledger computes none: Curio has no price table and would have to invent the

@@ -279,6 +279,20 @@ pytest utk_curio/backend/tests/test_agents/test_fine_tuning_provider.py \
 A real fine-tune is owner-run: it costs money, takes hours, and needs an
 endpoint that offers the feature.
 
+**Evaluation mode** (AI Settings → Evaluation mode, memo `dev/123`) runs an
+example through the real lifecycle with the configured model. Its whole
+orchestration — the isolated project, the required-closure install, the narrow
+automated approval, the phases, the record — is covered offline against the
+scripted provider:
+
+```bash
+pytest utk_curio/backend/tests/test_agents/test_evaluation_service.py \
+       utk_curio/backend/tests/test_agents/test_evaluation_policy.py
+```
+
+Real-provider evaluations are user-triggered from the panel and never part of
+default CI.
+
 ### Frontend Unit Tests
 
 The frontend uses Jest and React Testing Library for component and TypeScript unit tests.
