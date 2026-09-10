@@ -279,6 +279,20 @@ pytest utk_curio/backend/tests/test_agents/test_fine_tuning_provider.py \
 A real fine-tune is owner-run: it costs money, takes hours, and needs an
 endpoint that offers the feature.
 
+**Saving a project** goes through a guard (memo `dev/124`): every write of a
+spec bumps a counter at the one chokepoint that writes it, a client sends the
+revision it last synced with as `baseRevision`, and a save whose basis is stale
+**and** which would delete a node, an edge or a node's code that exists on disk
+is refused with 409. A caller that sends no basis is not checked, which is why
+scripts and tests keep working unchanged. If you add a path that writes a
+project spec, you get the counter for free; if you add a client that saves one,
+send the basis.
+
+```bash
+pytest utk_curio/backend/tests/test_projects/test_save_concurrency.py \
+       utk_curio/backend/tests/test_projects/test_routes.py
+```
+
 **Evaluation mode** (AI Settings → Evaluation mode, memo `dev/123`) runs an
 example through the real lifecycle with the configured model. Its whole
 orchestration — the isolated project, the required-closure install, the narrow

@@ -375,9 +375,10 @@ in the kept project. Both are tests.
   without Curio drawing a conclusion.
 - **F6 — fine-tuning stays dev/122's.** Untouched by this phase, as instructed;
   §0 records the relationship to the correction's "next capability" line.
-- **F7 — a client save carries no revision basis.** `update_project` takes the
-  client's graph verbatim, so any canvas that loaded a project before a
-  server-side write erases that write on its next save. F-f closes it for
-  evaluation projects only, with a rule that knows what an evaluation is. The
-  general fix is optimistic concurrency — the loaded `spec_revision` sent back
-  and a 409 on drift — which touches every save path and wants its own memo.
+- **F7 — a client save carries no revision basis.** ~~Open.~~ **CLOSED
+  2026-09-10 by dev/124.** Not by optimistic concurrency as guessed here: a
+  stale basis alone cannot refuse, because this canvas hears about an apply
+  through a live event and stays stale while its content is current. dev/124
+  refuses *loss* instead — a stale basis plus a payload that would drop a node
+  or edge on disk or blank a node's code — and the evaluation-only clause F-f
+  added is retired into it.

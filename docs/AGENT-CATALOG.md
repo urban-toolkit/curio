@@ -650,9 +650,10 @@ Open it and the dataflow is on the canvas, and the Dataflow Builder's own chat
 there carries the whole run: the prompt, the plan it proposed, what was
 applied, what Solve verified, and the report. That transcript stays with the
 project. The graph an evaluation built is protected from being erased by a
-canvas that was open before the run finished — such a save is refused and asks
-you to reload — while editing a finished evaluation project is otherwise yours
-to do.
+canvas that was open before the run finished, and so is every other project's:
+a save that would delete a node, a connection or a node's code that the browser
+never saw is refused, and says what would be lost and to reload (memo
+`dev/124`). Editing is otherwise yours to do.
 
 A model configured by the launcher counts: if the deployment was started with
 `--llm-provider`, `--llm-base-url` and `--llm-model`, the panel says so and runs

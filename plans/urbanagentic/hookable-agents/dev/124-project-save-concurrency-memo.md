@@ -1,8 +1,15 @@
 # dev/124 — A save may not delete what it never saw: revision-aware project writes
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` — closes dev/123 F7. Proposes no new
-`DEC` unless the owner wants one; this is the general form of a rule `DEC-079` already states
-for evaluation projects, and it retires that special case rather than adding a second one.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — closes dev/123 F7. No new `DEC`
+minted; this is the general form of a rule `DEC-079` already stated for evaluation projects,
+and it retires that special case rather than adding a second one. Five commits: `71f49d9a`
+(the counter at the write chokepoint), `8214eaca` (the rule, pure), `0b93c8f0` (the check on
+save, and the evaluation clause narrowed), `ebcaa85a` (the client's basis), and the docs and
+ledgers. Suites: `tests/test_projects` 304, `tests/test_agents` 2146, `tests/test_datasets`
+465, `tests/test_packages` green but for one pre-existing unrelated failure
+(`test_teardown_preserves_an_empty_pythonpath_entry`); jest 2382 across 205 suites; `tsc
+--noEmit` clean. Three things changed from the plan while building — the counter's home, the
+toast's Reload button, and what the retirement costs — and each is marked **§11** below.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `2e9918a6` (dev/123 closed, including its two live-run
@@ -82,8 +89,8 @@ than an edge case.
   much larger feature and this memo's rule is designed so it is not needed for correctness —
   see §3.3.
 - **The shared/viewer path** (`loadSharedProject`) — read-only already.
-- **`spec_revision` in the Projects list.** It keeps reading what it reads today; §6 records
-  the cosmetic lag that leaves.
+- ~~**`spec_revision` in the Projects list.**~~ Brought in after all: it reads the same
+  counter, so the field means one thing everywhere (§6).
 - Node-level history, undo, or per-field provenance.
 
 ---
@@ -94,16 +101,15 @@ than an edge case.
 
 `storage.write_spec` is the single place a spec reaches disk — 50 call sites across the
 projects, agents, packages, datasets and seed domains funnel through it, and nothing writes
-`spec.trill.json` directly. So the counter lives in the spec and is bumped there:
+`spec.trill.json` directly. So the counter is bumped there.
 
-```python
-SPEC_REVISION_KEY = "specRevision"
-
-def write_spec(user_key, project_id, spec) -> Path:
-    payload = dict(spec or {})
-    payload[SPEC_REVISION_KEY] = int(payload.get(SPEC_REVISION_KEY) or 0) + 1
-    ...
-```
+**Not inside the spec** (§11 A): a client sends the whole document back, so a number inside it
+is a number the client can reset — and the first cut, which bumped the incoming payload's
+value, reset the count on every save. It lives in a one-line file beside the spec
+(`.spec.rev`), which also means reading it costs no parse of the previous document, and
+nothing downstream — the trill schema, an export, a copy — grows a field it has no use for.
+The bump happens **before** the spec is written, so a crash between the two leaves the counter
+ahead rather than behind: a needless reload rather than a silent overwrite.
 
 Consequences, stated plainly because they are the whole design:
 
@@ -200,8 +206,10 @@ write would replace. Server-side callers of `update_project` (the dataset uninst
 
 ## 5. UI and UX Requirements
 
-- A conflict raises a toast carrying the sentence from §3.4 and a **Reload** action; the canvas
-  is left as the user has it.
+- A conflict raises a toast carrying the sentence from §3.4; the canvas is left as the user has
+  it. No **Reload** button (§11 B): `showToast` takes a message and a variant, and adding an
+  action slot to a provider every screen uses is not worth it for a sentence that already says
+  what to do.
 - An auto-save that conflicts (a dataset install chaining a save) shows the same toast rather
   than failing quietly — it is the same loss.
 - No new control, no new setting, nothing on the happy path: a save that is fine looks exactly
@@ -226,9 +234,9 @@ write would replace. Server-side callers of `update_project` (the dataset uninst
   added; otherwise both land, last-writer-wins on positions, as today.
 - **A node whose content the user legitimately clears** on a *current* basis: allowed — the
   check needs staleness too.
-- **`spec_revision` in the Projects list** now lags what the detail reports, because the list
-  reads the manifest and a background write does not rewrite the manifest. Cosmetic; recorded
-  so the next reader does not treat it as a bug.
+- **`spec_revision` in the Projects list** reads the same counter as the detail, so the field
+  means one thing across the API. The memo had planned to leave the list lagging; reading one
+  small file per row was cheaper than the caveat.
 
 ---
 
@@ -299,3 +307,34 @@ without the guard.
 - Refusals name what would be lost and what to do about it.
 - Additive on the wire: a caller that sends no basis is unaffected, which is what keeps this
   from breaking scripts and tests.
+
+---
+
+## 11. What implementing it turned up
+
+**A. A counter inside the document is a counter the client owns.** The plan put `specRevision`
+in the spec, and the first implementation bumped whatever the incoming payload carried — so a
+client save, which sends a spec with no counter at all, reset the count to 1 every time. Three
+project tests caught it immediately. Making it `max(disk, payload) + 1` would have worked and
+would have meant parsing the previous document on every write to read one integer. The
+one-line sidecar is cheaper, cannot be set by a client, and keeps the spec exactly as it was —
+which also meant every existing test that round-trips a spec kept passing untouched.
+
+**B. The toast has no room for an action.** `showToast(message, variant)` is the whole API.
+The refusal sentence names what would be lost and says to reload, which is the actionable part;
+a button would have meant an action slot on a provider every screen uses.
+
+**C. The retirement is not free, and the tests say so.** dev/123's clause refused a wipe of a
+run-built graph *whatever the client sent*; the general rule needs a basis, because without one
+it cannot tell loss from a deliberate delete. So a client that sends no basis can still empty
+an evaluation project — the escape that keeps scripts, tests and the internal dataset-uninstall
+caller working. The canvas always sends one, so the real path is covered, and dev/123's
+reproduction now runs the sequence it always described: the canvas opens an empty project, the
+run applies its graph, the canvas saves what it was holding. Requiring a basis for evaluation
+projects specifically was considered and rejected: the internal uninstall caller passes none,
+and a user uninstalling a dataset from a kept evaluation project would have started getting 409s.
+
+**D. What this does not close.** A save with a *current* basis still overwrites node content
+freely, which is right — that is editing. And the window between a read and a save is not
+locked: two clients whose saves both add are still last-writer-wins on positions. Neither loses
+work a client never saw, which is the promise made here.
