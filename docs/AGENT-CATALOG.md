@@ -332,6 +332,25 @@ install, and the applied install then says how many nodes it unblocked. A row
 the runtime cannot reach at confirmation time is recorded with that verdict and
 does **not** resolve the node.
 
+Every external row also says what you can **do** with it (memo dev/132), read
+from the same probe — never from the model's prose:
+
+| The row's access | What the card offers |
+|---|---|
+| **fetchable** — the data URL answered with data (JSON, GeoJSON, CSV, an archive) | Confirming it starts this node's own builder on it immediately. There is no prompt to compose: the loader is written, verified and lands as the ordinary reviewed content, and the card says the builder is writing it now. |
+| **manual-download** — the data URL answered with a *page*, or gated it (401/403/451) | The card carries the portal's download steps (its URL, the page as it actually answered, the file format, the row's stated requirement) and an **Import dataset** button — the same Data Catalog import as the drawer footer and the catalog page. After the import, that dataset becomes the node's source and the builder starts on it, by id. |
+| **unknown** — nothing was probed, the policy refused the URL, or the answer was neither | The row says so, and nothing upgrades it silently. |
+
+The steps are the portal's, not Curio's invention: when a page title is all the
+portal gave, the step says the portal describes the click path. Automating the
+download itself is deliberately not done — a click-through portal is a browser
+task, and scripting one is both brittle and often against its terms.
+
+A dataset you import or install *while* a Solve session is running is picked up
+by it: the moved selection record is what the session watches for, and the
+dataset's sandbox path is resolved for the running job rather than waiting for
+the next Solve.
+
 The Dataflow Builder therefore plans first and never blocks a plan on dataset
 identity: a data-loading node is planned with an honest intent naming the DATA
 it needs, and its source is resolved at the node.

@@ -1,7 +1,12 @@
 # dev/132 — The Dataset Finder closes its own loop: delegate the fetch automatically, or teach the manual download with an Import button, then hand the just-imported dataset to the builders
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `61ec9013`. Every line number below was
-read on that commit.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-67`, and **no new
+`DEC`**: `DEC-047`'s hand-off keeps its review gate (the delegation produces the same reviewed
+content Solve already produces) and `DEC-053`'s "the runtime records the verdict" is what the
+access classification IS. Commits `653fa934` (the access verdict + the steps), `25c6a409` (the
+automatic delegation), `f3f2eca3` (the card, the shared Import, the imported dataset as the
+source), `48108ff3` (dev/131 F4), and this docs commit. Every line number below was read on
+`61ec9013`.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `61ec9013` (dev/131's tracking commit).
@@ -193,3 +198,40 @@ own metadata. (5) No new import path, no bypassed review, no scripted portal dow
   finds a direct data URL (dev/130's web search)? Probably yes, and it belongs there.
 - **F3** An OSM PBF import fans out to one dataset per layer; the card must ask which layer the node
   needs. Bounded UI question, worth its own small design.
+
+---
+
+## 7. What changed while building
+
+1. **dev/130 was NOT needed first.** §2 named dev/130's `validate_api_connection` as the source of
+   the access verdict; it turned out dev/67-4's probe already observes everything the split needs
+   (content type, HTTP status, the page title of a non-data answer), so `classify_access` is a pure
+   function of one existing observation and dev/130 stays independent. Nothing here waits on it.
+2. **The delegation is the per-node Solve, not a new lane.** The memo said "the node's Node Builder
+   is asked… and the result arrives as the ordinary reviewed content"; the honest way to get all of
+   that — grounding, the recorded source, the input contract, document and execution verification,
+   `DEC-006`'s review for a node that already has content — is to start the SAME detached per-node
+   Solve the user's own button starts. So the endpoint starts that job and reports what it did:
+   `delegating`, `session-running` (dev/131's session owns the node; two builders would race for its
+   content), `manual-download`, `no-builder` or `skipped` with the reason.
+3. **An imported dataset resolves the node instead of waiting for an install.** dev/126 routes a
+   not-installed catalog pick to `awaiting-install`, which for a file the user has just imported
+   would be a second, unexplained step. A pick the user brought in themselves after the card was
+   minted is marked `imported` and resolves: its file is in their own account store and
+   `curio_dataset_path("<id>")` resolves it. The reviewed install lane adds a dataset to the
+   DATAFLOW — a separate act, not what reading the file needs. Card-listed uninstalled rows keep
+   dev/126's rule exactly.
+4. **`resolve_picks` grew a second grounding source, deliberately.** The card is older than the
+   imported file, so an unmatched CATALOG key is resolved against the runtime's own Data Catalog
+   listing (the same one `catalog.search` serves and `DEC-072` grounds against, read in the request
+   context). The client still sends identifiers only, and a key the catalog does not have is still
+   a 422 — the rule "a selection cannot introduce a source the runtime never saw" holds.
+5. **The provider's toast had to become optional.** The shared import reports through
+   `useToastContext`, which throws outside a `ToastProvider` — and the attachments provider is
+   rendered bare in 47 of its own tests. `useOptionalToastContext` is the narrow addition.
+6. **dev/131 F4 is closed here** (§3D's option): the acting user is captured at both Solve entry
+   points and the path mapping is topped up lazily for an id the eager pass never saw.
+
+Not done, and not in scope: automating a portal download (§2 said so and it stands), a second
+import pathway, and dev/130's web search (F2 — a Researcher search that finds a direct data URL
+could turn a `manual-download` row `fetchable`, and belongs there).
