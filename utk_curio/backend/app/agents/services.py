@@ -1995,6 +1995,34 @@ def _attach_plan_node_agents(
     }
 
 
+def _attached_agent_lines(*results: dict) -> list[str]:
+    """The applied card's truthful account of the agents an apply attached
+    (dev/126): one line naming each agent and how many nodes carry it, plus a
+    line for anything that could not be attached, with its reason."""
+    counts: dict[str, int] = {}
+    skipped: dict[str, str] = {}
+    for result in results:
+        for row in result.get("attached") or []:
+            counts[row["agentId"]] = counts.get(row["agentId"], 0) + 1
+        for row in result.get("skipped") or []:
+            skipped.setdefault(row["agentId"], row.get("reason") or "skipped")
+    lines: list[str] = []
+    if counts:
+        lines.append("agents attached: " + " · ".join(
+            f"{_agent_label(a)} ×{n}" if n > 1 else _agent_label(a)
+            for a, n in sorted(counts.items())
+        ))
+    for agent_id, reason in sorted(skipped.items()):
+        lines.append(f"no {_agent_label(agent_id)}: {reason}")
+    return lines
+
+
+def _agent_label(agent_id: str) -> str:
+    """A built-in's display name for a card line, id as the last resort."""
+    manifest = builtin.get_builtin_manifest(f"{agent_id}@{builtin.BUILTIN_VERSION}")
+    return getattr(manifest, "name", None) or agent_id
+
+
 def _attach_node_builder(spec: dict, node_id: str, *, user_key: str | None = None,
                          node_type: object = None) -> str | None:
     """dev/71: best-effort Node Builder attachment for a plan-created node.
@@ -2077,7 +2105,11 @@ def apply_plan_node(
     # dev/71: attach the Node Builder to the created node (best-effort,
     # idempotent — creation never fails over it); it operates as the node's
     # creation/content orchestration agent (67-6 modify-existing posture).
-    attached_agent_id = _attach_node_builder(spec, node_id)
+    # dev/126: and the Dataset Finder when the node is a data-loading one —
+    # the same helper the whole-plan apply uses, so the two paths cannot
+    # produce different graphs from the same plan.
+    attached = _attach_plan_node_agents(user_key, spec, node_id, plan_node["nodeType"])
+    attached_agent_id = attached["byAgent"].get("agent.node-builder")
     # dev/71: PROGRESSIVE CONNECTION — apply every plan edge whose other
     # endpoint already exists (created refs or existing canvas nodes), through
     # the 67-8 per-edge policy. The graph grows connected, not as islands;
@@ -2126,6 +2158,7 @@ def apply_plan_node(
                             f"{plan_node['title']} · {plan_node['nodeType']}",
                             f"node {node_id[:8]}",
                             f"{len(applied_refs)} of {len(plan.get('nodes', []))} plan nodes created",
+                            *_attached_agent_lines(attached),
                             f"proposal {proposal_id[:8]}",
                         ],
                     }],
@@ -2145,6 +2178,10 @@ def apply_plan_node(
         "edgeResults": edge_results,
         "edgeStates": dict(ctx["edge_states"]),
         "attachedAgentId": attached_agent_id,
+        # dev/126: every agent this apply gave the node, and anything it could
+        # not — the apply SAYS what it attached instead of dropping it.
+        "attachedAgents": attached["attached"],
+        "skippedAgents": attached["skipped"],
         "builderSession": session,
     }
 
@@ -3292,6 +3329,7 @@ def _apply_dataflow_plan(
     already_applied = set(proposal.get("appliedRefs") or [])
     ref_to_id: dict[str, str] = dict(proposal.get("appliedNodeIds") or {})
     created_nodes: list[dict] = []
+    attached_results: list[dict] = []
     for plan_node in plan.get("nodes", []):
         depth = depths.get(plan_node["ref"], 0)
         row = rows.get(depth, 0)
@@ -3312,6 +3350,12 @@ def _apply_dataflow_plan(
         }
         nodes.append(created)
         created_nodes.append(created)
+        # dev/126: the whole-plan apply gives every created node its agents,
+        # in THIS apply's single spec write — the per-node path has done so
+        # since dev/71 and the two must not disagree.
+        attached_results.append(
+            _attach_plan_node_agents(user_key, spec, node_id, plan_node["nodeType"])
+        )
     # dev/67-3 (DEC-051): handles are explicit end-to-end. Merge targets get a
     # deterministic free in_N slot (a named free toHandle wins; occupied or
     # unnamed falls to the lowest free) — the bridge passes these through
@@ -3411,6 +3455,7 @@ def _apply_dataflow_plan(
             + (f" · −{len(remove_node_set)} nodes" if remove_node_set else "")
             + (f" · −{len(removed_edge_ids)} connections" if removed_edge_ids else ""),
             f"{sum(1 for s in node_runs.values() if s == 'pending')} pending for Solve",
+            *_attached_agent_lines(*attached_results),
             topology,
             f"proposal {proposal_id[:8]}",
         ],
@@ -3427,6 +3472,9 @@ def _apply_dataflow_plan(
             "removedNodeIds": sorted(remove_node_set),
             "removedEdgeIds": sorted(removed_edge_ids),
         },
+        # dev/126: as the per-node apply — what each created node was given.
+        "attachedAgents": [row for r in attached_results for row in r["attached"]],
+        "skippedAgents": [row for r in attached_results for row in r["skipped"]],
         "builderSession": record.get("builderSession") if record else None,
     }
 

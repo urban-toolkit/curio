@@ -4617,6 +4617,133 @@ class TestDataflowPlanApply:
 
         return projects_storage.read_spec(_user_dir_key(user), project_id)
 
+    # ── dev/126: a whole-plan apply attaches the plan-node agents ────────
+
+    def _data_loading_plan(self):
+        helper = TestDataflowPlanMint()
+        return helper._plan_tail(
+            nodes=[
+                {"ref": "a", "nodeType": "curio.builtin/data-loading",
+                 "title": "Load boundaries", "intent": "load the community areas"},
+                {"ref": "b", "nodeType": "curio.builtin/computation-analysis",
+                 "title": "Analyze", "intent": "compute density"},
+            ],
+            edges=[{"from": "a", "to": "b"}],
+        )
+
+    def _add_data_loading_template(self, user):
+        """The fixture package ships no data-loading template; the plan-node
+        agents key on that type, so add one to the installed manifest."""
+        import json as _json
+
+        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        path = (
+            user_packageages_dir(_user_dir_key(user)) / "curio.builtin@1" / "manifest.json"
+        )
+        manifest = _json.loads(path.read_text(encoding="utf-8"))
+        if not any(t["id"] == "data-loading" for t in manifest["templates"]):
+            manifest["templates"].append({
+                "id": "data-loading", "label": "Data Loading",
+                "category": "data", "engine": "python", "editor": "code",
+                "description": "Load a dataset.",
+                "inputPorts": [],
+                "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+            })
+            path.write_text(_json.dumps(manifest), encoding="utf-8")
+
+    def _mint_data_loading_plan(self, client, user, token, project_id, monkeypatch):
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, project_id, monkeypatch,
+            replies=["Plan.\n" + self._data_loading_plan()],
+        )
+        self._add_data_loading_template(user)
+        r = helper._run(client, token, project_id, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        return att_id, proposal
+
+    def test_whole_plan_apply_attaches_both_agents_per_node_kind(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        att_id, proposal = self._mint_data_loading_plan(
+            client, user, token, alice_project, monkeypatch
+        )
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        ids = {n["goal"].split(" —")[0]: n["id"] for n in body["appliedGraph"]["nodes"]}
+        by_node: dict[str, set] = {}
+        for row in body["attachedAgents"]:
+            by_node.setdefault(row["nodeId"], set()).add(row["agentId"])
+        assert by_node[ids["Load boundaries"]] == {
+            "agent.node-builder", "agent.dataset-finder",
+        }
+        assert by_node[ids["Analyze"]] == {"agent.node-builder"}
+        assert body["skippedAgents"] == [] or all(
+            r["agentId"] == "agent.dataset-finder" for r in body["skippedAgents"]
+        )
+        # The spec carries them, targeted at those nodes.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        finder = [
+            c for c in cards if c["coord"].startswith("agent.dataset-finder@")
+        ]
+        assert [c["target"] for c in finder] == [
+            {"kind": "node", "targetId": ids["Load boundaries"]}
+        ]
+        # And the applied card says what it attached.
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        card = next(
+            p for t in reversed(turns) for p in (t.get("content") or [])
+            if p.get("title") == "Applied: dataflow plan"
+        )
+        line = next(l for l in card["lines"] if l.startswith("agents attached:"))
+        assert "Node Builder ×2" in line and "Dataset Finder" in line
+
+    def test_both_apply_paths_produce_the_same_attachments(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """dev/126: the per-node apply and the whole-plan apply are two ways to
+        apply ONE plan; the attachment set they produce must be identical."""
+        user, token = user_and_token
+        att_id, proposal = self._mint_data_loading_plan(
+            client, user, token, alice_project, monkeypatch
+        )
+        per_node = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/"
+            f"{proposal['proposalId']}/apply-node",
+            json={"ref": "a"}, headers=_auth(token),
+        ).get_json()
+        assert {r["agentId"] for r in per_node["attachedAgents"]} == {
+            "agent.node-builder", "agent.dataset-finder",
+        }
+        assert per_node["attachedAgentId"] == next(
+            r["attachmentId"] for r in per_node["attachedAgents"]
+            if r["agentId"] == "agent.node-builder"
+        )
+        # Finishing the same proposal as a whole covers the remaining ref only.
+        rest = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        assert {r["agentId"] for r in rest["attachedAgents"]} == {"agent.node-builder"}
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        node_attachments = sorted(
+            (c["coord"].split("@")[0], c["target"]["targetId"])
+            for c in cards if c["target"]["kind"] == "node"
+        )
+        loader = per_node["createdNode"]["id"]
+        other = rest["appliedGraph"]["nodes"][0]["id"]
+        assert node_attachments == sorted([
+            ("agent.dataset-finder", loader),
+            ("agent.node-builder", loader),
+            ("agent.node-builder", other),
+        ])
+
     def test_apply_inserts_graph_additively_with_server_ids(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
