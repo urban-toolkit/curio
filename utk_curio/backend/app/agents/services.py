@@ -4918,9 +4918,29 @@ def _solve_events(
                             )
                             return st, tx, ch
 
+                        # dev/129: errors from ANY execution feed the fix. A
+                        # node that still holds the code a Play run raised on
+                        # is repaired FROM that code — round 0 re-runs it and
+                        # the correction works on the real traceback — instead
+                        # of being regenerated as if nothing had happened.
+                        recorded = None
+                        try:
+                            from utk_curio.backend.app.execution import runtime_journal
+
+                            candidate_failure = runtime_journal.last_failure(
+                                user_key, project_id, node_id
+                            )
+                            if runtime_journal.failure_matches(
+                                candidate_failure, node.get("content")
+                            ):
+                                recorded = candidate_failure
+                        except Exception:  # noqa: BLE001
+                            recorded = None
                         gen = _verified_content_rounds(
                             user_key, project_id,
                             spec=wave_spec, node=node, resolution=resolution, config=config,
+                            start_from_current=bool(recorded),
+                            recorded_failure=recorded,
                             parent_execution_id=solve_execution_id, parent_coord=coord,
                             attachment_id=attachment_id, exec_fn=None,
                             grounding_loop_ctx=solve_ctx, grounding_base=solve_ground,
@@ -7059,6 +7079,7 @@ def _verified_content_rounds(
     prior_outputs_fn=None,
     resolve_source=None,
     clock=time.monotonic,
+    recorded_failure=None,
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -7158,6 +7179,19 @@ def _verified_content_rounds(
     confirmed_source: dict | None = None
     stopped_by: str | None = None  # dev/127: which bound ended the loop
     repeats = 0
+    if isinstance(recorded_failure, dict) and recorded_failure.get("stderr"):
+        # dev/129: the loop is starting from code that already failed — in a
+        # Play run or an earlier validation — and the traceback is on disk.
+        # Round 0 re-runs it (start_from_current), so this line is the trail's
+        # explanation of WHY it starts there; the correction gets the real
+        # traceback from the run itself.
+        rounds_trace.append(
+            f"starting from the code on the node, which failed at "
+            f"{recorded_failure.get('origin') or 'a previous run'}"
+            f"{' (' + str(recorded_failure.get('ranAt')) + ')' if recorded_failure.get('ranAt') else ''}"
+            f": {failure_text.summary(recorded_failure['stderr'], limit=200)}"
+        )
+        previous_error = str(recorded_failure["stderr"])[-2000:]
     # dev/128: what ``arg`` IS for this node — a fact of the graph, computed
     # once (it cannot change mid-loop), handed to the child as an input, and
     # enforced before the sandbox. The owner's report: a node fed through a

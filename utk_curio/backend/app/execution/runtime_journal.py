@@ -119,6 +119,51 @@ def read_record(user_key: str, project_id: str, node_id: str) -> dict | None:
         return None
 
 
+#: dev/129: how much of a recorded failure the repair loop is handed. The
+#: bounds mirror the ``node.runtime.read`` tool's, so the loop and the model
+#: read the same size of truth.
+_FAILURE_STDERR_CHARS = 4000
+
+
+def last_failure(user_key: str, project_id: str, node_id: str) -> dict | None:
+    """The node's last recorded FAILURE, whatever ran it, or None.
+
+    Memo dev/129, from the owner's instruction — *"the dataflow resolution must
+    be able to read errors raised by any execution and properly act to fix
+    it."* Every real run journals its outcome (``DEC-052``): a Play run through
+    the interactive route and a validation run through the runner both land
+    here. Until now the journal had exactly one reader — the model-chosen
+    ``node.runtime.read`` tool — so a node that failed at Play was re-solved
+    from scratch, as if the traceback on disk did not exist.
+
+    Returns ``{codeSha256, stderr, ranAt, origin}`` where ``origin`` is
+    ``"validation"`` or ``"play"``; ``None`` when the node never ran, ran
+    successfully, or has no readable record. The record stores the code's
+    DIGEST rather than its text (the node's own content is the text), so the
+    caller compares ``codeSha256`` with ``normalized_code_sha256(content)`` and
+    knows whether the failure is about the code that is still there.
+    """
+    record = read_record(user_key, project_id, node_id)
+    if not isinstance(record, dict) or record.get("status") != "error":
+        return None
+    stderr = str(record.get("stderrTail") or "")
+    return {
+        "codeSha256": str(record.get("executedCodeSha256") or ""),
+        "stderr": stderr[-_FAILURE_STDERR_CHARS:],
+        "ranAt": str(record.get("startedAt") or record.get("updatedAt") or ""),
+        "origin": "validation" if record.get("validation") else "play",
+    }
+
+
+def failure_matches(failure: dict | None, content: object) -> bool:
+    """Whether a recorded failure is about the code the node still holds."""
+    if not isinstance(failure, dict) or not failure.get("codeSha256"):
+        return False
+    if not isinstance(content, str) or not content.strip():
+        return False
+    return failure["codeSha256"] == normalized_code_sha256(content)
+
+
 def status_map(user_key: str, project_id: str) -> dict[str, dict]:
     """``{nodeId: {status, updatedAt}}`` for the dataflow.read projection."""
     out: dict[str, dict] = {}
