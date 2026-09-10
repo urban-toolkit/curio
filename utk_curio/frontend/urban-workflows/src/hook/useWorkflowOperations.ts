@@ -788,6 +788,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         return true;
     }, [setWorkflowName, markDirty]);
 
+    // The spec revision this canvas last synced with (memo dev/124): set when a
+    // project is loaded and re-set from every save's own response. It is sent
+    // with a save so the server can refuse one that would delete a node, an
+    // edge or a node's code written since -- an agent apply, a Solve wave, an
+    // install -- which a canvas cannot see and would otherwise overwrite. A
+    // stale basis alone is never refused, so this does not need updating from
+    // every endpoint that writes the spec; only from the two points that sync.
+    const baseRevisionRef = useRef<number | null>(null);
+
     const saveCurrentProject = useCallback(async (nameOverride?: string) => {
         if (viewerMode === "shared") {
             throw new Error("Shared dataflows are read-only; use Save a copy");
@@ -822,7 +831,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 spec,
                 outputs: outputRefs,
                 name,
+                ...(baseRevisionRef.current !== null
+                    ? { baseRevision: baseRevisionRef.current }
+                    : {}),
             });
+            baseRevisionRef.current = detail.spec_revision ?? null;
             syncDatasetsFromSavedSpec(detail.spec);
             // Re-pin the client's copy of the name to what the server actually
             // stored. The create branch already did this, so only the update path
@@ -852,6 +865,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             // create sees the new id and updates instead of creating a duplicate
             // (setProjectId only reaches the ref on the next render).
             projectIdRef.current = detail.id;
+            baseRevisionRef.current = detail.spec_revision ?? null;
             syncDatasetsFromSavedSpec(detail.spec);
             setProjectId(detail.id);
             if (projectNameRef.current === name) {
@@ -1128,6 +1142,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(false);
         setProjectSavedAt(project.updated_at ? new Date(project.updated_at) : null);
         setViewerMode("owner");
+        // What this canvas has seen, for the save guard (memo dev/124).
+        baseRevisionRef.current = project.spec_revision ?? null;
 
         const execStatus: Record<string, "stale" | "executed"> = {};
         for (const o of outputs) {
