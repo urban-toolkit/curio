@@ -32,6 +32,7 @@ from utk_curio.backend.app.agents import (
     agent_jobs,
     egress,
     failure_text,
+    input_contract,
     node_context,
     plan_topology,
     source_grounding,
@@ -6456,7 +6457,11 @@ def _content_sha(text: str) -> str:
 
 #: Attempt kinds whose detail is read from the HEAD (a refusal names the
 #: literal, a decline names the missing input); a traceback reads from its tail.
-_HEAD_FIRST_KINDS = ("ungrounded-source", "source-missing", "repeated-attempt")
+_HEAD_FIRST_KINDS = (
+    "ungrounded-source", "source-missing", "repeated-attempt",
+    # dev/128: the shape refusal's first line IS the answer.
+    "input-contract",
+)
 
 
 def _last_attempt_code(trail: dict) -> str | None:
@@ -7109,6 +7114,15 @@ def _verified_content_rounds(
     confirmed_source: dict | None = None
     stopped_by: str | None = None  # dev/127: which bound ended the loop
     repeats = 0
+    # dev/128: what ``arg`` IS for this node — a fact of the graph, computed
+    # once (it cannot change mid-loop), handed to the child as an input, and
+    # enforced before the sandbox. The owner's report: a node fed through a
+    # merge received ``arg`` and treated it as a frame.
+    arg_contract = input_contract.arg_shape(spec, node_id)
+    if (extra_inputs or {}).get("upstreamOutputs"):
+        arg_contract = input_contract.with_schemas(
+            arg_contract, (extra_inputs or {}).get("upstreamOutputs")
+        )
     # dev/126: a data-loading node RESOLVES ITS SOURCE FIRST. Discovery is
     # initiated by the runtime (never left to the model to think of), and a
     # node whose source the user has not confirmed yet waits for them instead
@@ -7185,6 +7199,10 @@ def _verified_content_rounds(
                     # dev/126: the source the USER confirmed on this node —
                     # handed over, not inferred from what was verified once.
                     inputs["sourceGrounding"]["confirmedSource"] = confirmed_source
+            if arg_contract.get("kind") != input_contract.KIND_NONE:
+                # dev/128 (DEC-063, ninth application): the shape of `arg`, per
+                # node, on the first generation and on every correction.
+                inputs["inputContract"] = arg_contract
             if extra_inputs:
                 inputs.update({k: v for k, v in extra_inputs.items() if k not in inputs})
             if previous_attempt is not None:
@@ -7257,6 +7275,31 @@ def _verified_content_rounds(
                 previous_error = refusal
                 url_evidence = []
                 continue
+        # dev/128: the shape gate, beside the DEC-072 source gate and before
+        # the sandbox. A list-shaped `arg` used as a frame is provably wrong —
+        # a list has no such attribute — so the round fails HERE, for free,
+        # with the slot table as its correction instead of a library's
+        # AttributeError three minutes later.
+        violation = input_contract.check(candidate, arg_contract)
+        if violation is not None:
+            refusal = input_contract.refusal_text(arg_contract, violation)
+            verdict_result = {
+                "verdict": "fail",
+                "evidence": {"kind": "input-contract", "detail": refusal[:2000]},
+            }
+            yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+            rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+            attempts.append({
+                "round": rounds_used, "contentSha256": _content_sha(candidate),
+                "verdict": "fail", "kind": "input-contract",
+                "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                "source": "current content" if use_current else "generated",
+                **_attempt_code_field(candidate),
+            })
+            previous_attempt = candidate
+            previous_error = refusal
+            url_evidence = []
+            continue
         # A repeat is judged AFTER the gate: a refused candidate keeps its own kind.
         if not use_current and previous_attempt is not None and _same_code(candidate, previous_attempt):
             # dev/116 live fix (2026-09-09): the correction changed only

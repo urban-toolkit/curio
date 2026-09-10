@@ -61,9 +61,9 @@ def _graph(spec: dict | None):
 def arg_shape(spec: dict | None, node_id: str) -> dict:
     """What ``arg`` will be for *node_id*, read the way the runner reads it.
 
-    ``{"kind": "list", "length": N, "slots": [{argIndex, nodeId, goal,
-    nodeType}], "via": "<pass-through node id>"}``, ``{"kind": "single",
-    "nodeId", "goal", "nodeType"}`` or ``{"kind": "none"}``.
+    ``{"kind": "list", "length": N, "slots": [{argIndex, upstreamNodeId, goal,
+    upstreamNodeType}], "via": "<pass-through node id>"}``, ``{"kind":
+    "single", upstreamNodeId, goal, upstreamNodeType}`` or ``{"kind": "none"}``.
     """
     graph = _graph(spec)
     if graph is None:
@@ -80,9 +80,12 @@ def arg_shape(spec: dict | None, node_id: str) -> dict:
     def _describe(nid: str, arg_index: int | None = None) -> dict:
         node = nodes.get(nid)
         row = {
-            "nodeId": nid,
+            # dev/128: NOT "nodeId"/"nodeType" — the child's own inputs already
+            # carry both keys for the node being generated, and one key with two
+            # meanings misleads a reader (model or test) about whose it is.
+            "upstreamNodeId": nid,
             "goal": goals.get(nid, ""),
-            "nodeType": str(getattr(node, "raw_type", "") or "") if node else "",
+            "upstreamNodeType": str(getattr(node, "raw_type", "") or "") if node else "",
         }
         if arg_index is not None:
             row["argIndex"] = arg_index
@@ -123,17 +126,17 @@ def with_schemas(shape: dict, rows: list | None) -> dict:
         str(r.get("nodeId")): r.get("schema")
         for r in rows
         if isinstance(r, dict) and r.get("schema")
-    }
+    }  # dev/127's rows are keyed by nodeId; the slots name it upstreamNodeId
     if not by_node:
         return shape
     if shape.get("kind") == KIND_LIST:
         slots = []
         for slot in shape.get("slots") or []:
-            schema = by_node.get(str(slot.get("nodeId")))
+            schema = by_node.get(str(slot.get("upstreamNodeId")))
             slots.append({**slot, "schema": _trim_schema(schema)} if schema else slot)
         return {**shape, "slots": slots}
     if shape.get("kind") == KIND_SINGLE:
-        schema = by_node.get(str(shape.get("nodeId")))
+        schema = by_node.get(str(shape.get("upstreamNodeId")))
         return {**shape, "schema": _trim_schema(schema)} if schema else shape
     return shape
 
@@ -158,7 +161,7 @@ def describe(shape: dict | None) -> str:
     if shape.get("kind") == KIND_LIST:
         parts = []
         for slot in shape.get("slots") or []:
-            label = slot.get("goal") or slot.get("nodeId") or "?"
+            label = slot.get("goal") or slot.get("upstreamNodeId") or "?"
             schema = slot.get("schema") if isinstance(slot.get("schema"), dict) else None
             columns = (
                 ", ".join(str(c.get("name")) for c in (schema.get("columns") or [])[:6])
@@ -169,7 +172,7 @@ def describe(shape: dict | None) -> str:
             )
         return f"arg is a list of {shape.get('length')} inputs — " + "; ".join(parts)
     if shape.get("kind") == KIND_SINGLE:
-        label = shape.get("goal") or shape.get("nodeId") or "the upstream node"
+        label = shape.get("goal") or shape.get("upstreamNodeId") or "the upstream node"
         return f"arg IS the value {label} returned"
     return "this node has no input"
 
@@ -237,7 +240,7 @@ def refusal_text(shape: dict, violation: dict) -> str:
     used = f"{name}.{attribute}" + (f" (line {line})" if line else "")
     slots = []
     for slot in (shape.get("slots") or [])[:MAX_SLOTS]:
-        label = slot.get("goal") or slot.get("nodeId") or "?"
+        label = slot.get("goal") or slot.get("upstreamNodeId") or "?"
         schema = slot.get("schema") if isinstance(slot.get("schema"), dict) else None
         detail = ""
         if schema:

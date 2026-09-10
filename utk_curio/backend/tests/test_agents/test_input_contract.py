@@ -52,6 +52,12 @@ class TestArgShape:
         assert [s["goal"] for s in shape["slots"]] == [
             "Chicago Community Boundaries", "Population Data",
         ]
+        # The slot's type is named unambiguously — the child's own inputs carry
+        # a "nodeType" for the node being generated.
+        assert shape["slots"][0]["upstreamNodeType"] == "curio.builtin/data-loading"
+        assert shape["slots"][0]["upstreamNodeId"] == "b"
+        # Neither key shadows the child's own inputs for the node being made.
+        assert all("nodeType" not in slot and "nodeId" not in slot for slot in shape["slots"])
 
     def test_a_single_input_merge_passes_the_value_through(self):
         # The runner's own rule — the mirror bug a naive "merge → index it"
@@ -180,3 +186,101 @@ class TestCheck:
         assert ic.check("import pandas as pd\nreturn pd.DataFrame()", self._shape()) is None
         assert ic.check("", self._shape()) is None
         assert ic.check(None, self._shape()) is None
+
+
+class TestTheGateInTheLoop:
+    """dev/128: the refusal happens BEFORE the sandbox, and the correction is
+    the model's — the owner's sequence, mechanised."""
+
+    SPEC = {
+        "dataflow": {
+            "name": "wf", "task": "compare neighborhoods",
+            "nodes": [
+                {"id": "b", "type": "curio.builtin/data-loading", "goal": "Boundaries",
+                 "content": "return 1"},
+                {"id": "p", "type": "curio.builtin/data-loading", "goal": "Population",
+                 "content": "return 2"},
+                {"id": "m", "type": "curio.builtin/merge-flow", "goal": "Merge", "content": ""},
+                {"id": "t", "type": "curio.builtin/data-transformation", "goal": "Densities",
+                 "content": ""},
+            ],
+            "edges": [
+                {"id": "u1", "source": "b", "target": "m", "targetHandle": "in_0"},
+                {"id": "u2", "source": "p", "target": "m", "targetHandle": "in_1"},
+                {"id": "u3", "source": "m", "target": "t", "targetHandle": "in"},
+            ],
+        }
+    }
+
+    def _rounds(self, app, **kw):
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        node = self.SPEC["dataflow"]["nodes"][3]
+        return _rounds(app, node, exec_fn=kw.pop("exec_fn", None) or _Exec(),
+                       spec=self.SPEC, **kw)
+
+    def test_arg_as_a_frame_is_refused_without_running_and_the_fix_passes(self, app, tmp_curio):
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec
+
+        exec_fn = _Exec()
+        events, outcome, inputs = self._rounds(
+            app,
+            replies=[ARG_AS_A_FRAME, "gdf = arg[0]\nreturn gdf.to_crs(3395)"],
+            exec_fn=exec_fn,
+        )
+        assert outcome["verdict"] == "pass"
+        kinds = [a["kind"] for a in outcome["attempts"]]
+        assert kinds == ["input-contract", "executed"]
+        # Round 1 never reached the sandbox: the refusal is free. (The slice's
+        # two upstream loaders run, as they always do — what must not appear is
+        # the refused candidate.)
+        ran = [c["code"] for c in exec_fn.calls]
+        assert not any("set_crs" in code for code in ran), ran
+        assert sum("to_crs(3395)" in code for code in ran) == 1
+        # The refused round kept its code, so the trail shows arg → arg[0].
+        assert outcome["attempts"][0]["code"].startswith("import geopandas")
+        # And the correction was told exactly what was wrong.
+        assert "`arg` is a LIST of 2 inputs" in inputs[1]["validationError"]
+        assert "arg[0] = Boundaries" in inputs[1]["validationError"]
+
+    def test_the_contract_rides_the_first_generation_and_every_correction(self, app, tmp_curio):
+        events, outcome, inputs = self._rounds(
+            app, replies=[ARG_AS_A_FRAME, "gdf = arg[0]\nreturn gdf"],
+        )
+        assert len(inputs) == 2
+        for frame in inputs:
+            contract = frame["inputContract"]
+            assert contract["kind"] == "list" and contract["length"] == 2
+            assert [s["argIndex"] for s in contract["slots"]] == [0, 1]
+            assert [s["goal"] for s in contract["slots"]] == ["Boundaries", "Population"]
+
+    def test_a_node_with_a_single_upstream_is_never_gated(self, app, tmp_curio):
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        spec = {"dataflow": {
+            "name": "wf", "task": "t",
+            "nodes": [
+                {"id": "b", "type": "curio.builtin/data-loading", "goal": "B", "content": "return 1"},
+                {"id": "t", "type": "curio.builtin/data-transformation", "goal": "T", "content": ""},
+            ],
+            "edges": [{"id": "e", "source": "b", "target": "t", "targetHandle": "in"}],
+        }}
+        exec_fn = _Exec()
+        events, outcome, inputs = _rounds(
+            app, spec["dataflow"]["nodes"][1], replies=["return arg.describe()"],
+            exec_fn=exec_fn, spec=spec,
+        )
+        assert outcome["verdict"] == "pass"
+        assert [a["kind"] for a in outcome["attempts"]] == ["executed"]
+        assert inputs[0]["inputContract"]["kind"] == "single"
+
+    def test_a_loader_gets_no_contract_at_all(self, app, tmp_curio):
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        spec = {"dataflow": {"name": "wf", "task": "t", "nodes": [
+            {"id": "b", "type": "curio.builtin/data-loading", "goal": "B", "content": ""},
+        ], "edges": []}}
+        events, outcome, inputs = _rounds(
+            app, spec["dataflow"]["nodes"][0], replies=["return 1"], exec_fn=_Exec(), spec=spec,
+        )
+        assert "inputContract" not in inputs[0]
