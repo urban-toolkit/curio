@@ -11,6 +11,14 @@ child prompt.
 Honesty rules: a neighbor that never executed says ``never-executed`` —
 nothing here fabricates schemas or results; ``outputSchema`` joins when the
 runtime journal starts capturing column metadata (recorded 67-2 follow-up).
+
+dev/135: the status WORD was all this composer forwarded, so a child asked to
+fix a node that had failed was told ``error`` and nothing else — not the
+message, not the output type, not when it ran or where. The journal has held
+all of that since dev/67-2 (and, since dev/135, for browser-rendered kinds
+too), so every node row now carries a bounded ``runtime`` block beside the
+legacy word: what happened, what it said, what it produced, and which origin
+produced the record.
 """
 
 from __future__ import annotations
@@ -23,6 +31,9 @@ _INTENT_MAX_CHARS = 300
 _CONTENT_MAX_CHARS = 6000
 _MAX_DATASETS = 12
 _CONTENT_TRUNCATION_MARKER = "\n…[truncated: content exceeds the context bound]"
+#: dev/135: the same bound dev/111's client-side summary uses, so the runtime
+#: and the browser cannot describe one node's failure at different sizes.
+_RUNTIME_MESSAGE_CHARS = 240
 
 
 def _neighbors(adjacency: dict[str, list[str]], start: str) -> list[str]:
@@ -71,6 +82,35 @@ def compose_node_context(
     def _status(nid: str) -> str:
         return (runtime.get(nid) or {}).get("status") or "never-executed"
 
+    def _runtime_block(nid: str) -> dict:
+        """What this node's last run DID (memo dev/135), bounded.
+
+        Read from the journal record itself rather than from the status map, so
+        the message and the output type ride along; a node that never ran gets
+        the status word alone, because there is nothing else true to say.
+        """
+        status = _status(nid)
+        block: dict = {"status": status}
+        if status == "never-executed":
+            return block
+        record = runtime_journal.read_record(user_key, project_id, nid) or {}
+        message = str(
+            record.get("stderrTail") if status == "error" else record.get("stdoutTail")
+            or ""
+        ).strip()
+        if message:
+            block["message"] = message[-_RUNTIME_MESSAGE_CHARS:]
+        output = record.get("output") if isinstance(record.get("output"), dict) else {}
+        if output.get("dataType"):
+            block["outputType"] = str(output["dataType"])[:60]
+        if record.get("origin"):
+            block["origin"] = str(record["origin"])[:20]
+        if record.get("startedAt") or record.get("updatedAt"):
+            block["ranAt"] = str(record.get("startedAt") or record.get("updatedAt"))[:40]
+        if isinstance(record.get("durationMs"), (int, float)):
+            block["durationMs"] = int(record["durationMs"])
+        return block
+
     def _row(nid: str) -> dict:
         neighbor = nodes[nid]
         content_text = str(neighbor.get("content") or "")
@@ -81,6 +121,9 @@ def compose_node_context(
             "hasContent": bool(content_text.strip()),
             "contentChars": len(content_text),
             "runtimeStatus": _status(nid),
+            # dev/135: an upstream that FAILED is the commonest reason a node
+            # cannot be fixed in isolation — its reason travels with it.
+            "runtime": _runtime_block(nid),
         }
 
     current = str(node.get("content") or "")
@@ -109,6 +152,9 @@ def compose_node_context(
         "intent": str(node.get("goal") or "")[:_INTENT_MAX_CHARS],
         "currentContent": current,
         "runtimeStatus": _status(node_id),
+        # dev/135: the owner's `a29d1ad8` — a Vega node visibly red, and the
+        # agent attached to it told nothing but "never-executed".
+        "runtime": _runtime_block(node_id),
         "upstream": [_row(nid) for nid in _neighbors(reverse, node_id)],
         "downstream": [_row(nid) for nid in _neighbors(forward, node_id)],
         "graphSummary": {

@@ -76,3 +76,58 @@ class TestComposeNodeContext:
         ])
         ctx = node_context.compose_node_context(KEY, PID, spec, "n1")
         assert ctx["datasetRefs"] == [{"id": "ds-acs", "name": "census-acs@1", "origin": "hub"}]
+
+
+class TestTheRuntimeBlock:
+    """dev/135: the status WORD was all a child ever got. The owner's
+    `a29d1ad8` had a Vega node visibly red with a message on screen, and the
+    agent attached to it was told `never-executed`."""
+
+    VEGA_ERROR = "outputs is not a valid input type for the 2D Plot (Vega-Lite)"
+
+    def test_a_browser_failure_reaches_the_context_with_its_message(self, tmp_curio):
+        runtime_journal.record_browser_execution(
+            KEY, PID, "n1", status="error", message=self.VEGA_ERROR, duration_ms=12,
+        )
+        ctx = node_context.compose_node_context(KEY, PID, _spec(), "n1")
+        assert ctx["runtimeStatus"] == "error"          # the legacy word, unchanged
+        runtime = ctx["runtime"]
+        assert runtime["status"] == "error"
+        assert runtime["message"] == self.VEGA_ERROR
+        assert runtime["origin"] == "browser"
+        assert runtime["durationMs"] == 12
+        assert runtime["ranAt"]
+
+    def test_a_failed_UPSTREAM_carries_its_reason_too(self, tmp_curio):
+        """The commonest reason a node cannot be fixed in isolation."""
+        runtime_journal.record_browser_execution(
+            KEY, PID, "n0", status="error", message="upstream blew up",
+        )
+        ctx = node_context.compose_node_context(KEY, PID, _spec(), "n1")
+        upstream = ctx["upstream"][0]
+        assert upstream["id"] == "n0"
+        assert upstream["runtime"]["message"] == "upstream blew up"
+        assert upstream["runtime"]["origin"] == "browser"
+
+    def test_a_successful_sandbox_run_reports_what_it_produced(self, tmp_curio):
+        runtime_journal.record_execution(
+            KEY, PID, "n1", code="return df", stdout=["done"], stderr="",
+            output={"path": "art-1", "dataType": "geodataframe"},
+            started_at="2026-09-10T00:00:00Z", duration_ms=41,
+        )
+        runtime = node_context.compose_node_context(KEY, PID, _spec(), "n1")["runtime"]
+        assert runtime["status"] == "ok"
+        assert runtime["outputType"] == "geodataframe"
+        assert runtime["origin"] == "sandbox"
+        assert runtime["message"] == "done"   # stdout, for a success
+
+    def test_a_node_that_never_ran_says_only_that(self, tmp_curio):
+        runtime = node_context.compose_node_context(KEY, PID, _spec(), "n1")["runtime"]
+        assert runtime == {"status": "never-executed"}   # nothing invented
+
+    def test_the_message_is_bounded(self, tmp_curio):
+        runtime_journal.record_browser_execution(
+            KEY, PID, "n1", status="error", message="e" * 5000,
+        )
+        runtime = node_context.compose_node_context(KEY, PID, _spec(), "n1")["runtime"]
+        assert len(runtime["message"]) <= 240
