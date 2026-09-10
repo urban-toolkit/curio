@@ -346,36 +346,28 @@ class InProcessDriver:
         return payload
 
     def apply_under_policy(self, turn: TurnResult, *, required: Mapping) -> list:
-        """Rule 2 and rule 3 of the user policy, and nothing more."""
+        """Apply what the shared policy allows, through the test client.
+
+        The DECISION is ``evaluation/policy.py``'s (memo dev/123) — the same
+        one the in-process evaluation service and the remote CLI use, so this
+        tier cannot drift away from what a UI run does. This method is the
+        transport, and it keeps ``left_pending``'s ``(tool, target)`` shape so
+        every existing assertion still reads.
+        """
+        from utk_curio.backend.app.agents.evaluation import policy as policy_mod
+
+        policy = policy_mod.UserPolicy(
+            required_datasets=frozenset(str(d) for d in required.get("datasets") or ()),
+            required_packages=frozenset(str(p) for p in required.get("packages") or ()),
+        )
         applied = []
-        wanted_datasets = {str(d) for d in required.get("datasets") or ()}
-        wanted_packages = {str(p) for p in required.get("packages") or ()}
         for proposal in turn.proposals:
-            tool = proposal.get("tool")
-            # What a proposal targets is in its PINS -- the revision-safety
-            # basis the apply endpoint re-checks (``make_proposal_part``), not a
-            # params echo. Reading a params key that does not exist is how the
-            # first cut of this policy silently declined every install it was
-            # offered.
-            pins = proposal.get("pins") or {}
-            if tool == "dataflow.plan.write":
-                applied.append(("plan", self.apply(proposal)))
-            elif tool == "dataset.install":
-                target = str(pins.get("datasetId") or "")
-                if target and target in wanted_datasets:
-                    applied.append(("dataset.install", self.apply(proposal)))
-                else:
-                    self.left_pending.append(("dataset.install", target))
-            elif tool == "package.install":
-                target = str(pins.get("dirName") or "")
-                if target and target in wanted_packages:
-                    applied.append(("package.install", self.apply(proposal)))
-                else:
-                    self.left_pending.append(("package.install", target))
-            elif tool == "project.install":
-                applied.append(("project.install", self.apply(proposal)))
-            else:
-                self.left_pending.append((tool, ""))
+            decision = policy.decide(proposal)
+            if decision.pending:
+                self.left_pending.append((decision.tool, decision.target))
+                continue
+            label = "plan" if decision.tool == "dataflow.plan.write" else decision.tool
+            applied.append((label, self.apply(proposal)))
         return applied
 
     def solve(self, node_ids: Iterable | None = None, *, verify: bool = True) -> SolveResult:

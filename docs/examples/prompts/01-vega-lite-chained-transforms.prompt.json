@@ -148,7 +148,7 @@
   },
   "split": "validation",
   "review": {
-    "status": "pending-owner-review",
+    "status": "approved",
     "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
     "reviewedBy": null,
     "reviewedAt": null

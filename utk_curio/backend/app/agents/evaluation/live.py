@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
 from utk_curio.backend.app.agents.evaluation import attempt as attempt_mod
+from utk_curio.backend.app.agents.evaluation import policy as policy_mod
 from utk_curio.backend.app.agents.evaluation.compare import Universe
 from utk_curio.backend.app.agents.evaluation.report import (
     AttemptRecord,
@@ -279,44 +280,33 @@ class LiveRun:
     def _apply_under_policy(
         self, project_id: str, attachment_id: str, proposals: Iterable, fixture
     ) -> list:
-        """The same fixed policy the deterministic driver plays: a plan is
-        applied whole, an install only for a resource the fixture required, and
-        anything else is left pending and recorded."""
-        wanted_datasets = set(fixture.required["datasets"])
-        wanted_packages = set(fixture.required["packages"])
+        """Apply what the shared policy allows, over HTTP.
+
+        The DECISION lives in ``evaluation/policy.py`` (memo dev/123) — the one
+        copy, shared with the in-process evaluation service and the
+        deterministic test driver, because three callers deciding separately
+        would measure three things and report one number. This method is the
+        transport for that decision and nothing else.
+        """
+        policy = policy_mod.UserPolicy.for_fixture(fixture)
         base = f"/api/agents/projects/{project_id}/attachments/{attachment_id}"
         applied: list = []
         for proposal in proposals:
-            tool = str(proposal.get("tool") or "")
-            pins = proposal.get("pins") or {}
-            target = ""
-            if tool == "dataset.install":
-                target = str(pins.get("datasetId") or "")
-                if target not in wanted_datasets:
-                    self.notes.append(
-                        f"{fixture.fixture_id}: left a dataset.install for "
-                        f"{target or '?'} pending (not required by the fixture)"
-                    )
-                    continue
-            elif tool == "package.install":
-                target = str(pins.get("dirName") or "")
-                if target not in wanted_packages:
-                    self.notes.append(
-                        f"{fixture.fixture_id}: left a package.install for "
-                        f"{target or '?'} pending (not required by the fixture)"
-                    )
-                    continue
-            elif tool not in ("dataflow.plan.write", "project.install"):
-                self.notes.append(f"{fixture.fixture_id}: left a {tool} pending")
+            decision = policy.decide(proposal)
+            if decision.pending:
+                self.notes.append(
+                    f"{fixture.fixture_id}: left a {decision.tool} pending"
+                    + (f" — {decision.reason}" if decision.reason else "")
+                )
                 continue
             status, body = self.client.request(
                 f"{base}/proposals/{proposal.get('proposalId')}/apply",
                 method="POST", payload={},
             )
-            applied.append((tool, status))
+            applied.append((decision.tool, status))
             if status >= 400:
                 self.notes.append(
-                    f"{fixture.fixture_id}: applying {tool} failed ({status})"
+                    f"{fixture.fixture_id}: applying {decision.tool} failed ({status})"
                 )
         return applied
 

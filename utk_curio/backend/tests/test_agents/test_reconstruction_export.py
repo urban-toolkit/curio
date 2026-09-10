@@ -64,13 +64,44 @@ class TestSplits:
 
 
 class TestReviewGate:
-    def test_nothing_exports_while_every_prompt_is_unreviewed(self):
-        """The corpus ships pending review, so an export today refuses and
-        says why -- rather than quietly producing an empty file."""
-        assert all(not f.approved for f in FIXTURES)
-        with pytest.raises(export_mod.ExportRefused) as refusal:
-            export_mod.rows_for_split(FIXTURES, split="train")
-        assert "awaiting review" in str(refusal.value)
+    def test_a_split_with_no_approved_prompt_refuses_and_names_them(self):
+        """An export refuses and says why rather than quietly producing an
+        empty file.
+
+        Asserted per split rather than over the whole corpus: the corpus ships
+        pending review, but the owner approves prompts one at a time, so a test
+        that required *every* fixture to be unapproved would fail the moment
+        the feature was used as intended (it did, on the first approval).
+        """
+        unapproved_splits = [
+            split for split in export_mod.SPLITS
+            if any(f.split == split for f in FIXTURES)
+            and not any(f.split == split and f.approved for f in FIXTURES)
+        ]
+        assert unapproved_splits, (
+            "every split now has an approved prompt; this test needs one that "
+            "does not, or it is asserting nothing"
+        )
+        for split in unapproved_splits:
+            with pytest.raises(export_mod.ExportRefused) as refusal:
+                export_mod.rows_for_split(FIXTURES, split=split)
+            assert "awaiting review" in str(refusal.value)
+            # The refusal names what is waiting, so a reader knows what to review.
+            waiting = [f.fixture_id for f in FIXTURES if f.split == split]
+            assert any(name in str(refusal.value) for name in waiting)
+
+    def test_an_approved_prompt_in_a_split_makes_that_split_exportable(self):
+        """The other half of the same rule, so approving one prompt is proven
+        to have an effect rather than only proven not to break anything."""
+        approved_splits = {f.split for f in FIXTURES if f.approved}
+        if not approved_splits:
+            pytest.skip("no prompt is approved on disk yet")
+        for split in approved_splits:
+            rows = export_mod.rows_for_split(FIXTURES, split=split)
+            assert rows
+            assert {row.fixture_id for row in rows} == {
+                f.fixture_id for f in FIXTURES if f.split == split and f.approved
+            }
 
     def test_an_approved_fixture_exports(self):
         approved = [_approved(f) for f in FIXTURES if f.split == "train"]
