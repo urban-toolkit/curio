@@ -723,9 +723,54 @@ def _template_entry(package_id: str, template) -> dict:
         "hasCode": bool(template.has_code),
         "backendHandler": bool(template.backend_handler),
         "executable": template_is_executable(template),
+        # dev/134: what KIND of content this template carries, derived from the
+        # same declared facts (never a name list — DEC-076's rule). The write
+        # gate reads it: code runs in the sandbox, a grammar is validated as a
+        # document, and a wired node has nothing to author at all.
+        "hasGrammar": bool(template.has_grammar),
+        **({"grammar": template.grammar_id} if template.grammar_id else {}),
+        "contentKind": template_content_kind(template),
         "inputs": inputs,
         "maxIncomingEdges": max_incoming,
     }
+
+
+#: dev/134: the four kinds of content a node template can carry.
+CONTENT_KIND_CODE = "code"
+CONTENT_KIND_GRAMMAR = "grammar"
+CONTENT_KIND_NOTE = "note"
+CONTENT_KIND_NONE = "none"
+
+
+def template_content_kind(template) -> str:
+    """What kind of content a node of this template carries (memo dev/134).
+
+    The write gate needs three different things of three different kinds, and
+    the manifest already declares which is which — so this is a DERIVATION, in
+    one place, rather than a list of node names somewhere in the agents layer
+    (``DEC-076``'s rule, the same one ``template_is_executable`` follows):
+
+    - ``code``    — an editable code surface the sandbox runs (``hasCode``);
+    - ``grammar`` — an authored DOCUMENT, validated but never executed
+      (``hasGrammar``; ``grammarId`` says which grammar);
+    - ``none``    — nothing is authored: the node renders or forwards its INPUT
+      and everything it does comes from the wiring (``editor: "none"`` with an
+      input port, or an explicit ``containerStyle.noContent``). Asking a model
+      for this node's content can only produce something wrong;
+    - ``note``    — authored presentation content with no validator: dev/90
+      A14's post-it profile (``editor: "none"`` and NO input port).
+    """
+    if bool(template.has_code):
+        return CONTENT_KIND_CODE
+    if bool(template.has_grammar):
+        return CONTENT_KIND_GRAMMAR
+    if (template.container_style or {}).get("noContent"):
+        return CONTENT_KIND_NONE
+    if str(template.editor or "") == "none":
+        # A presentation template with an input renders THAT (a pool, a merge, a
+        # simple view); one without renders what its author wrote (a note).
+        return CONTENT_KIND_NONE if (template.input_ports or []) else CONTENT_KIND_NOTE
+    return CONTENT_KIND_NONE
 
 
 def template_is_executable(template) -> bool:
@@ -745,7 +790,13 @@ def roster_templates(user_key: str, project_id: str) -> dict | None:
     back to the legacy tables)."""
     try:
         return {
-            t["id"]: {"executable": bool(t.get("executable")), "engine": t.get("engine") or "python"}
+            t["id"]: {
+                "executable": bool(t.get("executable")),
+                "engine": t.get("engine") or "python",
+                # dev/134: the write gate's routing rides the same snapshot.
+                "contentKind": t.get("contentKind") or "none",
+                **({"grammar": t["grammar"]} if t.get("grammar") else {}),
+            }
             for t in available_templates(user_key, project_id)
         }
     except Exception:

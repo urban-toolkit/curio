@@ -121,6 +121,54 @@ def is_executable_kind(node_type: str, templates: dict | None = None) -> bool:
     return category == "code"
 
 
+#: dev/134: the content kinds ``content_kind`` answers with — the same four the
+#: roster derives (``packages.services.template_content_kind``).
+CONTENT_KIND_CODE = "code"
+CONTENT_KIND_GRAMMAR = "grammar"
+CONTENT_KIND_NOTE = "note"
+CONTENT_KIND_NONE = "none"
+
+#: The offline fallback for a grammar kind's grammar id, used only when there is
+#: no roster snapshot (the legacy tables' equivalent for ``grammarId``).
+_LEGACY_GRAMMAR_IDS = {"VIS_VEGA": "vega-lite", "AUTK_GRAMMAR": "autk-grammar"}
+
+
+def content_kind(node_type: str, templates: dict | None = None) -> str:
+    """What kind of content a node of this type carries (memo dev/134).
+
+    The write gate's routing, beside ``is_executable_kind`` and derived the same
+    way: with a roster snapshot the template's own facts decide
+    (``contentKind``), and without one the legacy category tables answer —
+    ``code`` runs, ``grammar`` is a validated document, and ``datapool`` /
+    ``passive`` author nothing at all (they render or forward their input).
+    """
+    if not isinstance(node_type, str) or not node_type:
+        return CONTENT_KIND_NONE
+    if templates:
+        key = node_type.split("@", 1)[0]
+        row = templates.get(key)
+        if isinstance(row, dict) and row.get("contentKind"):
+            return str(row["contentKind"])
+    legacy = normalize_type(node_type)
+    category = classify_node(legacy)
+    if category == "code":
+        return CONTENT_KIND_CODE
+    if category == "grammar":
+        return CONTENT_KIND_GRAMMAR
+    return CONTENT_KIND_NONE
+
+
+def grammar_id_of(node_type: str, templates: dict | None = None) -> str | None:
+    """Which grammar a ``grammar`` node's document is written in, or None."""
+    if not isinstance(node_type, str) or not node_type:
+        return None
+    if templates:
+        row = templates.get(node_type.split("@", 1)[0])
+        if isinstance(row, dict) and row.get("grammar"):
+            return str(row["grammar"])
+    return _LEGACY_GRAMMAR_IDS.get(normalize_type(node_type))
+
+
 def classify_node(node_type: str) -> str:
     """Classify a workflow node type string into a test category.
 
