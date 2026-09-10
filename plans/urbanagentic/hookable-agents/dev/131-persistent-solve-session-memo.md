@@ -1,7 +1,16 @@
 # dev/131 — Solve is a session the user stops, not a pass that gives up: keep managing the dataflow until Stop or fifteen minutes, and let any node be resolved on its own
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `c398a4df`. Every line number and every
-piece of evidence below was read on that commit.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-66`, and **no new
+`DEC`**: it is `DEC-073`'s detached job kept alive and `DEC-075`'s pass kept intact inside a loop.
+Two commits: `9ea89fd6` (this memo) and `9c583829` (the session loop, the per-node clamp, and the
+frontend), plus a tracking commit. Every line number and every piece of evidence below was read on
+`c398a4df`.**
+
+**Suites: `tests/test_agents` 2335 passed; jest 2417 across 207 suites; `tsc --noEmit` clean.**
+
+**Six things changed from the plan while building — §12 — two of them because the owner sent two
+more instructions mid-build (a disabled Solve while a node depends on the user, and a better
+visualization of those nodes), both implemented here.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `c398a4df` (dev/130 memo).
@@ -305,3 +314,43 @@ named, every wait bounded and stop-aware.
   knows the session is waiting on them (the strip says it; the dock badge could too).
 - **F3** dev/129's F2 (render errors into the journal) would let a session repair a browser-side
   failure too, which is the last gap between "manages the dataflow" and "manages the dataflow".
+- **F4** A catalog dataset installed MID-session has no sandbox path inside the running job (the
+  mapping is resolved eagerly, in the request context — dev/115's rule). Its node stays pending
+  until the next Solve. An external URL confirmed mid-session is unaffected. Fixing it needs a
+  request context pushed into the job, or a path resolver that does not need one.
+
+---
+
+## 12. What changed while building
+
+1. **A later pass attempts only what CHANGED, not everything unresolved (§3A).** The memo's
+   "no-progress → wait" check ran after a pass, so every failing node got a second full set of
+   attempts before the loop noticed. Implemented as a per-node **blocker signature** — its own
+   content, every upstream's content, and its dataset-selection record — captured **after** the
+   pass runs, because taking it before made any pass that solved something trigger another one
+   (twenty-nine tests said so). A node is re-attempted when its signature moves; when nothing
+   moves the session waits and re-checks, which is what "keep attempting" means without burning
+   provider calls on identical conditions.
+2. **A session never un-solves a node, and never erases an earlier pass's evidence.** Not in the
+   plan, and load-bearing: a node still awaiting the user produces a fresh result with no attempts,
+   and overwriting the pass that DID try left a bare "pending". Results are now merged (a result
+   with attempts wins; one without keeps the earlier trail and updates only the reason) and a
+   solved node's outcome is never replaced.
+3. **`endedBy` has four values, not three.** The missing-specialist branch (an install only the
+   user can apply, whose proposal is already in the chat) ends the session as `blocked`, and the
+   bookkeeping moved above that branch so every exit reports an ending.
+4. **The suite pins the session budget and wait** (1 s each, autouse) for the same reason dev/127's
+   pin exists: every earlier test asserts on ONE pass, and a session waiting for an absent user
+   would hang the suite.
+5. **Two owner instructions arrived mid-build and are implemented**: the main Solve is DISABLED,
+   with the reason, when every unresolved node depends on the user (pressing it cannot help — the
+   action that can is already beside it), and a pill whose node waits for the user is outlined and
+   labeled *needs you*, with an upstream wait reading *waiting upstream*.
+6. **Cancel became Stop** in name and semantics (a session, not a wave), and its two jest tests
+   were renamed to describe the session.
+
+One limit found and not fixed here: the eager, request-context pieces (the Data Catalog listing and
+the sandbox dataset-path mapping) are resolved when the session starts, so a CATALOG dataset the
+user installs mid-session has no path inside the running job and its node stays pending until the
+next Solve. Recorded as **F4**; an external URL confirmed mid-session works, which is the owner's
+own case.
