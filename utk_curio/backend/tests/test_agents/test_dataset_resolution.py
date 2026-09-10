@@ -91,8 +91,15 @@ class TestNodeSourceState:
         assert attachments.get_attachment(spec, "att-df")["revision"] == before + 1
         assert dr.source_record(spec, "n1")["candidates"] == 4
         dr.mark_skipped(spec, "att-df", literal="/data/areas.csv")
-        assert dr.source_record(spec, "n1")["status"] == dr.STATE_RESOLVED
-        assert dr.source_record(spec, "n1")["skippedBecause"] == "/data/areas.csv"
+        record = dr.source_record(spec, "n1")
+        assert record["status"] == dr.STATE_NOT_NEEDED
+        assert record["skippedBecause"] == "/data/areas.csv"
+        # A recorded skip never suppresses a later discovery, and re-recording
+        # the same literal writes nothing.
+        assert dr.node_source_state(spec, "n1")["state"] == dr.STATE_UNRESOLVED
+        rev = attachments.get_attachment(spec, "att-df")["revision"]
+        assert dr.mark_skipped(spec, "att-df", literal="/data/areas.csv") is None
+        assert attachments.get_attachment(spec, "att-df")["revision"] == rev
         assert dr.mark_candidates_pending(spec, "ghost", count=1) is None
 
 

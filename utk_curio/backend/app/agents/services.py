@@ -4193,11 +4193,14 @@ def solve_attachment_stream(
         _resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
         if verify else {}
     )
+    # dev/126: and the Data Catalog rows the discovery delegate is handed.
+    solve_catalog_rows = _catalog_rows_for_discovery(user_key, project_id)
     events = _solve_events(
         user_key, project_id, attachment_id, config, targets, nodes_by_id,
         manifest, coord, session_id, solve_execution_id, stop,
         spec=spec, mode=mode, return_phase=return_phase, verify=verify,
         grounding_base=solve_ground, dataset_paths=solve_dataset_paths,
+        catalog_rows=solve_catalog_rows,
         retry_of=retry_of if isinstance(retry_of, str) else None,
     )
     # dev/115 (DEC-021, single-process slice): the batch runs as a detached
@@ -4230,6 +4233,7 @@ def _solve_events(
     grounding_base: dict | None = None,
     dataset_paths: dict | None = None,
     retry_of: str | None = None,
+    catalog_rows: list | None = None,
 ):
     """The solve batch body (dev/63). Workers report through a thread-safe
     queue — they never touch the response; the generator drains it between
@@ -4372,6 +4376,20 @@ def _solve_events(
                 )[:300]
                 results[node_id] = {"status": "pending", "reason": reason, **trail}
                 return {"nodeId": node_id, "status": "pending", "error": reason, **trail}
+            if outcome.get("verdict") == "awaiting-source":
+                # dev/126: the node's source is with the USER now — the Dataset
+                # Finder on this node proposed candidates (or said it found
+                # none). Nothing was generated or written, so this is PENDING
+                # with the reason, never a failure of content.
+                reason = (
+                    "awaiting your dataset selection — "
+                    + str(evidence.get("detail") or "")[:240]
+                )[:300]
+                remedy = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
+                extra = {"remedy": remedy} if remedy else {}
+                results[node_id] = {"status": "pending", "reason": reason, **trail, **extra}
+                return {"nodeId": node_id, "status": "pending", "reason": reason,
+                        **trail, **extra}
             kind = evidence.get("kind") or "fail"
             raw_detail = str(evidence.get("stderrTail") or evidence.get("detail") or "")
             if evidence.get("upstreamEmpty"):
@@ -4738,6 +4756,16 @@ def _solve_events(
                             prior_outputs_fn=lambda: {
                                 nid: o["output"] for nid, o in wave_outputs.items() if o.get("output")
                             },
+                            # dev/126: the batch resolves a data-loading node's
+                            # source before generating for it.
+                            resolve_source=_source_resolver(
+                                user_key, project_id, coord=coord,
+                                attachment_id=attachment_id,
+                                execution_id=solve_execution_id, config=config,
+                                manifest=manifest,
+                                extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
+                                catalog_rows=catalog_rows,
+                            ),
                         )
                         try:
                             while True:
@@ -5682,6 +5710,7 @@ def solve_node_stream(
         user_key, project_id, attachment_id, config, spec, node, resolution,
         record.get("coord", ""), record.get("sessionId"), execution_id, exec_fn,
         manifest=manifest, grounding_base=base, dataset_paths=dataset_paths,
+        catalog_rows=_catalog_rows_for_discovery(user_key, project_id),
         templates=_roster_templates(user_key, project_id),
     )
     job = agent_jobs.start_job(
@@ -5708,6 +5737,7 @@ def _solve_node_events(
     grounding_base: dict,
     dataset_paths: dict,
     templates: dict | None = None,
+    catalog_rows: list | None = None,
 ):
     """The per-node Solve body (dev/115 A2) over the ONE verified loop."""
     node_id = node.get("id")
@@ -5759,6 +5789,12 @@ def _solve_node_events(
             dataset_paths_fn=lambda codes: _filter_dataset_paths(dataset_paths, codes),
             exec_user_key=user_key,
             secrets_fn=_exec_secrets_resolver(user_key),
+            resolve_source=_source_resolver(
+                user_key, project_id, coord=coord, attachment_id=attachment_id,
+                execution_id=execution_id, config=config, manifest=manifest,
+                extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
+                catalog_rows=catalog_rows,
+            ),
         )
     verdict = outcome["verdict"]
     attempts = outcome["attempts"]
@@ -5844,6 +5880,19 @@ def _solve_node_events(
         text = (
             f"Not executable: {label!r} has no code the sandbox could run — it works in the "
             "browser or through its own service. Play the dataflow to see it. Nothing was changed."
+        )
+        card_kind = "result"
+    elif verdict == "awaiting-source":
+        # dev/126: the source is with the user. Nothing was generated or
+        # written; the node's own Dataset Finder holds the candidates.
+        evidence = outcome.get("evidence") or {}
+        remedy_payload = evidence.get("remedy")
+        if isinstance(remedy_payload, dict):
+            done["remedy"] = remedy_payload
+        text = (
+            f"Awaiting a source for {label!r}: {evidence.get('detail') or 'a dataset must be selected'} "
+            "— open Dataset Finder on this node, select the source and confirm, then Solve "
+            "again. Nothing was generated or written."
         )
         card_kind = "result"
     elif (outcome.get("evidence") or {}).get("upstreamEmpty"):
@@ -6388,6 +6437,157 @@ def _url_evidence_summary(url_evidence: list[dict]) -> str:
     return "; ".join(parts)[:_ATTEMPT_DETAIL_CHARS * 2]
 
 
+def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
+    """The project's Data Catalog rows, resolved WHILE A REQUEST CONTEXT EXISTS.
+
+    dev/126, learned from dev/123's field finding: ``catalog.search`` rides the
+    request context (the datasets domain is user-object keyed), and a detached
+    Solve job has none — so the rows are listed at the entry point and handed
+    to the discovery delegate, exactly as dev/115 already resolves the
+    execution paths eagerly. Empty on failure: the delegate is then TOLD the
+    catalog was unavailable rather than left to imagine it.
+    """
+    try:
+        return tools._catalog_search_rows(user_key, project_id, {})
+    except Exception:  # noqa: BLE001
+        log.warning("Data Catalog listing unavailable for project %s", project_id,
+                    exc_info=True)
+        return []
+
+
+def _node_grounded_literal(node: dict, ctx, *, extra_texts=()) -> str | None:
+    """The literal that ALREADY grounds this node's source, or None (dev/126).
+
+    Deliberately narrow. Only human-authored text counts — the node's own goal,
+    the dataflow's mission and the user's message — never the node's current
+    content: a path the model wrote is what the DEC-072 gate exists to refuse,
+    and letting it stand in here would ground a node on its own hallucination.
+    A batch's grounding context is shared by every target node, so the scan is
+    over THIS node's texts rather than over the context's own path set.
+    """
+    if ctx is None:
+        return None
+    texts = [str(node.get("goal") or ""), *[str(t or "") for t in extra_texts]]
+    joined = " ".join(texts)
+    for path in sorted(source_grounding.user_paths(texts)):
+        return path
+    for dataset_id in sorted(getattr(ctx, "catalog_ids", None) or {}):
+        if dataset_id and dataset_id in joined:
+            return f'curio_dataset_path("{dataset_id}")'
+    for url in sorted(getattr(ctx, "verified_urls", None) or {}):
+        if url and url in joined:
+            return url
+    if source_grounding.synthetic_requested(texts):
+        return "synthetic data (the goal asks for it)"
+    return None
+
+
+def _project_grounded_literal(ctx) -> str | None:
+    """Project-wide grounding: the Data Catalog the content child is handed.
+
+    dev/126: the catalog IS a grounded source (``DEC-072``) — the child gets
+    its rows and the gate accepts the row it loads — so a project that holds
+    datasets grounds a FIRST attempt without a review gate. It is not evidence
+    about this node, so it ranks below a pending candidates card, and when the
+    catalog turns out not to cover the node the ROUND says so and discovery is
+    initiated on that evidence instead of on a guess.
+    """
+    catalog = getattr(ctx, "catalog_ids", None) or {}
+    if catalog:
+        return f"the project's Data Catalog ({len(catalog)} dataset(s))"
+    return None
+
+
+def _source_resolver(
+    user_key: str,
+    project_id: str,
+    *,
+    coord: str,
+    attachment_id: str | None,
+    execution_id: str,
+    config: ProviderConfig,
+    manifest=None,
+    extra_texts=(),
+    catalog_rows: list | None = None,
+):
+    """dev/126: the callable the content loop consults BEFORE generating for a
+    data-loading node — the one place resolution initiates discovery.
+
+    Same policy on all three resolution paths (the Solve batch, the per-node
+    Solve, Simulation Mode's validate): a node whose source is already
+    grounded proceeds and the skip is recorded; an unresolved one gets ONE
+    ``dataset.discover`` delegation whose candidates await the user in that
+    node's own Dataset Finder chat; a node already awaiting the user spends
+    nothing at all.
+    """
+    parent_manifest = manifest if manifest is not None else _resolve_definition(user_key, coord)
+
+    def _resolve(node: dict, grounding_ctx, *, stage: str = "pre") -> dict:
+        """``stage="pre"``: before round 0, when nothing in the project could
+        ground this node's source. ``stage="post"``: after a round failed FOR
+        its source — the gate refused the literal the builder wrote, or the
+        builder declined — which is evidence no heuristic can override."""
+        from utk_curio.backend.app.agents import dataset_resolution
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        node_id = str(node.get("id") or "")
+        spec = projects_storage.read_spec(user_key, project_id)
+        literal = (
+            _node_grounded_literal(node, grounding_ctx, extra_texts=extra_texts)
+            if stage == "pre" else None
+        )
+        project_literal = (
+            _project_grounded_literal(grounding_ctx) if stage == "pre" else None
+        )
+        state = dataset_resolution.node_source_state(
+            spec, node_id, grounded_literal=literal, project_literal=project_literal,
+        )
+        if state["state"] == dataset_resolution.STATE_RESOLVED:
+            skip_literal = literal or project_literal
+            if skip_literal and state.get("attachmentId"):
+                with projects_storage.spec_write_lock(user_key, project_id):
+                    fresh = projects_storage.read_spec(user_key, project_id)
+                    if fresh is not None and dataset_resolution.mark_skipped(
+                        fresh, state["attachmentId"], literal=skip_literal
+                    ):
+                        projects_storage.write_spec(user_key, project_id, fresh)
+            return {
+                "state": "resolved",
+                "detail": state["detail"] or (skip_literal or ""),
+                "confirmedSource": dataset_resolution.confirmed_source(spec, node_id),
+            }
+        if state["state"] != dataset_resolution.STATE_UNRESOLVED:
+            # Candidates (or a reviewed install) already await the user: say so
+            # without spending a model call on a second identical card.
+            return {"state": "awaiting", "detail": state["detail"],
+                    "attachmentId": state["attachmentId"]}
+        started = dataset_resolution.initiate(
+            user_key, project_id, node,
+            config=config,
+            parent_manifest=parent_manifest,
+            parent_coord=coord,
+            parent_execution_id=execution_id,
+            parent_attachment_id=attachment_id,
+            mission=" — ".join(
+                t for t in [str(node.get("goal") or ""), *[str(x or "") for x in extra_texts]]
+                if t
+            )[:2000],
+            catalog_rows=catalog_rows,
+        )
+        if started["status"] == "awaiting":
+            return {"state": "awaiting", "detail": started["detail"],
+                    "attachmentId": started.get("attachmentId")}
+        # Discovery ran and found nothing usable, or the specialist could not
+        # run at all. "Awaiting your selection" would be a lie — there is
+        # nothing to select — so the node keeps its own honest outcome and the
+        # discovery attempt rides along as the reason it stays unresolved.
+        return {"state": "unresolved", "detail": started["detail"],
+                "attachmentId": started.get("attachmentId"),
+                "discovery": started["status"]}
+
+    return _resolve
+
+
 def _verified_content_rounds(
     user_key: str,
     project_id: str,
@@ -6409,6 +6609,7 @@ def _verified_content_rounds(
     exec_user_key: str | None = None,
     secrets_fn=None,
     prior_outputs_fn=None,
+    resolve_source=None,
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -6501,6 +6702,48 @@ def _verified_content_rounds(
     previous_attempt: str | None = None
     previous_error: str | None = None
     url_evidence: list[dict] = []
+    confirmed_source: dict | None = None
+    # dev/126: a data-loading node RESOLVES ITS SOURCE FIRST. Discovery is
+    # initiated by the runtime (never left to the model to think of), and a
+    # node whose source the user has not confirmed yet waits for them instead
+    # of ending in the old dead end — the content builder declining, or the
+    # gate refusing a filename it had to invent.
+    if is_data_loading and resolve_source is not None:
+        try:
+            source_state = resolve_source(node, grounding_ctx) or {}
+        except Exception:  # noqa: BLE001
+            log.warning("Source resolution failed for node %s", node_id, exc_info=True)
+            source_state = {}
+        if source_state.get("state") == "unresolved" and source_state.get("discovery"):
+            # Discovery was initiated and produced nothing selectable: say so
+            # in the trail and let the round proceed, so the node still ends
+            # with ITS own evidence (a refusal naming the literal, or the
+            # builder's own decline) rather than a promise of candidates.
+            rounds_trace.append(
+                f"discovery found no source — {str(source_state.get('detail'))[:160]}"
+            )
+        if source_state.get("state") == "awaiting":
+            detail = str(source_state.get("detail") or "a source must be selected")
+            return {
+                "verdict": "awaiting-source",
+                "evidence": {
+                    "kind": "awaiting-selection",
+                    "detail": detail[:2000],
+                    **({"remedy": {
+                        "kind": "dataset-selection",
+                        "attachmentId": source_state["attachmentId"],
+                        "nodeId": node_id,
+                    }} if source_state.get("attachmentId") else {}),
+                },
+                "rounds": 0,
+                "candidate": "",
+                "delegations": delegations,
+                "roundsTrace": [f"awaiting dataset selection — {detail[:160]}"],
+                "attempts": [],
+            }
+        confirmed_source = source_state.get("confirmedSource")
+        if source_state.get("detail"):
+            rounds_trace.append(f"source: {str(source_state['detail'])[:160]}")
     for round_index in range(1 + _VALIDATE_CORRECTION_ROUNDS):
         rounds_used = round_index + 1
         yield "generation_round", {"round": rounds_used}
@@ -6520,6 +6763,10 @@ def _verified_content_rounds(
             if is_data_loading and grounding_ctx is not None:
                 # dev/114's seventh DEC-063 application, on every caller.
                 inputs["sourceGrounding"] = _source_grounding_inputs(grounding_ctx)
+                if confirmed_source is not None:
+                    # dev/126: the source the USER confirmed on this node —
+                    # handed over, not inferred from what was verified once.
+                    inputs["sourceGrounding"]["confirmedSource"] = confirmed_source
             if extra_inputs:
                 inputs.update({k: v for k, v in extra_inputs.items() if k not in inputs})
             if previous_attempt is not None:
@@ -6728,9 +6975,57 @@ def _verified_content_rounds(
             # The endpoint's real answer joins the trail the card shows, so a
             # key-gated API reads as such instead of as a JSON decode error.
             attempt["endpointEvidence"] = _url_evidence_summary(url_evidence)
+    final_evidence = (verdict_result or {}).get("evidence") or {}
+    final_verdict = verdict_result["verdict"] if verdict_result else "fail"
+    if (
+        is_data_loading
+        and resolve_source is not None
+        and final_verdict == "fail"
+        and final_evidence.get("kind") in ("ungrounded-source", "source-missing")
+    ):
+        # dev/126: the round itself proved the source is missing — the gate
+        # refused the literal the builder wrote, or the builder declined and
+        # named what it needs. THIS is where the old dead end was: a failure
+        # whose remedy text asked the user to attach the Dataset Finder by
+        # hand. Discovery is initiated on that evidence, the attempt trail is
+        # kept (the user sees what was tried), and the node WAITS instead of
+        # failing.
+        try:
+            post = resolve_source(node, grounding_ctx, stage="post") or {}
+        except Exception:  # noqa: BLE001
+            log.warning("Post-failure source resolution failed for node %s",
+                        node_id, exc_info=True)
+            post = {}
+        if post.get("state") == "unresolved" and post.get("detail"):
+            final_evidence = {**final_evidence,
+                              "discovery": str(post["detail"])[:600]}
+            rounds_trace.append(
+                f"discovery found no source — {str(post['detail'])[:160]}"
+            )
+        if post.get("state") == "awaiting":
+            detail = str(post.get("detail") or "a source must be selected")
+            rounds_trace.append(f"awaiting dataset selection — {detail[:160]}")
+            return {
+                "verdict": "awaiting-source",
+                "evidence": {
+                    "kind": "awaiting-selection",
+                    "detail": detail[:2000],
+                    "after": str(final_evidence.get("detail") or "")[:600],
+                    **({"remedy": {
+                        "kind": "dataset-selection",
+                        "attachmentId": post["attachmentId"],
+                        "nodeId": node_id,
+                    }} if post.get("attachmentId") else {}),
+                },
+                "rounds": rounds_used,
+                "candidate": "",
+                "delegations": delegations,
+                "roundsTrace": rounds_trace,
+                "attempts": attempts,
+            }
     return {
-        "verdict": verdict_result["verdict"] if verdict_result else "fail",
-        "evidence": (verdict_result or {}).get("evidence") or {},
+        "verdict": final_verdict,
+        "evidence": final_evidence,
         "rounds": rounds_used,
         "candidate": candidate,
         "delegations": delegations,
@@ -6789,6 +7084,11 @@ def _validate_events(
             dataset_paths_fn=lambda codes: _exec_dataset_paths(project_id, *codes),
             exec_user_key=user_key,
             secrets_fn=_exec_secrets_resolver(user_key),
+            resolve_source=_source_resolver(
+                user_key, project_id, coord=coord, attachment_id=attachment_id,
+                execution_id=execution_id, config=config,
+                extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
+            ),
         )
         rounds_used = outcome["rounds"]
         candidate = outcome["candidate"]

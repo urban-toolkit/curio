@@ -11,10 +11,14 @@ runtime-minted two-lane candidates part with real verification verdicts.
 
 So resolution INITIATES discovery. The rule, in one place:
 
-- a node whose source is already grounded (a path the user typed, an installed
-  catalog dataset, a URL verified in this conversation, an explicit synthetic
-  request) is ``resolved`` — discovery is skipped and the skip is RECORDED, so
-  "always initiated" stays auditable instead of assumed;
+- a node whose source is already grounded (a path the user typed, a dataset in
+  the project's Data Catalog, a URL verified in this conversation, an explicit
+  synthetic request) needs no discovery — the skip is RECORDED with the literal
+  that grounded it, so "always initiated" stays auditable instead of assumed,
+  and the record never suppresses a later discovery;
+- a node whose ROUND failed for its source anyway — the gate refused a
+  fabricated literal, or the content builder declined — is unresolved by
+  evidence, and discovery is initiated then, with the attempt trail kept;
 - a node with candidates already awaiting the user is ``candidates-pending``:
   no second delegation, no duplicate card, no model call;
 - a node whose confirmed catalog pick is not installed yet is
@@ -44,6 +48,12 @@ STATE_RESOLVED = "resolved"
 STATE_UNRESOLVED = "unresolved"
 STATE_CANDIDATES_PENDING = "candidates-pending"
 STATE_AWAITING_INSTALL = "awaiting-install"
+
+#: Recorded when discovery was NOT needed, with the literal that grounded the
+#: node instead. Informational only — it never suppresses a later discovery,
+#: because the evidence that grounded the node once (a non-empty Data Catalog,
+#: a path in the goal) can turn out not to ground the code the builder writes.
+STATE_NOT_NEEDED = "not-needed"
 
 #: Rows a selection may carry (a lane's rows are already bounded at parse).
 MAX_PICKS = 8
@@ -85,13 +95,28 @@ def source_record(spec: dict | None, node_id: str) -> dict | None:
 
 
 def node_source_state(
-    spec: dict | None, node_id: str, *, grounded_literal: str | None = None
+    spec: dict | None,
+    node_id: str,
+    *,
+    grounded_literal: str | None = None,
+    project_literal: str | None = None,
 ) -> dict:
     """The node's source state — the ONE reading of it (memo dev/126).
 
-    ``grounded_literal`` is the caller's grounding evidence: the path, id or
-    URL that already grounds this node's source (the caller owns grounding;
-    this module owns the state). Returns ``{state, attachmentId, detail}``.
+    Two kinds of grounding evidence, deliberately ranked (the caller owns
+    grounding; this module owns the state):
+
+    - ``grounded_literal`` is about THIS node — a path or dataset id in its own
+      intent, a URL verified for it, an explicit synthetic request. It wins
+      over a pending card, because the user has since said what to load and
+      should not be stuck answering a card they have overtaken.
+    - ``project_literal`` is about the PROJECT — "the Data Catalog holds N
+      datasets", which may or may not cover this node. It grounds a first
+      attempt (the content child is handed those rows and the ``DEC-072`` gate
+      enforces them), but it loses to a pending card: once candidates are
+      waiting, re-generating against the whole catalog is not progress.
+
+    Returns ``{state, attachmentId, detail}``.
     """
     attachment = finder_attachment(spec, node_id) or {}
     attachment_id = attachment.get("attachmentId")
@@ -102,14 +127,14 @@ def node_source_state(
         return {"state": STATE_RESOLVED, "attachmentId": attachment_id,
                 "detail": _picks_detail(record)}
     if grounded_literal:
-        # A source the user grounded another way (typed a path, installed the
-        # dataset from the Data Catalog drawer) wins over a pending card: the
-        # node IS resolvable, so discovery would only cost a review gate.
         return {"state": STATE_RESOLVED, "attachmentId": attachment_id,
                 "detail": f"{grounded_literal} already grounds this node"}
     if status in (STATE_CANDIDATES_PENDING, STATE_AWAITING_INSTALL):
         return {"state": status, "attachmentId": attachment_id,
                 "detail": _pending_detail(record, status)}
+    if project_literal:
+        return {"state": STATE_RESOLVED, "attachmentId": attachment_id,
+                "detail": f"{project_literal} may cover this node"}
     return {"state": STATE_UNRESOLVED, "attachmentId": attachment_id, "detail": ""}
 
 
@@ -152,13 +177,21 @@ def mark_skipped(spec: dict, attachment_id: str, *, literal: str) -> dict | None
     record = attachments.get_attachment(spec, attachment_id)
     if record is None:
         return None
-    record[RECORD_KEY] = {
-        "status": STATE_RESOLVED,
+    current = record.get(RECORD_KEY)
+    written = {
+        "status": STATE_NOT_NEEDED,
         "skippedBecause": literal[:200],
         "recordedAt": _now(),
     }
+    if (
+        isinstance(current, dict)
+        and current.get("status") == STATE_NOT_NEEDED
+        and current.get("skippedBecause") == written["skippedBecause"]
+    ):
+        return None  # nothing changed: no write, no revision bump
+    record[RECORD_KEY] = written
     record["revision"] = int(record.get("revision", 1)) + 1
-    return record[RECORD_KEY]
+    return written
 
 
 def resolve_picks(part: dict | None, picks: object) -> list[dict]:
@@ -307,6 +340,7 @@ def initiate(
     parent_execution_id: str,
     parent_attachment_id: str | None = None,
     mission: str | None = None,
+    catalog_rows: list | None = None,
 ) -> dict:
     """Run ONE ``dataset.discover`` delegation for *node* and leave its
     candidates awaiting the user in that node's own Dataset Finder chat.
@@ -333,21 +367,29 @@ def initiate(
 
     node_id = str(node.get("id") or "")
     node_type = node.get("type")
-    spec = projects_storage.read_spec(user_key, project_id)
-    if spec is None or not node_id:
+    if not node_id:
         return {"status": "unavailable", "attachmentId": None,
-                "detail": "the project spec is unavailable"}
-    attached = services._attach_node_agent(
-        user_key, spec, FINDER_AGENT_ID, node_id, node_type
-    )
-    attachment_id = attached.get("attachmentId")
-    if not attachment_id:
-        return {"status": "unavailable", "attachmentId": None,
-                "detail": f"no Dataset Finder on this node: {attached.get('reason')}"}
-    if attached.get("status") == "attached":
-        # Persist BEFORE the delegate runs: the dev/72 home lookup reads the
-        # saved spec, and the trace turns belong in this attachment's session.
-        projects_storage.write_spec(user_key, project_id, spec)
+                "detail": "the node has no id"}
+    # The attachment is a read-modify-write of the spec, and a Solve batch
+    # runs its nodes in a worker pool: under the project's own spec lock, so
+    # two data-loading nodes resolving at once cannot lose each other's
+    # attachment (dev/124's chokepoint, dev/118's pool).
+    with projects_storage.spec_write_lock(user_key, project_id):
+        spec = projects_storage.read_spec(user_key, project_id)
+        if spec is None:
+            return {"status": "unavailable", "attachmentId": None,
+                    "detail": "the project spec is unavailable"}
+        attached = services._attach_node_agent(
+            user_key, spec, FINDER_AGENT_ID, node_id, node_type
+        )
+        attachment_id = attached.get("attachmentId")
+        if not attachment_id:
+            return {"status": "unavailable", "attachmentId": None,
+                    "detail": f"no Dataset Finder on this node: {attached.get('reason')}"}
+        if attached.get("status") == "attached":
+            # Persist BEFORE the delegate runs: the dev/72 home lookup reads
+            # the saved spec, and the trace turns belong in this session.
+            projects_storage.write_spec(user_key, project_id, spec)
     resolution = delegation.resolve(
         user_key, project_id, parent_manifest, "dataset.discover"
     ) if parent_manifest is not None else None
@@ -364,6 +406,20 @@ def initiate(
         "mission": (mission or str(node.get("goal") or "") or "").strip()[:2000],
         "nodeId": node_id,
     }
+    if catalog_rows is not None:
+        # dev/126: the rows were listed where a request context existed (a
+        # detached Solve job has none). Supplying them here also means
+        # ``_dataset_discover_inputs`` leaves them alone — the model-supplied
+        # key rule, applied to the runtime's own input.
+        inputs["catalog"] = {
+            "note": (
+                "The project's Data Catalog as catalog.search returned it"
+                if catalog_rows else
+                "The Data Catalog listing was empty or unavailable — the catalog lane "
+                "must stay empty; say so."
+            ),
+            "rows": catalog_rows,
+        }
     composed = node_context.compose_node_context(user_key, project_id, spec, node_id)
     if composed is not None:
         inputs["nodeContext"] = composed
@@ -380,12 +436,13 @@ def initiate(
     if status != "ok":
         return {"status": "unavailable", "attachmentId": attachment_id,
                 "detail": f"the Dataset Finder run failed: {(text or '')[:200]}"}
-    try:
-        catalog_rows = tools._catalog_search_rows(user_key, project_id, {})
-    except Exception:  # noqa: BLE001
-        log.warning("Catalog listing unavailable while minting candidates for node %s",
-                    node_id, exc_info=True)
-        catalog_rows = []
+    if catalog_rows is None:
+        try:
+            catalog_rows = tools._catalog_search_rows(user_key, project_id, {})
+        except Exception:  # noqa: BLE001
+            log.warning("Catalog listing unavailable while minting candidates for node %s",
+                        node_id, exc_info=True)
+            catalog_rows = []
     part, model_text, outcome = services._mint_candidates_from_delegate(
         loop_ctx, text, catalog_rows
     )
@@ -394,10 +451,11 @@ def initiate(
                 "detail": model_text[:300]}
     total = sum(len(rows) for rows in (part.get("lanes") or {}).values())
     _append_candidates_turn(user_key, project_id, attachment_id, part, total)
-    fresh = projects_storage.read_spec(user_key, project_id)
-    if fresh is not None:
-        mark_candidates_pending(fresh, attachment_id, count=total)
-        projects_storage.write_spec(user_key, project_id, fresh)
+    with projects_storage.spec_write_lock(user_key, project_id):
+        fresh = projects_storage.read_spec(user_key, project_id)
+        if fresh is not None:
+            mark_candidates_pending(fresh, attachment_id, count=total)
+            projects_storage.write_spec(user_key, project_id, fresh)
     return {"status": "awaiting", "attachmentId": attachment_id,
             "candidates": total,
             "detail": f"{total} candidate(s) awaiting your selection"}
