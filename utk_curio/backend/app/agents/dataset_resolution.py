@@ -194,7 +194,9 @@ def mark_skipped(spec: dict, attachment_id: str, *, literal: str) -> dict | None
     return written
 
 
-def resolve_picks(part: dict | None, picks: object) -> list[dict]:
+def resolve_picks(
+    part: dict | None, picks: object, *, catalog_rows: list[dict] | None = None
+) -> list[dict]:
     """Resolve client-supplied ``{lane, key}`` picks against the runtime's OWN
     candidate rows (the persisted ``datasetCandidates`` part).
 
@@ -204,9 +206,11 @@ def resolve_picks(part: dict | None, picks: object) -> list[dict]:
     ``DatasetResolutionError`` naming the first key that does not resolve.
     """
     if not isinstance(part, dict) or not isinstance(part.get("lanes"), dict):
-        raise DatasetResolutionError(
-            "there are no dataset candidates on this node to select from"
-        )
+        if not catalog_rows:
+            raise DatasetResolutionError(
+                "there are no dataset candidates on this node to select from"
+            )
+        part = {"lanes": {"catalog": [], "external": []}}
     if not isinstance(picks, list) or not picks:
         raise DatasetResolutionError("picks must be a non-empty list")
     if len(picks) > MAX_PICKS:
@@ -229,6 +233,13 @@ def resolve_picks(part: dict | None, picks: object) -> list[dict]:
             (r for r in rows if isinstance(r, dict) and str(r.get(field) or "") == key.strip()),
             None,
         )
+        if row is None and lane == "catalog":
+            # dev/132: a dataset the user JUST IMPORTED is not on the card —
+            # the card is older than the file. It is still a legitimate pick:
+            # the Data Catalog is the runtime's own listing (the same one
+            # ``catalog.search`` serves and `DEC-072`'s gate grounds against),
+            # so a key it contains was never introduced by the client.
+            row = _catalog_row(catalog_rows, key.strip())
         if row is None:
             raise DatasetResolutionError(
                 f"{key!r} is not a {lane} candidate on this node — select a row the "
@@ -239,6 +250,25 @@ def resolve_picks(part: dict | None, picks: object) -> list[dict]:
         seen.add((lane, key))
         resolved.append({"lane": lane, **row})
     return resolved
+
+
+def _catalog_row(catalog_rows: list[dict] | None, dataset_id: str) -> dict | None:
+    """A candidate-shaped row for a dataset that is IN the project's Data
+    Catalog (dev/132), or None. ``catalog_rows`` is the runtime's own listing —
+    ``tools._catalog_search_rows`` — resolved by the caller in the request
+    context, as dev/126 already does for discovery."""
+    for item in catalog_rows or []:
+        if not isinstance(item, dict) or str(item.get("id") or "") != dataset_id:
+            continue
+        return {
+            "name": str(item.get("name") or dataset_id)[:120],
+            "sourceType": "catalog",
+            "datasetId": dataset_id,
+            "installed": bool(item.get("installed")),
+            **({"format": str(item.get("format"))[:160]} if item.get("format") else {}),
+            "imported": True,
+        }
+    return None
 
 
 def record_selection(spec: dict, attachment_id: str, rows: list[dict]) -> dict | None:
@@ -255,7 +285,16 @@ def record_selection(spec: dict, attachment_id: str, rows: list[dict]) -> dict |
     if record is None:
         return None
     needs_install = [
-        r for r in rows if r["lane"] == "catalog" and not r.get("installed")
+        r for r in rows
+        if r["lane"] == "catalog"
+        and not r.get("installed")
+        # dev/132: a dataset the user brought in themselves after the card was
+        # minted — the Import button under a portal row's download steps. Its
+        # file is in their own account store and ``curio_dataset_path("<id>")``
+        # resolves it, so the node is RESOLVED: the reviewed install lane adds
+        # a dataset to the DATAFLOW, which is a separate act and not what
+        # reading the file needs.
+        and not r.get("imported")
     ]
     unreachable = [
         r for r in rows

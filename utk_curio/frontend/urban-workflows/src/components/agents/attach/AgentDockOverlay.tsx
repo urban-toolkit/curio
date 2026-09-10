@@ -181,6 +181,8 @@ export const AgentDockOverlay: React.FC = () => {
               onRecordDatasetSelection={(picks) =>
                 ctx.recordDatasetSelection(selected.attachmentId, picks)
               }
+              // dev/132: the portal-download row's Import button.
+              onImportDataset={ctx.importDataset}
               delegateExists={(id) =>
                 ctx.attachments.some((a) => a.attachmentId === id)
               }

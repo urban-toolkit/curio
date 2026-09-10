@@ -81,11 +81,24 @@ export const AgentDatasetCandidatesCard: React.FC<{
    * is attached to. Present only there; without it the card keeps its
    * dev/114 behavior exactly (select → prompt). */
   onRecordSelection?: (picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
-}> = ({ part, tintClassName, onComposePrompt, variant = "finder", onRecordSelection }) => {
+  /** dev/132: the ONE catalog import (`useDatasetImport`), so a row that must
+   * be downloaded from a portal can be brought in from the card that taught
+   * the download. Resolves to the imported dataset's id, or null when the
+   * import failed (the hook has already shown its own toast). */
+  onImportDataset?: (file: File) => Promise<string | null>;
+}> = ({
+  part,
+  tintClassName,
+  onComposePrompt,
+  variant = "finder",
+  onRecordSelection,
+  onImportDataset,
+}) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [recording, setRecording] = useState(false);
   const [recorded, setRecorded] = useState<AgentDatasetSelection | null>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const rowKey = (lane: string, index: number) => `${lane}:${index}`;
 
@@ -118,7 +131,42 @@ export const AgentDatasetCandidatesCard: React.FC<{
     }
   };
 
+  /** dev/132: the download's other half — the file the user just fetched from
+   * the portal is imported through the SAME catalog pathway as everywhere
+   * else, and its id is then confirmed as this node's source, so solving
+   * continues from it without the user explaining anything further. */
+  const importAndConfirm = async (file: File) => {
+    if (!onImportDataset || importing) return;
+    setImporting(true);
+    setRecordError(null);
+    try {
+      const datasetId = await onImportDataset(file);
+      if (!datasetId) return; // the import hook reported its own failure
+      if (onRecordSelection) {
+        setRecorded(await onRecordSelection([{ lane: "catalog", key: datasetId }]));
+      }
+    } catch (e) {
+      setRecordError(
+        e instanceof Error ? e.message : "the imported dataset could not be recorded",
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const recordedNote = (selection: AgentDatasetSelection): string => {
+    // dev/132: when the runtime handed the fetch to the node's own builder,
+    // say THAT — the user has nothing left to compose or press.
+    const delegated = selection.delegated;
+    if (delegated?.status === "delegating") {
+      return "Source recorded — this node's builder is writing the loader for it now.";
+    }
+    if (delegated?.status === "session-running") {
+      return "Source recorded — the running Solve session picks this node up on its next pass.";
+    }
+    if (delegated?.reason) {
+      return `Source recorded — ${delegated.reason}.`;
+    }
     if (selection.status === "resolved") {
       return "Source recorded for this node — Solve it to build the loader from this source.";
     }
@@ -176,6 +224,44 @@ export const AgentDatasetCandidatesCard: React.FC<{
             ) : null}
             {row.requirement ? (
               <span className={styles.requirement}>{row.requirement}</span>
+            ) : null}
+            {row.access === "manual-download" ? (
+              // dev/132: this source is a portal download, and the card is
+              // where the user learns how — the steps are the portal's own
+              // (or what the probe observed), never invented here.
+              <span className={styles.download}>
+                <span className={styles.downloadHead}>
+                  Download it from the portal
+                  {row.accessWhy ? ` — ${row.accessWhy}` : ""}
+                </span>
+                {row.downloadSteps?.length ? (
+                  <ol className={styles.steps}>
+                    {row.downloadSteps.map((step, si) => (
+                      <li key={si}>{step}</li>
+                    ))}
+                  </ol>
+                ) : null}
+                {onImportDataset ? (
+                  <label className={styles.importControl}>
+                    <input
+                      type="file"
+                      className={styles.importInput}
+                      disabled={importing}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) void importAndConfirm(file);
+                      }}
+                    />
+                    <span
+                      className={styles.importButton}
+                      aria-disabled={importing || undefined}
+                    >
+                      {importing ? "Importing…" : "Import dataset"}
+                    </span>
+                  </label>
+                ) : null}
+              </span>
             ) : null}
           </span>
         </label>

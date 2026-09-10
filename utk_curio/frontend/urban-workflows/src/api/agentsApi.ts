@@ -251,6 +251,18 @@ export interface AgentDatasetCandidateRow {
   /** Catalog lane only: the id dataset.install proposals reference. */
   datasetId?: string;
   installed?: boolean;
+  /** dev/132: what can be DONE with this row, read from the probe's own
+   * observation (never the model's prose) — code can fetch it, a person must
+   * download it from the portal, or the runtime could not tell. */
+  access?: "fetchable" | "manual-download" | "unknown" | string;
+  /** The one-line reason for `access` — the content type, status or page title
+   * the probe actually saw. */
+  accessWhy?: string;
+  /** Manual rows only: the portal's own download steps, as observed. */
+  downloadSteps?: string[];
+  /** dev/132: a catalog row the user imported themselves after the card was
+   * minted — its file is here, so nothing needs installing first. */
+  imported?: boolean;
   /** dev/67-4 (DEC-053): the deterministic verification verdict — external
    * rows only; runtime-probed through the egress policy, never model-claimed. */
   verification?: {
@@ -335,6 +347,23 @@ export interface AgentDatasetSelection {
   nodeId?: string;
   status: "resolved" | "awaiting-install" | "candidates-pending" | string;
   picks: AgentDatasetCandidateRow[];
+  /** dev/132: what the runtime did with the confirmation — a fetchable source
+   * is handed to the node's own builder automatically (no prompt to compose);
+   * a portal row waits for the download and the Import button. */
+  delegated?: {
+    status:
+      | "delegating"
+      | "session-running"
+      | "manual-download"
+      | "no-builder"
+      | "skipped"
+      | string;
+    reason?: string;
+    attachmentId?: string;
+    nodeId?: string;
+    executionId?: string;
+    sources?: string[];
+  };
 }
 
 /** dev/114: the proposal's source block — bounded plain data. */

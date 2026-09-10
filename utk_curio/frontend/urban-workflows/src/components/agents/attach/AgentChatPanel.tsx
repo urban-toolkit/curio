@@ -154,6 +154,9 @@ export const AgentChatPanel: React.FC<{
   onRecordDatasetSelection?: (
     picks: import("../../../api/agentsApi").AgentDatasetPick[],
   ) => Promise<import("../../../api/agentsApi").AgentDatasetSelection>;
+  /** dev/132: the shared catalog import, for a candidate row the runtime
+   * could not fetch — resolves with the imported dataset's id. */
+  onImportDataset?: (file: File) => Promise<string | null>;
   /** dev/72: live-existence check for a delegation home (stale → no link). */
   delegateExists?: (attachmentId: string) => boolean;
   onSaveIntent?: (intent: string | null) => Promise<void>;
@@ -201,6 +204,7 @@ export const AgentChatPanel: React.FC<{
   onCancelSolve,
   onOpenAgentChat,
   onRecordDatasetSelection,
+  onImportDataset,
   delegateExists,
   onSaveIntent,
   onSaveTitle,
@@ -757,6 +761,16 @@ export const AgentChatPanel: React.FC<{
                           attachment.coord.startsWith("agent.dataset-finder@") &&
                           attachment.target.kind === "node"
                             ? onRecordDatasetSelection
+                            : undefined
+                        }
+                        // dev/132: and the Import button under a portal row's
+                        // download steps — the same catalog import as the
+                        // drawer footer and the catalog page.
+                        onImportDataset={
+                          onImportDataset &&
+                          attachment.coord.startsWith("agent.dataset-finder@") &&
+                          attachment.target.kind === "node"
+                            ? onImportDataset
                             : undefined
                         }
                       />

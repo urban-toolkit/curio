@@ -1022,7 +1022,13 @@ def record_dataset_selection(
         None,
     )
     try:
-        rows = dataset_resolution.resolve_picks(part, picks)
+        rows = dataset_resolution.resolve_picks(
+            part, picks,
+            # dev/132: the Data Catalog listing, so a dataset the user just
+            # imported from the card's download steps can be confirmed — the
+            # card predates the file.
+            catalog_rows=_catalog_rows_for_discovery(user_key, project_id),
+        )
     except dataset_resolution.DatasetResolutionError as exc:
         raise AgentServiceError(str(exc), 422) from exc
     # Re-probe the external picks: the card may be minutes or days old, and the
@@ -1101,7 +1107,7 @@ def _fetchable_picks(rows: list[dict]) -> list[dict]:
             continue
         if row.get("lane") == "external" and row.get("access") == verify.ACCESS_FETCHABLE:
             out.append(row)
-        elif row.get("lane") == "catalog" and row.get("installed"):
+        elif row.get("lane") == "catalog" and (row.get("installed") or row.get("imported")):
             out.append(row)
     return out
 

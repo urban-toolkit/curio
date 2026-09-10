@@ -8,6 +8,9 @@ import React, {
   useState,
 } from "react";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useOptionalToastContext } from "../../../providers/ToastProvider";
+import { useDatasetCatalog } from "../../../services/datasetCatalog/datasetCatalogHooks";
+import { useDatasetImport } from "../../../services/datasetCatalog/useDatasetImport";
 import {
   agentsApi,
   type AgentApplyResult,
@@ -72,6 +75,11 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
     attachmentId: string,
     picks: AgentDatasetPick[],
   ) => Promise<AgentDatasetSelection>;
+  /** dev/132: import a dataset the user downloaded from a portal, through the
+   * ONE catalog import pathway (`useDatasetImport` — same register, same
+   * toast, same cross-surface refresh), and resolve with its dataset id so
+   * the card can confirm it as the node's source. */
+  importDataset: (file: File) => Promise<string | null>;
   /** dev/67-9: run the Simulation Mode driver (step or auto) — canvas
    * mutations from the stream apply live; resolves with the done payload. */
   runSimulation: (
@@ -167,6 +175,34 @@ export const AgentAttachmentsProvider: React.FC<{
 }> = ({ enabled = true, children }) => {
   const { projectId } = useFlowContext();
   const effectiveProjectId = enabled ? (projectId ?? null) : null;
+  // dev/132: the toast is how the shared import reports itself; the provider
+  // must still render where none is mounted (a test, an embedded surface).
+  const toast = useOptionalToastContext();
+  const showToast = useCallback(
+    (message: string, kind: "success" | "error") => {
+      if (toast) toast.showToast(message, kind);
+    },
+    [toast],
+  );
+  // dev/132: the catalog hook is used for its import ONLY — `enabled: false`
+  // fetches no listing here (the drawer and the catalog page own that), so a
+  // chat card gains the import without a second listing behind it.
+  const datasetCatalog = useDatasetCatalog({
+    dataflowId: effectiveProjectId ?? undefined,
+    enabled: false,
+  });
+  const { importFile: importDatasetFile } = useDatasetImport({
+    importDataset: datasetCatalog.importDataset,
+    showToast,
+  });
+  const importDataset = useCallback(
+    async (file: File) => {
+      const imported = await importDatasetFile(file);
+      const id = (imported as { id?: string } | null | undefined)?.id;
+      return typeof id === "string" && id ? id : null;
+    },
+    [importDatasetFile],
+  );
   const state = useAgentAttachments(effectiveProjectId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, AgentSessionTurn[]>>({});
@@ -1075,6 +1111,7 @@ export const AgentAttachmentsProvider: React.FC<{
       attachSolveJob,
       applyPlanNode,
       recordDatasetSelection,
+      importDataset,
       savePlanGoal,
       applyPlanEdges,
       validateNode,
@@ -1115,6 +1152,7 @@ export const AgentAttachmentsProvider: React.FC<{
       attachSolveJob,
       applyPlanNode,
       recordDatasetSelection,
+      importDataset,
       savePlanGoal,
       applyPlanEdges,
       validateNode,

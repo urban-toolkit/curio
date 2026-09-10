@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 
 import {
   AgentDatasetCandidatesCard,
@@ -148,5 +148,125 @@ describe("AgentDatasetCandidatesCard — dev/114 the Node Builder chat variant",
     expect(composeConfirmationPrompt([], [PART.lanes.external[0]], "builder")).toBe(
       "Build the data-loading node — fetch from: NOAA Climate Data API (https://api.noaa.gov).",
     );
+  });
+});
+
+describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Import", () => {
+  const MANUAL: AgentDatasetCandidatesPart = {
+    type: "datasetCandidates",
+    lanes: {
+      external: [
+        {
+          name: "Setores GeoSampa",
+          sourceType: "portal",
+          url: "https://geosampa.example.gov.br/downloads",
+          format: "Shapefile (zip)",
+          access: "manual-download",
+          accessWhy: 'the data URL answered with a web page titled "Downloads"',
+          downloadSteps: [
+            "Open the portal page in your browser: https://geosampa.example.gov.br/downloads",
+            "Save the Shapefile (zip) file the portal offers.",
+            "Then use Import dataset below: it registers the file in this project's Data Catalog, and the node is built from it.",
+          ],
+        },
+        {
+          name: "NOAA Climate Data API",
+          sourceType: "api",
+          url: "https://api.noaa.gov",
+          access: "fetchable",
+          accessWhy: "the endpoint answered 200 with application/json",
+        },
+      ],
+      catalog: [],
+    },
+  };
+
+  it("teaches the download only for the row that needs it", () => {
+    render(<AgentDatasetCandidatesCard part={MANUAL} />);
+    expect(screen.getByText(/Download it from the portal/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Open the portal page in your browser/),
+    ).toBeInTheDocument();
+    // The fetchable row teaches nothing: its code is written for it.
+    expect(screen.getAllByText(/Download it from the portal/)).toHaveLength(1);
+    // No Import control without the host's import (a canvas-level chat).
+    expect(screen.queryByText("Import dataset")).toBeNull();
+  });
+
+  it("imports the downloaded file and confirms it as the node's source", async () => {
+    const onImportDataset = jest.fn().mockResolvedValue("imported.x99@1");
+    const onRecordSelection = jest.fn().mockResolvedValue({
+      attachmentId: "att-df",
+      nodeId: "n1",
+      status: "resolved",
+      picks: [],
+      delegated: { status: "delegating", nodeId: "n1" },
+    });
+    const { container } = render(
+      <AgentDatasetCandidatesCard
+        part={MANUAL}
+        onImportDataset={onImportDataset}
+        onRecordSelection={onRecordSelection}
+      />,
+    );
+    expect(screen.getByText("Import dataset")).toBeInTheDocument();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["a,b\n1,2\n"], "setores.zip", { type: "application/zip" });
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [file] } });
+    });
+    expect(onImportDataset).toHaveBeenCalledWith(file);
+    // The just-imported dataset IS the node's source — one catalog pick.
+    expect(onRecordSelection).toHaveBeenCalledWith([
+      { lane: "catalog", key: "imported.x99@1" },
+    ]);
+    // And the card says the builder took over from there.
+    expect(
+      screen.getByText(/this node's builder is writing the loader for it now/),
+    ).toBeInTheDocument();
+  });
+
+  it("a failed import records nothing", async () => {
+    const onImportDataset = jest.fn().mockResolvedValue(null);
+    const onRecordSelection = jest.fn();
+    const { container } = render(
+      <AgentDatasetCandidatesCard
+        part={MANUAL}
+        onImportDataset={onImportDataset}
+        onRecordSelection={onRecordSelection}
+      />,
+    );
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, {
+        target: { files: [new File(["x"], "broken.zip")] },
+      });
+    });
+    expect(onRecordSelection).not.toHaveBeenCalled();
+  });
+
+  it("a confirmed fetchable row says the session will pick the node up", async () => {
+    const onRecordSelection = jest.fn().mockResolvedValue({
+      attachmentId: "att-df",
+      nodeId: "n1",
+      status: "resolved",
+      picks: [],
+      delegated: {
+        status: "session-running",
+        reason: "the running Solve session picks this node up on its next pass",
+      },
+    });
+    render(
+      <AgentDatasetCandidatesCard part={MANUAL} onRecordSelection={onRecordSelection} />,
+    );
+    fireEvent.click(screen.getByLabelText("Select NOAA Climate Data API"));
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /Confirm source for this node/ }),
+      );
+    });
+    expect(
+      screen.getByText(/picks this node up on its next pass/),
+    ).toBeInTheDocument();
   });
 });

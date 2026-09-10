@@ -142,3 +142,60 @@ class TestAFetchableRowIsDelegated:
 class _FakeJob:
     kind = "solve-batch"
     job_id = "job-1"
+
+
+class TestAfterTheImportSolvingContinues:
+    """dev/132 (R3): the download steps end at Import dataset, and the dataset
+    the user just imported IS the node's source — no explanation needed, and no
+    second card. The card posts the new dataset id as a catalog pick; the
+    runtime resolves it against its OWN Data Catalog listing (the same one
+    catalog.search serves and DEC-072's gate grounds against), so nothing the
+    client sends can introduce a source."""
+
+    def test_an_imported_dataset_resolves_the_node_and_starts_the_builder(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        user, token = user_and_token
+        h, finder_id = _await_candidates(client, user, token, monkeypatch)
+        # The user follows the portal steps and imports the file: the ONE
+        # catalog import, which the card calls through its shared hook.
+        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+        loader = (
+            "import pandas as pd\n"
+            f'return pd.read_csv(curio_dataset_path("{dataset_id}"))'
+        )
+        frames: list[str] = []
+
+        def _reply(config, messages, **kwargs):
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            frames.append(messages[-1].get("content") or "")
+            return loader
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", _reply
+        )
+        body = _select(h, finder_id, [{"lane": "catalog", "key": dataset_id}]).get_json()
+        assert body["status"] == dr.STATE_RESOLVED  # its file is here; nothing to install
+        pick = body["picks"][0]
+        assert pick["datasetId"] == dataset_id and pick["imported"] is True
+        delegated = body["delegated"]
+        assert delegated["status"] == "delegating"
+        events = _drain(h, delegated["attachmentId"])
+        done = next(p for k, p in events if k == "done")
+        assert done["verdict"] == "pass"
+        # The builder was handed the confirmed source, and built against the
+        # imported dataset BY ID — dev/114's grounded form.
+        assert any("confirmedSource" in f and dataset_id in f for f in frames)
+        assert f'curio_dataset_path("{dataset_id}")' in h.node_content(h.load)
+
+    def test_a_dataset_id_the_catalog_does_not_have_is_still_refused(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h, finder_id = _await_candidates(client, user, token, monkeypatch)
+        r = _select(h, finder_id, [{"lane": "catalog", "key": "imported.not-a-dataset"}])
+        assert r.status_code == 422
+        assert "not a catalog candidate" in r.get_json()["error"]

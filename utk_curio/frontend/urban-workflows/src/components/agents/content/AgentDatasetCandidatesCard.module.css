@@ -180,3 +180,61 @@
 .recordError {
   color: var(--curio-danger-text, var(--curio-warning-text));
 }
+
+/* dev/132: a row the runtime could not fetch — the portal's own steps, and the
+   shared catalog import right where they end. */
+.download {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.74rem;
+  color: var(--curio-text-secondary);
+}
+
+.downloadHead {
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  word-break: break-word;
+}
+
+.importControl {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.importInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.importButton {
+  font-size: 0.76rem;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  border: 1px solid var(--curio-border-strong);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+}
+
+.importControl:hover .importButton {
+  border-color: var(--curio-text-secondary);
+}
+
+.importButton[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
+}
