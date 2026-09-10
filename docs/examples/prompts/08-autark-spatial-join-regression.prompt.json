@@ -139,6 +139,10 @@
         "raster",
         "temperature"
       ]
+    },
+    {
+      "ref": "analysis1",
+      "outputKind": "list"
     }
   ],
   "execution": {

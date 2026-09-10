@@ -82,20 +82,50 @@ class TestReachability:
         assert score.categories == ("pass",), result.scored.as_dict()
         assert result.scored.comparison.exact
 
-    def test_every_declared_interaction_fixture_is_the_one_the_oracle_refuses(self):
-        """The gap set is a fact about the contract, not a per-fixture opinion:
-        the fixtures declaring ``interaction-edge`` are exactly the ones the
-        oracle cannot serialize."""
+    def test_the_interaction_edge_gap_is_closed_and_nothing_is_refused_now(self):
+        """dev/125 (dev/121 F2) — the gap that named this branch is gone.
+
+        Until dev/112's ``edges[].kind`` reached ``imp/agentcatalog``, these
+        eight fixtures were the ones the oracle could not serialize, and this
+        test pinned that set. It now pins the closure instead: every fixture,
+        including all eight, is representable, and NONE of their ``expected``
+        graphs was edited to get there -- they still declare the interaction
+        edges, and the eight still declare the need, which is the record of
+        what this branch once could not do.
+        """
         declared = {f.fixture_id for f in FIXTURES if "interaction-edge" in f.needs}
-        refused = set()
+        assert len(declared) == 8, "the eight fixtures keep their declaration"
         for fixture in FIXTURES:
-            try:
-                oracle.plan_for(fixture.expected, intents=fixture.intents)
-            except oracle.Unrepresentable as gap:
-                assert gap.need == "interaction-edge"
-                refused.add(fixture.fixture_id)
-        assert declared == refused
-        assert len(declared) == 8
+            oracle.plan_for(fixture.expected, intents=fixture.intents)
+        assert any(
+            str(edge.get("kind")) == "interaction"
+            for fixture in FIXTURES
+            for edge in fixture.expected.get("edges") or []
+        ), "the expected graphs still carry interaction edges — nothing was weakened"
+
+    def test_an_unexpressible_kind_is_still_named_rather_than_scored(self):
+        """The gap MACHINERY outlives the gap it was built for.
+
+        dev/121's rule is that a construct the contract cannot express is a
+        NAMED capability gap, never a lowered expectation. With the interaction
+        gap closed there is no live example of that, so the mechanism is pinned
+        against a synthetic kind — otherwise the next unexpressible construct
+        would be discovered prompt by prompt, which is the thing the harness
+        exists to prevent.
+        """
+        expected = {
+            "nodes": [
+                {"ref": "a", "type": "curio.builtin/data-loading", "role": "loader"},
+                {"ref": "b", "type": "curio.builtin/vis-vega", "role": "visualization"},
+            ],
+            "edges": [{"from": "a", "to": "b", "kind": "telepathy"}],
+        }
+        with pytest.raises(oracle.Unrepresentable) as caught:
+            oracle.plan_for(expected, intents=[])
+        assert caught.value.need == "telepathy-edge"
+        # The message names what the grammar CAN carry, so a fixture author
+        # reads the answer out of the failure.
+        assert "data" in caught.value.detail and "interaction" in caught.value.detail
 
 
 class TestTheModelSeesOnlyThePrompt:

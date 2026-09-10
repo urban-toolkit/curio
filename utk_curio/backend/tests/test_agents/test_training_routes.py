@@ -135,9 +135,16 @@ class TestPreview:
         assert payload["consent"]["rowsDigest"] == payload["dataset"]["sha256"]
         assert "identifiers" in payload["consent"]["note"].lower()
         assert payload["consent"]["licences"]
-        # The eight the contract cannot express are named, with their reason.
-        assert any(
-            entry["reason"] == "interaction-edge"
+        # dev/125: the eight interaction fixtures are no longer excluded — the
+        # contract expresses their edges now, so the same rule includes them.
+        # The excluded LIST stays in the payload: whatever is left out is named
+        # with its reason, which is the property this asserts.
+        assert not [
+            entry for entry in payload["dataset"]["excluded"]
+            if entry["reason"] == "interaction-edge"
+        ]
+        assert all(
+            entry.get("reason") and entry.get("fixtureId")
             for entry in payload["dataset"]["excluded"]
         )
         assert API_KEY not in json.dumps(payload)

@@ -29,7 +29,14 @@ from typing import Iterable, Mapping
 _FENCE = "curio.v1"
 
 #: Edge kinds the plan grammar can carry on this branch.
-EXPRESSIBLE_EDGE_KINDS = ("data",)
+#:
+#: dev/125 (dev/121 F2) added ``interaction``: dev/112's ``edges[].kind`` and
+#: ``plan_topology.py`` are now on this branch, so the eight fixtures that
+#: declare ``capability.needs: ["interaction-edge"]`` reconstruct through the
+#: real path instead of reporting a gap -- and NOT ONE of them was edited to
+#: make that happen, which is the point (dev/121: a gap is named by the
+#: harness, never hidden by a lowered expectation).
+EXPRESSIBLE_EDGE_KINDS = ("data", "interaction")
 
 _ROLE_TITLES = {
     "loader": "Load",
@@ -156,12 +163,27 @@ def plan_for(
         if kind not in EXPRESSIBLE_EDGE_KINDS:
             raise Unrepresentable(
                 f"{kind}-edge",
-                f"the plan grammar carries no edge kind, so {edge.get('from')} -> "
-                f"{edge.get('to')} cannot be proposed as a {kind} link",
+                f"the plan grammar carries {', '.join(EXPRESSIBLE_EDGE_KINDS)} edges, so "
+                f"{edge.get('from')} -> {edge.get('to')} cannot be proposed as a "
+                f"{kind} link",
             )
         entry = {"from": str(edge.get("from")), "to": str(edge.get("to"))}
+        if kind != "data":
+            # Byte-absent default, exactly as the grammar canonicalises it --
+            # a data-only plan the oracle emits must stay identical to what it
+            # emitted before dev/125.
+            entry["kind"] = kind
         slot = edge.get("slot")
         if slot is not None:
+            # An interaction edge takes no merge slot (the grammar refuses
+            # toHandle on one); a fixture that declares both is malformed and
+            # should fail loudly here rather than mint a plan the parser drops.
+            if kind == "interaction":
+                raise Unrepresentable(
+                    "interaction-edge",
+                    f"{edge.get('from')} -> {edge.get('to')} declares a merge slot on an "
+                    "interaction edge; interaction links carry no input port",
+                )
             entry["toHandle"] = f"in_{int(slot)}"
         edges.append(entry)
     return OraclePlan(goal=goal, nodes=tuple(nodes), edges=tuple(edges))

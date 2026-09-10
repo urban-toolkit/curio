@@ -546,10 +546,33 @@ def oracle_attempt(
         contents[ref]: kind for ref, kind in kinds.items() if ref in contents
     }
 
+    # dev/125: matched by CONTAINMENT, not equality. The runtime wraps every
+    # dispatched node in a determinism preamble (`_np.random.seed(42)` ...),
+    # so the payload's `code` is never byte-equal to the content the fixture
+    # declared -- an exact-match lookup silently never fired, and every node
+    # fell through to the word heuristic below. That went unnoticed while the
+    # heuristic happened to guess right; fixture 08's JS node returns a list of
+    # layers and only MENTIONS "raster" in its comments, so the guess was
+    # "raster", the downstream Autark grammar refused the type, and Solve
+    # burned three correction rounds on a node whose content was never wrong.
+    # Longest declared content first: a short snippet must not match inside a
+    # longer one.
+    # ... and whitespace-insensitively, because the wrapper also INDENTS the
+    # node's code into a function body, so plain containment fails too.
+    def _squeeze(text: str) -> str:
+        return "".join(str(text).split())
+
+    by_length = sorted(
+        ((_squeeze(code), kind) for code, kind in code_to_kind.items()),
+        key=lambda kv: len(kv[0]),
+        reverse=True,
+    )
+
     def kind_for(payload):
-        code = str(payload.get("code") or payload.get("content") or "")
-        if code in code_to_kind:
-            return code_to_kind[code]
+        code = _squeeze(payload.get("code") or payload.get("content") or "")
+        for declared, kind in by_length:
+            if declared and declared in code:
+                return kind
         # A fake sandbox still has to answer plausibly: the runtime checks the
         # produced type against the DOWNSTREAM node's declared input ports, so
         # answering "dataframe" for code that plainly returns a GeoDataFrame

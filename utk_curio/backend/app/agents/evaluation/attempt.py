@@ -35,11 +35,18 @@ from utk_curio.backend.app.agents.evaluation.scoring import (
     score_reconstruction,
 )
 
-#: Edge kinds the plan contract cannot express on this branch (dev/112's
-#: ``edges[].kind`` is not an ancestor of it). Passed to the comparator so the
-#: expected edges become named capability gaps; when dev/112 lands here this
-#: tuple empties and the T2 fixtures start scoring without a fixture edit.
-UNEXPRESSIBLE_EDGE_KINDS = ("interaction",)
+#: Edge kinds the plan contract cannot express on this branch. Passed to the
+#: comparator so the expected edges become named capability gaps rather than
+#: wrong scores.
+#:
+#: EMPTY since dev/125 (dev/121 F2): dev/112's ``edges[].kind`` and
+#: ``plan_topology.py`` are on this branch now, so ``interaction`` left this
+#: tuple and the eight T2 fixtures score on their own declared expectations --
+#: with no fixture edited, exactly as dev/121 promised. The parameter stays
+#: (and the comparator's gap machinery keeps its tests) because the NEXT
+#: unexpressible construct should be nameable the same way, not discovered
+#: prompt by prompt.
+UNEXPRESSIBLE_EDGE_KINDS: tuple[str, ...] = ()
 
 #: Solve statuses that mean "we never found out".
 _UNMEASURED = ("pending", "not-attempted", "skipped")

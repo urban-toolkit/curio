@@ -139,15 +139,43 @@ class TestTheTargetIsTheRuntimesContract:
             _build(approved, parse_reply=_always_refuse)
         assert "does not parse" in str(refusal.value)
 
-    def test_interaction_edge_fixtures_are_excluded_by_construction(self):
+    def test_interaction_edge_fixtures_are_no_longer_excluded(self):
+        """dev/125 (dev/121 F2) — the eight join the training set.
+
+        dev/122's rule is unchanged and is the reason this flipped on its own:
+        a fixture is excluded when the runtime's parser cannot accept its
+        target, and nothing else. The interaction edges those eight declare are
+        now serializable, so the SAME rule now includes them. Training on a
+        weakened graph was never the alternative — the alternative was training
+        on nothing, which is what this test used to assert.
+        """
         gaps = [f for f in FIXTURES if "interaction-edge" in f.needs]
-        assert len(gaps) == 8
+        assert len(gaps) == 8, "the eight keep their declaration (the record)"
         built = _build([_approved(f) for f in FIXTURES])
         for fixture in gaps:
-            assert fixture.fixture_id not in built.fixture_ids
-        assert {
-            e.reason for e in built.excluded if e.reason == "interaction-edge"
-        } == {"interaction-edge"}
+            assert fixture.fixture_id in built.fixture_ids
+        assert not [e for e in built.excluded if e.reason == "interaction-edge"]
+
+    def test_a_kind_the_grammar_cannot_carry_is_still_excluded_by_construction(self):
+        """The exclusion RULE outlives the gap that motivated it (dev/122 §2).
+
+        With ``interaction`` expressible there is no live example left, so the
+        rule is pinned against a kind no grammar will ever carry. Otherwise
+        the next unexpressible construct gets trained on rather than named.
+        """
+        base = _approved(_representable()[0])
+        data = json.loads(json.dumps(base.data))
+        refs = [n["ref"] for n in data["expected"]["nodes"]]
+        data["expected"]["edges"].append(
+            {"from": refs[0], "to": refs[-1], "kind": "telepathy"}
+        )
+        fixture = Fixture(path=base.path, data=data)
+        # Alongside good rows: a set whose ONLY fixture is excluded refuses
+        # outright ("nothing to train on"), which would test the wrong thing.
+        others = [_approved(f) for f in _representable()[1:4]]
+        built = _build(others + [fixture])
+        assert fixture.fixture_id not in built.fixture_ids
+        assert [e.reason for e in built.excluded] == ["telepathy-edge"]
 
     def test_the_row_shape_is_the_chat_shape_with_the_prompt_as_the_user_turn(self):
         fixture = _approved(_representable()[0])
