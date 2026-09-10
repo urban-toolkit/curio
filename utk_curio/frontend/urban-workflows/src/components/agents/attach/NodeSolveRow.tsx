@@ -3,6 +3,7 @@ import styles from "./AgentBuilderStrip.module.css";
 import type { AgentRemedy } from "../../../api/agentsApi";
 import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
 import { OpenDatasetFinderAction } from "./OpenDatasetFinderAction";
+import { stoppedByPhrase } from "../content/AgentSolveAttemptsCard";
 
 /**
  * dev/115 (DEC-073, Amendment A2): the per-node Solve row — rendered in a
@@ -34,7 +35,7 @@ export const NodeSolveRow: React.FC<{
     setRemedy(null);
     try {
       const done = (await onSolveNode()) as
-        | { verdict?: string; rounds?: number; unchanged?: boolean; written?: boolean; proposalId?: string; remedy?: AgentRemedy }
+        | { verdict?: string; rounds?: number; unchanged?: boolean; written?: boolean; proposalId?: string; remedy?: AgentRemedy; stoppedBy?: string }
         | undefined;
       if (done?.remedy) setRemedy(done.remedy);
       if (done?.verdict === "pass" && done.unchanged) setNotice("Verified — the node's code ran successfully; no change needed.");
@@ -47,7 +48,13 @@ export const NodeSolveRow: React.FC<{
             "confirm. Nothing was generated or written.",
         );
       else if (done?.verdict === "fail")
-        setNotice(`Not fixed after ${done.rounds ?? "?"} attempts — the trail is in the transcript; nothing was written.`);
+        setNotice(
+          // dev/127: the trail is a card in this chat now, with the code each
+          // attempt ran — the notice says where to look and what stopped it.
+          `Not fixed after ${done.rounds ?? "?"} attempts${
+            done.stoppedBy ? ` (${stoppedByPhrase(done.stoppedBy) || done.stoppedBy})` : ""
+          } — every attempt is below with the code it ran; nothing was written.`,
+        );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Solve failed");
     } finally {

@@ -1275,6 +1275,55 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
     ]);
   });
 
+  // dev/127: the trail rides the transcript, so opening the panel shows it.
+  it("renders a failed node's attempt trail from the transcript", () => {
+    const onOpenAgentChat = jest.fn();
+    renderPanel({
+      turns: [
+        {
+          role: "agent" as const,
+          text: "Solved 5 of 7 plan nodes.",
+          content: [
+            {
+              type: "solveAttempts" as const,
+              nodeId: "08b108a1",
+              label: "Calculate Density",
+              attachmentId: "att-nb",
+              rounds: 2,
+              stoppedBy: "budget",
+              verdict: "fail",
+              attempts: [
+                {
+                  round: 1,
+                  verdict: "fail",
+                  kind: "execution-error",
+                  error: "KeyError: 'community_area'",
+                  code: "merged = a.merge(b, on='community_area')",
+                },
+                {
+                  round: 2,
+                  verdict: "fail",
+                  kind: "execution-error",
+                  error: "AttributeError: 'DataFrame' object has no attribute 'crs'",
+                  code: "return merged.to_crs(3395)",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      onOpenAgentChat,
+    });
+    const card = screen.getByRole("group", { name: /Attempts to fix Calculate Density/ });
+    expect(card).toHaveTextContent("KeyError: 'community_area'");
+    expect(card).toHaveTextContent("return merged.to_crs(3395)");
+    expect(card).toHaveTextContent(/this node's time budget was spent/);
+    fireEvent.click(
+      within(card).getByRole("button", { name: /Open the Node Builder for Calculate Density/ }),
+    );
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-nb");
+  });
+
   it("a Dataset Finder on the canvas offers no per-node confirm", () => {
     renderPanel({
       attachment: {

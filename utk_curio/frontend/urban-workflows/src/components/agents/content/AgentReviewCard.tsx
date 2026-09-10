@@ -686,6 +686,20 @@ export const AgentReviewCard: React.FC<{
                     {attempt.verdict !== "pass" && attempt.endpointEvidence ? (
                       <span className={styles.attemptEndpoint}>Endpoint: {attempt.endpointEvidence}</span>
                     ) : null}
+                    {attempt.verdict !== "pass" && attempt.code ? (
+                      // dev/127: what this round actually ran. The review card
+                      // already showed the error; the code was only ever in
+                      // another agent's chat.
+                      <details className={styles.attemptError}>
+                        <summary>
+                          {attempt.codeIsProse
+                            ? "What the builder said instead of writing code"
+                            : "The code this attempt ran"}
+                          {attempt.codeTruncated ? " (truncated)" : ""}
+                        </summary>
+                        <pre>{attempt.code}</pre>
+                      </details>
+                    ) : null}
                     {attempt.verdict !== "pass" && attempt.remedy ? (
                       <AddKeyAction remedy={attempt.remedy} className={styles.attemptRemedy} />
                     ) : null}

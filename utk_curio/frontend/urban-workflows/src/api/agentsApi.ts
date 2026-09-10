@@ -636,6 +636,10 @@ export interface AgentValidationAttempt {
   endpointEvidence?: string;
   /** dev/116: a credential decline's concrete remedy. */
   remedy?: AgentRemedy;
+  /** dev/127: the candidate this round ran (failed rounds only). */
+  code?: string;
+  codeTruncated?: boolean;
+  codeIsProse?: boolean;
   /** dev/118: ancestors whose earlier output stood in for a re-run. */
   reusedNodes?: string[];
   /** dev/118: a vanished reused artifact made the slice run whole once (not a round). */
@@ -662,6 +666,8 @@ export interface AgentSolveNodeResult {
   proposalAttachmentId?: string | null;
   /** dev/116: present when the failure asks for a connection key. */
   remedy?: AgentRemedy;
+  /** dev/127: which bound ended the repair loop (rounds, budget, repeat, …). */
+  stoppedBy?: string;
   /** dev/118: a browser-rendered kind was written, not executed. `reason`
    * above also carries the batch's time budget or a slice bound (pending/skipped). */
   verification?: { status: "not-executable" | string; reason?: string };
@@ -682,6 +688,42 @@ export interface AgentSolveResult {
   reason?: string;
 }
 
+/** dev/127: one attempt a repair loop made — the code it ran beside the error
+ *  it produced. Runtime-minted only; a model can never author one. */
+export interface AgentSolveAttemptRow {
+  round: number;
+  verdict: string;
+  kind: string;
+  /** The error, read for its exception line (which leads and stays whole). */
+  error: string;
+  errorTruncated?: boolean;
+  /** The candidate this round ran. Absent for a round that passed. */
+  code?: string;
+  codeTruncated?: boolean;
+  /** dev/115: the builder's decline is prose — never rendered as runnable code. */
+  codeIsProse?: boolean;
+  durationMs?: number;
+  outputDataType?: string;
+  contentSha256?: string;
+  source?: string;
+}
+
+/** dev/127: every attempt to fix ONE node, in the transcript, durably. */
+export interface AgentSolveAttemptsPart {
+  type: "solveAttempts";
+  nodeId: string;
+  label: string;
+  /** The node's own agent — the chat where the child's replies live. */
+  attachmentId?: string | null;
+  rounds: number;
+  /** Which bound ended the loop: rounds, budget, repeat, decline, … */
+  stoppedBy: string;
+  verdict: string;
+  attempts: AgentSolveAttemptRow[];
+  /** Attempts beyond the part's cap, if any. */
+  elided?: number;
+}
+
 export type AgentContentPart =
   | AgentSuggestedPromptsPart
   | AgentCardPart
@@ -689,6 +731,7 @@ export type AgentContentPart =
   | AgentDatasetCandidatesPart
   | AgentDataflowPlanPart
   | AgentDelegationPart
+  | AgentSolveAttemptsPart
   | { type: string };
 
 /** One persisted chat turn of an attachment's session. */

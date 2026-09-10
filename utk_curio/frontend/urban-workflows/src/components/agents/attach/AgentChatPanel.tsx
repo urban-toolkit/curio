@@ -14,6 +14,7 @@ import type {
   AgentAttachment,
   AgentCardPart,
   AgentDatasetCandidatesPart,
+  AgentSolveAttemptsPart,
   AgentDelegationPart,
   AgentProposalPart,
   AgentSessionTurn,
@@ -25,6 +26,7 @@ import { AgentBuilderStrip } from "./AgentBuilderStrip";
 import { NodeSolveRow } from "./NodeSolveRow";
 import { AgentChatCard } from "../content/AgentChatCard";
 import { AgentDatasetCandidatesCard } from "../content/AgentDatasetCandidatesCard";
+import { AgentSolveAttemptsCard } from "../content/AgentSolveAttemptsCard";
 import { AgentDelegationEntry } from "../content/AgentDelegationEntry";
 import { AgentReviewCard } from "../content/AgentReviewCard";
 import { SafeAgentContent } from "../content/SafeAgentContent";
@@ -743,6 +745,20 @@ export const AgentChatPanel: React.FC<{
                             ? onRecordDatasetSelection
                             : undefined
                         }
+                      />
+                    ))}
+                  {(t.content ?? [])
+                    .filter(
+                      (p): p is AgentSolveAttemptsPart => p.type === "solveAttempts",
+                    )
+                    .map((part, j) => (
+                      // dev/127: every attempt to fix this node, with the code
+                      // it ran — durable, not a transient strip line.
+                      <AgentSolveAttemptsCard
+                        key={`attempts-${part.nodeId}-${j}`}
+                        part={part}
+                        tintClassName={tint}
+                        onOpenChat={onOpenAgentChat}
                       />
                     ))}
                   {(t.content ?? [])
