@@ -135,9 +135,13 @@ class TestRouting:
             assert verdict["status"] == dv.STATUS_UNCHECKED
             assert verdict["passive"] is True
 
-    def test_an_empty_document_is_nothing_to_write(self):
-        assert dv.validate(VEGA, "")["status"] == dv.STATUS_UNCHECKED
-        assert dv.validate(VEGA, None)["status"] == dv.STATUS_UNCHECKED
+    def test_an_empty_document_is_now_refused_for_a_grammar_kind(self):
+        # dev/134 corrects dev/129 here: for a kind that HAS a validator, "no
+        # document" is not "cannot be checked" — it is a refusal the loop must
+        # correct, because the node needs a document and nothing is written
+        # until one arrives. See TestProseIsARefusalNotAnUnchecked below.
+        assert dv.validate(VEGA, "")["status"] == dv.STATUS_INVALID
+        assert dv.validate(VEGA, None)["status"] == dv.STATUS_INVALID
 
     def test_a_kind_with_no_validator_says_so(self):
         verdict = dv.validate("curio.builtin/data-loading", "print(1)")
@@ -208,3 +212,191 @@ class TestTheWriteGateInTheLoop:
         assert [a["kind"] for a in outcome["attempts"]][0] == "document-invalid"
         assert (outcome["evidence"] or {}).get("documentValidated") == "autk-grammar"
         assert outcome["candidate"] == OWNERS_AUTK
+
+
+class TestProseIsARefusalNotAnUnchecked:
+    """dev/134, from `e72c7080`: the child replied the sentence "not
+    controllable" for an autk-grammar node and it was WRITTEN as the grammar.
+    For a kind with a validator that reply is a refusal — the loop asks again
+    with the shape named — and nothing is written until a document arrives."""
+
+    def test_the_not_controllable_marker_is_refused_for_a_grammar_kind(self):
+        verdict = dv.validate("curio.builtin/autk-grammar", "not controllable")
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "no document here at all" in verdict["detail"]
+        assert "layerRefs" in verdict["detail"]  # the shape is named
+        assert "dataRef" in verdict["detail"]
+
+    def test_empty_content_is_refused_for_a_grammar_kind(self):
+        verdict = dv.validate("curio.builtin/vis-vega", "   ")
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "$schema" in verdict["detail"]
+        # And the Vega contract the runtime imposes is stated, not implied.
+        assert "Curio injects this node's input as the data" in verdict["detail"]
+
+    def test_prose_is_refused_with_what_was_expected(self):
+        verdict = dv.validate(
+            "curio.builtin/vis-vega",
+            "I cannot produce a chart without knowing the columns.",
+        )
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "prose, not a document" in verdict["detail"]
+        assert "I cannot produce a chart" in verdict["detail"]
+
+    def test_a_wired_kind_keeps_its_unchecked_and_passive_answer(self):
+        # merge-flow/data-pool have no validator: "unchecked" keeps its narrow
+        # meaning, and dev/134 stops them being asked at all.
+        for node_type in ("curio.builtin/merge-flow", "curio.builtin/data-pool"):
+            verdict = dv.validate(node_type, "not controllable")
+            assert verdict["status"] == dv.STATUS_UNCHECKED
+            assert verdict["passive"] is True
+
+    def test_a_grammar_with_no_validator_is_unchecked_not_refused(self):
+        verdict = dv.validate("pkg.custom/plotly-view", '{"data": []}',
+                              grammar_id="plotly")
+        assert verdict["status"] == dv.STATUS_UNCHECKED
+        assert "plotly" in verdict["why"]
+
+
+class TestRoutingByGrammarId:
+    def test_the_roster_grammar_routes_a_third_party_vega_node(self):
+        spec = '{"mark": "bar", "encoding": {"x": {"field": "a", "type": "quantitative"}}}'
+        assert dv.validate("pkg.custom/chart", spec, grammar_id="vega-lite")["status"] == dv.STATUS_VALID
+        assert dv.grammar_of("pkg.custom/chart", "vega-lite") == "vega-lite"
+
+    def test_the_suffix_is_the_offline_fallback(self):
+        assert dv.grammar_of("curio.builtin/vis-vega@2") == "vega-lite"
+        assert dv.grammar_of("curio.builtin/autk-grammar") == "autk-grammar"
+        assert dv.grammar_of("curio.builtin/data-pool") is None
+
+    def test_the_refusal_text_names_the_grammar(self):
+        text = dv.refusal_text(
+            "pkg.custom/chart", {"detail": "boom"}, grammar_id="vega-lite",
+        )
+        assert "Vega-Lite" in text and "boom" in text
+
+
+class TestVegaFieldReferences:
+    """dev/129 F3, closed. The owner's chart was schema-valid and plotted
+    nothing: it encoded a column that does not exist."""
+
+    COLUMNS = ["community", "area_numbe", "population", "density"]
+
+    def _spec(self, y_field: str) -> str:
+        import json as _json
+
+        return _json.dumps({
+            "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+            "mark": "bar",
+            "encoding": {
+                "x": {"field": "density", "type": "quantitative"},
+                "y": {"field": y_field, "type": "nominal", "sort": "-x"},
+            },
+        })
+
+    def test_an_unknown_field_is_invalid_and_the_columns_are_named(self):
+        verdict = dv.validate(
+            "curio.builtin/vis-vega", self._spec("neighborhood"), columns=self.COLUMNS,
+        )
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "encoding.y.field reads 'neighborhood'" in verdict["detail"]
+        assert "available columns: area_numbe, community, density, population" in verdict["detail"]
+
+    def test_the_same_spec_with_a_real_column_is_valid(self):
+        assert dv.validate(
+            "curio.builtin/vis-vega", self._spec("community"), columns=self.COLUMNS,
+        )["status"] == dv.STATUS_VALID
+
+    def test_the_runtime_fields_curio_adds_are_allowed(self):
+        import json as _json
+
+        spec = _json.dumps({
+            "mark": "bar",
+            "encoding": {
+                "x": {"field": "density", "type": "quantitative"},
+                "color": {"field": "interacted", "type": "nominal"},
+                "tooltip": [{"field": "__row_index__", "type": "quantitative"}],
+            },
+        })
+        assert dv.validate("curio.builtin/vis-vega", spec, columns=self.COLUMNS)[
+            "status"] == dv.STATUS_VALID
+
+    def test_a_column_a_transform_creates_is_allowed(self):
+        import json as _json
+
+        spec = _json.dumps({
+            "mark": "bar",
+            "transform": [
+                {"calculate": "datum.population / 1000", "as": "pop_k"},
+                {"aggregate": [{"op": "mean", "field": "density", "as": "mean_density"}],
+                 "groupby": ["community"]},
+            ],
+            "encoding": {
+                "x": {"field": "mean_density", "type": "quantitative"},
+                "y": {"field": "community", "type": "nominal"},
+            },
+        })
+        assert dv.validate("curio.builtin/vis-vega", spec, columns=self.COLUMNS)[
+            "status"] == dv.STATUS_VALID
+
+    def test_a_transform_groupby_on_an_unknown_column_is_invalid(self):
+        import json as _json
+
+        spec = _json.dumps({
+            "mark": "bar",
+            "transform": [{"aggregate": [{"op": "mean", "field": "density", "as": "m"}],
+                           "groupby": ["nabe"]}],
+            "encoding": {"x": {"field": "m", "type": "quantitative"}},
+        })
+        verdict = dv.validate("curio.builtin/vis-vega", spec, columns=self.COLUMNS)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "groupby[0] reads 'nabe'" in verdict["detail"]
+
+    def test_a_layered_spec_is_walked(self):
+        import json as _json
+
+        spec = _json.dumps({
+            "layer": [
+                {"mark": "bar",
+                 "encoding": {"x": {"field": "density", "type": "quantitative"}}},
+                {"mark": "text",
+                 "encoding": {"text": {"field": "ghost", "type": "nominal"}}},
+            ],
+        })
+        verdict = dv.validate("curio.builtin/vis-vega", spec, columns=self.COLUMNS)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "'ghost'" in verdict["detail"]
+
+    def test_an_opaque_transform_skips_the_field_check(self):
+        import json as _json
+
+        spec = _json.dumps({
+            "mark": "bar",
+            "transform": [{"fold": ["population", "density"]}],
+            "encoding": {"x": {"field": "key", "type": "nominal"},
+                         "y": {"field": "value", "type": "quantitative"}},
+        })
+        # `fold` creates key/value columns this module cannot enumerate: the
+        # schema still decides, and no field is refused on a guess.
+        assert dv.validate("curio.builtin/vis-vega", spec, columns=self.COLUMNS)[
+            "status"] == dv.STATUS_VALID
+
+    def test_unknown_columns_skip_the_check_entirely(self):
+        assert dv.validate(
+            "curio.builtin/vis-vega", self._spec("neighborhood"), columns=None,
+        )["status"] == dv.STATUS_VALID
+        assert dv.validate(
+            "curio.builtin/vis-vega", self._spec("neighborhood"), columns=[],
+        )["status"] == dv.STATUS_VALID
+
+    def test_a_repeat_spec_names_no_column_and_is_not_refused(self):
+        import json as _json
+
+        spec = _json.dumps({
+            "repeat": {"column": ["density", "population"]},
+            "spec": {"mark": "bar",
+                     "encoding": {"x": {"field": {"repeat": "column"},
+                                        "type": "quantitative"}}},
+        })
+        assert dv.validate("curio.builtin/vis-vega", spec, columns=self.COLUMNS)[
+            "status"] == dv.STATUS_VALID

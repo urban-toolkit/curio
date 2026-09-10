@@ -21,8 +21,23 @@ things, never a guess:
                  the loop's existing budget and trail carry it;
 - ``unchecked``— nothing here can check this kind: write NOTHING and say so.
 
-Kind routing is by canonical template id (``DEC-076``'s rule: the roster, not a
-name list). Pure: no I/O, no network, no spec.
+Kind routing is by the template's own ``grammarId`` (``DEC-076``'s rule: the
+roster, not a name list), with the template id suffix as the offline fallback.
+Pure: no I/O, no network, no spec.
+
+dev/134 corrects two things this module could not do, both proven by the owner's
+``e72c7080``:
+
+- a reply that is not a document AT ALL — prose, a decline, the
+  ``not controllable`` marker — is a **refusal** for a kind that has a validator
+  (the field log wrote the sentence "not controllable" into an ``autk-grammar``
+  node as its grammar), so the loop asks again with the shape named and writes
+  nothing until it gets one. ``unchecked`` keeps its narrow meaning: *nothing
+  here can check this kind*;
+- a Vega document's **field references** are checked against the columns its
+  input actually has (dev/129 **F3**): the same spec encoded
+  ``y.field: "neighborhood"`` over a frame whose name column is ``community``,
+  which the schema cannot know and a reader of the columns can.
 """
 
 from __future__ import annotations
@@ -58,8 +73,9 @@ def _parse_json(content: str) -> tuple[object | None, str | None]:
         return None, f"the document is not valid JSON: {exc}"
 
 
-def validate_vega_lite(content: str) -> dict:
-    """A Vega-Lite document, against the schema ``altair`` bundles offline."""
+def validate_vega_lite(content: str, *, columns: list | None = None) -> dict:
+    """A Vega-Lite document, against the schema ``altair`` bundles offline —
+    and (dev/134) against the columns its input actually has."""
     payload, error = _parse_json(content)
     if error:
         return {"status": STATUS_INVALID, "detail": _detail(error)}
@@ -81,7 +97,116 @@ def validate_vega_lite(content: str) -> dict:
         alt.Chart.from_dict(spec, validate=True)
     except Exception as exc:  # noqa: BLE001  (altair raises SchemaValidationError)
         return {"status": STATUS_INVALID, "detail": _vega_message(exc)}
+    fields = check_vega_fields(payload, columns)
+    if fields is not None:
+        return fields
     return {"status": STATUS_VALID}
+
+
+#: dev/134: names Curio's own runtime adds to every row it hands Vega, so an
+#: encoding may use them even though no upstream column is called that.
+#: ``interacted`` is set by the Data Pool / ``useTableData``; ``__row_index__``
+#: by ``useVega.parseInputData``.
+RUNTIME_FIELDS = ("interacted", "__row_index__")
+
+#: Transforms whose output column names cannot be known from the document
+#: alone. A spec that uses one is schema-checked and its FIELDS are left alone —
+#: refusing a field this module cannot enumerate would be a guess.
+_OPAQUE_TRANSFORMS = ("pivot", "fold", "flatten", "sample", "lookup", "density", "loess")
+
+#: Keys under which a Vega-Lite spec nests another spec.
+_SPEC_CONTAINERS = ("layer", "hconcat", "vconcat", "concat", "spec", "facet", "repeat")
+
+
+def _transform_outputs(spec: dict) -> tuple[set, bool]:
+    """``(names a transform creates, whether any transform is opaque)``."""
+    produced: set = set()
+    opaque = False
+    for entry in spec.get("transform") or []:
+        if not isinstance(entry, dict):
+            continue
+        if any(key in entry for key in _OPAQUE_TRANSFORMS):
+            opaque = True
+        for key in ("as",):
+            value = entry.get(key)
+            if isinstance(value, str):
+                produced.add(value)
+            elif isinstance(value, list):
+                produced.update(v for v in value if isinstance(v, str))
+        for key in ("aggregate", "joinaggregate", "window"):
+            for item in entry.get(key) or []:
+                if isinstance(item, dict) and isinstance(item.get("as"), str):
+                    produced.add(item["as"])
+        if isinstance(entry.get("calculate"), str) and isinstance(entry.get("as"), str):
+            produced.add(entry["as"])
+    for key in _SPEC_CONTAINERS:
+        child = spec.get(key)
+        for sub in (child if isinstance(child, list) else [child]):
+            if isinstance(sub, dict):
+                names, sub_opaque = _transform_outputs(sub)
+                produced |= names
+                opaque = opaque or sub_opaque
+    return produced, opaque
+
+
+def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str]]:
+    """Every ``(json path, field name)`` an encoding or a transform reads.
+
+    Only string fields: ``{"repeat": "column"}`` and a bare ``count`` aggregate
+    name no column, and inventing one would produce a false refusal.
+    """
+    refs: list[tuple[str, str]] = []
+
+    def _walk(node: object, where: str) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "field" and isinstance(value, str):
+                    refs.append((f"{where}.field", value))
+                elif key == "groupby" and isinstance(value, list):
+                    for i, name in enumerate(value):
+                        if isinstance(name, str):
+                            refs.append((f"{where}.groupby[{i}]", name))
+                else:
+                    _walk(value, f"{where}.{key}" if where else key)
+        elif isinstance(node, list):
+            for index, item in enumerate(node):
+                _walk(item, f"{where}[{index}]")
+
+    _walk(spec, path)
+    return refs
+
+
+def check_vega_fields(payload: dict, columns: list | None) -> dict | None:
+    """dev/134 (closes dev/129 **F3**): does this document read columns that
+    exist?
+
+    The field proof is the owner's `e72c7080`: a schema-valid bar chart encoding
+    ``y.field: "neighborhood"`` against a frame whose name column is
+    ``community`` — a chart that renders axes and no bars. The columns come from
+    the SAME bounded artifact preview the generation request was handed
+    (``DEC-063``: never refuse a model for ignoring something it was not told),
+    so when they are unknown this check does not run at all.
+    """
+    if not columns:
+        return None
+    known = {str(c) for c in columns} | set(RUNTIME_FIELDS)
+    produced, opaque = _transform_outputs(payload)
+    if opaque:
+        return None  # a transform creates names this module cannot enumerate
+    known |= produced
+    for where, field in _field_refs(payload):
+        if field in known:
+            continue
+        available = ", ".join(sorted(str(c) for c in columns)[:20])
+        return {
+            "status": STATUS_INVALID,
+            "detail": _detail(
+                f"{where} reads {field!r}, which is not a column of this node's "
+                f"input — available columns: {available}"
+                + (f" (plus {', '.join(RUNTIME_FIELDS)}, added by Curio)")
+            ),
+        }
+    return None
 
 
 def _vega_message(exc: Exception) -> str:
@@ -113,7 +238,7 @@ def _vega_message(exc: Exception) -> str:
 #: AUTK map grammar: what the renderer requires of any document (memo dev/129).
 #: Deliberately structural — the parts a document cannot render without — and
 #: honest that it is not the whole grammar.
-def validate_autk_grammar(content: str) -> dict:
+def validate_autk_grammar(content: str, *, columns: list | None = None) -> dict:
     payload, error = _parse_json(content)
     if error:
         return {"status": STATUS_INVALID, "detail": _detail(error)}
@@ -153,11 +278,33 @@ def validate_autk_grammar(content: str) -> dict:
     return {"status": STATUS_VALID}
 
 
-#: canonical template id suffix → validator. Read by ``validate`` only, so a new
-#: grammar kind is one entry rather than a branch somewhere.
+#: GRAMMAR ID → validator (dev/134: the manifest's own ``grammarId``, so a
+#: package that ships its own Vega node validates through the same entry). Read
+#: by ``validate`` only, so a new grammar is one entry rather than a branch.
 _VALIDATORS = {
-    "vis-vega": validate_vega_lite,
+    "vega-lite": validate_vega_lite,
     "autk-grammar": validate_autk_grammar,
+}
+
+#: The offline fallback: a template id suffix → the grammar it carries, for a
+#: caller with no roster snapshot (dev/119's pattern).
+_SUFFIX_GRAMMARS = {
+    "vis-vega": "vega-lite",
+    "autk-grammar": "autk-grammar",
+}
+
+#: What each grammar's document IS, for the refusal a non-document reply gets.
+_GRAMMAR_SHAPES = {
+    "vega-lite": (
+        'a Vega-Lite JSON document — {"$schema": "https://vega.github.io/schema/'
+        'vega-lite/v6.json", "mark": …, "encoding": …}. Do NOT include a "data" '
+        "block: Curio injects this node's input as the data at render time"
+    ),
+    "autk-grammar": (
+        'an AUTK map grammar JSON document — {"map": {"layerRefs": [{"dataRef": '
+        '"upstream", …}], "initialView": …}}, where "upstream" is this node\'s '
+        "own input"
+    ),
 }
 
 #: Kinds whose content is never authored (the preamble's "uncontrollable"
@@ -171,33 +318,80 @@ def canonical_suffix(node_type: object) -> str:
     return str(node_type or "").rsplit("/", 1)[-1].split("@", 1)[0].lower().replace("_", "-")
 
 
-def validate(node_type: object, content: object) -> dict:
-    """Validate a non-executable node's content. See the module docstring."""
+def grammar_of(node_type: object, grammar_id: object = None) -> str | None:
+    """Which grammar this node's document is written in (dev/134).
+
+    The roster's ``grammarId`` when the caller has one; otherwise the template
+    id suffix, the offline fallback.
+    """
+    if isinstance(grammar_id, str) and grammar_id.strip():
+        return grammar_id.strip()
+    return _SUFFIX_GRAMMARS.get(canonical_suffix(node_type))
+
+
+def validate(
+    node_type: object,
+    content: object,
+    *,
+    grammar_id: object = None,
+    columns: list | None = None,
+) -> dict:
+    """Validate a non-executable node's content. See the module docstring.
+
+    dev/134: the kind is routed by its GRAMMAR (the roster's ``grammarId``), and
+    a reply that is not a document at all — prose, a decline, the
+    ``not controllable`` marker — is a REFUSAL for a kind that has a validator,
+    not an "unchecked". The owner's `e72c7080` wrote the sentence
+    "not controllable" into an ``autk-grammar`` node as its grammar; the loop
+    must ask again with the shape named, and write nothing until it gets one.
+    """
     text = content if isinstance(content, str) else ""
     suffix = canonical_suffix(node_type)
-    if not text.strip() or text.strip().lower() == NOT_CONTROLLABLE:
-        # A passive box's marker, or nothing at all: there is no document.
+    grammar = grammar_of(node_type, grammar_id)
+    validator = _VALIDATORS.get(grammar or "")
+    stripped = text.strip()
+    if not stripped or stripped.lower() == NOT_CONTROLLABLE:
+        if validator is not None:
+            return {
+                "status": STATUS_INVALID,
+                "detail": _detail(
+                    "there is no document here at all"
+                    + (f" (the reply was {stripped!r})" if stripped else "")
+                    + f" — this node's content must be {_GRAMMAR_SHAPES.get(grammar, 'a JSON document')}"
+                ),
+            }
+        # A wired box's marker, or nothing at all: there is no document.
         return {"status": STATUS_UNCHECKED,
                 "why": "there is no authored document to validate",
                 "passive": suffix in _PASSIVE}
-    validator = _VALIDATORS.get(suffix)
     if validator is None:
         return {"status": STATUS_UNCHECKED,
-                "why": f"no document validator exists for {suffix or 'this kind'}",
+                "why": f"no document validator exists for {grammar or suffix or 'this kind'}",
                 "passive": suffix in _PASSIVE}
+    if not stripped.startswith(("{", "[")):
+        # Prose where a document belongs: say what was expected rather than
+        # letting a JSON parse error stand in for the real problem.
+        return {
+            "status": STATUS_INVALID,
+            "detail": _detail(
+                f"the reply is prose, not a document ({stripped[:120]!r}…) — this "
+                f"node's content must be {_GRAMMAR_SHAPES.get(grammar, 'a JSON document')}"
+            ),
+        }
     try:
-        return validator(text)
+        return validator(text, columns=columns)
     except Exception as exc:  # noqa: BLE001
-        log.warning("Document validation failed for %s", suffix, exc_info=True)
+        log.warning("Document validation failed for %s", grammar or suffix, exc_info=True)
         return {"status": STATUS_UNCHECKED,
-                "why": _detail(f"the validator for {suffix} could not run: {exc}")}
+                "why": _detail(f"the validator for {grammar or suffix} could not run: {exc}")}
 
 
-def refusal_text(node_type: object, verdict: dict) -> str:
+def refusal_text(node_type: object, verdict: dict, *, grammar_id: object = None) -> str:
     """What the model is told, and what a human reads in the trail."""
-    suffix = canonical_suffix(node_type)
-    what = "Vega-Lite" if suffix == "vis-vega" else (
-        "AUTK map grammar" if suffix == "autk-grammar" else suffix or "document"
+    grammar = grammar_of(node_type, grammar_id)
+    what = "Vega-Lite" if grammar == "vega-lite" else (
+        "AUTK map grammar" if grammar == "autk-grammar" else
+        grammar or canonical_suffix(node_type) or "document"
     )
     return (
         f"document refused — this node's content is a {what} document and it does not "
