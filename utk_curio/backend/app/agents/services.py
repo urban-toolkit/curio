@@ -28,7 +28,14 @@ from utk_curio.backend.app.agents import (
     storage,
     tools,
 )
-from utk_curio.backend.app.agents import agent_jobs, egress, node_context, source_grounding, verify
+from utk_curio.backend.app.agents import (
+    agent_jobs,
+    egress,
+    node_context,
+    plan_topology,
+    source_grounding,
+    verify,
+)
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES, AgentManifest
 from utk_curio.backend.app.agents.providers import (
@@ -1321,10 +1328,14 @@ def _validate_plan_fanin(
             continue
         if edge.get("source") in remove_node_set or edge.get("target") in remove_node_set:
             continue
+        if plan_topology.is_interaction_edge(edge):
+            continue  # dev/112: feedback edges take no input port (parity with _plan_edge_context)
         target = edge.get("target")
         surviving_in[target] = surviving_in.get(target, 0) + 1
     incoming: dict[str, list[str]] = {}
     for edge in plan.get("edges", []):
+        if plan_topology.is_interaction_edge(edge):
+            continue  # dev/112
         incoming.setdefault(edge["to"], []).append(edge["from"])
     for target, sources in incoming.items():
         if target in plan_nodes:
@@ -1384,6 +1395,18 @@ def _validate_plan_fanin(
                 f"edges[{i}].toHandle {handle!r}: merge inputs are in_0..in_4"
             )
     return errors
+
+
+def _removal_phrase(n_nodes: int, n_edges: int, *, prefix: str = "removed ") -> str:
+    """dev/112: ``, removed 1 node and 2 connections`` — truthful for edges
+    (the old copy counted nodes only, so an edge-only removal read "removed 0
+    nodes"). Empty when nothing was removed."""
+    parts = []
+    if n_nodes:
+        parts.append(f"{n_nodes} node{'s' if n_nodes != 1 else ''}")
+    if n_edges:
+        parts.append(f"{n_edges} connection{'s' if n_edges != 1 else ''}")
+    return f", {prefix}" + " and ".join(parts) if parts else ""
 
 
 def _mint_dataflow_plan(
@@ -1486,6 +1509,49 @@ def _mint_dataflow_plan(
     )
     if fanin_errors:
         return "refused", "\n- ".join(["the plan wires invalid fan-in:"] + fanin_errors), None
+    # dev/112 (DEC-070): topology validated BEFORE anything materializes, like
+    # fan-in. (1) Interaction edges obey the preamble's rule (visualization ↔
+    # data-pool) — an executable rule, not prose the model must infer. (2) No
+    # plan DATA edge may close a cycle in the NET graph. Before this, an
+    # agent asked to "make it an interaction edge" had its kind dropped by
+    # the grammar and re-applied the same data edge — the same cycle — on
+    # every round; the only enforcement was the execution runner's refusal,
+    # which the agent never saw.
+    plan_types = {n["ref"]: n["nodeType"] for n in plan["nodes"]}
+
+    def _type_of_endpoint(endpoint: str):
+        if endpoint in plan_types:
+            return plan_types[endpoint]
+        node = existing_nodes.get(endpoint)
+        return node.get("type") if node else None
+
+    kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint)
+    if kind_errors:
+        return "refused", "\n- ".join(["the plan wires invalid interaction edges:"] + kind_errors), None
+    net_pairs = plan_topology.net_data_edges(
+        existing_edges, plan, remove_node_set, set(remove_edges)
+    )
+    closing = plan_topology.closing_plan_edges(net_pairs, plan)
+    if closing:
+        def _label(node_id: str) -> str:
+            return _plan_endpoint_label(node_id, plan, existing_nodes)
+        cycle_errors = [
+            f"edge {_label(u)!r} → {_label(v)!r} closes a cycle: "
+            + plan_topology.format_cycle(path, _label)
+            for u, v, path in closing[:5]
+        ]
+        return (
+            "refused",
+            "\n- ".join(
+                ["the plan creates a cycle in the dataflow (data edges must form a DAG):"]
+                + cycle_errors
+                + [
+                    "remove one data edge of the loop, or — for a visualization feeding "
+                    "back into a data-pool — make that edge \"kind\": \"interaction\""
+                ]
+            ),
+            None,
+        )
     # The cascade: edges incident to removed nodes die with them (dev/59) —
     # computed here for the review card, recomputed at apply as the truth.
     cascade_edge_ids = [
@@ -1528,7 +1594,9 @@ def _mint_dataflow_plan(
     n_nodes, n_edges = len(plan["nodes"]), len(plan["edges"])
     summary = f"Apply plan · {n_nodes} nodes, {n_edges} edges"
     if remove_nodes or remove_edges:
-        summary += f", removes {len(remove_nodes)} node{'s' if len(remove_nodes) != 1 else ''}"
+        # dev/112: removed connections counted too — the user approved edge
+        # removals five times without seeing them named.
+        summary += _removal_phrase(len(remove_nodes), len(remove_edges), prefix="removes ")
     preview_lines = [
         f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
     ]
@@ -1563,6 +1631,7 @@ def _mint_dataflow_plan(
                 "from": e["from"],
                 "to": e["to"],
                 **({"toHandle": e["toHandle"]} if e.get("toHandle") else {}),
+                **({"kind": e["kind"]} if e.get("kind") else {}),  # dev/112
                 "fromLabel": _plan_endpoint_label(e["from"], plan, existing_nodes),
                 "toLabel": _plan_endpoint_label(e["to"], plan, existing_nodes),
             }
@@ -1583,6 +1652,23 @@ def _mint_dataflow_plan(
         ]
         part["plan"]["removedEdgeCount"] = len(remove_edges)
         part["plan"]["cascadeCount"] = len(cascade_edge_ids)
+        # dev/112: removed connections reviewed by NAME too (DEC-049.2 applied
+        # to edges) — endpoint labels from the saved spec, kind preserved.
+        edges_by_id = {str(e.get("id")): e for e in existing_edges}
+        part["plan"]["removedEdges"] = [
+            {
+                "id": edge_id,
+                "fromLabel": _plan_endpoint_label(str(edges_by_id[edge_id].get("source")), plan, existing_nodes),
+                "toLabel": _plan_endpoint_label(str(edges_by_id[edge_id].get("target")), plan, existing_nodes),
+                **(
+                    {"kind": "interaction"}
+                    if plan_topology.is_interaction_edge(edges_by_id[edge_id])
+                    else {}
+                ),
+            }
+            for edge_id in remove_edges
+            if edge_id in edges_by_id
+        ]
     # The builder session (DR-2) transitions on the SAME spec write: the
     # attachment record is rule-9 share-stripped and save-preserved already.
     record = attachments.get_attachment(spec, loop_ctx["attachment_id"])

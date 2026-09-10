@@ -8578,3 +8578,162 @@ class TestReadDefinition:
             headers=_auth(token),
         )
         assert r.status_code in (200, 201), r.get_json()
+class TestPlanTopologyMint:
+    """dev/112 (DEC-070) — the owner's 2026-08-25 session, made unmintable:
+    a plan data edge that closes a cycle is refused with the path named; an
+    interaction edge is kept as such (visualization ↔ data-pool only);
+    edge-only plans mint; removed connections are reviewed by name."""
+
+    COORD = "agent.dataflow-builder@1.0.0"
+    TEMPLATES = [
+        {"id": "computation-analysis", "label": "Computation Analysis", "category": "computation",
+         "engine": "python", "editor": "code", "description": "d",
+         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
+         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+        {"id": "data-pool", "label": "Data Pool", "category": "data", "engine": "python",
+         "editor": "none", "hasCode": False, "description": "d",
+         "inputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+        {"id": "merge-flow", "label": "Merge Flow", "category": "data", "engine": "python",
+         "editor": "none", "hasCode": False, "description": "d",
+         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
+         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+        {"id": "vis-vega", "label": "Vega", "category": "visualization", "engine": "javascript",
+         "editor": "grammar", "description": "d",
+         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+    ]
+    # The owner's canvas: Load → Transform → Merge → Pool → Vis.
+    NODES = [
+        {"id": "load", "type": "curio.builtin/computation-analysis", "content": "", "goal": "Fabricate", "x": 0, "y": 0},
+        {"id": "xform", "type": "curio.builtin/computation-analysis", "content": "", "goal": "Transform", "x": 400, "y": 0},
+        {"id": "merge", "type": "curio.builtin/merge-flow", "content": "", "goal": "Pool Input Merge", "x": 800, "y": 0},
+        {"id": "pool", "type": "curio.builtin/data-pool", "content": "", "goal": "Time Data Pool", "x": 1200, "y": 0},
+        {"id": "vis", "type": "curio.builtin/vis-vega", "content": "", "goal": "Metric Distribution", "x": 1600, "y": 0},
+    ]
+    EDGES = [
+        {"id": "e1", "source": "load", "target": "xform", "sourceHandle": "out", "targetHandle": "in"},
+        {"id": "e2", "source": "xform", "target": "merge", "sourceHandle": "out", "targetHandle": "in_0"},
+        {"id": "e3", "source": "merge", "target": "pool", "sourceHandle": "out", "targetHandle": "in"},
+        {"id": "e4", "source": "pool", "target": "vis", "sourceHandle": "out", "targetHandle": "in"},
+    ]
+
+    def _tail(self, plan):
+        import json as _json
+        return f"```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
+
+    def _setup(self, client, user, token, project_id, monkeypatch, replies, edges=None):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=self.TEMPLATES)
+        spec = {"dataflow": {"nodes": self.NODES, "edges": edges if edges is not None else self.EDGES, "packages": []}}
+        r = client.put(f"/api/projects/{project_id}", json={"name": "p", "spec": spec, "outputs": []}, headers=_auth(token))
+        assert r.status_code == 200
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.COORD}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}}, headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return att_id, calls
+
+    def _run(self, client, token, project_id, att_id, message="fix the cycle"):
+        return client.post(f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
+                           json={"message": message}, headers=_auth(token))
+
+    @staticmethod
+    def _proposal(body):
+        return next((p for p in body["content"] if p["type"] == "proposal"), None)
+
+    def test_the_owners_plan_is_refused_with_the_cycle_named(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Round one of the 2026-08-25 session: vis → merge as a data edge.
+        user, token = user_and_token
+        owner_plan = {"goal": "interaction loop", "nodes": [], "edges": [{"from": "vis", "to": "merge"}]}
+        att_id, calls = self._setup(client, user, token, alice_project, monkeypatch,
+                                    replies=["Fix.\n" + self._tail(owner_plan), "I give up."])
+        body = self._run(client, token, alice_project, att_id).get_json()
+        assert self._proposal(body) is None
+        feedback = calls[1][-1]["content"]
+        assert "creates a cycle" in feedback
+        assert "Metric Distribution" in feedback and "Pool Input Merge" in feedback
+        assert '"kind": "interaction"' in feedback
+        # The saved graph is untouched — nothing materialized (DEC-051 discipline).
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        assert len(projects_storage.read_spec(_user_dir_key(user), alice_project)["dataflow"]["edges"]) == 4
+
+    def test_interaction_edge_to_the_pool_mints_edge_only_and_keeps_its_kind(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        plan = {"goal": "interaction", "edges": [{"from": "vis", "to": "pool", "kind": "interaction"}]}
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch, replies=["Fix.\n" + self._tail(plan)])
+        proposal = self._proposal(self._run(client, token, alice_project, att_id).get_json())
+        assert proposal is not None, "an edge-only plan must mint (no filler nodes needed)"
+        assert proposal["summary"] == "Apply plan · 0 nodes, 1 edges"
+        assert proposal["plan"]["edges"] == [{
+            "from": "vis", "to": "pool", "kind": "interaction",
+            "fromLabel": "Metric Distribution", "toLabel": "Time Data Pool",
+        }]
+
+    def test_interaction_edge_into_a_merge_is_refused_naming_the_fix(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        plan = {"goal": "interaction", "edges": [{"from": "vis", "to": "merge", "kind": "interaction"}]}
+        att_id, calls = self._setup(client, user, token, alice_project, monkeypatch,
+                                    replies=["Fix.\n" + self._tail(plan), "ok"])
+        body = self._run(client, token, alice_project, att_id).get_json()
+        assert self._proposal(body) is None
+        feedback = calls[1][-1]["content"]
+        assert "invalid interaction edges" in feedback
+        assert "'merge' is merge-flow" in feedback and "target the data-pool" in feedback
+
+    def test_removal_only_plan_that_breaks_a_user_cycle_mints_and_names_the_connection(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"}]
+        plan = {"goal": "break", "removeEdges": ["e5"]}
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Fix.\n" + self._tail(plan)], edges=cyclic)
+        proposal = self._proposal(self._run(client, token, alice_project, att_id).get_json())
+        assert proposal is not None
+        assert proposal["summary"] == "Apply plan · 0 nodes, 0 edges, removes 1 connection"
+        assert proposal["plan"]["removals"] == []
+        assert proposal["plan"]["removedEdges"] == [
+            {"id": "e5", "fromLabel": "Metric Distribution", "toLabel": "Pool Input Merge"},
+        ]
+
+    def test_remove_and_readd_as_data_is_still_refused(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Rounds two to five of the session: removeEdges the loop edge, add it back as data.
+        user, token = user_and_token
+        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"}]
+        plan = {"goal": "convert", "nodes": [], "edges": [{"from": "vis", "to": "merge"}], "removeEdges": ["e5"]}
+        att_id, calls = self._setup(client, user, token, alice_project, monkeypatch,
+                                    replies=["Fix.\n" + self._tail(plan), "ok"], edges=cyclic)
+        assert self._proposal(self._run(client, token, alice_project, att_id).get_json()) is None
+        assert "creates a cycle" in calls[1][-1]["content"]
+
+    def test_a_plan_that_leaves_a_user_cycle_alone_is_not_blamed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"}]
+        plan = {"goal": "note", "nodes": [{"ref": "n", "nodeType": "curio.builtin/computation-analysis",
+                                          "title": "Side", "intent": "unrelated"}], "edges": []}
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Add.\n" + self._tail(plan)], edges=cyclic)
+        assert self._proposal(self._run(client, token, alice_project, att_id).get_json()) is not None
+
+    def test_existing_interaction_edges_do_not_count_toward_fan_in_or_cycles(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        with_feedback = self.EDGES + [{"id": "e5", "source": "vis", "target": "pool", "type": "Interaction",
+                                       "sourceHandle": "in/out", "targetHandle": "in/out"}]
+        plan = {"goal": "extend", "nodes": [{"ref": "n", "nodeType": "curio.builtin/computation-analysis",
+                                            "title": "Post", "intent": "downstream"}],
+                "edges": [{"from": "vis", "to": "n"}]}
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Add.\n" + self._tail(plan)], edges=with_feedback)
+        assert self._proposal(self._run(client, token, alice_project, att_id).get_json()) is not None
