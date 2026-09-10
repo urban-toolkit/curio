@@ -5,8 +5,9 @@
 one node-compatibility predicate, one remedy sentence), `650536d8` (`DEC-080` + the
 declaration), `e9a6c2ac` (both apply paths attach and say so), `943ad114`
 (`dataset_resolution.py`), `3599b35c` (resolution initiates discovery), `4a30196f` (the
-selection endpoint + the surfaces), `68fa2fd9` (the three instructions) and this
-tracking commit (docs + ledgers). The plan's commit 7 split in two: the prompt edits move the Dataflow
+selection endpoint + the surfaces), `68fa2fd9` (the three instructions),
+`1156e62b` (docs + ledgers) and `6b6d27f9` (the ledgers repointed to the hashes the
+trailer strip renumbered). The plan's commit 7 split in two: the prompt edits move the Dataflow
 Builder's byte pin, which belongs with the edit rather than with the docs. Every line number
 below was read on `573451df`.**
 
