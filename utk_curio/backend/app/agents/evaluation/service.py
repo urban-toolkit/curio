@@ -28,6 +28,7 @@ from typing import Iterable, Mapping
 
 from utk_curio.backend.app.agents.evaluation import attempt as attempt_mod
 from utk_curio.backend.app.agents.evaluation import authorization as auth_mod
+from utk_curio.backend.app.agents.evaluation import chat as chat_mod
 from utk_curio.backend.app.agents.evaluation import policy as policy_mod
 from utk_curio.backend.app.agents.evaluation import records as records_mod
 from utk_curio.backend.app.agents.evaluation import review as review_mod
@@ -295,6 +296,10 @@ def _run_phases(user, user_key: str, run_id: str, fixture, config, *, started_at
     def _over_deadline() -> bool:
         return (time.monotonic() - started) > RUN_DEADLINE_S
 
+    # Named before the first phase so every stop path below can reach them,
+    # whichever phase it stops in.
+    project_id = ""
+    attachment_id = ""
     try:
         # ── project ──────────────────────────────────────────────────────
         yield _phase("project")
@@ -305,6 +310,10 @@ def _run_phases(user, user_key: str, run_id: str, fixture, config, *, started_at
 
         if _cancelled():
             yield _phase("cancelled", stoppedIn="project")
+            _post_stopped(
+                user_key, project_id, attachment_id, record, fixture,
+                "You cancelled this evaluation while it was creating its project.",
+            )
             return
 
         # ── provisioning ─────────────────────────────────────────────────
@@ -316,6 +325,11 @@ def _run_phases(user, user_key: str, run_id: str, fixture, config, *, started_at
 
         if _cancelled():
             yield _phase("cancelled", stoppedIn="provisioning")
+            _post_stopped(
+                user_key, project_id, attachment_id, record, fixture,
+                "You cancelled this evaluation while it was installing the "
+                "datasets and packages the prompt needs.",
+            )
             return
 
         # ── installing ───────────────────────────────────────────────────
@@ -327,6 +341,11 @@ def _run_phases(user, user_key: str, run_id: str, fixture, config, *, started_at
 
         if _cancelled():
             yield _phase("cancelled", stoppedIn="installing")
+            _post_stopped(
+                user_key, project_id, attachment_id, record, fixture,
+                "You cancelled this evaluation while it was installing and "
+                "attaching the Dataflow Builder.",
+            )
             return
 
         # ── prompting ────────────────────────────────────────────────────
@@ -361,6 +380,10 @@ def _run_phases(user, user_key: str, run_id: str, fixture, config, *, started_at
 
         if _cancelled():
             yield _phase("cancelled", stoppedIn="reviewing")
+            _post_stopped(
+                user_key, project_id, attachment_id, record, fixture,
+                "You cancelled this evaluation while it was applying what the model proposed.",
+            )
             return
 
         # ── solving ──────────────────────────────────────────────────────
@@ -375,6 +398,11 @@ def _run_phases(user, user_key: str, run_id: str, fixture, config, *, started_at
 
         # ── scoring ──────────────────────────────────────────────────────
         yield _phase("scoring")
+        solvable = len(solve_results)
+        solved = sum(
+            1 for result in solve_results.values()
+            if isinstance(result, Mapping) and _verified(result)
+        )
         scored = _score(
             user, user_key, project_id, fixture,
             solve_results=solve_results,
@@ -386,16 +414,88 @@ def _run_phases(user, user_key: str, run_id: str, fixture, config, *, started_at
         record.digests["rosterDigest"] = _roster_digest(user_key, project_id)
         _save()
 
+        # The transcript gets the verdict too, after the model has finished —
+        # see ``chat`` for why nothing may be appended before that.
+        _post_report(
+            user_key, project_id, attachment_id, record, fixture,
+            solved=solved, solvable=solvable,
+        )
+
         yield _phase("done", total=record.score["total"])
         yield ("done", {"runId": run_id, "score": record.score})
     except Exception as error:  # noqa: BLE001 - a run reports, never crashes
         detail = f"{type(error).__name__}: {error}"
         record.fail(record.phase, detail)
         _save()
+        _post_stopped(
+            user_key, project_id, attachment_id, record, fixture,
+            "This evaluation could not finish, so it has no score.",
+        )
         yield ("error", {"runId": run_id, "detail": detail})
 
 
 # ── the phases, each through a production entry point ───────────────────────
+
+def _verified(result: Mapping) -> bool:
+    """Did Solve actually verify this node? (the vocabulary of dev/118)."""
+    verification = result.get("verification")
+    status = ""
+    if isinstance(verification, Mapping) and verification.get("status"):
+        status = str(verification["status"])
+    else:
+        status = str(result.get("status") or "")
+    return status in ("verified", "solved", "pass")
+
+
+def _post_to_chat(user_key: str, project_id: str, attachment_id: str, write) -> None:
+    """Write one turn into the attachment's transcript, best effort.
+
+    The record is the machine account of a run and is already written; a
+    transcript that could not be appended must not turn a finished run into a
+    failed one, so this swallows its own errors after noting them nowhere but
+    here. The spec is re-read because the run has been writing it.
+    """
+    if not project_id or not attachment_id:
+        return
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    try:
+        spec = projects_storage.read_spec(user_key, project_id) or {}
+        write(spec)
+    except Exception:  # noqa: BLE001 - the run's outcome does not depend on this
+        return
+
+
+def _post_report(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    record,
+    fixture,
+    *,
+    solved: int,
+    solvable: int,
+) -> None:
+    _post_to_chat(
+        user_key, project_id, attachment_id,
+        lambda spec: chat_mod.post_report(
+            user_key, project_id, attachment_id, spec,
+            record=record, fixture=fixture, solved=solved, solvable=solvable,
+        ),
+    )
+
+
+def _post_stopped(
+    user_key: str, project_id: str, attachment_id: str, record, fixture, reason: str
+) -> None:
+    _post_to_chat(
+        user_key, project_id, attachment_id,
+        lambda spec: chat_mod.post_stopped(
+            user_key, project_id, attachment_id, spec,
+            record=record, fixture=fixture, reason=reason,
+        ),
+    )
+
 
 def _create_isolated_project(user, user_key: str, run_id: str, fixture) -> str:
     """A NEW project, marked as this run's. The caller's project is untouched:

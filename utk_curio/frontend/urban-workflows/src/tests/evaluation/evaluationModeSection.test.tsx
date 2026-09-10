@@ -223,6 +223,24 @@ describe("a run in progress", () => {
     expect(await screen.findByText("Run evaluation")).toBeDisabled();
   });
 
+  it("does not offer the project until the run finishes", async () => {
+    // The graph is written when the plan is applied, so a project opened
+    // mid-run shows an empty canvas -- and the canvas saves what it shows,
+    // which is how a finished run came to have a score and no dataflow.
+    mockRuns = {
+      runs: [{ ...RUN, phase: "prompting", terminal: false, score: null }],
+      inFlight: RUN.runId,
+    };
+    await openSection();
+    await waitFor(() =>
+      expect(screen.getByText(/waiting for the model/)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Open the generated dataflow")).toBeNull();
+    expect(
+      screen.getByText(/dataflow opens when the run finishes/),
+    ).toBeInTheDocument();
+  });
+
   it("cancels through the service", async () => {
     mockRuns = {
       runs: [{ ...RUN, phase: "solving", terminal: false, score: null }],
@@ -249,6 +267,8 @@ describe("a finished run", () => {
     );
     const link = screen.getByText("Open the generated dataflow");
     expect(link).toHaveAttribute("href", "/dataflow/project-1");
+    // The note points at the transcript, which now carries the whole run.
+    expect(screen.getByText(/chat there carries the whole run/)).toBeInTheDocument();
     expect(screen.getByText(/5120 in \/ 980 out tokens/)).toBeInTheDocument();
   });
 

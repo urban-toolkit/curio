@@ -340,7 +340,12 @@ export const EvaluationModeSection: React.FC<{ sharedGuest?: boolean }> = ({
           </p>
 
           <div className={modal.buttonRow}>
-            {run.projectId ? (
+            {/* Only once the run is terminal. The graph is written when the
+                plan is applied, so a project opened mid-run shows an empty
+                canvas -- and the canvas saves what it shows, which is how a
+                finished run came to have a score and no dataflow. The backend
+                now refuses that save; not inviting it is the other half. */}
+            {run.projectId && run.terminal ? (
               <a
                 className={modal.ghostBtn}
                 href={`/dataflow/${run.projectId}`}
@@ -373,10 +378,19 @@ export const EvaluationModeSection: React.FC<{ sharedGuest?: boolean }> = ({
               Refresh
             </button>
           </div>
-          {run.projectId ? (
+          {run.projectId && run.terminal ? (
             <p className={styles.meta} id="evaluation-project-note">
               Opens the project this run built, so you can see the graph behind
-              the score. It is yours to keep or delete.
+              the score. The Dataflow Builder's chat there carries the whole
+              run: the prompt, the plan, what was applied and this report. The
+              project is yours to keep or delete.
+            </p>
+          ) : null}
+          {run.projectId && !run.terminal ? (
+            <p className={styles.meta}>
+              The dataflow opens when the run finishes — until then the canvas
+              would be empty, because the graph is written when the plan is
+              applied.
             </p>
           ) : null}
           {!run.terminal ? (

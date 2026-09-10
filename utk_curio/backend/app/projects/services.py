@@ -191,6 +191,32 @@ def _assert_guest_can_save(user) -> None:
         raise ProjectError("Guest users cannot save projects", 403)
 
 
+def _assert_evaluation_graph_survives(
+    user_key: str, existing_spec: Optional[dict], incoming_spec: Optional[dict]
+) -> None:
+    """Refuse a client save that would destroy an evaluation run's dataflow.
+
+    The rule and its reasoning live with the marker
+    (``agents/evaluation/authorization``); this reads the run's phase, which
+    the rule needs and cannot look up itself, and translates its refusal into
+    this domain's own error so the route answers 409 with that sentence.
+    """
+    from utk_curio.backend.app.agents.evaluation import authorization as eval_auth
+    from utk_curio.backend.app.agents.evaluation import records as eval_records
+
+    marker = eval_auth.marker_of(existing_spec or {})
+    if marker is None:
+        return
+    record = eval_records.read(user_key, marker.run_id)
+    in_flight = bool(record and record.phase not in eval_records.TERMINAL_PHASES)
+    try:
+        eval_auth.assert_client_may_replace_graph(
+            existing_spec or {}, incoming_spec or {}, run_in_flight=in_flight
+        )
+    except eval_auth.ClientSaveRefused as refusal:
+        raise ProjectError(str(refusal), 409) from refusal
+
+
 def _humanize_node_type(node_type: Optional[str]) -> Optional[str]:
     """Friendly fallback title from a node type slug, e.g.
     ``curio.builtin/autk-grammar`` → ``Autk Grammar``. Returns ``None`` when no
@@ -616,6 +642,14 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         # from the on-disk spec — otherwise a client save wipes installed agents
         # and attachments. No-op on an outputs-only update (effective is existing).
         if data.spec is not None:
+            # An evaluation run owns the graph of the project it built, in the
+            # two cases where the client cannot be its authority: while the run
+            # is still writing, and a save that would leave that graph with no
+            # nodes at all. Without this, a canvas opened before the plan was
+            # applied silently wrote its empty graph over a finished run's work
+            # — a run with a score and an empty canvas, which is how this was
+            # found. Editing a finished evaluation project is untouched.
+            _assert_evaluation_graph_survives(ukey, existing_spec, effective_spec)
             from utk_curio.backend.app.agents.project_agents import preserve_agent_state
             from utk_curio.backend.app.agents.attachments import prune_orphaned_attachments
             from utk_curio.backend.app.agents.sessions import delete_session

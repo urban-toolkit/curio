@@ -323,8 +323,26 @@ class TestTheRun:
         marker = auth_mod.marker_of(detail["spec"])
         assert marker is not None
         assert marker.run_id == record.run_id
-        # The graph is the evidence, so it stays.
-        assert detail["spec"]["dataflow"]["nodes"]
+        # The graph is the evidence, so it stays — and it has to be a graph the
+        # CANVAS can draw, which is what "displayed in the project" means. The
+        # loader needs both arrays (``ProjectLoader.hasLoadableDataflow``) and
+        # each node needs the id, type and position it renders from; an edge
+        # whose endpoint is not a node in the same spec draws nothing.
+        dataflow = detail["spec"]["dataflow"]
+        assert isinstance(dataflow["nodes"], list) and dataflow["nodes"]
+        assert isinstance(dataflow["edges"], list) and dataflow["edges"]
+        node_ids = set()
+        for node in dataflow["nodes"]:
+            assert node.get("id"), node
+            assert node.get("type"), node
+            assert isinstance(node.get("x"), (int, float)), node
+            assert isinstance(node.get("y"), (int, float)), node
+            node_ids.add(node["id"])
+        for edge in dataflow["edges"]:
+            assert edge["source"] in node_ids, edge
+            assert edge["target"] in node_ids, edge
+        # The identity fields the canvas title and provenance keys read.
+        assert isinstance(dataflow.get("name"), str) and dataflow["name"]
 
     def test_the_agent_arrives_with_its_required_closure(
         self, client, account, monkeypatch
@@ -616,3 +634,242 @@ class TestTheAutomatedApprovalIsNarrow:
             if s.agent_id == "agent.dataflow-builder"
         )
         assert spec.review_policy == "review-before-apply"
+
+
+class TestTheTranscriptCarriesTheEvaluation:
+    """The panel keeps the report; the CHAT has to carry it too.
+
+    A person who opens the generated project looks at the Dataflow Builder's
+    conversation to understand what happened, and production's own turns stop
+    at the Solve card — nothing there said what the run was or how it scored.
+    """
+
+    def _turns(self, client, account, record):
+        session = client.get(
+            f"/api/agents/projects/{record.project_id}/attachments/"
+            f"{record.attachment_id}/session",
+            headers=_auth(account["token"]),
+        )
+        assert session.status_code == 200, session.get_json()
+        return session.get_json()["turns"]
+
+    def _cards(self, turns, title):
+        return [
+            part
+            for turn in turns
+            for part in (turn.get("content") or [])
+            if isinstance(part, dict)
+            and part.get("type") == "card"
+            and part.get("title") == title
+        ]
+
+    def test_the_report_lands_in_the_chat_after_the_run(
+        self, client, account, monkeypatch
+    ):
+        _script_the_model(monkeypatch)
+        record = _run(client, account)
+        turns = self._turns(client, account, record)
+        cards = self._cards(turns, "Evaluation report")
+        assert len(cards) == 1, [t.get("text") for t in turns]
+        lines = " ".join(cards[0]["lines"])
+        assert "Overall accuracy 100%" in lines
+        assert "Templates: 100%" in lines
+        assert "no model graded this" in lines
+        assert "stayed on the server" in lines
+        # The story reads in order: the prompt, the plan, the apply, the Solve,
+        # then the verdict.
+        assert turns[0]["role"] == "user"
+        assert turns[-1] is turns[-1] and self._cards([turns[-1]], "Evaluation report")
+
+    def test_the_run_still_scores_the_same_and_the_project_is_reachable(
+        self, client, account, monkeypatch
+    ):
+        """The transcript is an addition, not a change to what is measured."""
+        _script_the_model(monkeypatch)
+        record = _run(client, account)
+        assert record.score["total"] == pytest.approx(1.0)
+        detail = client.get(
+            f"/api/projects/{record.project_id}", headers=_auth(account["token"])
+        ).get_json()
+        assert detail["spec"]["dataflow"]["nodes"]
+
+    def test_nothing_is_appended_before_the_model_answers(
+        self, client, account, monkeypatch
+    ):
+        """The session is the model's context (``run_attachment``), so a turn
+        written ahead of the prompt would change what is being measured."""
+        calls = _script_the_model(monkeypatch)
+        _run(client, account)
+        sent = json.dumps(calls)
+        assert "Evaluation report" not in sent
+        assert "Overall accuracy" not in sent
+
+    def test_the_report_carries_no_piece_of_the_reference(
+        self, client, account, monkeypatch
+    ):
+        """Aggregates and category names, never the example itself: these turns
+        become context for any later conversation in the kept project."""
+        _script_the_model(monkeypatch)
+        record = _run(client, account)
+        lines = " ".join(
+            self._cards(self._turns(client, account, record), "Evaluation report")[0][
+                "lines"
+            ]
+        )
+        assert str(FIXTURE.data["source"]["path"]) not in lines
+        example = json.loads(FIXTURE.source_path.read_text(encoding="utf-8"))
+        for node in (example.get("dataflow") or {}).get("nodes") or []:
+            content = str(node.get("content") or "").strip()
+            if len(content) > 40:
+                assert content[:40] not in lines
+
+    def test_a_cancelled_run_says_so_in_the_chat(
+        self, client, account, monkeypatch
+    ):
+        import time as _time
+
+        from utk_curio.backend.app.agents import services as services_mod
+
+        def _slow(config, messages, **kwargs):
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Evaluation"
+            _time.sleep(1.5)
+            return "I need more time."
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", _slow
+        )
+        started = client.post(
+            "/api/agents/evaluation/runs", json={"fixtureId": FIXTURE.fixture_id},
+            headers=_auth(account["token"]),
+        ).get_json()
+        # Cancel once the agent is attached — before that there is no transcript
+        # to post into, and the assertion would pass by being skipped. The slow
+        # model holds the run in ``prompting`` while this waits.
+        for _ in range(200):
+            pending = records_mod.read(account["key"], started["runId"])
+            if pending and pending.attachment_id:
+                break
+            _time.sleep(0.05)
+        assert pending and pending.attachment_id, "the run never got as far as attaching"
+        client.post(
+            f"/api/agents/evaluation/runs/{started['runId']}/cancel",
+            headers=_auth(account["token"]),
+        )
+        agent_jobs.get_job(started["runId"]).thread.join(timeout=120)
+        record = records_mod.read(account["key"], started["runId"])
+        assert record.phase == "cancelled", record.phase
+        cards = self._cards(
+            self._turns(client, account, record), "Evaluation stopped"
+        )
+        assert len(cards) == 1
+        assert "cancelled" in " ".join(cards[0]["lines"]).lower()
+        assert "yours to keep or delete" in " ".join(cards[0]["lines"])
+
+
+class TestTheRunsGraphSurvivesAClientSave:
+    """The defect this class exists for: a finished run with a score and an
+    EMPTY canvas.
+
+    A canvas save is a whole-spec ``PUT`` carrying the browser's live nodes and
+    no revision basis. A project opened before the plan was applied therefore
+    holds an empty graph, and its next save — an auto-save is enough — wrote
+    that emptiness over the run's six nodes.
+    """
+
+    def _mark(self, client, account, *, run_id, phase, nodes):
+        """A project marked for a run in *phase*, holding *nodes*."""
+        from utk_curio.backend.app.agents.evaluation import records as rec_mod
+
+        record = rec_mod.EvaluationRecord(
+            run_id=run_id, fixture_id=FIXTURE.fixture_id,
+        )
+        record.enter(phase)
+        rec_mod.write(account["key"], record)
+        spec = auth_mod.mark_spec(
+            {"dataflow": {"nodes": list(nodes), "edges": [], "packages": []}},
+            auth_mod.new_marker(run_id, FIXTURE.fixture_id),
+        )
+        created = client.post(
+            "/api/projects",
+            json={"name": "Evaluation · test", "spec": spec, "outputs": []},
+            headers=_auth(account["token"]),
+        )
+        assert created.status_code in (200, 201), created.get_json()
+        return created.get_json()["id"]
+
+    def _put(self, client, account, project_id, nodes):
+        return client.put(
+            f"/api/projects/{project_id}",
+            json={
+                "spec": {"dataflow": {"nodes": list(nodes), "edges": []}},
+                "name": "Evaluation · test",
+            },
+            headers=_auth(account["token"]),
+        )
+
+    def _nodes(self, client, account, project_id):
+        return client.get(
+            f"/api/projects/{project_id}", headers=_auth(account["token"])
+        ).get_json()["spec"]["dataflow"]["nodes"]
+
+    def test_a_stale_canvas_cannot_empty_a_finished_runs_dataflow(
+        self, client, account
+    ):
+        node = {"id": "n1", "type": "curio.builtin/data-loading", "x": 0, "y": 0}
+        project_id = self._mark(
+            client, account, run_id="eval-20260101T000000Z-aaaaaaaa",
+            phase="done", nodes=[node],
+        )
+        refused = self._put(client, account, project_id, [])
+        assert refused.status_code == 409, refused.get_json()
+        assert "no nodes at all" in refused.get_json()["error"]
+        assert "reload the project" in refused.get_json()["error"]
+        assert self._nodes(client, account, project_id) == [node]
+
+    def test_a_real_edit_to_a_finished_evaluation_project_still_saves(
+        self, client, account
+    ):
+        """The project is the user's to change — only emptying it is refused."""
+        node = {"id": "n1", "type": "curio.builtin/data-loading", "x": 0, "y": 0}
+        extra = {"id": "n2", "type": "curio.builtin/data-transformation", "x": 9, "y": 9}
+        project_id = self._mark(
+            client, account, run_id="eval-20260101T000000Z-bbbbbbbb",
+            phase="done", nodes=[node],
+        )
+        saved = self._put(client, account, project_id, [node, extra])
+        assert saved.status_code == 200, saved.get_json()
+        assert len(self._nodes(client, account, project_id)) == 2
+
+    def test_a_save_is_refused_while_the_run_is_still_writing(
+        self, client, account
+    ):
+        project_id = self._mark(
+            client, account, run_id="eval-20260101T000000Z-cccccccc",
+            phase="solving", nodes=[],
+        )
+        refused = self._put(
+            client, account, project_id,
+            [{"id": "mine", "type": "curio.builtin/data-loading", "x": 0, "y": 0}],
+        )
+        assert refused.status_code == 409, refused.get_json()
+        assert "still building this project" in refused.get_json()["error"]
+
+    def test_an_ordinary_project_can_still_be_emptied(self, client, account):
+        """Nothing global changed: this guard knows only evaluation projects."""
+        created = client.post(
+            "/api/projects",
+            json={
+                "name": "mine",
+                "spec": {"dataflow": {
+                    "nodes": [{"id": "n1", "type": "curio.builtin/data-loading",
+                               "x": 0, "y": 0}],
+                    "edges": [], "packages": [],
+                }},
+                "outputs": [],
+            },
+            headers=_auth(account["token"]),
+        ).get_json()
+        emptied = self._put(client, account, created["id"], [])
+        assert emptied.status_code == 200, emptied.get_json()
+        assert self._nodes(client, account, created["id"]) == []
