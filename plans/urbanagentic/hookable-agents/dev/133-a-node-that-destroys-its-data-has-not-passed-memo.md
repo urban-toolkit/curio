@@ -1,7 +1,10 @@
 # dev/133 — A node that destroys its data has not passed: the empty result is a verdict, not a success
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `743cec57`. Every line number below was read
-on that commit; every claim about the failing dataflow was read from the owner's saved project.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-68`, and **no new
+`DEC`**: this is `DEC-073`'s own promise read honestly (a verified node is one the runtime
+checked), not a new authority. Commit `8f6b711a` + the docs commit. Every line number below was
+read on `743cec57`; every claim about the failing dataflow was read from the owner's saved
+project.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `743cec57` (dev/132's docs commit).
@@ -269,3 +272,32 @@ and its content stays empty; the dependent pool node reports *waiting — upstre
 - The trade-off (a deliberately empty filter now fails) is stated in the memo and in the docs
   rather than hidden.
 - Play, the runner and the sandbox are untouched.
+
+---
+
+## 11. What changed while building
+
+1. **The check reads the artifact, and only the artifact.** No new request per round: the batch
+   already memoizes one bounded preview per artifact for the NEXT node's input schema (dev/127), so
+   the emptiness verdict is a second read of a description the loop had already paid for. The
+   per-node Solve gets its own memoized reader (`_artifact_summary_fn`).
+2. **`parts` needed a rule of its own.** A merge hands a LIST of frames; its row count is the total
+   across the parts, so "empty" means every part is empty. A partly-empty list is not a failure —
+   that is an ordinary shape, not a destroyed dataflow.
+3. **`empty-result` joins `_HEAD_FIRST_KINDS`** (with dev/129's `document-invalid`): these details
+   are composed prose whose FIRST sentence is the answer, and reading them through
+   `failure_text.summary` — which looks for an exception line — buried it.
+4. **dev/131's carry-forward composes without a change.** An empty result IS about the code, so it
+   is not in `_NO_CARRY_KINDS`: a later session pass starts from the candidate that produced nothing
+   and the diagnosis it produced, which is exactly the correction the owner's case needs. Pinned by
+   a test so the two features cannot drift apart.
+5. **The trade-off is in the docs, not only in the memo.** `AGENT-CATALOG.md` says plainly that a
+   node which filters everything out now fails, and that hand-writing such code in the editor is the
+   way to keep it.
+
+Not done, and recorded rather than hidden: **F1** — the check cannot tell a wrong-but-non-empty
+result from a right one (a join that matched 3 of 77 rows passes), which needs a different kind of
+evidence than a row count; **F2** — Play still reports an empty result without comment (the user's
+own run is theirs), so a node the user fills by hand and plays gets no warning; **F3** — the honest
+next step for the owner's project is a population dataset keyed by community area, which is
+dev/126/132's Dataset Finder lane and not this memo's business.

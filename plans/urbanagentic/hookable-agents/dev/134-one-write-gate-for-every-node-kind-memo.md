@@ -1,7 +1,11 @@
 # dev/134 — One write gate for every node kind: a grammar document is validated, a wired node is never authored, and prose is never content
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `743cec57`. Every line number below was read
-on that commit; every claim about the failing dataflow was read from the owner's saved project.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-69`, and **no new
+`DEC`**: `DEC-076`'s rule (the roster's own facts decide) applied to a second question, and
+`DEC-006`'s review gate untouched. Commits `f9cc0ce3` (the content kind), `998cbc42` (the
+validator), `cd39479b` (the routing), `61668bee` (the corpus), + the docs commit. Every line
+number below was read on `743cec57`; every claim about the failing dataflow was read from the
+owner's saved project.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `743cec57` (dev/132's docs commit).
@@ -332,3 +336,42 @@ regression check that nothing regressed.
   a grammar node; both already in dev/129's vocabulary.
 - Deliberate limits recorded rather than hidden: rendering is still unchecked (dev/129 F1), and a
   `note`'s content still has no validator.
+
+---
+
+## 11. What changed while building
+
+1. **dev/129's AUTK validator was too strict, and putting the gate on the product path proved it.**
+   The grammar has FOUR document families, not one: `autkGrammarBehavior`'s own `classifyAutkSpec`
+   is the authority — `map`/`plot` render, `compute` runs WGSL, `data` only loads sources — and
+   dev/129, written from one example, refused the other three. Fifteen shipped examples were false
+   refusals the moment the gate became reachable. `validate_autk_grammar` now accepts all four and
+   keeps the structural `layerRefs`/`dataRef` check for a map. **This is the strongest argument for
+   the memo's own thesis**: a gate nothing reaches is a gate nobody has tested.
+2. **Six shipped examples did not validate against the renderer's own schema** (the frontend
+   bundles `vega-lite ^6.4.3`; `altair` bundles `v6.4.1`, so these are the renderer's rules): three
+   with the same `'else'` defect the owner hit, one with a `sort` transform the grammar has no such
+   thing of, one with `config.concat.align` plus two `legend.anchor` keys, and one still using the
+   v4 `selection` syntax removed in v5. All six are fixed and their fixtures' digests re-recorded —
+   a corpus that teaches a model its own defects is worse than no corpus. Nothing about the expected
+   GRAPHS moved (content is not part of canonical identity), and all thirty-one fixtures still
+   reconstruct to 1.0.
+3. **A `note` kind stays on the plain write path.** dev/90 A14's post-it profile is authored
+   presentation content with no validator, and routing it into the loop would have made
+   `documentUnchecked` refuse to write it — breaking note authoring to fix charts. Only `code` and
+   `grammar` enter the loop.
+4. **The scorer had to learn two words.** `document-valid` and `no-content` join
+   `_NOT_MEASURED_STATUSES`: validating a document is not executing it, and crediting it as one
+   would over-credit exactly the way dev/118 F6 warned. `attempt.py` marks both non-executable for
+   the same reason.
+5. **The per-node Solve stopped refusing grammar kinds** — that refusal (dev/118/119) was itself
+   what left the batch's unguarded path as the only way to fill a Vega or AUTK node.
+6. **The prompt states two contracts a model cannot infer**: a Vega document must not carry a `data`
+   block (the runtime injects the input and overwrites it) and its fields must come from the named
+   upstream columns, with `interacted`/`__row_index__` always available; an AUTK document is one of
+   the four shapes above. `DEC-063` again: the check and the instruction read the same facts.
+
+Recorded and not done: **F1** — rendering is still unchecked (a valid document can still draw the
+wrong picture; dev/129 F1's headless render idea stands); **F2** — a `note`'s content has no
+validator; **F3** — the six corpus fixes were mechanical, but the browser tier that renders those
+examples has not been re-run on this branch.

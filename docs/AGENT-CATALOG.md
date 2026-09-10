@@ -355,6 +355,32 @@ The Dataflow Builder therefore plans first and never blocks a plan on dataset
 identity: a data-loading node is planned with an honest intent naming the DATA
 it needs, and its source is resolved at the node.
 
+### What Solve checks before it writes
+
+Solve's promise is not "the code ran" — it is that what lands in a node is
+something the runtime has checked. Three kinds of node, three checks (memos
+dev/129, dev/133, dev/134), and the routing comes from the node template's own
+declared facts, never from a list of node names:
+
+| The node carries | What Solve does | What it says |
+|---|---|---|
+| **Code** the sandbox runs (`hasCode`) | Generates, gates the sources, runs it, and **reads the shape of the result**: a table or geotable with **no rows**, produced from inputs that had rows, is a failed round with the diagnosis — the inputs' row counts, their key columns and their sample **values** (memo dev/133) | *verified*, or a failure naming what happened |
+| A **document** (`hasGrammar` — a Vega-Lite chart, an AUTK grammar) | Validates it against the schema the renderer itself uses, or the renderer's own requirements. An invalid document is a correction round; a reply that is not a document at all (prose, a decline) is refused the same way (memo dev/134) | *validated as a document, not executed* |
+| **Nothing** — a Merge Flow, a Data Pool, a Simple View, a Spatial Join | Nothing. These nodes are wired, not written: everything they do comes from their connections and their input, so no model is asked for their content and nothing is written into them | *wired, not written* |
+
+The reason the middle and bottom rows matter: before dev/134 a document and a
+wired node took a path with no gate on it, so an invalid chart specification and
+even a model's sentence *"not controllable"* could land in a node while the chat
+said **solved**. Nothing unvalidated reaches a node now, on any path.
+
+The empty-result check has one deliberate consequence worth knowing: a node that
+filters everything out fails rather than passing quietly. A join on two columns
+whose values are different kinds of thing — a community-area number against a
+census tract id — is the common case, and it used to produce a green dataflow
+whose pool said *"Nothing to display"* and whose chart drew empty axes. If the
+emptiness is genuinely what you want, write that code in the editor yourself;
+Solve will not claim it verified something that produced nothing.
+
 ### Solve is the engineering loop — and it runs in the background
 
 Grounding says where a data-loading node's source may come from; it does not
