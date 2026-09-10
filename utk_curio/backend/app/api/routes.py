@@ -500,6 +500,73 @@ def _record_runtime_outcome(*, node_id, dataflow_id, code, stdout, stderr, outpu
         pass
 
 
+@bp.route('/nodeRuntime', methods=['POST'])
+@require_auth
+def report_node_runtime():
+    """A node reports its own execution outcome from the BROWSER (memo dev/135).
+
+    ``DEC-052``'s journal had three writers and all three were the sandbox, so a
+    Vega-Lite chart, an AUTK map, a Data Pool, a Merge Flow, a Simple View, a
+    Spatial Join and a Data Export — every kind that runs in the client or
+    through its own service — left no trace, and every agent reading the journal
+    was told ``never-executed`` about a node the user had just watched fail.
+
+    Body: ``{dataflowId, nodeId, status, message?, outputType?, durationMs?,
+    code?}``. Deliberately narrow, because this is client-supplied data written
+    into a store agents read:
+
+    - the caller's own storage key is used, so a report can only ever touch
+      that user's own project directory, and the project must already exist
+      (a bogus id is a no-op, never a new directory);
+    - ``status`` is an allowlist and ``message`` is bounded on arrival;
+    - **no artifact path is accepted** — a client cannot mint one, so nothing
+      downstream can mistake a reported record for a stored artifact;
+    - the response is 204 whether or not the write landed: a render must never
+      fail over its journal (``DEC-052``'s own rule).
+    """
+    from utk_curio.backend.app.execution import runtime_journal
+    from utk_curio.backend.app.projects import storage as projects_storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    body = request.get_json(silent=True) or {}
+    node_id = body.get('nodeId')
+    dataflow_id = body.get('dataflowId')
+    status = body.get('status')
+    user = getattr(g, 'user', None)
+    if not isinstance(node_id, str) or not node_id.strip():
+        return jsonify({'error': "'nodeId' is required"}), 400
+    if not isinstance(dataflow_id, str) or not dataflow_id.strip():
+        return jsonify({'error': "'dataflowId' is required"}), 400
+    if status not in runtime_journal.STATUSES:
+        return jsonify({
+            'error': f"'status' must be one of {', '.join(runtime_journal.STATUSES)}",
+        }), 400
+    if user is None:
+        return jsonify({'error': 'authentication required'}), 401
+    user_key = _user_dir_key(user)
+    try:
+        exists = projects_storage.project_dir(user_key, dataflow_id).is_dir()
+    except Exception:
+        exists = False
+    if not exists:
+        # An unsaved canvas or an id this user does not own: nothing to journal,
+        # and never a directory created on a client's word.
+        return '', 204
+    try:
+        duration = float(body.get('durationMs') or 0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    runtime_journal.record_browser_execution(
+        user_key, dataflow_id, node_id.strip(),
+        status=status,
+        message=str(body.get('message') or '')[:runtime_journal.BROWSER_MESSAGE_CHARS],
+        output_type=str(body.get('outputType') or '')[:60],
+        duration_ms=max(duration, 0.0),
+        code=str(body.get('code') or ''),
+    )
+    return '', 204
+
+
 @bp.route('/processJavaScriptCode', methods=['POST'])
 @require_auth
 def process_javascript_code():

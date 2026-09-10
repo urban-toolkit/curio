@@ -280,3 +280,90 @@ class TestOriginOnEveryRecord:
             status="ok", origin="browser",
         )
         assert runtime_journal.read_record(KEY, PID, "n-explicit")["status"] == "ok"
+
+
+class TestTheBrowserReportRoute:
+    """dev/135: `POST /nodeRuntime` — the client's own write path, narrow
+    because this is client-supplied data written into a store agents read."""
+
+    VEGA_ERROR = "outputs is not a valid input type for the 2D Plot (Vega-Lite)"
+
+    def _project(self, client, token):
+        body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": []}}, "outputs": []}
+        return client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
+
+    def _post(self, client, token, **body):
+        return client.post("/nodeRuntime", json=body, headers=_auth(token))
+
+    def test_a_reported_error_is_readable_by_every_journal_reader(
+        self, client, user_and_token, tmp_curio
+    ):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = self._project(client, token)
+        r = self._post(client, token, dataflowId=pid, nodeId="vega-1", status="error",
+                       message=self.VEGA_ERROR, durationMs=12, code='{"mark": "bar"}')
+        assert r.status_code == 204
+        key = _user_dir_key(user)
+        record = runtime_journal.read_record(key, pid, "vega-1")
+        assert record["status"] == "error" and record["origin"] == "browser"
+        assert record["stderrTail"] == self.VEGA_ERROR
+        assert runtime_journal.status_map(key, pid)["vega-1"]["origin"] == "browser"
+        assert runtime_journal.last_failure(key, pid, "vega-1")["origin"] == "browser"
+
+    def test_authentication_is_required(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        pid = self._project(client, token)
+        r = client.post("/nodeRuntime", json={"dataflowId": pid, "nodeId": "n", "status": "ok"})
+        assert r.status_code in (401, 403)
+
+    def test_a_project_this_user_has_none_of_is_a_no_op_not_a_directory(
+        self, client, user_and_token, tmp_curio
+    ):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        user, token = user_and_token
+        assert self._post(client, token, dataflowId="not-mine", nodeId="n1",
+                          status="error", message="x").status_code == 204
+        key = _user_dir_key(user)
+        assert runtime_journal.read_record(key, "not-mine", "n1") is None
+        assert not projects_storage.project_dir(key, "not-mine").is_dir()
+
+    def test_the_payload_is_validated(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        pid = self._project(client, token)
+        assert self._post(client, token, dataflowId=pid, status="ok").status_code == 400
+        assert self._post(client, token, nodeId="n", status="ok").status_code == 400
+        bad = self._post(client, token, dataflowId=pid, nodeId="n", status="exploded")
+        assert bad.status_code == 400 and "status" in bad.get_json()["error"]
+
+    def test_no_artifact_path_can_be_claimed_and_the_message_is_bounded(
+        self, client, user_and_token, tmp_curio
+    ):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = self._project(client, token)
+        self._post(client, token, dataflowId=pid, nodeId="vega-2", status="ok",
+                   outputType="dataframe", message="m" * 9000,
+                   output={"path": "art-stolen", "dataType": "dataframe"},
+                   path="art-stolen")
+        record = runtime_journal.read_record(_user_dir_key(user), pid, "vega-2")
+        assert record["output"] == {"path": "", "dataType": "dataframe"}
+        assert len(record["stdoutTail"]) <= 2000
+        assert record["status"] == "ok"
+
+    def test_a_negative_or_unparseable_duration_is_ignored(
+        self, client, user_and_token, tmp_curio
+    ):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = self._project(client, token)
+        for duration in (-5, "nonsense", None):
+            self._post(client, token, dataflowId=pid, nodeId="vega-3", status="ok",
+                       durationMs=duration)
+            record = runtime_journal.read_record(_user_dir_key(user), pid, "vega-3")
+            assert record["durationMs"] == 0
