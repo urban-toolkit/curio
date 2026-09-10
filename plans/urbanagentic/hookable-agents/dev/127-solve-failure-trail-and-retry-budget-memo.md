@@ -1,7 +1,19 @@
 # dev/127 — When Solve cannot fix a node: show every attempt, name the error precisely, retry within a real budget, and stop guessing the upstream's columns
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `64490ca7`. Every line number below was
-read on that commit.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-61`, and **no new
+`DEC`**: this is `DEC-063`'s eighth application (an input the agent needs must be supplied on
+the path it runs on) inside `DEC-073`'s loop, under `DEC-075`'s honesty rules. Seven commits:
+`7d26f591` (this memo), `a7817740` (one reading of a failed round), `62acd01c` (the code and the
+bound on every attempt), `3e0b387e` (the retry budget), `e7a7f847` (the transcript part),
+`3f36f3bc` (the inputs' columns), `4b836c0b` (the frontend), plus a tracking commit for the docs
+and ledgers. Every line number below was read on `64490ca7`.**
+
+**Suites: `tests/test_agents` + `tests/test_execution` 2336 passed (2236 before the phase);
+`tests/test_projects` 304; jest 2400 across 206 suites; `tsc --noEmit` clean.**
+
+**Six things changed from the plan while building — §12.** The one to read first: the memo
+promised that an unconnected merge slot would be named, and it is not, because a merge's arity
+is not declared per node. Everything else in §3E landed.
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `64490ca7` (the owner's "removing heavy plan files" commit,
@@ -517,3 +529,38 @@ attempts, each with its code, and the bound named.
 - **F4** Whether a passing round's code should also be recorded (it is the node's content, so it
   is already visible; a diff between the failing and the passing attempt might be worth it).
 - **F5** Owner live re-run of `623b6620` after commit 5 and again after commit 6.
+- **F6** An unconnected merge slot cannot be named until a merge declares its arity per node
+  (§12.1): today a missing input makes the `arg` row list shorter, silently.
+
+---
+
+## 12. What changed while building
+
+1. **An unconnected merge slot is NOT named (§3E, §6.11).** The walk resolves the upstreams a
+   merge actually has, in `in_0…in_n` order, but a merge's expected arity is declared nowhere per
+   node, so a missing slot is invisible: the row list is simply shorter. Saying *"arg[1]: not
+   connected"* would have required inventing an expectation. Recorded as **F6** instead of faked.
+2. **A repeat stops the loop on the SECOND one, not the first (§3C).** dev/116 deliberately tells
+   the model it repeated itself and lets it try again, and that recovery is worth keeping; what
+   the raised budget made necessary is a limit, so `_MAX_REPEATED_ATTEMPTS = 2` ends it. A single
+   repeat is still reported to the model as its correction.
+3. **No `selfRaised` field on a row (§3D).** The sentence *"raised by the code's own check, not by
+   the library"* is part of the error text `failure_text.summary` composes, so there is no second
+   field for a renderer to disagree with.
+4. **Frames render as `path:line in func`.** The memo's sketch quoted Python's own shape
+   (`generic.py", line 6206`), which is exactly what a character slice through a traceback leaves
+   behind; the compact form is what a reader needs.
+5. **The suite pins the old round cap** (`CURIO_SOLVE_CORRECTION_ROUNDS=2`, an autouse fixture).
+   Not anticipated, and worth naming: every test written before today scripts a fixed number of
+   provider replies and asserts on three attempts, so raising the default silently changed what
+   those scripts meant — one of them started PASSING on a reply nobody wrote. The budget has its
+   own six tests, which delete the variable.
+6. **The preview is bounded twice** (§3E): the sandbox's `maxRows` AND a 512 KB streaming cap in
+   the backend, because a geodataframe's GeoJSON is large even at five rows and
+   `load_artifact_as_dict`'s own comment records the MemoryError an unbounded read once caused.
+   An oversized preview is reported as no schema — the child is told nothing rather than
+   something invented.
+
+Nothing else in §3 was deviated from, and no existing test's expectations were rewritten to
+accommodate the change: the only test-side edit is the pin in (5), and every other suite passed
+unchanged.

@@ -350,9 +350,24 @@ lands:
 | The run… | Then |
 |---|---|
 | passes | An empty plan node gets the content written. A node that already had content is untouched: "verified — no change needed". |
-| fails | The failure goes back to the content generator with the traceback, the previous attempt, the grounded sources, and a fresh probe of the URL it fetched (a `400` after a reachable base URL is a wrong request shape, not a dead endpoint). The corrected code is grounded again and re-run — at most two corrections. A node that had content receives the fix as a content review **that has already run**; applying it puts the code that passed on the node. |
-| still fails after three attempts | Nothing is written. The node shows *failed*, and the Solve card lists every attempt — round, verdict, kind, the error, and what ran — under a collapsed **Verification · N attempts** disclosure, which the content review also carries. |
+| fails | The failure goes back to the content generator with the traceback, the previous attempt, the grounded sources, **what its inputs actually contain** (memo dev/127 — the columns, dtypes and row counts of the frames feeding this node, through a merge in `arg` order), and a fresh probe of the URL it fetched (a `400` after a reachable base URL is a wrong request shape, not a dead endpoint). The corrected code is grounded again and re-run. |
+| keeps failing | Corrections continue while **both** budgets allow: up to five of them, and only while this node's repair budget (five minutes by default) is unspent. Whichever binds first is NAMED — *"not fixed after 6 attempts (stopped by the round cap)"*, *"…(stopped by this node's time budget)"*, *"…(stopped by a repeated attempt)"*. A second identical candidate ends it: more retries must not mean more copies. |
+| still fails | Nothing is written. The node shows *failed*, and **every attempt appears in the chat** as its own card: one disclosure per round with the exception line, the frame that raised it, and **the code that attempt ran**, copyable, with the last round open. One click opens that node's own agent. |
 | cannot run (sandbox unreachable) | The node stays *pending* with the reason — never *failed*: an outage is not a content failure. |
+
+A failure never reads as more certain than it is. The exception type and its
+message lead every failure line and are never cut mid-word (memo dev/127 —
+before it, a sliced traceback reached the chat as `execution-error:
+das/core/generic.py`, and one round's message survived as the two characters
+`de`), an error the generated code raised itself is labeled as such instead of
+being blamed on the library whose file appears in the frame, and *"not fixed
+after N attempts"* is always followed by the bound that stopped the loop.
+
+Both budgets are deployment knobs: `CURIO_SOLVE_CORRECTION_ROUNDS` (default 5)
+and `CURIO_SOLVE_NODE_BUDGET` (default 300 seconds), alongside the existing
+`CURIO_VALIDATION_EXEC_TIMEOUT` for one run and `CURIO_SOLVE_BATCH_DEADLINE`
+for the whole batch. An unusable value falls back to the default rather than
+breaking every run.
 
 Apply itself never executes anything and is never blocked by verification: a
 proposal's Apply places the node as proposed, and the card says that Solve is
