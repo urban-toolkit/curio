@@ -24,6 +24,59 @@ def test_read_spec_missing(tmp_curio):
     assert storage.read_spec("1", "no-exist") is None
 
 
+# ---------------------------------------------------------------------------
+# The write counter (memo dev/124) — the basis a client save is checked against
+# ---------------------------------------------------------------------------
+
+def test_every_write_bumps_the_counter_whoever_wrote_it(tmp_curio):
+    """The point of putting it here: a writer inherits it without knowing.
+
+    An agent apply, a Solve wave and a dataset install do not go near the
+    projects service, but they all go through ``write_spec``.
+    """
+    spec = {"dataflow": {"name": "test", "nodes": [], "edges": []}}
+    assert storage.spec_revision("1", "proj-rev") == 0
+    storage.write_spec("1", "proj-rev", spec)
+    assert storage.spec_revision("1", "proj-rev") == 1
+    for expected in (2, 3, 4):
+        storage.write_spec("1", "proj-rev", spec)
+        assert storage.spec_revision("1", "proj-rev") == expected
+
+
+def test_the_counter_is_not_in_the_spec_so_a_client_cannot_reset_it(tmp_curio):
+    """A client sends the whole spec back, so a number inside it is a number
+    the client controls — which is no basis at all."""
+    storage.write_spec("1", "proj-reset", {"dataflow": {"nodes": [], "edges": []}})
+    storage.write_spec("1", "proj-reset", {"dataflow": {"nodes": [], "edges": []}})
+    assert storage.spec_revision("1", "proj-reset") == 2
+    # Whatever the payload claims, the counter keeps counting.
+    storage.write_spec(
+        "1", "proj-reset",
+        {"dataflow": {"nodes": [], "edges": []}, "specRevision": 0},
+    )
+    assert storage.spec_revision("1", "proj-reset") == 3
+    assert "specRevision" not in storage.read_spec("1", "proj-reset")["dataflow"]
+
+
+def test_a_project_written_before_this_change_reads_as_no_basis(tmp_curio):
+    """No migration: an existing project has no counter file, which reads as
+    zero — "no basis" — until its first write."""
+    d = storage.ensure_project_dir("1", "proj-old")
+    (d / "spec.trill.json").write_text(
+        json.dumps({"dataflow": {"nodes": [], "edges": []}}), encoding="utf-8"
+    )
+    assert storage.spec_revision("1", "proj-old") == 0
+    storage.write_spec("1", "proj-old", {"dataflow": {"nodes": [], "edges": []}})
+    assert storage.spec_revision("1", "proj-old") == 1
+
+
+def test_an_unreadable_or_absent_counter_reads_as_zero(tmp_curio):
+    assert storage.spec_revision("1", "never-existed") == 0
+    d = storage.ensure_project_dir("1", "proj-junk")
+    (d / storage.SPEC_REVISION_FILE).write_text("not a number", encoding="utf-8")
+    assert storage.spec_revision("1", "proj-junk") == 0
+
+
 def test_copy_outputs_happy(tmp_curio):
     shared = storage._shared_data_dir()
     shared.mkdir(parents=True, exist_ok=True)

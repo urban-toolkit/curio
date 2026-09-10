@@ -400,14 +400,17 @@ def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
     return {"nodes": nodes, "edges": edges}
 
 
-def _to_summary(p, graph_preview=None) -> ProjectSummary:
+def _to_summary(p, graph_preview=None, spec_revision=None) -> ProjectSummary:
+    """*spec_revision* keeps one meaning for the field across the API (memo
+    dev/124): how many times the spec has been written, background writes
+    included. ``None`` falls back to the column."""
     return ProjectSummary(
         id=p.id,
         name=p.name,
         slug=p.slug,
         description=p.description,
         thumbnail_accent=p.thumbnail_accent or "peach",
-        spec_revision=p.spec_revision,
+        spec_revision=spec_revision if spec_revision is not None else p.spec_revision,
         last_opened_at=p.last_opened_at.isoformat() if p.last_opened_at else None,
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
@@ -415,14 +418,20 @@ def _to_summary(p, graph_preview=None) -> ProjectSummary:
     )
 
 
-def _to_detail(p, spec=None, outputs=None, dataset_install_warnings=None) -> ProjectDetail:
+def _to_detail(
+    p, spec=None, outputs=None, dataset_install_warnings=None, spec_revision=None
+) -> ProjectDetail:
+    """*spec_revision* is the project's write counter (memo dev/124) — the
+    number a client holds as its basis, which counts every write rather than
+    only client saves. ``None`` falls back to the database column, for a
+    caller that has no user key to read the counter with."""
     return ProjectDetail(
         id=p.id,
         name=p.name,
         slug=p.slug,
         description=p.description,
         thumbnail_accent=p.thumbnail_accent or "peach",
-        spec_revision=p.spec_revision,
+        spec_revision=spec_revision if spec_revision is not None else p.spec_revision,
         last_opened_at=p.last_opened_at.isoformat() if p.last_opened_at else None,
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
@@ -608,7 +617,8 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
 
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
-                      dataset_install_warnings=install_warnings)
+                      dataset_install_warnings=install_warnings,
+                      spec_revision=storage.spec_revision(ukey, project_id))
 
 
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
@@ -744,7 +754,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
 
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
-                      dataset_install_warnings=install_warnings)
+                      dataset_install_warnings=install_warnings,
+                      spec_revision=storage.spec_revision(ukey, project_id))
 
 
 def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
@@ -858,7 +869,10 @@ def load_project(user, project_id: str) -> dict:
 
     db.session.commit()
     return {
-        "project": _to_detail(project, spec=spec, outputs=hydrated),
+        "project": _to_detail(
+            project, spec=spec, outputs=hydrated,
+            spec_revision=storage.spec_revision(ukey, project_id),
+        ),
         "spec": spec,
         "outputs": [_output_ref_dict(r) for r in hydrated],
     }
@@ -908,7 +922,10 @@ def load_shared_project(project_id: str) -> dict:
     hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
     spec = _with_effective_packages(spec, ukey, project_id)
 
-    detail = _to_detail(project, spec=spec, outputs=hydrated)
+    detail = _to_detail(
+        project, spec=spec, outputs=hydrated,
+        spec_revision=storage.spec_revision(ukey, project_id),
+    )
     # Don't leak server filesystem layout to shared-link visitors.
     detail.folder_path = ""
 
@@ -945,7 +962,10 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
             repo.delete_project_row(p.id, user.id)
             dropped_stale_row = True
             continue
-        summaries.append(_to_summary(p, graph_preview=_extract_graph_preview(spec)))
+        summaries.append(_to_summary(
+            p, graph_preview=_extract_graph_preview(spec),
+            spec_revision=storage.spec_revision(ukey, p.id),
+        ))
     if dropped_stale_row:
         db.session.commit()
     return summaries
@@ -960,7 +980,9 @@ def rename_project(user, project_id: str, new_name: str) -> ProjectSummary:
     project.name = new_name
     project.slug = repo._unique_slug(user.id, _slugify(new_name), exclude_id=project_id)
     db.session.commit()
-    return _to_summary(project)
+    return _to_summary(
+        project, spec_revision=storage.spec_revision(_user_dir_key(user), project_id)
+    )
 
 
 # ---------------------------------------------------------------------------

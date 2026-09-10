@@ -86,11 +86,69 @@ def user_dir(user_key: str) -> Path:
 # Spec I/O
 # ---------------------------------------------------------------------------
 
+#: Where a project's write counter lives (memo dev/124): a one-line file beside
+#: the spec rather than a key inside it, for three reasons. A client sends the
+#: whole spec, so a key inside it is a number the client can reset — the basis
+#: has to be something only the server writes. Reading one small file is
+#: cheaper than parsing the previous spec on every write, and every write has
+#: to bump it. And it stays invisible to every reader of the spec, so nothing
+#: downstream — the trill schema, an export, a copy — grows a field it has no
+#: use for.
+#:
+#: It counts EVERY write, which is the property the ``spec_revision`` column
+#: cannot have: that one is bumped by ``repositories.upsert_project``, which
+#: runs for a client save and nothing else, so it stays equal across exactly
+#: the background writes a client needs to notice (an agent apply, a Solve
+#: wave, an install).
+SPEC_REVISION_FILE = ".spec.rev"
+
+
+def spec_revision(user_key: str, project_id: str) -> int:
+    """How many times this project's spec has been written.
+
+    ``0`` for a project last written before dev/124, and for one that does not
+    exist — both mean "no basis to compare against", which is how the guard
+    reads it.
+    """
+    try:
+        path = project_dir(user_key, project_id) / SPEC_REVISION_FILE
+    except (PathTraversalError, ValueError):
+        return 0
+    try:
+        return int(path.read_text(encoding="utf-8").strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
 def write_spec(user_key: str, project_id: str, spec: dict) -> Path:
+    """Persist *spec* and bump the project's write counter.
+
+    The counter is bumped BEFORE the spec is written, so a crash between the
+    two leaves it ahead rather than behind: a client is then told its basis is
+    stale when it is not, which costs it a reload, where the other order would
+    let it silently overwrite the write that did land.
+    """
     d = ensure_project_dir(user_key, project_id)
+    _bump_spec_revision(d)
     p = d / "spec.trill.json"
     p.write_text(json.dumps(spec, indent=2), encoding="utf-8")
     return p
+
+
+def _bump_spec_revision(project_dir_path: Path) -> int:
+    path = project_dir_path / SPEC_REVISION_FILE
+    try:
+        current = int(path.read_text(encoding="utf-8").strip() or 0)
+    except (OSError, ValueError):
+        current = 0
+    nxt = current + 1
+    try:
+        path.write_text(f"{nxt}\n", encoding="utf-8")
+    except OSError:
+        # A counter that cannot be written must not fail the save: the guard
+        # reads a missing counter as "no basis", which is today's behaviour.
+        return current
+    return nxt
 
 
 def read_spec(user_key: str, project_id: str) -> Optional[dict]:
