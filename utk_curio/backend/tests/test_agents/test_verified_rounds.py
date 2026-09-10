@@ -1572,20 +1572,26 @@ class TestAttemptTrailCarriesTheCodeAndTheBound:
         assert outcome["verdict"] == "fail"
         assert outcome["stoppedBy"] == "rounds"
 
-    def test_a_second_repeat_stops_the_loop(self, app, tmp_curio):
+    def test_a_repeat_escalates_and_only_a_long_run_of_them_stops(self, app, tmp_curio, monkeypatch):
+        # dev/129: a repeat no longer ends the loop (the owner asked for as many
+        # retries as the budget affords) — it escalates, and stops only at the
+        # hard count, so a stuck model cannot spend the whole budget on copies.
+        monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", "20")
         node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
         exec_fn = _Exec(fail_markers=("bad",))
         events, outcome, inputs = _rounds(
-            app, node,
-            # The same code every time: round 1 runs and fails, rounds 2 and 3
-            # are repeats — the second repeat ends it.
-            replies=["bad()", "bad()", "bad()", "bad()", "bad()", "bad()"],
-            exec_fn=exec_fn,
+            app, node, replies=["bad()"] * 20, exec_fn=exec_fn,
         )
         assert outcome["stoppedBy"] == "repeat"
         kinds = [a["kind"] for a in outcome["attempts"]]
-        assert kinds.count("repeated-attempt") == 2
+        assert kinds.count("repeated-attempt") == services_mod._MAX_REPEATED_ATTEMPTS_HARD
         assert len(exec_fn.calls) == 1  # a repeat is never run again
+        # The correction gets louder rather than the loop getting shorter.
+        escalated = [
+            frame for frame in inputs
+            if "change the APPROACH" in (frame.get("validationError") or "")
+        ]
+        assert escalated, "the repeat is named back to the model"
 
     def test_an_upstream_blocker_is_its_own_bound(self, app, tmp_curio):
         node_t = {"id": "t", "type": CA, "goal": "stats", "content": ""}
@@ -1620,14 +1626,16 @@ class TestRepairBudget:
     attempts — the owner's failing batch finished in 25 s against a 300 s
     sandbox timeout and a 45-minute batch deadline."""
 
-    def test_the_shipped_default_is_ten_attempts_and_fifteen_minutes(self, monkeypatch):
-        # dev/128, the owner's instruction: "change the fix attempts to 10 and
-        # 15 mins at max".
+    def test_time_is_the_bound_and_the_attempt_cap_sits_above_it(self, monkeypatch):
+        # dev/128 set ten attempts / fifteen minutes; dev/129 refined it at the
+        # owner's instruction — "keep trying for at least 15 mins, with many
+        # retries as possible" — so the cap sits ABOVE what a quarter hour
+        # affords and the CLOCK is the normal stop.
         monkeypatch.delenv("CURIO_SOLVE_MAX_ATTEMPTS", raising=False)
         monkeypatch.delenv("CURIO_SOLVE_NODE_BUDGET", raising=False)
-        assert services_mod.solve_max_attempts() == 10
-        assert services_mod.solve_correction_rounds() == 9  # attempts − the first
         assert services_mod.solve_node_budget_s() == 15 * 60
+        assert services_mod.solve_max_attempts() == services_mod.MAX_SOLVE_ATTEMPTS == 40
+        assert services_mod.solve_correction_rounds() == 39
 
     def test_the_env_is_read_and_garbage_falls_back(self, monkeypatch):
         monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", "4")
@@ -1635,22 +1643,25 @@ class TestRepairBudget:
         assert services_mod.solve_correction_rounds() == 3
         for bad in ("", "   ", "zero", "-3", "0"):
             monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", bad)
-            assert services_mod.solve_max_attempts() == 10, bad
+            assert services_mod.solve_max_attempts() == 40, bad
         monkeypatch.setenv("CURIO_SOLVE_NODE_BUDGET", "60")
         assert services_mod.solve_node_budget_s() == 60
         monkeypatch.setenv("CURIO_SOLVE_NODE_BUDGET", "nope")
         assert services_mod.solve_node_budget_s() == 15 * 60
 
-    def test_ten_attempts_are_made_when_the_clock_allows(self, app, tmp_curio, monkeypatch):
-        monkeypatch.delenv("CURIO_SOLVE_MAX_ATTEMPTS", raising=False)
+    def test_it_keeps_trying_while_the_clock_allows(self, app, tmp_curio, monkeypatch):
+        # dev/129: twelve distinct failing candidates, a cap of twelve, and a
+        # clock inside the budget — every one of them is attempted, which the
+        # old ten-attempt stop would have cut off at ten.
+        monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", "12")
         node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
         exec_fn = _Exec(fail_markers=("bad",))
-        replies = [f"bad{i}()" for i in range(1, 15)]  # each different: no repeat
+        replies = [f"bad{i}()" for i in range(1, 13)]  # each different: no repeat
         events, outcome, inputs = _rounds(app, node, replies=replies, exec_fn=exec_fn)
         assert outcome["verdict"] == "fail"
-        assert outcome["rounds"] == 10  # dev/128: the owner's ten
+        assert outcome["rounds"] == 12
         assert outcome["stoppedBy"] == "rounds"
-        assert len(outcome["attempts"]) == 10
+        assert len(outcome["attempts"]) == 12
         assert all(a.get("code") for a in outcome["attempts"])
 
     def test_the_wall_budget_stops_the_next_round_and_names_itself(

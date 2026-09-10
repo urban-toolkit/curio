@@ -5703,10 +5703,18 @@ def _run_node_events(
 # with both budgets essentially untouched. It is now a round cap AND a per-node
 # wall budget, whichever binds first, both env-overridable on the
 # ``exec_timeout_s`` pattern (an unusable value falls back rather than raising).
-# dev/128 (owner instruction, 2026-09-10): "change the fix attempts to 10 and
-# 15 mins at max". The knob is stated in ATTEMPTS, the way the instruction and
-# the failure sentence both read, rather than in corrections-after-the-first.
-DEFAULT_SOLVE_ATTEMPTS = 10
+# dev/128 (owner instruction): "change the fix attempts to 10 and 15 mins at
+# max". The knob is stated in ATTEMPTS, the way the instruction and the failure
+# sentence both read, rather than in corrections-after-the-first.
+#
+# dev/129 (the same day, refined): "the validation runtime should keep trying to
+# solve for at least 15 mins, with many retries as possible". A failing round
+# takes seconds, so an attempt cap of ten stopped the loop with fourteen
+# minutes unspent. The default cap therefore sits ABOVE what a quarter hour
+# affords — the CLOCK is the bound, and `stoppedBy` reports `budget` in the
+# normal case — while the knob stays a real cap for a deployment (or a test)
+# that wants a tighter one.
+DEFAULT_SOLVE_ATTEMPTS = 40
 DEFAULT_SOLVE_NODE_BUDGET_S = 15 * 60
 
 
@@ -5745,10 +5753,13 @@ def solve_node_budget_s() -> int:
 
 
 #: The widest the loop may ever go, whatever the env says — the trail, the
-#: transcript part and the egress budget are all sized from it. dev/128: the
-#: default is ten attempts, so the ceiling leaves room for a deployment that
-#: wants more without letting a typo run a node forever.
-MAX_SOLVE_ATTEMPTS = 20
+#: transcript part and the egress budget are all sized from it. dev/129: the
+#: owner's instruction is that TIME is the bound ("keep trying to solve for at
+#: least 15 mins, with many retries as possible"), so this is a safety net
+#: rather than the normal stop: sized so that a quarter hour of seconds-long
+#: rounds cannot exhaust it by accident, and so that a typo in the env cannot
+#: run one node forever.
+MAX_SOLVE_ATTEMPTS = 40
 
 
 def _solve_waves(spec: dict | None, targets: list[str]) -> list[list[str]]:
@@ -6389,10 +6400,13 @@ _ATTEMPT_STDERR_CHARS = 1200
 #: a copy of the project (a five-round trail costs tens of KB, not MB).
 _ATTEMPT_CODE_CHARS = 4000
 _CODE_TRUNCATION_MARKER = "\n… [truncated: the attempt's code exceeded the trail's bound]"
-#: dev/127: how many repeated candidates the loop tolerates before it stops.
-#: dev/116 tells the model it repeated itself and lets it try again; a second
-#: repeat means the budget would buy copies, not corrections.
+#: dev/127: how many repeated candidates before the correction ESCALATES.
+#: dev/116 tells the model it repeated itself and lets it try again; dev/129
+#: keeps the loop going (the owner's "as many retries as possible") but makes
+#: each repeat louder, and stops only at the hard count — a stuck model must
+#: not spend a quarter hour of provider calls on copies.
 _MAX_REPEATED_ATTEMPTS = 2
+_MAX_REPEATED_ATTEMPTS_HARD = 8
 #: dev/127: how many nodes' attempt trails ride ONE Solve turn. Beyond this the
 #: card names how many were elided; each is still readable in its own node's
 #: agent chat.
@@ -6402,7 +6416,7 @@ _MAX_ATTEMPT_PARTS = 8
 #: "not fixed after N attempts" can never again read as a verdict on the code
 #: when it was a verdict on the round cap.
 STOPPED_BY_PHRASES = {
-    "rounds": "the round cap",
+    "rounds": "the attempt ceiling",
     "budget": "this node's time budget",
     "repeat": "a repeated attempt",
     "decline": "the builder's decline",
@@ -6416,7 +6430,7 @@ STOPPED_BY_PHRASES = {
 
 
 def _stopped_by_clause(stopped_by: object) -> str:
-    """`" (stopped by the round cap)"`, or `""` when nothing is recorded."""
+    """`" (stopped by this node's time budget)"`, or `""` when unrecorded."""
     phrase = STOPPED_BY_PHRASES.get(str(stopped_by or ""))
     return f" (stopped by {phrase})" if phrase and stopped_by != "passed" else ""
 
@@ -7194,13 +7208,18 @@ def _verified_content_rounds(
         confirmed_source = source_state.get("confirmedSource")
         if source_state.get("detail"):
             rounds_trace.append(f"source: {str(source_state['detail'])[:160]}")
+    # dev/129: the wall budget is the bound; the attempt count is a cap that
+    # sits ABOVE what a quarter hour affords, so in practice the clock stops
+    # the loop and `stoppedBy` says so. A deployment (or a test) that wants a
+    # tighter cap sets CURIO_SOLVE_MAX_ATTEMPTS and gets it.
     max_rounds = min(solve_max_attempts(), MAX_SOLVE_ATTEMPTS)
     node_budget_s = solve_node_budget_s()
     loop_started = clock()
     for round_index in range(max_rounds):
         if round_index and (clock() - loop_started) >= node_budget_s:
             # dev/127: the budget is checked BEFORE a new round is dispatched,
-            # so a round in flight always finishes and is recorded.
+            # so a round in flight always finishes and is recorded. dev/129:
+            # this is now the NORMAL stop, which is why it is checked first.
             stopped_by = "budget"
             rounds_trace.append(
                 f"stopped after round {rounds_used}: this node's "
@@ -7354,12 +7373,23 @@ def _verified_content_rounds(
             })
             repeats += 1
             if repeats >= _MAX_REPEATED_ATTEMPTS:
-                # dev/127: one repeat is worth telling the model about (dev/116
-                # does); a second means more rounds would only buy more copies
-                # of the same code. More retries must not mean more identical
-                # retries.
-                stopped_by = "repeat"
-                break
+                # dev/129: a repeat no longer ends the loop — the owner asked
+                # for as many retries as the budget affords. It ESCALATES: the
+                # next round is told how many times it has repeated itself and
+                # that it must change approach, not phrasing. Only an
+                # implausible run of identical candidates stops the loop, so a
+                # stuck model cannot spend fifteen minutes of provider calls.
+                detail = (
+                    f"you have now returned the same code {repeats} times. Stop repeating it: "
+                    "change the APPROACH — a different library call, a different key or column, "
+                    "a different shape of the result — or say plainly what you cannot do. "
+                    + detail
+                )
+                previous_error = detail
+                attempts[-1]["detail"] = detail[:_ATTEMPT_DETAIL_CHARS]
+                if repeats >= _MAX_REPEATED_ATTEMPTS_HARD:
+                    stopped_by = "repeat"
+                    break
             previous_attempt = candidate
             previous_error = detail
             continue  # url_evidence: unchanged — same request, same answer

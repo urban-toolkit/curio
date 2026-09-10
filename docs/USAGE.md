@@ -417,8 +417,8 @@ slot, with its columns. Code that forgets to index it is refused before it runs.
 When Solve cannot fix a node, the chat says so completely: every attempt
 appears as its own row — the exception, where it was raised, and the code that
 attempt ran — with the last one expanded, and the message names what stopped
-the loop (the attempt cap — ten by default, this node's 15-minute repair
-budget, or a builder that repeated itself). Nothing is written when nothing passed.
+the loop (this node's 15-minute repair budget, which is normally what stops it,
+or a builder that kept returning the same code). Nothing is written when nothing passed.
 
 The goal box in the dock is shared with your agents: several of them, the
 Dataflow Task Planner most of all, are written around knowing what the dataflow

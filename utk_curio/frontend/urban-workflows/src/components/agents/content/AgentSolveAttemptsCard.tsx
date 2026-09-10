@@ -10,6 +10,8 @@ import styles from "./AgentSolveAttemptsCard.module.css";
  *  STOPPED_BY_PHRASES so the card and the failure sentence agree. */
 const STOPPED_BY: Record<string, string> = {
   rounds: "the attempt cap was reached",
+  // dev/129: a document that cannot be run was still checked, and did not pass.
+  document: "the document did not validate",
   budget: "this node's time budget was spent",
   repeat: "the builder repeated itself",
   decline: "the builder declined — it needs something from you",

@@ -351,7 +351,7 @@ lands:
 |---|---|
 | passes | An empty plan node gets the content written. A node that already had content is untouched: "verified — no change needed". |
 | fails | The failure goes back to the content generator with the traceback, the previous attempt, the grounded sources, **what its inputs actually contain** (memo dev/127 — the columns, dtypes and row counts of the frames feeding this node, through a merge in `arg` order), and a fresh probe of the URL it fetched (a `400` after a reachable base URL is a wrong request shape, not a dead endpoint). The corrected code is grounded again and re-run. |
-| keeps failing | Corrections continue while **both** budgets allow: up to **ten attempts** in all, and only while this node's repair budget (**15 minutes** by default) is unspent. Whichever binds first is NAMED — *"not fixed after 6 attempts (stopped by the round cap)"*, *"…(stopped by this node's time budget)"*, *"…(stopped by a repeated attempt)"*. A second identical candidate ends it: more retries must not mean more copies. |
+| keeps failing | Corrections continue **while this node's repair budget allows — 15 minutes by default**, as many attempts as fit (the attempt cap sits above what a quarter hour affords, so the clock is the normal stop). A repeated candidate does not end the loop: the next correction is told, in plain words, that it repeated itself and must change approach; only a long run of identical candidates stops it. Whichever bound binds is NAMED — *"not fixed after 6 attempts (stopped by the round cap)"*, *"…(stopped by this node's time budget)"*, *"…(stopped by a repeated attempt)"*. A second identical candidate ends it: more retries must not mean more copies. |
 | still fails | Nothing is written. The node shows *failed*, and **every attempt appears in the chat** as its own card: one disclosure per round with the exception line, the frame that raised it, and **the code that attempt ran**, copyable, with the last round open. One click opens that node's own agent. |
 | cannot run (sandbox unreachable) | The node stays *pending* with the reason — never *failed*: an outage is not a content failure. |
 
@@ -372,6 +372,19 @@ list-shaped `arg` as a value (`arg.crs`, or `gdf = arg` then `gdf.to_crs(…)`) 
 as an ungrounded source is refused. A merge with only one connected input passes
 its value straight through, so there `arg` IS the value and nothing is refused.
 
+**A document that cannot be run is still checked.** A Vega-Lite chart and an
+AUTK map grammar are documents, so before either is written into a node the
+runtime validates it — Vega-Lite against the schema Curio already ships, the
+map grammar against what the renderer cannot draw without (a `map`, a non-empty
+`layerRefs`, a `dataRef` per layer) — and an invalid document is a **correction
+round** like a failing traceback, with the validator's complaint as the
+instruction (memo dev/129; before it, an invalid spec was written and the chat
+said *solved* while the node rendered red). A written document is reported as
+*"document validated — not executed"*: still honest that nothing ran, no longer
+silent about whether it is well-formed. And a kind nothing here can validate is
+**not written at all** — the node stays *pending* with the reason, because
+nothing unchecked belongs in a node.
+
 A failure never reads as more certain than it is. The exception type and its
 message lead every failure line and are never cut mid-word (memo dev/127 —
 before it, a sliced traceback reached the chat as `execution-error:
@@ -380,8 +393,9 @@ das/core/generic.py`, and one round's message survived as the two characters
 being blamed on the library whose file appears in the frame, and *"not fixed
 after N attempts"* is always followed by the bound that stopped the loop.
 
-Both budgets are deployment knobs: `CURIO_SOLVE_MAX_ATTEMPTS` (default 10) and
-`CURIO_SOLVE_NODE_BUDGET` (default 900 seconds), alongside the existing
+Both budgets are deployment knobs: `CURIO_SOLVE_NODE_BUDGET` (default 900
+seconds — the bound that normally binds) and `CURIO_SOLVE_MAX_ATTEMPTS`
+(default 40, a cap above what that budget affords), alongside the existing
 `CURIO_VALIDATION_EXEC_TIMEOUT` for one run and `CURIO_SOLVE_BATCH_DEADLINE`
 for the whole batch. An unusable value falls back to the default rather than
 breaking every run.
