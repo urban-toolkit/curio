@@ -6875,6 +6875,54 @@ class TestVerifiedDiscovery:
         assert unverified["verification"]["status"] == "unverified"
         assert "never checked" in unverified["verification"]["detail"]
 
+    def test_rows_carry_the_access_verdict_and_a_manual_row_its_steps(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """dev/132: the same probe now also answers *what can you do with it* —
+        fetch it (delegate the code) or download it from the portal (steps +
+        Import). Read from the observation, never from the row's prose."""
+        user, token = user_and_token
+        observations = {
+            "https://data.cityofchicago.org/resource/abcd-1234.json": {
+                "status": "verified", "httpStatus": 200,
+                "contentType": "application/json", "sampleKeys": ["a"], "checkedAt": "now",
+            },
+            "https://geosampa.prefeitura.sp.gov.br/downloads": {
+                "status": "verified", "httpStatus": 200, "contentType": "text/html",
+                "pageTitle": "GeoSampa — Downloads", "checkedAt": "now",
+            },
+        }
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **kw: observations.get(url) or {
+                "status": "unverified", "detail": "no probeable URL", "checkedAt": "now",
+            },
+        )
+        rows = [
+            {"name": "Chicago Heat", "sourceType": "api",
+             "url": "https://data.cityofchicago.org/resource/abcd-1234.json"},
+            {"name": "Setores GeoSampa", "sourceType": "portal", "format": "Shapefile (zip)",
+             "url": "https://geosampa.prefeitura.sp.gov.br/downloads"},
+        ]
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            coord="agent.dataset-finder@1.0.0",
+            replies=[self._candidates_reply(rows)],
+        )
+        body = helper._run(client, token, alice_project, att_id).get_json()
+        part = next(p for p in body["content"] if p["type"] == "datasetCandidates")
+        api_row, portal_row = part["lanes"]["external"]
+        assert api_row["access"] == "fetchable"
+        assert "application/json" in api_row["accessWhy"]
+        assert "downloadSteps" not in api_row  # nothing to teach: code fetches it
+        assert portal_row["access"] == "manual-download"
+        assert "GeoSampa" in portal_row["accessWhy"]
+        steps = portal_row["downloadSteps"]
+        assert steps[0].endswith("https://geosampa.prefeitura.sp.gov.br/downloads")
+        assert "Shapefile (zip)" in " ".join(steps)
+        assert steps[-1].startswith("Then use Import dataset below")
+
     def test_research_verify_delegates_get_runtime_evidence(self, tmp_curio, monkeypatch):
         from utk_curio.backend.app.agents import services as services_mod
 

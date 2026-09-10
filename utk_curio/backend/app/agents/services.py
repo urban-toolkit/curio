@@ -9237,16 +9237,39 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
             url = row.get("url")
             if not url:
                 row["verification"] = verify.verify_external_source(None)
+                _mint_row_access(row)
                 continue
             if budget.exhausted:
                 row["verification"] = {
                     "status": "unverified",
                     "detail": "the egress budget was spent before this row — not checked",
                 }
+                _mint_row_access(row)
                 continue
             row["verification"] = verify.verify_external_source(url, budget=budget)
+            _mint_row_access(row)
             if loop_ctx is not None and row["verification"].get("status") == "verified":
                 loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
+
+
+def _mint_row_access(row: dict) -> None:
+    """dev/132: what the user can DO with this row, minted from the probe.
+
+    The owner's instruction splits the external lane: a row code can fetch is
+    delegated automatically, a row a person must download from a portal
+    carries the steps and an Import button. Both halves need the same thing
+    first — a verdict, recorded by the runtime from what it observed
+    (``DEC-053``), never a claim the model made. ``access`` is that verdict;
+    ``downloadSteps`` rides only the manual answer.
+    """
+    outcome = row.get("verification") if isinstance(row.get("verification"), dict) else {}
+    verdict = verify.classify_access(outcome)
+    row["access"] = verdict["access"]
+    row["accessWhy"] = verdict["why"]
+    if verdict["access"] == verify.ACCESS_MANUAL:
+        steps = verify.download_steps(row, outcome)
+        if steps:
+            row["downloadSteps"] = steps
 
 
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":

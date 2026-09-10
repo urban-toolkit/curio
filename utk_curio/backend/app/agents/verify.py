@@ -200,3 +200,132 @@ def verify_external_source(url: str | None, *, request_fn=None, resolver=None, b
     # It is raw remote content and must not ride the outcome into a card.
     outcome.pop("_body", None)
     return outcome
+
+
+# --- dev/132: what a verified row actually gives you --------------------------
+#
+# The owner's instruction splits the external lane in two: a row the runtime can
+# FETCH (delegate the code) and a row a human must DOWNLOAD from a portal
+# (teach the steps, then import). That split is not a guess — it is read from
+# what the probe above already observed: the content type it got back, the HTTP
+# status, and the page title of a non-data answer. Nothing here issues a
+# request; `classify_access` is a pure function of one observation.
+
+#: Content types a loader can parse directly.
+_DATA_CONTENT_TYPES = (
+    "json", "geo+json", "csv", "text/csv", "xml", "zip", "octet-stream",
+    "spreadsheet", "excel", "parquet", "x-netcdf", "geopackage", "shapefile",
+)
+#: Content types that are a PAGE about the data, never the data.
+_PAGE_CONTENT_TYPES = ("html", "xhtml")
+#: Statuses whose page-shaped answer means "a human must go through the portal".
+_GATED_STATUSES = (401, 403, 451)
+
+ACCESS_FETCHABLE = "fetchable"
+ACCESS_MANUAL = "manual-download"
+ACCESS_UNKNOWN = "unknown"
+
+_ACCESS_WHY_MAX = 160
+_STEP_MAX_CHARS = 200
+_STEPS_MAX = 6
+
+
+def _content_type_kind(content_type: str) -> str:
+    lowered = (content_type or "").lower()
+    if any(marker in lowered for marker in _PAGE_CONTENT_TYPES):
+        return "page"
+    if any(marker in lowered for marker in _DATA_CONTENT_TYPES):
+        return "data"
+    return "unknown"
+
+
+def classify_access(observation: dict | None) -> dict:
+    """``{"access": …, "why": …}`` — whether code can fetch this row's URL.
+
+    dev/132: the three answers of memo §3A, each traceable to the probe's own
+    evidence (`DEC-053` — a verdict the runtime recorded, never a claim the
+    model made):
+
+    - ``fetchable`` — 2xx with a data body (a JSON/CSV/GeoJSON/archive content
+      type, or a JSON shape sample the probe read);
+    - ``manual-download`` — the data URL answered with a PAGE (``text/html``),
+      or refused with a gated status (401/403/451) — a portal a person passes
+      through, not an endpoint code can read;
+    - ``unknown`` — nothing was probed, the policy refused the URL, or the
+      answer was neither (a 404, a transport failure, an unrecognized type).
+      The row says so; nothing downstream may upgrade it silently.
+    """
+    obs = observation if isinstance(observation, dict) else {}
+    status = str(obs.get("status") or "")
+    http_status = obs.get("httpStatus")
+    kind = _content_type_kind(str(obs.get("contentType") or ""))
+    title = str(obs.get("pageTitle") or "").strip()
+    if status == "verified":
+        if kind == "data" or obs.get("sampleKeys"):
+            detail = (
+                f"the endpoint answered {http_status or 200} with "
+                f"{obs.get('contentType') or 'a data body'}"
+            )
+            return {"access": ACCESS_FETCHABLE, "why": detail[:_ACCESS_WHY_MAX]}
+        if kind == "page":
+            why = "the data URL answered with a web page"
+            if title:
+                why += f' titled "{title}"'
+            return {"access": ACCESS_MANUAL, "why": why[:_ACCESS_WHY_MAX]}
+        return {
+            "access": ACCESS_UNKNOWN,
+            "why": (
+                f"answered {http_status or 200} with "
+                f"{obs.get('contentType') or 'no content type'} — not recognized as data"
+            )[:_ACCESS_WHY_MAX],
+        }
+    if status == "unreachable" and http_status in _GATED_STATUSES:
+        why = f"the data URL answered {http_status} — the portal gates it"
+        if title:
+            why += f' ("{title}")'
+        return {"access": ACCESS_MANUAL, "why": why[:_ACCESS_WHY_MAX]}
+    if status == "refused":
+        return {
+            "access": ACCESS_UNKNOWN,
+            "why": ("the egress policy refused the URL — nothing was observed")[:_ACCESS_WHY_MAX],
+        }
+    detail = str(obs.get("detail") or "the URL was never checked")
+    return {"access": ACCESS_UNKNOWN, "why": detail[:_ACCESS_WHY_MAX]}
+
+
+def download_steps(row: dict | None, observation: dict | None) -> list[str]:
+    """The steps for a ``manual-download`` row — the portal's own description.
+
+    dev/132 (R4): every line comes from the row's metadata or from what the
+    probe observed. Nothing invents a click path: when the page title is all
+    the portal gave, that is what the step says, and the framing is explicit
+    about it. Bounded (6 steps, 200 chars each) like every other minted field.
+    """
+    row = row if isinstance(row, dict) else {}
+    obs = observation if isinstance(observation, dict) else {}
+    url = str(obs.get("finalUrl") or row.get("url") or "").strip()
+    steps: list[str] = []
+    if url:
+        steps.append(f"Open the portal page in your browser: {url}")
+    title = str(obs.get("pageTitle") or "").strip()
+    if title:
+        steps.append(
+            f'The page answered as "{title}" — use its own download control '
+            "(the portal describes the click path, not Curio)."
+        )
+    elif url:
+        steps.append(
+            "Use the page's own download control — the portal describes the "
+            "click path, not Curio."
+        )
+    fmt = str(row.get("format") or "").strip()
+    if fmt:
+        steps.append(f"Save the {fmt} file the portal offers.")
+    requirement = str(row.get("requirement") or "").strip()
+    if requirement:
+        steps.append(f"The row states this requirement: {requirement}")
+    steps.append(
+        "Then use Import dataset below: it registers the file in this "
+        "project's Data Catalog, and the node is built from it."
+    )
+    return [step[:_STEP_MAX_CHARS] for step in steps[:_STEPS_MAX]]
