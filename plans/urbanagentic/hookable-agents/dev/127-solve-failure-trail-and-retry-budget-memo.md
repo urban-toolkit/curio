@@ -564,3 +564,12 @@ attempts, each with its code, and the bound named.
 Nothing else in §3 was deviated from, and no existing test's expectations were rewritten to
 accommodate the change: the only test-side edit is the pin in (5), and every other suite passed
 unchanged.
+
+**Superseded numbers (2026-09-10, same day, owner instruction — see dev/128).** *"also change the
+fix attempts to 10 and 15 mins at max"*: the budget shipped here as five corrections (six
+attempts) and 300 s is now **ten attempts and 900 s**, and the knob is stated in ATTEMPTS
+(`CURIO_SOLVE_MAX_ATTEMPTS`) rather than in corrections-after-the-first
+(`CURIO_SOLVE_CORRECTION_ROUNDS`), because that is how both the instruction and the failure
+sentence read. Only the numbers and the knob's name changed; §3C's shape — two bounds, the wall
+budget checked at round boundaries, a second repeat ending the loop, a hard ceiling above the
+default — is exactly as built.

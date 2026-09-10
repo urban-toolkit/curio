@@ -1620,43 +1620,47 @@ class TestRepairBudget:
     attempts — the owner's failing batch finished in 25 s against a 300 s
     sandbox timeout and a 45-minute batch deadline."""
 
-    def test_the_shipped_default_is_six_attempts(self, monkeypatch):
-        monkeypatch.delenv("CURIO_SOLVE_CORRECTION_ROUNDS", raising=False)
+    def test_the_shipped_default_is_ten_attempts_and_fifteen_minutes(self, monkeypatch):
+        # dev/128, the owner's instruction: "change the fix attempts to 10 and
+        # 15 mins at max".
+        monkeypatch.delenv("CURIO_SOLVE_MAX_ATTEMPTS", raising=False)
         monkeypatch.delenv("CURIO_SOLVE_NODE_BUDGET", raising=False)
-        assert services_mod.solve_correction_rounds() == 5  # + the first generation
-        assert services_mod.solve_node_budget_s() == 300  # the owner's five minutes
+        assert services_mod.solve_max_attempts() == 10
+        assert services_mod.solve_correction_rounds() == 9  # attempts − the first
+        assert services_mod.solve_node_budget_s() == 15 * 60
 
     def test_the_env_is_read_and_garbage_falls_back(self, monkeypatch):
-        monkeypatch.setenv("CURIO_SOLVE_CORRECTION_ROUNDS", "9")
-        assert services_mod.solve_correction_rounds() == 9
+        monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", "4")
+        assert services_mod.solve_max_attempts() == 4
+        assert services_mod.solve_correction_rounds() == 3
         for bad in ("", "   ", "zero", "-3", "0"):
-            monkeypatch.setenv("CURIO_SOLVE_CORRECTION_ROUNDS", bad)
-            assert services_mod.solve_correction_rounds() == 5, bad
+            monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", bad)
+            assert services_mod.solve_max_attempts() == 10, bad
         monkeypatch.setenv("CURIO_SOLVE_NODE_BUDGET", "60")
         assert services_mod.solve_node_budget_s() == 60
         monkeypatch.setenv("CURIO_SOLVE_NODE_BUDGET", "nope")
-        assert services_mod.solve_node_budget_s() == 300
+        assert services_mod.solve_node_budget_s() == 15 * 60
 
-    def test_six_attempts_are_made_when_the_clock_allows(self, app, tmp_curio, monkeypatch):
-        monkeypatch.delenv("CURIO_SOLVE_CORRECTION_ROUNDS", raising=False)
+    def test_ten_attempts_are_made_when_the_clock_allows(self, app, tmp_curio, monkeypatch):
+        monkeypatch.delenv("CURIO_SOLVE_MAX_ATTEMPTS", raising=False)
         node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
         exec_fn = _Exec(fail_markers=("bad",))
-        replies = [f"bad{i}()" for i in range(1, 9)]  # each different: no repeat
+        replies = [f"bad{i}()" for i in range(1, 15)]  # each different: no repeat
         events, outcome, inputs = _rounds(app, node, replies=replies, exec_fn=exec_fn)
         assert outcome["verdict"] == "fail"
-        assert outcome["rounds"] == 6  # 1 generation + 5 corrections
+        assert outcome["rounds"] == 10  # dev/128: the owner's ten
         assert outcome["stoppedBy"] == "rounds"
-        assert len(outcome["attempts"]) == 6
+        assert len(outcome["attempts"]) == 10
         assert all(a.get("code") for a in outcome["attempts"])
 
     def test_the_wall_budget_stops_the_next_round_and_names_itself(
         self, app, tmp_curio, monkeypatch
     ):
-        monkeypatch.delenv("CURIO_SOLVE_CORRECTION_ROUNDS", raising=False)
+        monkeypatch.delenv("CURIO_SOLVE_MAX_ATTEMPTS", raising=False)
         monkeypatch.setenv("CURIO_SOLVE_NODE_BUDGET", "100")
         node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
         exec_fn = _Exec(fail_markers=("bad",))
-        ticks = iter([0, 40, 80, 120, 160, 200, 240])  # 40 s per round
+        ticks = iter([0, 40, 80, 120, 160, 200, 240, 280, 320, 360, 400])  # 40 s/round
 
         events, outcome, inputs = _rounds(
             app, node, replies=[f"bad{i}()" for i in range(1, 9)], exec_fn=exec_fn,
@@ -1671,7 +1675,7 @@ class TestRepairBudget:
     def test_a_round_in_flight_is_never_cut_off(self, app, tmp_curio, monkeypatch):
         # The budget is checked at round BOUNDARIES: the clock jumping past it
         # mid-round must not lose the round's attempt.
-        monkeypatch.delenv("CURIO_SOLVE_CORRECTION_ROUNDS", raising=False)
+        monkeypatch.delenv("CURIO_SOLVE_MAX_ATTEMPTS", raising=False)
         monkeypatch.setenv("CURIO_SOLVE_NODE_BUDGET", "10")
         node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
         exec_fn = _Exec(fail_markers=("bad",))
@@ -1685,10 +1689,10 @@ class TestRepairBudget:
         assert outcome["attempts"][0]["code"] == "bad1()"
 
     def test_the_cap_bounds_a_reckless_env(self, app, tmp_curio, monkeypatch):
-        monkeypatch.setenv("CURIO_SOLVE_CORRECTION_ROUNDS", "500")
+        monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", "500")
         node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
         exec_fn = _Exec(fail_markers=("bad",))
         events, outcome, inputs = _rounds(
-            app, node, replies=[f"bad{i}()" for i in range(1, 40)], exec_fn=exec_fn,
+            app, node, replies=[f"bad{i}()" for i in range(1, 60)], exec_fn=exec_fn,
         )
-        assert outcome["rounds"] == 1 + services_mod.MAX_SOLVE_CORRECTION_ROUNDS
+        assert outcome["rounds"] == services_mod.MAX_SOLVE_ATTEMPTS

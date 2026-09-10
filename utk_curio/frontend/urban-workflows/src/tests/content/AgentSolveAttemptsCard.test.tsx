@@ -72,7 +72,7 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
 
   it("names how many attempts there were and what stopped the loop", () => {
     render(<AgentSolveAttemptsCard part={part()} />);
-    expect(screen.getByText(/3 attempts · the round cap was reached/)).toBeInTheDocument();
+    expect(screen.getByText(/3 attempts · the attempt cap was reached/)).toBeInTheDocument();
     expect(stoppedByPhrase("budget")).toBe("this node's time budget was spent");
     expect(stoppedByPhrase("nonsense")).toBe("");
   });

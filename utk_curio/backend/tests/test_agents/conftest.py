@@ -38,7 +38,7 @@ def _default_provider(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _pinned_repair_budget(monkeypatch):
-    """dev/127: pin the repair loop's round cap to the historical 2 corrections.
+    """dev/127: pin the repair loop to the historical THREE attempts.
 
     Every test written before dev/127 scripts a fixed number of provider
     replies and asserts on "three attempts" — the cap that existed when it was
@@ -48,7 +48,7 @@ def _pinned_repair_budget(monkeypatch):
     those tests about its own subject; the new budget has its own tests, which
     delete this variable and assert the shipped default instead.
     """
-    monkeypatch.setenv("CURIO_SOLVE_CORRECTION_ROUNDS", "2")
+    monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", "3")
 
 
 @pytest.fixture(autouse=True)

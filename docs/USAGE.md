@@ -413,8 +413,8 @@ know the datasets to draw the dataflow.
 When Solve cannot fix a node, the chat says so completely: every attempt
 appears as its own row — the exception, where it was raised, and the code that
 attempt ran — with the last one expanded, and the message names what stopped
-the loop (the round cap, this node's five-minute repair budget, or a builder
-that repeated itself). Nothing is written when nothing passed.
+the loop (the attempt cap — ten by default, this node's 15-minute repair
+budget, or a builder that repeated itself). Nothing is written when nothing passed.
 
 The goal box in the dock is shared with your agents: several of them, the
 Dataflow Task Planner most of all, are written around knowing what the dataflow

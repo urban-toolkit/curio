@@ -5687,8 +5687,11 @@ def _run_node_events(
 # with both budgets essentially untouched. It is now a round cap AND a per-node
 # wall budget, whichever binds first, both env-overridable on the
 # ``exec_timeout_s`` pattern (an unusable value falls back rather than raising).
-DEFAULT_SOLVE_CORRECTION_ROUNDS = 5  # → six attempts
-DEFAULT_SOLVE_NODE_BUDGET_S = 300  # the owner's five minutes
+# dev/128 (owner instruction, 2026-09-10): "change the fix attempts to 10 and
+# 15 mins at max". The knob is stated in ATTEMPTS, the way the instruction and
+# the failure sentence both read, rather than in corrections-after-the-first.
+DEFAULT_SOLVE_ATTEMPTS = 10
+DEFAULT_SOLVE_NODE_BUDGET_S = 15 * 60
 
 
 def _positive_int_env(name: str, default: int) -> int:
@@ -5704,23 +5707,32 @@ def _positive_int_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def solve_max_attempts() -> int:
+    """``CURIO_SOLVE_MAX_ATTEMPTS`` — how many times the loop may try, counting
+    the first generation (dev/128: the owner's ten)."""
+    return _positive_int_env("CURIO_SOLVE_MAX_ATTEMPTS", DEFAULT_SOLVE_ATTEMPTS)
+
+
 def solve_correction_rounds() -> int:
-    """``CURIO_SOLVE_CORRECTION_ROUNDS`` — corrections after the first
-    generation (so attempts = this + 1)."""
-    return _positive_int_env("CURIO_SOLVE_CORRECTION_ROUNDS", DEFAULT_SOLVE_CORRECTION_ROUNDS)
+    """Corrections after the first generation — ``solve_max_attempts() - 1``,
+    kept as its own reading because that is what the loop's docstring and the
+    egress budget are written in terms of."""
+    return max(solve_max_attempts() - 1, 0)
 
 
 def solve_node_budget_s() -> int:
     """``CURIO_SOLVE_NODE_BUDGET`` — the wall-clock budget one node's repair
-    loop may spend. Checked at round BOUNDARIES: a round already running is
-    never killed (its own sandbox timeout bounds it), but no new round starts
-    past the budget."""
+    loop may spend (dev/128: the owner's fifteen minutes). Checked at round
+    BOUNDARIES: a round already running is never killed (its own sandbox
+    timeout bounds it), but no new round starts past the budget."""
     return _positive_int_env("CURIO_SOLVE_NODE_BUDGET", DEFAULT_SOLVE_NODE_BUDGET_S)
 
 
 #: The widest the loop may ever go, whatever the env says — the trail, the
-#: transcript part and the egress budget are all sized from it.
-MAX_SOLVE_CORRECTION_ROUNDS = 12
+#: transcript part and the egress budget are all sized from it. dev/128: the
+#: default is ten attempts, so the ceiling leaves room for a deployment that
+#: wants more without letting a typo run a node forever.
+MAX_SOLVE_ATTEMPTS = 20
 
 
 def _solve_waves(spec: dict | None, targets: list[str]) -> list[list[str]]:
@@ -5907,7 +5919,7 @@ def _batch_deadline_spent(started: float, deadline_s: int) -> bool:
 #: dev/116: the verified loop's own egress budget — per failed round up to five
 #: real requests (the gate's probe, the composed request and its redirect, the
 #: keyed probe), over the first round plus the corrections, with slack.
-_LOOP_EGRESS_CALLS = 4 * (1 + DEFAULT_SOLVE_CORRECTION_ROUNDS) + 2
+_LOOP_EGRESS_CALLS = 4 * DEFAULT_SOLVE_ATTEMPTS + 2
 _VALIDATE_STALE_SECONDS = 15 * 60
 
 
@@ -7016,10 +7028,11 @@ def _verified_content_rounds(
       ``validationError``, ``sourceGrounding`` (data-loading nodes) and — when
       the failure names an HTTP problem — fresh probe evidence for the URLs
       the candidate fetches;
-    - corrections continue while BOTH bounds allow (dev/127): at most
-      ``solve_correction_rounds()`` of them, and only while
-      ``solve_node_budget_s()`` seconds have not been spent — the outcome's
-      ``stoppedBy`` names whichever bound ended it.
+    - attempts continue while BOTH bounds allow (dev/127, widened by dev/128 at
+      the owner's instruction): at most ``solve_max_attempts()`` of them — ten
+      by default — and only while ``solve_node_budget_s()`` seconds have not
+      been spent — fifteen minutes by default; the outcome's ``stoppedBy``
+      names whichever bound ended it.
 
     A generator: yields ``("generation_round", …)``, ``("node_executed", …)``
     and ``("round_verdict", …)`` exactly as the validate-node stream always
@@ -7137,7 +7150,7 @@ def _verified_content_rounds(
         confirmed_source = source_state.get("confirmedSource")
         if source_state.get("detail"):
             rounds_trace.append(f"source: {str(source_state['detail'])[:160]}")
-    max_rounds = min(1 + solve_correction_rounds(), 1 + MAX_SOLVE_CORRECTION_ROUNDS)
+    max_rounds = min(solve_max_attempts(), MAX_SOLVE_ATTEMPTS)
     node_budget_s = solve_node_budget_s()
     loop_started = clock()
     for round_index in range(max_rounds):

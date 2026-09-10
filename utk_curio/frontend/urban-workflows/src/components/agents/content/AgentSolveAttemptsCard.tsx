@@ -9,7 +9,7 @@ import styles from "./AgentSolveAttemptsCard.module.css";
 /** dev/127: the bound that ended the loop, in words. Mirrors the server's own
  *  STOPPED_BY_PHRASES so the card and the failure sentence agree. */
 const STOPPED_BY: Record<string, string> = {
-  rounds: "the round cap was reached",
+  rounds: "the attempt cap was reached",
   budget: "this node's time budget was spent",
   repeat: "the builder repeated itself",
   decline: "the builder declined — it needs something from you",
