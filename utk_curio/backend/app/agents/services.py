@@ -30,6 +30,7 @@ from utk_curio.backend.app.agents import (
 )
 from utk_curio.backend.app.agents import (
     agent_jobs,
+    document_validation,
     egress,
     failure_text,
     input_contract,
@@ -4488,10 +4489,24 @@ def _solve_events(
                 return {"nodeId": node_id, "status": "solved", "content": candidate, **trail}
             evidence = outcome.get("evidence") or {}
             if outcome.get("verdict") == "not-executable" and (outcome.get("candidate") or "").strip():
-                # dev/118 (DEC-075): a browser-rendered kind — written like the
-                # legacy path writes, and SAID to be unexecuted, never "verified".
+                # dev/118 (DEC-075): a browser-rendered kind — SAID to be
+                # unexecuted, never "verified". dev/129: and never written
+                # unchecked — an authored document that nothing here can
+                # validate stays OUT of the node.
                 candidate = outcome.get("candidate") or ""
-                verification = {"status": "not-executable", "reason": str(evidence.get("detail") or "")[:300]}
+                if evidence.get("documentUnchecked") and not evidence.get("documentPassive"):
+                    reason = (
+                        "written nothing — " + str(evidence["documentUnchecked"])[:200]
+                        + "; Play the dataflow to see whether it renders"
+                    )[:300]
+                    results[node_id] = {"status": "pending", "reason": reason, **trail}
+                    return {"nodeId": node_id, "status": "pending", "reason": reason, **trail}
+                verification = (
+                    {"status": "document-valid",
+                     "reason": f"{evidence['documentValidated']} document validated — not executed"}
+                    if evidence.get("documentValidated") else
+                    {"status": "not-executable", "reason": str(evidence.get("detail") or "")[:300]}
+                )
                 results[node_id] = {"status": "solved", "verification": verification, **trail}
                 applied_contents.append({"nodeId": node_id, "content": candidate})
                 return {"nodeId": node_id, "status": "solved", "content": candidate,
@@ -6152,10 +6167,25 @@ def _solve_node_events(
         )
         card_kind = "error"
     elif verdict == "not-executable":
-        text = (
-            f"Not executable: {label!r} has no code the sandbox could run — it works in the "
-            "browser or through its own service. Play the dataflow to see it. Nothing was changed."
-        )
+        # dev/129: a document that validated says so; one that nothing could
+        # check says THAT, and is not written.
+        doc_evidence = outcome.get("evidence") or {}
+        if doc_evidence.get("documentValidated"):
+            text = (
+                f"Validated {label!r}: its {doc_evidence['documentValidated']} document is valid "
+                "and was written — the sandbox cannot run this kind, so it was not executed; "
+                "Play the dataflow to see it render."
+            )
+        elif doc_evidence.get("documentUnchecked") and not doc_evidence.get("documentPassive"):
+            text = (
+                f"Wrote nothing for {label!r}: {str(doc_evidence['documentUnchecked'])[:200]}. "
+                "Nothing unchecked is put into a node."
+            )
+        else:
+            text = (
+                f"Not executable: {label!r} has no code the sandbox could run — it works in the "
+                "browser or through its own service. Play the dataflow to see it. Nothing was changed."
+            )
         card_kind = "result"
     elif verdict == "awaiting-source":
         # dev/126: the source is with the user. Nothing was generated or
@@ -7404,6 +7434,38 @@ def _verified_content_rounds(
             # not the candidate's fault. Once, silently, the slice runs whole.
             verdict_result = yield from _validate_with(None)
             reuse_retried = True
+        if verdict_result.get("verdict") == "not-executable" and str(candidate or "").strip():
+            # dev/129: the sandbox cannot RUN a Vega or AUTK document, which is
+            # not the same as being unable to CHECK it. An invalid document is
+            # a failed round like any other — the validator's message is the
+            # correction — and a valid one is written with a stronger, still
+            # truthful claim than "no code to run".
+            document = document_validation.validate(node_type, candidate)
+            if document["status"] == document_validation.STATUS_INVALID:
+                refusal = document_validation.refusal_text(node_type, document)
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "document-invalid", "detail": refusal[:2000]},
+                }
+                yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+                attempts.append({
+                    "round": rounds_used, "contentSha256": _content_sha(candidate),
+                    "verdict": "fail", "kind": "document-invalid",
+                    "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                    "source": "current content" if use_current else "generated",
+                    **_attempt_code_field(candidate),
+                })
+                previous_attempt = candidate
+                previous_error = refusal
+                url_evidence = []
+                continue
+            evidence = verdict_result.setdefault("evidence", {})
+            if document["status"] == document_validation.STATUS_VALID:
+                evidence["documentValidated"] = document_validation.canonical_suffix(node_type)
+            else:
+                evidence["documentUnchecked"] = str(document.get("why") or "")[:300]
+                evidence["documentPassive"] = bool(document.get("passive"))
         yield "round_verdict", {
             "round": rounds_used, "verdict": verdict_result["verdict"],
         }
