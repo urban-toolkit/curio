@@ -23,6 +23,7 @@ import json
 from dataclasses import dataclass
 from typing import Iterable
 
+from utk_curio.backend.app.agents import plan_topology
 from utk_curio.backend.app.agents.manifest import ToolRequirement
 
 _EFFECTS = ("read", "mutate")
@@ -178,14 +179,20 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="mutate",
         description=(
-            "Propose an ADDITIVE plan of connected new nodes, by ending a "
-            "reply with a dataflowPlan block (not a toolRequest): "
+            "Propose a reviewed plan that changes the dataflow graph, by ending "
+            "a reply with a dataflowPlan block (not a toolRequest): "
             '{"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", '
             '"nodeType": "<packageId>/<templateId>", "title": "...", '
-            '"intent": "..."}], "edges": [{"from": "n1", "to": "n2"}]}}. '
-            "nodeType must come from the Available node templates list. The "
-            "user reviews the whole plan; nothing is added without approval, "
-            "and existing nodes are never touched."
+            '"intent": "..."}], "edges": [{"from": "n1", "to": "<ref or existing '
+            'node id>", "kind": "data"|"interaction"}], "removeNodes": ["<existing '
+            'node id>"], "removeEdges": ["<existing edge id>"]}}. A plan may add '
+            "nodes, add connections (edge-only plans are valid), and/or remove — "
+            "each part optional. kind defaults to data; an interaction edge is the "
+            "feedback link between a visualization and a data-pool node. Data "
+            "edges must keep the graph acyclic — a plan that closes a cycle is "
+            "refused with the loop named. nodeType must come from the Available "
+            "node templates list. The user reviews the whole plan (removals "
+            "listed by name); nothing changes without approval."
         ),
     ),
     # dev/50 — consumer: agent.dataset-finder. The catalog lane's reviewed
@@ -469,6 +476,15 @@ def _dataflow_projection(stripped: dict, user_key: str, project_id: str) -> dict
         for key in ("sourceHandle", "targetHandle"):
             if edge.get(key) is not None:
                 row[key] = edge.get(key)
+        # dev/125 §3.6: the edge KIND, in the plan grammar's own vocabulary and
+        # with its byte-absent default (present only when "interaction"). The
+        # instruction tells the builder to re-read the graph and confirm the
+        # topology before claiming a repair; without this the projection could
+        # not show that the feedback edge it just asked for is in fact an
+        # interaction edge, so the read-back was not executable — the same
+        # DEC-063 defect the plan grammar had, one layer up.
+        if plan_topology.is_interaction_edge(edge):
+            row["kind"] = "interaction"
         edges.append(row)
     projection = {
         "name": dataflow.get("name"),

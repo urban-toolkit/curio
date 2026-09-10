@@ -259,6 +259,36 @@ class TestDataflowReadProjection:
         )
         assert json.loads(text)["edges"][0]["targetHandle"] == "in_0"
 
+    def test_interaction_edges_are_named_as_such_data_edges_stay_bare(self, tmp_curio):
+        """dev/125 §3.6 — the read-back the instruction demands.
+
+        The builder is told to re-read the graph and confirm the topology
+        before claiming a repair. If the projection cannot say which edge is
+        the feedback link, the agent that just asked for an interaction edge
+        cannot tell whether it got one — so it re-diagnoses and loops, which is
+        the failure this whole memo exists to end. `kind` follows the plan
+        grammar's own vocabulary and its byte-absent default: present only when
+        the edge is an interaction edge.
+        """
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = {"dataflow": {"nodes": [
+            {"id": "vis", "type": "curio.builtin/vis-vega", "content": ""},
+            {"id": "pool", "type": "curio.builtin/data-pool", "content": ""},
+        ], "edges": [
+            {"id": "e1", "source": "pool", "target": "vis",
+             "sourceHandle": "out", "targetHandle": "in"},
+            {"id": "e2", "source": "vis", "target": "pool", "type": "Interaction",
+             "sourceHandle": "in/out", "targetHandle": "in/out"},
+        ]}}
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+        _, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        by_id = {e["id"]: e for e in json.loads(text)["edges"]}
+        assert by_id["e2"]["kind"] == "interaction"
+        assert "kind" not in by_id["e1"]  # data stays byte-absent, as in the plan
+
 
 class TestNodeRuntimeRead:
     """dev/67-2 — the journal's read tool: honest never-executed, traceback
