@@ -4350,6 +4350,26 @@ def _solve_events(
 
     results: dict[str, dict] = {}
     applied_contents: list[dict] = []
+    # dev/127: one bounded artifact preview per artifact per batch, turned into
+    # the columns and dtypes its frame holds. A node that had to join two
+    # frames used to be told only their TYPE and spent its whole budget
+    # guessing a join key (memo dev/127 §1 D5).
+    schema_cache: dict[str, dict | None] = {}
+
+    def _schema_of_artifact(artifact_id: str) -> dict | None:
+        if artifact_id in schema_cache:
+            return schema_cache[artifact_id]
+        from utk_curio.backend.app.agents import upstream_schema
+        from utk_curio.backend.app.execution import runner as _runner
+
+        summary = None
+        try:
+            preview = _runner.load_artifact_preview(artifact_id)
+            summary = upstream_schema.summarize(preview) if preview else None
+        except Exception:  # noqa: BLE001
+            log.warning("Could not describe artifact %s", artifact_id, exc_info=True)
+        schema_cache[artifact_id] = summary
+        return summary
     delegations: list = []
     unstarted: list[str] = []
     started = time.monotonic()
@@ -4835,7 +4855,9 @@ def _solve_events(
                     # node's neighborhood (goals, runtime status, datasets),
                     # not just its own intent.
                     wave_spec = current["spec"]
-                    upstream_outputs = _upstream_outputs_for(wave_spec, node_id, wave_outputs)
+                    upstream_outputs = _upstream_outputs_for(
+                        wave_spec, node_id, wave_outputs, schema_fn=_schema_of_artifact,
+                    )
                     inputs = {
                         "nodeType": node.get("type"),
                         "intent": node.get("goal"),
@@ -5736,20 +5758,80 @@ def _solve_waves(spec: dict | None, targets: list[str]) -> list[list[str]]:
     return [[t for t in targets if depth[t] == d] for d in sorted(set(depth.values()))]
 
 
-def _upstream_outputs_for(spec: dict | None, node_id: str, wave_outputs: dict) -> list[dict]:
-    """dev/118: the recorded outputs of this node's direct upstreams that
-    passed earlier in the batch — data-flow edges only, bounded."""
+#: dev/127: how far the walk looks through nodes that produced no artifact of
+#: their own (a merge-flow, a data pool) before giving up.
+_UPSTREAM_WALK_MAX_DEPTH = 4
+_UPSTREAM_ROWS_MAX = 12
+
+
+def _upstream_outputs_for(
+    spec: dict | None,
+    node_id: str,
+    wave_outputs: dict,
+    *,
+    schema_fn=None,
+) -> list[dict]:
+    """What the nodes feeding this one actually produced (dev/118, dev/127).
+
+    dev/118 listed the direct upstreams that had passed earlier in the batch —
+    which skipped the case that mattered: a ``merge-flow`` is written but never
+    executed (``DEC-075``), so it holds no output, so a node fed THROUGH one
+    was handed an empty list and had to invent its inputs (memo dev/127 §1 D5,
+    the owner's join that guessed ``community_area`` three times).
+
+    So the walk goes THROUGH a node that produced nothing, into its own
+    upstreams, in ``in_0…in_n`` order — which is the order the child will index
+    as ``arg[0]``, ``arg[1]`` — and each row carries ``argIndex`` when it
+    arrived that way. ``schema_fn`` (optional) turns a recorded artifact into
+    the columns and dtypes it holds; an artifact it cannot describe leaves the
+    row without a schema rather than with a guess.
+    """
     if not wave_outputs:
         return []
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
 
     try:
-        ups = parse_workflow_dict(spec or {}).upstream_nodes(node_id)
+        graph = parse_workflow_dict(spec or {})
     except Exception:
         return []
-    return [
-        {k: v for k, v in wave_outputs[u].items() if k != "output"} for u in ups if u in wave_outputs
-    ][:12]
+
+    def _row(nid: str, arg_index: int | None) -> dict:
+        record = wave_outputs[nid]
+        row = {k: v for k, v in record.items() if k != "output"}
+        if arg_index is not None:
+            row["argIndex"] = arg_index
+        if schema_fn is not None:
+            artifact = (record.get("output") or {}).get("path")
+            if artifact:
+                try:
+                    schema = schema_fn(artifact)
+                except Exception:  # noqa: BLE001
+                    schema = None
+                if schema:
+                    row["schema"] = schema
+        return row
+
+    def _walk(target: str, arg_index: int | None, depth: int) -> list[dict]:
+        if depth > _UPSTREAM_WALK_MAX_DEPTH:
+            return []
+        try:
+            ups = graph.upstream_nodes(target)
+        except Exception:
+            return []
+        rows: list[dict] = []
+        indexed = len(ups) > 1
+        for index, up in enumerate(ups):
+            slot = index if indexed else arg_index
+            if up in wave_outputs:
+                rows.append(_row(up, slot))
+            else:
+                # A node with no recorded output of its own (a merge, a pool,
+                # or one that has not run): look through it, keeping the slot
+                # order the child will index by.
+                rows.extend(_walk(up, slot, depth + 1))
+        return rows
+
+    return _walk(node_id, None, 0)[:_UPSTREAM_ROWS_MAX]
 
 
 _VANISHED_INPUT_MARKERS = (

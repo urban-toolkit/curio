@@ -502,3 +502,80 @@ class TestDev119RosterClassification:
         assert "no code the sandbox could run" in report["error"]
         assert "through its own service" in report["error"] and "Play the dataflow" in report["error"]
         assert rec.calls == []
+
+
+class TestArtifactPreviewIsBounded:
+    """dev/127: the backend describes an upstream frame without holding it.
+
+    ``load_artifact_as_dict`` fetches a WHOLE artifact and its own comment
+    records what that cost once (MemoryError on the largest example dataflow).
+    The preview asks the sandbox for a row cap AND abandons the read past a
+    byte cap, so an artifact too big to describe cheaply is reported as no
+    schema rather than as a crash.
+    """
+
+    class _StreamResp:
+        def __init__(self, body: bytes, status: int = 200):
+            self._body = body
+            self.status_code = status
+            self.ok = 200 <= status < 300
+
+        def iter_content(self, chunk_size=32_768):
+            for i in range(0, len(self._body), chunk_size):
+                yield self._body[i : i + chunk_size]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def _patch(self, monkeypatch, resp, seen=None):
+        import requests
+
+        def _get(url, params=None, timeout=None, headers=None, stream=False):
+            if seen is not None:
+                seen.update({"url": url, "params": params, "stream": stream,
+                             "headers": headers})
+            return resp
+
+        monkeypatch.setattr(requests, "get", _get)
+
+    def test_the_row_cap_rides_the_request_and_the_payload_comes_back(self, monkeypatch):
+        seen: dict = {}
+        self._patch(
+            monkeypatch,
+            self._StreamResp(b'{"dataType": "dataframe", "data": {"a": [1]}}'),
+            seen,
+        )
+        out = runner.load_artifact_preview("art-1")
+        assert out == {"dataType": "dataframe", "data": {"a": [1]}}
+        assert seen["params"] == {"fileName": "art-1", "maxRows": runner.ARTIFACT_PREVIEW_MAX_ROWS}
+        assert seen["stream"] is True
+        assert seen["url"].endswith("/get")
+
+    def test_an_oversized_body_is_abandoned_and_reports_no_preview(self, monkeypatch):
+        big = b'{"dataType": "geodataframe", "data": "' + b"x" * (
+            runner.ARTIFACT_PREVIEW_MAX_BYTES + 10_000
+        ) + b'"}'
+        self._patch(monkeypatch, self._StreamResp(big))
+        assert runner.load_artifact_preview("art-big") is None
+
+    def test_an_error_status_is_no_preview_not_a_raise(self, monkeypatch):
+        self._patch(monkeypatch, self._StreamResp(b"nope", status=500))
+        assert runner.load_artifact_preview("art-1") is None
+        self._patch(monkeypatch, self._StreamResp(b"", status=401))
+        assert runner.load_artifact_preview("art-1") is None
+
+    def test_a_body_that_is_not_json_is_no_preview(self, monkeypatch):
+        self._patch(monkeypatch, self._StreamResp(b"<html>error</html>"))
+        assert runner.load_artifact_preview("art-1") is None
+
+    def test_an_unreachable_sandbox_is_no_preview(self, monkeypatch):
+        import requests
+
+        def _boom(*a, **k):
+            raise requests.ConnectionError("refused")
+
+        monkeypatch.setattr(requests, "get", _boom)
+        assert runner.load_artifact_preview("art-1") is None

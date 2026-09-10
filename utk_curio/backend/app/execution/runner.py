@@ -110,6 +110,61 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
     return result
 
 
+#: dev/127: how much of a preview the BACKEND will hold. The sandbox bounds
+#: rows; this bounds bytes, because a geodataframe's GeoJSON can be large even
+#: at five rows and the comment on ``load_artifact_as_dict`` records what an
+#: unbounded read once cost (MemoryError on the largest example dataflow).
+ARTIFACT_PREVIEW_MAX_BYTES = 512_000
+ARTIFACT_PREVIEW_MAX_ROWS = 5
+
+
+def load_artifact_preview(
+    artifact_id: str,
+    *,
+    max_rows: int = ARTIFACT_PREVIEW_MAX_ROWS,
+    max_bytes: int = ARTIFACT_PREVIEW_MAX_BYTES,
+) -> dict | None:
+    """A BOUNDED preview of a stored artifact, or None (memo dev/127).
+
+    ``GET /get?fileName=…&maxRows=n`` is the sandbox's own preview path (it
+    reads the row cap out of duckdb for tabular artifacts). The response is
+    streamed and abandoned past *max_bytes*, so whatever the sandbox chooses to
+    serialize cannot cost the backend its memory: an oversized preview is
+    reported as no preview, which the caller states as an absent schema rather
+    than as a guess.
+
+    Never raises: an unreachable sandbox, a 401, a 500 or a body that is not
+    JSON all return None.
+    """
+    import json as _json
+
+    import requests as _req
+
+    try:
+        with _req.get(
+            f"{_sandbox_url()}/get",
+            params={"fileName": artifact_id, "maxRows": int(max_rows)},
+            headers=sandbox_headers(),
+            timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
+            stream=True,
+        ) as resp:
+            if not resp.ok:
+                return None
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in resp.iter_content(chunk_size=32_768):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > max_bytes:
+                    return None  # too big to describe cheaply: no schema
+                chunks.append(chunk)
+        payload = _json.loads(b"".join(chunks).decode("utf-8", "replace"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 _SEED_PREFIX = (
     "import numpy as _np; _np.random.seed({seed}); "
     "import random as _rnd; _rnd.seed({seed})\n"
