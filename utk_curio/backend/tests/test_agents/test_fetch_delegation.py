@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from utk_curio.backend.app.agents import agent_jobs
 from utk_curio.backend.app.agents import dataset_resolution as dr
+from utk_curio.backend.app.agents import services as services_mod
 from utk_curio.backend.tests.test_agents import test_routes as _tr
 from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _Harness
 
@@ -199,3 +200,46 @@ class TestAfterTheImportSolvingContinues:
         r = _select(h, finder_id, [{"lane": "catalog", "key": "imported.not-a-dataset"}])
         assert r.status_code == 422
         assert "not a catalog candidate" in r.get_json()["error"]
+
+
+class TestAMidSessionDatasetStillGetsItsPath:
+    """dev/131 F4, closed here. The sandbox path mapping is resolved when a
+    Solve starts (dev/115's rule — a detached job holds no request context), so
+    a dataset that appeared DURING the session had no path inside the running
+    job. What the resolution actually needs is the acting user, and a job can
+    hold that from its start."""
+
+    def test_an_id_the_eager_mapping_never_saw_is_resolved_with_the_captured_user(
+        self, app, tmp_curio, user_and_token, monkeypatch
+    ):
+        user, _token = user_and_token
+        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="mid.csv")
+        code = f'return pd.read_csv(curio_dataset_path("{dataset_id}"))'
+        mapping: dict = {}  # what the session started with: nothing
+        with app.test_request_context():
+            paths = services_mod._session_dataset_paths(
+                "p-132", user, mapping, [code],
+            )
+        assert paths[dataset_id].endswith("mid.csv")
+        assert mapping[dataset_id] == paths[dataset_id]  # cached for the session
+
+    def test_without_a_user_the_mapping_is_unchanged_and_nothing_raises(
+        self, tmp_curio
+    ):
+        code = 'return pd.read_csv(curio_dataset_path("imported.ghost"))'
+        assert services_mod._session_dataset_paths("p-132", None, {}, [code]) == {}
+
+    def test_an_already_mapped_id_costs_no_lookup(self, tmp_curio, monkeypatch):
+        called: list = []
+        monkeypatch.setattr(
+            services_mod, "_dataset_path_topup",
+            lambda *a, **k: called.append(a) or a[2],
+        )
+        code = 'return pd.read_csv(curio_dataset_path("imported.known"))'
+        paths = services_mod._session_dataset_paths(
+            "p-132", object(), {"imported.known": "/data/known.csv"}, [code],
+        )
+        assert paths == {"imported.known": "/data/known.csv"}
+        # The top-up is consulted, and it is the one that skips a resolved id.
+        assert len(called) == 1
+        assert services_mod._dataset_ids_in([code]) == ["imported.known"]

@@ -4436,12 +4436,15 @@ def solve_attachment_stream(
     )
     # dev/126: and the Data Catalog rows the discovery delegate is handed.
     solve_catalog_rows = _catalog_rows_for_discovery(user_key, project_id)
+    # dev/132 (closes dev/131 F4): the acting user, so a dataset that arrives
+    # DURING the session can still be resolved to a sandbox path.
+    solve_user = _acting_user()
     events = _solve_events(
         user_key, project_id, attachment_id, config, targets, nodes_by_id,
         manifest, coord, session_id, solve_execution_id, stop,
         spec=spec, mode=mode, return_phase=return_phase, verify=verify,
         grounding_base=solve_ground, dataset_paths=solve_dataset_paths,
-        catalog_rows=solve_catalog_rows,
+        catalog_rows=solve_catalog_rows, acting_user=solve_user,
         retry_of=retry_of if isinstance(retry_of, str) else None,
     )
     # dev/115 (DEC-021, single-process slice): the batch runs as a detached
@@ -4475,6 +4478,7 @@ def _solve_events(
     dataset_paths: dict | None = None,
     retry_of: str | None = None,
     catalog_rows: list | None = None,
+    acting_user=None,
 ):
     """The solve batch body (dev/63). Workers report through a thread-safe
     queue — they never touch the response; the generator drains it between
@@ -5187,8 +5191,11 @@ def _solve_events(
                             extra_inputs={"planSiblings": goals[:20],
                                           **({"upstreamOutputs": upstream_outputs} if upstream_outputs else {})},
                             delegate_runner=_traced,
-                            dataset_paths_fn=lambda codes: _filter_dataset_paths(
-                                solve_dataset_paths, codes
+                            # dev/132 (closes dev/131 F4): the eager mapping,
+                            # topped up for a dataset the user imported or
+                            # installed since this session started.
+                            dataset_paths_fn=lambda codes: _session_dataset_paths(
+                                project_id, acting_user, solve_dataset_paths, codes
                             ),
                             exec_user_key=user_key,
                             secrets_fn=_exec_secrets_resolver(user_key),
@@ -6528,6 +6535,7 @@ def solve_node_stream(
         manifest=manifest, grounding_base=base, dataset_paths=dataset_paths,
         catalog_rows=_catalog_rows_for_discovery(user_key, project_id),
         templates=_roster_templates(user_key, project_id),
+        acting_user=_acting_user(),
     )
     job = agent_jobs.start_job(
         user_key=user_key, project_id=project_id, attachment_id=attachment_id,
@@ -6554,6 +6562,7 @@ def _solve_node_events(
     dataset_paths: dict,
     templates: dict | None = None,
     catalog_rows: list | None = None,
+    acting_user=None,
 ):
     """The per-node Solve body (dev/115 A2) over the ONE verified loop."""
     node_id = node.get("id")
@@ -6602,7 +6611,12 @@ def _solve_node_events(
             grounding_base=grounding_base,
             start_from_current=True,
             delegate_runner=_traced,
-            dataset_paths_fn=lambda codes: _filter_dataset_paths(dataset_paths, codes),
+            # dev/132 (closes dev/131 F4): topped up for a dataset that
+            # arrived after this job started — the per-pill Solve and the
+            # Finder's own delegation both come through here.
+            dataset_paths_fn=lambda codes: _session_dataset_paths(
+                project_id, acting_user, dataset_paths, codes
+            ),
             exec_user_key=user_key,
             secrets_fn=_exec_secrets_resolver(user_key),
             resolve_source=_source_resolver(
@@ -6886,6 +6900,72 @@ def _resolve_catalog_execution_paths(project_id: str, dataset_ids: list) -> dict
         log.warning("Could not resolve catalog execution paths for project %s",
                     project_id, exc_info=True)
         return {}
+
+
+def _acting_user():
+    """The user object the request is acting as, or None — captured at a job's
+    ENTRY so the detached thread can still reach the datasets domain (which is
+    user-object keyed, unlike the key-based agents store)."""
+    try:
+        from flask import g, has_request_context
+
+        return getattr(g, "user", None) if has_request_context() else None
+    except Exception:  # noqa: BLE001 — not under Flask
+        return None
+
+
+def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list) -> dict:
+    """Resolve dataset ids the eager mapping does not have, as *user_obj*.
+
+    dev/131 F4, closed by dev/132: the sandbox path mapping is resolved when a
+    Solve starts (dev/115's rule — the job thread holds no request context), so
+    a dataset that appeared DURING the session — the user importing the file a
+    portal row's steps described, or installing one from the catalog — had no
+    path inside the running job and its node stayed pending until the next
+    Solve. The acting user is what the resolution actually needs, and a job can
+    hold that from its start; the top-up caches into the same mapping, so one
+    new id costs one lookup per session.
+    """
+    missing = [i for i in ids if i and i not in mapping]
+    if not missing or user_obj is None:
+        return mapping
+    try:
+        from utk_curio.backend.app.datasets.application.catalog_service import (
+            DatasetCatalogService,
+        )
+
+        resolved = DatasetCatalogService(user_obj).resolve_execution_paths(
+            missing, dataflow_id=project_id
+        ) or {}
+    except Exception:  # noqa: BLE001 — an unresolvable id fails loudly IN the sandbox
+        log.warning("Could not top up catalog paths for project %s", project_id,
+                    exc_info=True)
+        return mapping
+    for dataset_id, path in resolved.items():
+        mapping[str(dataset_id)] = path
+    return mapping
+
+
+def _dataset_ids_in(codes: list) -> list[str]:
+    """Every ``curio_dataset_path("<id>")`` id these codes reference."""
+    out: list[str] = []
+    for code in codes:
+        if not isinstance(code, str) or "curio_dataset_path" not in code:
+            continue
+        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
+            dataset_id = match.group(2)
+            if dataset_id not in out:
+                out.append(dataset_id)
+    return out
+
+
+def _session_dataset_paths(project_id: str, user_obj, mapping: dict, codes: list) -> dict:
+    """The paths *codes* need — from the eager mapping, topped up for anything
+    that arrived since the session started (dev/131 F4)."""
+    ids = _dataset_ids_in(codes)
+    if ids:
+        _dataset_path_topup(project_id, user_obj, mapping, ids)
+    return _filter_dataset_paths(mapping, codes)
 
 
 def _filter_dataset_paths(mapping: dict, codes: list) -> dict:
