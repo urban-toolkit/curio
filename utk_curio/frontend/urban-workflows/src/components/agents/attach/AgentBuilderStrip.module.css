@@ -136,3 +136,47 @@
   align-self: center;
   margin-right: 4px;
 }
+
+/* dev/131: a node that depends on the USER is visualized as such — the owner's
+   "the nodes that depend on user inputs should be better visualized". */
+.nodeNeedsUser {
+    outline: 1px solid var(--curio-warning-text);
+    outline-offset: 1px;
+    border-radius: 8px;
+}
+
+.needsYou {
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--curio-warning-text);
+    white-space: nowrap;
+}
+
+.waitingUpstream {
+    font-size: 0.66rem;
+    color: var(--curio-text-secondary);
+    white-space: nowrap;
+}
+
+/* dev/131: resolve ONE node from its own pill. */
+.nodeSolve {
+    font-size: 0.66rem;
+    font-weight: 600;
+    border-radius: 6px;
+    padding: 1px 6px;
+    cursor: pointer;
+    border: 1px solid var(--curio-border-strong);
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
+}
+
+.nodeSolve:hover:not(:disabled) {
+    border-color: var(--curio-text-secondary);
+}
+
+.nodeSolve:disabled {
+    cursor: default;
+    opacity: 0.5;
+}

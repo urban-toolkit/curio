@@ -128,6 +128,12 @@ export const AgentChatPanel: React.FC<{
   solveErrors?: Record<string, string>;
   /** dev/116: the live batch's per-node remedies (a missing connection key). */
   solveRemedies?: Record<string, import("../../../api/agentsApi").AgentRemedy>;
+  /** dev/131: the session's live pass / waiting summary / ending. */
+  solveWaiting?: Array<{ nodeId: string; kind: string; reason?: string; attachmentId?: string | null }>;
+  solveEndedBy?: string | null;
+  solvePass?: number | null;
+  /** dev/131: resolve ONE node through its own agent, from its pill. */
+  onSolveOneNode?: (nodeId: string) => Promise<unknown>;
   /** dev/118: the live batch's current topological wave. */
   solveWave?: import("../../../api/agentsApi").AgentSolveWave;
   /** dev/118: per-node notices that are not errors (pending/skipped reasons, written-not-executed). */
@@ -186,6 +192,10 @@ export const AgentChatPanel: React.FC<{
   solveProgress,
   solveErrors,
   solveRemedies,
+  solveWaiting,
+  solveEndedBy,
+  solvePass,
+  onSolveOneNode,
   solveWave,
   solveNotices,
   onCancelSolve,
@@ -597,6 +607,10 @@ export const AgentChatPanel: React.FC<{
           solveErrors={solveErrors}
           solveRemedies={solveRemedies}
           onOpenChat={onOpenAgentChat}
+          solveWaiting={solveWaiting}
+          solveEndedBy={solveEndedBy}
+          solvePass={solvePass}
+          onSolveNode={onSolveOneNode}
           solveWave={solveWave}
           solveNotices={solveNotices}
           onCancelSolve={onCancelSolve}

@@ -686,6 +686,17 @@ export interface AgentSolveResult {
   /** dev/106: the batch-level failure reason (the missing-specialist case) —
    * the same text every node's `error` carries; the Solve card shows it once. */
   reason?: string;
+  /** dev/131: how the SESSION ended — complete | stopped | budget | blocked. */
+  endedBy?: string;
+  /** dev/131: how many passes the session made. */
+  passes?: number;
+  /** dev/131: what it is still blocked on, per node. */
+  waiting?: Array<{
+    nodeId: string;
+    kind: string;
+    reason?: string;
+    attachmentId?: string | null;
+  }>;
 }
 
 /** dev/127: one attempt a repair loop made — the code it ran beside the error

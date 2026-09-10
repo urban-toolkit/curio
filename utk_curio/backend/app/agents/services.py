@@ -4392,6 +4392,10 @@ def _solve_events(
     persisted: set[str] = set()
     # dev/118: the batch's time budget (§3.6) — a bound, never a failure.
     deadline_s = solve_batch_deadline_s()
+    # dev/131: the session's own budget — the owner's fifteen minutes. The
+    # batch ceiling above stays the outer guard.
+    session_deadline_s = solve_session_deadline_s()
+    session_wait_s = solve_session_wait_s()
     deadline_reason = (
         f"the batch's time budget ({max(1, deadline_s // 60)} min) was spent — "
         "Retry continues from here"
@@ -4443,6 +4447,32 @@ def _solve_events(
         return _node_is_executable(node_obj, batch_templates)
 
     def _record_outcome(node_id: str, status: str, text, child) -> dict | None:
+        # dev/131: a later pass must not ERASE an earlier pass's evidence. A
+        # node that is still awaiting the user produces a fresh result with no
+        # attempts (nothing was tried this pass), and overwriting the trail of
+        # the pass that DID try left the user with a bare "pending". So the
+        # record is merged: a result carrying attempts always wins; one without
+        # them keeps the earlier trail and updates only the reason.
+        previous = dict(results.get(node_id) or {})
+        if previous.get("status") in ("solved", "proposed") and status != "verified":
+            # dev/131: a session NEVER un-solves a node. A later pass exists to
+            # pick up work that became possible, not to downgrade a node whose
+            # content already landed (a slice bound or a cancellation arriving
+            # after the fact must not rewrite "solved" into "skipped").
+            return None
+        event = _record_outcome_inner(node_id, status, text, child)
+        fresh = results.get(node_id)
+        if isinstance(fresh, dict) and not fresh.get("attempts") and previous.get("attempts"):
+            for key in ("attempts", "rounds", "verdict", "stoppedBy"):
+                if previous.get(key) is not None and fresh.get(key) is None:
+                    fresh[key] = previous[key]
+            if isinstance(event, dict) and not event.get("attempts"):
+                for key in ("attempts", "rounds", "verdict", "stoppedBy"):
+                    if fresh.get(key) is not None:
+                        event[key] = fresh[key]
+        return event
+
+    def _record_outcome_inner(node_id: str, status: str, text, child) -> dict | None:
         nonlocal batch_reason
         if status == "deadline":
             # dev/118: the budget ran out before this node was dispatched — it
@@ -4806,6 +4836,12 @@ def _solve_events(
             payload_out["reason"] = batch_reason
         return payload_out
 
+    # dev/131: session bookkeeping lives ABOVE the resolution branch, because
+    # every exit — including "no specialist installed" — must still report how
+    # the session ended.
+    ended_by = "complete"
+    pass_no = 0
+    attempted_signature: dict[str, tuple] = {}
     try:
         yield "solve_started", {"executionId": solve_execution_id, "targets": list(targets)}
         resolution = delegation.resolve(
@@ -4844,6 +4880,10 @@ def _solve_events(
             for node_id in targets:
                 results[node_id] = {"status": "failed", "error": reason}
                 yield "node_result", {"nodeId": node_id, "status": "failed", "error": reason}
+            # dev/131: nothing a further pass could change — the missing
+            # specialist is an install the USER applies, and the proposal for it
+            # is already in the chat.
+            ended_by = "blocked"
         else:
             goals = [
                 str(nodes_by_id[t].get("goal") or "") for t in targets if t in nodes_by_id
@@ -4965,6 +5005,10 @@ def _solve_events(
                                 extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
                                 catalog_rows=catalog_rows,
                             ),
+                            # dev/131: this node may not outlive the session.
+                            node_budget_s=max(
+                                int(session_deadline_s - (time.monotonic() - started)), 1
+                            ),
                         )
                         try:
                             while True:
@@ -4988,194 +5032,296 @@ def _solve_events(
                 except BaseException as exc:  # a lost item would deadlock the drain
                     outcome_queue.put((node_id, "failed", f"solve worker error: {exc}", None))
 
-            pool = ThreadPoolExecutor(max_workers=_SOLVE_MAX_WORKERS)
-            waves = _solve_waves(spec, list(targets))
-            try:
-                for wave_no, wave in enumerate(waves, 1):
-                    current["wave"] = wave_no
+            # dev/131: SOLVE IS A SESSION. dev/118's pass — waves in
+            # topological order, per-wave persist, honest reasons — is unchanged
+            # inside; what changed is that it no longer ends the run. The
+            # session keeps making passes while unresolved nodes remain, the
+            # session budget is unspent and the user has not stopped, so a
+            # blocker that clears later (a dataset the user confirms mid-run, an
+            # upstream a later pass fills) is picked up instead of stranding the
+            # dataflow (the owner's `224d23a2`: six solved, three left, exited
+            # in thirteen seconds).
+            while True:
+                pass_no += 1
+                if pass_no > _SOLVE_MAX_PASSES:
+                    ended_by = "budget"
+                    break
+                if _should_stop():
+                    ended_by = "stopped"
+                    break
+                if (time.monotonic() - started) >= session_deadline_s:
+                    ended_by = "budget"
+                    break
+                # Re-read the spec every pass: a selection confirmed, a node
+                # edited or content written since the last pass all count.
+                try:
+                    pass_spec = _read_spec_or_404(user_key, project_id)
+                except AgentServiceError:
+                    pass_spec = current.get("spec") or spec
+                record_now = attachments.get_attachment(pass_spec, attachment_id) or {}
+                runs_now = (record_now.get("builderSession") or {}).get("nodeRuns") or {}
+                unresolved = [
+                    nid for nid in targets
+                    if str(runs_now.get(nid, "pending")) in ("pending", "failed")
+                ]
+                if not unresolved:
+                    ended_by = "complete"
+                    break
+                # dev/131: pass 1 attempts everything; a later pass attempts a
+                # node only when something that could unblock it has changed —
+                # its own content, an upstream's, or its dataset selection.
+                pass_targets = [
+                    nid for nid in unresolved
+                    if pass_no == 1
+                    or attempted_signature.get(nid) != _blocker_signature(pass_spec, nid)
+                ]
+                if not pass_targets:
+                    # Nothing can progress yet. The session STAYS ALIVE — the
+                    # user may confirm a source or edit a node — and says what
+                    # it is waiting for, checking again after a bounded,
+                    # stop-aware pause.
                     if _should_stop():
-                        # Cancelled between waves: nothing here was dispatched.
-                        for nid in wave:
-                            _record_outcome(nid, "unstarted", None, None)
-                        continue
-                    if _batch_deadline_spent(started, deadline_s):
-                        # dev/118: out of time before this wave — its targets
-                        # stay pending with the reason; Retry continues.
-                        for nid in wave:
-                            event = _record_outcome(nid, "deadline", None, None)
-                            if event is not None:
-                                yield "node_result", event
-                        continue
-                    yield "solve_wave", {"wave": wave_no, "of": len(waves), "nodeIds": list(wave)}
-                    for target in wave:
-                        pool.submit(_solve_one, target)
-                    remaining = len(wave)
-                    while remaining:
-                        node_id, status, text, child = outcome_queue.get()
-                        if status == "started":
-                            yield "node_started", {"nodeId": node_id}
+                        ended_by = "stopped"
+                        break
+                    if (time.monotonic() - started) >= session_deadline_s:
+                        ended_by = "budget"
+                        break
+                    yield "solve_waiting", {
+                        "pass": pass_no,
+                        "seconds": session_wait_s,
+                        "waiting": _session_waiting_summary(results, unresolved),
+                        "secondsLeft": max(
+                            int(session_deadline_s - (time.monotonic() - started)), 0
+                        ),
+                    }
+                    if _wait_for_stop(stop, session_wait_s):
+                        ended_by = "stopped"
+                        break
+                    continue
+                spec = pass_spec
+                current["spec"] = pass_spec
+                nodes_by_id = {
+                    n.get("id"): n
+                    for n in (pass_spec.get("dataflow") or {}).get("nodes") or []
+                    if isinstance(n, dict)
+                }
+                waiting = _session_waiting_summary(results, pass_targets)
+                yield "solve_pass", {
+                    "pass": pass_no,
+                    "targets": list(pass_targets),
+                    "remaining": len(pass_targets),
+                    "waiting": waiting,
+                    "secondsLeft": max(int(session_deadline_s - (time.monotonic() - started)), 0),
+                }
+
+                pool = ThreadPoolExecutor(max_workers=_SOLVE_MAX_WORKERS)
+                waves = _solve_waves(spec, list(targets))
+                try:
+                    for wave_no, wave in enumerate(waves, 1):
+                        current["wave"] = wave_no
+                        if _should_stop():
+                            # Cancelled between waves: nothing here was dispatched.
+                            for nid in wave:
+                                _record_outcome(nid, "unstarted", None, None)
                             continue
-                        if status == "progress":
-                            # dev/115: the verified loop's rounds, live — the strip
-                            # shows "verifying" and each round's verdict.
-                            progress = dict(text)
-                            kind = progress.pop("kind", "")
-                            event_name = _SOLVE_PROGRESS_EVENTS.get(kind)
-                            if event_name:
-                                yield event_name, {"nodeId": node_id, **progress}
-                            continue
-                        remaining -= 1
-                        if mode == "propose" and status == "verified":
-                            # dev/115: an EXECUTED review — the validation block
-                            # (verdict, rounds, attempts) rides the part, PASS or
-                            # FAIL (dev/67-7's labeled choice); a sandbox outage
-                            # mints nothing and the node stays pending.
-                            outcome = text
-                            for c in outcome.get("delegations") or []:
-                                if c is not None:
-                                    delegations.append(c)
-                            if outcome.get("verdict") == "infrastructure":
-                                event = _record_outcome(node_id, "verified", outcome, None)
+                        if _batch_deadline_spent(started, deadline_s):
+                            # dev/118: out of time before this wave — its targets
+                            # stay pending with the reason; Retry continues.
+                            for nid in wave:
+                                event = _record_outcome(nid, "deadline", None, None)
                                 if event is not None:
                                     yield "node_result", event
-                                continue
-                            validation_block = {
-                                "verdict": outcome.get("verdict"),
-                                "rounds": outcome.get("rounds"),
-                                "evidence": outcome.get("evidence") or {},
-                                "attempts": outcome.get("attempts") or [],
-                            }
-                            part, home_att, mint_text = _mint_content_review_from_delegate(
-                                user_key, project_id,
-                                node_id=node_id,
-                                generated_text=outcome.get("candidate") or "",
-                                parent_attachment_id=attachment_id,
-                                parent_session_id=session_id,
-                                local_turn=True,
-                                validation=validation_block,
-                                grounding_base=solve_ground,
-                            )
-                            if part is not None:
-                                results[node_id] = {
-                                    "status": "proposed",
-                                    "proposalId": part["proposalId"],
-                                    "proposalAttachmentId": home_att,
-                                    "verdict": validation_block["verdict"],
-                                    "rounds": validation_block["rounds"],
-                                    "attempts": validation_block["attempts"],
-                                }
-                                yield "node_result", {
-                                    "nodeId": node_id,
-                                    "status": "proposed",
-                                    "proposalId": part["proposalId"],
-                                    "proposalAttachmentId": home_att,
-                                    "verdict": validation_block["verdict"],
-                                    "rounds": validation_block["rounds"],
-                                }
-                            else:
-                                results[node_id] = {"status": "failed", "error": mint_text[:300]}
-                                yield "node_result", {
-                                    "nodeId": node_id, "status": "failed", "error": mint_text[:300],
-                                }
                             continue
-                        if mode == "propose" and status == "solved":
-                            # dev/67-6 (Simulation Mode: solve): nothing is
-                            # written — the child's content mints a reviewed
-                            # node.content.write proposal through the EXISTING
-                            # machinery (digest-pinned against the current
-                            # content). dev/72: the review lives with the node's
-                            # agent when one exists (find-only — the drain never
-                            # writes the spec beyond the mint's own write).
-                            if child is not None:
-                                delegations.append(child)
-                            # dev/114: the gate runs on the batch base BEFORE the
-                            # mint so the node's failure names the source.
-                            _pnode = nodes_by_id.get(node_id) or {}
-                            _v, _refusal = _gate_generated_content(
-                                user_key, project_id, solve_ctx,
-                                code=content.extract_node_content(text), engine="python",
-                                node_type=_pnode.get("type"), base=solve_ground,
-                            )
-                            if _refusal:
-                                err = ("ungrounded source: " + _refusal.split("Allowed sources:")[0]
-                                       .replace("source grounding refused — ", "").strip())[:220] + \
-                                      _ungrounded_remedy(
-                                          _dataset_finder_attachment_id(spec, node_id))
-                                results[node_id] = {"status": "failed", "error": err[:300]}
-                                yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
+                        yield "solve_wave", {"wave": wave_no, "of": len(waves), "nodeIds": list(wave)}
+                        for target in wave:
+                            pool.submit(_solve_one, target)
+                        remaining = len(wave)
+                        while remaining:
+                            node_id, status, text, child = outcome_queue.get()
+                            if status == "started":
+                                yield "node_started", {"nodeId": node_id}
                                 continue
-                            # dev/73: the shared content→review sequence (also the
-                            # chat loops' — one mint policy, three callers).
-                            part, home_att, mint_text = _mint_content_review_from_delegate(
-                                user_key, project_id,
-                                node_id=node_id,
-                                generated_text=text,
-                                parent_attachment_id=attachment_id,
-                                parent_session_id=session_id,
-                                local_turn=True,
-                            )
-                            if part is not None:
-                                results[node_id] = {
-                                    "status": "proposed",
-                                    "proposalId": part["proposalId"],
-                                    "proposalAttachmentId": home_att,
+                            if status == "progress":
+                                # dev/115: the verified loop's rounds, live — the strip
+                                # shows "verifying" and each round's verdict.
+                                progress = dict(text)
+                                kind = progress.pop("kind", "")
+                                event_name = _SOLVE_PROGRESS_EVENTS.get(kind)
+                                if event_name:
+                                    yield event_name, {"nodeId": node_id, **progress}
+                                continue
+                            remaining -= 1
+                            if mode == "propose" and status == "verified":
+                                # dev/115: an EXECUTED review — the validation block
+                                # (verdict, rounds, attempts) rides the part, PASS or
+                                # FAIL (dev/67-7's labeled choice); a sandbox outage
+                                # mints nothing and the node stays pending.
+                                outcome = text
+                                for c in outcome.get("delegations") or []:
+                                    if c is not None:
+                                        delegations.append(c)
+                                if outcome.get("verdict") == "infrastructure":
+                                    event = _record_outcome(node_id, "verified", outcome, None)
+                                    if event is not None:
+                                        yield "node_result", event
+                                    continue
+                                validation_block = {
+                                    "verdict": outcome.get("verdict"),
+                                    "rounds": outcome.get("rounds"),
+                                    "evidence": outcome.get("evidence") or {},
+                                    "attempts": outcome.get("attempts") or [],
                                 }
-                                node = nodes_by_id.get(node_id) or {}
-                                node_label = (node.get('goal') or node_id)[:60]
-                                if home_att != attachment_id and isinstance(session_id, str):
-                                    sessions.append_turns(
-                                        user_key, project_id, session_id, attachment_id,
-                                        [sessions.make_turn(
-                                            "agent",
-                                            f"Proposed content for {node_label!r} — "
-                                            "the review lives in the node's Node Builder.",
-                                            content=[content.make_delegation_part(
-                                                capability="node.content.generate",
-                                                coord="agent.node-builder",
-                                                name="Node Builder",
-                                                category="node",
-                                                attachment_id=home_att,
-                                                status="ok",
-                                                summary=f"content proposed for {node_label!r}",
+                                part, home_att, mint_text = _mint_content_review_from_delegate(
+                                    user_key, project_id,
+                                    node_id=node_id,
+                                    generated_text=outcome.get("candidate") or "",
+                                    parent_attachment_id=attachment_id,
+                                    parent_session_id=session_id,
+                                    local_turn=True,
+                                    validation=validation_block,
+                                    grounding_base=solve_ground,
+                                )
+                                if part is not None:
+                                    results[node_id] = {
+                                        "status": "proposed",
+                                        "proposalId": part["proposalId"],
+                                        "proposalAttachmentId": home_att,
+                                        "verdict": validation_block["verdict"],
+                                        "rounds": validation_block["rounds"],
+                                        "attempts": validation_block["attempts"],
+                                    }
+                                    yield "node_result", {
+                                        "nodeId": node_id,
+                                        "status": "proposed",
+                                        "proposalId": part["proposalId"],
+                                        "proposalAttachmentId": home_att,
+                                        "verdict": validation_block["verdict"],
+                                        "rounds": validation_block["rounds"],
+                                    }
+                                else:
+                                    results[node_id] = {"status": "failed", "error": mint_text[:300]}
+                                    yield "node_result", {
+                                        "nodeId": node_id, "status": "failed", "error": mint_text[:300],
+                                    }
+                                continue
+                            if mode == "propose" and status == "solved":
+                                # dev/67-6 (Simulation Mode: solve): nothing is
+                                # written — the child's content mints a reviewed
+                                # node.content.write proposal through the EXISTING
+                                # machinery (digest-pinned against the current
+                                # content). dev/72: the review lives with the node's
+                                # agent when one exists (find-only — the drain never
+                                # writes the spec beyond the mint's own write).
+                                if child is not None:
+                                    delegations.append(child)
+                                # dev/114: the gate runs on the batch base BEFORE the
+                                # mint so the node's failure names the source.
+                                _pnode = nodes_by_id.get(node_id) or {}
+                                _v, _refusal = _gate_generated_content(
+                                    user_key, project_id, solve_ctx,
+                                    code=content.extract_node_content(text), engine="python",
+                                    node_type=_pnode.get("type"), base=solve_ground,
+                                )
+                                if _refusal:
+                                    err = ("ungrounded source: " + _refusal.split("Allowed sources:")[0]
+                                           .replace("source grounding refused — ", "").strip())[:220] + \
+                                          _ungrounded_remedy(
+                                              _dataset_finder_attachment_id(spec, node_id))
+                                    results[node_id] = {"status": "failed", "error": err[:300]}
+                                    yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
+                                    continue
+                                # dev/73: the shared content→review sequence (also the
+                                # chat loops' — one mint policy, three callers).
+                                part, home_att, mint_text = _mint_content_review_from_delegate(
+                                    user_key, project_id,
+                                    node_id=node_id,
+                                    generated_text=text,
+                                    parent_attachment_id=attachment_id,
+                                    parent_session_id=session_id,
+                                    local_turn=True,
+                                )
+                                if part is not None:
+                                    results[node_id] = {
+                                        "status": "proposed",
+                                        "proposalId": part["proposalId"],
+                                        "proposalAttachmentId": home_att,
+                                    }
+                                    node = nodes_by_id.get(node_id) or {}
+                                    node_label = (node.get('goal') or node_id)[:60]
+                                    if home_att != attachment_id and isinstance(session_id, str):
+                                        sessions.append_turns(
+                                            user_key, project_id, session_id, attachment_id,
+                                            [sessions.make_turn(
+                                                "agent",
+                                                f"Proposed content for {node_label!r} — "
+                                                "the review lives in the node's Node Builder.",
+                                                content=[content.make_delegation_part(
+                                                    capability="node.content.generate",
+                                                    coord="agent.node-builder",
+                                                    name="Node Builder",
+                                                    category="node",
+                                                    attachment_id=home_att,
+                                                    status="ok",
+                                                    summary=f"content proposed for {node_label!r}",
+                                                )],
                                             )],
-                                        )],
-                                    )
-                                yield "node_result", {
-                                    "nodeId": node_id,
-                                    "status": "proposed",
-                                    "proposalId": part["proposalId"],
-                                    "proposalAttachmentId": home_att,
-                                }
-                            else:
-                                results[node_id] = {
-                                    "status": "failed", "error": mint_text[:300]
-                                }
-                                yield "node_result", {
-                                    "nodeId": node_id, "status": "failed",
-                                    "error": mint_text[:300],
-                                }
-                            continue
-                        event = _record_outcome(node_id, status, text, child)
-                        if event is not None:
-                            yield "node_result", event
-                    if wave_no < len(waves):
-                        # dev/118: the wave boundary persists and heartbeats;
-                        # the next wave runs against what actually landed.
-                        _persist_wave(list(wave))
-            except GeneratorExit:
-                # Client gone (dev/63): stop dispatch, let in-flight children
-                # finish, fold their results in WITHOUT yielding — the finally
-                # persist keeps everything that completed.
-                stop.set()
-                pool.shutdown(wait=True)
-                while not outcome_queue.empty():
-                    node_id, status, text, child = outcome_queue.get_nowait()
-                    if status != "started":
-                        _record_outcome(node_id, status, text, child)
-                raise
-            finally:
-                pool.shutdown(wait=True)
-        yield "done", _finish()
+                                        )
+                                    yield "node_result", {
+                                        "nodeId": node_id,
+                                        "status": "proposed",
+                                        "proposalId": part["proposalId"],
+                                        "proposalAttachmentId": home_att,
+                                    }
+                                else:
+                                    results[node_id] = {
+                                        "status": "failed", "error": mint_text[:300]
+                                    }
+                                    yield "node_result", {
+                                        "nodeId": node_id, "status": "failed",
+                                        "error": mint_text[:300],
+                                    }
+                                continue
+                            event = _record_outcome(node_id, status, text, child)
+                            if event is not None:
+                                yield "node_result", event
+                        if wave_no < len(waves):
+                            # dev/118: the wave boundary persists and heartbeats;
+                            # the next wave runs against what actually landed.
+                            _persist_wave(list(wave))
+                except GeneratorExit:
+                    # Client gone (dev/63): stop dispatch, let in-flight children
+                    # finish, fold their results in WITHOUT yielding — the finally
+                    # persist keeps everything that completed.
+                    stop.set()
+                    pool.shutdown(wait=True)
+                    while not outcome_queue.empty():
+                        node_id, status, text, child = outcome_queue.get_nowait()
+                        if status != "started":
+                            _record_outcome(node_id, status, text, child)
+                    raise
+                finally:
+                    pool.shutdown(wait=True)
+                # dev/131: the signature is taken AFTER the pass, from a fresh
+                # spec — a node attempted once its upstream landed in the same
+                # pass has already seen that content, so the next pass must not
+                # count it as a change. Taking it before the pass made every
+                # pass that solved anything trigger another one.
+                try:
+                    settled = _read_spec_or_404(user_key, project_id)
+                except AgentServiceError:
+                    settled = current.get("spec") or pass_spec
+                for nid in pass_targets:
+                    attempted_signature[nid] = _blocker_signature(settled, nid)
+
+
+        payload = _finish()
+        # dev/131: every session ends in exactly one of three ways, and says so.
+        payload["endedBy"] = ended_by
+        payload["passes"] = pass_no
+        payload["waiting"] = _session_waiting_summary(
+            results, [nid for nid, r in results.items() if (r or {}).get("status") in ("pending", "failed")]
+        )
+        yield "done", payload
     finally:
         _SOLVE_CANCEL_EVENTS.pop(solve_execution_id, None)
         _finish()
@@ -5736,6 +5882,12 @@ def _run_node_events(
 # that wants a tighter one.
 DEFAULT_SOLVE_ATTEMPTS = 40
 DEFAULT_SOLVE_NODE_BUDGET_S = 15 * 60
+# dev/131 (owner instruction): "The DFB must continue to manage the data flow
+# until the user requests to stop by pressing a button, or until a timeout of 15
+# minutes occurs." That is the SESSION's budget — the batch used to make one
+# pass and exit (thirteen seconds, in the owner's dataflow `224d23a2`), leaving
+# a node that was one dataset selection away from finishing.
+DEFAULT_SOLVE_SESSION_DEADLINE_S = 15 * 60
 
 
 def _positive_int_env(name: str, default: int) -> int:
@@ -5762,6 +5914,15 @@ def solve_correction_rounds() -> int:
     kept as its own reading because that is what the loop's docstring and the
     egress budget are written in terms of."""
     return max(solve_max_attempts() - 1, 0)
+
+
+def solve_session_deadline_s() -> int:
+    """``CURIO_SOLVE_SESSION_DEADLINE`` — how long ONE Solve session keeps
+    managing the dataflow before it gives the time back (dev/131). The user's
+    Stop ends it sooner; nothing else does while work remains."""
+    return _positive_int_env(
+        "CURIO_SOLVE_SESSION_DEADLINE", DEFAULT_SOLVE_SESSION_DEADLINE_S
+    )
 
 
 def solve_node_budget_s() -> int:
@@ -5955,6 +6116,104 @@ def solve_batch_deadline_s() -> int:
     except ValueError:
         return DEFAULT_SOLVE_BATCH_DEADLINE_S
     return value if value > 0 else DEFAULT_SOLVE_BATCH_DEADLINE_S
+
+
+#: dev/131: how long the session pauses between two passes that changed
+#: nothing — long enough for a user to answer, short enough to pick up their
+#: answer promptly, and always stop-aware. Env-overridable so a test suite can
+#: run a whole session without sleeping.
+DEFAULT_SOLVE_SESSION_WAIT_S = 10
+#: A hard bound on passes, so a clock that misbehaves cannot spin forever.
+_SOLVE_MAX_PASSES = 200
+
+
+def solve_session_wait_s() -> int:
+    """``CURIO_SOLVE_SESSION_WAIT`` — the pause between two passes that changed
+    nothing (dev/131)."""
+    return _positive_int_env("CURIO_SOLVE_SESSION_WAIT", DEFAULT_SOLVE_SESSION_WAIT_S)
+
+
+def _wait_for_stop(stop, seconds: float) -> bool:
+    """Sleep up to *seconds*, returning True the moment a stop is requested.
+
+    ``stop`` is dev/63's in-process event; a durable cancel flag is checked by
+    the caller's own ``_should_stop`` on the next pass. Waiting on the event
+    rather than sleeping means Stop is felt immediately (memo dev/131 §6.5).
+    """
+    try:
+        return bool(stop.wait(timeout=seconds))
+    except Exception:  # noqa: BLE001 — a stop we cannot wait on is not a stop
+        time.sleep(min(seconds, 1))
+        return False
+
+
+def _blocker_signature(spec: dict | None, node_id: str) -> tuple:
+    """What would have to CHANGE for this node to be worth attempting again.
+
+    dev/131: a session that keeps making passes must not re-burn provider calls
+    on identical conditions — "consistently attempt to resolve" means keep
+    watching and attempt whenever progress became possible, not attempt the
+    same impossible thing in a loop. The signature is the node's own content,
+    the content of everything upstream of it, and the state of its dataset
+    selection; when none of those moved, a new attempt would ask the same
+    question of the same model with the same inputs.
+    """
+    from utk_curio.backend.app.agents import dataset_resolution
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    dataflow = (spec or {}).get("dataflow") or {}
+    nodes = {
+        n.get("id"): str(n.get("content") or "")
+        for n in dataflow.get("nodes") or []
+        if isinstance(n, dict)
+    }
+    upstreams: list[str] = []
+    try:
+        graph = parse_workflow_dict(spec or {})
+        frontier = [node_id]
+        seen = set()
+        while frontier:
+            current_id = frontier.pop()
+            for up in graph.upstream_nodes(current_id):
+                if up in seen:
+                    continue
+                seen.add(up)
+                upstreams.append(up)
+                frontier.append(up)
+    except Exception:  # noqa: BLE001
+        upstreams = []
+    record = dataset_resolution.source_record(spec, node_id) or {}
+    return (
+        len(nodes.get(node_id) or ""),
+        tuple(sorted((up, len(nodes.get(up) or "")) for up in upstreams)),
+        str(record.get("status") or ""),
+        len(record.get("picks") or []),
+    )
+
+
+def _session_waiting_summary(results: dict, targets: list) -> list[dict]:
+    """What the session is blocked on, per node, for the strip's live line.
+
+    dev/131: a node awaiting the USER (dev/126's dataset selection) is the case
+    that used to end a run; naming it is how the user learns the session is
+    waiting for them rather than stuck.
+    """
+    out: list[dict] = []
+    for node_id in targets:
+        result = results.get(node_id) or {}
+        remedy = result.get("remedy") if isinstance(result.get("remedy"), dict) else None
+        kind = (
+            "dataset-selection" if (remedy or {}).get("kind") == "dataset-selection"
+            else "upstream" if "waiting — upstream" in str(result.get("reason") or "")
+            else "retry"
+        )
+        out.append({
+            "nodeId": node_id,
+            "kind": kind,
+            "reason": str(result.get("reason") or result.get("error") or "")[:200],
+            **({"attachmentId": (remedy or {}).get("attachmentId")} if remedy else {}),
+        })
+    return out[:12]
 
 
 def _batch_deadline_spent(started: float, deadline_s: int) -> bool:
@@ -6446,6 +6705,11 @@ STOPPED_BY_PHRASES = {
     "passed": "success",
     # dev/126's lane: the source is with the user, so the loop stopped ON PURPOSE.
     "source": "a source the user must confirm",
+    # dev/131: the session's own endings.
+    "complete": "nothing left to do",
+    "stopped": "you stopped it",
+    "budget": "this session's time budget",
+    "blocked": "a specialist that must be installed first",
 }
 
 
@@ -7080,6 +7344,7 @@ def _verified_content_rounds(
     resolve_source=None,
     clock=time.monotonic,
     recorded_failure=None,
+    node_budget_s=None,
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -7247,7 +7512,13 @@ def _verified_content_rounds(
     # the loop and `stoppedBy` says so. A deployment (or a test) that wants a
     # tighter cap sets CURIO_SOLVE_MAX_ATTEMPTS and gets it.
     max_rounds = min(solve_max_attempts(), MAX_SOLVE_ATTEMPTS)
-    node_budget_s = solve_node_budget_s()
+    # dev/131: a node's repair budget is clamped by what remains of the
+    # SESSION's, so the owner's fifteen minutes means the same thing at both
+    # levels and one node cannot spend a session it shares.
+    node_budget_s = (
+        max(int(node_budget_s), 1) if isinstance(node_budget_s, (int, float))
+        else solve_node_budget_s()
+    )
     loop_started = clock()
     for round_index in range(max_rounds):
         if round_index and (clock() - loop_started) >= node_budget_s:

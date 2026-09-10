@@ -153,10 +153,10 @@ describe("AgentBuilderStrip streamed solve (dev/63)", () => {
     expect(screen.getByText("solved")).toBeInTheDocument();
     expect(screen.queryByText("pending")).toBeNull();
     // No live solve → no Cancel control.
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   });
 
-  it("Cancel appears during a solve and disables after the click", async () => {
+  it("Stop appears during a session and disables after the click", async () => {
     const onCancelSolve = jest.fn().mockResolvedValue(undefined);
     render(
       <AgentBuilderStrip
@@ -170,9 +170,9 @@ describe("AgentBuilderStrip streamed solve (dev/63)", () => {
         onComposePrompt={jest.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(onCancelSolve).toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: "Cancelling…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Stopping…" })).toBeDisabled();
   });
 
   it("a cancelled result surfaces the not-attempted notice", async () => {
@@ -525,7 +525,7 @@ describe("AgentBuilderStrip — dev/115 verified Solve as a background job", () 
       />,
     );
     expect(screen.getByRole("button", { name: "Solving…" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Stop" })).toHaveAttribute(
       "title", expect.stringContaining("a running fetch cannot be aborted"),
     );
   });
@@ -660,5 +660,109 @@ describe("AgentBuilderStrip — dev/118 waves, written kinds and notices", () =>
     const notes = screen.getByRole("note", { name: "Solve notices" });
     expect(notes.textContent!.match(/time budget/g)).toHaveLength(1);
     expect(screen.queryByText(/^Solve failed/)).toBeNull();
+  });
+});
+
+
+describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on you", () => {
+  const waiting = (over: Partial<{ nodeId: string; kind: string; reason: string; attachmentId: string }> = {}) => ({
+    nodeId: "a",
+    kind: "dataset-selection",
+    reason: "awaiting your dataset selection — 3 candidate(s)",
+    attachmentId: "att-df",
+    ...over,
+  });
+
+  it("deactivates Solve while every unresolved node depends on the user", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "pending" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveWaiting={[waiting()]}
+      />,
+    );
+    const solve = screen.getByRole("button", { name: /Solve/ });
+    expect(solve).toBeDisabled();
+    expect(solve).toHaveAttribute("title", expect.stringContaining("Waiting for you"));
+  });
+
+  it("keeps Solve active when something else can still be attempted", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "failed" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveWaiting={[waiting()]}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /^Solve$/ })).toBeEnabled();
+  });
+
+  it("marks the nodes that depend on the user, and only those", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "pending" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveWaiting={[waiting(), waiting({ nodeId: "b", kind: "upstream", reason: "waiting — upstream node 'a' has no content yet" })]}
+      />,
+    );
+    expect(screen.getAllByText("needs you")).toHaveLength(1);
+    expect(screen.getByText("waiting upstream")).toBeInTheDocument();
+  });
+
+  it("offers Solve on each unresolved pill, and disables it for a node that needs the user", async () => {
+    const onSolveNode = jest.fn().mockResolvedValue({});
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "failed", c: "solved" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveWaiting={[waiting()]}
+        onSolveNode={onSolveNode}
+      />,
+    );
+    // The solved node carries no action; the two unresolved ones do.
+    expect(screen.getByRole("button", { name: "Solve node a on its own" })).toBeDisabled();
+    const b = screen.getByRole("button", { name: "Solve node b on its own" });
+    expect(b).toBeEnabled();
+    fireEvent.click(b);
+    await waitFor(() => expect(onSolveNode).toHaveBeenCalledWith("b"));
+  });
+
+  it("narrates the running session and then how it ended", () => {
+    const { rerender } = render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "solving", nodeRuns: { a: "pending", b: "solved" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solvePass={3}
+        solveWaiting={[waiting()]}
+      />,
+    );
+    expect(screen.getByText(/Managing the dataflow — pass 3/)).toHaveTextContent(
+      /waiting for you on 1 node/,
+    );
+    rerender(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "solved" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveEndedBy="budget"
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /Out of time for this session — 1 node still pending/,
+    );
+    rerender(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "solved" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveEndedBy="complete"
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Finished — nothing left to do.");
   });
 });

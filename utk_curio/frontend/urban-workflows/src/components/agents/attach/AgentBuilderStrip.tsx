@@ -63,6 +63,22 @@ export const AgentBuilderStrip: React.FC<{
   /** dev/126: open a node's Dataset Finder chat (the awaiting-selection
    * remedy's action). Omitted → the reason line stands alone. */
   onOpenChat?: (attachmentId: string) => void;
+  /** dev/131: what the running session is blocked on, per node — the live
+   * `solve_pass`/`solve_waiting` summary. A node whose `kind` is
+   * "dataset-selection" is waiting for the USER. */
+  solveWaiting?: Array<{
+    nodeId: string;
+    kind: string;
+    reason?: string;
+    attachmentId?: string | null;
+  }>;
+  /** dev/131: how the last session ended — complete | stopped | budget | blocked. */
+  solveEndedBy?: string | null;
+  /** dev/131: the session's pass number while it runs. */
+  solvePass?: number | null;
+  /** dev/131: resolve ONE node through its own agent (the per-node Solve).
+   *  Omitted → the pills carry no action. */
+  onSolveNode?: (nodeId: string) => Promise<unknown>;
   /** dev/118: the live batch's current wave — "solving wave 2 of 3 — 4 nodes". */
   solveWave?: AgentSolveWave;
   /** dev/118: per-node notices that are not errors — ONE line per distinct text. */
@@ -89,6 +105,10 @@ export const AgentBuilderStrip: React.FC<{
   solveErrors,
   solveRemedies,
   onOpenChat,
+  solveWaiting,
+  solveEndedBy,
+  solvePass,
+  onSolveNode,
   solveWave,
   solveNotices,
   onCancelSolve,
@@ -104,6 +124,7 @@ export const AgentBuilderStrip: React.FC<{
   const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [simBusy, setSimBusy] = useState<"step" | "auto" | null>(null);
+  const [nodeSolving, setNodeSolving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -235,6 +256,21 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
+  // dev/131: "users should have the ability to resolve each node
+  // individually" — the node's OWN agent runs the same verified loop.
+  const solveOne = async (nodeId: string) => {
+    if (!onSolveNode || nodeSolving) return;
+    setNodeSolving(nodeId);
+    setError(null);
+    try {
+      await onSolveNode(nodeId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Solving that node failed");
+    } finally {
+      setNodeSolving(null);
+    }
+  };
+
   const review = async (
     fn?: (proposalId: string) => Promise<unknown>,
     proposalId: string | undefined = planReview?.proposalId,
@@ -251,6 +287,13 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
+  // dev/131: a node waiting for the USER (a dataset selection) cannot be
+  // helped by pressing Solve — the owner's instruction: "while depending on
+  // user's input, the solve button should be deactivated".
+  const userBlocked = (solveWaiting ?? []).filter((w) => w.kind === "dataset-selection");
+  const userBlockedIds = new Set(userBlocked.map((w) => w.nodeId));
+  const everyUnresolvedNeedsUser =
+    unresolved > 0 && pending.concat(failed).every((id) => userBlockedIds.has(id));
   const solveDisabledReason =
     phase === "plan_review"
       ? "Apply or dismiss the plan review first"
@@ -258,7 +301,13 @@ export const AgentBuilderStrip: React.FC<{
         ? "Apply a plan first"
         : unresolved === 0
           ? "No pending nodes"
-          : null;
+          : everyUnresolvedNeedsUser
+            ? `Waiting for you: ${
+                userBlocked.length === 1
+                  ? "confirm a dataset source"
+                  : `confirm a dataset source for ${userBlocked.length} nodes`
+              }`
+            : null;
   const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
   const runDisabledReason =
     unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
@@ -302,15 +351,74 @@ export const AgentBuilderStrip: React.FC<{
       ) : null}
       {entries.length > 0 ? (
         <ul className={styles.nodeRuns} aria-live="polite" aria-label="Plan node progress">
-          {entries.map(([nodeId, status]) => (
-            <li key={nodeId} className={styles.nodeRun}>
-              <span className={styles.nodeId}>{nodeId.slice(0, 8)}</span>
-              <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>
-                {STATUS_LABEL[status] ?? status}
-              </span>
-            </li>
-          ))}
+          {entries.map(([nodeId, status]) => {
+            const needsUser = userBlockedIds.has(nodeId);
+            const waiting = (solveWaiting ?? []).find((w) => w.nodeId === nodeId);
+            return (
+              <li
+                key={nodeId}
+                className={`${styles.nodeRun}${needsUser ? ` ${styles.nodeNeedsUser}` : ""}`}
+              >
+                <span className={styles.nodeId}>{nodeId.slice(0, 8)}</span>
+                <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>
+                  {STATUS_LABEL[status] ?? status}
+                </span>
+                {/* dev/131: "the nodes that depend on user inputs should be
+                    better visualized" — the pill says whose turn it is. */}
+                {needsUser ? (
+                  <span className={styles.needsYou} title={waiting?.reason ?? undefined}>
+                    needs you
+                  </span>
+                ) : null}
+                {waiting && waiting.kind === "upstream" ? (
+                  <span className={styles.waitingUpstream} title={waiting.reason ?? undefined}>
+                    waiting upstream
+                  </span>
+                ) : null}
+                {onSolveNode && (status === "pending" || status === "failed") ? (
+                  <button
+                    type="button"
+                    className={styles.nodeSolve}
+                    aria-label={`Solve node ${nodeId.slice(0, 8)} on its own`}
+                    title={
+                      needsUser
+                        ? "This node is waiting for you to confirm a source — open its Dataset Finder first"
+                        : "Runs this node's own agent: generate, run in the sandbox, fix, and write only code that passed"
+                    }
+                    disabled={needsUser || solveRunning || nodeSolving === nodeId}
+                    onClick={() => void solveOne(nodeId)}
+                  >
+                    {nodeSolving === nodeId ? "Solving…" : "Solve"}
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
+      ) : null}
+      {solveRunning && (solvePass ?? 0) > 0 ? (
+        <div className={styles.hint} aria-live="polite">
+          {`Managing the dataflow — pass ${solvePass}`}
+          {unresolved ? ` · ${unresolved} node${unresolved === 1 ? "" : "s"} left` : ""}
+          {userBlocked.length
+            ? ` · waiting for you on ${userBlocked.length} node${
+                userBlocked.length === 1 ? "" : "s"
+              }`
+            : ""}
+        </div>
+      ) : null}
+      {!solveRunning && solveEndedBy ? (
+        <div className={styles.hint} role="status">
+          {solveEndedBy === "complete"
+            ? "Finished — nothing left to do."
+            : solveEndedBy === "stopped"
+              ? `Stopped by you${unresolved ? ` — ${unresolved} node${unresolved === 1 ? "" : "s"} still pending.` : "."}`
+              : solveEndedBy === "budget"
+                ? `Out of time for this session${unresolved ? ` — ${unresolved} node${unresolved === 1 ? "" : "s"} still pending.` : "."}`
+                : solveEndedBy === "blocked"
+                  ? "Stopped — a specialist must be installed first."
+                  : ""}
+        </div>
       ) : null}
       {solveReasons.length ? (
         <div className={styles.error} aria-live="polite">
@@ -464,10 +572,13 @@ export const AgentBuilderStrip: React.FC<{
             type="button"
             className={styles.run}
             disabled={cancelling}
-            title="Stops after the current node finishes — a running fetch cannot be aborted"
+            title="Ends the session after the current node finishes — a running fetch cannot be aborted. Everything already written stays."
             onClick={() => void cancel()}
           >
-            {cancelling ? "Cancelling…" : "Cancel"}
+            {/* dev/131: the control ends a SESSION that keeps managing the
+                dataflow, so it is Stop rather than Cancel — and everything
+                already written stays. */}
+            {cancelling ? "Stopping…" : "Stop"}
           </button>
         ) : null}
         <button

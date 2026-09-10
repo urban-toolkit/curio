@@ -157,6 +157,10 @@ export const AgentDockOverlay: React.FC = () => {
               solveProgress={ctx.solveProgress[selected.attachmentId]}
               solveErrors={ctx.solveErrors[selected.attachmentId]}
               solveRemedies={ctx.solveRemedies[selected.attachmentId]}
+              solveWaiting={ctx.solveWaiting[selected.attachmentId]}
+              solveEndedBy={ctx.solveEndedBy[selected.attachmentId] ?? null}
+              solvePass={ctx.solvePass[selected.attachmentId] ?? null}
+              onSolveOneNode={(nodeId) => ctx.solveNode(selected.attachmentId, nodeId)}
               solveWave={ctx.solveWave[selected.attachmentId]}
               solveNotices={ctx.solveNotices[selected.attachmentId]}
               onCancelSolve={() => ctx.cancelSolve(selected.attachmentId)}

@@ -49,6 +49,13 @@ def _pinned_repair_budget(monkeypatch):
     delete this variable and assert the shipped default instead.
     """
     monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", "3")
+    # dev/131: Solve became a SESSION that keeps making passes until the user
+    # stops it or fifteen minutes pass. Every test written before it asserts on
+    # ONE pass, and a session that waits for a user who is not there would hang
+    # the suite — so the session budget is one second and its inter-pass wait is
+    # one second here. dev/131's own tests set both explicitly.
+    monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", "1")
+    monkeypatch.setenv("CURIO_SOLVE_SESSION_WAIT", "1")
 
 
 @pytest.fixture(autouse=True)

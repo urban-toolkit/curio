@@ -135,6 +135,12 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
    * text): a target left pending by the batch's time budget, a skipped slice
    * bound, a browser-rendered kind written unexecuted. Cleared with solveErrors. */
   solveNotices: Record<string, Record<string, string>>;
+  /** dev/131: the running session's pass number, per attachment. */
+  solvePass: Record<string, number>;
+  /** dev/131: what the session is blocked on, per attachment. */
+  solveWaiting: Record<string, Array<{ nodeId: string; kind: string; reason?: string; attachmentId?: string | null }>>;
+  /** dev/131: how the last session ended — complete | stopped | budget | blocked. */
+  solveEndedBy: Record<string, string>;
   /** Cancel the running solve (dev/63): in-flight children finish and
    * persist; undispatched targets revert to pending. */
   cancelSolve: (attachmentId: string) => Promise<void>;
@@ -180,6 +186,11 @@ export const AgentAttachmentsProvider: React.FC<{
   >({});
   const [solveWave, setSolveWave] = useState<Record<string, import("../../../api/agentsApi").AgentSolveWave>>({});
   const [solveNotices, setSolveNotices] = useState<Record<string, Record<string, string>>>({});
+  const [solvePass, setSolvePass] = useState<Record<string, number>>({});
+  const [solveWaiting, setSolveWaiting] = useState<
+    Record<string, Array<{ nodeId: string; kind: string; reason?: string; attachmentId?: string | null }>>
+  >({});
+  const [solveEndedBy, setSolveEndedBy] = useState<Record<string, string>>({});
   // dev/115: the per-node Solve's narration, and the background jobs this
   // client is already attached to (never attach twice to one execution).
   const [solveNodeActivity, setSolveNodeActivity] = useState<Record<string, string>>({});
@@ -696,6 +707,29 @@ export const AgentAttachmentsProvider: React.FC<{
           [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: status },
         }));
       return (name: string, payload: Record<string, unknown>) => {
+        if (name === "solve_pass" || name === "solve_waiting") {
+          // dev/131: the session keeps making passes; `waiting` names the
+          // nodes it is blocked on, and a "dataset-selection" kind means the
+          // USER is the blocker.
+          if (typeof payload.pass === "number") {
+            setSolvePass((prev) => ({ ...prev, [attachmentId]: payload.pass as number }));
+          }
+          const waiting = Array.isArray(payload.waiting)
+            ? (payload.waiting as Array<Record<string, unknown>>).map((w) => ({
+                nodeId: String(w.nodeId ?? ""),
+                kind: String(w.kind ?? "retry"),
+                reason: typeof w.reason === "string" ? w.reason : undefined,
+                attachmentId:
+                  typeof w.attachmentId === "string" ? w.attachmentId : null,
+              }))
+            : [];
+          setSolveWaiting((prev) => ({ ...prev, [attachmentId]: waiting }));
+          setSolveEndedBy((prev) => {
+            const { [attachmentId]: _gone, ...rest } = prev;
+            return rest;
+          });
+          return;
+        }
         if (name === "solve_wave") {
           // dev/118 (DEC-075): the batch runs in topological waves.
           const wave = typeof payload.wave === "number" ? payload.wave : 0;
@@ -789,6 +823,23 @@ export const AgentAttachmentsProvider: React.FC<{
           nodeIds,
           controller.signal,
         );
+        // dev/131: how the session ended, for the strip's one honest line.
+        const endedBy = (result as { endedBy?: string } | undefined)?.endedBy;
+        if (typeof endedBy === "string" && endedBy) {
+          setSolveEndedBy((prev) => ({ ...prev, [attachmentId]: endedBy }));
+        }
+        const waiting = (result as { waiting?: unknown } | undefined)?.waiting;
+        if (Array.isArray(waiting)) {
+          setSolveWaiting((prev) => ({
+            ...prev,
+            [attachmentId]: (waiting as Array<Record<string, unknown>>).map((w) => ({
+              nodeId: String(w.nodeId ?? ""),
+              kind: String(w.kind ?? "retry"),
+              reason: typeof w.reason === "string" ? w.reason : undefined,
+              attachmentId: typeof w.attachmentId === "string" ? w.attachmentId : null,
+            })),
+          }));
+        }
         return result;
       } finally {
         solveAbortRef.current.delete(attachmentId);
@@ -797,6 +848,10 @@ export const AgentAttachmentsProvider: React.FC<{
           return rest;
         });
         setSolveWave((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
+        setSolvePass((prev) => {
           const { [attachmentId]: _gone, ...rest } = prev;
           return rest;
         });
@@ -1011,6 +1066,9 @@ export const AgentAttachmentsProvider: React.FC<{
       solveRemedies,
       solveWave,
       solveNotices,
+      solvePass,
+      solveWaiting,
+      solveEndedBy,
       cancelSolve,
       solveNode,
       solveNodeActivity,
@@ -1048,6 +1106,9 @@ export const AgentAttachmentsProvider: React.FC<{
       solveRemedies,
       solveWave,
       solveNotices,
+      solvePass,
+      solveWaiting,
+      solveEndedBy,
       cancelSolve,
       solveNode,
       solveNodeActivity,
