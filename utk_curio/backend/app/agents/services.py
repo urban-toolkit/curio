@@ -36,6 +36,7 @@ from utk_curio.backend.app.agents import (
     input_contract,
     node_context,
     plan_topology,
+    result_shape,
     source_grounding,
     upstream_schema,
     verify,
@@ -5238,6 +5239,10 @@ def _solve_events(
                             dataset_paths_fn=lambda codes: _session_dataset_paths(
                                 project_id, acting_user, solve_dataset_paths, codes
                             ),
+                            # dev/133: the batch's memoized preview — one
+                            # description per artifact, reused by the emptiness
+                            # check and by the next node's input schema.
+                            result_summary_fn=_schema_of_artifact,
                             exec_user_key=user_key,
                             secrets_fn=_exec_secrets_resolver(user_key),
                             prior_outputs_fn=lambda: {
@@ -6585,6 +6590,28 @@ def solve_node_stream(
     return agent_jobs.subscribe(job)
 
 
+def _artifact_summary_fn():
+    """A memoized ``artifact id -> shape summary`` reader (dev/127's preview +
+    dev/133's emptiness check), for a caller with no batch-wide cache."""
+    cache: dict = {}
+
+    def _summary(artifact_id: str) -> dict | None:
+        if artifact_id in cache:
+            return cache[artifact_id]
+        from utk_curio.backend.app.execution import runner as _runner
+
+        summary = None
+        try:
+            preview = _runner.load_artifact_preview(artifact_id)
+            summary = upstream_schema.summarize(preview) if preview else None
+        except Exception:  # noqa: BLE001
+            log.warning("Could not describe artifact %s", artifact_id, exc_info=True)
+        cache[artifact_id] = summary
+        return summary
+
+    return _summary
+
+
 def _solve_node_events(
     user_key: str,
     project_id: str,
@@ -6667,6 +6694,9 @@ def _solve_node_events(
             dataset_paths_fn=lambda codes: _session_dataset_paths(
                 project_id, acting_user, dataset_paths, codes
             ),
+            # dev/133: an empty result is a failed round here too — the
+            # per-node Solve is where the owner presses "solve this node".
+            result_summary_fn=_artifact_summary_fn(),
             exec_user_key=user_key,
             secrets_fn=_exec_secrets_resolver(user_key),
             resolve_source=_source_resolver(
@@ -7154,6 +7184,9 @@ _HEAD_FIRST_KINDS = (
     "ungrounded-source", "source-missing", "repeated-attempt",
     # dev/128: the shape refusal's first line IS the answer.
     "input-contract",
+    # dev/129/133/134: these details are composed prose, not tracebacks — the
+    # sentence that says what is wrong is the FIRST one.
+    "document-invalid", "empty-result",
 )
 
 
@@ -7791,6 +7824,7 @@ def _verified_content_rounds(
     recorded_failure=None,
     node_budget_s=None,
     carry_forward=None,
+    result_summary_fn=None,
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -8285,6 +8319,48 @@ def _verified_content_rounds(
             else:
                 evidence["documentUnchecked"] = str(document.get("why") or "")[:300]
                 evidence["documentPassive"] = bool(document.get("passive"))
+        if verdict_result.get("verdict") == "pass" and result_summary_fn is not None:
+            # dev/133: "it ran" is not "it worked". A node that produced a
+            # countable result with NO rows in it, out of inputs that had rows,
+            # destroyed the dataflow's data — the owner's `e72c7080` joined
+            # community-area numbers to census-tract ids, ran clean in 45 ms,
+            # and left the pool and the chart empty while the chat said solved.
+            # The check is silent whenever it cannot attribute the emptiness.
+            artifact = ((verdict_result.get("evidence") or {}).get("output") or {}).get("path")
+            summary = None
+            if artifact:
+                try:
+                    summary = result_summary_fn(artifact)
+                except Exception:  # noqa: BLE001 — a shape we cannot read is not a failure
+                    summary = None
+            upstream_rows = (extra_inputs or {}).get("upstreamOutputs")
+            if result_shape.is_empty(summary) and (
+                result_shape.inputs_had_rows(upstream_rows) is not False
+            ):
+                refusal = result_shape.refusal_text(
+                    summary=summary,
+                    upstream_outputs=upstream_rows,
+                    output_data_type=str(
+                        (verdict_result.get("evidence") or {}).get("outputDataType") or ""
+                    ),
+                )
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "empty-result", "detail": refusal[:2000]},
+                }
+                yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+                attempts.append({
+                    "round": rounds_used, "contentSha256": _content_sha(candidate),
+                    "verdict": "fail", "kind": "empty-result",
+                    "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                    "source": "current content" if use_current else "generated",
+                    **_attempt_code_field(candidate),
+                })
+                previous_attempt = candidate
+                previous_error = refusal
+                url_evidence = []
+                continue
         yield "round_verdict", {
             "round": rounds_used, "verdict": verdict_result["verdict"],
         }
