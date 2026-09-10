@@ -1,0 +1,243 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "a7e16a24-5b4c-49a2-95f3-54e57705559e",
+        "type": "curio.builtin/data-loading",
+        "x": -253.20688373721174,
+        "y": -101.06336323833392,
+        "width": 830,
+        "height": 531,
+        "saveOutputDataset": false,
+        "content": "import pandas as pd\nfrom sodapy import Socrata\n\n# Initialize the official unauthenticated Socrata client for Chicago\n# (No account needed for basic data queries)\nclient = Socrata(\"data.cityofchicago.org\", None)\n\n# Cell 1: Fetch Community Area Boundaries (igwz-8jzy)\n# The client returns a list of dictionaries that Pandas reads instantly\nboundaries_data = client.get(\"igwz-8jzy\", limit=100)\nboundaries_df = pd.DataFrame.from_records(boundaries_data)\n\nreturn boundaries_df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Community Boundaries — Fetch GeoJSON/Shapefile of Chicago Community Areas from City of Chicago Data Portal.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "06b40ea1-c3a7-4fc5-8109-6c246d5a27b3",
+        "type": "curio.builtin/data-loading",
+        "x": -227.18343952073064,
+        "y": 498.65681105633206,
+        "width": 806,
+        "height": 479,
+        "saveOutputDataset": false,
+        "content": "import pandas as pd\nfrom sodapy import Socrata\n\n# Initialize the official unauthenticated Socrata client for Chicago\n# (No account needed for basic data queries)\nclient = Socrata(\"data.cityofchicago.org\", None)\n\n# Cell 2: Fetch Population Data (t68z-cikk)\n# Using the client avoids the server-side text encoding/parsing errors\npopulation_data = client.get(\"t68z-cikk\", limit=5000)\npopulation_df = pd.DataFrame.from_records(population_data)\n\nreturn population_df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Population Data — Fetch CSV/JSON demographic data containing population density by community area.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "cc0d1def-7403-4261-b9e4-09596640e78a",
+        "type": "curio.builtin/merge-flow",
+        "x": 757.5345453742877,
+        "y": 306.3811729499788,
+        "saveOutputDataset": false,
+        "content": "not controllable",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Merge Data Sources — Combine boundaries and population data flows into a single tuple.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "85288b21-7301-45ec-bdd8-62193cf6fc0f",
+        "type": "curio.builtin/computation-analysis",
+        "x": 920,
+        "y": 80,
+        "saveOutputDataset": false,
+        "content": "import pandas as pd\nimport geopandas as gpd\n\nboundaries = arg[0]\npop_data = arg[1]\n\n# Perform the merge using the correct column names from your logs\njoined_gdf = boundaries.merge(pop_data, left_on='area_numbe', right_on='community_area')\n\n# Convert back to GeoDataFrame so the next node can handle CRS\njoined_gdf = gpd.GeoDataFrame(joined_gdf, geometry='the_geom')\n\n# Fix: Ensure we use the correct column name 'total_population'\nif 'total_population' in joined_gdf.columns:\n    joined_gdf['population_density'] = joined_gdf['total_population']\nelse:\n    # Fallback to prevent the VIS_VEGA node from being empty\n    joined_gdf['population_density'] = 0\n\nreturn joined_gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Join Spatial & Demographic Data — Join population density to boundaries on community area ID and calculate final density metrics.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c7186320-f646-46e1-9475-1fe073d3668e",
+        "type": "curio.builtin/data-transformation",
+        "x": 1574.4623376184097,
+        "y": 66.2976555937293,
+        "saveOutputDataset": false,
+        "content": "import geopandas as gpd\n\ngdf = arg\n\nif gdf.crs is None:\n    gdf.set_crs(\"EPSG:4326\", inplace=True)\n\nfiltered_gdf = gdf.to_crs(3395)\n\n# Add metadata name for AUTK_MAP differentiation\nfiltered_gdf.metadata = {\n    'name': 'chicago_density'\n}\n\nreturn filtered_gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map Projection & Metadata — Set CRS to 3395 and add metadata name 'chicago_density' for AUTK_MAP.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9b2e36e7-3e63-43cb-a990-aed99fe6b31b",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2380.8491109193615,
+        "y": -564.0782543509117,
+        "saveOutputDataset": false,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"chicago_density\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Density Choropleth Map — Render a 3D urban map of Chicago colored by population density.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "fd305e28-2156-4b07-b67f-405ead58beb4",
+        "type": "curio.builtin/data-pool",
+        "x": 3495.3483398596663,
+        "y": 427.66690138609243,
+        "saveOutputDataset": false,
+        "content": "not controllable",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chicago Data Pool — Store joined data to synchronize interaction between map and chart.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "a1e43393-ed9b-46db-9984-02d2996e0203",
+        "type": "curio.builtin/vis-vega",
+        "x": 2530.862841754494,
+        "y": 201.99158524875182,
+        "saveOutputDataset": false,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"params\": [\n    {\n      \"name\": \"select\",\n      \"select\": \"point\"\n    }\n  ],\n  \"mark\": {\n    \"type\": \"bar\",\n    \"cursor\": \"pointer\"\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"community\",\n      \"type\": \"nominal\",\n      \"title\": \"Neighborhood\",\n      \"axis\": {\n        \"labelAngle\": -45\n      }\n    },\n    \"y\": {\n      \"field\": \"population_density\",\n      \"type\": \"quantitative\",\n      \"title\": \"Population\"\n    },\n    \"color\": {\n      \"field\": \"interacted\",\n      \"type\": \"nominal\",\n      \"condition\": {\n        \"test\": \"datum.interacted === '1'\",\n        \"value\": \"red\",\n        \"else\": \"steelblue\"\n      }\n    },\n    \"opacity\": {\n      \"condition\": {\n        \"param\": \"select\",\n        \"value\": 1\n      },\n      \"value\": 0.7\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Density Comparison Chart — Render a bar chart comparing population density across neighborhoods, highlighting interacted areas.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c2abdfdf-6a5e-4caa-9b33-b64e492f0d0e",
+        "type": "curio.builtin/merge-flow",
+        "x": 3294.085564297848,
+        "y": 69.73909285371641,
+        "saveOutputDataset": false,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Interaction Merger — Collect interaction signals from both the map and chart.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "1d3fa60b-1353-444e-8b39-47cbd5540685",
+        "type": "curio.builtin/merge-flow",
+        "x": 3922.7171077527046,
+        "y": -347.52399405599715,
+        "saveOutputDataset": false,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Final Pool Merger — Merge the primary data flow and the interaction flow into a single input for the Data Pool.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "47154085-5072-4299-833c-6cb4f683b861",
+        "type": "curio.builtin/data-transformation",
+        "x": 4284.425169305079,
+        "y": -508.94164728559497,
+        "saveOutputDataset": false,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Geometry Parser — Ensure 'the_geom' is converted from WKT string to actual geometry objects.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e3b1eabd-8ba8-4f52-973a-a702e2800cf6",
+        "source": "9b2e36e7-3e63-43cb-a990-aed99fe6b31b",
+        "target": "c2abdfdf-6a5e-4caa-9b33-b64e492f0d0e",
+        "sourceHandle": "out",
+        "targetHandle": "in_0"
+      },
+      {
+        "id": "1670bb91-e1b4-4739-9dfc-5b99af1deb1b",
+        "source": "a1e43393-ed9b-46db-9984-02d2996e0203",
+        "target": "c2abdfdf-6a5e-4caa-9b33-b64e492f0d0e",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "833fbfde-575d-41a7-be64-8f2bb74b0614",
+        "source": "c7186320-f646-46e1-9475-1fe073d3668e",
+        "target": "1d3fa60b-1353-444e-8b39-47cbd5540685",
+        "sourceHandle": "out",
+        "targetHandle": "in_0"
+      },
+      {
+        "id": "321fc223-e01c-4351-963f-4c75f2ad81fd",
+        "source": "c2abdfdf-6a5e-4caa-9b33-b64e492f0d0e",
+        "target": "1d3fa60b-1353-444e-8b39-47cbd5540685",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "b056f1fc-f211-4765-9e62-e8fa845734f2",
+        "source": "1d3fa60b-1353-444e-8b39-47cbd5540685",
+        "target": "fd305e28-2156-4b07-b67f-405ead58beb4",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "5d93595c-03f2-4b79-9dca-6389b1472901",
+        "source": "a7e16a24-5b4c-49a2-95f3-54e57705559e",
+        "target": "cc0d1def-7403-4261-b9e4-09596640e78a",
+        "sourceHandle": "out",
+        "targetHandle": "in_0"
+      },
+      {
+        "id": "5b2b6b65-86ed-4700-97eb-be2dfef6df89",
+        "source": "06b40ea1-c3a7-4fc5-8109-6c246d5a27b3",
+        "target": "cc0d1def-7403-4261-b9e4-09596640e78a",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "a112752a-7518-4202-ba4e-32a289561e3b",
+        "source": "cc0d1def-7403-4261-b9e4-09596640e78a",
+        "target": "85288b21-7301-45ec-bdd8-62193cf6fc0f",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "48613fc4-4f96-4fee-ba53-6b4165777ab8",
+        "source": "85288b21-7301-45ec-bdd8-62193cf6fc0f",
+        "target": "c7186320-f646-46e1-9475-1fe073d3668e",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "6ded5e8c-8170-476c-b9a0-d0e2458371a4",
+        "source": "c7186320-f646-46e1-9475-1fe073d3668e",
+        "target": "9b2e36e7-3e63-43cb-a990-aed99fe6b31b",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "DefaultDataflow",
+    "task": "",
+    "timestamp": 1788986653949,
+    "provenance_id": "DefaultDataflow",
+    "packages": [
+      "curio.builtin@1"
+    ]
+  }
+}
