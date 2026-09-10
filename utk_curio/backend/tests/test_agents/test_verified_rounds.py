@@ -1534,3 +1534,82 @@ class TestRunEgressBudget:
         assert len(calls) == rows * 2 and loop_ctx["_egress_budget"].used == rows * 2
         # One more request would be the (2n+1)th: the bound still means something.
         assert loop_ctx["_egress_budget"].exhausted
+
+
+class TestAttemptTrailCarriesTheCodeAndTheBound:
+    """dev/127: the owner could see three truncated tracebacks and no code, and
+    "not fixed after 3 attempts" read as a verdict on the code when it was a
+    verdict on the round cap."""
+
+    def test_a_failed_round_records_the_code_it_ran(self, app, tmp_curio):
+        node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
+        exec_fn = _Exec(fail_markers=("bad_attempt",))
+        events, outcome, inputs = _rounds(
+            app, node, replies=["bad_attempt()", "bad_attempt2()", "bad_attempt3()"],
+            exec_fn=exec_fn,
+        )
+        assert outcome["verdict"] == "fail"
+        codes = [a.get("code") for a in outcome["attempts"]]
+        assert codes and all(codes), "every failed attempt carries its code"
+        assert codes[0] == "bad_attempt()"
+        # And each attempt is distinguishable from the next.
+        assert len({a["contentSha256"] for a in outcome["attempts"]}) == len(codes)
+
+    def test_a_passing_round_keeps_no_code_copy(self, app, tmp_curio):
+        node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
+        events, outcome, inputs = _rounds(app, node, replies=["good()"], exec_fn=_Exec())
+        assert outcome["verdict"] == "pass"
+        assert "code" not in outcome["attempts"][0]  # it IS the node's content
+        assert outcome["stoppedBy"] == "passed"
+
+    def test_the_round_cap_is_named_as_the_bound(self, app, tmp_curio):
+        node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
+        exec_fn = _Exec(fail_markers=("bad",))
+        events, outcome, inputs = _rounds(
+            app, node, replies=["bad1()", "bad2()", "bad3()", "bad4()", "bad5()", "bad6()"],
+            exec_fn=exec_fn,
+        )
+        assert outcome["verdict"] == "fail"
+        assert outcome["stoppedBy"] == "rounds"
+
+    def test_a_second_repeat_stops_the_loop(self, app, tmp_curio):
+        node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
+        exec_fn = _Exec(fail_markers=("bad",))
+        events, outcome, inputs = _rounds(
+            app, node,
+            # The same code every time: round 1 runs and fails, rounds 2 and 3
+            # are repeats — the second repeat ends it.
+            replies=["bad()", "bad()", "bad()", "bad()", "bad()", "bad()"],
+            exec_fn=exec_fn,
+        )
+        assert outcome["stoppedBy"] == "repeat"
+        kinds = [a["kind"] for a in outcome["attempts"]]
+        assert kinds.count("repeated-attempt") == 2
+        assert len(exec_fn.calls) == 1  # a repeat is never run again
+
+    def test_an_upstream_blocker_is_its_own_bound(self, app, tmp_curio):
+        node_t = {"id": "t", "type": CA, "goal": "stats", "content": ""}
+        spec = {"dataflow": {"nodes": [{"id": "a", "type": DL, "goal": "load", "content": ""}, node_t],
+                             "edges": [{"id": "e1", "source": "a", "target": "t"}],
+                             "name": "wf", "task": "t"}}
+        events, outcome, inputs = _rounds(
+            app, node_t, replies=["df = arg[0]\nreturn df"], exec_fn=_Exec(), spec=spec,
+        )
+        assert outcome["stoppedBy"] == "blocker"
+
+    def test_the_trail_line_keeps_the_exception_whole(self, app, tmp_curio):
+        # The regression: 'round 2: execution-error — de'.
+        traceback = (
+            'Traceback (most recent call last):\n'
+            '  File "/opt/conda/lib/python3.11/site-packages/pandas/core/generic.py", line 1776,'
+            ' in _get_label_or_level_values\n    raise KeyError(key)\n'
+            "KeyError: 'community_area'\n"
+        )
+        node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
+        exec_fn = _Exec(fail_markers=("bad",), stderr=traceback)
+        events, outcome, inputs = _rounds(
+            app, node, replies=["bad()", "bad2()", "bad3()"], exec_fn=exec_fn,
+        )
+        line = next(l for l in outcome["roundsTrace"] if l.startswith("round 1"))
+        assert "KeyError: 'community_area'" in line
+        assert "generic.py:1776 in _get_label_or_level_values" in line

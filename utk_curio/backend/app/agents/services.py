@@ -4532,8 +4532,9 @@ def _solve_events(
                 _source_missing_remedy(remedy_payload)
                 if kind == "source-missing" else ""
             )
+            bound = _stopped_by_clause(outcome.get("stoppedBy"))
             err = (
-                f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''} — "
+                f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''}{bound} — "
                 f"{kind}: {detail[:200 - len(remedy)] if remedy else detail}{remedy}"
             )[:300]
             extra = {"remedy": remedy_payload} if remedy_payload else {}
@@ -6017,8 +6018,9 @@ def _solve_node_events(
         card_kind = "result"
     else:
         text = (
-            f"Not fixed after {rounds} attempt{'s' if rounds != 1 else ''}: {label!r} still "
-            "fails — the attempts are listed below; nothing was written."
+            f"Not fixed after {rounds} attempt{'s' if rounds != 1 else ''}"
+            f"{_stopped_by_clause(outcome.get('stoppedBy'))}: {label!r} still "
+            "fails — every attempt is listed below with the code it ran; nothing was written."
         )
         remedy_payload = (outcome.get("evidence") or {}).get("remedy")
         if isinstance(remedy_payload, dict):
@@ -6182,6 +6184,55 @@ _CORRECTION_URL_PROBES = 2
 #: dev/115: bounded attempt-trail fields (the card renders them inert).
 _ATTEMPT_DETAIL_CHARS = 300
 _ATTEMPT_STDERR_CHARS = 1200
+#: dev/127: the candidate a failed round actually ran, kept ON the attempt so
+#: the transcript can show what was tried. Bounded — a trail is a record, not
+#: a copy of the project (a five-round trail costs tens of KB, not MB).
+_ATTEMPT_CODE_CHARS = 4000
+_CODE_TRUNCATION_MARKER = "\n… [truncated: the attempt's code exceeded the trail's bound]"
+#: dev/127: how many repeated candidates the loop tolerates before it stops.
+#: dev/116 tells the model it repeated itself and lets it try again; a second
+#: repeat means the budget would buy copies, not corrections.
+_MAX_REPEATED_ATTEMPTS = 2
+
+#: dev/127: why the repair loop stopped. Every failure sentence names one, so
+#: "not fixed after N attempts" can never again read as a verdict on the code
+#: when it was a verdict on the round cap.
+STOPPED_BY_PHRASES = {
+    "rounds": "the round cap",
+    "budget": "this node's time budget",
+    "repeat": "a repeated attempt",
+    "decline": "the builder's decline",
+    "blocker": "an upstream blocker",
+    "generation": "a generation error",
+    "infrastructure": "a sandbox outage",
+    "passed": "success",
+    # dev/126's lane: the source is with the user, so the loop stopped ON PURPOSE.
+    "source": "a source the user must confirm",
+}
+
+
+def _stopped_by_clause(stopped_by: object) -> str:
+    """`" (stopped by the round cap)"`, or `""` when nothing is recorded."""
+    phrase = STOPPED_BY_PHRASES.get(str(stopped_by or ""))
+    return f" (stopped by {phrase})" if phrase and stopped_by != "passed" else ""
+
+
+def _attempt_code_field(candidate: object, *, prose: bool = False) -> dict:
+    """The attempt's ``code`` (+ ``codeIsProse``/``codeTruncated``) fields."""
+    text = candidate if isinstance(candidate, str) else ""
+    if not text.strip():
+        return {}
+    field: dict = {}
+    if len(text) > _ATTEMPT_CODE_CHARS:
+        field["code"] = text[:_ATTEMPT_CODE_CHARS] + _CODE_TRUNCATION_MARKER
+        field["codeTruncated"] = True
+    else:
+        field["code"] = text
+    if prose:
+        # dev/115: the builder's sanctioned decline is prose, not content — the
+        # card must not render it as code the user could run.
+        field["codeIsProse"] = True
+    return field
 
 
 def _exec_dataset_paths(project_id: str, *codes: str) -> dict:
@@ -6839,6 +6890,8 @@ def _verified_content_rounds(
     previous_error: str | None = None
     url_evidence: list[dict] = []
     confirmed_source: dict | None = None
+    stopped_by: str | None = None  # dev/127: which bound ended the loop
+    repeats = 0
     # dev/126: a data-loading node RESOLVES ITS SOURCE FIRST. Discovery is
     # initiated by the runtime (never left to the model to think of), and a
     # node whose source the user has not confirmed yet waits for them instead
@@ -6923,6 +6976,7 @@ def _verified_content_rounds(
                     "round": rounds_used, "verdict": "fail", "kind": "generation-error",
                     "detail": (text or "")[:_ATTEMPT_DETAIL_CHARS],
                 })
+                stopped_by = "generation"
                 break
             candidate = content.extract_node_content(text)
         # DEC-072: the gate runs BEFORE the sandbox does — a fabricated path
@@ -6952,6 +7006,9 @@ def _verified_content_rounds(
                     "verdict": "fail", "kind": kind,
                     "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
                     "source": "current content" if use_current else "generated",
+                    # dev/127: what was refused, verbatim — the literal the
+                    # gate named is IN this text, so showing it is the point.
+                    **_attempt_code_field(candidate, prose=declined),
                 })
                 if declined:
                     # dev/116: when the decline is about a credential and the
@@ -6965,6 +7022,7 @@ def _verified_content_rounds(
                     # (a key, a path, a URL). Asking the same builder again
                     # with the same inputs only repeats it — the user is the
                     # correction; stop and say so.
+                    stopped_by = "decline"
                     break
                 previous_attempt = candidate
                 previous_error = refusal
@@ -6990,7 +7048,16 @@ def _verified_content_rounds(
                 "round": rounds_used, "contentSha256": _content_sha(candidate),
                 "verdict": "fail", "kind": "repeated-attempt",
                 "detail": detail[:_ATTEMPT_DETAIL_CHARS], "source": "generated",
+                **_attempt_code_field(candidate),
             })
+            repeats += 1
+            if repeats >= _MAX_REPEATED_ATTEMPTS:
+                # dev/127: one repeat is worth telling the model about (dev/116
+                # does); a second means more rounds would only buy more copies
+                # of the same code. More retries must not mean more identical
+                # retries.
+                stopped_by = "repeat"
+                break
             previous_attempt = candidate
             previous_error = detail
             continue  # url_evidence: unchanged — same request, same answer
@@ -7072,7 +7139,12 @@ def _verified_content_rounds(
         rounds_trace.append(
             f"round {rounds_used}: {verdict_result['verdict']}"
             + (
-                f" — {(round_evidence.get('stderrTail') or round_evidence.get('detail') or '')[-160:]}"
+                # dev/127: the exception line, whole — this is the line that
+                # reached the owner's chat as "round 2: execution-error — de".
+                " — " + failure_text.summary(
+                    round_evidence.get("stderrTail") or round_evidence.get("detail") or "",
+                    code=candidate, limit=200,
+                )
                 if verdict_result["verdict"] != "pass"
                 else f" — output {round_evidence.get('outputDataType') or '?'}"
             )
@@ -7096,13 +7168,21 @@ def _verified_content_rounds(
             attempt["reusedNodes"] = list(round_evidence["reusedNodes"])[:12]
         if reuse_retried:
             attempt["reuseRetried"] = True
+        if verdict_result["verdict"] != "pass":
+            # dev/127: the code that ran and failed, ON the attempt — the
+            # owner could not see any of it without opening another chat.
+            attempt.update(_attempt_code_field(candidate))
         attempts.append(attempt)
         if verdict_result["verdict"] != "fail":
+            stopped_by = "passed" if verdict_result["verdict"] == "pass" else (
+                "infrastructure" if verdict_result["verdict"] == "infrastructure" else None
+            )
             break
         if round_evidence.get("kind") == "precondition" or round_evidence.get("upstreamEmpty"):
             # dev/118: the runner refused the SLICE (bound, cycle), or an
             # upstream has no content yet — no correction of THIS content can
             # change that; one round says so.
+            stopped_by = "blocker"
             break
         previous_attempt = candidate
         previous_error = round_evidence.get("stderrTail") or round_evidence.get("detail") or ""
@@ -7158,6 +7238,7 @@ def _verified_content_rounds(
                 "delegations": delegations,
                 "roundsTrace": rounds_trace,
                 "attempts": attempts,
+                "stoppedBy": "source",
             }
     return {
         "verdict": final_verdict,
@@ -7167,6 +7248,8 @@ def _verified_content_rounds(
         "delegations": delegations,
         "roundsTrace": rounds_trace,
         "attempts": attempts,
+        # dev/127: which bound ended the loop. Unset means the rounds ran out.
+        "stoppedBy": stopped_by or "rounds",
     }
 
 
