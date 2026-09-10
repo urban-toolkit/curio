@@ -180,6 +180,56 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
     expect(context).toContain("print('old')");
   });
 
+  it("targetContext carries the node's live runtime state (dev/135)", () => {
+    // The owner's `a29d1ad8`: the Node Builder attached to a node that was
+    // visibly RED answered "since the node has never been executed…", because
+    // targetContext sent {id, type, goal, content} and nothing else.
+    const failing = {
+      nodes: [
+        {
+          id: "n1",
+          type: "VIS_VEGA",
+          position: { x: 0, y: 0 },
+          data: {
+            nodeId: "n1",
+            nodeType: "VIS_VEGA",
+            goal: "rank neighborhoods",
+            input: { dataType: "outputs", data: [] },
+            output: {
+              code: "error",
+              content: "outputs is not a valid input type for the 2D Plot (Vega-Lite)",
+            },
+          },
+        },
+      ],
+      edges: [],
+      workflowName: "wf",
+      workflowGoal: "analyze heat risk",
+    };
+    const att = attachment({
+      coord: "agent.node-builder@1.0.0",
+      target: { kind: "node", targetId: "n1" },
+      reads: ["targetContext"],
+    });
+    const context = composeAgentRunContext(att, failing);
+    expect(context).toContain("Target node:");
+    expect(context).toContain("current_output");
+    expect(context).toContain("not a valid input type for the 2D Plot");
+    // And what it received, which is the other half of the diagnosis.
+    expect(context).toContain("current_input");
+    expect(context).toContain("outputs");
+  });
+
+  it("a never-executed node still says so through targetContext", () => {
+    const att = attachment({
+      coord: "agent.node-builder@1.0.0",
+      target: { kind: "node", targetId: "n1" },
+      reads: ["targetContext"],
+    });
+    const context = composeAgentRunContext(att, wiredCanvas);
+    expect(context).toContain("never-executed");   // never fabricated
+  });
+
   it("Dataset Finder gets at least the mission on a canvas target", () => {
     const att = attachment({
       coord: "agent.dataset-finder@1.0.0",

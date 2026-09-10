@@ -186,6 +186,13 @@ function readFragment(
       if (nodeId) {
         const node = findTrillNode(liveTrill(canvas), nodeId);
         if (!node) return null;
+        // dev/135: the snapshot used to be {id, type, goal, content} — no
+        // runtime state at all — so the Node Builder attached to a node that
+        // was visibly RED replied "since the node has never been executed…"
+        // (the owner's `a29d1ad8`). It was an accurate report of an empty
+        // context. The live summary rides both node reads now, in the same
+        // words `nodeContext` and the server's own composer use.
+        const live = findLiveNode(canvas.nodes, nodeId);
         return (
           "Target node: " +
           JSON.stringify({
@@ -193,6 +200,10 @@ function readFragment(
             type: node.type ?? "",
             goal: node.goal ?? "",
             content: node.content ?? "",
+            current_input: live ? summarizeNodeInput(live.data) : "",
+            current_output: live
+              ? summarizeNodeOutput(live.data, storeOutputFor(canvas.outputs, nodeId))
+              : "",
           })
         );
       }
