@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/DataPool_Vega_2.json",
-    "sha256": "a91f7072bfdc5baaad020f9d1260b67b9e43dd01eeedd2a845e4e58062d282f3",
+    "sha256": "63f324cc0c2760afbd6715c725cd63ebb5502c4f3e891a5b95685b834a222b2a",
     "walkthrough": null
   },
   "prompt": "Load the Chicago green roofs and the zip-coded boundary polygons from the Data Catalog and join them so each roof carries its zip code. Route the joined result through a fan-out, then pick out the ten zip codes with the largest green roof area and chart them as a Vega-Lite bar chart.",

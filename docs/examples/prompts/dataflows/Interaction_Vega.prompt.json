@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/Interaction_Vega.json",
-    "sha256": "ecb353a3171fc80a8f03292d970fc4aab6347363d484d212f1bd94c7440ad088",
+    "sha256": "38b929fe874ebf86d76108b1a59aa0bc83d1eb631edba9e999066c182203008a",
     "walkthrough": null
   },
   "prompt": "Read the accessibility score polygons from docs/examples/data/access_score.geojson in this checkout, keeping coverage, the average attribute count, the neighborhood name and the geometry. Clean and flatten that attribute count into columns, then compute a weighted accessibility score per neighborhood in a Python step, projecting to a metric CRS first. Fan the scored neighborhoods out and plot accessibility by neighborhood in Vega-Lite, linked to the map view so a selection in the chart highlights the neighborhood.",

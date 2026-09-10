@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/Interaction_Vega_Simple.json",
-    "sha256": "bbe001f29454ad8eb57740b0982190dadc033bb8ad4a7b97510692604fba5570",
+    "sha256": "ff05d38423f09c3e10c1dabb2cb342cd6a887bb5d876d2413929a11db79cf6ee",
     "walkthrough": null
   },
   "prompt": "Make a five-row table of names and values in a loading step, route it through a fan-out, and draw a Vega-Lite bar chart whose selection highlights back through the fan-out.",
