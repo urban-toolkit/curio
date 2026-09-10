@@ -1,6 +1,7 @@
 import { NodeBehaviorHook } from '../../registry/types';
 import { useVega } from '../../hook/useVega';
 import { useToastContext } from '../../providers/ToastProvider';
+import { renderOutcome } from '../../utils/renderOutcome';
 
 export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { showToast } = useToastContext();
@@ -8,7 +9,18 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   const applyGrammar = async (spec: string) => {
     try {
-      await handleCompileGrammar(spec);
+      const counts = await handleCompileGrammar(spec);
+      // dev/136: compiling is not drawing. A schema-valid spec over zero rows
+      // renders its axes and nothing else, and a spec whose encoded field is
+      // entirely null renders an empty panel — both used to land here as
+      // `success`, so the node showed a green Done over a blank chart and
+      // every agent reading the journal was told the node was fine.
+      const outcome = renderOutcome(counts ?? {});
+      if (outcome.empty) {
+        nodeState.setOutput({ code: 'error', content: outcome.message, outputType: '' });
+        showToast(outcome.message, 'error');
+        return;
+      }
       nodeState.setOutput({ code: 'success', content: '', outputType: '' });
     } catch (error: any) {
       nodeState.setOutput({ code: 'error', content: error.message, outputType: '' });

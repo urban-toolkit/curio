@@ -1,0 +1,103 @@
+import { partialRenderNote, renderOutcome } from "../../utils/renderOutcome";
+
+/**
+ * dev/136: the order of the rules IS the attribution, so the tests are mostly
+ * about which cause wins — the fix for an empty plot depends entirely on what
+ * emptied it.
+ */
+
+describe("renderOutcome", () => {
+  it("blames the document when every layer it asks for was dropped", () => {
+    const outcome = renderOutcome({
+      rowsIn: 120,
+      drawn: 0,
+      layersRequested: 2,
+      layersDrawn: 0,
+      requestedRefs: ["population_density", "boundaries"],
+      availableRefs: ["table_osm"],
+    });
+    expect(outcome.empty).toBe(true);
+    expect(outcome.cause).toBe("no-layers");
+    expect(outcome.message).toContain("population_density, boundaries");
+    expect(outcome.message).toContain("available: table_osm");
+  });
+
+  it("blames the UPSTREAM when nothing arrived", () => {
+    const outcome = renderOutcome({ rowsIn: 0, drawn: 0 });
+    expect(outcome.cause).toBe("no-input-rows");
+    expect(outcome.message).toContain("0 rows arrived");
+    // dev/133's rule, said out loud: this document is not at fault.
+    expect(outcome.message).toContain("not at fault");
+  });
+
+  it("blames the document when rows arrived and no mark was drawn", () => {
+    const outcome = renderOutcome({ rowsIn: 3, drawn: 0 });
+    expect(outcome.cause).toBe("nothing-drawn");
+    expect(outcome.message).toContain("3 rows arrived");
+    expect(outcome.message).toContain("all null");
+  });
+
+  it("says one row in the singular", () => {
+    expect(renderOutcome({ rowsIn: 1, drawn: 0 }).message).toContain("1 row arrived");
+  });
+
+  it("a render that drew something is not empty", () => {
+    expect(renderOutcome({ rowsIn: 3, drawn: 3 })).toEqual({
+      empty: false, cause: null, message: "",
+    });
+    expect(renderOutcome({ rowsIn: 0, drawn: 0, layersRequested: 2, layersDrawn: 2 }).cause)
+      .toBe("no-input-rows");   // no layers dropped, but nothing arrived
+  });
+
+  it("a PARTIAL layer drop is not empty — something was drawn", () => {
+    const outcome = renderOutcome({
+      rowsIn: 10, drawn: 10, layersRequested: 3, layersDrawn: 1,
+    });
+    expect(outcome.empty).toBe(false);
+  });
+
+  it("makes no claim when it cannot count", () => {
+    expect(renderOutcome({}).empty).toBe(false);
+    expect(renderOutcome({ drawn: 0 }).empty).toBe(false);          // rows unknown
+    expect(renderOutcome({ rowsIn: 5 }).empty).toBe(false);         // marks unknown
+    expect(renderOutcome({ layersRequested: 2 }).empty).toBe(false); // drawn unknown
+  });
+
+  it("bounds every message", () => {
+    const outcome = renderOutcome({
+      layersRequested: 1,
+      layersDrawn: 0,
+      requestedRefs: Array.from({ length: 40 }, (_, i) => `ref_${i}_${"x".repeat(40)}`),
+      availableRefs: Array.from({ length: 40 }, (_, i) => `avail_${i}`),
+    });
+    expect(outcome.message.length).toBeLessThanOrEqual(400);
+    expect(outcome.message.endsWith("…")).toBe(true);   // clipped, not dumped
+  });
+
+  it("counts the names it does not show rather than dumping them", () => {
+    const outcome = renderOutcome({
+      layersRequested: 1,
+      layersDrawn: 0,
+      requestedRefs: ["a", "b", "c", "d", "e", "f", "g", "h"],
+      availableRefs: ["z"],
+    });
+    expect(outcome.message).toContain("a, b, c, d, e, f, … 2 more");
+  });
+});
+
+describe("partialRenderNote", () => {
+  it("names what was dropped on a render that still drew", () => {
+    const note = partialRenderNote({
+      layersRequested: 3, layersDrawn: 1,
+      requestedRefs: ["a", "b", "c"], availableRefs: ["a"],
+    });
+    expect(note).toContain("drew 1 of 3 layers");
+    expect(note).toContain("available: a");
+  });
+
+  it("says nothing when nothing was dropped, or when nothing was drawn", () => {
+    expect(partialRenderNote({ layersRequested: 2, layersDrawn: 2 })).toBe("");
+    expect(partialRenderNote({ layersRequested: 2, layersDrawn: 0 })).toBe("");
+    expect(partialRenderNote({})).toBe("");
+  });
+});
