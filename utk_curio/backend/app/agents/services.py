@@ -4449,6 +4449,8 @@ def _solve_events(
                 "verdict": outcome.get("verdict"),
                 "rounds": outcome.get("rounds"),
                 "attempts": outcome.get("attempts") or [],
+                # dev/127: which bound ended the loop, all the way to the UI.
+                "stoppedBy": outcome.get("stoppedBy"),
             }
             if outcome.get("verdict") == "pass":
                 candidate = outcome.get("candidate") or ""
@@ -4699,6 +4701,29 @@ def _solve_events(
                         if attempt.get("endpointEvidence"):
                             lines.append(f"    endpoint: {str(attempt['endpointEvidence'])[:200]}")
             lines = lines[:24]
+            # dev/127: every attempt, in the transcript, per node that has a
+            # trail — the card's lines cannot carry code, so the trail is its
+            # own part. Bounded: the first _MAX_ATTEMPT_PARTS nodes, then a
+            # line naming the rest (each still reachable from its own chat).
+            attempt_parts: list = []
+            trailed = [
+                (nid, outcome) for nid, outcome in results.items()
+                if (outcome or {}).get("attempts")
+                and (outcome or {}).get("status") in ("failed", "pending", "skipped")
+            ]
+            for nid, outcome in trailed[:_MAX_ATTEMPT_PARTS]:
+                node = nodes_by_id.get(nid) or {}
+                part = _solve_attempts_part(
+                    current.get("spec") or spec, nid,
+                    str(node.get("goal") or nid)[:120], outcome,
+                )
+                if part is not None:
+                    attempt_parts.append(part)
+            if len(trailed) > _MAX_ATTEMPT_PARTS:
+                lines.append(
+                    f"{len(trailed) - _MAX_ATTEMPT_PARTS} more node(s) have attempt trails — "
+                    "open each node's agent to read them"
+                )
             if cancelled:
                 lines.append(f"cancelled — {len(unstarted)} node(s) not attempted")
             if batch_reason:
@@ -4720,7 +4745,7 @@ def _solve_events(
                             "kind": "result",
                             "title": f"Solve: {solved} of {len(targets)} nodes",
                             "lines": lines,
-                        }, *extra_parts],
+                        }, *attempt_parts, *extra_parts],
                         execution=_execution_record(
                             solve_execution_id,
                             {"coord": coord, "provider": config.api_type,
@@ -6072,6 +6097,16 @@ def _solve_node_events(
         "title": f"Solve · {verdict.upper()} after {rounds} round{'s' if rounds != 1 else ''}",
         "lines": trail_lines[:10],
     }
+    if verdict != "pass" and attempts:
+        # dev/127: the trail itself, with the code each attempt ran — in THIS
+        # chat, durably, not only in the transient row above.
+        trail_part = _solve_attempts_part(
+            spec, node_id, str(node.get("goal") or node_id)[:120],
+            {"attempts": attempts, "rounds": rounds, "verdict": verdict,
+             "stoppedBy": outcome.get("stoppedBy")},
+        )
+        if trail_part is not None:
+            parts.append(trail_part)
     if isinstance(session_id, str):
         try:
             sessions.append_turns(
@@ -6233,6 +6268,10 @@ _CODE_TRUNCATION_MARKER = "\n… [truncated: the attempt's code exceeded the tra
 #: dev/116 tells the model it repeated itself and lets it try again; a second
 #: repeat means the budget would buy copies, not corrections.
 _MAX_REPEATED_ATTEMPTS = 2
+#: dev/127: how many nodes' attempt trails ride ONE Solve turn. Beyond this the
+#: card names how many were elided; each is still readable in its own node's
+#: agent chat.
+_MAX_ATTEMPT_PARTS = 8
 
 #: dev/127: why the repair loop stopped. Every failure sentence names one, so
 #: "not fixed after N attempts" can never again read as a verdict on the code
@@ -6331,6 +6370,45 @@ def _last_attempt_code(trail: dict) -> str | None:
     exception line is read against, so a self-raised error is named as one."""
     attempts = (trail or {}).get("attempts") or []
     return attempts[-1].get("code") if attempts else None
+
+
+def _solve_attempts_part(
+    spec: dict | None, node_id: str, label: str, result: dict | None
+) -> dict | None:
+    """dev/127: ONE node's repair attempts as a transcript part, or None.
+
+    The owner's requirement — *"it is important to clearly display all attempts
+    to fix in the chat transcript"* — is a durability requirement: the strip is
+    transient and the card's lines cannot carry code. Every recorded attempt
+    rides here with the code it ran and its error read through
+    ``failure_text`` (the exception line first, whole), and the part links the
+    node's own agent so the child's replies are one click away.
+    """
+    attempts = (result or {}).get("attempts") or []
+    if not attempts:
+        return None
+    rows = []
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            continue
+        rows.append({
+            **attempt,
+            "errorSummary": _attempt_why(
+                attempt, limit=content.SOLVE_ATTEMPT_ERROR_MAX_CHARS
+            ),
+        })
+    if not rows:
+        return None
+    home = _node_attachment_of(spec or {}, "agent.node-builder", node_id) or {}
+    return content.make_solve_attempts_part(
+        node_id=node_id,
+        label=label,
+        attachment_id=home.get("attachmentId"),
+        rounds=(result or {}).get("rounds") or len(rows),
+        stopped_by=(result or {}).get("stoppedBy") or "",
+        attempts=rows,
+        verdict=(result or {}).get("verdict") or "fail",
+    )
 
 
 def _attempt_why(attempt: dict, *, limit: int) -> str:

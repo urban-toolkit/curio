@@ -364,3 +364,91 @@ class TestSelectionEndpoint:
         )
         assert r.status_code == 400
         assert "picks" in r.get_json()["error"]
+
+
+class TestAttemptTrailInTheTranscript:
+    """dev/127: the owner's requirement — every attempt to fix a node is IN the
+    chat transcript, with the code it ran, and it is still there after a reload.
+    """
+
+    def _turn_parts(self, h, attachment_id, part_type):
+        return [
+            p for t in h.session_turns(attachment_id)
+            for p in (t.get("content") or []) if p.get("type") == part_type
+        ]
+
+    def test_a_failed_node_leaves_its_whole_trail_on_the_solve_turn(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        # A loader whose code the gate refuses three times: three attempts,
+        # each with its own code. Discovery finds nothing, so the node keeps
+        # its own failure (dev/126) and the trail is what explains it.
+        h = _Harness(
+            client, user, token, monkeypatch,
+            goal="load /data/areas.csv from disk",
+            discover_replies=["no source covers that"],
+            dl_replies=[
+                'import pandas as pd\nreturn pd.read_csv("guess1.csv")',
+                'import pandas as pd\nreturn pd.read_csv("guess2.csv")',
+                'import pandas as pd\nreturn pd.read_csv("guess3.csv")',
+            ],
+        )
+        body = h.solve()
+        assert body["results"][h.load]["status"] == "failed"
+        parts = self._turn_parts(h, h.att, "solveAttempts")
+        trail = next(p for p in parts if p["nodeId"] == h.load)
+        assert trail["verdict"] == "fail"
+        assert trail["stoppedBy"] in ("rounds", "budget", "repeat")
+        assert len(trail["attempts"]) == len(body["results"][h.load]["attempts"])
+        # Each attempt: its round, its error read for the exception, its CODE.
+        for row, expected in zip(trail["attempts"], ("guess1", "guess2", "guess3")):
+            assert row["code"] and expected in row["code"]
+            assert row["error"]
+            assert row["kind"] == "ungrounded-source"
+        # And the node's own agent is one click away.
+        assert trail["attachmentId"]
+        assert trail["label"].startswith("Load boundaries")
+
+    def test_the_trail_survives_a_reload(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(
+            client, user, token, monkeypatch,
+            goal="load /data/areas.csv from disk",
+            dl_replies=['import pandas as pd\nreturn pd.read_csv("nope.csv")'],
+        )
+        h.solve()
+        # Re-read the session the way the panel does on open.
+        parts = self._turn_parts(h, h.att, "solveAttempts")
+        assert parts and parts[0]["attempts"][0]["code"]
+
+    def test_a_solved_node_leaves_no_trail_part(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(
+            client, user, token, monkeypatch,
+            goal="load /data/community_areas.csv from disk",
+            dl_replies=['import pandas as pd\nreturn pd.read_csv("/data/community_areas.csv")'],
+        )
+        body = h.solve()
+        assert body["results"][h.load]["status"] == "solved"
+        trails = [p for p in self._turn_parts(h, h.att, "solveAttempts")
+                  if p["nodeId"] == h.load]
+        assert trails == []
+
+    def test_an_awaiting_source_node_shows_what_it_tried(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        # dev/126's lane: the rounds that were refused before discovery ran are
+        # attempts too, and the owner asked for ALL of them.
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.solve()
+        trail = next(
+            p for p in self._turn_parts(h, h.att, "solveAttempts") if p["nodeId"] == h.load
+        )
+        assert trail["stoppedBy"] == "source"
+        assert trail["attempts"] and all(r.get("code") for r in trail["attempts"])

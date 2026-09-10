@@ -1172,6 +1172,82 @@ def make_delegation_part(
     }
 
 
+#: dev/127: the attempt trail's bounds, enforced HERE so no caller can decide
+#: to persist a little more (a transcript is a record, not a copy of the code).
+SOLVE_ATTEMPTS_MAX_ROWS = 8
+SOLVE_ATTEMPT_CODE_MAX_CHARS = 4000
+SOLVE_ATTEMPT_ERROR_MAX_CHARS = 2000
+_SOLVE_ATTEMPT_KINDS_MAX = 40
+
+
+def make_solve_attempts_part(
+    *,
+    node_id: str,
+    label: str,
+    attachment_id: str | None,
+    rounds: int,
+    stopped_by: str,
+    attempts: list,
+    verdict: str = "fail",
+) -> dict:
+    """Every attempt a repair loop made, for the CHAT TRANSCRIPT (memo dev/127).
+
+    RUNTIME-emitted, like proposal and delegation parts — never parseable from a
+    model tail, so nothing a model writes can put a fake trail in the record.
+    The owner's requirement is the shape: *"it is important to clearly display
+    all attempts to fix in the chat transcript"*, with the code each attempt ran
+    beside the error it produced. A card part cannot carry code (its lines are
+    capped per line), which is why this is a part of its own.
+
+    ``attachmentId`` is the node's own agent, so the card can open the chat
+    where the child's replies live. Every field is bounded here; a truncated
+    one says so.
+    """
+    rows: list[dict] = []
+    for attempt in (attempts or [])[:SOLVE_ATTEMPTS_MAX_ROWS]:
+        if not isinstance(attempt, dict):
+            continue
+        raw_error = str(
+            attempt.get("errorSummary")
+            or attempt.get("stderrTail")
+            or attempt.get("detail")
+            or ""
+        )
+        row: dict = {
+            "round": int(attempt.get("round") or len(rows) + 1),
+            "verdict": str(attempt.get("verdict") or "fail")[:24],
+            "kind": str(attempt.get("kind") or "")[:_SOLVE_ATTEMPT_KINDS_MAX],
+            "error": raw_error[:SOLVE_ATTEMPT_ERROR_MAX_CHARS],
+        }
+        if len(raw_error) > SOLVE_ATTEMPT_ERROR_MAX_CHARS:
+            row["errorTruncated"] = True
+        code = attempt.get("code")
+        if isinstance(code, str) and code.strip():
+            row["code"] = code[:SOLVE_ATTEMPT_CODE_MAX_CHARS]
+            if len(code) > SOLVE_ATTEMPT_CODE_MAX_CHARS or attempt.get("codeTruncated"):
+                row["codeTruncated"] = True
+            if attempt.get("codeIsProse"):
+                row["codeIsProse"] = True
+        for key in ("durationMs", "outputDataType", "contentSha256", "source"):
+            if attempt.get(key) is not None:
+                row[key] = attempt[key] if key == "durationMs" else str(attempt[key])[:80]
+        rows.append(row)
+    part = {
+        "type": "solveAttempts",
+        "nodeId": str(node_id or "")[:80],
+        "label": str(label or "")[:120],
+        "attachmentId": attachment_id if isinstance(attachment_id, str) else None,
+        "rounds": int(rounds or len(rows)),
+        "stoppedBy": str(stopped_by or "")[:32],
+        "verdict": str(verdict or "fail")[:24],
+        "attempts": rows,
+    }
+    total = len(attempts or [])
+    if total > SOLVE_ATTEMPTS_MAX_ROWS:
+        part["elided"] = total - SOLVE_ATTEMPTS_MAX_ROWS
+    return part
+
+
 def make_proposal_part(
     *,
     proposal_id: str,
