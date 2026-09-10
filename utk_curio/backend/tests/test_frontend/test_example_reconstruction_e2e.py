@@ -42,6 +42,7 @@ from utk_curio.backend.app.agents.evaluation.compare import Universe
 from utk_curio.backend.app.agents.evaluation.fixtures import FIXTURE_ROOT, load_fixture
 
 from .utils import (
+    SCRIPTED_MODEL,
     api_json,
     canvas_nodes,
     dismiss_toasts,
@@ -53,6 +54,7 @@ from .utils import (
     script_agent_replies,
     stub_db_user,
     use_scripted_llm,
+    wait_for_projects_page,
 )
 
 pytestmark = pytest.mark.examples
@@ -438,4 +440,92 @@ class TestSolveProgressAndReconnection:
         dismiss_toasts(page)
         save_workflow_test_screenshot(
             page, SCREENSHOT_STEM, test_name="solved_canvas",
+        )
+
+
+class TestEvaluationModeRunsFromAiSettings:
+    """Mode 5, added by dev/123: the evaluation itself is a product action.
+
+    The four cases above drive a reconstruction the way a person builds a
+    dataflow -- chat, review, Apply, Solve -- and that is still what is being
+    measured. This one covers the surface that *asks for* a measurement:
+    AI Settings -> Evaluation mode. It is deliberately one case, because the
+    orchestration behind the panel is already covered offline in
+    ``tests/test_agents/test_evaluation_service.py`` through the same routes;
+    what only a browser can show is that the panel names the model that will
+    answer, offers the prompt before sending it, reports a phase while the run
+    is live, and ends with a score and a way to reach the dataflow the run
+    built.
+
+    The provider is the scripted one (the account's own configured provider
+    here), so no model is called and the phases are the real ones.
+    """
+
+    def test_evaluation_mode_names_the_model_then_reports_a_score(
+        self, reconstruction_session
+    ):
+        require_project_page()
+        require_user_auth()
+        session = reconstruction_session
+        page = session["page"]
+
+        # The service creates its own project and installs the dependencies
+        # itself, so the only setup here is the provider's script: one plan
+        # reply, then the content replies Solve consumes wave by wave.
+        _script_the_oracle(session)
+
+        # The header button is the entry point that exists on /projects; the
+        # canvas reaches the same modal through the catalog drawer's cog, which
+        # is more machinery than this assertion needs.
+        page.goto(f"{session['frontend']}/projects")
+        page.wait_for_load_state("domcontentloaded")
+        wait_for_projects_page(page, timeout=20000)
+        page.get_by_role("button", name="AI Settings", exact=True).first.click()
+        expect(
+            page.get_by_role("heading", name="AI Settings", level=2)
+        ).to_be_visible(timeout=20000)
+
+        section = page.locator('[data-testid="evaluation-mode-section"]')
+        expect(section).to_be_visible(timeout=20000)
+        section.locator("summary").click()
+
+        # Readiness: the panel must name the model that will actually answer,
+        # not merely that something is configured.
+        expect(
+            section.get_by_text(re.compile(rf"{re.escape(SCRIPTED_MODEL)}"))
+        ).to_be_visible(timeout=20000)
+
+        # The prompt is shown BEFORE it is sent -- seeing what goes to the
+        # model is the point of the panel.
+        page.select_option("#evaluation-fixture", FIXTURE.fixture_id)
+        prompt_region = section.get_by_role(
+            "region", name="The prompt that will be sent"
+        )
+        expect(prompt_region).to_be_visible(timeout=20000)
+        assert FIXTURE.prompt.split("\n")[0][:40] in (prompt_region.inner_text() or "")
+        save_workflow_test_screenshot(
+            page, SCREENSHOT_STEM, test_name="evaluation_mode_ready",
+        )
+
+        section.get_by_role("button", name="Run evaluation").click()
+
+        # A phase in words while it runs. The run is a job, so the panel is
+        # polling; any of the phases proves the report region is live.
+        report = section.get_by_role("status", name="Evaluation run")
+        expect(report).to_be_visible(timeout=30000)
+        expect(report).to_contain_text(FIXTURE.fixture_id, timeout=30000)
+
+        # Then the outcome. A run drives install, attach, a plan turn, an apply
+        # and a Solve batch, so the wait is generous; the assertion is that a
+        # score appears at all, never a particular number -- Curio reports, it
+        # does not grade.
+        expect(
+            report.get_by_text(re.compile(r"Overall accuracy \d+%"))
+        ).to_be_visible(timeout=600000)
+        expect(
+            report.get_by_role("link", name="Open the generated dataflow")
+        ).to_be_visible(timeout=20000)
+        expect(report.get_by_role("table")).to_be_visible()
+        save_workflow_test_screenshot(
+            page, SCREENSHOT_STEM, test_name="evaluation_mode_report",
         )
