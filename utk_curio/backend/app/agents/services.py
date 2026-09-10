@@ -8437,6 +8437,18 @@ def _mint_project_install(
     )
 
 
+#: dev/126: capabilities whose node-scoped work homes at the DELEGATE's own
+#: node attachment rather than dev/72's Node Builder default — discovery
+#: belongs in the chat of the agent that owns it, which is also where the user
+#: selects a source. One declaration; every other capability keeps dev/72's
+#: behavior byte-for-byte, and so does this one when that agent cannot live on
+#: the node (its manifest's compatibleTargets decide).
+_HOME_AGENT_BY_CAPABILITY: dict[str, str] = {
+    "dataset.discover": "agent.dataset-finder",
+    "dataset.select": "agent.dataset-finder",
+}
+
+
 def _delegation_home(
     spec: dict,
     coord: str,
@@ -8445,15 +8457,36 @@ def _delegation_home(
     *,
     node_id: str | None = None,
     create: bool = True,
+    user_key: str | None = None,
 ) -> tuple[dict | None, bool]:
     """Where a delegated task LIVES (memo dev/72): node-scoped work → the
     target node's Node Builder attachment (dev/71's; best-effort created);
     everything else → an existing attachment of the DELEGATE's agent id
     (canvas-scoped preferred), else a new canvas attachment of the resolved
     coord. Returns ``(record | None, created)`` — best-effort throughout: a
-    missing home never fails a delegation."""
+    missing home never fails a delegation. dev/126: a capability in
+    ``_HOME_AGENT_BY_CAPABILITY`` homes at its own agent's node attachment."""
     target_node = node_id or (inputs or {}).get("nodeId")
     if isinstance(target_node, str) and target_node:
+        home_agent = _HOME_AGENT_BY_CAPABILITY.get(capability)
+        if home_agent:
+            existing = _node_attachment_of(spec, home_agent, target_node)
+            if existing is not None:
+                return existing, False
+            if create:
+                node_type = next(
+                    (
+                        n.get("type") for n in (spec.get("dataflow") or {}).get("nodes") or []
+                        if isinstance(n, dict) and n.get("id") == target_node
+                    ),
+                    None,
+                )
+                row = _attach_node_agent(
+                    user_key, spec, home_agent, target_node, node_type
+                )
+                if row.get("attachmentId"):
+                    return attachments.get_attachment(spec, row["attachmentId"]), True
+            # That agent cannot live on this node — dev/72's default applies.
         for rec in attachments.list_attachments(spec):
             target = rec.get("target") or {}
             if (
@@ -8526,7 +8559,8 @@ def _run_delegate_traced(
         spec = projects_storage.read_spec(user_key, project_id)
         if spec is not None:
             home, created = _delegation_home(
-                spec, coord, capability, inputs, node_id=node_id, create=home_create
+                spec, coord, capability, inputs, node_id=node_id, create=home_create,
+                user_key=user_key,
             )
             if home is not None:
                 home_attachment_id = home.get("attachmentId")
