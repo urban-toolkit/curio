@@ -15,6 +15,38 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+def _block_closure_repair(monkeypatch):
+    """dev/126 (``DEC-080``): stand in for the one state the repair cannot fix
+    — a required agent that is visible nowhere, where ``install_in_project``
+    refuses with 409 and writes nothing. The reviewed ``project.install`` lane
+    still carries the state, which is what these tests are about.
+
+    Returns ``release()``: the user's own Apply of that reviewed install goes
+    through the same function, so a test that walks the migration path lifts
+    the block before clicking Apply."""
+    from utk_curio.backend.app.agents import services as agents_services
+
+    real = agents_services.install_in_project
+    blocked = [True]
+
+    def _refuse(*a, **k):
+        if not blocked[0]:
+            return real(*a, **k)
+        raise agents_services.AgentServiceError(
+            "requires agent.ghost, which is not available in the catalog or your "
+            "imports — nothing was installed", 409,
+        )
+
+    monkeypatch.setattr(
+        "utk_curio.backend.app.agents.services.install_in_project", _refuse
+    )
+
+    def release():
+        blocked[0] = False
+
+    return release
+
+
 def _drop_from_lockfile(user, project_id, coord):
     """Simulate a pre-dev/106 project: remove *coord* from ``dataflow.agents``
     directly (the API refuses uninstalling a required dependency)."""
@@ -192,6 +224,13 @@ class TestProjectInstall:
     # ── dev/106: the requiresAgents closure ─────────────────────────────
     DFB = "agent.dataflow-builder@1.0.0"
     NCB = "agent.node-content-builder@1.0.0"
+    # dev/126: the closure is three deep now — the Dataset Finder (resolution
+    # delegates dataset.discover from a server path) and the Node Builder
+    # (every plan-created node is given one at Apply) joined the content
+    # builder, in the Dataflow Builder's own declaration order.
+    DF = "agent.dataset-finder@1.0.0"
+    NB = "agent.node-builder@1.0.0"
+    CLOSURE = [NCB, DF, NB]
 
     def test_installing_the_builder_installs_its_required_specialist_in_one_write(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -211,9 +250,9 @@ class TestProjectInstall:
         )
         assert r.status_code == 201, r.get_data(as_text=True)
         body = r.get_json()
-        assert body["agents"] == [self.DFB, self.NCB]
-        assert body["installed"] == [self.DFB, self.NCB]
-        assert body["required"] == [self.NCB]
+        assert body["agents"] == sorted([self.DFB, *self.CLOSURE])
+        assert body["installed"] == [self.DFB, *self.CLOSURE]
+        assert body["required"] == self.CLOSURE
         assert len(writes) == 1  # atomic: root + closure in one spec write
         # The dependency's bytes are materialized (AC-5) — no import row added.
         assert storage.load_installed_agent_definition(_user_dir_key(user), self.NCB) is not None
@@ -225,14 +264,16 @@ class TestProjectInstall:
         r = client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
         assert r.status_code == 201
         assert r.get_json()["installed"] == []
-        assert r.get_json()["agents"] == [self.DFB, self.NCB]
+        assert r.get_json()["agents"] == sorted([self.DFB, *self.CLOSURE])
 
     def test_dependency_already_installed_adds_only_the_root(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.NCB}, headers=_auth(token))
         r = client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
-        assert r.get_json()["installed"] == [self.DFB]
-        assert sorted(r.get_json()["agents"]) == [self.DFB, self.NCB]
+        # The already-installed member is not re-added; the rest of the
+        # closure is (dev/126).
+        assert r.get_json()["installed"] == [self.DFB, self.DF, self.NB]
+        assert sorted(r.get_json()["agents"]) == sorted([self.DFB, *self.CLOSURE])
 
     def test_unresolvable_dependency_409s_and_writes_nothing(self, client, user_and_token, tmp_curio, alice_project):
         user, token = user_and_token
@@ -260,29 +301,43 @@ class TestProjectInstall:
     def test_uninstalling_a_required_dependency_409s_naming_the_dependent(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
-        r = client.delete(f"/api/agents/projects/{alice_project}/{self.NCB}", headers=_auth(token))
-        assert r.status_code == 409
-        assert "Dataflow Builder" in r.get_json()["error"]
-        # Parent first, then the dependency — no cascade either way.
+        for dependency in self.CLOSURE:
+            r = client.delete(f"/api/agents/projects/{alice_project}/{dependency}", headers=_auth(token))
+            assert r.status_code == 409, dependency
+            assert "Dataflow Builder" in r.get_json()["error"]
+        # dev/126: the Dataset Finder is required by the Node Builder too, so
+        # its refusal names both dependents.
+        r = client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token))
+        assert "Node Builder" in r.get_json()["error"]
+        # Parent first, then the dependencies — no cascade either way.
         assert client.delete(f"/api/agents/projects/{alice_project}/{self.DFB}", headers=_auth(token)).status_code == 200
         listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
-        assert [a["dirName"] for a in listed["agents"]] == [self.NCB]
+        assert sorted(a["dirName"] for a in listed["agents"]) == sorted(self.CLOSURE)
+        # The Node Builder still requires the Dataset Finder: builder first.
+        assert client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token)).status_code == 409
+        assert client.delete(f"/api/agents/projects/{alice_project}/{self.NB}", headers=_auth(token)).status_code == 200
+        assert client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token)).status_code == 200
         assert client.delete(f"/api/agents/projects/{alice_project}/{self.NCB}", headers=_auth(token)).status_code == 200
 
     def test_catalog_cards_disclose_requires_agents_per_project(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
         cat = client.get(f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)).get_json()["agents"]
         dfb = next(a for a in cat if a["dirName"] == self.DFB)
-        assert dfb["requiresAgents"] == [{
-            "id": "agent.node-content-builder", "name": "Node Content Builder",
-            "coord": self.NCB, "visible": True, "installedInProject": False,
-        }]
+        assert dfb["requiresAgents"] == [
+            {"id": "agent.node-content-builder", "name": "Node Content Builder",
+             "coord": self.NCB, "visible": True, "installedInProject": False},
+            {"id": "agent.dataset-finder", "name": "Dataset Finder",
+             "coord": self.DF, "visible": True, "installedInProject": False},
+            {"id": "agent.node-builder", "name": "Node Builder",
+             "coord": self.NB, "visible": True, "installedInProject": False},
+        ]
         ncb = next(a for a in cat if a["dirName"] == self.NCB)
         assert ncb["requiresAgents"] == []
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.NCB}, headers=_auth(token))
         cat = client.get(f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)).get_json()["agents"]
         dfb = next(a for a in cat if a["dirName"] == self.DFB)
         assert dfb["requiresAgents"][0]["installedInProject"] is True
+        assert dfb["requiresAgents"][1]["installedInProject"] is False
         installed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()["agents"]
         assert installed[0]["requiresAgents"] == []
 
@@ -4094,6 +4149,73 @@ class TestDataflowPlanMint:
         ).get_json()["attachments"]
         assert cards[0]["activeProposal"]["status"] == "pending"
 
+    # ── dev/126 (DEC-080): the closure repaired at the point of use ──────
+
+    def test_a_legacy_lockfile_is_repaired_before_the_run_delegates(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """The regression test for the owner's session 7c300d0d: a Dataflow
+        Builder conversation must never spend a turn on an install proposal for
+        one of its OWN required agents. The delegation is scripted so the run
+        actually asks for dataset.discover in a project whose lockfile lost the
+        Dataset Finder."""
+        user, token = user_and_token
+        att_id, calls = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                '```curio.v1\n{"delegateRequest": {"capability": "dataset.discover", '
+                '"inputs": {"mission": "chicago population density"}}}\n```',
+                '{"datasetCandidates": {"lanes": {"external": [{"name": "Chicago portal", '
+                '"sourceType": "api", "url": "https://example.org/d.json"}], "catalog": []}}}',
+                "Here are the candidates.",
+            ],
+        )
+        _drop_from_lockfile(user, alice_project, "agent.dataset-finder@1.0.0")
+        body = self._run(client, token, alice_project, att_id).get_json()
+        # No install proposal for a required agent, anywhere in the reply.
+        assert all(
+            p.get("tool") != "project.install" for p in body["content"] if p["type"] == "proposal"
+        )
+        # The Dataset Finder is back in the lockfile, and the repair says so.
+        installed = client.get(
+            f"/api/agents/projects/{alice_project}", headers=_auth(token)
+        ).get_json()["agents"]
+        assert "agent.dataset-finder@1.0.0" in {a["dirName"] for a in installed}
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        disclosure = next(
+            t for t in turns if (t.get("text") or "").startswith("Added Dataset Finder")
+        )
+        assert "required by Dataflow Builder" in disclosure["text"]
+
+    def test_a_preferred_delegate_keeps_the_reviewed_install_lane(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """`REQ-ORCH-001` is untouched: only requiresAgents members are
+        repaired. A merely PREFERRED delegate still reaches the user as a
+        reviewed install proposal."""
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                '```curio.v1\n{"delegateRequest": {"capability": "workflow.plan.create", '
+                '"inputs": {"currentTask": "decompose this"}}}\n```',
+                "I asked for an install.",
+            ],
+        )
+        body = self._run(client, token, alice_project, att_id).get_json()
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert proposal["tool"] == "project.install"
+        assert proposal["pins"]["coord"] == "agent.dataflow-task-planner@1.0.0"
+        installed = {
+            a["dirName"] for a in client.get(
+                f"/api/agents/projects/{alice_project}", headers=_auth(token)
+            ).get_json()["agents"]
+        }
+        assert "agent.dataflow-task-planner@1.0.0" not in installed
+
     def test_unavailable_template_yields_error_card_not_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         att_id, _ = self._setup(
@@ -4611,7 +4733,11 @@ class TestSolve:
         else:
             # dev/106: installing the Builder now brings the NCB along; the
             # missing-specialist state is a legacy/hand-edited lockfile.
+            # dev/126: and DEC-080 repairs exactly that at the next action, so
+            # a test about the reviewed install lane must also stand in for the
+            # one case the repair cannot fix (see _block_closure_repair).
             _drop_from_lockfile(user, project_id, self.NCB)
+            self._release_repair = _block_closure_repair(monkeypatch)
         r = helper._run(client, token, project_id, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
         body = client.post(
@@ -4759,6 +4885,10 @@ class TestSolve:
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        # The user's Apply installs through the same path the blocked repair
+        # uses — in the real "visible nowhere" state it would refuse too, so
+        # the migration path is tested with the dependency available again.
+        self._release_repair()
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{active['proposalId']}/apply",
             headers=_auth(token),
@@ -6197,12 +6327,20 @@ class TestProposeModeSolve:
         cards = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
-        active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        # dev/126: the Node Builder is a required agent of the Dataflow Builder
+        # now, so the applied plan node HAS its own agent and dev/73's rule
+        # takes effect — the content review is minted at the NODE's agent, not
+        # folded back into the orchestrator's chat. The event says where.
+        mint_att_id = result["proposalAttachmentId"]
+        minted_at = next(c for c in cards if c["attachmentId"] == mint_att_id)
+        assert minted_at["coord"].startswith("agent.node-builder@")
+        assert minted_at["target"] == {"kind": "node", "targetId": created["id"]}
+        active = minted_at["activeProposal"]
         assert active["tool"] == "node.content.write"
         assert active["proposalId"] == content_proposal_id
         # Applying the content proposal writes + resolves the ledger.
         body = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{content_proposal_id}/apply",
+            f"/api/agents/projects/{alice_project}/attachments/{mint_att_id}/proposals/{content_proposal_id}/apply",
             headers=_auth(token),
         ).get_json()
         assert body["appliedContent"]["nodeId"] == created["id"]
@@ -6464,9 +6602,33 @@ class TestProgressiveLifecycle:
         again = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
         assert again["status"] == "already-applied"
 
-    def test_apply_without_node_builder_installed_skips_quietly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_apply_repairs_the_closure_and_attaches_the_node_builder(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # dev/126 (DEC-080): the Node Builder is a required agent of the
+        # Dataflow Builder, so an apply in a project that lacks it completes
+        # the closure and the created node carries its agent — the dev/71
+        # behavior stops depending on what the user happened to install.
         user, token = user_and_token
         att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
+        assert body["attachedAgentId"]
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        attached = next(c for c in cards if c["attachmentId"] == body["attachedAgentId"])
+        assert attached["coord"].startswith("agent.node-builder@")
+
+    def test_apply_without_node_builder_installed_skips_quietly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The remaining path to an agent-less node: the closure cannot be
+        # completed (a required agent visible nowhere). Creation never fails
+        # over its agent (dev/71), and the apply says so rather than pretending.
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        # The run's own repair already installed the Node Builder, so the
+        # agent-less state has to be re-created the way a legacy lockfile has
+        # it — and then held there by a repair that cannot complete.
+        _drop_from_lockfile(user, alice_project, "agent.node-builder@1.0.0")
+        _block_closure_repair(monkeypatch)
         ref = proposal["plan"]["nodes"][0]["ref"]
         body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
         assert body["attachedAgentId"] is None
@@ -6873,9 +7035,12 @@ class TestValidateNode:
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
         node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == created["id"])
         assert node["content"] == ""
-        # The transcript part carries the validation block.
+        # The transcript part carries the validation block — in the session the
+        # mint reports (dev/126: the plan node now has its own Node Builder, so
+        # dev/73's rule homes the review there).
+        mint_att_id = done.get("proposalAttachmentId") or att_id
         turns = client.get(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            f"/api/agents/projects/{alice_project}/attachments/{mint_att_id}/session",
             headers=_auth(token),
         ).get_json()["turns"]
         part = next(

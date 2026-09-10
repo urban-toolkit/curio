@@ -222,6 +222,11 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    # the catalog as INPUT and its candidates are
                                    # runtime-minted onto the two-lane card.
                                    "agent.dataset-finder"),
+                     # dev/126: a data-loading node's source resolution
+                     # delegates dataset.discover from a SERVER path, with no
+                     # model choice — the Dataset Finder is a hard dependency,
+                     # not a preference.
+                     requires_agents=("agent.dataset-finder",),
                      review_policy="review-before-apply"),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
     # lane discovery: catalog picks → reviewed dataset.install; external picks
@@ -282,7 +287,15 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    # reply, reviewed note sequence.
                                    "agent.researcher"),
                      # dev/106: Solve/Validate hard-invoke node.content.generate.
-                     requires_agents=("agent.node-content-builder",),
+                     # dev/126: and resolution hard-invokes dataset.discover for
+                     # a data-loading node, while every plan-created node is
+                     # given a Node Builder at the user's Apply — both server
+                     # paths, neither a model choice, so both are required
+                     # (DEC-068's own criterion) instead of merely preferred.
+                     # The install proposal for a required agent that the owner
+                     # hit mid-conversation (memo dev/126 §0) cannot recur.
+                     requires_agents=("agent.node-content-builder",
+                                      "agent.dataset-finder", "agent.node-builder"),
                      review_policy="review-before-apply",
                      # dev/115 (DEC-073): Solve is a detached background job.
                      execution="background"),

@@ -339,9 +339,15 @@ class TestRequiresAgentsRoster:
                 assert r in m.delegates_to, (m.agent_id, r)
                 assert r in ids, (m.agent_id, r)
 
-    def test_only_the_dataflow_builder_requires(self):
-        requiring = [m.agent_id for m in builtin.list_builtin_manifests() if m.requires_agents]
-        assert requiring == ["agent.dataflow-builder"]
+    def test_only_the_two_composites_require(self):
+        # dev/126: the Node Builder joins the Dataflow Builder — a data-loading
+        # node's source resolution delegates dataset.discover from a server
+        # path. Every other built-in keeps an empty requiresAgents, so no
+        # install fans out across the roster.
+        requiring = sorted(
+            m.agent_id for m in builtin.list_builtin_manifests() if m.requires_agents
+        )
+        assert requiring == ["agent.dataflow-builder", "agent.node-builder"]
 
 
 class TestDataflowBuilderComposite:
@@ -375,11 +381,16 @@ class TestDataflowBuilderComposite:
         ]
         assert m.provenance.trust == "built-in"
 
-    def test_requires_only_the_solve_specialist(self):
-        # dev/106: Solve/Validate hard-invoke node.content.generate; every
-        # other delegate stays optional (no 15-agent install fan-out).
+    def test_requires_the_three_server_invoked_specialists(self):
+        # dev/106: Solve/Validate hard-invoke node.content.generate.
+        # dev/126: resolution hard-invokes dataset.discover, and every
+        # plan-created node is given a Node Builder at the user's Apply — both
+        # server paths, so both are required. The other nine delegates stay
+        # optional (no 15-agent install fan-out).
         m = builtin.get_builtin_manifest(self.COORD)
-        assert m.requires_agents == ["agent.node-content-builder"]
+        assert m.requires_agents == [
+            "agent.node-content-builder", "agent.dataset-finder", "agent.node-builder",
+        ]
 
     def test_net_new_instruction_resolves(self):
         text = builtin.read_prompt_text(self.COORD, "instruction")

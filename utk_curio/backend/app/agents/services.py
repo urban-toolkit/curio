@@ -581,6 +581,93 @@ def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
     }
 
 
+def _repair_required_closure(
+    user_key: str, project_id: str, coord: str, *, attachment_id: str | None = None
+) -> list[str]:
+    """``DEC-080`` (memo dev/126): complete an installed agent's declared
+    hard-dependency closure at the point the USER acts on the dependent.
+
+    A project whose lockfile predates a ``requiresAgents`` declaration is
+    missing an agent a SERVER path of the dependent invokes without model
+    choice, and no amount of conversation can fix that: the run stalls on a
+    reviewed install for something the user already consented to when they
+    installed the dependent (that is what ``DEC-068`` made an install mean).
+    So the closure is completed through the ONE install path
+    (``install_in_project`` — same materialization, same single spec write,
+    same 409 when a member is visible nowhere), bounded to ``requiresAgents``
+    members, never a preferred delegate, and never a model decision:
+    `REQ-ORCH-001` is untouched.
+
+    Returns the coords added (empty when the closure was already complete, or
+    when it could not be completed — a refusal is logged and disclosed by the
+    caller's own fallback lane, never raised into the user's action).
+    """
+    from utk_curio.backend.app.agents import project_agents
+
+    try:
+        manifest = _resolve_definition(user_key, coord)
+        if manifest is None or not manifest.requires_agents:
+            return []
+        spec = projects_storage.read_spec(user_key, project_id)
+        if spec is None:
+            return []
+        installed_ids = {
+            c.split("@", 1)[0] for c in project_agents.project_agents(spec)
+        }
+        required, missing = delegation.required_closure(user_key, manifest)
+        if missing:
+            log.warning(
+                "Required agent(s) %s of %s are visible nowhere — project %s keeps the "
+                "reviewed install lane", ", ".join(missing), coord, project_id,
+            )
+            return []
+        if all(c.split("@", 1)[0] in installed_ids for c in required):
+            return []
+        added = install_in_project(user_key, project_id, coord).get("installed") or []
+    except Exception:  # noqa: BLE001
+        log.warning("Could not repair the required closure of %s in project %s",
+                    coord, project_id, exc_info=True)
+        return []
+    if added and attachment_id:
+        _disclose_closure_repair(user_key, project_id, attachment_id, coord, added)
+    return added
+
+
+def _disclose_closure_repair(
+    user_key: str, project_id: str, attachment_id: str, coord: str, added: list[str]
+) -> None:
+    """Say in the transcript what the repair installed and why (dev/126) — an
+    install the user did not click on this turn is never silent. Best-effort:
+    the disclosure never fails the action it describes."""
+    try:
+        spec = projects_storage.read_spec(user_key, project_id)
+        record = attachments.get_attachment(spec or {}, attachment_id) or {}
+        session_id = record.get("sessionId")
+        if not isinstance(session_id, str):
+            return
+        dependent = _resolve_definition(user_key, coord)
+        dependent_name = getattr(dependent, "name", None) or coord
+        names = []
+        for c in added:
+            m = _resolve_definition(user_key, c)
+            names.append(getattr(m, "name", None) or c)
+        sessions.append_turns(
+            user_key, project_id, session_id, attachment_id,
+            [sessions.make_turn(
+                "agent",
+                f"Added {', '.join(names)} — required by {dependent_name}.",
+                content=[{
+                    "type": "card",
+                    "kind": "result",
+                    "title": "Added required agents",
+                    "lines": [c for c in added[:6]] + [f"required by {coord}"],
+                }],
+            )],
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("Could not disclose the closure repair for %s", coord, exc_info=True)
+
+
 def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
     """Remove *coord* from the project's lockfile and drop its defaults record.
 
@@ -801,6 +888,10 @@ def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> 
         raise AgentServiceError(
             "install the agent in this project before attaching it", 400
         )
+    # DEC-080 (dev/126): attaching is acting on this agent — complete its
+    # declared closure before it can run.
+    if _repair_required_closure(user_key, project_id, coord):
+        spec = _read_spec_or_404(user_key, project_id)
     # Enforce the agent's declared compatibility: a canvas-only agent can only
     # attach to the canvas, a node-only agent only to nodes, a dual-compatible
     # agent to either. (attachments.attach still validates the target exists.)
@@ -940,6 +1031,13 @@ def apply_proposal(
     model/tool/user *text* can reach this path — only this endpoint."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
+    # DEC-080 (dev/126): a plan apply attaches the plan-node agents, so the
+    # closure is completed BEFORE the apply reads the lockfile it consults.
+    if _repair_required_closure(
+        user_key, project_id, record.get("coord", ""), attachment_id=attachment_id
+    ):
+        spec = _read_spec_or_404(user_key, project_id)
+        record = _record_or_404(spec, attachment_id)
     # dev/90 A16: settle the same-reply queue first, then address the
     # proposal by id in EITHER pending home — active slot or queue.
     attachments.reconcile_proposal_queue(spec, attachment_id)
@@ -3986,6 +4084,14 @@ def solve_attachment_stream(
 
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
+    # DEC-080 (dev/126): Solve hard-invokes node.content.generate and, for a
+    # data-loading node, dataset.discover — both required delegates, completed
+    # before the batch resolves them.
+    if _repair_required_closure(
+        user_key, project_id, record.get("coord", ""), attachment_id=attachment_id
+    ):
+        spec = _read_spec_or_404(user_key, project_id)
+        record = _record_or_404(spec, attachment_id)
     _reconcile_solve_session(user_key, project_id, spec, record)
     session = record.get("builderSession") or {}
     if not session.get("appliedPlanId"):
@@ -5493,6 +5599,13 @@ def solve_node_stream(
     """
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
+    # DEC-080 (dev/126): as the batch — the per-node Solve resolves the same
+    # required delegates.
+    if _repair_required_closure(
+        user_key, project_id, record.get("coord", ""), attachment_id=attachment_id
+    ):
+        spec = _read_spec_or_404(user_key, project_id)
+        record = _record_or_404(spec, attachment_id)
     if not isinstance(node_id, str) or not node_id:
         raise AgentServiceError("a nodeId is required", 422)
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
@@ -6966,6 +7079,13 @@ def _prepare_run(
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     coord = record.get("coord", "")
+    # DEC-080 (dev/126): a project whose lockfile predates this agent's
+    # requiresAgents declaration gets it completed HERE — before the messages
+    # are composed, so the run resolves its required delegates instead of
+    # stalling on a reviewed install for one of them.
+    if _repair_required_closure(user_key, project_id, coord, attachment_id=attachment_id):
+        spec = _read_spec_or_404(user_key, project_id)
+        record = _record_or_404(spec, attachment_id)
     manifest = _resolve_definition(user_key, coord)
     requested_tools = manifest.tools if manifest is not None else []
     missing = tools.missing_required(requested_tools)
@@ -9469,6 +9589,23 @@ def _resolve_delegate_request(
     if resolution.outcome == "ok":
         return "ok", "", resolution
     if resolution.outcome == "not-installed":
+        # DEC-080 (dev/126): a REQUIRED delegate that is missing is a closure
+        # the user already consented to — repaired once, here, instead of
+        # stalling the conversation on an install proposal for it. A merely
+        # PREFERRED delegate keeps the reviewed install lane below
+        # (`REQ-ORCH-001`), unchanged.
+        dependency_id = (resolution.coord or "").split("@", 1)[0]
+        required_ids = {
+            c.split("@", 1)[0]
+            for c in delegation.required_closure(user_key, manifest)[0]
+        }
+        if dependency_id in required_ids and _repair_required_closure(
+            user_key, project_id, loop_ctx.get("coord") or "",
+            attachment_id=loop_ctx.get("attachment_id"),
+        ):
+            retried = delegation.resolve(user_key, project_id, manifest, capability)
+            if retried.outcome == "ok":
+                return "ok", "", retried
         status, text, part = _mint_project_install(
             user_key,
             project_id,
