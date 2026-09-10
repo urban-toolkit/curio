@@ -39,6 +39,61 @@ contract, and the runtime knows it exactly.
 
 ---
 
+## 0.1 A second report, and the defect under it: validation and Play disagreed about slot order
+
+**Owner, mid-phase:** *"I attempted to recreate the same dataflow, but it generated a node with an
+error. This must never happen; the dataflow must be completely validated before inserting into a
+node."* — with dataflow `00708324` and a screenshot.
+
+Read from disk, that project's Solve card says `ed1a326f · solved · pass after 1 round`, and its
+runtime journal for the same node says `status: error`, `validation: false`, ending in
+`KeyError: 'tract_id'`. **The node passed validation and failed at Play** — which is exactly what
+"validated before inserting" must rule out.
+
+The generated code is the evidence:
+
+```python
+# Since the input comes from a MERGE_FLOW node, arg is a list.
+# Based on upstreamOutputs:
+# arg[0] is the Population Data (DataFrame)
+# arg[1] is the Chicago Boundaries (GeoDataFrame)
+```
+
+while the spec's edges read `03fb2c00 (Boundaries) → in_0`, `88086398 (Population) → in_1`. The
+model was told the mapping backwards and repeated it faithfully. Where the lie came from:
+
+- `workflow_spec.upstream_nodes` ordered a merge's inputs by parsing `in_N` out of **each edge's
+  id** (`_merge_edge_handle_index`, `workflow_spec.py:17`-`:25`) — the canvas's own encoding
+  (`reactflow__edge-…78504in_0`);
+- an **agent-applied** edge has a UUID id and carries the slot in `targetHandle` (dev/67-3 made
+  handles explicit, and `_apply_dataflow_plan` writes them);
+- **and both spec parsers dropped `targetHandle` entirely** (`workflow_spec.py:318`-`:326` and
+  `:383`-`:392`), so the slot was not even available to read;
+- so every plan-created merge was ordered **lexicographically by UUID**: `0c05b055…` (Population,
+  `in_1`) before `b396ed2d…` (Boundaries, `in_0`);
+- while Play orders by the handle — `mergeFlowUtils.parseHandleIndex(e.targetHandle)`,
+  `connectedMergeSlotIndices` sorted ascending.
+
+One command shows both, on the owner's own spec:
+
+```
+VALIDATION ORDER (backend upstream_nodes):   arg[0] = Population Data · arg[1] = Chicago Boundaries
+PLAY ORDER (handles, as the frontend sorts): in_0  = Chicago Boundaries · in_1 = Population Data
+```
+
+**This also corrects dev/127.** Its `upstreamOutputs[].argIndex` — and therefore the columns each
+slot was said to hold — came from `upstream_nodes`, so for every agent-applied merge dev/127
+handed the model an authoritative-looking mapping that was inverted. The schema plumbing worked;
+the order it was keyed on did not.
+
+**Fix (implemented as this phase's first code commit):** `merge_slot_index(edge)` reads the
+**handle** first (`targetHandle`, tolerating `target_handle`) and keeps the id's `in_N` suffix as
+the fallback for canvas-saved specs; both parsers carry `targetHandle`/`sourceHandle` through. One
+authority, matching the canvas's, for the validation runner, the schema walk, `argIndex`, and this
+memo's own slot table — which had to be right before it could be enforced.
+
+---
+
 ## 1. Problem Statement
 
 ### D1 — the runtime knows the shape of `arg` and never states it for this node

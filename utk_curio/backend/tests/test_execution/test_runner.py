@@ -579,3 +579,117 @@ class TestArtifactPreviewIsBounded:
 
         monkeypatch.setattr(requests, "get", _boom)
         assert runner.load_artifact_preview("art-1") is None
+
+
+class TestMergeSlotOrderIsTheHandle:
+    """dev/128, from a field failure: dataflow `00708324` reported
+    *"ed1a326f · solved · pass after 1 round"* and then failed on Play with
+    ``KeyError: 'tract_id'``, because validation assembled ``arg`` as
+    ``[population, boundaries]`` while the canvas assembles it as
+    ``[boundaries, population]``.
+
+    The cause was reading the slot from the edge's ID: the canvas encodes it
+    there (`…78504in_0`), but an AGENT-APPLIED edge has a UUID id and carries
+    the slot in ``targetHandle`` (dev/67-3). Both parsers also dropped the
+    handle entirely, so a plan-created merge was ordered lexicographically by
+    UUID. The handle is now the authority — the same one
+    `mergeFlowUtils.parseHandleIndex` uses for Play.
+    """
+
+    #: The owner's own edges: UUID ids, slots in targetHandle, and the id sort
+    #: is the INVERSE of the handle sort.
+    AGENT_SPEC = {
+        "dataflow": {
+            "nodes": [
+                {"id": "b", "type": "curio.builtin/data-loading", "content": "return 1"},
+                {"id": "p", "type": "curio.builtin/data-loading", "content": "return 2"},
+                {"id": "m", "type": "curio.builtin/merge-flow", "content": ""},
+                {"id": "t", "type": "curio.builtin/data-transformation", "content": "return arg"},
+            ],
+            "edges": [
+                {"id": "b396ed2d-3679-4b38-bbf7-5829d1db082c", "source": "b",
+                 "target": "m", "sourceHandle": "out", "targetHandle": "in_0"},
+                {"id": "0c05b055-f50e-43f6-9a98-7f66d66e36d9", "source": "p",
+                 "target": "m", "sourceHandle": "out", "targetHandle": "in_1"},
+                {"id": "e-mt", "source": "m", "target": "t", "targetHandle": "in"},
+            ],
+        }
+    }
+
+    def _spec(self, raw):
+        from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+        return parse_workflow_dict(raw)
+
+    def test_an_agent_applied_merge_is_ordered_by_its_handles(self):
+        spec = self._spec(self.AGENT_SPEC)
+        assert spec.upstream_nodes("m") == ["b", "p"]
+        # The regression: sorted by id it would be ["p", "b"].
+        assert sorted(
+            e["id"] for e in spec.edges if e["target"] == "m"
+        ) == ["0c05b055-f50e-43f6-9a98-7f66d66e36d9", "b396ed2d-3679-4b38-bbf7-5829d1db082c"]
+
+    def test_the_canvas_legacy_id_encoding_still_works(self):
+        raw = {"dataflow": {
+            "nodes": self.AGENT_SPEC["dataflow"]["nodes"],
+            "edges": [
+                {"id": "reactflow__edge-p78504in_1", "source": "p", "target": "m"},
+                {"id": "reactflow__edge-b78504in_0", "source": "b", "target": "m"},
+                {"id": "e-mt", "source": "m", "target": "t"},
+            ],
+        }}
+        assert self._spec(raw).upstream_nodes("m") == ["b", "p"]
+
+    def test_the_handle_wins_over_a_conflicting_id_suffix(self):
+        raw = {"dataflow": {
+            "nodes": self.AGENT_SPEC["dataflow"]["nodes"],
+            "edges": [
+                {"id": "x-in_1", "source": "b", "target": "m", "targetHandle": "in_0"},
+                {"id": "y-in_0", "source": "p", "target": "m", "targetHandle": "in_1"},
+                {"id": "e-mt", "source": "m", "target": "t"},
+            ],
+        }}
+        assert self._spec(raw).upstream_nodes("m") == ["b", "p"]
+
+    def test_the_handle_survives_the_projection(self):
+        spec = self._spec(self.AGENT_SPEC)
+        handles = {e["source"]: e.get("targetHandle") for e in spec.edges if e["target"] == "m"}
+        assert handles == {"b": "in_0", "p": "in_1"}
+
+    def test_the_slot_reader_is_one_function(self):
+        from utk_curio.backend.app.execution.workflow_spec import merge_slot_index
+
+        assert merge_slot_index({"targetHandle": "in_2"}) == 2
+        assert merge_slot_index({"target_handle": "in_3"}) == 3
+        assert merge_slot_index({"id": "…78504in_4"}) == 4
+        assert merge_slot_index({"targetHandle": "in", "id": "u"}) is None
+        assert merge_slot_index({"targetHandle": "out_0"}) is None
+        assert merge_slot_index({}) is None
+        assert merge_slot_index(None) is None
+
+    def test_validation_hands_the_node_the_same_order_play_does(self, monkeypatch):
+        """The end of the disagreement: the runner's own pass-through assembly,
+        driven through a fake sandbox, delivers slot order."""
+        seen: list[dict] = []
+
+        def _exec(endpoint, payload):
+            seen.append(payload)
+            code = payload["code"]
+            if "return 1" in code:
+                return {"stdout": [], "stderr": "", "output": {"path": "art-b", "dataType": "geodataframe"}}
+            if "return 2" in code:
+                return {"stdout": [], "stderr": "", "output": {"path": "art-p", "dataType": "dataframe"}}
+            return {"stdout": [], "stderr": "", "output": {"path": "art-t", "dataType": "dataframe"}}
+
+        monkeypatch.setattr(runner, "_http_exec", _exec)
+        report = runner.run_through_node(
+            "1", "p-1", self.AGENT_SPEC, "t", candidate_content="return arg",
+        )
+        assert report["ok"], report
+        target = seen[-1]
+        # The merge's assembled list rides the target's file_path as the
+        # stringified outputs list the worker evals back — in SLOT order.
+        assert target["dataType"] == "outputs"
+        assert target["file_path"].index("art-b") < target["file_path"].index("art-p"), (
+            target["file_path"]
+        )

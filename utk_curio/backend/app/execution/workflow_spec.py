@@ -14,14 +14,32 @@ from dataclasses import dataclass
 from collections import deque
 
 
-def _merge_edge_handle_index(edge_id: str) -> int | None:
-    """Parse ``in_N`` from a React Flow edge id (matches frontend ``useCode.ts``).
+def merge_slot_index(edge: dict) -> int | None:
+    """Which merge slot an edge feeds: ``in_0`` → 0, or None.
 
-    MERGE_FLOW inputs are ordered by handle slot ``in_0``, ``in_1``, … — not by
-    the order edges appear in the JSON file.
+    The HANDLE is the authority, exactly as the canvas reads it
+    (``mergeFlowUtils.parseHandleIndex(e.targetHandle)`` → the order Play
+    assembles ``arg`` in). The edge id's ``in_N`` suffix is the canvas's own
+    legacy encoding and stays as a fallback for specs saved that way.
+
+    dev/128, from a field failure: agent-applied edges carry a UUID id and the
+    slot in ``targetHandle`` (dev/67-3 made handles explicit), so reading only
+    the id left every plan-created merge unordered — sorted lexicographically
+    by UUID. A node then validated against ``arg`` in one order and ran at Play
+    in another: dataflow ``00708324`` passed *"solved · pass after 1 round"* and
+    failed on Play with ``KeyError: 'tract_id'``, because validation handed it
+    ``[population, boundaries]`` and Play handed it ``[boundaries, population]``.
     """
-    # e.g. ``…78504in_0`` (no hyphen before ``in_``)
-    m = re.search(r"in_(\d+)$", edge_id or "")
+    if not isinstance(edge, dict):
+        return None
+    for key in ("targetHandle", "target_handle"):
+        handle = edge.get(key)
+        if isinstance(handle, str):
+            m = re.match(r"^in_(\d+)$", handle.strip())
+            if m:
+                return int(m.group(1))
+    # e.g. ``…78504in_0`` (no hyphen before ``in_``) — the canvas's edge ids.
+    m = re.search(r"in_(\d+)$", str(edge.get("id") or ""))
     return int(m.group(1)) if m else None
 
 
@@ -200,8 +218,10 @@ class WorkflowSpec:
         Interaction edges are excluded because they carry selection state,
         not data.
 
-        For ``MERGE_FLOW`` targets, sources are ordered by ``in_0``, ``in_1``,
-        … as encoded in each edge's ``id`` (same as the canvas / sandbox).
+        For ``MERGE_FLOW`` targets, sources are ordered by their input handle
+        ``in_0``, ``in_1``, … — the same authority the canvas uses to build
+        ``arg`` at Play (``mergeFlowUtils``), with the edge id's legacy
+        ``in_N`` suffix as a fallback (dev/128).
         """
         node_map = {n.id: n for n in self.nodes}
         target = node_map.get(node_id)
@@ -212,8 +232,8 @@ class WorkflowSpec:
         if target and target.type == "MERGE_FLOW" and len(edges_to) > 1:
 
             def sort_key(e: dict) -> tuple:
-                idx = _merge_edge_handle_index(e.get("id", ""))
-                return (idx if idx is not None else 10**9, e.get("id", ""))
+                idx = merge_slot_index(e)
+                return (idx if idx is not None else 10**9, str(e.get("id") or ""))
 
             edges_to = sorted(edges_to, key=sort_key)
         return [e["source"] for e in edges_to]
@@ -301,6 +321,10 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
             "source": e["source"],
             "target": e["target"],
             "type": e.get("type"),
+            # dev/128: the input handle is what orders a merge's inputs, and
+            # dropping it here is what made an agent-applied merge unordered.
+            "targetHandle": e.get("targetHandle") or e.get("target_handle"),
+            "sourceHandle": e.get("sourceHandle") or e.get("source_handle"),
         }
         for e in dataflow["edges"]
     ]
@@ -366,6 +390,10 @@ def parse_workflow_dict(data: dict, *, name: str = "", templates: dict | None = 
             "source": e.get("source"),
             "target": e.get("target"),
             "type": e.get("type"),
+            # dev/128: see the twin projection above — the handle is the merge's
+            # slot authority, the same one the canvas uses at Play.
+            "targetHandle": e.get("targetHandle") or e.get("target_handle"),
+            "sourceHandle": e.get("sourceHandle") or e.get("source_handle"),
         }
         for e in dataflow.get("edges") or []
         if isinstance(e, dict)
