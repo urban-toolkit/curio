@@ -642,7 +642,17 @@ unchanged everywhere else.
 When it finishes you get the overall accuracy, a score per category, the
 failure categories, and a link to **the project it built** — the graph is how
 you understand the number. An unmeasured category says so rather than reading
-as zero.
+as zero. The link appears only once the run is over, because the graph is
+written when the plan is applied and a project opened earlier would show an
+empty canvas.
+
+Open it and the dataflow is on the canvas, and the Dataflow Builder's own chat
+there carries the whole run: the prompt, the plan it proposed, what was
+applied, what Solve verified, and the report. That transcript stays with the
+project. The graph an evaluation built is protected from being erased by a
+canvas that was open before the run finished — such a save is refused and asks
+you to reload — while editing a finished evaluation project is otherwise yours
+to do.
 
 A model configured by the launcher counts: if the deployment was started with
 `--llm-provider`, `--llm-base-url` and `--llm-model`, the panel says so and runs

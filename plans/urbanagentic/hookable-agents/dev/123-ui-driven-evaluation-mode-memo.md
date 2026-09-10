@@ -1,6 +1,6 @@
 # dev/123 — Evaluation mode: run an evaluation through the product, with the model the account actually uses
 
-**Status: IMPLEMENTED (2026-09-09) on `imp/agentcatalog` — `DEC-079` minted, `BL-P5-20260909-57`. Four commits: `9b2d51bb` (one shared policy, both existing copies re-pointed, plus the two test adaptations the owner's first use forced), `94ab1854` (records, the narrow automated approval, the prompt-review action, the service and eight routes), `8c0d8bb5` (the Evaluation mode panel), and `ac03d06f` (docs), with the ledgers alongside. Suites: `tests/test_agents` 2137 passed; full jest 2376 across 204 suites; `tsc --noEmit` clean. Two owner instructions arrived mid-build and are implemented: the panel distinguishes a model configured by the deployment's start command from one in AI Settings, and a prompt can be **approved from the panel** rather than by hand-editing JSON — that instruction came from a real `papproved` typo which broke every suite at collection. NOT DONE, deliberately: **no real-provider run was executed in this slice.** It is user-triggered by design, and the owner's gemma4 configuration is the acceptance scenario (F1). Findings are in §11 — the load-bearing one is that the production paths assume a request context, so an in-process service driving them must supply one or the grounding gate silently loses the Data Catalog. Neither `OQ-009` nor `OQ-010` was closed. Fine-tuning (dev/122) is untouched, as instructed.**
+**Status: IMPLEMENTED (2026-09-09) on `imp/agentcatalog` — `DEC-079` minted, `BL-P5-20260909-57`. Four commits: `9b2d51bb` (one shared policy, both existing copies re-pointed, plus the two test adaptations the owner's first use forced), `94ab1854` (records, the narrow automated approval, the prompt-review action, the service and eight routes), `8c0d8bb5` (the Evaluation mode panel), `ac03d06f` (docs), `ec02d2b8` (the browser case) and `6e98a205` (the two defects the owner's first real run exposed — see §11 F-f and F-g), with the ledgers alongside. Suites: `tests/test_agents` 2137 passed; full jest 2376 across 204 suites; `tsc --noEmit` clean. Two owner instructions arrived mid-build and are implemented: the panel distinguishes a model configured by the deployment's start command from one in AI Settings, and a prompt can be **approved from the panel** rather than by hand-editing JSON — that instruction came from a real `papproved` typo which broke every suite at collection. **The owner then ran it for real** — gemma4 at `sage200.evl.uic.edu`, the `01-vega-lite-chained-transforms` prompt, 0.64 overall, plan applied and six of six nodes solved — which is F1 discharged for the first time and which immediately earned its keep: it exposed two defects the deterministic mirror could not (§11 F-f, F-g), exactly the dev/115 A3 pattern. A re-run against the fixed build is the remaining part of F1. Findings are in §11 — the load-bearing one is that the production paths assume a request context, so an in-process service driving them must supply one or the grounding gate silently loses the Data Catalog. Neither `OQ-009` nor `OQ-010` was closed. Fine-tuning (dev/122) is untouched, as instructed.**
 
 Date: 2026-09-09
 Branch / tree: `imp/agentcatalog` @ `463c0493` (dev/122 closed). Line numbers pinned to that commit. `plans/` is tracked on this branch; `plans/urbanagentic/hookable-agents/knowledge-graph/` (354 MB site copy) stays untracked by intent.
@@ -328,11 +328,43 @@ moved, so approving cannot smuggle a change into what is measured.
 "installed": [coords]}` — the first cut called `.get()` on a string — and a
 project's name is on its summary rather than its detail payload.
 
+**F-f. The owner's first real run finished with a score and an empty canvas —
+and both halves of that were defects.** The record proved the order: the plan
+applied, Solve verified six of six nodes, the comparator scored a real graph,
+and the spec was written again six seconds after the run ended carrying
+`nodeProvenance`, a key only the frontend emits. A canvas save is a whole-spec
+`PUT` of the browser's live nodes with **no revision basis**, so the project
+the panel invited the owner to open mid-run held an empty graph, and its next
+save — an auto-save is enough — wrote that emptiness over the run's work. The
+fix uses the marker already in the spec: while the run is still writing, and
+for any save that would leave a run-built graph with no nodes at all, the
+client is not the authority and the save is refused with a sentence that says
+to reload. Node lists are deliberately **not** made a backend-owned section
+the way `agents`, `packages` and `datasets` are — a person's canvas is the
+authority for their own graph — so editing a finished evaluation project is
+untouched. The panel also stopped offering the project until the run is
+terminal. The general hazard is wider than this feature and is recorded as F7:
+any client that loaded a project before a server-side write will overwrite it
+on its next save, because the save carries no revision.
+
+**F-g. The transcript stopped at the Solve card.** Production's own turns tell
+the story up to Solve and then go quiet, so the conversation — the place a
+person actually looks to see what an agent did — never said what the run was or
+how it compared. The report now lands there too, and a run that stops without a
+score says so. Two rules bound what may be written: nothing is appended before
+the model answers, because `run_attachment` sends prior turns as context and a
+turn written ahead of the prompt would change the very conditions being
+measured; and the lines carry aggregates and category names only, never a piece
+of the reference, because these turns become context for any later conversation
+in the kept project. Both are tests.
+
 ## Follow-ups (recorded, not delivered)
 
-- **F1 — an owner-run live evaluation** against the configured endpoint (the
-  gemma4 setup is the acceptance scenario). Per dev/115 A3: a live failure the
-  deterministic mirror did not predict becomes a fixture, not a prompt tweak.
+- **F1 — re-run live against the configured endpoint** now that F-f and F-g
+  are fixed. The first run happened (gemma4, 0.64) and did what dev/115 A3 says
+  a live run is for: it found what the deterministic mirror could not. What is
+  left is confirming the graph now survives and the transcript now carries the
+  report, on a real model rather than the scripted one.
 - **F2 — a comparison detail view on the canvas**: open the generated project
   with the differences highlighted on the graph, rather than only in a table.
 - **F3 — batch runs** (a whole tier in one click) once one run's real cost and
@@ -343,3 +375,9 @@ project's name is on its summary rather than its detail payload.
   without Curio drawing a conclusion.
 - **F6 — fine-tuning stays dev/122's.** Untouched by this phase, as instructed;
   §0 records the relationship to the correction's "next capability" line.
+- **F7 — a client save carries no revision basis.** `update_project` takes the
+  client's graph verbatim, so any canvas that loaded a project before a
+  server-side write erases that write on its next save. F-f closes it for
+  evaluation projects only, with a rule that knows what an evaluation is. The
+  general fix is optimistic concurrency — the loaded `spec_revision` sent back
+  and a 409 on drift — which touches every save path and wants its own memo.
