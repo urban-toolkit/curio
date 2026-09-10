@@ -1174,7 +1174,11 @@ def make_delegation_part(
 
 #: dev/127: the attempt trail's bounds, enforced HERE so no caller can decide
 #: to persist a little more (a transcript is a record, not a copy of the code).
-SOLVE_ATTEMPTS_MAX_ROWS = 8
+#: dev/131 (owner correction): a Solve is a SESSION now — the trail spans
+#: passes, so the part carries more rows, and the ones it carries are the most
+#: RECENT (what the node is stuck on now); earlier rows are counted in
+#: ``elided``, which is what the card has always said.
+SOLVE_ATTEMPTS_MAX_ROWS = 12
 SOLVE_ATTEMPT_CODE_MAX_CHARS = 4000
 SOLVE_ATTEMPT_ERROR_MAX_CHARS = 2000
 _SOLVE_ATTEMPT_KINDS_MAX = 40
@@ -1204,7 +1208,7 @@ def make_solve_attempts_part(
     one says so.
     """
     rows: list[dict] = []
-    for attempt in (attempts or [])[:SOLVE_ATTEMPTS_MAX_ROWS]:
+    for attempt in (attempts or [])[-SOLVE_ATTEMPTS_MAX_ROWS:]:
         if not isinstance(attempt, dict):
             continue
         raw_error = str(

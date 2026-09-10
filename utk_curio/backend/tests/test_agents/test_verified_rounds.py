@@ -961,7 +961,11 @@ class TestVerifiedSolve:
         assert load["status"] == "failed" and load["verdict"] == "fail" and load["rounds"] == 3
         assert load["error"].startswith("not fixed after 3 attempts")
         assert "NameError" in load["error"]
-        assert len(load["attempts"]) == 3
+        # dev/131 (owner correction): the session keeps attempting, so the
+        # trail spans passes — the exhausted first pass is its first three
+        # rows, and the later passes' rounds follow it.
+        assert [a["kind"] for a in load["attempts"][:3]] == ["execution-error"] * 3
+        assert len(load["attempts"]) >= 3
         assert self._node_content(ctx, ctx["load"]) == ""
         assert body["builderSession"]["nodeRuns"][ctx["load"]] == "failed"
         # The Solve card carries the trail lines.

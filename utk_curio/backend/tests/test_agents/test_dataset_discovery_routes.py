@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 
+from utk_curio.backend.app.agents import content
 from utk_curio.backend.app.agents import dataset_resolution as dr
 from utk_curio.backend.app.agents import services as services_mod
 from utk_curio.backend.app.projects import storage as projects_storage
@@ -400,10 +401,14 @@ class TestAttemptTrailInTheTranscript:
         trail = next(p for p in parts if p["nodeId"] == h.load)
         assert trail["verdict"] == "fail"
         assert trail["stoppedBy"] in ("rounds", "budget", "repeat")
-        assert len(trail["attempts"]) == len(body["results"][h.load]["attempts"])
-        # Each attempt: its round, its error read for the exception, its CODE.
-        for row, expected in zip(trail["attempts"], ("guess1", "guess2", "guess3")):
-            assert row["code"] and expected in row["code"]
+        # dev/131: the session's trail spans passes; the part carries the most
+        # recent rows and counts the rest (``elided``), and every row it does
+        # carry has its round, its error and its CODE.
+        recorded = body["results"][h.load]["attempts"]
+        assert len(trail["attempts"]) == min(len(recorded), content.SOLVE_ATTEMPTS_MAX_ROWS)
+        assert trail.get("elided", 0) == max(len(recorded) - content.SOLVE_ATTEMPTS_MAX_ROWS, 0)
+        for row in trail["attempts"]:
+            assert row["code"] and "guess" in row["code"]
             assert row["error"]
             assert row["kind"] == "ungrounded-source"
         # And the node's own agent is one click away.

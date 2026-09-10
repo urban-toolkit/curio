@@ -4351,6 +4351,11 @@ def _solve_events(
     from concurrent.futures import ThreadPoolExecutor
 
     results: dict[str, dict] = {}
+    # dev/131 (owner correction): consecutive passes in which a node's every
+    # failed attempt was a REPEAT — the builder handed back the code that
+    # already failed. Retrying that is not persistence, it is a spin, so a
+    # node is dropped from later passes once it stalls this way (below).
+    weak_passes: dict[str, int] = {}
     applied_contents: list[dict] = []
     # dev/127: one bounded artifact preview per artifact per batch, turned into
     # the columns and dtypes its frame holds. A node that had to join two
@@ -4462,9 +4467,38 @@ def _solve_events(
             return None
         event = _record_outcome_inner(node_id, status, text, child)
         fresh = results.get(node_id)
+        if isinstance(fresh, dict) and fresh.get("attempts") and previous.get("attempts"):
+            # dev/131 (owner correction): a session keeps attempting, and the
+            # owner asked for ALL attempts to be visible — so a later pass
+            # APPENDS its rounds to the trail instead of replacing it. And a
+            # pass that only repeated itself must not bury the concrete error
+            # the earlier pass found: the sentence stays the concrete one.
+            this_pass_was_weak = _weak_failure(fresh)
+            if fresh.get("status") == "failed" and this_pass_was_weak:
+                weak_passes[node_id] = weak_passes.get(node_id, 0) + 1
+            else:
+                weak_passes.pop(node_id, None)
+            fresh["attempts"] = (
+                list(previous["attempts"]) + list(fresh["attempts"])
+            )[-_MAX_TRAIL_ATTEMPTS:]
+            if (
+                fresh.get("status") == "failed"
+                and previous.get("status") == "failed"
+                and previous.get("error")
+                and this_pass_was_weak
+                and not _weak_failure(previous)
+            ):
+                fresh["error"] = previous["error"]
+            if isinstance(event, dict):
+                event["attempts"] = fresh["attempts"]
+                if fresh.get("error"):
+                    event["error"] = fresh["error"]
         if isinstance(fresh, dict) and not fresh.get("attempts") and previous.get("attempts"):
+            # An emptied field counts as absent, not as an answer: the awaiting
+            # path records ``attempts: []`` and ``rounds: 0``, which used to
+            # win over a real trail purely because they are not None.
             for key in ("attempts", "rounds", "verdict", "stoppedBy"):
-                if previous.get(key) is not None and fresh.get(key) is None:
+                if previous.get(key) is not None and not fresh.get(key):
                     fresh[key] = previous[key]
             if isinstance(event, dict) and not event.get("attempts"):
                 for key in ("attempts", "rounds", "verdict", "stoppedBy"):
@@ -4478,7 +4512,8 @@ def _solve_events(
             # dev/118: the budget ran out before this node was dispatched — it
             # stays pending, says why, and the batch names the reason once.
             results[node_id] = {"status": "pending", "reason": deadline_reason}
-            unstarted.append(node_id)
+            if node_id not in unstarted:
+                unstarted.append(node_id)
             batch_reason = batch_reason or deadline_reason
             return {"nodeId": node_id, "status": "pending", "reason": deadline_reason}
         """Fold one worker outcome into the batch state — no yields, so it is
@@ -4565,6 +4600,27 @@ def _solve_events(
                         **trail, **extra}
             kind = evidence.get("kind") or "fail"
             raw_detail = str(evidence.get("stderrTail") or evidence.get("detail") or "")
+            if kind in _WEAK_CARRY_KINDS:
+                # dev/131 (owner correction): the loop stopped because the
+                # correction repeated itself — that is HOW it stopped, not WHAT
+                # is wrong. The sentence names the error it is stuck on (the
+                # last attempt that actually ran and failed); ``stoppedBy``
+                # still says a repeat ended it.
+                stronger = next(
+                    (
+                        a for a in reversed(trail.get("attempts") or [])
+                        if isinstance(a, dict)
+                        and a.get("verdict") != "pass"
+                        and str(a.get("kind") or "") not in _WEAK_CARRY_KINDS
+                        and str(a.get("stderrTail") or a.get("detail") or "").strip()
+                    ),
+                    None,
+                )
+                if stronger is not None:
+                    kind = str(stronger.get("kind") or kind)
+                    raw_detail = str(
+                        stronger.get("stderrTail") or stronger.get("detail") or raw_detail
+                    )
             if evidence.get("upstreamEmpty"):
                 # dev/118 live fix: the upstream has no content (it failed, or
                 # is not a target) — this node waits, pending with the reason;
@@ -4976,11 +5032,21 @@ def _solve_events(
                                 recorded = candidate_failure
                         except Exception:  # noqa: BLE001
                             recorded = None
+                        # dev/131 (owner correction): on a later pass the error
+                        # this node's last attempt produced is the input this
+                        # one starts from — never the same blank inputs again.
+                        # A recorded on-disk failure is the stronger evidence
+                        # (it is the code actually ON the node), so it wins.
+                        carry = (
+                            None if recorded
+                            else _carry_forward_error(results.get(node_id))
+                        )
                         gen = _verified_content_rounds(
                             user_key, project_id,
                             spec=wave_spec, node=node, resolution=resolution, config=config,
                             start_from_current=bool(recorded),
                             recorded_failure=recorded,
+                            carry_forward=carry,
                             parent_execution_id=solve_execution_id, parent_coord=coord,
                             attachment_id=attachment_id, exec_fn=None,
                             grounding_loop_ctx=solve_ctx, grounding_base=solve_ground,
@@ -5052,6 +5118,13 @@ def _solve_events(
                 if (time.monotonic() - started) >= session_deadline_s:
                     ended_by = "budget"
                     break
+                if pass_no > 1 and _batch_deadline_spent(started, deadline_s):
+                    # dev/118's outer ceiling: nothing would be dispatched, so
+                    # another pass could only re-mark the same nodes. Only from
+                    # the second pass on — the first pass IS dev/118's batch and
+                    # keeps its own boundary checks, unchanged.
+                    ended_by = "budget"
+                    break
                 # Re-read the spec every pass: a selection confirmed, a node
                 # edited or content written since the last pass all count.
                 try:
@@ -5063,16 +5136,32 @@ def _solve_events(
                 unresolved = [
                     nid for nid in targets
                     if str(runs_now.get(nid, "pending")) in ("pending", "failed")
+                    # dev/131 (owner correction): what THIS session already
+                    # settled counts too. dev/118 persists a wave only at a
+                    # wave boundary, so the pass's last wave lands in
+                    # ``_finish``; reading the disk alone made a node this
+                    # session had just solved look pending and re-solved it
+                    # every pass.
+                    and str((results.get(nid) or {}).get("status") or "pending")
+                    in ("pending", "failed")
                 ]
                 if not unresolved:
                     ended_by = "complete"
                     break
-                # dev/131: pass 1 attempts everything; a later pass attempts a
-                # node only when something that could unblock it has changed —
-                # its own content, an upstream's, or its dataset selection.
+                # dev/131: pass 1 attempts everything. A later pass attempts
+                # every node that is NOT parked on the user — carrying the
+                # error its last attempt produced, which is a different input
+                # than the pass before had (owner correction: "it should carry
+                # the currently error that is being given"). A node waiting on
+                # a user action has no new input, so that one is attempted
+                # again only when something that could unblock it changed.
                 pass_targets = [
                     nid for nid in unresolved
                     if pass_no == 1
+                    or (
+                        not _awaits_user_action(results.get(nid))
+                        and weak_passes.get(nid, 0) < _MAX_WEAK_PASSES
+                    )
                     or attempted_signature.get(nid) != _blocker_signature(pass_spec, nid)
                 ]
                 if not pass_targets:
@@ -5115,7 +5204,13 @@ def _solve_events(
                 }
 
                 pool = ThreadPoolExecutor(max_workers=_SOLVE_MAX_WORKERS)
-                waves = _solve_waves(spec, list(targets))
+                # dev/131 (owner correction): the waves are this PASS's targets
+                # — a node parked on the user (or already solved) is not
+                # re-dispatched, so its trail and its reason survive the pass
+                # that could not touch it. Depth is recomputed over the pass's
+                # own set: an upstream outside it either has content already or
+                # is named as a blocker honestly, exactly as dev/118 intends.
+                waves = _solve_waves(spec, list(pass_targets))
                 try:
                     for wave_no, wave in enumerate(waves, 1):
                         current["wave"] = wave_no
@@ -5301,6 +5396,12 @@ def _solve_events(
                     raise
                 finally:
                     pool.shutdown(wait=True)
+                # dev/131 (owner correction): the pass boundary persists what
+                # the pass settled — including its LAST wave, which dev/118
+                # deliberately left to ``_finish`` because a batch ended
+                # there. A session does not end at a pass, so a pass that is
+                # not the last must leave the same truth on disk.
+                _persist_wave(list(pass_targets))
                 # dev/131: the signature is taken AFTER the pass, from a fresh
                 # spec — a node attempted once its upstream landed in the same
                 # pass has already seen that content, so the next pass must not
@@ -6799,6 +6900,86 @@ def _last_attempt_code(trail: dict) -> str | None:
     return attempts[-1].get("code") if attempts else None
 
 
+#: dev/131 (owner correction): remedies only the USER can act on. A node
+#: parked on one of these has no new input to carry — attempting it again would
+#: ask the same question of the same model, so the session WAITS and rechecks.
+#: Everything else (an execution error, a refusal, a decline) IS a new input.
+_USER_ACTION_REMEDIES = ("dataset-selection", "connection-key")
+
+
+def _awaits_user_action(result: dict | None) -> bool:
+    """Whether this node's last outcome is parked on something the user must do."""
+    remedy = (result or {}).get("remedy")
+    return (
+        isinstance(remedy, dict)
+        and str(remedy.get("kind") or "") in _USER_ACTION_REMEDIES
+    )
+
+
+#: Attempt kinds that say nothing about the CODE: the sandbox was down, the
+#: runner refused the slice, an upstream has no content yet. Carrying one
+#: forward would ask the builder to "fix" code that never ran — and the repeat
+#: detector would then fail the node for returning the same correct code. The
+#: node is still re-attempted; it just starts clean, because the blocker was
+#: never in the code.
+_NO_CARRY_KINDS = ("infrastructure", "precondition", "upstream-blocker", "not-executable")
+#: A repeat notice is about the LOOP, not the code: when a real error sits
+#: behind it, that error is what the next pass carries.
+_WEAK_CARRY_KINDS = ("repeated-attempt",)
+
+
+#: How many consecutive repeat-only passes a node gets before the session
+#: stops re-attempting it: the builder is handing back the code that already
+#: failed, so another pass would spend a provider call to learn the same
+#: thing. Its diagnosis and trail stay; the session moves on to what can
+#: progress (and ends "blocked" when nothing can).
+_MAX_WEAK_PASSES = 3
+
+#: How many attempt rows one node's trail keeps across a whole session. The
+#: transcript part shows the last few (dev/127's cap); this is the record.
+_MAX_TRAIL_ATTEMPTS = 40
+
+
+def _weak_failure(result: dict | None) -> bool:
+    """Whether every failed attempt in this trail is about the LOOP or the
+    environment rather than the code (a repeat notice, a sandbox outage, a
+    slice bound) — so its sentence must not replace a concrete diagnosis."""
+    failed = [
+        a for a in ((result or {}).get("attempts") or [])
+        if isinstance(a, dict) and a.get("verdict") != "pass"
+    ]
+    if not failed:
+        return False
+    weak = set(_WEAK_CARRY_KINDS) | set(_NO_CARRY_KINDS)
+    return all(str(a.get("kind") or "") in weak for a in failed)
+
+
+def _carry_forward_error(result: dict | None) -> dict | None:
+    """The input a re-attempt carries: the last attempt's code and ITS error.
+
+    The owner's correction to dev/131 — *"the keep attempting it should not
+    carry the same inputs, supposing it doesn't depend on user's actions, it
+    should carry the currently error that is being given"*. A later pass is not
+    a fresh start: it continues from the candidate that failed and the error it
+    produced, so round 0 generates a CORRECTION rather than another blank first
+    draft that fails the same way.
+    """
+    attempts = [
+        a for a in ((result or {}).get("attempts") or [])
+        if isinstance(a, dict)
+        and a.get("verdict") != "pass"
+        and str(a.get("kind") or "") not in _NO_CARRY_KINDS
+        and str(a.get("stderrTail") or a.get("detail") or "").strip()
+    ]
+    if not attempts:
+        return None
+    strong = [a for a in attempts if str(a.get("kind") or "") not in _WEAK_CARRY_KINDS]
+    attempt = (strong or attempts)[-1]
+    error = str(attempt.get("stderrTail") or attempt.get("detail") or "").strip()
+    code = "" if attempt.get("codeIsProse") else str(attempt.get("code") or "")
+    return {"code": code, "error": error, "kind": str(attempt.get("kind") or "")}
+
+
 def _solve_attempts_part(
     spec: dict | None, node_id: str, label: str, result: dict | None
 ) -> dict | None:
@@ -7345,6 +7526,7 @@ def _verified_content_rounds(
     clock=time.monotonic,
     recorded_failure=None,
     node_budget_s=None,
+    carry_forward=None,
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -7457,6 +7639,23 @@ def _verified_content_rounds(
             f": {failure_text.summary(recorded_failure['stderr'], limit=200)}"
         )
         previous_error = str(recorded_failure["stderr"])[-2000:]
+    if isinstance(carry_forward, dict) and (carry_forward.get("error") or "").strip():
+        # dev/131 (owner correction): a retry must not carry the SAME inputs.
+        # When an earlier pass of this session already tried and failed, its
+        # last candidate and the error it produced are the inputs this pass
+        # starts from — so round 0 generates a CORRECTION, not another blank
+        # first draft. (A node blocked on the user has no such input, which is
+        # why only that case waits.)
+        previous_attempt = (
+            str(carry_forward.get("code") or "")[:6000] or previous_attempt
+        )
+        previous_error = str(carry_forward["error"])[-2000:]
+        rounds_trace.append(
+            "carrying forward the previous attempt's error: "
+            + failure_text.summary(
+                str(carry_forward["error"]), code=carry_forward.get("code"), limit=200
+            )
+        )
     # dev/128: what ``arg`` IS for this node — a fact of the graph, computed
     # once (it cannot change mid-loop), handed to the child as an input, and
     # enforced before the sandbox. The owner's report: a node fed through a
@@ -7559,11 +7758,15 @@ def _verified_content_rounds(
                 inputs["inputContract"] = arg_contract
             if extra_inputs:
                 inputs.update({k: v for k, v in extra_inputs.items() if k not in inputs})
-            if previous_attempt is not None:
+            if previous_attempt is not None or (previous_error or "").strip():
                 # The NCB instruction's self-correction contract: fix
                 # precisely the failure, grounded in the real traceback.
-                inputs["previousAttempt"] = previous_attempt[:6000]
+                # dev/131: a carried-forward error with no code (a prose
+                # decline, a refusal that named no candidate) still rides —
+                # the error IS the new input.
                 inputs["validationError"] = (previous_error or "")[:2000]
+                if previous_attempt is not None:
+                    inputs["previousAttempt"] = previous_attempt[:6000]
                 if url_evidence:
                     inputs["urlEvidence"] = url_evidence
             status, text, child = run_delegate(inputs)

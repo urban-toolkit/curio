@@ -4953,13 +4953,17 @@ class TestSolve:
         monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
         body = self._solve(client, token, alice_project, att_id).get_json()
         statuses = sorted(r["status"] for r in body["results"].values())
-        assert statuses == ["failed", "solved"]
-        assert body["builderSession"]["phase"] == "applied"  # not ready yet
-        failed_id = next(n for n, r in body["results"].items() if r["status"] == "failed")
-        # Retry the failed subset only.
-        body2 = self._solve(client, token, alice_project, att_id, node_ids=[failed_id]).get_json()
-        assert body2["results"] == {failed_id: {"status": "solved"}} or body2["results"][failed_id]["status"] == "solved"
-        assert body2["builderSession"]["phase"] == "ready"
+        # dev/131: a child failure still isolates — the sibling solved on the
+        # same pass — and the SESSION now retries it instead of handing the
+        # user a failure to click through: the second pass succeeds and the
+        # session reaches ready by itself.
+        assert statuses == ["solved", "solved"]
+        assert body["passes"] > 1
+        assert body["builderSession"]["phase"] == "ready"
+        # Nothing is left to solve, so a re-run of the batch says so rather
+        # than re-burning the same calls.
+        again = self._solve(client, token, alice_project, att_id)
+        assert again.status_code == 409
 
     def test_solve_without_applied_plan_409s(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token

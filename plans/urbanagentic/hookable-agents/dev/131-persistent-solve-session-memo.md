@@ -349,6 +349,38 @@ named, every wait bounded and stop-aware.
 6. **Cancel became Stop** in name and semantics (a session, not a wave), and its two jest tests
    were renamed to describe the session.
 
+7. **OWNER CORRECTION (2026-09-10, after the first eight commits): a retry must not carry the same
+   inputs.** *"the keep attempting it should not carry the same inputs, supossing it doesn't depend
+   on user's actions, it should carry the currently error that is being given."* Deviation (1)
+   above was too strict: the blocker signature is about the node's SURROUNDINGS, and a node whose
+   own attempt just failed has a new input — **its error** — which the signature cannot see. So:
+   - a later pass attempts **every** unresolved node that is not parked on a user action
+     (`_awaits_user_action`: dev/126's dataset selection, dev/116's missing connection key); the
+     signature gate now applies only to those, whose blocker really is elsewhere;
+   - the pass carries the node's own last failed candidate and its error into round 0
+     (`_carry_forward_error` → the loop's `carry_forward`), so the child is asked for a
+     CORRECTION, with `previousAttempt`/`validationError` set exactly as a mid-loop round would
+     have them, and the trail says *"carrying forward the previous attempt's error: …"*;
+   - kinds that say nothing about the code are never carried (a sandbox outage, a slice bound, an
+     upstream blocker) — handing that code back as "your previous attempt" made the repeat
+     detector fail a node whose code had never run; and a repeat notice yields to the real error
+     behind it;
+   - the trail **accumulates across passes** (40 rows kept, the transcript part now carries the 12
+     most recent and counts the rest) because the owner asked to see all attempts;
+   - the diagnosis stays concrete: when a repeat ended the loop, the sentence names the error the
+     node is stuck on and `stoppedBy` still says a repeat ended it;
+   - and the spin is bounded: after three consecutive passes in which every attempt was a repeat,
+     the session stops re-attempting THAT node (`_MAX_WEAK_PASSES`) — its diagnosis and trail
+     stay, and the session moves on to what can progress.
+8. **Three defects in (1)'s implementation, found by the correction and fixed.** (a) The waves were
+   built from ALL targets, not the pass's — so a pass ran nodes the gate had excluded, and a
+   node parked on the user lost its trail to a pass that could not touch it. (b) dev/118 persists a
+   wave only at a wave BOUNDARY (the last wave lands in `_finish`, correct for a batch), so a
+   pass's last wave never reached `nodeRuns` and the next pass re-solved a node this session had
+   just solved; a pass boundary now persists too, and `unresolved` also honors what this session
+   settled in memory. (c) The merge in (2) treated `attempts: []` and `rounds: 0` as answers
+   rather than absences, so the awaiting path still won over a real trail.
+
 One limit found and not fixed here: the eager, request-context pieces (the Data Catalog listing and
 the sandbox dataset-path mapping) are resolved when the session starts, so a CATALOG dataset the
 user installs mid-session has no path inside the running job and its node stays pending until the
