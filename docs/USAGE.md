@@ -399,6 +399,17 @@ spatial join) are written and labeled *no code to run; renders in the browser
 or its own service*; nothing claims they were verified. A batch stops after 45 minutes by default and leaves what it did
 not reach *pending* with the reason; **Retry** continues from there.
 
+Applying a plan also gives every created node its own agents: a **Node
+Builder** on each, and a **Dataset Finder** on each data-loading node. Solving a
+data-loading node whose source is not already settled asks that Dataset Finder
+for candidates instead of letting the code guess a filename: the two-lane card
+appears in the node's Dataset Finder chat, the node stays **pending — awaiting
+your dataset selection** with an **Open Dataset Finder** button, and nothing is
+generated or written until you pick one. **Confirm source for this node**
+records your choice against the node, and the next Solve builds the loader from
+exactly that source. So the Dataflow Builder plans first — it does not need to
+know the datasets to draw the dataflow.
+
 The goal box in the dock is shared with your agents: several of them, the
 Dataflow Task Planner most of all, are written around knowing what the dataflow
 is for. It is saved with the project.

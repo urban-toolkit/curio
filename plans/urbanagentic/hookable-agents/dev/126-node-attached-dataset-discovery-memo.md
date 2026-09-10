@@ -1,7 +1,23 @@
 # dev/126 — Node-attached dataset discovery: the Dataset Finder is a Dataflow Builder dependency, attached to the data-loading node it resolves
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `e4367765`. One new design decision
-proposed (`DEC-080`). Every line number below was read on that commit.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `DEC-080` minted,
+`BL-P5-20260910-60`. Nine commits: `a6437932` (this memo), `32771fb2` (one attach helper,
+one node-compatibility predicate, one remedy sentence), `d9a92456` (`DEC-080` + the
+declaration), `8a80de89` (both apply paths attach and say so), `7f7c6532`
+(`dataset_resolution.py`), `c22c3e27` (resolution initiates discovery), `86f63b3b` (the
+selection endpoint + the surfaces), `e3ad9192` (the three instructions) and this
+tracking commit (docs + ledgers). The plan's commit 7 split in two: the prompt edits move the Dataflow
+Builder's byte pin, which belongs with the edit rather than with the docs. Every line number
+below was read on `e4367765`.**
+
+**Suites: `tests/test_agents` 2236 passed (2189 before); `tests/test_projects` +
+`tests/test_datasets` 769; jest 2390 across 205 suites; `tsc --noEmit` clean.**
+
+**Six things changed from the plan while building — each recorded in §12.** The
+load-bearing one: the memo's single pre-round discovery check would have fired on every
+project with a non-empty Data Catalog, which is every shipped install, so discovery is
+initiated in TWO stages instead of one. F3 records the strict variant, which is one
+predicate away.
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `e4367765` (clean but for the untracked `plans/…/results`,
@@ -699,3 +715,51 @@ anywhere in the transcript.
   §B's repair proves the better answer for those too, that is a separate decision (it would
   need a rule for what a *preferred* delegate may install, which `REQ-ORCH-001` currently
   forbids).
+
+---
+
+## 12. What changed while building
+
+1. **Two stages of initiation, not one (§3D).** The memo's pre-round check treated "the
+   project's Data Catalog holds datasets" as grounding for a first attempt. Reading it back
+   through a real test environment showed what that means in practice: every shipped install
+   seeds a catalog (13 datasets in the suite's own environment), so a single pre-round check
+   would have skipped discovery essentially always. The implemented rule keeps both readings:
+   nothing in the project could ground the node → discovery BEFORE the first round; the
+   catalog might → the first attempt is generated against its rows and the round's own
+   refusal or decline (`ungrounded-source`, `source-missing`) initiates discovery, with the
+   attempt trail kept. The strict "always, even for a node the catalog can serve" variant is
+   one predicate — recorded as **F3**, not chosen unilaterally.
+2. **Grounding evidence is ranked (§4).** Not in the plan. Evidence about THIS node (a path
+   or dataset id in its own intent, a URL verified for it, an explicit synthetic request)
+   outranks a pending candidates card — a user who has since said what to load must not be
+   stuck answering a card they overtook. Evidence about the PROJECT loses to a pending card,
+   because re-generating against the whole catalog is not progress.
+3. **"Awaiting your selection" is only ever said when something is selectable.** The memo
+   mapped every unresolved outcome to `pending`. Implemented: discovery that finds nothing
+   usable, or a specialist that cannot run, leaves the node its OWN honest outcome with the
+   discovery attempt recorded as the reason it stays unresolved. This also preserved two
+   harness tests whose contract is that a fabricated dataset id never reads as a success —
+   a fabrication that ends "pending, waiting for you" would have scored 1.0.
+4. **No second data-loading predicate (§3C).** The memo's `_PLAN_NODE_AGENTS` carried a
+   `data-loading` marker per agent. Implemented as a bare list whose membership question is
+   answered by the manifests themselves (`compatibleTargets[].requires`, through the one
+   predicate extracted from `attach_agent`) — so the list cannot drift from the roster, and
+   the drawer's attach and the automatic attach cannot disagree about where an agent may live.
+5. **The skip record is informational, not `resolved`.** The memo's `mark_skipped` wrote
+   `status: resolved`, which would have suppressed the post-failure stage forever. It writes
+   `not-needed` with the literal instead, and re-recording the same literal writes nothing
+   (no revision churn on every Solve).
+6. **The Data Catalog is listed at the entry point.** `catalog.search` rides the request
+   context and a detached Solve job has none — dev/123's field finding, applied rather than
+   relearned: the rows are resolved beside dev/115's eager dataset-path resolution and handed
+   to the discovery delegate, and a failed listing TELLS the delegate the catalog was
+   unavailable instead of leaving it to imagine one. The initiation's spec writes are
+   serialized under the project's own spec lock, because a batch resolves its nodes in a pool.
+
+Six existing tests were re-framed rather than bent, each with its reason in its commit
+message: three legacy-lockfile Solve tests and one apply test now use a blocker standing in
+for the one state `DEC-080` cannot fix (a required agent visible nowhere), and two found
+their content review in the orchestrator's chat only because the plan node had no agent of
+its own — with the Node Builder required, dev/73's rule takes effect and they follow
+`proposalAttachmentId`, which the events already carried.

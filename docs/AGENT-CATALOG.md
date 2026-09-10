@@ -257,6 +257,23 @@ The reverse is enforced too. Removing an agent that another added agent requires
 is refused, with a message naming the dependent, so a dataflow cannot end up
 holding a broken reference.
 
+The **Dataflow Builder requires three**: the Node Content Builder (its Solve
+generates content through it), the **Dataset Finder** (resolving a data-loading
+node asks it for candidates) and the **Node Builder** (every node an applied
+plan creates is given one). Each is a server path with no model choice, which is
+what "required" means here. The Node Builder in turn requires the Dataset
+Finder, for the same reason.
+
+A dataflow created before an agent declared what it requires is **repaired the
+next time you act on that agent** — a run, an attach, an apply, a Solve
+(memo dev/126, `DEC-080`). The missing required agents are added through the
+same install path a click uses, and the chat says so: *"Added Dataset Finder —
+required by Dataflow Builder."* Only agents an agent DECLARES as required are
+ever added this way; a merely preferred delegate still reaches you as a review
+card you apply yourself. Before this, a Dataflow Builder conversation could
+spend a turn proposing to install one of its own specialists, and you had to
+apply it and ask again.
+
 ### Where a data-loading node's source comes from
 
 An agent never decides on its own that a file exists. Every piece of node
@@ -290,6 +307,34 @@ Selecting rows prefills an editable **Build the data-loading node — …** prom
 nothing is proposed until you send it. In the Dataset Finder's chat the same
 card composes the reviewed `dataset.install` or the hand-off to Node Builder, as
 before.
+
+### The Dataset Finder lives on the data-loading node
+
+Applying a dataflow plan gives every created node a **Node Builder**, and every
+**data-loading** node its own **Dataset Finder** as well (memo dev/126) — the
+two badges appear on the node as soon as the apply lands, and the applied card
+says what it attached. Both plan-apply paths do it identically: the whole-plan
+**Apply** and Simulation Mode's per-node apply.
+
+Resolving such a node then goes to that Dataset Finder rather than to a guess:
+
+| The node | What happens |
+|---|---|
+| Its intent already names a source (a path you typed, a Data Catalog dataset, a URL the runtime verified, or explicitly synthetic data) | Discovery is skipped, and the skip is recorded with the literal that grounded it. |
+| Your Data Catalog holds datasets | The first attempt is generated against those rows, and the grounding gate above enforces them. |
+| Nothing could ground it, or the attempt was refused for its source anyway | The runtime asks that node's Dataset Finder itself. The candidates appear in **its** chat, and the node's Solve result is **pending — awaiting your dataset selection**, with an **Open Dataset Finder** button. Nothing is generated, run or written. |
+
+On the card, **Confirm source for this node** records your selection against the
+node. The record is what the next Solve reads, so the loader is built from
+exactly the source you confirmed — not from what a model remembers you picked. A
+catalog row that is not installed yet keeps the node waiting for its reviewed
+install, and the applied install then says how many nodes it unblocked. A row
+the runtime cannot reach at confirmation time is recorded with that verdict and
+does **not** resolve the node.
+
+The Dataflow Builder therefore plans first and never blocks a plan on dataset
+identity: a data-loading node is planned with an honest intent naming the DATA
+it needs, and its source is resolved at the node.
 
 ### Solve is the engineering loop — and it runs in the background
 
