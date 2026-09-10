@@ -582,7 +582,7 @@ class TestResearcher:
     # The Dataflow Builder's prompt is byte-pinned while the Researcher lands
     # (dev/90 §8 AC-2): a drive-by edit fails HERE, not in a downstream run.
     DATAFLOW_BUILDER_PROMPT_SHA256 = (
-        "dbc8637320b014766eb229db6f2103c56ecaf6180f3b484d1f6631e780e1f6a0"  # dev/112 commit 5: DAG rule, interaction-edge kind, edge-only plans, Topology verdict
+        "94fe370b1e43c6be5a9956d7c3242f0df09c0b75e6fac88c059a9ffbc69beec2"  # dev/126 commit 7: plan first (step 2d), and step 6 points at the NODE's Dataset Finder
     )
 
     def test_manifest_surface(self):
