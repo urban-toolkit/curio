@@ -1,7 +1,20 @@
 # dev/128 — `arg` from a merge is a LIST: the runtime knows it per node, so it must say it and refuse code that ignores it
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `13fd93df`. Every line number below was
-read on that commit.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-63`, and **no new
+`DEC`**: `DEC-063`'s ninth application (an input the agent needs must be supplied on the path it
+runs on) in the `DEC-072` gate's shape (a deterministic refusal before the sandbox, whose text is
+the next round's correction). Five commits: `b6835da6` (this memo), `4e9dd45c` (the owner's
+budget — ten attempts, fifteen minutes), `35a1e46a` (the merge slot authority — the field defect
+in §0.1), `d717ba31` (`input_contract.py`), `fef64abb` (the contract handed over and enforced),
+plus a tracking commit for the docs and ledgers. Every line number below was read on `13fd93df`.**
+
+**Suites: `tests/test_agents` + `tests/test_execution` 2363 passed (2336 before);
+`tests/test_projects` 304; jest 2400 across 206 suites; `tsc --noEmit` clean.**
+
+**Two things changed from the plan while building — §12 — and one of them is the reason the
+phase is worth reading: the owner's second report exposed a defect UNDER this one (§0.1), where
+validation and Play disagreed about slot order, so the contract's own slot table would have been
+wrong had it shipped first.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `13fd93df` (dev/127 commit 7).
@@ -402,3 +415,29 @@ live re-run of `623b6620` where the analysis node is generated with `arg[0]` wit
 - **F3** dev/127 **F6** (an unconnected merge slot) is still open and is visible here too: the
   contract's `length` counts connected inputs.
 - **F4** Owner live re-run of `623b6620`.
+
+---
+
+## 12. What changed while building
+
+1. **The order had to be fixed first (§0.1).** The memo as written assumed
+   `upstream_nodes` was authoritative and built the contract's slot table on it. The owner's
+   second report proved otherwise: both spec parsers dropped `targetHandle`, the merge sort read
+   `in_N` out of the edge *id*, and an agent-applied edge carries a UUID id — so validation
+   ordered a plan-created merge lexicographically while Play ordered it by handle. Enforcing a
+   contract built on that order would have made the runtime confidently wrong. `merge_slot_index`
+   (handle first, id suffix as the canvas-legacy fallback) and the two projections carrying the
+   handle are therefore this phase's first code commit, and dev/127's `argIndex` is corrected by
+   the same change.
+2. **Slots name `upstreamNodeId` / `upstreamNodeType`, not `nodeId` / `nodeType`.** Not in the
+   plan, and not cosmetic: the child's own inputs already carry both keys for the node being
+   generated, and the collision broke two suites the moment the contract rode a prompt — a dev/126
+   harness keying on `"nodeId": "<loader>"` began matching the analysis node's frames, and a
+   dev/115 fixture keying on `"nodeType": "<data-loading>"` mis-routed a request so a node
+   "solved" without its code ever running. One key with two meanings misleads a reader whether
+   that reader is a model or a test.
+
+Everything else in §3 landed as written: the shape read the way the runner reads it (with a
+one-input merge as `single`), the AST rule that refuses only what is provably wrong, the refusal
+that names the slots and their columns, the contract on every round, the gate beside the source
+gate, the instruction paragraph, and no UI work — dev/127's trail carries it.

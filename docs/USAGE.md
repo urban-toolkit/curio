@@ -410,6 +410,10 @@ records your choice against the node, and the next Solve builds the loader from
 exactly that source. So the Dataflow Builder plans first — it does not need to
 know the datasets to draw the dataflow.
 
+A node fed by a **Merge** receives a list — `arg[0]`, `arg[1]`, … in the order
+of the merge's input handles — and the agent is told which dataset sits in each
+slot, with its columns. Code that forgets to index it is refused before it runs.
+
 When Solve cannot fix a node, the chat says so completely: every attempt
 appears as its own row — the exception, where it was raised, and the code that
 attempt ran — with the last one expanded, and the message names what stopped

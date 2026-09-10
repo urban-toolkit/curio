@@ -355,6 +355,23 @@ lands:
 | still fails | Nothing is written. The node shows *failed*, and **every attempt appears in the chat** as its own card: one disclosure per round with the exception line, the frame that raised it, and **the code that attempt ran**, copyable, with the last round open. One click opens that node's own agent. |
 | cannot run (sandbox unreachable) | The node stays *pending* with the reason — never *failed*: an outage is not a content failure. |
 
+**A node fed through a merge is told what `arg` is.** The merge hands the next
+node a **list**, one item per connected input, in the order of its input
+handles (`in_0`, `in_1`, …) — and that order is now read from the handles
+everywhere: by Play, by Solve's validation runner, and by the contract the
+generator is given (memo dev/128). Before that fix the validation runner read
+the slot out of the edge's *id*, which an agent-applied edge does not carry, so
+a plan-created merge was ordered arbitrarily: a node could pass validation
+against `[population, boundaries]` and fail on Play against
+`[boundaries, population]`.
+
+The generator receives an `inputContract` for the node — `list` with a slot
+table (each slot's node, goal and columns) or `single` — and code that treats a
+list-shaped `arg` as a value (`arg.crs`, or `gdf = arg` then `gdf.to_crs(…)`) is
+**refused before the sandbox runs**, with the slot table in the refusal, exactly
+as an ungrounded source is refused. A merge with only one connected input passes
+its value straight through, so there `arg` IS the value and nothing is refused.
+
 A failure never reads as more certain than it is. The exception type and its
 message lead every failure line and are never cut mid-word (memo dev/127 —
 before it, a sliced traceback reached the chat as `execution-error:
