@@ -1,6 +1,6 @@
 # dev/123 — Evaluation mode: run an evaluation through the product, with the model the account actually uses
 
-**Status: PROPOSED (2026-09-09) on `imp/agentcatalog` — memo complete, no code yet. Proposes `DEC-079`; backlog entry `BL-P5-20260909-57` at the first implementation change. Corrects dev/121's delivery assumption (an operator CLI outside the product) without discarding any of it: the scripted-provider path stays exactly where it is as the deterministic layer, and a UI-driven production path is added beside it.**
+**Status: IMPLEMENTED (2026-09-09) on `imp/agentcatalog` — `DEC-079` minted, `BL-P5-20260909-57`. Four commits: `9b2d51bb` (one shared policy, both existing copies re-pointed, plus the two test adaptations the owner's first use forced), `94ab1854` (records, the narrow automated approval, the prompt-review action, the service and eight routes), `8c0d8bb5` (the Evaluation mode panel), and `ac03d06f` (docs), with the ledgers alongside. Suites: `tests/test_agents` 2137 passed; full jest 2376 across 204 suites; `tsc --noEmit` clean. Two owner instructions arrived mid-build and are implemented: the panel distinguishes a model configured by the deployment's start command from one in AI Settings, and a prompt can be **approved from the panel** rather than by hand-editing JSON — that instruction came from a real `papproved` typo which broke every suite at collection. NOT DONE, deliberately: **no real-provider run was executed in this slice.** It is user-triggered by design, and the owner's gemma4 configuration is the acceptance scenario (F1). Findings are in §11 — the load-bearing one is that the production paths assume a request context, so an in-process service driving them must supply one or the grounding gate silently loses the Data Catalog. Neither `OQ-009` nor `OQ-010` was closed. Fine-tuning (dev/122) is untouched, as instructed.**
 
 Date: 2026-09-09
 Branch / tree: `imp/agentcatalog` @ `463c0493` (dev/122 closed). Line numbers pinned to that commit. `plans/` is tracked on this branch; `plans/urbanagentic/hookable-agents/knowledge-graph/` (354 MB site copy) stays untracked by intent.
@@ -285,10 +285,61 @@ Each commit is a pathspec commit, no push; `plans/` changes ride separate `track
 4. **Cancel semantics.** Default: stop at the next phase boundary (a fetch in flight cannot be aborted), matching Solve's own contract.
 5. **Whether the panel should surface `agent_eval` for remote stacks.** Default: mentioned in docs, not in the UI.
 
+## 11. What implementing it turned up
+
+**F-a. The production paths assume a request context.**
+`services._catalog_grounding_refs` reads `g.user` when one is available and
+answers *"no catalog"* when it is not. So driving `run_attachment` from a job
+thread silently lost the Data Catalog: every `curio_dataset_path` loader was
+refused as an ungrounded source, Solve failed those nodes, and the run finished
+with a low score and **no error** — the worst shape a defect can take in a
+measurement tool. Solve's own workers dodge this by building their grounding
+base in the request thread (its docstring says so); a service that drives the
+same paths from a job has no request thread to borrow, so it pushes one
+carrying the user. The alternative — threading an explicit user through
+dev/114's gate — would change product code to accommodate a caller, which is
+the wrong way round. Recorded because anything else that later drives these
+paths off-request will hit it.
+
+**F-b. Cancel was a lost update.** The run keeps an in-memory record and writes
+it whole at every phase, so a cancel written by a *different* request was
+clobbered between its read and its write: the flag never reached the run and
+the event vanished from the history. A first attempt at merging the two copies
+was the wrong fix — it still lost the flag itself. A cancel is now a **sentinel
+file**, so the two writers never share one: the run owns its record, the
+canceller owns the sentinel, and the run appends the event when it observes one.
+
+**F-c. Two tests encoded the shipped state as an invariant.** Both asserted
+*"no prompt in the corpus is approved"*, which the owner's first approval
+falsified. A test that fails the moment the feature is used as intended is
+testing the wrong thing; both now assert the behaviour per split, and the half
+that was missing — that an approved prompt makes its split exportable — was
+added, so approving is proven to have an effect rather than only proven not to
+break anything.
+
+**F-d. A hand-edited review is a mistyped review.** `papproved` is a
+one-character slip that the schema rejects and that broke every suite at
+collection. It is also the whole argument for putting review in the panel: it
+validates the file before writing, and it asserts that only the review block
+moved, so approving cannot smuggle a change into what is measured.
+
+**F-e. Two shapes read rather than guessed, after guessing cost a round each.**
+`install_in_project` answers `{"agents": <lockfile of coordinate strings>,
+"installed": [coords]}` — the first cut called `.get()` on a string — and a
+project's name is on its summary rather than its detail payload.
+
 ## Follow-ups (recorded, not delivered)
 
-- **F1 — the next capability, per the correction: fine-tuning.** Already discharged by dev/122 (`DEC-078`) at the owner's instruction; this memo adds none. If the owner wants that lane withdrawn pending review, that is its own small memo (§0).
-- **F2 — a comparison detail view on the canvas**: open the generated project with the differences highlighted on the graph, rather than only in a table.
-- **F3 — batch runs** (a whole tier in one click) once one run's real cost and duration are known.
-- **F4 — evaluate a user's own dataflow** against a prompt they write, which needs a fixture-authoring surface and the consent shape dev/122 F2 defines.
-- **F5 — a run comparison view**: two runs of the same fixture side by side (two models, or the same model twice), still without Curio drawing a conclusion.
+- **F1 — an owner-run live evaluation** against the configured endpoint (the
+  gemma4 setup is the acceptance scenario). Per dev/115 A3: a live failure the
+  deterministic mirror did not predict becomes a fixture, not a prompt tweak.
+- **F2 — a comparison detail view on the canvas**: open the generated project
+  with the differences highlighted on the graph, rather than only in a table.
+- **F3 — batch runs** (a whole tier in one click) once one run's real cost and
+  duration are known in practice.
+- **F4 — evaluate a user's own dataflow** against a prompt they write, which
+  needs a fixture-authoring surface.
+- **F5 — a two-run comparison view**: the same fixture under two models, still
+  without Curio drawing a conclusion.
+- **F6 — fine-tuning stays dev/122's.** Untouched by this phase, as instructed;
+  §0 records the relationship to the correction's "next capability" line.

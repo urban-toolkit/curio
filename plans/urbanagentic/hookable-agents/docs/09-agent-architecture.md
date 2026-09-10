@@ -245,6 +245,16 @@ separate `agent.dataflow-explainer` remains a canvas/full-flow behavior.
   canonicaliser, the executability derivation, the grounding scanner and the install services are
   called, not copied — and it grades with deterministic code, so the `DEC-055` report-only
   evaluator boundary is untouched. Live-model runs write reports, never gates.
+- **Evaluation** — an evaluation is a product action (dev/123, `DEC-079`): one service
+  (`app/agents/evaluation/service.py`) drives the product's own entry points — `save_project`,
+  `install_in_project` with its required closure, `attach_agent`, `run_attachment`,
+  `apply_proposal`, `solve_attachment` — inside a pushed request context carrying the user,
+  because several of those paths read `g.user` and degrade without one (most consequentially
+  the grounding gate's catalog read). The unattended apply is authorized per proposal against
+  a marker in the evaluation project's own spec, so no agent contract is widened. The user
+  policy and the scorer are single-sourced (`evaluation/policy.py`, `evaluation/attempt.py`),
+  which is what keeps a UI run and a CI run comparable. The reference dataflow is read only in
+  the scoring phase and never reaches a prompt or a client.
 - **Fine-tuning** — the provider port gained a tuning surface (dev/122, `DEC-078`): a capability
   probe plus upload/create/status/cancel, implemented for the OpenAI-compatible family and
   refusing with the endpoint's own reason elsewhere. It follows the model-catalog doctrine
