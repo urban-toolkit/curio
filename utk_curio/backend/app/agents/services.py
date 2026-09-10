@@ -1397,6 +1397,35 @@ def _validate_plan_fanin(
     return errors
 
 
+def _interaction_spec_edge(source: str, target: str) -> dict:
+    """dev/112: the spec shape of a Trill Interaction edge — what
+    ``TrillGenerator`` writes and ``loadTrill`` reads (``in/out`` both ends,
+    bidirectional on the canvas)."""
+    return {
+        "id": str(uuid.uuid4()),
+        "source": source,
+        "target": target,
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": plan_topology.INTERACTION_EDGE_TYPE,
+    }
+
+
+def _topology_clause(spec: dict) -> str:
+    """dev/112 (G5): the applied turn's verdict on the saved graph — what the
+    agent reads to confirm a repair instead of asserting one. A cycle the plan
+    could not have created (the user drew it) is reported here, never refused."""
+    dataflow = spec.get("dataflow") or {}
+    nodes = {n.get("id"): n for n in dataflow.get("nodes") or [] if isinstance(n, dict)}
+    pairs = plan_topology.net_data_edges(dataflow.get("edges") or [], {"edges": []}, set(), set())
+    path = plan_topology.find_data_cycle(pairs)
+    if path is None:
+        return "Topology: acyclic."
+    return "Topology: cycle through " + plan_topology.format_cycle(
+        path, lambda x: (nodes.get(x) or {}).get("goal") or x
+    ) + "."
+
+
 def _removal_phrase(n_nodes: int, n_edges: int, *, prefix: str = "removed ") -> str:
     """dev/112: ``, removed 1 node and 2 connections`` — truthful for edges
     (the old copy counted nodes only, so an edge-only removal read "removed 0
@@ -2051,12 +2080,13 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
         reason = source_err or target_err
         edge_states[key] = "refused"
         return {**row, "status": "refused", "reason": reason}, None
+    wants_interaction = plan_topology.is_interaction_edge(plan_edge)
     already = next(
         (
             e for e in ctx["edges"]
             if isinstance(e, dict)
             and e.get("source") == source and e.get("target") == target
-            and str(e.get("type") or "") != "Interaction"
+            and plan_topology.is_interaction_edge(e) == wants_interaction
         ),
         None,
     )
@@ -2065,6 +2095,29 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
         return {
             **row, "status": "applied", "edgeId": already.get("id"),
             "note": "already connected",
+        }, None
+    if wants_interaction:
+        # dev/112: feedback edge — no input port, no merge slot, no cycle
+        # question (interaction edges never carry data flow).
+        edge = _interaction_spec_edge(source, target)
+        ctx["edges"].append(edge)
+        edge_states[key] = "applied"
+        return {**row, "status": "applied", "edgeId": edge["id"], "kind": "interaction"}, edge
+    # dev/112: a data edge that would close a cycle in the CURRENT graph is
+    # refused per edge, named — the same predicate the mint applies.
+    current_pairs = [
+        (str(e.get("source")), str(e.get("target")))
+        for e in ctx["edges"]
+        if isinstance(e, dict) and not plan_topology.is_interaction_edge(e)
+    ]
+    closing = plan_topology.closing_plan_edges(current_pairs, {"edges": [{"from": source, "to": target}]})
+    if closing:
+        _, _, path = closing[0]
+        labels = {nid: (n.get("goal") or nid) for nid, n in nodes_by_id.items()}
+        edge_states[key] = "refused"
+        return {
+            **row, "status": "refused",
+            "reason": "closes a cycle: " + plan_topology.format_cycle(path, lambda x: labels.get(x, x)),
         }, None
     # Fan-in against the CURRENT spec (DEC-051 rendered capacity).
     target_type = ctx["types_by_id"].get(target, "")
@@ -3014,6 +3067,30 @@ def _apply_dataflow_plan(
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
     edges = dataflow.setdefault("edges", [])
+    # dev/112 (DEC-070): topology re-checked against the CURRENT spec BEFORE
+    # anything mutates (``_mark_stale`` persists the spec, so a later raise
+    # would persist the removals). The shape digest already catches most
+    # drift; this names the one case it cannot — a plan minted acyclic whose
+    # edges now close a loop through edges the user drew since.
+    pre_ref_to_id: dict[str, str] = dict(proposal.get("appliedNodeIds") or {})
+    closing = plan_topology.closing_plan_edges(
+        plan_topology.net_data_edges(
+            edges, plan, set(plan.get("removeNodes", [])),
+            set(plan.get("removeEdges", [])), pre_ref_to_id,
+        ),
+        plan, pre_ref_to_id,
+    )
+    if closing:
+        u, v, path = closing[0]
+        labels = {n.get("id"): (n.get("goal") or n.get("id")) for n in nodes if isinstance(n, dict)}
+        plan_titles = {n["ref"]: n["title"] for n in plan.get("nodes", [])}
+        def _lbl(x):  # noqa: E306
+            return plan_titles.get(x) or labels.get(x) or x
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            "the canvas changed since this plan was proposed — applying it would now "
+            f"close a cycle ({plan_topology.format_cycle(path, _lbl)}) — ask the agent to replan",
+        )
     # Removals first (dev/59): listed edges + the recomputed cascade of edges
     # incident to removed nodes, then the victims themselves — in place, so
     # unlisted elements are untouched by construction.
@@ -3088,6 +3165,14 @@ def _apply_dataflow_plan(
         # dev/59: endpoints resolve through the ref map ∪ existing ids.
         source = ref_to_id.get(plan_edge["from"], plan_edge["from"])
         target = ref_to_id.get(plan_edge["to"], plan_edge["to"])
+        if plan_topology.is_interaction_edge(plan_edge):
+            # dev/112: the Trill's feedback edge — in/out handles both ends,
+            # type Interaction (what loadTrill/TrillGenerator round-trip); no
+            # input port, no merge slot.
+            edge = _interaction_spec_edge(source, target)
+            edges.append(edge)
+            created_edges.append(edge)
+            continue
         target_handle = plan_edge.get("toHandle") or "in"
         if types_by_id.get(target) == _MERGE_NODE_TYPE:
             taken = merge_slots_taken.setdefault(target, set())
@@ -3141,20 +3226,22 @@ def _apply_dataflow_plan(
             "nodeIds": dict(ref_to_id),
         }
     projects_storage.write_spec(user_key, project_id, spec)
-    removed_summary = (
-        f", removed {len(remove_node_set)} node{'s' if len(remove_node_set) != 1 else ''}"
-        if remove_node_set or removed_edge_ids
-        else ""
-    )
+    # dev/112: truthful for edges (the old copy said "removed 0 nodes" after an
+    # edge-only removal), plus the post-apply topology verdict the agent needs
+    # to confirm a fix instead of asserting one.
+    removed_summary = _removal_phrase(len(remove_node_set), len(removed_edge_ids))
+    topology = _topology_clause(spec)
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
         f"Applied: plan added {len(created_nodes)} nodes and "
-        f"{len(created_edges)} connections{removed_summary}.",
+        f"{len(created_edges)} connections{removed_summary}. {topology}",
         "Applied: dataflow plan",
         [
             f"+{len(created_nodes)} nodes · +{len(created_edges)} connections"
-            + (f" · −{len(remove_node_set)} nodes" if remove_node_set else ""),
+            + (f" · −{len(remove_node_set)} nodes" if remove_node_set else "")
+            + (f" · −{len(removed_edge_ids)} connections" if removed_edge_ids else ""),
             f"{sum(1 for s in node_runs.values() if s == 'pending')} pending for Solve",
+            topology,
             f"proposal {proposal_id[:8]}",
         ],
     )

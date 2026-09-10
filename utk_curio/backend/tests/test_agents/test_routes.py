@@ -8737,3 +8737,122 @@ class TestPlanTopologyMint:
         att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
                                 replies=["Add.\n" + self._tail(plan)], edges=with_feedback)
         assert self._proposal(self._run(client, token, alice_project, att_id).get_json()) is not None
+
+
+class TestPlanTopologyApply:
+    """dev/112 (DEC-070) — the apply paths: interaction edges materialize as
+    the Trill's Interaction shape, removed connections are counted, the applied
+    turn carries the topology verdict, and drift that would close a cycle is
+    refused (whole-plan → 409 + stale; per-edge → refused row, named)."""
+
+    def _base(self):
+        return TestPlanTopologyMint()
+
+    def _cyclic_edges(self):
+        return TestPlanTopologyMint.EDGES + [
+            {"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"},
+        ]
+
+    def _apply(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply",
+            headers=_auth(token),
+        )
+
+    def _apply_edges(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply-edges",
+            json={}, headers=_auth(token),
+        )
+
+    def _spec(self, user, project_id):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        return projects_storage.read_spec(_user_dir_key(user), project_id)
+
+    def _write_spec(self, user, project_id, spec):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        projects_storage.write_spec(_user_dir_key(user), project_id, spec)
+
+    def _drift_but_keep_digest(self, user, project_id, att_id, new_edge):
+        """The user draws an edge AND the digest is re-pinned (as the per-node
+        applies do), so the topology re-check — not the digest — must catch it."""
+        from utk_curio.backend.app.agents import services as services_mod
+        spec = self._spec(user, project_id)
+        spec["dataflow"]["edges"].append(new_edge)
+        record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
+        record["activeProposal"]["baseGraphDigest"] = services_mod._graph_shape_digest(spec)
+        self._write_spec(user, project_id, spec)
+
+    def _turn_texts(self, client, token, project_id, att_id):
+        body = client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/session", headers=_auth(token)
+        ).get_json()
+        return [t.get("text") or "" for t in body.get("turns", [])]
+
+    def test_the_repair_applies_as_an_interaction_edge_and_reports_acyclic(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        base = self._base()
+        plan = {"goal": "convert", "edges": [{"from": "vis", "to": "pool", "kind": "interaction"}], "removeEdges": ["e5"]}
+        att_id, _ = base._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Fix.\n" + base._tail(plan)], edges=self._cyclic_edges())
+        proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        (created,) = body["appliedGraph"]["edges"]
+        assert created["type"] == "Interaction"
+        assert created["sourceHandle"] == "in/out" and created["targetHandle"] == "in/out"
+        assert body["appliedGraph"]["removedEdgeIds"] == ["e5"]
+        edges = self._spec(user, alice_project)["dataflow"]["edges"]
+        assert all(e["id"] != "e5" for e in edges)
+        assert any(e.get("type") == "Interaction" and e["source"] == "vis" and e["target"] == "pool" for e in edges)
+        applied = next(t for t in self._turn_texts(client, token, alice_project, att_id) if t.startswith("Applied: plan"))
+        assert applied == "Applied: plan added 0 nodes and 1 connections, removed 1 connection. Topology: acyclic."
+
+    def test_applied_turn_reports_a_user_cycle_the_plan_left_alone(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        base = self._base()
+        plan = {"goal": "side", "nodes": [{"ref": "n", "nodeType": "curio.builtin/computation-analysis",
+                                          "title": "Side", "intent": "unrelated"}], "edges": []}
+        att_id, _ = base._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Add.\n" + base._tail(plan)], edges=self._cyclic_edges())
+        proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
+        self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        applied = next(t for t in self._turn_texts(client, token, alice_project, att_id) if t.startswith("Applied: plan"))
+        assert "Topology: cycle through" in applied
+        assert "Metric Distribution" in applied and "Pool Input Merge" in applied
+
+    def test_whole_plan_apply_refuses_drift_that_would_close_a_cycle(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        base = self._base()
+        # Acyclic at mint: load → merge (merge accepts many inputs).
+        plan = {"goal": "wire", "edges": [{"from": "load", "to": "merge"}]}
+        att_id, _ = base._setup(client, user, token, alice_project, monkeypatch, replies=["Wire.\n" + base._tail(plan)])
+        proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
+        # The user then draws merge → load; the plan edge load → merge would close it.
+        self._drift_but_keep_digest(user, alice_project, att_id,
+                                    {"id": "u1", "source": "merge", "target": "load", "sourceHandle": "out", "targetHandle": "in"})
+        r = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert r.status_code == 409
+        assert "close a cycle" in r.get_json()["error"]
+        # Nothing mutated: the drawn edge is there, the plan edge is not.
+        edges = self._spec(user, alice_project)["dataflow"]["edges"]
+        assert any(e["id"] == "u1" for e in edges) and not any(e["source"] == "load" and e["target"] == "merge" for e in edges)
+
+    def test_per_edge_apply_refuses_a_closing_edge_by_name_and_applies_interaction_edges(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        base = self._base()
+        plan = {"goal": "wire", "edges": [
+            {"from": "load", "to": "merge"},
+            {"from": "vis", "to": "pool", "kind": "interaction"},
+        ]}
+        att_id, _ = base._setup(client, user, token, alice_project, monkeypatch, replies=["Wire.\n" + base._tail(plan)])
+        proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
+        self._drift_but_keep_digest(user, alice_project, att_id,
+                                    {"id": "u1", "source": "merge", "target": "load", "sourceHandle": "out", "targetHandle": "in"})
+        body = self._apply_edges(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        assert body["results"]["0"]["status"] == "refused"
+        assert body["results"]["0"]["reason"].startswith("closes a cycle: ")
+        assert body["results"]["1"]["status"] == "applied" and body["results"]["1"]["kind"] == "interaction"
+        (created,) = body["createdEdges"]
+        assert created["type"] == "Interaction" and created["sourceHandle"] == "in/out"
