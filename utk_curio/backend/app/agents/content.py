@@ -78,6 +78,13 @@ _PLAN_MAX_NODES = 200
 _PLAN_MAX_EDGES = 600
 _PLAN_GOAL_MAX_CHARS = 300
 _PLAN_TEMPLATE_ID_MAX_CHARS = 64
+# dev/112 (DEC-070): a plan edge carries an explicit kind. "data" is the
+# default and stays byte-absent from the canonical plan; "interaction" is the
+# Trill's feedback edge (Interaction type, in/out handles) — before this the
+# grammar dropped any kind the model wrote and every plan edge materialized as
+# a data edge, so an agent asked to "make it an interaction edge" recreated
+# the same data edge (and the same cycle) on every round.
+PLAN_EDGE_KINDS = ("data", "interaction")
 _PLAN_REF_MAX_CHARS = 32
 _PLAN_TITLE_MAX_CHARS = 120
 _PLAN_INTENT_MAX_CHARS = 300
@@ -464,8 +471,20 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     nodes_raw = raw.get("nodes")
     if nodes_raw is None and (remove_nodes or remove_edges):
         nodes_raw = []  # a remove-only revision carries no new nodes
-    if not isinstance(nodes_raw, list) or (not nodes_raw and not (remove_nodes or remove_edges)):
-        errors.append("nodes must be a non-empty list (unless the plan only removes)")
+    edges_raw_probe = raw.get("edges")
+    has_edges = isinstance(edges_raw_probe, list) and len(edges_raw_probe) > 0
+    if nodes_raw is None and has_edges:
+        nodes_raw = []  # dev/112: an edge-only plan carries no new nodes
+    if not isinstance(nodes_raw, list) or (
+        not nodes_raw and not (remove_nodes or remove_edges or has_edges)
+    ):
+        # dev/112: a plan may add nodes, add connections, or remove — any of
+        # them. Refusing edge-only plans taught the model to invent filler
+        # nodes "to make the plan valid".
+        errors.append(
+            "the plan changes nothing — add nodes, add edges (existing node ids "
+            "allowed), or remove nodes/edges"
+        )
         nodes_raw = []
     elif len(nodes_raw) > _PLAN_MAX_NODES:
         errors.append(f"nodes has {len(nodes_raw)} entries (max {_PLAN_MAX_NODES})")
@@ -539,7 +558,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         errors.append(f"edges has {len(edges_raw)} entries (max {_PLAN_MAX_EDGES})")
         edges_raw = []
     edges: list[dict] = []
-    seen_edges: set[tuple[str, str]] = set()
+    seen_edges: set[tuple[str, str, str]] = set()
     removed = set(remove_nodes)
     for i, edge_raw in enumerate(edges_raw):
         where = f"edges[{i}]"
@@ -570,18 +589,47 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
                 errors.append(err)
                 continue
             to_handle = str(to_handle_raw).strip()
+        kind_raw = edge_raw.get("kind", edge_raw.get("type"))
+        kind = "data"
+        if kind_raw is not None:
+            kind_norm = str(kind_raw).strip().lower()
+            if kind_norm not in PLAN_EDGE_KINDS:
+                errors.append(
+                    f"{where}.kind {kind_raw!r} is not one of "
+                    + ", ".join(repr(k) for k in PLAN_EDGE_KINDS)
+                )
+                continue
+            kind = kind_norm
+        if kind == "interaction" and to_handle:
+            errors.append(
+                f"{where}: an interaction edge has no merge slot — drop toHandle"
+            )
+            continue
         src, dst = str(src).strip(), str(dst).strip()
         if src == dst:
             errors.append(f"{where} connects {src!r} to itself")
             continue
-        if (src, dst) in seen_edges:
-            errors.append(f"{where} duplicates an earlier {src!r}→{dst!r} edge")
+        # dev/125: the duplicate key includes the KIND. dev/112 §6 decided a
+        # (from,to) pair was a duplicate whatever its kind; the shipped corpus
+        # disproves it — `docs/examples/dataflows/Interaction_Vega.json` (and
+        # the three other linked-view examples) carry BOTH a data edge and an
+        # Interaction edge between the same data-pool and visualization, which
+        # is what a linked view IS: the pool feeds the chart, the chart feeds
+        # selections back. Keying on the pair alone made those graphs
+        # unproposable, so the eight interaction fixtures scored 0 with the
+        # whole plan refused.
+        if (src, dst, kind) in seen_edges:
+            errors.append(
+                f"{where} duplicates an earlier {src!r}→{dst!r} {kind} edge"
+            )
             continue
-        seen_edges.add((src, dst))
+        seen_edges.add((src, dst, kind))
         edge_entry = {"from": src, "to": dst}
         if to_handle:
             # Present only when named — additive plans stay byte-identical.
             edge_entry["toHandle"] = to_handle
+        if kind != "data":
+            edge_entry["kind"] = kind  # dev/112: data stays byte-absent
         edges.append(edge_entry)
     plan["edges"] = edges
     # dev/59: keys present only when used — additive plans stay byte-identical.

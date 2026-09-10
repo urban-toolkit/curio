@@ -1009,3 +1009,62 @@ class TestDecoratedRequest:
         visible, parts = content.extract_content(reply)
         assert [p["type"] for p in parts] == ["suggestedPrompts"]
         assert visible.strip() == "prose"
+
+
+class TestDataflowPlanEdgeKindGrammar:
+    """dev/112 (DEC-070) — edges carry an explicit kind; edge-only plans are
+    valid; additive data-only plans stay byte-identical."""
+
+    def _nodes(self):
+        return [
+            {"ref": "v", "nodeType": "curio.builtin/vis-vega", "title": "V", "intent": "i"},
+            {"ref": "p", "nodeType": "curio.builtin/data-pool", "title": "P", "intent": "i"},
+        ]
+
+    def test_data_kind_is_the_default_and_stays_byte_absent(self):
+        plan = {"goal": "g", "nodes": self._nodes(), "edges": [{"from": "v", "to": "p"}]}
+        part, errors = content.parse_dataflow_plan_verbose(plan)
+        assert errors == [] and part["edges"] == [{"from": "v", "to": "p"}]
+        plan["edges"] = [{"from": "v", "to": "p", "kind": "data"}]
+        part, _ = content.parse_dataflow_plan_verbose(plan)
+        assert part["edges"] == [{"from": "v", "to": "p"}]
+
+    def test_interaction_kind_is_kept_and_normalised(self):
+        for spelling in ("interaction", "Interaction", " INTERACTION "):
+            plan = {"goal": "g", "nodes": self._nodes(), "edges": [{"from": "v", "to": "p", "kind": spelling}]}
+            part, errors = content.parse_dataflow_plan_verbose(plan)
+            assert errors == []
+            assert part["edges"] == [{"from": "v", "to": "p", "kind": "interaction"}]
+
+    def test_type_is_accepted_as_an_alias_the_trill_vocabulary_uses(self):
+        plan = {"goal": "g", "nodes": self._nodes(), "edges": [{"from": "v", "to": "p", "type": "Interaction"}]}
+        part, errors = content.parse_dataflow_plan_verbose(plan)
+        assert errors == [] and part["edges"][0]["kind"] == "interaction"
+
+    def test_unknown_kind_is_a_named_error(self):
+        plan = {"goal": "g", "nodes": self._nodes(), "edges": [{"from": "v", "to": "p", "kind": "feedback"}]}
+        part, errors = content.parse_dataflow_plan_verbose(plan)
+        assert part is None
+        assert any("edges[0].kind 'feedback'" in e and "'interaction'" in e for e in errors)
+
+    def test_interaction_edge_refuses_a_merge_slot(self):
+        plan = {"goal": "g", "nodes": self._nodes(), "edges": [{"from": "v", "to": "p", "kind": "interaction", "toHandle": "in_0"}]}
+        part, errors = content.parse_dataflow_plan_verbose(plan)
+        assert part is None and any("drop toHandle" in e for e in errors)
+
+    def test_edge_only_plan_is_valid(self):
+        # The owner's loop: the model added filler note nodes because this was refused.
+        plan = {"goal": "connect", "edges": [{"from": "existing-vis", "to": "existing-pool", "kind": "interaction"}]}
+        part, errors = content.parse_dataflow_plan_verbose(plan)
+        assert errors == []
+        assert part["nodes"] == [] and len(part["edges"]) == 1
+
+    def test_edge_only_plan_with_nodes_key_empty_is_valid(self):
+        plan = {"goal": "connect", "nodes": [], "edges": [{"from": "a", "to": "b"}]}
+        part, errors = content.parse_dataflow_plan_verbose(plan)
+        assert errors == [] and part["edges"] == [{"from": "a", "to": "b"}]
+
+    def test_plan_that_changes_nothing_names_the_options(self):
+        part, errors = content.parse_dataflow_plan_verbose({"goal": "g", "nodes": [], "edges": []})
+        assert part is None
+        assert any("the plan changes nothing" in e for e in errors)
