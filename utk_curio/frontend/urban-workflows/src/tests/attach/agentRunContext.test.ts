@@ -101,8 +101,11 @@ describe("composeAgentRunContext (memo dev/44)", () => {
     const context = composeAgentRunContext(att, canvas)!;
     const payload = JSON.parse(context);
     expect(payload.id).toBe("n1");
+    // dev/129 (porting dev/111): these were asserted only to EXIST, because
+    // they were always "". They now carry the runtime summary.
     expect(payload).toHaveProperty("current_input");
     expect(payload).toHaveProperty("current_output");
+    expect(payload.current_output).toContain("never-executed");
   });
 
   it("node-scoped reads are omitted for canvas attachments", () => {

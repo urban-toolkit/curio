@@ -1,5 +1,10 @@
 import { TrillGenerator } from "../../../TrillGenerator";
 import type { AgentAttachment } from "../../../api/agentsApi";
+import {
+  storeOutputFor,
+  summarizeNodeInput,
+  summarizeNodeOutput,
+} from "../../../utils/nodeRuntimeSummary";
 
 /**
  * The live-canvas grounded-context composer (memo dev/44).
@@ -24,6 +29,10 @@ export interface AgentCanvasState {
   edges: unknown[];
   workflowName: string;
   workflowGoal: string;
+  /** dev/129 (porting dev/111): the FlowProvider's produced artifacts, so
+   *  `current_output` can name one. Optional — every other caller is
+   *  unchanged. */
+  outputs?: Array<{ nodeId?: string; output?: unknown }>;
 }
 
 type TrillNode = { id?: string; content?: string; type?: string; goal?: string };
@@ -35,6 +44,18 @@ function liveTrill(canvas: AgentCanvasState): { dataflow?: { nodes?: TrillNode[]
     canvas.workflowName,
     canvas.workflowGoal,
   );
+}
+
+/** The LIVE ReactFlow node (its `data` carries input/output state), or null. */
+function findLiveNode(
+  nodes: unknown[],
+  nodeId: string,
+): { data?: Record<string, unknown> } | null {
+  if (!Array.isArray(nodes)) return null;
+  const found = nodes.find(
+    (n) => (n as { id?: string } | null)?.id === nodeId,
+  ) as { data?: Record<string, unknown> } | undefined;
+  return found ?? null;
 }
 
 function targetNodeId(attachment: AgentAttachment): string | null {
@@ -105,13 +126,19 @@ function readFragment(
     case "nodeContext": {
       const node = findTrillNode(liveTrill(canvas), nodeId);
       if (!node) return null;
-      // Legacy NodeExplanation payload shape; in/out empty when unexecuted.
+      // dev/111, ported here by dev/129: these two were sent EMPTY, so every
+      // agent asked about a node was told nothing about what it received or
+      // produced. They now carry a bounded, truthful runtime summary — never
+      // the output's content.
+      const live = nodeId ? findLiveNode(canvas.nodes, nodeId) : null;
       return JSON.stringify({
         id: node.id,
         type: node.type ?? "",
         content: node.content ?? "",
-        current_input: "",
-        current_output: "",
+        current_input: live ? summarizeNodeInput(live.data) : "",
+        current_output: live
+          ? summarizeNodeOutput(live.data, storeOutputFor(canvas.outputs, nodeId ?? ""))
+          : "",
       });
     }
     case "codeContext":

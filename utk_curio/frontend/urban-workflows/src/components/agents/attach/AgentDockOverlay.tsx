@@ -18,7 +18,10 @@ import { ConnectionKeysModalHost } from "../../connectionKeys/ConnectionKeysModa
  */
 export const AgentDockOverlay: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
-  const { projectId, workflowGoal, setWorkflowGoal, workflowNameRef } = useFlowContext();
+  // dev/129 (porting dev/111): `outputs` rides along so nodeContext's
+  // current_output can name the artifact a node produced.
+  const { projectId, workflowGoal, setWorkflowGoal, workflowNameRef, outputs } =
+    useFlowContext();
   const { getNodes, getEdges } = useReactFlow();
   // The apply→canvas bridge listener (dev/48 §3.3): applied node creations
   // and content writes land on the LIVE canvas from here, where React Flow
@@ -122,6 +125,7 @@ export const AgentDockOverlay: React.FC = () => {
                     edges: getEdges(),
                     workflowName: workflowNameRef.current,
                     workflowGoal,
+                    outputs,
                   }),
                 )
               }
