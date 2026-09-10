@@ -672,12 +672,22 @@ class TestSolveOutcomesAreReadHonestly:
     ):
         """dev/119 (DEC-076): a Vega-Lite node has no code the sandbox could
         run. Solve writes its content and says so; the score must neither
-        credit nor blame it."""
+        credit nor blame it.
+
+        dev/134: it now says something STRONGER and still truthful — the
+        document was validated against the renderer's own schema, so the status
+        is ``document-valid`` rather than ``not-executable``. It stays
+        unmeasured either way: validating a document is not executing it.
+        """
         driver = _driver(client, user_and_token, monkeypatch)
         result = oracle_attempt(ONE, driver, templates=TEMPLATES, example=_example(ONE))
         statuses = {d.status for d in result.scored.execution_details}
-        assert "not-executable" in statuses
+        assert "document-valid" in statuses
         assert "verified" in statuses
+        assert not any(
+            d.measured for d in result.scored.execution_details
+            if d.status == "document-valid"
+        )
         measured = [d for d in result.scored.execution_details if d.measured]
         assert measured and all(d.passed for d in measured)
         assert result.scored.score.dimension("execution").value == 1.0

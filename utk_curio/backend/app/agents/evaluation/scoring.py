@@ -49,7 +49,15 @@ CATEGORIES = (
 )
 
 #: A verification status that means "we never found out", not "it failed".
-_NOT_MEASURED_STATUSES = ("pending", "not-executable", "skipped", "not-attempted")
+#: dev/134: ``document-valid`` (a Vega/AUTK document the runtime VALIDATED but
+#: never ran) and ``no-content`` (a wired node with nothing to author) join the
+#: statuses that are reported and not measured — a document that validates is
+#: not an execution, and crediting it as one would over-credit exactly the way
+#: dev/118 F6 warned about.
+_NOT_MEASURED_STATUSES = (
+    "pending", "not-executable", "skipped", "not-attempted",
+    "document-valid", "no-content",
+)
 
 
 @dataclass(frozen=True)

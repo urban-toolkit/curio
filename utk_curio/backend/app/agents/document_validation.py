@@ -235,9 +235,16 @@ def _vega_message(exc: Exception) -> str:
     return _detail(" — ".join(parts))
 
 
-#: AUTK map grammar: what the renderer requires of any document (memo dev/129).
-#: Deliberately structural — the parts a document cannot render without — and
-#: honest that it is not the whole grammar.
+#: AUTK grammar: what the renderer requires of any document (memo dev/129,
+#: corrected by dev/134). Deliberately structural — the parts a document cannot
+#: run without — and honest that it is not the whole grammar.
+#:
+#: dev/134: the document has FOUR shapes, not one. ``autkGrammarBehavior``'s own
+#: ``classifyAutkSpec`` is the authority: ``map``/``plot`` render, ``compute``
+#: runs WGSL over upstream layers, and ``data`` only loads sources (the OSM/PBF
+#: pipelines six shipped examples use). dev/129 was written from one example and
+#: refused the other three families — invisible while the validator was
+#: unreachable, and a false refusal the moment dev/134 put it on the path.
 def validate_autk_grammar(content: str, *, columns: list | None = None) -> dict:
     payload, error = _parse_json(content)
     if error:
@@ -245,11 +252,19 @@ def validate_autk_grammar(content: str, *, columns: list | None = None) -> dict:
     if not isinstance(payload, dict):
         return {"status": STATUS_INVALID,
                 "detail": "an AUTK grammar document must be a JSON object"}
-    grammar = payload.get("map")
-    if not isinstance(grammar, dict):
+    renders = payload.get("map") is not None or payload.get("plot") is not None
+    computes = isinstance(payload.get("compute"), list) and bool(payload["compute"])
+    loads = isinstance(payload.get("data"), list) and bool(payload["data"])
+    if not (renders or computes or loads):
         return {"status": STATUS_INVALID,
-                "detail": 'the document has no "map" object — an AUTK grammar '
-                          'is {"map": {"layerRefs": [...], ...}}'}
+                "detail": 'the document names none of "map", "plot", "compute" or '
+                          '"data", so there is nothing for Autark to run — a map is '
+                          '{"map": {"layerRefs": [{"dataRef": "upstream", …}]}}, a '
+                          'loader is {"data": [{"type": "osm", …}]}'}
+    if not isinstance(payload.get("map"), dict):
+        # A plot-, compute- or data-only document: nothing more is structural.
+        return {"status": STATUS_VALID}
+    grammar = payload["map"]
     layers = grammar.get("layerRefs")
     if not isinstance(layers, list) or not layers:
         return {"status": STATUS_INVALID,
@@ -301,9 +316,10 @@ _GRAMMAR_SHAPES = {
         "block: Curio injects this node's input as the data at render time"
     ),
     "autk-grammar": (
-        'an AUTK map grammar JSON document — {"map": {"layerRefs": [{"dataRef": '
-        '"upstream", …}], "initialView": …}}, where "upstream" is this node\'s '
-        "own input"
+        'an AUTK grammar JSON document — a map ({"map": {"layerRefs": [{"dataRef": '
+        '"upstream", …}], "initialView": …}}, where "upstream" is this node\'s own '
+        'input), a plot ("plot"), a WGSL compute pass ("compute") or a loader '
+        '("data": [{"type": "osm", …}])'
     ),
 }
 

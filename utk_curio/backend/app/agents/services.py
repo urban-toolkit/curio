@@ -37,8 +37,10 @@ from utk_curio.backend.app.agents import (
     node_context,
     plan_topology,
     source_grounding,
+    upstream_schema,
     verify,
 )
+from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES, AgentManifest
 from utk_curio.backend.app.agents.providers import (
@@ -4589,6 +4591,11 @@ def _solve_events(
     def _is_executable(node_obj: dict) -> bool:  # dev/118 (DEC-075) → dev/119 (DEC-076)
         return _node_is_executable(node_obj, batch_templates)
 
+    def _content_kind(node_obj: dict) -> str:  # dev/134
+        return workflow_spec.content_kind(
+            str((node_obj or {}).get("type") or ""), batch_templates
+        )
+
     def _record_outcome(node_id: str, status: str, text, child) -> dict | None:
         # dev/131: a later pass must not ERASE an earlier pass's evidence. A
         # node that is still awaiting the user produces a fresh result with no
@@ -4646,6 +4653,20 @@ def _solve_events(
 
     def _record_outcome_inner(node_id: str, status: str, text, child) -> dict | None:
         nonlocal batch_reason
+        if status == "no-content":
+            # dev/134: nothing is owed and nothing was spent. Not "skipped"
+            # (that means a bound refused it) and not "pending" (that means
+            # work remains): the node is resolved, and the reason says why
+            # there was never anything to write.
+            node = nodes_by_id.get(node_id) or {}
+            reason = (
+                f"{node.get('type')} is wired, not written — this kind has no "
+                "content to author; it renders or forwards its input"
+            )
+            result = {"status": "solved",
+                      "verification": {"status": "no-content", "reason": reason[:300]}}
+            results[node_id] = result
+            return {"nodeId": node_id, "status": "solved", **result}
         if status == "deadline":
             # dev/118: the budget ran out before this node was dispatched — it
             # stays pending, says why, and the batch names the reason once.
@@ -5101,6 +5122,16 @@ def _solve_events(
                         # User content preserved.
                         outcome_queue.put((node_id, "skipped", None, None))
                         return
+                    if _content_kind(node) == workflow_spec.CONTENT_KIND_NONE:
+                        # dev/134: this kind authors NOTHING — it renders or
+                        # forwards its input and everything it does comes from
+                        # the wiring (a merge, a pool, a simple view, a spatial
+                        # join). Asking a model for its content spends a call
+                        # to produce something that can only be wrong: the
+                        # owner's `e72c7080` wrote the reply "not controllable"
+                        # into a merge-flow and a data-pool as their content.
+                        outcome_queue.put((node_id, "no-content", None, None))
+                        return
                     # dev/67-6: the ONE context composer — the child sees the
                     # node's neighborhood (goals, runtime status, datasets),
                     # not just its own intent.
@@ -5134,9 +5165,19 @@ def _solve_events(
                                 extra_texts=(str(node.get("goal") or ""),),
                             )
                         )
-                    if verify and _is_executable(node):
+                    if verify and _content_kind(node) in (
+                        workflow_spec.CONTENT_KIND_CODE,
+                        workflow_spec.CONTENT_KIND_GRAMMAR,
+                    ):
                         # dev/115 (DEC-073) → dev/118 (DEC-075): the ONE
                         # verified-content loop for EVERY executable kind —
+                        # and, since dev/134, for every GRAMMAR kind too: the
+                        # runner reports "not executable" for a document and
+                        # dev/129's validator decides, so nothing unvalidated
+                        # is written on any path. The batch used to route a
+                        # Vega or AUTK node past this loop, which is how an
+                        # invalid document and the sentence "not controllable"
+                        # reached two nodes in the owner's `e72c7080`.
                         # every round traced at the node's home (dev/72), the
                         # loop's progress relayed as node_* events, the outcome
                         # folded by _record_outcome.
@@ -6585,12 +6626,21 @@ def _solve_node_events(
         )
         return st, tx, ch
 
-    if not _node_is_executable(node, templates):
-        # dev/118 (DEC-075) → dev/119: a kind with no code the sandbox could
-        # run (Vega, Autark, merge, data pool, spatial join, an unknown
-        # package). No round, no sandbox, no generation — nothing this loop
-        # could verify; say so and change nothing.
+    kind = workflow_spec.content_kind(str(node.get("type") or ""), templates)
+    # dev/134: a DOCUMENT kind (Vega-Lite, an AUTK grammar) goes through the
+    # SAME loop as code — the runner reports "not executable" and dev/129's
+    # validator decides whether the document is written. The per-node Solve used
+    # to refuse these outright, which left the batch's unguarded write path as
+    # the only way to fill such a node.
+    if kind not in (workflow_spec.CONTENT_KIND_CODE, workflow_spec.CONTENT_KIND_GRAMMAR):
+        # dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at
+        # all (a merge, a pool, a simple view, a spatial join) or presentation
+        # content with no validator. No round, no sandbox, no generation —
+        # nothing this loop could verify; say so and change nothing.
         reason = (
+            f"{label!r} ({node.get('type')}) is wired, not written — this kind has no "
+            "content to author; it renders or forwards its input"
+            if kind == workflow_spec.CONTENT_KIND_NONE else
             f"{label!r} ({node.get('type')}) has no code the sandbox could run — it works "
             "in the browser or through its own service; Play the dataflow to see it"
         )
@@ -7800,8 +7850,13 @@ def _verified_content_rounds(
         available = None  # arity metadata unavailable: type check fails open
     # dev/119 (DEC-076): the same roster classifies executability for the runner.
     loop_templates = (
-        {tid: {"executable": bool(row.get("executable")), "engine": row.get("engine") or "python"}
-         for tid, row in available.items()}
+        {tid: {
+            "executable": bool(row.get("executable")),
+            "engine": row.get("engine") or "python",
+            # dev/134: and the same snapshot routes the document validator.
+            "contentKind": row.get("contentKind") or "none",
+            **({"grammar": row["grammar"]} if row.get("grammar") else {}),
+        } for tid, row in available.items()}
         if available else None
     )
     # ONE grounding context per loop: the same catalog/verified-URL evidence for
@@ -8192,9 +8247,21 @@ def _verified_content_rounds(
             # a failed round like any other — the validator's message is the
             # correction — and a valid one is written with a stronger, still
             # truthful claim than "no code to run".
-            document = document_validation.validate(node_type, candidate)
+            # dev/134: routed by the roster's own grammarId, and checked
+            # against the columns this node's input actually has — the same
+            # rows the generation request was handed (DEC-063).
+            document = document_validation.validate(
+                node_type, candidate,
+                grammar_id=workflow_spec.grammar_id_of(node_type, loop_templates),
+                columns=upstream_schema.columns_of(
+                    (extra_inputs or {}).get("upstreamOutputs")
+                ),
+            )
             if document["status"] == document_validation.STATUS_INVALID:
-                refusal = document_validation.refusal_text(node_type, document)
+                refusal = document_validation.refusal_text(
+                    node_type, document,
+                    grammar_id=workflow_spec.grammar_id_of(node_type, loop_templates),
+                )
                 verdict_result = {
                     "verdict": "fail",
                     "evidence": {"kind": "document-invalid", "detail": refusal[:2000]},

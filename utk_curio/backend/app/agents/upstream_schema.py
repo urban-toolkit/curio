@@ -167,3 +167,38 @@ def describe(summary: object) -> str:
     if names:
         bits.append(", ".join(names))
     return " · ".join(bits)
+
+
+#: dev/134: how many column names a document's field check is given. A wide
+#: frame's whole header is not evidence, and the refusal names what it lists.
+MAX_KNOWN_COLUMNS = 200
+
+
+def columns_of(upstream_outputs: list | None) -> list[str]:
+    """Every column name this node's inputs actually have (memo dev/134).
+
+    Read from the same rows the generation request was handed — each carries
+    the ``schema`` this module summarized — so the instruction and the check
+    cannot disagree (``DEC-063``). An input whose artifact could not be
+    described contributes nothing rather than a guess, so an unknown shape
+    yields an EMPTY list, which callers must read as "do not check".
+    """
+    names: list[str] = []
+    for row in upstream_outputs or []:
+        if not isinstance(row, dict):
+            continue
+        schema = row.get("schema")
+        if not isinstance(schema, dict):
+            continue
+        for column in schema.get("columns") or []:
+            name = column.get("name") if isinstance(column, dict) else None
+            if isinstance(name, str) and name and name not in names:
+                names.append(name)
+        # A merge hands a LIST of frames (``kind: "parts"``); each part's own
+        # columns are what a downstream document could read.
+        for part in schema.get("parts") or []:
+            for column in (part or {}).get("columns") or []:
+                name = column.get("name") if isinstance(column, dict) else None
+                if isinstance(name, str) and name and name not in names:
+                    names.append(name)
+    return names[:MAX_KNOWN_COLUMNS]

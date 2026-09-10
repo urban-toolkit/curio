@@ -174,7 +174,10 @@ def execution_outcomes(
             status = str(verification["status"])
         else:
             status = str(result.get("status") or "")
-        if status == "not-executable":
+        if status in ("not-executable", "document-valid", "no-content"):
+            # dev/134: a validated DOCUMENT and a wired node are both "not an
+            # execution" — the template facts already say so, and saying it
+            # here too keeps a roster gap from crediting one.
             executable = False
         if status == "solved" and executable:
             status = "verified"

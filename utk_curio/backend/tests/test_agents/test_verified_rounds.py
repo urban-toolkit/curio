@@ -1479,26 +1479,51 @@ class TestSolveNode:
         assert "no code the sandbox could run" in turns[-1]["text"]
         assert "through its own service" in turns[-1]["text"]
 
-    def test_a_browser_rendered_node_is_not_executable_and_nothing_runs(self, client, user_and_token, tmp_curio, monkeypatch):
+    def test_a_browser_rendered_node_has_its_DOCUMENT_validated_and_still_never_runs(self, client, user_and_token, tmp_curio, monkeypatch):
         # dev/118 (DEC-075): the per-node Solve accepted any kind and, for a
-        # Vega node, reported a PASS on content the runner never sent.
+        # Vega node, reported a PASS on content the runner never sent — so it
+        # was made to refuse the kind outright. dev/134: it neither runs it nor
+        # refuses it. The document on the node is VALIDATED (dev/129's gate,
+        # now reachable here), nothing is generated because the document is
+        # already valid, nothing reaches the sandbox, and the content is
+        # untouched.
         user, token = user_and_token
         ctx = self._setup(client, user, token, monkeypatch, content='{"mark": "bar"}', node_type=VEGA)
         events = self._solve_node(client, token, ctx)
         done = events[-1][1]
-        assert done["verdict"] == "not-executable" and done["rounds"] == 0
-        assert [k for k, _ in events] == ["solve_node_started", "done"]  # no round, no run
-        assert ctx["calls"] == [] and ctx["payloads"] == []  # no generation, no sandbox
-        assert "unchanged" not in done and "written" not in done and "proposalId" not in done
-        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
-                           headers=_auth(token)).get_json()["turns"]
-        assert turns[-1]["text"].startswith("Not executable:")
-        assert "no code the sandbox could run" in turns[-1]["text"]
-        assert turns[-1].get("error") is not True
-        assert turns[-1]["content"][0]["title"].startswith("Solve · NOT-EXECUTABLE")
+        assert done["verdict"] == "not-executable" and done["rounds"] == 1
+        assert ctx["calls"] == []  # nothing was generated: the document validates
+        assert ctx["payloads"] == []  # and the sandbox was never asked to run it
+        assert done["attempts"][0]["source"] == "current content"
         node = next(n for n in client.get(f"/api/projects/{ctx['pid']}", headers=_auth(token)).get_json()
                     ["spec"]["dataflow"]["nodes"] if n["id"] == "n1")
         assert node["content"] == '{"mark": "bar"}'  # untouched
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        assert turns[-1].get("error") is not True
+
+    def test_an_invalid_document_on_the_node_is_corrected_by_the_per_node_solve(self, client, user_and_token, tmp_curio, monkeypatch):
+        """dev/134: the point of routing a grammar kind into the loop — the
+        owner's `e72c7080` held a Vega document with `'else'` inside an
+        encoding condition, and the per-node Solve had no way to say so."""
+        user, token = user_and_token
+        invalid = ('{"mark": "bar", "encoding": {"color": {"field": "x", '
+                   '"type": "nominal", "condition": {"test": "true", '
+                   '"value": "red", "else": "blue"}}}}')
+        fixed = '{"mark": "bar", "encoding": {"x": {"field": "x", "type": "nominal"}}}'
+        ctx = self._setup(
+            client, user, token, monkeypatch, content=invalid, node_type=VEGA,
+            child_replies=[fixed],
+        )
+        events = self._solve_node(client, token, ctx)
+        done = events[-1][1]
+        kinds = [a.get("kind") for a in done["attempts"]]
+        assert kinds[0] == "document-invalid"
+        assert "'else' was unexpected" in done["attempts"][0]["detail"]
+        # The correction was asked for with the validator's message as its error.
+        assert ctx["calls"], "the loop asked for a corrected document"
+        assert ctx["payloads"] == []  # never the sandbox: it is a document
+        assert done["verdict"] == "not-executable"  # validated, not executed
 
     def test_preflight(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
