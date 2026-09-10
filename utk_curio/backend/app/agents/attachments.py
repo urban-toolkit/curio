@@ -73,6 +73,31 @@ def validate_target(spec: dict, target: object) -> dict:
     return {"kind": kind, "targetId": target_id}
 
 
+def canonical_node_suffix(node_type: object) -> str:
+    """The template-id suffix a node's type reduces to, for a compatibility
+    test: ``"pkg/data-loading@2"`` → ``"data-loading"``, ``"DATA_LOADING"`` →
+    ``"data-loading"``. Tolerant of versioned ids and the legacy enum names."""
+    return str(node_type or "").rsplit("/", 1)[-1].split("@", 1)[0].lower().replace("_", "-")
+
+
+def node_target_matches(manifest: object, node_type: object) -> bool:
+    """Whether a node of *node_type* satisfies *manifest*'s node target.
+
+    ``compatibleTargets[].requires`` (memo dev/50) lists template-id suffixes
+    the target node must match; an empty ``requires`` accepts any node, and a
+    manifest with no node target accepts none. This is the ONE reading of that
+    rule (memo dev/126): the drawer's attach and the plan apply's automatic
+    attach cannot disagree about where an agent may live."""
+    targets = getattr(manifest, "compatible_targets", None) or []
+    node_target = next((t for t in targets if getattr(t, "kind", None) == "node"), None)
+    if node_target is None:
+        return False
+    requires = getattr(node_target, "requires", None) or []
+    if not requires:
+        return True
+    return canonical_node_suffix(node_type) in {str(r).lower() for r in requires}
+
+
 def attach(spec: dict, coord: str, target: object, *, attachment_id: str, session_id: str) -> dict:
     """Append a new attachment record to the spec and return it.
 

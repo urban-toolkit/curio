@@ -826,10 +826,9 @@ def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> 
                 (n for n in nodes if isinstance(n, dict) and n.get("id") == target_id), None
             )
             node_type = str((node or {}).get("type") or "")
-            # Canonical suffix, tolerant of versioned ids and legacy enum names
-            # ("pkg/tmpl@1" → "tmpl"; "DATA_LOADING" → "data-loading").
-            suffix = node_type.rsplit("/", 1)[-1].split("@", 1)[0].lower().replace("_", "-")
-            if suffix not in {r.lower() for r in node_target.requires}:
+            # dev/126: ONE reading of the rule — the same predicate the plan
+            # apply's automatic attach uses (attachments.node_target_matches).
+            if not attachments.node_target_matches(manifest, node_type):
                 raise AgentServiceError(
                     f"this agent attaches to {', '.join(sorted(node_target.requires))} "
                     f"nodes; that node is {node_type or 'untyped'}",
@@ -1802,37 +1801,110 @@ def set_plan_goal(
     }
 
 
-def _attach_node_builder(spec: dict, node_id: str) -> str | None:
-    """dev/71: best-effort Node Builder attachment for a plan-created node.
-    Skips (returning None) when the template is not installed or the node
-    already carries one — node creation NEVER fails over this."""
+#: dev/126: the agents a plan-created node carries. WHICH of them attaches to
+#: a given node is the manifests' own compatibility declaration, read through
+#: ``attachments.node_target_matches`` — the Node Builder accepts any node, the
+#: Dataset Finder only a ``data-loading`` one (dev/50's ``requires``). No second
+#: predicate lives here, so this list can never drift from the manifests.
+_PLAN_NODE_AGENTS: tuple[str, ...] = ("agent.node-builder", "agent.dataset-finder")
+
+
+def _installed_project_coord(spec: dict, agent_id: str) -> str | None:
+    """The project lockfile's coord for *agent_id*, or None when absent."""
     from utk_curio.backend.app.agents import project_agents
 
-    coord = next(
+    return next(
         (
             c for c in project_agents.project_agents(spec)
-            if c.split("@", 1)[0] == "agent.node-builder"
+            if c.split("@", 1)[0] == agent_id
         ),
         None,
     )
-    if coord is None:
-        return None
+
+
+def _node_attachment_of(spec: dict, agent_id: str, node_id: str) -> dict | None:
+    """An existing attachment of *agent_id* on node *node_id*, or None."""
     for existing in attachments.list_attachments(spec):
         target = existing.get("target") or {}
         if (
-            existing.get("coord", "").split("@", 1)[0] == "agent.node-builder"
+            existing.get("coord", "").split("@", 1)[0] == agent_id
             and target.get("kind") == "node"
             and target.get("targetId") == node_id
         ):
-            return existing.get("attachmentId")
+            return existing
+    return None
+
+
+def _attach_node_agent(
+    user_key: str | None, spec: dict, agent_id: str, node_id: str, node_type: object
+) -> dict:
+    """Attach ONE agent to a node, idempotently, reporting what happened.
+
+    dev/126: the shared body of dev/71's plan-node attachment. Returns
+    ``{"agentId", "attachmentId" | None, "status": "attached" | "existing" |
+    "skipped", "reason"?}``. Never raises and never writes the spec — the
+    caller's own single write persists it, and a node is never blocked over
+    its agent."""
+    existing = _node_attachment_of(spec, agent_id, node_id)
+    if existing is not None:
+        return {
+            "agentId": agent_id,
+            "attachmentId": existing.get("attachmentId"),
+            "status": "existing",
+        }
+    coord = _installed_project_coord(spec, agent_id)
+    if coord is None:
+        return {"agentId": agent_id, "attachmentId": None, "status": "skipped",
+                "reason": "not installed in this dataflow"}
+    manifest = _resolve_definition(user_key, coord) if user_key else None
+    if manifest is not None and not attachments.node_target_matches(manifest, node_type):
+        return {"agentId": agent_id, "attachmentId": None, "status": "skipped",
+                "reason": f"does not attach to {attachments.canonical_node_suffix(node_type)} nodes"}
     try:
         record = attachments.attach(
             spec, coord, {"kind": "node", "targetId": node_id},
             attachment_id=uuid.uuid4().hex, session_id=uuid.uuid4().hex,
         )
-        return record.get("attachmentId")
-    except Exception:
-        return None  # best-effort: never block the node over its agent
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Could not attach %s to node %s: %s", agent_id, node_id, exc)
+        return {"agentId": agent_id, "attachmentId": None, "status": "skipped",
+                "reason": str(exc)[:120]}
+    return {"agentId": agent_id, "attachmentId": record.get("attachmentId"),
+            "status": "attached"}
+
+
+def _attach_plan_node_agents(
+    user_key: str | None, spec: dict, node_id: str, node_type: object
+) -> dict:
+    """dev/126: every plan-created node gets its agents — the Node Builder
+    always, the Dataset Finder when the node is a data-loading one — on BOTH
+    apply paths, idempotently, in the caller's own spec write.
+
+    Returns ``{"attached": [row], "skipped": [row], "byAgent": {agentId: id}}``
+    so the apply can SAY what it attached instead of silently dropping it."""
+    rows = [
+        _attach_node_agent(user_key, spec, agent_id, node_id, node_type)
+        for agent_id in _PLAN_NODE_AGENTS
+    ]
+    return {
+        "attached": [
+            {"nodeId": node_id, **r} for r in rows if r["status"] in ("attached", "existing")
+        ],
+        "skipped": [{"nodeId": node_id, **r} for r in rows if r["status"] == "skipped"],
+        "byAgent": {
+            r["agentId"]: r["attachmentId"] for r in rows if r.get("attachmentId")
+        },
+    }
+
+
+def _attach_node_builder(spec: dict, node_id: str, *, user_key: str | None = None,
+                         node_type: object = None) -> str | None:
+    """dev/71: best-effort Node Builder attachment for a plan-created node.
+    Skips (returning None) when the template is not installed or the node
+    already carries one — node creation NEVER fails over this. dev/126: one
+    call into the shared body above."""
+    row = _attach_node_agent(user_key, spec, "agent.node-builder", node_id, node_type)
+    return row.get("attachmentId")
 
 
 def apply_plan_node(
@@ -4167,7 +4239,7 @@ def _solve_events(
             rounds = outcome.get("rounds") or 0
             remedy_payload = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
             remedy = (
-                " — resolve the source with Dataset Finder (attach it to this node) or give the path"
+                _ungrounded_remedy(_dataset_finder_attachment_id(spec, node_id))
                 if kind == "ungrounded-source" else
                 _source_missing_remedy(remedy_payload)
                 if kind == "source-missing" else ""
@@ -4196,7 +4268,7 @@ def _solve_events(
                 err = (
                     "ungrounded source: " + refusal.split("Allowed sources:")[0]
                     .replace("source grounding refused — ", "").strip()
-                )[:220] + " — resolve the source with Dataset Finder (attach it to this node) or give the path"
+                )[:220] + _ungrounded_remedy(_dataset_finder_attachment_id(spec, node_id))
                 results[node_id] = {"status": "failed", "error": err[:300]}
                 return {"nodeId": node_id, "status": "failed", "error": err[:300]}
             result: dict = {"status": "solved"}
@@ -4646,7 +4718,8 @@ def _solve_events(
                             if _refusal:
                                 err = ("ungrounded source: " + _refusal.split("Allowed sources:")[0]
                                        .replace("source grounding refused — ", "").strip())[:220] + \
-                                      " — resolve the source with Dataset Finder (attach it to this node) or give the path"
+                                      _ungrounded_remedy(
+                                          _dataset_finder_attachment_id(spec, node_id))
                                 results[node_id] = {"status": "failed", "error": err[:300]}
                                 yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
                                 continue
@@ -5854,6 +5927,33 @@ def _same_code(a: str, b: str) -> bool:
             return "\n".join(l.strip() for l in code.splitlines() if l.strip() and not l.strip().startswith("#"))
 
     return bool(a and b) and _norm(a) == _norm(b)
+
+
+def _dataset_finder_attachment_id(spec: dict | None, node_id: str) -> str | None:
+    """The node's own Dataset Finder attachment id, or None (dev/126)."""
+    if not isinstance(spec, dict) or not isinstance(node_id, str) or not node_id:
+        return None
+    record = _node_attachment_of(spec, "agent.dataset-finder", node_id)
+    return (record or {}).get("attachmentId")
+
+
+#: dev/126: the ONE sentence an ``ungrounded-source`` failure ends with. It
+#: existed in three copies (the batch Solve's verified and legacy lanes and the
+#: per-node stream), which is exactly how the three drifted apart from what the
+#: product can now do: discovery is initiated at the node, so the sentence names
+#: that node's own Dataset Finder when it has one.
+_UNGROUNDED_REMEDY_GENERIC = (
+    " — resolve the source with Dataset Finder (attach it to this node) or give the path"
+)
+
+
+def _ungrounded_remedy(attachment_id: str | None = None) -> str:
+    """The remedy an ungrounded data source ends with (dev/126)."""
+    if attachment_id:
+        return (
+            " — open Dataset Finder on this node to pick a source, or give the path"
+        )
+    return _UNGROUNDED_REMEDY_GENERIC
 
 
 def _source_missing_remedy(remedy: dict | None) -> str:
