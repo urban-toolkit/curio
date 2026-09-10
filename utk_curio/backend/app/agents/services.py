@@ -31,6 +31,7 @@ from utk_curio.backend.app.agents import (
 from utk_curio.backend.app.agents import (
     agent_jobs,
     egress,
+    failure_text,
     node_context,
     plan_topology,
     source_grounding,
@@ -4510,8 +4511,19 @@ def _solve_events(
                 reason = f"skipped — {raw_detail[:240]}" if raw_detail else "skipped — validation refused the slice"
                 results[node_id] = {"status": "skipped", "reason": reason, **trail}
                 return {"nodeId": node_id, "status": "skipped", "reason": reason, **trail}
-            # A refusal's head names the literal; a traceback's tail names the error.
-            detail = raw_detail[:200] if kind in _HEAD_FIRST_KINDS else raw_detail[-200:]
+            # dev/127: a refusal's head names the literal; a traceback is read
+            # for its exception line and frame, never sliced by character count
+            # (the report's "execution-error: das/core/generic.py" was the tail
+            # of pandas/core/generic.py, cut mid-path).
+            detail = (
+                failure_text.excerpt(raw_detail, limit=200, head=True)
+                if kind in _HEAD_FIRST_KINDS
+                else failure_text.summary(
+                    raw_detail,
+                    code=_last_attempt_code(trail),
+                    limit=200,
+                )
+            )
             rounds = outcome.get("rounds") or 0
             remedy_payload = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
             remedy = (
@@ -4681,8 +4693,7 @@ def _solve_events(
                 lines.append(line)
                 if outcome.get("verdict") == "fail":
                     for attempt in (outcome.get("attempts") or [])[:3]:
-                        raw = str(attempt.get("stderrTail") or attempt.get("detail") or "")
-                        why = raw[:100] if attempt.get("kind") in _HEAD_FIRST_KINDS else raw[-100:]
+                        why = _attempt_why(attempt, limit=160)
                         lines.append(f"  round {attempt.get('round')}: {attempt.get('kind')} — {why}")
                         if attempt.get("endpointEvidence"):
                             lines.append(f"    endpoint: {str(attempt['endpointEvidence'])[:200]}")
@@ -5906,9 +5917,8 @@ def _solve_node_events(
     done: dict = {"nodeId": node_id, "verdict": verdict, "rounds": rounds,
                   "attempts": attempts, "evidence": outcome["evidence"]}
     trail_lines = []
-    for attempt in attempts[:6]:
-        raw = str(attempt.get("stderrTail") or attempt.get("detail") or "")
-        why = raw[:100] if attempt.get("kind") in _HEAD_FIRST_KINDS else raw[-100:]
+    for attempt in attempts[:8]:
+        why = _attempt_why(attempt, limit=160)
         line = f"round {attempt.get('round')} · {attempt.get('verdict')} · {attempt.get('kind')}"
         if attempt.get("verdict") == "pass":
             line += f" · {attempt.get('outputDataType') or '?'}"
@@ -6223,6 +6233,28 @@ def _content_sha(text: str) -> str:
 #: Attempt kinds whose detail is read from the HEAD (a refusal names the
 #: literal, a decline names the missing input); a traceback reads from its tail.
 _HEAD_FIRST_KINDS = ("ungrounded-source", "source-missing", "repeated-attempt")
+
+
+def _last_attempt_code(trail: dict) -> str | None:
+    """The code of the last recorded attempt (dev/127) — what the failure's
+    exception line is read against, so a self-raised error is named as one."""
+    attempts = (trail or {}).get("attempts") or []
+    return attempts[-1].get("code") if attempts else None
+
+
+def _attempt_why(attempt: dict, *, limit: int) -> str:
+    """dev/127: ONE reading of a recorded attempt's failure, for every card.
+
+    A refusal (the grounding gate, a decline) says what it refused in its FIRST
+    line; a traceback says it in its exception line, which
+    ``failure_text.summary`` puts first and keeps whole. The attempt's own code
+    rides along so an error the candidate raised itself is labeled as such."""
+    raw = str(attempt.get("stderrTail") or attempt.get("detail") or "")
+    if not raw.strip():
+        return ""
+    if attempt.get("kind") in _HEAD_FIRST_KINDS:
+        return failure_text.excerpt(raw, limit=limit, head=True)
+    return failure_text.summary(raw, code=attempt.get("code"), limit=limit)
 
 
 def _same_code(a: str, b: str) -> bool:
