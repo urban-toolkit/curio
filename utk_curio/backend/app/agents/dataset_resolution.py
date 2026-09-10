@@ -320,7 +320,10 @@ def confirmed_source(spec: dict | None, node_id: str) -> dict | None:
         "picks": [
             {k: v for k, v in pick.items() if k in
              ("lane", "name", "datasetId", "url", "format", "requirement", "installed",
-              "verification")}
+              # dev/132: whether code can fetch this row, and the portal steps
+              # when it cannot — the builder must not author a fetch for a
+              # source that only exists behind a browser download.
+              "verification", "access", "accessWhy", "downloadSteps")}
             for pick in picks
         ],
     }

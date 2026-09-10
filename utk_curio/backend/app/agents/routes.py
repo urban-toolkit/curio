@@ -487,13 +487,27 @@ def record_dataset_selection(project_id: str, attachment_id: str):
     node's next Solve reads the record instead of asking the model what the
     user picked.
     """
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
     body = request.get_json(silent=True) or {}
     if "picks" not in body:
         return _error("body must include 'picks'")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
+        # dev/132: a confirmed fetchable source is delegated to the node's own
+        # builder right here, so the config is resolved with the selection. A
+        # user with no provider still records the selection (the delegation
+        # says why it did not start).
+        try:
+            config = resolve_provider_config(g.user)
+        except ProviderConfigError:
+            config = None
         payload = agents_services.record_dataset_selection(
-            _user_dir_key(g.user), project_id, attachment_id, body.get("picks")
+            _user_dir_key(g.user), project_id, attachment_id, body.get("picks"),
+            config=config,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

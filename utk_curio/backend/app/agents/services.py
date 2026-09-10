@@ -983,7 +983,8 @@ def update_attachment_title(
 
 
 def record_dataset_selection(
-    user_key: str, project_id: str, attachment_id: str, picks: object
+    user_key: str, project_id: str, attachment_id: str, picks: object,
+    config: "ProviderConfig | None" = None,
 ) -> dict:
     """dev/126: record the user's confirmed dataset selection for a node.
 
@@ -1031,6 +1032,9 @@ def record_dataset_selection(
     for row in rows:
         if row["lane"] == "external" and row.get("url"):
             row["verification"] = verify.verify_external_source(row["url"], budget=budget)
+            # dev/132: and what can be DONE with it now — the card's verdict
+            # may be days old, and the delegation below depends on this one.
+            _mint_row_access(row)
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = _read_spec_or_404(user_key, project_id)
         state = dataset_resolution.record_selection(fresh, attachment_id, rows)
@@ -1070,11 +1074,129 @@ def record_dataset_selection(
         except Exception:  # noqa: BLE001
             log.warning("Could not log the dataset selection for %s", attachment_id,
                         exc_info=True)
-    return {
+    payload = {
         "attachmentId": attachment_id,
         "nodeId": target.get("targetId"),
         "status": state["status"],
         "picks": rows,
+    }
+    # dev/132 (R1): a confirmed row code can FETCH is handed to the node's own
+    # builder automatically — the owner asked for the delegation, not for a
+    # prompt they must compose. A manual row is not delegated: its file does
+    # not exist yet, and its card teaches the download and offers Import.
+    delegated = _delegate_confirmed_fetch(
+        user_key, project_id, str(target.get("targetId") or ""), rows, state, config,
+    )
+    if delegated is not None:
+        payload["delegated"] = delegated
+    return payload
+
+
+#: dev/132: the two rows worth delegating a fetch for — an external row the
+#: probe could read, and a catalog row already installed (its path exists).
+def _fetchable_picks(rows: list[dict]) -> list[dict]:
+    out = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if row.get("lane") == "external" and row.get("access") == verify.ACCESS_FETCHABLE:
+            out.append(row)
+        elif row.get("lane") == "catalog" and row.get("installed"):
+            out.append(row)
+    return out
+
+
+def _delegate_confirmed_fetch(
+    user_key: str,
+    project_id: str,
+    node_id: str,
+    rows: list[dict],
+    state: dict,
+    config: "ProviderConfig | None",
+) -> dict | None:
+    """dev/132 (R1): start the node's own builder on the confirmed source.
+
+    The owner's instruction — *"The datafinder should be able to automatically
+    delegate the code to fetch external api datasets"* — closes `DEC-047`'s
+    manual seam: the Finder no longer composes a prompt for the user to send.
+    Nothing here authors anything itself: it starts the SAME detached per-node
+    Solve the user's own button starts (dev/115, `DEC-073`), which reads the
+    recorded source (dev/126), verifies before writing (dev/129) and lands
+    reviewed content for a node that already has some (`DEC-006`).
+
+    Returns what happened — ``delegating`` with the job's execution id,
+    ``session-running`` when dev/131's session will pick the node up on its
+    next pass (its record just moved, which is exactly its trigger),
+    ``manual-download`` when the file is still on a portal, or a reason —
+    never raising: a selection is recorded whether or not a build can start.
+    """
+    from utk_curio.backend.app.agents import agent_jobs, dataset_resolution
+
+    if not node_id or state.get("status") != dataset_resolution.STATE_RESOLVED:
+        return None
+    fetchable = _fetchable_picks(rows)
+    if not fetchable:
+        manual = [r for r in rows if (r or {}).get("access") == verify.ACCESS_MANUAL]
+        if manual:
+            return {
+                "status": "manual-download",
+                "reason": (
+                    "this source is a portal download — follow the steps on the "
+                    "card and use Import dataset; solving continues from the "
+                    "imported dataset"
+                ),
+            }
+        return None
+    if config is None:
+        return {"status": "skipped", "reason": "no provider is configured for this user"}
+    try:
+        spec = _read_spec_or_404(user_key, project_id)
+    except AgentServiceError:
+        return None
+    # A running dataflow session owns this node: dev/131 re-reads the spec each
+    # pass and this record IS the change it watches for. Two builders on one
+    # node would race for its content.
+    for record in attachments.list_attachments(spec):
+        job = agent_jobs.live_job(user_key, str(record.get("attachmentId") or ""))
+        if job is not None and job.kind == "solve-batch":
+            return {
+                "status": "session-running",
+                "reason": "the running Solve session picks this node up on its next pass",
+            }
+    builder = None
+    for agent_id in _NODE_BUILD_AGENTS:
+        builder = _node_attachment_of(spec, agent_id, node_id)
+        if builder is not None:
+            break
+    if builder is None:
+        return {
+            "status": "no-builder",
+            "reason": (
+                "no builder is attached to this node — Solve the node, or attach "
+                "a Node Builder to it"
+            ),
+        }
+    builder_id = str(builder.get("attachmentId") or "")
+    try:
+        subscription = solve_node_stream(
+            user_key, project_id, builder_id, config, node_id=node_id,
+        )
+    except AgentServiceError as exc:
+        return {"status": "skipped", "reason": str(exc)}
+    except Exception:  # noqa: BLE001 — a selection is recorded regardless
+        log.warning("Could not delegate the fetch for node %s", node_id, exc_info=True)
+        return {"status": "skipped", "reason": "the build could not be started"}
+    job = agent_jobs.live_job(user_key, builder_id)
+    del subscription  # the job is detached; the client re-attaches to it
+    return {
+        "status": "delegating",
+        "attachmentId": builder_id,
+        "nodeId": node_id,
+        "sources": [
+            str(r.get("name") or r.get("datasetId") or r.get("url") or "")[:120]
+            for r in fetchable[:8]
+        ],
+        **({"executionId": job.job_id} if job is not None else {}),
     }
 
 
@@ -2004,6 +2126,12 @@ def set_plan_goal(
 #: Dataset Finder only a ``data-loading`` one (dev/50's ``requires``). No second
 #: predicate lives here, so this list can never drift from the manifests.
 _PLAN_NODE_AGENTS: tuple[str, ...] = ("agent.node-builder", "agent.dataset-finder")
+#: dev/132: which node-attached agent a confirmed source is handed to, in
+#: preference order — the Node Builder owns fetch code (`DEC-047`), and the
+#: Node Content Builder is the fallback a plain plan node carries.
+_NODE_BUILD_AGENTS: tuple[str, ...] = (
+    "agent.node-builder", "agent.node-content-builder",
+)
 
 
 def _installed_project_coord(spec: dict, agent_id: str) -> str | None:
