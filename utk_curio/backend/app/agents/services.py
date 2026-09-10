@@ -5631,9 +5631,49 @@ def _run_node_events(
             pass
 
 
-# dev/67-7: bounded self-correction — initial generation + up to 2 corrective
+# dev/67-7: bounded self-correction — an initial generation plus corrective
 # regenerations, each re-validated by actually running the dataflow.
-_VALIDATE_CORRECTION_ROUNDS = 2
+#
+# dev/127: the bound used to be a hard, unconfigurable 2 (three attempts), and
+# the owner's failing batch spent it in 25 SECONDS against a 300 s sandbox
+# timeout and a 45-minute batch deadline: the loop stopped for want of a round
+# with both budgets essentially untouched. It is now a round cap AND a per-node
+# wall budget, whichever binds first, both env-overridable on the
+# ``exec_timeout_s`` pattern (an unusable value falls back rather than raising).
+DEFAULT_SOLVE_CORRECTION_ROUNDS = 5  # → six attempts
+DEFAULT_SOLVE_NODE_BUDGET_S = 300  # the owner's five minutes
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    import os as _os
+
+    raw = _os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def solve_correction_rounds() -> int:
+    """``CURIO_SOLVE_CORRECTION_ROUNDS`` — corrections after the first
+    generation (so attempts = this + 1)."""
+    return _positive_int_env("CURIO_SOLVE_CORRECTION_ROUNDS", DEFAULT_SOLVE_CORRECTION_ROUNDS)
+
+
+def solve_node_budget_s() -> int:
+    """``CURIO_SOLVE_NODE_BUDGET`` — the wall-clock budget one node's repair
+    loop may spend. Checked at round BOUNDARIES: a round already running is
+    never killed (its own sandbox timeout bounds it), but no new round starts
+    past the budget."""
+    return _positive_int_env("CURIO_SOLVE_NODE_BUDGET", DEFAULT_SOLVE_NODE_BUDGET_S)
+
+
+#: The widest the loop may ever go, whatever the env says — the trail, the
+#: transcript part and the egress budget are all sized from it.
+MAX_SOLVE_CORRECTION_ROUNDS = 12
 
 
 def _solve_waves(spec: dict | None, targets: list[str]) -> list[list[str]]:
@@ -5760,7 +5800,7 @@ def _batch_deadline_spent(started: float, deadline_s: int) -> bool:
 #: dev/116: the verified loop's own egress budget — per failed round up to five
 #: real requests (the gate's probe, the composed request and its redirect, the
 #: keyed probe), over the first round plus the corrections, with slack.
-_LOOP_EGRESS_CALLS = 4 * (1 + _VALIDATE_CORRECTION_ROUNDS) + 2
+_LOOP_EGRESS_CALLS = 4 * (1 + DEFAULT_SOLVE_CORRECTION_ROUNDS) + 2
 _VALIDATE_STALE_SECONDS = 15 * 60
 
 
@@ -6797,6 +6837,7 @@ def _verified_content_rounds(
     secrets_fn=None,
     prior_outputs_fn=None,
     resolve_source=None,
+    clock=time.monotonic,
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -6815,7 +6856,10 @@ def _verified_content_rounds(
       ``validationError``, ``sourceGrounding`` (data-loading nodes) and — when
       the failure names an HTTP problem — fresh probe evidence for the URLs
       the candidate fetches;
-    - at most ``_VALIDATE_CORRECTION_ROUNDS`` corrections.
+    - corrections continue while BOTH bounds allow (dev/127): at most
+      ``solve_correction_rounds()`` of them, and only while
+      ``solve_node_budget_s()`` seconds have not been spent — the outcome's
+      ``stoppedBy`` names whichever bound ended it.
 
     A generator: yields ``("generation_round", …)``, ``("node_executed", …)``
     and ``("round_verdict", …)`` exactly as the validate-node stream always
@@ -6933,7 +6977,19 @@ def _verified_content_rounds(
         confirmed_source = source_state.get("confirmedSource")
         if source_state.get("detail"):
             rounds_trace.append(f"source: {str(source_state['detail'])[:160]}")
-    for round_index in range(1 + _VALIDATE_CORRECTION_ROUNDS):
+    max_rounds = min(1 + solve_correction_rounds(), 1 + MAX_SOLVE_CORRECTION_ROUNDS)
+    node_budget_s = solve_node_budget_s()
+    loop_started = clock()
+    for round_index in range(max_rounds):
+        if round_index and (clock() - loop_started) >= node_budget_s:
+            # dev/127: the budget is checked BEFORE a new round is dispatched,
+            # so a round in flight always finishes and is recorded.
+            stopped_by = "budget"
+            rounds_trace.append(
+                f"stopped after round {rounds_used}: this node's "
+                f"{node_budget_s}s repair budget is spent"
+            )
+            break
         rounds_used = round_index + 1
         yield "generation_round", {"round": rounds_used}
         use_current = (
