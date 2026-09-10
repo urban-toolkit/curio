@@ -435,6 +435,8 @@ export interface AgentProposalPart {
       from: string;
       to: string;
       toHandle?: string;
+      /** dev/112 (DEC-069): present only for interaction (feedback) edges. */
+      kind?: "data" | "interaction";
       fromLabel: string;
       toLabel: string;
     }>;
@@ -443,6 +445,8 @@ export interface AgentProposalPart {
     removals?: Array<{ id: string; label: string; nodeType?: string; contentChars: number }>;
     removedEdgeCount?: number;
     cascadeCount?: number;
+    /** dev/112: removed CONNECTIONS reviewed by name too (DEC-049.2 for edges). */
+    removedEdges?: Array<{ id: string; fromLabel: string; toLabel: string; kind?: "interaction" }>;
   };
 }
 
@@ -495,6 +499,8 @@ export interface AgentApplyResult {
       /** dev/67-3: explicit handles from the apply (merge slots in_N). */
       sourceHandle?: string;
       targetHandle?: string;
+      /** dev/112: `"Interaction"` for a feedback edge. */
+      type?: string;
     }>;
     removedNodeIds?: string[];
     removedEdgeIds?: string[];
@@ -533,6 +539,7 @@ export interface AgentPlanNodeApplyResult {
     target: string;
     sourceHandle?: string;
     targetHandle?: string;
+    type?: string; // dev/112
   }>;
   /** dev/71: the sweep's per-edge outcomes (index-keyed; refusals named). */
   edgeResults?: Record<string, { status: string; reason?: string; fromLabel?: string; toLabel?: string }>;
@@ -555,6 +562,7 @@ export interface AgentPlanEdgesResult {
       toLabel: string;
       edgeId?: string;
       targetHandle?: string;
+      kind?: "interaction"; // dev/112
       reason?: string;
       note?: string;
     }
@@ -566,6 +574,7 @@ export interface AgentPlanEdgesResult {
     target: string;
     sourceHandle?: string;
     targetHandle?: string;
+    type?: string; // dev/112
   }>;
   builderSession?: AgentBuilderSession | null;
 }

@@ -205,7 +205,7 @@ describe("AgentReviewCard — dev/59 destructive revision (DEC-049.2)", () => {
 
   it("names every victim with a content flag and the cascade", () => {
     render(<AgentReviewCard part={revision} onApply={jest.fn()} onDismiss={jest.fn()} />);
-    const section = screen.getByRole("group", { name: "Nodes this plan removes" });
+    const section = screen.getByRole("group", { name: "Nodes and connections this plan removes" });
     expect(section).toHaveTextContent("Removes 2 nodes (and 1 connected edge)");
     expect(section).toHaveTextContent("Load CSV · curio.builtin/computation-analysis — contains 10 chars of content");
     expect(section).toHaveTextContent("Scratch — empty");
@@ -214,10 +214,31 @@ describe("AgentReviewCard — dev/59 destructive revision (DEC-049.2)", () => {
     ).toBeInTheDocument();
   });
 
+  it("names removed CONNECTIONS too, with the interaction kind (dev/112)", () => {
+    const edgeOnly: AgentProposalPart = {
+      ...revision,
+      summary: "Apply plan · 0 nodes, 1 edges, removes 1 connection",
+      plan: {
+        goal: "convert the feedback edge",
+        nodes: [],
+        edgeCount: 1,
+        edges: [{ from: "vis", to: "pool", kind: "interaction", fromLabel: "Metric Distribution", toLabel: "Time Data Pool" }],
+        removedEdges: [{ id: "e5", fromLabel: "Metric Distribution", toLabel: "Pool Input Merge" }],
+      },
+    };
+    render(<AgentReviewCard part={edgeOnly} onApply={jest.fn()} onDismiss={jest.fn()} />);
+    const section = screen.getByRole("group", { name: "Nodes and connections this plan removes" });
+    expect(section).toHaveTextContent("Removes 1 connection");
+    expect(section).toHaveTextContent("Metric Distribution → Pool Input Merge");
+    expect(
+      screen.getByText("Applying adds 1 connection and removes 1 — nodes and their content are untouched."),
+    ).toBeInTheDocument();
+  });
+
   it("additive plans render no Removes section (regression)", () => {
     const additive = { ...revision, plan: { ...revision.plan!, removals: undefined, cascadeCount: undefined } };
     render(<AgentReviewCard part={additive} onApply={jest.fn()} />);
-    expect(screen.queryByRole("group", { name: "Nodes this plan removes" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Nodes and connections this plan removes" })).toBeNull();
     expect(screen.getByText(/existing work is untouched/)).toBeInTheDocument();
   });
 });

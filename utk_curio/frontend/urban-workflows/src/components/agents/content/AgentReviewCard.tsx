@@ -248,17 +248,42 @@ const EFFECT_LINE: Record<string, string> = {
     "Applying installs the exact reviewed artifact and creates its requested nodes — nothing else changes.",
 };
 
+/** dev/112: the removals block title — nodes, connections, and the cascade,
+ * each only when present. */
+function removalsTitle(nodes: number, edges: number, cascade: number): string {
+  const parts: string[] = [];
+  if (nodes) parts.push(`${nodes} node${nodes === 1 ? "" : "s"}`);
+  if (edges) parts.push(`${edges} connection${edges === 1 ? "" : "s"}`);
+  const cascadeNote = cascade
+    ? ` (and ${cascade} connected edge${cascade === 1 ? "" : "s"})`
+    : "";
+  return `Removes ${parts.join(" · ")}${cascadeNote}`;
+}
+
 /** dev/52 (+dev/59): the plan card's effect line — dynamic and honest about
  * removals. */
 function planEffectLine(part: AgentProposalPart): string | null {
   if (part.tool !== "dataflow.plan.write" || !part.plan) return null;
   const n = part.plan.nodes.length;
   const removed = part.plan.removals?.length ?? 0;
+  const removedEdges = part.plan.removedEdges?.length ?? 0;
   if (removed) {
     return (
       `Applying adds ${n} node${n === 1 ? "" : "s"} and removes ${removed} — ` +
       "removal deletes their content and cannot be undone."
     );
+  }
+  if (removedEdges) {
+    // dev/112: an edge-only revision — truthful about what changes.
+    const e = part.plan.edgeCount;
+    return (
+      `Applying adds ${e} connection${e === 1 ? "" : "s"} and removes ${removedEdges} — ` +
+      "nodes and their content are untouched."
+    );
+  }
+  if (n === 0) {
+    const e = part.plan.edgeCount;
+    return `Applying adds ${e} connection${e === 1 ? "" : "s"} — existing work is untouched.`;
   }
   return `Applying adds these ${n} connected node${n === 1 ? "" : "s"} to the canvas — existing work is untouched.`;
 }
@@ -376,25 +401,31 @@ export const AgentReviewCard: React.FC<{
           {part.plan.nodes.length} nodes · {part.plan.edgeCount} connections — {part.plan.goal}
         </div>
       ) : null}
-      {part.tool === "dataflow.plan.write" && part.plan?.removals?.length ? (
+      {part.tool === "dataflow.plan.write" &&
+      part.plan &&
+      ((part.plan.removals?.length ?? 0) > 0 || (part.plan.removedEdges?.length ?? 0) > 0) ? (
         // DEC-049.2: removals reviewed by NAME — every victim, with a
-        // content flag; impossible to miss.
-        <div className={styles.removals} role="group" aria-label="Nodes this plan removes">
+        // content flag; impossible to miss. dev/112: removed CONNECTIONS
+        // named too — the owner approved five edge removals unseen.
+        <div className={styles.removals} role="group" aria-label="Nodes and connections this plan removes">
           <div className={styles.removalsTitle}>
-            Removes {part.plan.removals.length} node
-            {part.plan.removals.length === 1 ? "" : "s"}
-            {part.plan.cascadeCount
-              ? ` (and ${part.plan.cascadeCount} connected edge${part.plan.cascadeCount === 1 ? "" : "s"})`
-              : ""}
+            {removalsTitle(part.plan.removals?.length ?? 0, part.plan.removedEdges?.length ?? 0, part.plan.cascadeCount ?? 0)}
           </div>
           <ul className={styles.removalsList}>
-            {part.plan.removals.map((victim) => (
+            {(part.plan.removals ?? []).map((victim) => (
               <li key={victim.id}>
                 {victim.label}
                 {victim.nodeType ? ` · ${victim.nodeType}` : ""}
                 {victim.contentChars > 0
                   ? ` — contains ${victim.contentChars} chars of content`
                   : " — empty"}
+              </li>
+            ))}
+            {(part.plan.removedEdges ?? []).map((edge) => (
+              <li key={edge.id}>
+                {edge.kind === "interaction" ? "⇄ " : "→ "}
+                {edge.fromLabel} → {edge.toLabel}
+                {edge.kind === "interaction" ? " · interaction" : ""}
               </li>
             ))}
           </ul>
@@ -765,8 +796,9 @@ export const AgentReviewCard: React.FC<{
               return (
                 <li key={index} className={styles.planEdgeRow}>
                   <span className={styles.planEdgeNames}>
-                    {edge.fromLabel} → {edge.toLabel}
+                    {edge.fromLabel} {edge.kind === "interaction" ? "⇄" : "→"} {edge.toLabel}
                     {edge.toHandle ? ` [${edge.toHandle}]` : ""}
+                    {edge.kind === "interaction" ? " · interaction" : ""}
                   </span>
                   {state === "applied" ? (
                     <span className={styles.planNodeCreated}>Connected ✓</span>
