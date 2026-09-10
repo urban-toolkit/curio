@@ -381,6 +381,38 @@ whose pool said *"Nothing to display"* and whose chart drew empty axes. If the
 emptiness is genuinely what you want, write that code in the editor yourself;
 Solve will not claim it verified something that produced nothing.
 
+### What an agent knows about a node's last run
+
+Every execution leaves a record, **wherever it ran** (memo dev/135). A node's
+code in the sandbox, a validation run the agent runtime drove, and a render in
+your browser — a Vega-Lite chart, an AUTK map, a Data Pool, a Merge Flow, a
+Simple View, a Spatial Join, a Data Export — all write the same per-node
+journal, each stamped with the `origin` that produced it. An agent attached to
+a node reads that record, so it can answer *what ran, what failed, and why*
+instead of guessing.
+
+Until dev/135 only the sandbox wrote there, and the consequence was easy to
+meet: a chart could sit visibly **red** on the canvas while the agent attached
+to it replied *"since the node has never been executed, there are no runtime
+errors to diagnose."* That sentence was true of the agent's context and false
+of the world.
+
+Three properties are worth knowing:
+
+- **A browser record is evidence, never authority.** It carries a status, a
+  short message and the output type the node declares — never the data, and
+  never an artifact id, which only the sandbox can mint.
+- **A failed upstream travels with the node.** Asked to fix a chart whose input
+  never arrived, an agent is told which upstream failed and what it said, so it
+  can say so rather than coding around a missing input.
+- **Never-executed still says so.** A node that has not run reports exactly
+  that, and nothing invents a schema or a result for it.
+
+This is also what lets Solve repair a browser-side failure: the repair loop
+starts from the last recorded failure and checks it against the content the
+node still holds, so a chart that failed in your browser is corrected from its
+real message rather than regenerated from scratch.
+
 ### Solve is the engineering loop — and it runs in the background
 
 Grounding says where a data-loading node's source may come from; it does not

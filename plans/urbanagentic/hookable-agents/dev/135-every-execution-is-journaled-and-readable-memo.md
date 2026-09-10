@@ -1,8 +1,11 @@
 # dev/135 — Every execution is journaled, and every agent can read it: a browser-rendered node's outcome is runtime truth too
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `6b1c51bd`. Every line number below was read
-on that commit; every claim about the failing dataflow was read from the owner's screenshot and the
-code paths it names.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-70`, and **no new
+`DEC`**: `DEC-052`'s journal keeps its charter (observational, latest-per-node, fail-open) and
+gains a third origin. Commits `5a2afb22` (the journal), `900092d6` (the route), `10315251` (the
+node context), `2ef7c267` (the reporter + `targetContext`), + this docs commit. Closes dev/129
+**F2** and dev/131 **F3**. Every line number below was read on `6b1c51bd`; every claim about the
+failing dataflow was read from the owner's screenshot and the code paths it names.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `6b1c51bd` (dev/133 + dev/134's docs commit).
@@ -341,3 +344,38 @@ not post without a project id, deduplicates repeats, and never throws when the e
 - The two follow-ups the owner asked about are answered in §1 rather than silently folded in: the
   row chips become implementable (and stay their entry's follow-up), and the canvas-diff engine is
   unrelated.
+
+---
+
+## 11. What changed while building
+
+1. **The `ok` predicate was the hidden half of the defect.** `record_execution` derived success
+   from `bool(output["path"])` — a sandbox rule. A Vega node that rendered *perfectly* has no
+   artifact, so even a reporting client would have had every success journaled as an **error**. The
+   explicit `status` parameter is what makes a browser record possible at all; `status=None` keeps
+   the canonical rule, so both existing writers are unchanged.
+2. **A successful run can still have something to say.** A layer count, a warning, a row total —
+   written to `stdoutTail` rather than `stderrTail`, because a message on a success must never be
+   read as a failure by `last_failure` or by the repair loop.
+3. **`origin` replaced an inference.** `last_failure` used to derive `"validation"` vs `"play"`
+   from the `validation` flag; it now reports `"browser"` from the record itself and keeps the two
+   legacy words for sandbox runs, so no existing reader changes meaning.
+4. **The reporter went where the instance mirror already was.** `useNodeState`'s output effect was
+   already the one place every kind writes its outcome onto its own node object (the owner's
+   phrase); reporting from there covers Vega, Autark, the pool, the merge, the simple view, the
+   spatial join, the export and the render boundary without touching a single behavior file — and
+   a kind added later is covered by construction.
+5. **`targetContext`, not a new read.** R4 said every node-attached agent must be able to read the
+   state whichever read it declares. The cheaper, truer fix was to give `targetContext` the same
+   live block `nodeContext` already carried, rather than re-declaring reads across the roster and
+   re-pinning manifests.
+6. **The route answers 204 for a project it cannot find.** A client may report against an unsaved
+   canvas or a stale id; creating a directory on a client's word would litter the store, and a 404
+   would make a render look broken. The no-op is the honest middle.
+
+Recorded and not done: **F1** — the owner's actual error is a real type mismatch (a multi-table
+Data Pool emits `{dataType: "outputs"}`, which a Vega node cannot read); it is now legible to an
+agent and to the user, and rewiring the graph is a proposal act under `DEC-006`. **F2** — run
+outcomes as row chips from the journal (`BL-P5-20260812-15`'s follow-up) is now implementable for
+every kind. **F3** — the `running` status is written by nothing yet; the allowlist carries it so a
+long render can use it without a protocol change.
