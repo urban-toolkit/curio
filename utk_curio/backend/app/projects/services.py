@@ -11,6 +11,7 @@ from uuid import uuid4
 logger = logging.getLogger(__name__)
 
 from utk_curio.backend.extensions import db
+from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.projects.schemas import (
@@ -191,15 +192,19 @@ def _assert_guest_can_save(user) -> None:
         raise ProjectError("Guest users cannot save projects", 403)
 
 
-def _assert_evaluation_graph_survives(
-    user_key: str, existing_spec: Optional[dict], incoming_spec: Optional[dict]
+def _assert_evaluation_run_not_writing(
+    user_key: str, existing_spec: Optional[dict]
 ) -> None:
-    """Refuse a client save that would destroy an evaluation run's dataflow.
+    """Refuse a client save into a project an evaluation is still building.
 
     The rule and its reasoning live with the marker
     (``agents/evaluation/authorization``); this reads the run's phase, which
     the rule needs and cannot look up itself, and translates its refusal into
     this domain's own error so the route answers 409 with that sentence.
+
+    This is NOT the general staleness rule — that is ``concurrency``, and it
+    applies to every project. This one says only that a run owns the project it
+    created until it reaches a terminal phase.
     """
     from utk_curio.backend.app.agents.evaluation import authorization as eval_auth
     from utk_curio.backend.app.agents.evaluation import records as eval_records
@@ -208,11 +213,10 @@ def _assert_evaluation_graph_survives(
     if marker is None:
         return
     record = eval_records.read(user_key, marker.run_id)
-    in_flight = bool(record and record.phase not in eval_records.TERMINAL_PHASES)
+    if not record or record.phase in eval_records.TERMINAL_PHASES:
+        return
     try:
-        eval_auth.assert_client_may_replace_graph(
-            existing_spec or {}, incoming_spec or {}, run_in_flight=in_flight
-        )
+        eval_auth.assert_run_is_not_writing(existing_spec or {})
     except eval_auth.ClientSaveRefused as refusal:
         raise ProjectError(str(refusal), 409) from refusal
 
@@ -652,14 +656,24 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         # from the on-disk spec — otherwise a client save wipes installed agents
         # and attachments. No-op on an outputs-only update (effective is existing).
         if data.spec is not None:
-            # An evaluation run owns the graph of the project it built, in the
-            # two cases where the client cannot be its authority: while the run
-            # is still writing, and a save that would leave that graph with no
-            # nodes at all. Without this, a canvas opened before the plan was
-            # applied silently wrote its empty graph over a finished run's work
-            # — a run with a score and an empty canvas, which is how this was
-            # found. Editing a finished evaluation project is untouched.
-            _assert_evaluation_graph_survives(ukey, existing_spec, effective_spec)
+            # A save may not delete what the client never saw (memo dev/124).
+            # This is where the canvas's whole-spec PUT meets whatever the
+            # backend wrote since the client loaded — an agent apply, a Solve
+            # wave, an install — and the check runs on the bytes the write
+            # would replace, under the lock that performs it.
+            try:
+                concurrency.assert_save_keeps_server_work(
+                    existing_spec or {}, effective_spec or {},
+                    base_revision=data.base_revision,
+                    current_revision=storage.spec_revision(ukey, project_id),
+                )
+            except concurrency.SaveWouldLoseWork as refusal:
+                raise ProjectError(str(refusal), 409) from refusal
+            # An evaluation run owns its project until it finishes; that is
+            # about evaluations rather than about staleness, so it stays its
+            # own rule. Its graph clause is gone — dev/124's rule covers it for
+            # every project.
+            _assert_evaluation_run_not_writing(ukey, existing_spec)
             from utk_curio.backend.app.agents.project_agents import preserve_agent_state
             from utk_curio.backend.app.agents.attachments import prune_orphaned_attachments
             from utk_curio.backend.app.agents.sessions import delete_session

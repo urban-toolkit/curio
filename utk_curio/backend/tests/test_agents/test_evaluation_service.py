@@ -798,14 +798,18 @@ class TestTheRunsGraphSurvivesAClientSave:
         assert created.status_code in (200, 201), created.get_json()
         return created.get_json()["id"]
 
-    def _put(self, client, account, project_id, nodes):
+    def _put(self, client, account, project_id, nodes, base_revision=None):
+        """A canvas save. ``base_revision`` is the counter the canvas last
+        synced with (memo dev/124) — a stale one is what a canvas opened before
+        the run's writes actually sends."""
+        body = {
+            "spec": {"dataflow": {"nodes": list(nodes), "edges": []}},
+            "name": "Evaluation · test",
+        }
+        if base_revision is not None:
+            body["baseRevision"] = base_revision
         return client.put(
-            f"/api/projects/{project_id}",
-            json={
-                "spec": {"dataflow": {"nodes": list(nodes), "edges": []}},
-                "name": "Evaluation · test",
-            },
-            headers=_auth(account["token"]),
+            f"/api/projects/{project_id}", json=body, headers=_auth(account["token"])
         )
 
     def _nodes(self, client, account, project_id):
@@ -816,16 +820,50 @@ class TestTheRunsGraphSurvivesAClientSave:
     def test_a_stale_canvas_cannot_empty_a_finished_runs_dataflow(
         self, client, account
     ):
-        node = {"id": "n1", "type": "curio.builtin/data-loading", "x": 0, "y": 0}
+        """The original defect, replayed in order and now caught by the
+        general rule (memo dev/124) rather than by a clause that knew what an
+        evaluation was.
+
+        The canvas opens the project while it is still empty, the run applies
+        its graph, and the canvas then saves what it has been holding.
+        """
+        from utk_curio.backend.app.projects import storage as projects_storage
+
         project_id = self._mark(
             client, account, run_id="eval-20260101T000000Z-aaaaaaaa",
-            phase="done", nodes=[node],
+            phase="done", nodes=[],
         )
-        refused = self._put(client, account, project_id, [])
+        # What the canvas loaded: an empty project, at this revision.
+        loaded = client.get(
+            f"/api/projects/{project_id}", headers=_auth(account["token"])
+        ).get_json()
+        assert loaded["spec"]["dataflow"]["nodes"] == []
+        basis = loaded["project"]["spec_revision"]
+
+        # What the run then wrote, the way an apply does — straight through the
+        # spec, with no idea a browser is holding the old one.
+        node = {"id": "n1", "type": "curio.builtin/data-loading",
+                "x": 0, "y": 0, "content": "import pandas as pd"}
+        spec = projects_storage.read_spec(account["key"], project_id)
+        spec["dataflow"]["nodes"] = [node]
+        projects_storage.write_spec(account["key"], project_id, spec)
+        assert projects_storage.spec_revision(account["key"], project_id) > basis
+
+        refused = self._put(client, account, project_id, [], base_revision=basis)
         assert refused.status_code == 409, refused.get_json()
-        assert "no nodes at all" in refused.get_json()["error"]
-        assert "reload the project" in refused.get_json()["error"]
+        assert "1 node" in refused.get_json()["error"]
+        assert "Reload the project" in refused.get_json()["error"]
         assert self._nodes(client, account, project_id) == [node]
+
+        # And the recovery the message asks for: reload, then save.
+        fresh = client.get(
+            f"/api/projects/{project_id}", headers=_auth(account["token"])
+        ).get_json()
+        saved = self._put(
+            client, account, project_id, fresh["spec"]["dataflow"]["nodes"],
+            base_revision=fresh["project"]["spec_revision"],
+        )
+        assert saved.status_code == 200, saved.get_json()
 
     def test_a_real_edit_to_a_finished_evaluation_project_still_saves(
         self, client, account
@@ -837,7 +875,12 @@ class TestTheRunsGraphSurvivesAClientSave:
             client, account, run_id="eval-20260101T000000Z-bbbbbbbb",
             phase="done", nodes=[node],
         )
-        saved = self._put(client, account, project_id, [node, extra])
+        current = client.get(
+            f"/api/projects/{project_id}", headers=_auth(account["token"])
+        ).get_json()["project"]["spec_revision"]
+        saved = self._put(
+            client, account, project_id, [node, extra], base_revision=current
+        )
         assert saved.status_code == 200, saved.get_json()
         assert len(self._nodes(client, account, project_id)) == 2
 
