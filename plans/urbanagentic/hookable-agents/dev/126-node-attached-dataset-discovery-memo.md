@@ -1,14 +1,20 @@
 # dev/126 — Node-attached dataset discovery: the Dataset Finder is a Dataflow Builder dependency, attached to the data-loading node it resolves
 
 **Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `DEC-080` minted,
-`BL-P5-20260910-60`. Nine commits: `a6437932` (this memo), `32771fb2` (one attach helper,
-one node-compatibility predicate, one remedy sentence), `d9a92456` (`DEC-080` + the
-declaration), `8a80de89` (both apply paths attach and say so), `7f7c6532`
-(`dataset_resolution.py`), `c22c3e27` (resolution initiates discovery), `86f63b3b` (the
-selection endpoint + the surfaces), `e3ad9192` (the three instructions) and this
+`BL-P5-20260910-60`. Nine commits: `32235ebd` (this memo), `3506446e` (one attach helper,
+one node-compatibility predicate, one remedy sentence), `650536d8` (`DEC-080` + the
+declaration), `e9a6c2ac` (both apply paths attach and say so), `943ad114`
+(`dataset_resolution.py`), `3599b35c` (resolution initiates discovery), `4a30196f` (the
+selection endpoint + the surfaces), `68fa2fd9` (the three instructions) and this
 tracking commit (docs + ledgers). The plan's commit 7 split in two: the prompt edits move the Dataflow
 Builder's byte pin, which belongs with the edit rather than with the docs. Every line number
-below was read on `e4367765`.**
+below was read on `573451df`.**
+
+**Hashes renumbered 2026-09-10 (owner request):** every commit of this phase and of dev/125
+was rewritten to drop the `Co-Authored-By` trailer, message-only — the trees are byte-identical
+(`git diff` between the old and new tips is empty). The hashes above and in
+`BL-P5-20260910-60` are the current ones; a note elsewhere quoting `a6437932`…`e3ad9192`, or
+`e4367765` for this memo's base, is naming the same commits before that rewrite.
 
 **Suites: `tests/test_agents` 2236 passed (2189 before); `tests/test_projects` +
 `tests/test_datasets` 769; jest 2390 across 205 suites; `tsc --noEmit` clean.**
@@ -20,7 +26,7 @@ initiated in TWO stages instead of one. F3 records the strict variant, which is 
 predicate away.
 
 Date: 2026-09-10
-Branch / tree: `imp/agentcatalog` @ `e4367765` (clean but for the untracked `plans/…/results`,
+Branch / tree: `imp/agentcatalog` @ `573451df` (clean but for the untracked `plans/…/results`,
 `knowledge-graph/` and one computed-dataset directory).
 Origin: owner request — "The dataset finder must always be initiated when resolving a
 data-loading node, and it should be attached directly to that node. It should be modified to
