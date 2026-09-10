@@ -157,3 +157,126 @@ class TestExecutionSeamWrite:
         })
         assert self._post(client, token, {"nodeId": "node-3"}).status_code == 200  # no dataflowId
         assert runtime_journal.read_record(_user_dir_key(user), "proj-1", "node-3") is None
+
+
+class TestBrowserExecutions:
+    """dev/135: a run is a run wherever it happens.
+
+    The owner's `a29d1ad8`: a Vega-Lite node visibly red with
+    "outputs is not a valid input type for the 2D Plot (Vega-Lite)", and every
+    agent reading the journal told `never-executed` — because the journal had
+    three writers and all three were the sandbox.
+    """
+
+    VEGA_ERROR = "outputs is not a valid input type for the 2D Plot (Vega-Lite)"
+
+    def test_a_render_error_is_journaled_with_its_message_and_origin(self, tmp_curio):
+        assert runtime_journal.record_browser_execution(
+            KEY, PID, "vega-1",
+            status="error", message=self.VEGA_ERROR, duration_ms=12,
+        ) is True
+        record = runtime_journal.read_record(KEY, PID, "vega-1")
+        assert record["status"] == "error"
+        assert record["origin"] == "browser"
+        assert record["stderrTail"] == self.VEGA_ERROR
+        # A client cannot mint an artifact id, so the record carries none.
+        assert record["output"] == {"path": "", "dataType": ""}
+        assert record["validation"] is False
+
+    def test_a_successful_render_is_ok_even_with_no_artifact(self, tmp_curio):
+        """The defect an explicit status exists for: `output.path == ""` is a
+        SANDBOX predicate, and a chart that rendered perfectly has no path."""
+        runtime_journal.record_browser_execution(
+            KEY, PID, "vega-2", status="ok", output_type="dataframe", duration_ms=8,
+        )
+        record = runtime_journal.read_record(KEY, PID, "vega-2")
+        assert record["status"] == "ok"
+        assert record["output"]["dataType"] == "dataframe"
+        assert record["stderrTail"] == ""
+
+    def test_a_note_on_a_successful_run_rides_stdout_not_stderr(self, tmp_curio):
+        runtime_journal.record_browser_execution(
+            KEY, PID, "autk-1", status="ok", message="4 layers drawn",
+        )
+        record = runtime_journal.read_record(KEY, PID, "autk-1")
+        assert record["status"] == "ok"
+        assert record["stdoutTail"] == "4 layers drawn"
+        assert record["stderrTail"] == ""  # nothing reads it as a failure
+
+    def test_the_repair_loop_reads_a_browser_failure(self, tmp_curio):
+        """dev/129's `last_failure` is the seed the fix starts from, and it now
+        covers browser failures — dev/129 F2 / dev/131 F3, closed."""
+        grammar = '{"mark": "bar"}'
+        runtime_journal.record_browser_execution(
+            KEY, PID, "vega-3", status="error", message=self.VEGA_ERROR, code=grammar,
+        )
+        failure = runtime_journal.last_failure(KEY, PID, "vega-3")
+        assert failure["origin"] == "browser"
+        assert failure["stderr"] == self.VEGA_ERROR
+        assert runtime_journal.failure_matches(failure, grammar) is True
+
+    def test_a_running_status_is_not_a_failure(self, tmp_curio):
+        runtime_journal.record_browser_execution(KEY, PID, "autk-2", status="running")
+        assert runtime_journal.read_record(KEY, PID, "autk-2")["status"] == "running"
+        assert runtime_journal.last_failure(KEY, PID, "autk-2") is None
+
+    def test_an_unknown_status_is_refused_and_writes_nothing(self, tmp_curio):
+        assert runtime_journal.record_browser_execution(
+            KEY, PID, "ghost", status="exploded", message="x",
+        ) is False
+        assert runtime_journal.read_record(KEY, PID, "ghost") is None
+
+    def test_the_message_is_bounded(self, tmp_curio):
+        runtime_journal.record_browser_execution(
+            KEY, PID, "vega-4", status="error", message="e" * 9000,
+        )
+        record = runtime_journal.read_record(KEY, PID, "vega-4")
+        assert len(record["stderrTail"]) <= runtime_journal.BROWSER_MESSAGE_CHARS
+
+    def test_it_never_raises(self, tmp_curio):
+        # An unwritable project directory must not take a render down with it.
+        assert runtime_journal.record_browser_execution(
+            "", "", "", status="error", message="x",
+        ) is True  # attempted; the write itself fails open
+
+
+class TestOriginOnEveryRecord:
+    def test_the_sandbox_and_validation_origins_are_derived_as_before(self, tmp_curio):
+        runtime_journal.record_execution(
+            KEY, PID, "play-1", code="print(1)", stdout=[], stderr="",
+            output={"path": "art-9", "dataType": "dataframe"},
+            started_at="2026-09-10T00:00:00Z", duration_ms=1,
+        )
+        runtime_journal.record_execution(
+            KEY, PID, "val-1", code="print(1)", stdout=[], stderr="",
+            output={"path": "art-9", "dataType": "dataframe"},
+            started_at="2026-09-10T00:00:00Z", duration_ms=1, validation=True,
+        )
+        assert runtime_journal.read_record(KEY, PID, "play-1")["origin"] == "sandbox"
+        assert runtime_journal.read_record(KEY, PID, "val-1")["origin"] == "validation"
+        # And the legacy projection keeps its own words.
+        assert runtime_journal.last_failure(KEY, PID, "play-1") is None
+
+    def test_status_map_reports_the_origin(self, tmp_curio):
+        runtime_journal.record_browser_execution(KEY, PID, "vega-5", status="error",
+                                                 message="boom")
+        runtime_journal.record_execution(
+            KEY, PID, "py-5", code="print(1)", stdout=[], stderr="",
+            output={"path": "art-1", "dataType": "dataframe"},
+            started_at="2026-09-10T00:00:00Z", duration_ms=1,
+        )
+        statuses = runtime_journal.status_map(KEY, PID)
+        assert statuses["vega-5"] == {
+            "status": "error", "updatedAt": statuses["vega-5"]["updatedAt"],
+            "origin": "browser",
+        }
+        assert statuses["py-5"]["origin"] == "sandbox"
+
+    def test_an_explicit_status_overrides_the_path_predicate(self, tmp_curio):
+        runtime_journal.record_execution(
+            KEY, PID, "n-explicit", code="", stdout=[], stderr="",
+            output={"path": "", "dataType": "json"},
+            started_at="2026-09-10T00:00:00Z", duration_ms=1,
+            status="ok", origin="browser",
+        )
+        assert runtime_journal.read_record(KEY, PID, "n-explicit")["status"] == "ok"

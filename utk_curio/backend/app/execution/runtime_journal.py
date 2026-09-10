@@ -17,6 +17,19 @@ Design rules:
   provenance's job.
 - Storage rides the project directory (`DEC-040` filesystem posture):
   ``<project dir>/runtime/<nodeId>.json``.
+
+dev/135: a run is a run wherever it happens. Until now this module had three
+writers and all three were the sandbox, so a Vega-Lite chart, an AUTK map, a
+Data Pool, a Merge Flow, a Simple View, a Spatial Join and a Data Export — every
+kind that runs in the BROWSER or through its own service — left no trace at all,
+and every agent reading the journal was told ``never-executed`` about a node the
+user had just watched fail (the owner's `a29d1ad8`). Two facts make room for
+them: an explicit ``status``, because ``output.path == ""`` is a SANDBOX
+predicate (a chart that rendered perfectly produces no artifact and would be
+journaled as an error), and an ``origin`` — ``sandbox`` | ``validation`` |
+``browser`` — so a reader can always tell what produced the record. A browser
+record is evidence like any other and authority like none: it carries no
+artifact path, and nothing downstream treats it as one.
 """
 
 from __future__ import annotations
@@ -31,6 +44,26 @@ from utk_curio.backend.app.projects import storage as projects_storage
 
 _STDERR_TAIL_CHARS = 4000
 _STDOUT_TAIL_CHARS = 2000
+
+#: dev/135: where a record came from. ``sandbox`` is an interactive run through
+#: the execution routes, ``validation`` a run the agent runtime drove, and
+#: ``browser`` an outcome a node reported from the client (a render, a compile,
+#: a service call it made itself).
+ORIGIN_SANDBOX = "sandbox"
+ORIGIN_VALIDATION = "validation"
+ORIGIN_BROWSER = "browser"
+ORIGINS = (ORIGIN_SANDBOX, ORIGIN_VALIDATION, ORIGIN_BROWSER)
+
+#: The statuses a record may carry. ``running`` exists so a long browser render
+#: can say so; nothing derives a failure from it.
+STATUS_OK = "ok"
+STATUS_ERROR = "error"
+STATUS_RUNNING = "running"
+STATUSES = (STATUS_OK, STATUS_ERROR, STATUS_RUNNING)
+
+#: A browser message is a sentence, not a traceback: bounded on arrival here as
+#: well as at the route, so no caller can grow the record.
+BROWSER_MESSAGE_CHARS = 2000
 # Node ids come from specs (untrusted for path purposes): filename-safe only.
 _NODE_SEGMENT_RE = re.compile(r"[^A-Za-z0-9._-]")
 
@@ -63,11 +96,25 @@ def record_execution(
     started_at: str,
     duration_ms: float,
     validation: bool = False,
+    status: str | None = None,
+    origin: str | None = None,
 ) -> None:
-    """Persist one execution outcome. Best-effort: never raises."""
+    """Persist one execution outcome. Best-effort: never raises.
+
+    ``status`` (dev/135) overrides the sandbox predicate for a caller whose run
+    produces no artifact — a browser render, a compile, a service call. When it
+    is None the canonical rule stands, so every existing caller is unchanged.
+    ``origin`` defaults to ``validation``/``sandbox`` from the ``validation``
+    flag, which is what the two sandbox writers have always meant.
+    """
     try:
         out = output if isinstance(output, dict) else {}
-        ok = bool(str(out.get("path") or ""))  # the canonical predicate
+        if status in STATUSES:
+            ok = status == STATUS_OK
+            recorded_status = status
+        else:
+            ok = bool(str(out.get("path") or ""))  # the canonical predicate
+            recorded_status = STATUS_OK if ok else STATUS_ERROR
         if isinstance(stdout, list):
             stdout_text = "\n".join(str(line) for line in stdout)
         else:
@@ -80,7 +127,7 @@ def record_execution(
             seq = 1
         record = {
             "nodeId": node_id,
-            "status": "ok" if ok else "error",
+            "status": recorded_status,
             "stderrTail": stderr_text[-_STDERR_TAIL_CHARS:],
             "stdoutTail": stdout_text[-_STDOUT_TAIL_CHARS:],
             "output": {
@@ -92,6 +139,12 @@ def record_execution(
             "executionSeq": seq,
             "executedCodeSha256": normalized_code_sha256(str(code or "")),
             "validation": bool(validation),
+            # dev/135: what produced this record. Read as evidence, never as
+            # authority — a browser record carries no artifact path.
+            "origin": (
+                origin if origin in ORIGINS
+                else (ORIGIN_VALIDATION if validation else ORIGIN_SANDBOX)
+            ),
             "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         directory = projects_storage.ensure_project_dir(user_key, project_id) / "runtime"
@@ -100,6 +153,68 @@ def record_execution(
         path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
     except Exception:
         # Observational store: an execution must never fail over its journal.
+        pass
+
+
+def record_browser_execution(
+    user_key: str,
+    project_id: str,
+    node_id: str,
+    *,
+    status: str,
+    message: str = "",
+    output_type: str = "",
+    duration_ms: float = 0,
+    code: str = "",
+    started_at: str | None = None,
+) -> bool:
+    """Journal an outcome a node reported from the CLIENT (memo dev/135).
+
+    The browser's vocabulary is a message, not a stream: a render error, a
+    grammar compile failure, a service call's reason. It is written into the
+    same record every other run writes — ``stderrTail`` for the message, so
+    ``last_failure`` and ``node.runtime.read`` need no special case — with
+    ``origin: "browser"`` and NO artifact path, because a client cannot mint
+    one. Returns whether a write was attempted (a bad status is refused);
+    never raises, like every write here.
+    """
+    if status not in STATUSES:
+        return False
+    text = str(message or "")[-BROWSER_MESSAGE_CHARS:]
+    record_execution(
+        user_key, project_id, node_id,
+        code=code,
+        stdout=[],
+        stderr=text if status == STATUS_ERROR else "",
+        # A browser run produces no artifact; the declared type is what it can
+        # honestly report about its output.
+        output={"path": "", "dataType": str(output_type or "")},
+        started_at=started_at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        duration_ms=duration_ms,
+        status=status,
+        origin=ORIGIN_BROWSER,
+    )
+    if status != STATUS_ERROR and text:
+        # A successful render may still have something to say (a warning, a
+        # layer count). It rides stdout so nothing reads it as a failure.
+        _amend_stdout(user_key, project_id, node_id, text)
+    return True
+
+
+def _amend_stdout(user_key: str, project_id: str, node_id: str, text: str) -> None:
+    """Best-effort: put a non-failure message where a reader looks for notes."""
+    try:
+        record = read_record(user_key, project_id, node_id)
+        if not isinstance(record, dict):
+            return
+        record["stdoutTail"] = text[-_STDOUT_TAIL_CHARS:]
+        path = (
+            projects_storage.project_dir(user_key, project_id)
+            / "runtime"
+            / f"{_node_segment(node_id)}.json"
+        )
+        path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    except Exception:
         pass
 
 
@@ -151,7 +266,12 @@ def last_failure(user_key: str, project_id: str, node_id: str) -> dict | None:
         "codeSha256": str(record.get("executedCodeSha256") or ""),
         "stderr": stderr[-_FAILURE_STDERR_CHARS:],
         "ranAt": str(record.get("startedAt") or record.get("updatedAt") or ""),
-        "origin": "validation" if record.get("validation") else "play",
+        # dev/135: the record says where it came from; the legacy word "play"
+        # is what a sandbox run has always been called in this projection.
+        "origin": (
+            ORIGIN_BROWSER if record.get("origin") == ORIGIN_BROWSER
+            else "validation" if record.get("validation") else "play"
+        ),
     }
 
 
@@ -181,6 +301,10 @@ def status_map(user_key: str, project_id: str) -> dict[str, dict]:
                 out[node_id] = {
                     "status": data.get("status"),
                     "updatedAt": data.get("updatedAt"),
+                    # dev/135: so a reader can say WHERE a node last ran.
+                    "origin": data.get("origin") or (
+                        ORIGIN_VALIDATION if data.get("validation") else ORIGIN_SANDBOX
+                    ),
                 }
     except Exception:
         pass
