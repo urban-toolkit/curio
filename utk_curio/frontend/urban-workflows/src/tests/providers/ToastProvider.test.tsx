@@ -141,4 +141,196 @@ describe("ToastProvider", () => {
     });
     expect(screen.queryByText("Import failed")).not.toBeInTheDocument();
   });
+
+  // A failure that fans out reports itself once per occurrence. Stacking those
+  // put five identical errors on screen, taller than the window - and since an
+  // error stays until it is dismissed, the oldest sat clipped off the top with
+  // its close button out of reach, undismissable by anyone.
+  it("collapses a repeated message into one toast with a count", () => {
+    render(
+      <ToastProvider>
+        <Trigger
+          message="This browser does not expose WebGPU."
+          variant="error"
+        />
+      </ToastProvider>,
+    );
+    act(() => {
+      for (let i = 0; i < 5; i++) screen.getByText("fire").click();
+    });
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(
+      screen.getByText("This browser does not expose WebGPU."),
+    ).toBeInTheDocument();
+    const tally = screen.getByTestId("toast-count");
+    expect(tally).toHaveAttribute("title", "Reported 5 times");
+    expect(tally.textContent).toContain("5");
+  });
+
+  it("leaves a message that only happened once untallied", () => {
+    render(
+      <ToastProvider>
+        <Trigger message="Import failed" variant="error" />
+      </ToastProvider>,
+    );
+    act(() => {
+      screen.getByText("fire").click();
+    });
+    expect(screen.queryByTestId("toast-count")).not.toBeInTheDocument();
+  });
+
+  it("keeps different failures apart", () => {
+    // Collapsing is per message: two things going wrong is not one thing
+    // going wrong twice.
+    render(
+      <ToastProvider>
+        <Trigger message="brokenlib cannot be imported" variant="error" />
+        <Trigger message="Could not reach the sandbox" variant="error" />
+      </ToastProvider>,
+    );
+    const [first, second] = screen.getAllByText("fire");
+    act(() => {
+      first.click();
+      second.click();
+      first.click();
+    });
+
+    expect(screen.getAllByRole("alert")).toHaveLength(2);
+    expect(screen.getByTestId("toast-count").textContent).toContain("2");
+  });
+
+  it("closes every occurrence behind the one the user closed", () => {
+    render(
+      <ToastProvider>
+        <Trigger message="brokenlib cannot be imported" variant="error" />
+      </ToastProvider>,
+    );
+    act(() => {
+      for (let i = 0; i < 3; i++) screen.getByText("fire").click();
+    });
+    act(() => {
+      screen.getByRole("button", { name: /close/i }).click();
+    });
+
+    expect(
+      screen.queryByText("brokenlib cannot be imported"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the same element when an earlier occurrence expires", () => {
+    // The toast is still on screen, so it must survive as the same DOM node:
+    // a key that changes with group membership makes React tear it down and
+    // build a new one, which drops keyboard focus from its close button to
+    // <body> mid-interaction. jsdom sees the text either way, which is why
+    // this asserts on node identity.
+    jest.useFakeTimers();
+    try {
+      render(
+        <ToastProvider>
+          <Trigger message="Saved" variant="success" />
+        </ToastProvider>,
+      );
+      act(() => {
+        screen.getByText("fire").click();
+      });
+      act(() => {
+        jest.advanceTimersByTime(3000);
+        screen.getByText("fire").click();
+      });
+
+      const region = getNotificationRegion();
+      const before = region.querySelector(".toast");
+      const focusable = region.querySelector("button.btn-close") as HTMLElement;
+      focusable.focus();
+
+      // The first occurrence's five seconds are up; the second's are not.
+      act(() => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      expect(screen.getByText("Saved")).toBeInTheDocument();
+      expect(region.querySelector(".toast")).toBe(before);
+      expect(document.activeElement).toBe(focusable);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("keeps a live toast in its slot when an earlier occurrence expires", () => {
+    // The stack is positional: a toast that moves takes its close button out
+    // from under a click already on its way there.
+    jest.useFakeTimers();
+    try {
+      render(
+        <ToastProvider>
+          <Trigger message="Saved" variant="success" />
+          <Trigger message="Export failed" variant="error" />
+        </ToastProvider>,
+      );
+      const [saved, failed] = screen.getAllByText("fire");
+      act(() => {
+        saved.click();
+      });
+      act(() => {
+        jest.advanceTimersByTime(1000);
+        failed.click();
+      });
+      act(() => {
+        jest.advanceTimersByTime(3000);
+        saved.click();
+      });
+
+      const region = getNotificationRegion();
+      const order = () =>
+        Array.from(region.querySelectorAll(".toast-body")).map(
+          (n) => n.textContent,
+        );
+      expect(order()).toEqual(["Saved", "Export failed"]);
+
+      // The first "Saved" expires; the second is still live, and the error
+      // between them never expires at all.
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(order()).toEqual(["Saved", "Export failed"]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("counts back down as each occurrence expires", () => {
+    // Occurrences are grouped for display, not merged: each keeps its own
+    // five-second timer, so the tally follows what is still outstanding.
+    jest.useFakeTimers();
+    try {
+      render(
+        <ToastProvider>
+          <Trigger message="Saved" variant="success" />
+        </ToastProvider>,
+      );
+      act(() => {
+        screen.getByText("fire").click();
+      });
+      act(() => {
+        jest.advanceTimersByTime(3000);
+        screen.getByText("fire").click();
+      });
+      expect(screen.getByTestId("toast-count").textContent).toContain("2");
+
+      // The first one's five seconds are up; the second one's are not.
+      act(() => {
+        jest.advanceTimersByTime(2000);
+      });
+      expect(screen.getByText("Saved")).toBeInTheDocument();
+      expect(screen.queryByTestId("toast-count")).not.toBeInTheDocument();
+
+      act(() => {
+        jest.advanceTimersByTime(3000);
+      });
+      expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

@@ -283,12 +283,19 @@ def test_the_libraries_dialog_names_the_library_and_the_reason(
     expect(dialog.get_by_text("✓ Already installed")).to_have_count(0)
     expect(dialog.get_by_text("✓ Installed")).to_have_count(0)
 
+    # The repo default budget rather than a tight one, because the machine that
+    # records this baseline is not the machine that polices it: e2e runs
+    # host-side on the Linux runner (CURIO_E2E_HOST), whose font metrics wrap
+    # the intro copy a line earlier, overflow the library table and add a
+    # horizontal scrollbar - 10% of a crop that is almost entirely text, with
+    # nothing behaving differently. What the dialog SAYS is asserted above, in
+    # the DOM; this capture is here for the layout around it.
     save_workflow_test_screenshot(
         page, "broken-library",
         test_name="test_the_libraries_dialog_names_the_library_and_the_reason",
         fit_reactflow=False,
         clip_selector='[role="dialog"]',
-        max_diff_ratio=0.03,
+        max_diff_ratio=0.20,
     )
 
 
@@ -510,16 +517,25 @@ def test_sideloading_an_archive_reports_its_broken_library(
     assert response.status == 201, f"{response.status}: {response.text()[:400]}"
     assert response.json()["importErrors"] == {LIB: broken_library["importError"]}
 
-    toasts = page.get_by_label(NOTIFICATIONS)
-    expect(toasts).to_contain_text(LIB, timeout=30000)
-    expect(toasts).to_contain_text(REASON_FRAGMENT)
-
-    save_workflow_test_screenshot(
-        page, "broken-library",
-        test_name="test_sideloading_an_archive_reports_its_broken_library",
-        fit_reactflow=False,
-        clip_selector='[aria-label="Notifications"]',
-        max_diff_ratio=0.05,
+    # The whole sentence, not two fragments and a picture of it.
+    # `dependencyFailureNotice` is the one phrasing seven install surfaces
+    # share, so an exact comparison is what catches a surface drifting back to
+    # its own wording - which is the bug that function exists to prevent.
+    #
+    # This replaced a 350x151 screenshot of the same toast. That crop was
+    # nothing but text, so one wrap difference moved a quarter of its pixels:
+    # the message is four lines on the machine that mints the baseline and five
+    # on the Linux runner that polices it (e2e runs host-side there, see
+    # CURIO_E2E_HOST), and no diff budget both clears that and still means
+    # anything. Text compares the same everywhere.
+    notice = page.locator(
+        f'[aria-label="{NOTIFICATIONS}"] .toast-body'
+    ).filter(has_text=LIB)
+    expect(notice).to_have_text(
+        f"Imported {FIXTURE_NAME}, but {LIB} cannot be imported "
+        f"({broken_library['importError']}). "
+        "Nodes needing it will fail until it is repaired.",
+        timeout=30000,
     )
 
     # The toast is bottom-right and now stays until dismissed; the drawer's
