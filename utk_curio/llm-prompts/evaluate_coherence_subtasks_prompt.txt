@@ -33,7 +33,7 @@ Your warnings should contribute to a more coherent dataflow. Keep your warnings 
 - Incompatible analysis or visualization. For example: trying to visualize a non-geolocated data into a map, trying to use Vega lite to produce 3D visualizations (it can't).
 - Incompatible box. For example: using a computation box to load data, using a dataformat not supported by the box.
 - Boxes that overloaded with multiple subtasks that could be broken down into smaller subtasks (make sure to recommend ways to breakdown the subtask).
-- Imposibilities. The user specify a subtask that is unachievable and unrealistic for the plataform's capability. Example: real time stream of data to another application.
+- Impossibilities. The user specify a subtask that is unachievable and unrealistic for the plataform's capability. Example: real time stream of data to another application.
 - Lack of supporting nodes. A subtask that does is not correctly supported by previous boxes. For example: trying to do analysis on data that was not loaded.
 - Underspecified subtask. Not enough details to implement it.
 
@@ -41,8 +41,8 @@ Do not generate warnings for these node types:
 
 - DATA_POOL
 - MERGE_FLOW
-- VIS_VEGA
-- AUTK_MAP
+- VEGA-LITE
+- AUTARK
 
 **BE VERY SPECIFIC, DO NOT PROVIDE VAGUE WARNINGS LIKE: 'Input data format not suited for analysis'. YOU DO NOT NEED TO OUTPUT WARNING FOR EVERY NODE**.
 

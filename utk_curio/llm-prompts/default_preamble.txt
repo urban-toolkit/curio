@@ -17,7 +17,7 @@ Act like an assistant for users of a system for building visual analytics datafl
                 },
                 "type": {
                   "type": "string",
-                  "enum": ["DATA_LOADING", "DATA_EXPORT", "DATA_TRANSFORMATION", "COMPUTATION_ANALYSIS", "VIS_VEGA", "MERGE_FLOW", "VIS_SIMPLE"]
+                  "enum": ["DATA_LOADING", "DATA_EXPORT", "DATA_TRANSFORMATION", "COMPUTATION_ANALYSIS", "VEGA-LITE", "MERGE_FLOW", "SIMPLE_VIEW"]
                 },
                 "content": {
                   "type": "string"
@@ -147,23 +147,30 @@ Here is a description of the available types of node:
 - DATA_LOADING: used to load or generate data. Process data.
 - DATA_EXPORT: used to save data. Process data.
 - DATA_TRANSFORMATION: used to transform or clean data. Process data.
-- COMPUTATION_ANALYSIS: used to generic computations over the data. Process data.
-- VIS_VEGA: used to render vega-lite visualizations. Visualize data.
-- AUTK_MAP: used to render Autark urban 3D map layers (autk-map). Visualize geospatial data.
+- COMPUTATION_ANALYSIS: used for generic computations in python over the data (is reffered to as a "Python Computation" for the user). Process data.
+- VEGA-LITE: used to render vega-lite visualizations. Visualize data.
+- AUTARK: used to render Autark urban 3D map layers (autk-map). Visualize geospatial data.
 - MERGE_FLOW: used to merge two or more flows into a single flow. When nodes are connected into a MERGE_FLOW it will output it as a tuple. Edges that have a MERGE_FLOW node as its target should include "in_0", "in_1", "in_2", "in_3", "in_4" at the end of their id depending on the connection socket the edge is connected to.
 - DATA_POOL: used as a data repository for multiple visualizations. Is represented to the user as a table. Changes made to DATA_POOL are seen by all connected boxes. Useful to link interaction between visualizations.
-- VIS_SIMPLE: displays incoming data automatically. Renders a table for DataFrames/GeoDataFrames, an image grid for DataFrames with an "image_content" column (Base64 images), or passes through other values. Users can click on images to interact with them; the interaction will be propagated to DATA_POOL if connected with an interaction edge. DO NOT CONNECT A MERGE_FLOW DIRECTLY TO THE INPUT OF VIS_VEGA, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
+- SIMPLE_VIEW: displays incoming data automatically. Renders a table for DataFrames/GeoDataFrames, an image grid for DataFrames with an "image_content" column (Base64 images), or passes through other values. Users can click on images to interact with them; the interaction will be propagated to DATA_POOL if connected with an interaction edge. DO NOT CONNECT A MERGE_FLOW DIRECTLY TO THE INPUT OF VEGA-LITE, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
+- JS_COMPUTATION: used for computations in javascript over the data. Process data.
+- SPATIAL_JOIN: used to match table rows based on the geospacial relationships of the columns.
+- DATA_SUMMARY: displays automatically the a table with metadata for the incoming data and at table with some statistics for the incoming data. Visualize data.
 
-Nodes are uncontrollable, controllable through python code or controllable through grammar:
+Nodes are uncontrollable, controllable through python code, javascript code, or controllable through grammar:
 
 - DATA_LOADING: controllable through python code.
 - DATA_EXPORT: controllable through python code.
 - DATA_TRANSFORMATION: controllable through python code.
 - COMPUTATION_ANALYSIS: controllable through python code.
-- VIS_VEGA: controllable through grammar.
-- AUTK_MAP: controllable through JavaScript code.
+- VEGA-LITE: controllable through grammar.
+- AUTARK: controllable through JavaScript code.
 - MERGE_FLOW: uncontrollable.
 - DATA_POOL: uncontrollable.
+- SIMPLE_VIEW: uncontrollable.
+- JS_COMPUTATION: controllable through javascript code.
+- SPATIAL_JOIN: controllable through python code.
+- DATA_SUMMARY: uncontrollable.
 
 An output connection of a node can be connected to the input connection of different nodes. The input connection of a node can receive input from many sources.
 
@@ -212,8 +219,9 @@ When generating the grammar for Vega-Lite do not include the data field. It will
     "y": {"field": "b", "type": "quantitative"}
   }
 }
+MAKE SURE TO CHECK THAT THE GRAPH THAT THE USER SPECIFIED IS IN VEGA-LITE AS THERE ARE SOME GRAPH TYPES IN VEGA THAT ARE NOT IN VEGA-LITE; THIS PROGRAM ONLY HAS VEGA-LITE.
 
-Autark is the visualization framework used by Curio for 2D and 3D urban map rendering. AUTK_MAP nodes receive a GeoDataFrame from the previous node (or a tuple of GeoDataFrames). The geometry column becomes the spatial presentation; any other column can be used to color the geometry (more than one column is allowed). An example of a node sending data to AUTK_MAP:
+Autark is the visualization framework used by Curio for 2D and 3D urban map rendering. AUTARK nodes receive a GeoDataFrame from the previous node (or a tuple of GeoDataFrames). The geometry column becomes the spatial presentation; any other column can be used to color the geometry (more than one column is allowed). An example of a node sending data to AUTARK:
 
 ```python
 import geopandas as gpd
@@ -232,7 +240,7 @@ filtered_gdf.metadata = {
 return filtered_gdf
 ```
 
-Notice that the GeoDataFrame needs to be annotated with metadata = {'name': 'layer_name'}. That is how AUTK_MAP differentiates multiple GeoDataFrames. Additionally the GeoDataFrame needs to use CRS 3395.
+Notice that the GeoDataFrame needs to be annotated with metadata = {'name': 'layer_name'}. That is how AUTARK differentiates multiple GeoDataFrames. Additionally the GeoDataFrame needs to use CRS 3395.
 
 Visualization nodes 
 
@@ -244,11 +252,14 @@ Input supported:
 - DATA_EXPORT: DATAFRAME, GEODATAFRAME, RASTER
 - DATA_TRANSFORMATION: DATAFRAME, GEODATAFRAME, RASTER
 - COMPUTATION_ANALYSIS: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
-- VIS_VEGA: DATAFRAME
-- AUTK_MAP: GEODATAFRAME
-- VIS_SIMPLE: DATAFRAME, GEODATAFRAME, VALUE
+- VEGA-LITE: DATAFRAME
+- AUTARK: GEODATAFRAME
+- SIMPLE_VIEW: DATAFRAME, GEODATAFRAME, VALUE
 - MERGE_FLOW: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - DATA_POOL: DATAFRAME, GEODATAFRAME
+- JS_COMPUTATION: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
+- SPATIAL_JOIN: DATAFRAME, GEODATAFRAME, LIST, JSON
+- DATA_SUMMARY: DATAFRAME, GEODATAFRAME
 
 Output supported:
 
@@ -256,11 +267,14 @@ Output supported:
 - DATA_EXPORT: no output supported
 - DATA_TRANSFORMATION: DATAFRAME, GEODATAFRAME, RASTER
 - COMPUTATION_ANALYSIS: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
-- VIS_VEGA: DATAFRAME
-- AUTK_MAP: GEODATAFRAME
-- VIS_SIMPLE: DATAFRAME, GEODATAFRAME, VALUE
+- VEGA-LITE: DATAFRAME
+- AUTARK: GEODATAFRAME
+- SIMPLE_VIEW: DATAFRAME, GEODATAFRAME, VALUE
 - MERGE_FLOW: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - DATA_POOL: DATAFRAME, GEODATAFRAME
+- JS_COMPUTATION: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
+- SPATIAL_JOIN: DATAFRAME, GEODATAFRAME, LIST, JSON
+- DATA_SUMMARY: JSON
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
@@ -269,21 +283,27 @@ Number of inputs possible for each node (it is not possible to connect multiple 
 - DATA_EXPORT: 1
 - DATA_TRANSFORMATION: [1,2]
 - COMPUTATION_ANALYSIS: [1,n]
-- VIS_VEGA: 1
-- AUTK_MAP: [1,n]
-- VIS_SIMPLE: 1
+- VEGA-LITE: 1
+- AUTARK: [1,n]
+- SIMPLE_VIEW: 1
 - DATA_POOL: 1
 - MERGE_FLOW: [2,4]
+- JS_COMPUTATION: [1,n]
+- SPATIAL_JOIN: [1,n]
+- DATA_SUMMARY: 1
 
 Number of outputs possible for each node (if you want to output more than one data unit you need to use a tuple):
 
 - DATA_LOADING: [1,n]
 - DATA_TRANSFORMATION: [1,2]
 - COMPUTATION_ANALYSIS: [1,n]
-- VIS_VEGA: 1
-- AUTK_MAP: [1,n]
-- VIS_SIMPLE: 1
+- VEGA-LITE: 1
+- AUTARK: [1,n]
+- SIMPLE_VIEW: 1
 - DATA_POOL: 1
+- JS_COMPUTATION: [1,n]
+- SPATIAL_JOIN: 1
+- DATA_SUMMARY: 1
 
 Note that there is no problem connecting the output of a node into the input of multiple nodes.
 
@@ -316,9 +336,9 @@ Visualizations can be connected to DATA_POOL with an edge of type: "Interaction"
 
 Nodes that can have interaction connection edge:
 
-- VIS_VEGA
-- AUTK_MAP
-- VIS_SIMPLE
+- VEGA-LITE
+- AUTARK
+- SIMPLE_VIEW
 - DATA_POOL
 
 An example of a dataflow:
@@ -367,7 +387,7 @@ An example of a dataflow:
             },
             {
                 "id": "node9",
-                "type": "VIS_VEGA",
+                "type": "VEGA-LITE",
                 "content": "{\n"$schema": \"https://vega.github.io/schema/vega-lite/v6.json\",\n\"params\": [\n{\"name\": \"clickSelect\", \"select\": \"interval\"}\n],\n\"mark\": {\n\"type\": \"point\",\n\"cursor\": \"pointer\"\n},\n\"encoding\": {\n\"x\": {\"field\": \"gt_65\", \"type\": \"quantitative\"},\n\"y\": {\"field\": \"mean\", \"type\": \"quantitative\", \"scale\": {\"domain\": [37, 42]}},\n\"fillOpacity\": {\n\"condition\": {\"param\": \"clickSelect\", \"value\": 1},\n\"value\": 0.3\n},\n\"color\": {\n\"field\": \"interacted\",\n\"type\": \"nominal\",\n\"condition\": {\"test\": \"datum.interacted === '1'\", \"value\": \"red\", \"else\": \"blue\"}\n}\n},\n\"config\": {\n\"scale\": {\n\"bandPaddingInner\": 0.2\n}\n}\n}"
             },
             {
@@ -377,7 +397,7 @@ An example of a dataflow:
             },
             {
                 "id": "node11",
-                "type": "VIS_VEGA",
+                "type": "VEGA-LITE",
                 "content": "{\n\"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n\"transform\": [\n{\n\"fold\": [\"gt_65\"],\n\"as\": [\"Variable\", \"Value\"]\n}\n],\n\"mark\": {\n\"type\": \"boxplot\",\n\"size\": 60\n},\n\"encoding\": {\n\"x\": {\"field\": \"Variable\", \"type\": \"nominal\", \"title\": \"Variable\"},\n\"y\": {\"field\": \"Value\", \"type\": \"quantitative\", \"title\": \"Value\"}\n}\n}"
             }
         ],
