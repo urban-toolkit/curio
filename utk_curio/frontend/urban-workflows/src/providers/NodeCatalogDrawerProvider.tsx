@@ -4,15 +4,11 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import { NodeCatalogDrawer } from "../components/packages/publishing";
-
-/** Panel slide duration — keep in sync with `.drawer` in NodeCatalogDrawer.module.css */
-const DRAWER_MOTION_MS = 300;
+import { useSlideDrawerPresentation } from "../hook/useSlideDrawerPresentation";
 
 type OpenNodeCatalogDrawerOptions = {
   /** Seed the drawer's search box, so a caller can land the user on one
@@ -29,72 +25,26 @@ type NodeCatalogDrawerContextValue = {
 
 const NodeCatalogDrawerContext = createContext<NodeCatalogDrawerContextValue | null>(null);
 
-function subscribeReducedMotion(onStoreChange: () => void): () => void {
-  const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-  mq.addEventListener("change", onStoreChange);
-  return () => mq.removeEventListener("change", onStoreChange);
-}
-
-function getReducedMotionSnapshot(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 export function NodeCatalogDrawerProvider({ children }: { children: React.ReactNode }) {
-  const prefersReducedMotion = useSyncExternalStore(
-    subscribeReducedMotion,
-    getReducedMotionSnapshot,
-    () => false,
-  );
+  const {
+    mounted,
+    presented,
+    open: present,
+    close: closeNodeCatalogDrawer,
+    finishExit: finishClose,
+  } = useSlideDrawerPresentation();
 
-  const [mounted, setMounted] = useState(false);
-  const [presented, setPresented] = useState(false);
   const [initialSearch, setInitialSearch] = useState("");
-  const preOpenFocusRef = useRef<HTMLElement | null>(null);
-  const exitTimerRef = useRef<number | null>(null);
-  const exitSettledRef = useRef(false);
 
-  const clearExitTimer = useCallback(() => {
-    if (exitTimerRef.current != null) {
-      window.clearTimeout(exitTimerRef.current);
-      exitTimerRef.current = null;
-    }
-  }, []);
-
-  const finishClose = useCallback(() => {
-    if (exitSettledRef.current) return;
-    exitSettledRef.current = true;
-    clearExitTimer();
-    setMounted(false);
-    setPresented(false);
-    const el = preOpenFocusRef.current;
-    preOpenFocusRef.current = null;
-    queueMicrotask(() => el?.focus?.());
-  }, [clearExitTimer]);
-
-  const closeNodeCatalogDrawer = useCallback(() => {
-    clearExitTimer();
-    setPresented(false);
-    exitTimerRef.current = window.setTimeout(
-      finishClose,
-      prefersReducedMotion ? 0 : DRAWER_MOTION_MS + 80,
-    );
-  }, [clearExitTimer, finishClose, prefersReducedMotion]);
-
-  const openNodeCatalogDrawer = useCallback((options?: OpenNodeCatalogDrawerOptions) => {
-    clearExitTimer();
-    exitSettledRef.current = false;
-    setInitialSearch(options?.search ?? "");
-    preOpenFocusRef.current = document.activeElement as HTMLElement | null;
-    setMounted(true);
-    setPresented(false);
-    if (prefersReducedMotion) {
-      setPresented(true);
-      return;
-    }
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => setPresented(true));
-    });
-  }, [clearExitTimer, prefersReducedMotion]);
+  // The search seed is this drawer's own payload, so it stays here: the
+  // presentation hook knows about sliding and nothing else.
+  const openNodeCatalogDrawer = useCallback(
+    (options?: OpenNodeCatalogDrawerOptions) => {
+      setInitialSearch(options?.search ?? "");
+      present();
+    },
+    [present],
+  );
 
   useEffect(() => {
     if (!mounted) return;
@@ -104,8 +54,6 @@ export function NodeCatalogDrawerProvider({ children }: { children: React.ReactN
       document.body.style.overflow = prevOverflow;
     };
   }, [mounted]);
-
-  useEffect(() => () => clearExitTimer(), [clearExitTimer]);
 
   const ctx = useMemo(
     () => ({
