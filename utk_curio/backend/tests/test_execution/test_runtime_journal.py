@@ -507,3 +507,61 @@ class TestTwoOriginsNeverEraseEachOther:
             started_at="2026-09-11T00:00:00Z", duration_ms=1,
         )
         assert runtime_journal.read_record(KEY, PID, "vega-c")["executionSeq"] == 1
+
+
+class TestAnAbsentOutputIsAFailedRun:
+    """dev/138: `return None` still stores an artifact, and the sandbox types it
+    "null" — so ``bool(output.path)`` called it success and the owner's
+    `edd71e67` wrote a node that produced nothing and called it solved."""
+
+    def test_a_null_output_type_is_an_error_with_a_stated_reason(self, tmp_curio):
+        runtime_journal.record_execution(
+            KEY, PID, "none-1", code="return None", stdout=[], stderr="",
+            output={"path": "art-null", "dataType": "null"},
+            started_at="2026-09-11T01:00:00Z", duration_ms=7,
+        )
+        record = runtime_journal.read_record(KEY, PID, "none-1")
+        assert record["status"] == "error"
+        assert "returned no output (None)" in record["stderrTail"]
+        # And the repair loop can start from it, like any other failure.
+        failure = runtime_journal.last_failure(KEY, PID, "none-1")
+        assert failure is not None
+        assert runtime_journal.failure_matches(failure, "return None") is True
+
+    def test_every_spelling_of_absent_counts(self, tmp_curio):
+        for index, dtype in enumerate(("null", "None", "NoneType", "")):
+            runtime_journal.record_execution(
+                KEY, PID, f"none-{index}-x", code="return None", stdout=[], stderr="",
+                output={"path": "art", "dataType": dtype},
+                started_at="2026-09-11T01:00:00Z", duration_ms=1,
+            )
+            record = runtime_journal.read_record(KEY, PID, f"none-{index}-x")
+            assert record["status"] == "error", dtype
+
+    def test_a_real_type_this_build_does_not_know_is_still_ok(self, tmp_curio):
+        # "absent" is not "unknown": a new sandbox type must not read as a
+        # failure, which is the whole distinction dev/138 rests on.
+        runtime_journal.record_execution(
+            KEY, PID, "tensor-1", code="return t", stdout=[], stderr="",
+            output={"path": "art-t", "dataType": "tensor"},
+            started_at="2026-09-11T01:00:00Z", duration_ms=1,
+        )
+        assert runtime_journal.read_record(KEY, PID, "tensor-1")["status"] == "ok"
+
+    def test_a_real_traceback_is_never_replaced_by_the_reason(self, tmp_curio):
+        runtime_journal.record_execution(
+            KEY, PID, "boom-1", code="boom()", stdout=[],
+            stderr="Traceback (most recent call last):\n  NameError: boom",
+            output={"path": "", "dataType": "str"},
+            started_at="2026-09-11T01:00:00Z", duration_ms=1,
+        )
+        record = runtime_journal.read_record(KEY, PID, "boom-1")
+        assert "NameError" in record["stderrTail"]
+        assert "returned no output" not in record["stderrTail"]
+
+    def test_is_absent_output_is_the_one_predicate(self):
+        assert runtime_journal.is_absent_output({"path": "a", "dataType": "null"}) is True
+        assert runtime_journal.is_absent_output({"path": "", "dataType": "dataframe"}) is True
+        assert runtime_journal.is_absent_output({"path": "a", "dataType": "dataframe"}) is False
+        assert runtime_journal.is_absent_output({"path": "a", "dataType": "tensor"}) is False
+        assert runtime_journal.is_absent_output(None) is True

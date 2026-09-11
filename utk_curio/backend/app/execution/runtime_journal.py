@@ -65,6 +65,34 @@ STATUSES = (STATUS_OK, STATUS_ERROR, STATUS_RUNNING)
 #: well as at the route, so no caller can grow the record.
 BROWSER_MESSAGE_CHARS = 2000
 
+#: dev/138: the output types that are the ABSENCE of an output. A node whose
+#: code ends in ``return None`` still stores an artifact, and the sandbox types
+#: it ``null`` — so ``bool(output.path)`` said "ok", the consumer type check
+#: took its "unmapped runtime type: fail open" path, and the shape check could
+#: not count a payload with no shape. Three fail-opens in a row, and the owner's
+#: `edd71e67` was written and called solved with nothing in it. `null` is not an
+#: unknown type to fail open on; it is no output at all.
+NULL_OUTPUT_TYPES = ("", "null", "none", "nonetype")
+NO_OUTPUT_REASON = (
+    "the code returned no output (None) — a node must return the data it "
+    "produces, and nothing downstream can read an absent output"
+)
+
+
+def is_absent_output(output: object) -> bool:
+    """Whether this run produced NO output (memo dev/138).
+
+    True when the artifact is missing or its declared type is one of
+    :data:`NULL_OUTPUT_TYPES`. An output type this build simply does not know
+    is NOT absent — that distinction is what keeps a new sandbox type from
+    reading as a failure.
+    """
+    out = output if isinstance(output, dict) else {}
+    if not str(out.get("path") or "").strip():
+        return True
+    return str(out.get("dataType") or "").strip().lower() in NULL_OUTPUT_TYPES
+
+
 #: dev/136: an outcome's kind, when the reporter knows one (``empty-render``).
 #: Free-form and bounded: an unrecognized kind is a label, never a branch.
 _KIND_CHARS = 40
@@ -119,13 +147,25 @@ def record_execution(
             ok = status == STATUS_OK
             recorded_status = status
         else:
-            ok = bool(str(out.get("path") or ""))  # the canonical predicate
+            # dev/138: the predicate is the artifact AND a type to read it by.
+            # `return None` produced a path with dataType "null", which passed
+            # as success and left everything downstream empty.
+            ok = not is_absent_output(out)
             recorded_status = STATUS_OK if ok else STATUS_ERROR
         if isinstance(stdout, list):
             stdout_text = "\n".join(str(line) for line in stdout)
         else:
             stdout_text = str(stdout or "")
         stderr_text = str(stderr or "")
+        if (
+            recorded_status == STATUS_ERROR
+            and not stderr_text.strip()
+            and str(out.get("path") or "").strip()
+        ):
+            # dev/138: the run raised nothing and produced no readable output —
+            # the ABSENCE is the failure, so it is stated where every reader
+            # already looks for a reason.
+            stderr_text = NO_OUTPUT_REASON
         previous = read_record(user_key, project_id, node_id)
         try:
             seq = int((previous or {}).get("executionSeq") or 0) + 1

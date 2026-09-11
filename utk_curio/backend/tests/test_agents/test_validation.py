@@ -88,6 +88,59 @@ class TestValidateCandidate:
         )
         assert result["verdict"] == "pass"
 
+    def test_an_ABSENT_output_is_a_mismatch_and_names_the_decline(self, tmp_curio):
+        """dev/138, from the owner's `edd71e67`: the node's code ended in
+        `return None`, the sandbox typed the artifact "null", and this check
+        took its "unmapped runtime type: fail open" path — so a node that
+        produced nothing was written and called solved."""
+        spec = _spec(
+            [_node("t"), _node("pool", "curio.builtin/data-pool", "", goal="Neighborhood Pool")],
+            [{"id": "e1", "source": "t", "target": "pool"}],
+        )
+        available = {"curio.builtin/data-pool": {
+            "inputs": [{"types": ["DATAFRAME", "GEODATAFRAME"], "min": 1, "max": 1}],
+        }}
+        result = validation.validate_candidate(
+            KEY, PID, spec, "t", "return None",
+            exec_fn=_exec({"None": ("art-null", "null")}),
+            available_templates=available,
+        )
+        assert result["verdict"] == "fail"
+        assert result["evidence"]["kind"] == "type-mismatch"
+        detail = result["evidence"]["detail"]
+        assert "returned no output (None)" in detail
+        assert "'Neighborhood Pool'" in detail
+        assert "DATAFRAME, GEODATAFRAME" in detail
+        # The honest alternative is named, because it exists (dev/115).
+        assert "say so in one line instead of returning code" in detail
+
+    def test_an_output_type_this_build_does_not_know_still_fails_open(self, tmp_curio):
+        """The distinction dev/138 rests on: 'absent' is not 'unknown'."""
+        spec = _spec(
+            [_node("t"), _node("pool", "curio.builtin/data-pool", "", goal="Pool")],
+            [{"id": "e1", "source": "t", "target": "pool"}],
+        )
+        available = {"curio.builtin/data-pool": {
+            "inputs": [{"types": ["DATAFRAME"], "min": 1, "max": 1}],
+        }}
+        result = validation.validate_candidate(
+            KEY, PID, spec, "t", "return tensor()",
+            exec_fn=_exec({"tensor": ("art-9", "tensor")}),
+            available_templates=available,
+        )
+        assert result["verdict"] == "pass"
+
+    def test_an_absent_output_with_no_consumer_is_not_a_mismatch(self, tmp_curio):
+        # Nothing downstream declares anything, so there is nothing to violate;
+        # the journal still records the run as a failure (its own test).
+        spec = _spec([_node("t")], [])
+        result = validation.validate_candidate(
+            KEY, PID, spec, "t", "return None",
+            exec_fn=_exec({"None": ("art-null", "null")}),
+            available_templates={"curio.builtin/computation-analysis": {"inputs": []}},
+        )
+        assert result["verdict"] == "pass"
+
     def test_infrastructure_is_never_a_content_failure(self, tmp_curio):
         spec = _spec([_node("t")], [])
         result = validation.validate_candidate(

@@ -47,9 +47,16 @@ def _consumer_type_mismatch(
     consumer's DECLARED input types (dev/67-3 arity metadata), or None."""
     if not available:
         return None
+    from utk_curio.backend.app.execution import runtime_journal
+
+    absent = (output_data_type or "").strip().lower() in runtime_journal.NULL_OUTPUT_TYPES
     port_type = _RUNTIME_TO_PORT_TYPE.get((output_data_type or "").lower())
-    if port_type is None:
+    if port_type is None and not absent:
         return None  # unmapped runtime type: fail open
+    # dev/138: an ABSENT output is not an unmapped one. `return None` types as
+    # "null", which has no port — and taking the fail-open path for it let the
+    # owner's `edd71e67` write a node that produced nothing and call it solved.
+    # A type this build does not recognize still fails open, just above.
     dataflow = (spec_dict or {}).get("dataflow") or {}
     nodes = {n.get("id"): n for n in dataflow.get("nodes") or [] if isinstance(n, dict)}
     for edge in dataflow.get("edges") or []:
@@ -66,6 +73,15 @@ def _consumer_type_mismatch(
             declared.update(t.upper() for t in port.get("types") or [])
         if not declared:
             continue
+        if absent:
+            label = (consumer.get("goal") or edge.get("target") or "?")
+            return (
+                "the code returned no output (None), which downstream node "
+                f"{str(label)[:60]!r} cannot accept (it declares "
+                f"{', '.join(sorted(declared))}) — return the data this node "
+                "produces, or, if it cannot be produced from these inputs, say "
+                "so in one line instead of returning code"
+            )
         if port_type not in declared:
             label = (consumer.get("goal") or edge.get("target") or "?")
             return (
