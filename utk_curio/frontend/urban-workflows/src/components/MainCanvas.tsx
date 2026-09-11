@@ -45,7 +45,7 @@ import {
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
 import { agentsApi } from "../api/agentsApi";
-import { readAgentDragCoord, notifyAgentDockRefresh, pickNodeAtPoint, pickEdgeAtPoint, hasAgentDrag, type AgentDropTarget } from "../utils/agentCatalogEvents";
+import { readAgentDragCoord, notifyAgentDockRefresh, resolveAgentDropTarget, hasAgentDrag, type AgentDropTarget } from "../utils/agentCatalogEvents";
 import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";
@@ -279,21 +279,17 @@ export function MainCanvas() {
         const agentCoord = readAgentDragCoord(event.dataTransfer);
         if (agentCoord) {
             event.preventDefault();
-            // Hit-test the drop point against node geometry (reliable regardless
-            // of which DOM layer received the drop). A hit → attach to that node;
-            // empty canvas → attach to the canvas.
-            const dropPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-            const hitNodeId = pickNodeAtPoint(reactFlow.getNodes(), dropPos);
-            // Node first, then edge, then canvas: an edge routed underneath a
-            // node should resolve to the node the pointer is actually over.
-            const hitEdgeId = hitNodeId
-                ? null
-                : pickEdgeAtPoint(event.clientX, event.clientY);
-            const target: AgentDropTarget = hitNodeId
-                ? { kind: "node", targetId: hitNodeId }
-                : hitEdgeId
-                    ? { kind: "connection", targetId: hitEdgeId }
-                    : { kind: "canvas" };
+            // Node first, then edge, then canvas, hit-tested against node
+            // geometry (reliable regardless of which DOM layer received the
+            // drop) and then the DOM for edges. The SAME resolver feeds the
+            // drag-over highlight, so what lights up under the pointer and what
+            // actually receives the drop cannot disagree (#296).
+            const target: AgentDropTarget = resolveAgentDropTarget({
+                nodes: reactFlow.getNodes(),
+                flowPoint: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+                clientX: event.clientX,
+                clientY: event.clientY,
+            });
             const where =
                 target.kind === "node"
                     ? "the node"

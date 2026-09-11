@@ -58,6 +58,13 @@ export type AgentDropTarget =
  * connection-only agent was then refused by the backend with "this agent
  * attaches to connection, node, not canvas". `data-id` is still preferred so
  * this keeps working if a later React Flow starts setting it.
+ *
+ * **This DOM hit-test is the decision, and it stays** (#296). The drag-over
+ * highlight feeds from the same `resolveAgentDropTarget` the drop does rather
+ * than re-deriving the curve, so there is exactly one answer to "which edge is
+ * under this pointer". Do not reintroduce a geometry-based `pickEdgeAtPoint`
+ * alongside it: a second implementation is a second answer, and the one the
+ * user sees would eventually stop matching the one the drop uses.
  */
 export function pickEdgeAtPoint(clientX: number, clientY: number): string | null {
   if (typeof document === "undefined" || !document.elementFromPoint) return null;
@@ -113,6 +120,42 @@ export function pickNodeAtPoint(nodes: NodeRect[], point: XYPoint): string | nul
     }
   }
   return null;
+}
+
+/** Everything ``resolveAgentDropTarget`` needs to answer "what is under this
+ * point", in both the coordinate spaces the answer depends on. */
+export interface AgentDropTargetQuery {
+  /** As returned by React Flow's ``getNodes()``. */
+  nodes: NodeRect[];
+  /** The point in FLOW coordinates (``screenToFlowPosition``), for the node box test. */
+  flowPoint: XYPoint;
+  /** The same point in SCREEN coordinates, for the DOM edge hit-test. */
+  clientX: number;
+  clientY: number;
+  /** Injected by tests so this stays importable with no DOM. */
+  pickEdge?: (clientX: number, clientY: number) => string | null;
+}
+
+/**
+ * Node, then connection, then canvas - the one place that precedence lives.
+ *
+ * Shared by the drop handler and the drag-over highlight (#296) on purpose. The
+ * highlight answers "where would this land", which is the same question the drop
+ * answers; two implementations of it would be free to disagree, and a highlight
+ * that lies about the target is worse than no highlight at all. It also means an
+ * edge routed underneath a node correctly lights up nothing, because the node
+ * wins here before the edge is ever hit-tested.
+ *
+ * The edge test is skipped entirely when a node was hit, so the common case
+ * costs no ``elementFromPoint``.
+ */
+export function resolveAgentDropTarget(query: AgentDropTargetQuery): AgentDropTarget {
+  const hitNodeId = pickNodeAtPoint(query.nodes, query.flowPoint);
+  if (hitNodeId) return { kind: "node", targetId: hitNodeId };
+  const pickEdge = query.pickEdge ?? pickEdgeAtPoint;
+  const hitEdgeId = pickEdge(query.clientX, query.clientY);
+  if (hitEdgeId) return { kind: "connection", targetId: hitEdgeId };
+  return { kind: "canvas" };
 }
 
 /** Refresh signal for the attachment dock, dispatched after attach/detach so the
