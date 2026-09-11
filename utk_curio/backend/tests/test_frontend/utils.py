@@ -995,6 +995,9 @@ def dismiss_toasts(
     Safe to call when there are none. Bounded by *max_rounds*, so a toast that
     genuinely re-fires forever costs a few seconds rather than hanging - it just
     ends up in the screenshot, which is the honest outcome.
+
+    Closes the stack from the bottom up; see the comment on the click for why
+    the top of it may be unreachable.
     """
     container = page.locator('[aria-label="Notifications"]')
     dismissed = 0
@@ -1006,11 +1009,27 @@ def dismiss_toasts(
             buttons = container.locator("button.btn-close")
             if buttons.count() == 0:
                 break
+            # From the BOTTOM of the stack, not the top. The region is anchored
+            # to the bottom of the viewport and grows upward, so once enough
+            # toasts are up the oldest is clipped off the TOP of the screen -
+            # and a position:fixed element off-screen cannot be scrolled into
+            # view, so clicking `first` times out and the sweep returns having
+            # closed nothing. `run-all-survives-a-failed-node` ends with five
+            # error toasts and lost 26.87% of its frame to exactly that. The
+            # last toast is always on screen, and closing it brings the rest
+            # down one slot.
             try:
-                buttons.first.click(timeout=1000)
+                buttons.last.click(timeout=1000)
                 dismissed += 1
             except PlaywrightTimeoutError:
-                break
+                # Still unreachable - covered, or mid-transition. Close it the
+                # way its own button would, so one stuck toast cannot wedge the
+                # sweep for every toast behind it.
+                try:
+                    buttons.last.evaluate("el => el.click()")
+                    dismissed += 1
+                except Exception:
+                    break
 
         # Did another arrive during the quiet window? wait_for_function resolving
         # means one showed up, so loop and clear it; a timeout means quiet.
