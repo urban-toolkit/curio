@@ -55,9 +55,10 @@ const INTENT_CLAMP_CHARS = 280;
  *
  * Per DEC-042 (dev/21) the opened agent view has ONE dark top header carrying
  * the master agent identity, the ‹ › agent-cycling arrows (walking all
- * attachments in the dataflow), the identification details (attached target +
- * session chip), and Close — no Pin, and no static "Agent Catalog" bar (that
- * chrome is exclusive to the Agents Roster drawer). Below the header: the
+ * attachments in the dataflow), the name of what it is attached to (its ids
+ * are on that line's tooltip, see below), and Close — no Pin, and no
+ * static "Agent Catalog" bar (that chrome is exclusive to the Agents Roster
+ * drawer). Below the header: the
  * intent-as-first-message transcript and pill input, unchanged.
  *
  * Presentational: the transcript and intent live in AgentAttachmentsProvider
@@ -443,7 +444,10 @@ export const AgentChatPanel: React.FC<{
 
   return (
     <div className={styles.panel} role="dialog" aria-label={`Chat with ${displayName}`}>
-      <div className={styles.header}>
+      {/* Addressable from outside the CSS-module hash, so the #228 baseline can
+          clip to the header rather than spend its diff budget on an empty
+          transcript (agent-chat-names-its-node). */}
+      <div className={styles.header} data-curio-chat-header="true">
         <div className={styles.headerRow}>
           <button
             type="button"
