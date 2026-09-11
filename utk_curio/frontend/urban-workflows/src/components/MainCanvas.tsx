@@ -46,6 +46,7 @@ import {
 } from "../services/datasetCatalog";
 import { agentsApi } from "../api/agentsApi";
 import { readAgentDragCoord, notifyAgentDockRefresh, resolveAgentDropTarget, hasAgentDrag, type AgentDropTarget } from "../utils/agentCatalogEvents";
+import { clearAgentDropHover, setAgentDropHoverEdgeId } from "../utils/agentDropHover";
 import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";
@@ -248,6 +249,10 @@ export function MainCanvas() {
         setDashBoardMode(value);
     }, [setDashBoardMode]);
 
+    // Last dragover point, so a pointer that reports the same coordinate twice
+    // (browsers fire dragover on a timer as well as on movement) costs nothing.
+    const lastDragPointRef = useRef<{ x: number; y: number } | null>(null);
+
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         // Dataset AND agent drags use effectAllowed="copy"; a "move" dropEffect is
@@ -257,6 +262,53 @@ export function MainCanvas() {
         const wantsCopy =
             hasDatasetDrag(event.dataTransfer) || hasAgentDrag(event.dataTransfer);
         event.dataTransfer.dropEffect = wantsCopy ? "copy" : "move";
+
+        // Tell the edges which connection would receive this drop (#296). Only
+        // for agent drags: a dataset or node-creation drag pays nothing, which
+        // is what keeps this off the hot path for every other kind of drag.
+        if (!hasAgentDrag(event.dataTransfer)) {
+            clearAgentDropHover();
+            return;
+        }
+        const last = lastDragPointRef.current;
+        if (last && last.x === event.clientX && last.y === event.clientY) return;
+        lastDragPointRef.current = { x: event.clientX, y: event.clientY };
+        const target = resolveAgentDropTarget({
+            nodes: reactFlow.getNodes(),
+            flowPoint: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+            clientX: event.clientX,
+            clientY: event.clientY,
+        });
+        setAgentDropHoverEdgeId(target.kind === "connection" ? target.targetId : null);
+    }, [reactFlow, screenToFlowPosition]);
+
+    const handleDragLeave = useCallback((event: React.DragEvent) => {
+        // dragleave bubbles from descendants, so a pointer crossing from the
+        // pane onto a node fires one here with relatedTarget still inside the
+        // drop target. Only a relatedTarget outside it - or null, which is how
+        // leaving the window reports - is a real exit.
+        const next = event.relatedTarget as Node | null;
+        if (next && event.currentTarget.contains(next)) return;
+        lastDragPointRef.current = null;
+        clearAgentDropHover();
+    }, []);
+
+    // The end of a drag that never reaches the canvas: Escape cancels it, the
+    // pointer is released over another application, or the drop lands outside
+    // the window. None of those fire dragleave on the pane, and dragend fires on
+    // the drag SOURCE, so the listener has to be global. Capture phase so
+    // nothing downstream can swallow it.
+    useEffect(() => {
+        const clear = () => {
+            lastDragPointRef.current = null;
+            clearAgentDropHover();
+        };
+        window.addEventListener("dragend", clear, true);
+        window.addEventListener("drop", clear, true);
+        return () => {
+            window.removeEventListener("dragend", clear, true);
+            window.removeEventListener("drop", clear, true);
+        };
     }, []);
 
     const handleCanvasDrop = useCallback((event: React.DragEvent) => {
@@ -279,6 +331,8 @@ export function MainCanvas() {
         const agentCoord = readAgentDragCoord(event.dataTransfer);
         if (agentCoord) {
             event.preventDefault();
+            clearAgentDropHover();
+            lastDragPointRef.current = null;
             // Node first, then edge, then canvas, hit-tested against node
             // geometry (reliable regardless of which DOM layer received the
             // drop) and then the DOM for edges. The SAME resolver feeds the
@@ -515,6 +569,7 @@ export function MainCanvas() {
                 className="curio-canvas-drop-target"
                 style={{ width: "100%", height: "100%" }}
                 onDragOver={!dashboardOn && !isSharedView ? handleDragOver : undefined}
+                onDragLeave={!dashboardOn && !isSharedView ? handleDragLeave : undefined}
                 onDrop={!dashboardOn && !isSharedView ? handleDrop : undefined}
             >
             <ReactFlow

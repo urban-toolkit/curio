@@ -7,8 +7,11 @@ import {
   getSimpleBezierPath,
   getSmoothStepPath,
 } from "reactflow";
+import { useAgentDropHoverEdge } from "../../hook/useAgentDropHoverEdge";
+import { EDGE_DROP_HOVER_ATTR, edgeDropHighlightStyle } from "./edgeDropHighlight";
 
 export default function BiDirectionalEdge({
+  id,
   sourceX,
   sourceY,
   targetX,
@@ -53,12 +56,17 @@ export default function BiDirectionalEdge({
   //   targetPosition,
   // });
 
+  const dropHovered = useAgentDropHoverEdge(id);
+
+  // Always-mounted <g>: see the twin comment in UniDirectionalEdge (#296).
   return (
-    <BaseEdge
-      path={edgePath}
-      markerEnd={markerEnd}
-      markerStart={markerStart}
-      style={{stroke: data?.keywordHighlighted ? 'blue' : 'red'}}
-    />
+    <g {...{ [EDGE_DROP_HOVER_ATTR]: dropHovered ? 'true' : undefined }}>
+      <BaseEdge
+        path={edgePath}
+        markerEnd={markerEnd}
+        markerStart={markerStart}
+        style={edgeDropHighlightStyle(data?.keywordHighlighted ? 'blue' : 'red', dropHovered)}
+      />
+    </g>
   );
 }
