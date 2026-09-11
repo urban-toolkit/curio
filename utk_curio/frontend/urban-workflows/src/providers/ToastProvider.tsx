@@ -6,12 +6,15 @@ export type ToastVariant = "error" | "warning" | "info" | "success";
 
 interface ToastItem {
     id: number;
+    /** The slot this message holds in the stack, shared by every occurrence. */
+    seq: number;
     message: string;
     variant: ToastVariant;
 }
 
-/** Every occurrence of one message, rendered as a single toast. */
+/** Every outstanding occurrence of one message, rendered as a single toast. */
 interface ToastGroup {
+    seq: number;
     ids: number[];
     message: string;
     variant: ToastVariant;
@@ -56,7 +59,20 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
 
     const showToast = useCallback((message: string, variant: ToastVariant = "error") => {
         const id = _nextId++;
-        setToasts((prev) => [...prev, { id, message, variant }]);
+        setToasts((prev) => {
+            // A repeat joins the slot its message already holds. Derive the
+            // slot from the occurrences still outstanding instead and a toast
+            // the user can see moves: when the first of two "Saved" toasts
+            // expires, the second would re-enter the stack below an error
+            // raised between them, swapping two live toasts under the pointer.
+            const sibling = prev.find(
+                (t) => t.variant === variant && t.message === message,
+            );
+            const seq = sibling
+                ? sibling.seq
+                : prev.reduce((highest, t) => Math.max(highest, t.seq), -1) + 1;
+            return [...prev, { id, seq, message, variant }];
+        });
         const after = AUTO_DISMISS_MS[variant];
         if (after !== undefined) {
             setTimeout(() => {
@@ -85,16 +101,17 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
      * the previous state.
      */
     const groups = useMemo(() => {
-        const byMessage = new Map<string, ToastGroup>();
+        const bySlot = new Map<number, ToastGroup>();
         for (const toast of toasts) {
-            const key = JSON.stringify([toast.variant, toast.message]);
-            const seen = byMessage.get(key);
+            const seen = bySlot.get(toast.seq);
             if (seen) seen.ids.push(toast.id);
-            else byMessage.set(key, {
-                ids: [toast.id], message: toast.message, variant: toast.variant,
+            else bySlot.set(toast.seq, {
+                seq: toast.seq, ids: [toast.id],
+                message: toast.message, variant: toast.variant,
             });
         }
-        return [...byMessage.values()];
+        // By slot, not by whichever occurrence happens to still be outstanding.
+        return [...bySlot.values()].sort((a, b) => a.seq - b.seq);
     }, [toasts]);
 
     const toastContainer = (
@@ -123,7 +140,11 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
         >
             {groups.map((toast) => (
                     <Toast
-                        key={toast.ids[0]}
+                        // The slot, not `ids[0]`: that changes when the oldest
+                        // occurrence expires, and React would then tear down a
+                        // toast still on screen - dropping keyboard focus from
+                        // its close button to <body> mid-interaction.
+                        key={toast.seq}
                         show
                         onClose={() => dismiss(toast.ids)}
                         role={toast.variant === "error" ? "alert" : "status"}

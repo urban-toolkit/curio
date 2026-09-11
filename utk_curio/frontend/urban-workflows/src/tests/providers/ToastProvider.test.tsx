@@ -218,6 +218,87 @@ describe("ToastProvider", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps the same element when an earlier occurrence expires", () => {
+    // The toast is still on screen, so it must survive as the same DOM node:
+    // a key that changes with group membership makes React tear it down and
+    // build a new one, which drops keyboard focus from its close button to
+    // <body> mid-interaction. jsdom sees the text either way, which is why
+    // this asserts on node identity.
+    jest.useFakeTimers();
+    try {
+      render(
+        <ToastProvider>
+          <Trigger message="Saved" variant="success" />
+        </ToastProvider>,
+      );
+      act(() => {
+        screen.getByText("fire").click();
+      });
+      act(() => {
+        jest.advanceTimersByTime(3000);
+        screen.getByText("fire").click();
+      });
+
+      const region = getNotificationRegion();
+      const before = region.querySelector(".toast");
+      const focusable = region.querySelector("button.btn-close") as HTMLElement;
+      focusable.focus();
+
+      // The first occurrence's five seconds are up; the second's are not.
+      act(() => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      expect(screen.getByText("Saved")).toBeInTheDocument();
+      expect(region.querySelector(".toast")).toBe(before);
+      expect(document.activeElement).toBe(focusable);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("keeps a live toast in its slot when an earlier occurrence expires", () => {
+    // The stack is positional: a toast that moves takes its close button out
+    // from under a click already on its way there.
+    jest.useFakeTimers();
+    try {
+      render(
+        <ToastProvider>
+          <Trigger message="Saved" variant="success" />
+          <Trigger message="Export failed" variant="error" />
+        </ToastProvider>,
+      );
+      const [saved, failed] = screen.getAllByText("fire");
+      act(() => {
+        saved.click();
+      });
+      act(() => {
+        jest.advanceTimersByTime(1000);
+        failed.click();
+      });
+      act(() => {
+        jest.advanceTimersByTime(3000);
+        saved.click();
+      });
+
+      const region = getNotificationRegion();
+      const order = () =>
+        Array.from(region.querySelectorAll(".toast-body")).map(
+          (n) => n.textContent,
+        );
+      expect(order()).toEqual(["Saved", "Export failed"]);
+
+      // The first "Saved" expires; the second is still live, and the error
+      // between them never expires at all.
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(order()).toEqual(["Saved", "Export failed"]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("counts back down as each occurrence expires", () => {
     // Occurrences are grouped for display, not merged: each keeps its own
     // five-second timer, so the tally follows what is still outstanding.
