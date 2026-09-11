@@ -1,7 +1,10 @@
 # dev/137 — A column of nulls is an empty result, a stale line is not a status, and a browser report must never erase a sandbox run
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `16e2a772`. Every claim below was read from
-the owner's project `7a27b702-27a9-4abb-bd3b-2994ce40cad8` on disk.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-72`, and **no new
+`DEC`**: `DEC-052`'s journal keeps its charter with one file per origin, and dev/133's rule is read
+for values as well as rows. Commits `ba1a91cd` (the two records), `2eefe517` (null columns + the
+contract), `fc4552fe` (the render half + the panel), + this docs commit. Every claim below was read
+from the owner's project `7a27b702-27a9-4abb-bd3b-2994ce40cad8` on disk.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `16e2a772` (dev/136's docs commit).
@@ -305,3 +308,38 @@ one current message and no stale pending line.
   the diagnosis as one thing (`DEC-063`).
 - The honest limit is stated: these two datasets cannot be joined, and the product's job is to say so,
   not to draw an empty chart.
+
+---
+
+## 11. What changed while building
+
+1. **The attribution rule had to compare NULL-NESS, not presence.** The memo said "a column this
+   node created"; implemented that way, the owner's own case would have been excluded — the
+   population TABLE has values (4521, 3890) and the *joined* frame's `population` is all null, so the
+   name does exist upstream. The rule is: all-null here **and not already all-null in an input that
+   had it**. A test pins exactly that distinction, because getting it wrong makes the whole check
+   miss the defect it was written for.
+2. **Two records, not an ordering.** dev/135 assumed the server wrote last; the client always does.
+   The fix separates the files (`<nodeId>.json` for the run, `<nodeId>.render.json` for the render)
+   so no write order can erase anything, and `read_record` keeps its meaning for every caller since
+   dev/67-2. `last_failure` asks the run first and the render second — which restores dev/129's
+   traceback repair *and* keeps dev/136's empty-render branch working.
+3. **`node.runtime.read` needed the same treatment as `node_context`.** The model-chosen reader and
+   the composed context must describe a node identically, so both lead with the run, fall back to the
+   render, and carry the render beside the run when both exist.
+4. **The render check moved from the scene graph to the data.** dev/136 counted marks; a zero-extent
+   bar for a null value counts as drawn, which is exactly the owner's chart. Counting rows that hold
+   a usable value in the encoded fields is both cheaper and truer, and it no longer depends on how a
+   renderer treats invalid values. The mark count stays as the later rule for filters and domains.
+5. **The panel clears on the event that supersedes a line** — `solve_pass` for what the new pass will
+   attempt, `node_result` for the node it describes — and the waiting list clears only when the
+   session ended `complete`, because a stopped or out-of-budget session's nodes genuinely do still
+   wait.
+6. **`14` dev/135/136 assertions were re-pointed at the render record.** A browser report is no
+   longer the node's run record; that is the change, and the tests say so rather than being deleted.
+
+Recorded and not done: **F1** — the Data Pool's four empty states still reach no journal (it renders
+through `NodeEmptyState` rather than `setOutput`), so "this input is not tabular data" is still only
+on screen; **F2** — nothing counts a *partially* null column, which is data rather than a defect but
+could be a warning; **F3** — the two datasets in `7a27b702` genuinely cannot be joined, and the
+honest repair is a population dataset keyed by community area (dev/126/132's lane).

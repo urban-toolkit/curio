@@ -381,6 +381,23 @@ whose pool said *"Nothing to display"* and whose chart drew empty axes. If the
 emptiness is genuinely what you want, write that code in the editor yourself;
 Solve will not claim it verified something that produced nothing.
 
+### Rows with nothing in them are empty too
+
+A result can be non-empty and still contain nothing (memo dev/137). The common
+shape is a join whose keys do not match, run with `how="left"`: it keeps its
+rows and fills the other side with **nulls**, so a row count looks fine and
+every plot below it is blank. Curio reads the columns a node **emptied** — all
+null here, and not already null in the input they came from — and fails the
+round naming them, with the same *"compare the key columns' VALUES, not their
+names"* diagnosis a zero-row result gets. The content contract says the rest
+out loud: never fabricate values, never fill nulls, and never let a join that
+matched nothing stand *"so the dataflow can proceed"* — if two datasets cannot
+be joined, saying so in one line is the accepted answer.
+
+A chart over such rows is reported the same way: the check counts the rows that
+hold a **usable value in the fields the document plots**, so a renderer that
+draws a zero-width bar for a null cannot pass as having drawn something.
+
 ### An empty plot is a failed render
 
 A document can be schema-valid, encode columns that exist, compile without an
@@ -428,6 +445,10 @@ Three properties are worth knowing:
 - **A browser record is evidence, never authority.** It carries a status, a
   short message and the output type the node declares — never the data, and
   never an artifact id, which only the sandbox can mint.
+- **A render never overwrites a run.** The two are kept apart (memo dev/137):
+  what a node's code did keeps its artifact, its output type and its traceback
+  for good, and what its picture did is recorded beside it. A node that ran
+  cleanly and drew nothing reports both, because both are true.
 - **A failed upstream travels with the node.** Asked to fix a chart whose input
   never arrived, an agent is told which upstream failed and what it said, so it
   can say so rather than coding around a missing input.
