@@ -37,6 +37,7 @@ import urllib.error
 import pytest
 from playwright.sync_api import expect
 
+from .test_library_install_integration import library_teardown  # noqa: F401
 from .utils import (
     _wait_for_reactflow_ready,
     api_json,
@@ -236,7 +237,7 @@ class TestMissingModuleNotice:
 
 
 def test_installing_from_the_node_panel_then_rerunning_succeeds(
-    workflow_page, frontend_server, current_server
+    workflow_page, frontend_server, current_server, library_teardown
 ):
     """The round trip, for real. Needs PyPI; skips when the index is unreachable.
 
@@ -249,6 +250,9 @@ def test_installing_from_the_node_panel_then_rerunning_succeeds(
     token, _project_id = _open_node_dataflow(
         page, frontend_server, current_server, REAL_LIB
     )
+
+    # Registered before installing, so a mid-test failure still cleans up.
+    library_teardown(token, REAL_LIB)
 
     # Self-healing pre-clean, so a leaked earlier run cannot make this vacuous.
     try:
