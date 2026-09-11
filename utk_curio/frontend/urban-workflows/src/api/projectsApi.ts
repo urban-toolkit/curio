@@ -43,7 +43,6 @@ export interface ProjectSummary {
   last_opened_at: string | null;
   created_at: string;
   updated_at: string;
-  archived_at: string | null;
   graph_preview?: GraphPreview | null;
 }
 
@@ -86,14 +85,12 @@ export interface LoadResponse {
 }
 
 export interface ListParams {
-  scope?: "mine" | "recent" | "archived";
   sort?: "last_opened" | "name" | "created";
 }
 
 export const projectsApi = {
   list(params?: ListParams): Promise<ProjectSummary[]> {
     const qs = new URLSearchParams();
-    if (params?.scope) qs.set("scope", params.scope);
     if (params?.sort) qs.set("sort", params.sort);
     const query = qs.toString();
     return apiFetch<ProjectSummary[]>(
@@ -123,8 +120,9 @@ export const projectsApi = {
     });
   },
 
-  delete(id: string, opts?: { purge?: boolean }): Promise<void> {
-    return apiFetch(`/api/projects/${id}?purge=${opts?.purge ?? false}`, {
+  /** Hard-deletes the project and its files. There is no soft variant (#261). */
+  delete(id: string): Promise<void> {
+    return apiFetch(`/api/projects/${id}`, {
       method: "DELETE",
     });
   },

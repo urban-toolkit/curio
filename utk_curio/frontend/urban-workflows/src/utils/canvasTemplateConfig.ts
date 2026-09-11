@@ -27,7 +27,7 @@ function portDefToDraft(
   if (!ports.length) return [];
   return ports.map((p) => ({
     id: factoryUiMakeId(),
-    types: p.types.join(","),
+    types: [...p.types],
     cardinality: String(p.cardinality ?? "1"),
   }));
 }
@@ -66,7 +66,7 @@ export function canvasTemplateConfigFromDescriptor(
     outputPorts:
       desc.outputPorts.length > 0
         ? portDefToDraft(desc.outputPorts)
-        : [{ id: factoryUiMakeId(), types: SupportedType.JSON, cardinality: "1" }],
+        : [{ id: factoryUiMakeId(), types: [SupportedType.JSON], cardinality: "1" }],
     sourceFilename: defaultSourceFilename(desc),
     sourceCode: templateCode,
   };

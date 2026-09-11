@@ -205,6 +205,41 @@ def _validate_one(
             for t in unresolved
         ]
 
+    # The lockfile has to cover the node types, or nothing downstream can tell
+    # what the dataflow needs. `10-street-vision-cv-analysis.json` shipped
+    # `packages: []` while its nodes referenced `curio.streetvision/*`, and
+    # because those types are UNVERSIONED the backend's backfill could only
+    # resolve them through packages that were ALREADY installed - which
+    # streetvision, by design, never is. So three nodes sat on "Loading node…"
+    # forever and every edge touching them vanished (#233).
+    #
+    # Not behind `--resolve`: that flag exists because resolution needs the
+    # package catalog on disk, whereas this needs only the document. A guard
+    # nobody remembers to switch on is not a guard - and note `--resolve`
+    # passed example 10 happily, because the types DO resolve against the repo
+    # catalog. Declaring them is the part that was missing.
+    flow = doc.get("dataflow") if isinstance(doc, dict) else None
+    nodes = (flow or {}).get("nodes") or []
+    declared_ids = {
+        dir_name.split("@", 1)[0]
+        for dir_name in ((flow or {}).get("packages") or [])
+        if isinstance(dir_name, str) and "@" in dir_name
+    }
+    referenced_ids = set()
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_type = unversioned_node_type(node.get("type", ""))
+        if isinstance(node_type, str) and "/" in node_type:
+            referenced_ids.add(node_type.split("/", 1)[0])
+    # builtin is always installed and is never a declared dependency.
+    undeclared = sorted(referenced_ids - declared_ids - {"curio.builtin"})
+    problems += [
+        f"dataflow.packages: does not declare {pkg!r}, which dataflow.nodes "
+        f"references"
+        for pkg in undeclared
+    ]
+
     if not problems:
         if not quiet:
             print(f"  ok   {_rel(path)}")

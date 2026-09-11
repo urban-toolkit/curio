@@ -1,15 +1,39 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Feature, FeatureCollection } from 'geojson';
 import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
+import { detectWebGpuSupport, reprobeWebGpuSupport } from '../../utils/webgpuSupport';
 import { useToastContext } from '../../providers/ToastProvider';
 import { autkGrammarAdapter } from '../../adapters/autkGrammarAdapter';
 import { VisInteractionType, NodeType } from '../../constants';
 import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
+import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
+import { backendUrl } from '../../utils/backendUrl';
+import { runAndAlwaysSettle } from './autkRunSettlement';
 
 export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     const { showToast } = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
+    // Set when the browser cannot run Autark at all (#201). Renders an
+    // in-node explanation instead of the map container, so the node says why
+    // it is empty rather than looking like it simply produced nothing.
+    const [gpuBlocked, setGpuBlocked] = useState<string | null>(null);
+    // The fallback panel's "Check again" is re-probing (#272).
+    const [gpuChecking, setGpuChecking] = useState(false);
+    // The last spec handed to applyGrammar, so "Check again" can re-run it the
+    // moment WebGPU answers instead of asking the user to press play again.
+    const lastSpecRef = useRef<string | null>(null);
+    // What kind of step this spec is, so the body can say so. A data-only or
+    // compute-only node has no map/plot to draw, and used to render a blank
+    // 400px box under a green "Done" chip - indistinguishable from a node that
+    // never ran or silently failed (#282). Seeded from the authored spec so the
+    // pre-run body already says what running it will do; updated on every run.
+    const [specKind, setSpecKind] = useState<AutkSpecKind>(() =>
+        classifyAutkSpecString((data as any).code || data.defaultCode || autkGrammarAdapter.getDefaultSpec?.()),
+    );
+    // One line per table/layer the last successful run produced. Null while
+    // running and after an error, so a stale summary never outlives its data.
+    const [runSummary, setRunSummary] = useState<string | null>(null);
 
     // Grammar instance and last-run spec, kept in refs so effects can access
     // them without causing re-renders.
@@ -33,14 +57,43 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // or the upstream input changes.
     const dataCacheRef = useRef<{ key: string; ref: { path: string; dataType: string } } | null>(null);
 
-    const applyGrammar = async (specString: string) => {
+    const runGrammar = async (
+        specString: string,
+        emit: (o: { code: string; content: string }) => void,
+    ) => {
         let spec: any;
         try {
             spec = typeof specString === 'string' ? JSON.parse(specString) : { ...(specString as any) };
         } catch {
-            nodeState.setOutput({ code: 'error', content: 'Invalid JSON grammar spec.' });
+            emit({ code: 'error', content: 'Invalid JSON grammar spec.' });
             return;
         }
+        setSpecKind(classifyAutkSpec(spec));
+        setRunSummary(null);
+
+        // Ask whether this browser can run Autark at all, BEFORE any canvas or
+        // DOM work (#201). Upstream of the dynamic import, the compute path and
+        // the canvas creation, so a refusal leaves no orphaned canvas and no
+        // window listeners behind. The library swallows its own init failure and
+        // only throws much later, inside `createShaders()`, where the stack says
+        // nothing about WebGPU.
+        const needsGpu =
+            spec.map != null ||
+            spec.plot != null ||
+            (Array.isArray(spec.compute) && spec.compute.length > 0);
+        if (needsGpu) {
+            const support = await detectWebGpuSupport();
+            if (!support.supported) {
+                const message =
+                    support.reason ??
+                    'Autark nodes need WebGPU, which this browser does not provide.';
+                setGpuBlocked(message);
+                emit({ code: 'error', content: message });
+                showToast(message, 'error');
+                return;
+            }
+        }
+        setGpuBlocked(null);
 
         const nodeId = data.nodeId;
         const mapCanvasId = 'autk-grammar-map-' + nodeId;
@@ -118,7 +171,8 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         interactionOffRef.current.forEach(f => f());
         interactionOffRef.current = [];
 
-        nodeState.setOutput({ code: 'exec', content: '' });
+        emit({ code: 'exec', content: '' });
+        let summary: string | null = null;
         try {
             // ── Data section → backend sandbox ──────────────────────────────
             // The authored data sources are compiled to autk-db JavaScript and
@@ -336,6 +390,13 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     // loads it straight from the DB. The fallback emits layers inline.
                     const out = backendRef ?? backendLayers;
                     if (data.outputCallback) data.outputCallback(data.nodeId, out);
+                    // The backend path hands back an artifact ref, not the
+                    // tables, so name what the spec asked autk-db to create -
+                    // a short load has already failed above, so these exist.
+                    const tables = backendLayers
+                        ? backendLayers.map((l) => `${l.name} (${l.geojson?.features?.length ?? 0} features)`)
+                        : requestedLayerTables(specDataSources);
+                    summary = describeAutkRun('Loaded', 'table', tables);
                 } else {
                     // Compute-only node: skip the extra AutkDb round-trip — upstream layers
                     // (from backend, or the in-browser fallback) are already normalized and
@@ -364,7 +425,19 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         layers = layers.filter((l) => !emptyLayers.includes(l));
                     }
                     if (Array.isArray(spec.compute) && spec.compute.length > 0) {
-                        layers = await applyComputeBlocks(layers, spec.compute);
+                        const computeFailures: string[] = [];
+                        layers = await applyComputeBlocks(
+                            layers, spec.compute, computeFailures,
+                        );
+                        if (computeFailures.length > 0) {
+                            // Emitting here would hand downstream nodes the
+                            // untouched input under a green "Done" badge.
+                            const message =
+                                'Compute failed: ' + computeFailures.join('; ');
+                            emit({ code: 'error', content: message });
+                            showToast(message, 'error');
+                            return;
+                        }
                     }
                     // Build the pool-compatible wrapper and persist it to the
                     // backend sandbox so downstream nodes see a `{path, dataType}`
@@ -382,18 +455,80 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         }
                     }
                     if (data.outputCallback) data.outputCallback(data.nodeId, out ?? layers);
+                    summary = describeAutkRun(
+                        'Computed',
+                        'layer',
+                        layers.map((l) => `${l.name} (${(l.geojson as any)?.features?.length ?? 0} rows)`),
+                    );
                 }
             }
 
-            nodeState.setOutput({ code: 'success', content: '' });
+            // A render node reports through its map/plot; a data or compute
+            // node has only this line to show that it did something (#282).
+            setRunSummary(summary);
+            emit({ code: 'success', content: summary ?? '' });
         } catch (err: any) {
             const msg = err?.message ?? String(err);
             // The toast is transient and the node UI has no error tab, so
             // also log to console — it's the only durable place tooling
             // (and the e2e browser-log dump) can read the failure from.
             console.error('[autk-grammar] node error:', msg);
-            nodeState.setOutput({ code: 'error', content: msg });
+            emit({ code: 'error', content: msg });
             showToast(msg, 'error');
+        }
+    };
+
+    /**
+     * Run the spec, and always leave the "exec" state (#271).
+     *
+     * The runner (FlowProvider's Run All) has no promise to await: it waits
+     * for this node's output to flip to success or error, and until then the
+     * whole run - and every later Run / Run All click - is held. runGrammar
+     * has several early returns and awaits a WebGPU probe, a dynamic import
+     * and the library's own async init, any of which can throw or hang in
+     * ways its inner try/catch never sees. So the terminal output is
+     * guaranteed here, in a finally, rather than hoped for in the body.
+     */
+    const applyGrammar = async (specString: string) => {
+        lastSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
+        let settled = false;
+        const emit = (o: { code: string; content: string }) => {
+            if (o.code === 'success' || o.code === 'error') settled = true;
+            nodeState.setOutput(o);
+        };
+        // The net itself lives in autkRunSettlement so it can be tested; see the
+        // note there for why it is unreachable through this hook.
+        await runAndAlwaysSettle(() => runGrammar(specString, emit), {
+            settled: () => settled,
+            onError: (msg) => {
+                // The toast is transient and the node UI has no error tab, so
+                // also log to console - the only durable place tooling (and the
+                // e2e browser-log dump) can read the failure from.
+                console.error('[autk-grammar] node error:', msg);
+                emit({ code: 'error', content: msg });
+                showToast(msg, 'error');
+            },
+            onUnreported: () => {
+                emit({ code: 'error', content: 'The Autark node stopped without reporting a result.' });
+            },
+        });
+    };
+
+    /** Re-probe WebGPU and, if it is there now, run the last spec (#272). */
+    const checkGpuAgain = async () => {
+        setGpuChecking(true);
+        try {
+            const support = await reprobeWebGpuSupport();
+            if (support.supported) {
+                setGpuBlocked(null);
+                if (lastSpecRef.current != null) await applyGrammar(lastSpecRef.current);
+            } else {
+                const message = support.reason ?? 'Autark nodes need WebGPU, which this browser does not provide.';
+                setGpuBlocked(message);
+                showToast(message, 'error');
+            }
+        } finally {
+            setGpuChecking(false);
         }
     };
 
@@ -441,7 +576,11 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
                     : grammar.setPlotSelection?.(plotSpec.dataRef, sel);
             }
-        })();
+        })().catch((err) => {
+            // Same reason as GrammarEditor's: an escaped rejection here
+            // surfaces as the dev-server overlay rather than as a node error.
+            console.error("[autk-grammar] interaction sync failed:", err);
+        });
     }, [data.input]);
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
@@ -506,21 +645,102 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // Stable JSX reference across incidental re-renders, but identity changes
     // on run completion so NodeEditor switches to the output tab automatically.
     const contentComponent = React.useMemo<React.ReactNode>(
-        () => (
-            <div
-                className="nodrag nopan nowheel"
-                ref={wrapperRef}
-                style={{
-                    position: 'relative',
-                    width: '100%',
-                    height: '100%',
-                    minHeight: 400,
-                    overflow: 'hidden',
-                }}
-            />
-        ),
+        () =>
+            gpuBlocked ? (
+                // Styled after providers/BackendHealthBanner: an explanation the
+                // user can act on, in the node, rather than an empty box. The red
+                // "Error" chip on the node header comes for free from the output
+                // code set alongside this.
+                <div
+                    role="alert"
+                    className="nodrag nopan nowheel"
+                    style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        padding: '14px 16px',
+                        margin: 8,
+                        border: '1px solid var(--curio-danger, #c0392b)',
+                        borderRadius: 'var(--curio-radius-md, 6px)',
+                        background: 'var(--curio-danger-bg, rgba(192, 57, 43, 0.08))',
+                        color: 'var(--curio-danger-strong, #922b21)',
+                        fontSize: 'var(--curio-font-size-md, 13px)',
+                        lineHeight: 1.45,
+                        overflow: 'auto',
+                    }}
+                >
+                    <strong>WebGPU is not available</strong>
+                    <span>{gpuBlocked}</span>
+                    <button
+                        type="button"
+                        className="nodrag nopan"
+                        aria-label="Check WebGPU again"
+                        disabled={gpuChecking}
+                        onClick={() => { void checkGpuAgain(); }}
+                        style={{
+                            alignSelf: 'flex-start',
+                            padding: '4px 10px',
+                            border: '1px solid currentColor',
+                            borderRadius: 'var(--curio-radius-sm, 4px)',
+                            background: 'transparent',
+                            color: 'inherit',
+                            cursor: gpuChecking ? 'progress' : 'pointer',
+                        }}
+                    >
+                        {gpuChecking ? 'Checking…' : 'Check again'}
+                    </button>
+                </div>
+            ) : (
+                // The wrapper is always mounted - applyGrammar owns its
+                // children (canvas / plot div) and empties it on every run - so
+                // the data/compute feedback is a SIBLING React owns, not a child
+                // the next run would wipe (#282). A render node keeps the old
+                // 400px box; a data/compute node has nothing to draw there, so
+                // the box collapses and the summary is the body.
+                <div
+                    className="nodrag nopan nowheel"
+                    style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}
+                >
+                    {specKind === 'data' || specKind === 'compute' ? (
+                        runSummary ? (
+                            <div
+                                data-curio-autk-summary={specKind}
+                                style={{
+                                    padding: '10px 14px',
+                                    fontSize: 'var(--curio-font-size-md, 13px)',
+                                    lineHeight: 1.5,
+                                    color: 'var(--curio-text-primary, #1E1F23)',
+                                    whiteSpace: 'pre-wrap',
+                                    overflow: 'auto',
+                                }}
+                            >
+                                {runSummary}
+                            </div>
+                        ) : (
+                            <NodeEmptyState
+                                reason="upstream-not-run"
+                                hint={
+                                    specKind === 'data'
+                                        ? 'This step loads data; run it to pass tables downstream.'
+                                        : 'This step computes on upstream layers; run it to pass results downstream.'
+                                }
+                            />
+                        )
+                    ) : null}
+                    <div
+                        ref={wrapperRef}
+                        style={{
+                            position: 'relative',
+                            width: '100%',
+                            flex: 1,
+                            minHeight: specKind === 'data' || specKind === 'compute' ? 0 : 400,
+                            overflow: 'hidden',
+                        }}
+                    />
+                </div>
+            ),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [nodeState.output],
+        [nodeState.output, gpuBlocked, gpuChecking, runSummary, specKind],
     );
 
     // Editor seed, decided ONCE at mount: a node that arrives with no code gets
@@ -705,6 +925,89 @@ export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => vo
     };
 }
 
+// Table names a data spec is contractually asking autk-db to create.
+//
+// The point is to tell a load that came back SHORT apart from one that came back
+// empty. autk-db's `loadOsm` walks `autoLoadLayers.layers` sequentially and lets
+// a per-layer failure propagate, so a throw partway leaves the earlier tables
+// registered and the later ones absent. Both loaders below used to publish
+// whatever `getLayerTables()` happened to hold, which surfaces downstream as an
+// opaque "Table <last layer> not found" from a node two hops away, with the node
+// that actually failed showing "Done" (#248).
+//
+// Naming mirrors autk-db's own, which derives a layer table as
+// `outputTableName || `${osmInputTableName}_${layer}``.
+export type AutkSpecKind = 'render' | 'data' | 'compute' | 'unknown';
+
+/**
+ * Which kind of step an UrbanSpec describes (#282).
+ *
+ * ``render`` draws a map or plot; ``compute`` runs WGSL over upstream layers;
+ * ``data`` only loads sources. The last two have nothing to draw, so the node
+ * body reports what they produced instead of staying blank.
+ */
+export function classifyAutkSpec(spec: any): AutkSpecKind {
+    if (!spec || typeof spec !== 'object') return 'unknown';
+    if (spec.map != null || spec.plot != null) return 'render';
+    if (Array.isArray(spec.compute) && spec.compute.length > 0) return 'compute';
+    if (Array.isArray(spec.data) && spec.data.length > 0) return 'data';
+    return 'unknown';
+}
+
+export function classifyAutkSpecString(specString: unknown): AutkSpecKind {
+    if (typeof specString !== 'string' || specString.trim() === '') return 'unknown';
+    try {
+        return classifyAutkSpec(JSON.parse(specString));
+    } catch {
+        return 'unknown';
+    }
+}
+
+/** ``Loaded 3 tables: a, b, c`` - the one line a data/compute node shows after a run. */
+export function describeAutkRun(verb: string, noun: string, items: string[]): string {
+    if (items.length === 0) return `${verb} nothing - the spec names no ${noun}s.`;
+    const plural = items.length === 1 ? noun : `${noun}s`;
+    return `${verb} ${items.length} ${plural}: ${items.join(', ')}`;
+}
+
+export function requestedLayerTables(dataSources: any[]): string[] {
+    const names: string[] = [];
+    for (const source of dataSources ?? []) {
+        const { type, ...rest } = (source ?? {}) as any;
+        if (type === 'osm') {
+            // Per-layer tables only. `${outputTableName}` and
+            // `${outputTableName}_boundaries` are excluded deliberately:
+            // `autoLoadLayers.dropOsmTable` drops those once the layers have been
+            // split out, so expecting them would fail every spec that sets it.
+            const layers = rest?.autoLoadLayers?.layers;
+            if (rest?.outputTableName && Array.isArray(layers)) {
+                for (const layer of layers) names.push(`${rest.outputTableName}_${layer}`);
+            }
+        } else if (type === 'geojson' || type === 'csv' || type === 'json') {
+            if (rest?.outputTableName) names.push(rest.outputTableName);
+        }
+        // `join` is skipped on purpose: its MODIFY_ROOT/CREATE_TABLE output
+        // rewrites a table another source already created rather than adding a
+        // layer of its own, so expecting one would report a phantom miss.
+    }
+    return Array.from(new Set(names));
+}
+
+// Message for a load that produced layers, but not the ones the spec asked for.
+// Shared by both loaders so the two paths report a short load identically.
+//
+// `errors` is what makes this safe to throw on rather than merely warn about:
+// autk-db propagates rather than swallows, so a table missing *because the load
+// broke* always arrives with a caught reason, while a sparse-but-successful
+// query area does not (`loadOsmLayer` creates the table even at zero features,
+// and autk-db counts rows on it immediately after). Missing with no recorded
+// error is therefore a warning, not a failure.
+function missingLayerMessage(missing: string[], errors: string[]): string {
+    return `autk data load produced ${missing.length} fewer table(s) than the spec asked for`
+        + ` - missing: ${missing.join(', ')}`
+        + (errors.length > 0 ? ` (${errors.join('; ')})` : '');
+}
+
 // Compile a grammar `data` section into autk-db JavaScript to run in the backend
 // Node.js sandbox. The single top-level `import` is rewritten to `await import()`
 // by execute_js_code; the rest is the body of the async function the sandbox
@@ -724,6 +1027,10 @@ const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;
 const DEFAULT_WORKSPACE_COORDINATE_FORMAT = __autkDbMod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
 if (typeof AutkDb !== 'function') throw new Error('@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');
 const __sources = ${JSON.stringify(dataSources)};
+// Computed host-side by requestedLayerTables so the naming rules live in ONE
+// place rather than being restated inside this emitted string.
+const __expectedTables = ${JSON.stringify(requestedLayerTables(dataSources))};
+const __loadErrors = [];
 const db = new AutkDb();
 await db.init();
 for (const source of __sources) {
@@ -748,8 +1055,35 @@ for (const source of __sources) {
     else if (type === 'join' && typeof db.spatialQuery === 'function') await db.spatialQuery(rest);
     else console.log('[autk-grammar] unsupported data source type "' + type + '" - skipped');
   } catch (e) {
+    // Recorded, not discarded: this reason is the only account of WHY a layer is
+    // missing, and the contract check below attaches it to the thrown error.
+    __loadErrors.push(type + ': ' + ((e && e.message) || String(e)));
     console.log('[autk-grammar] data load failed for source type "' + type + '": ' + (e && e.message));
   }
+}
+let __tables = [];
+try {
+  __tables = db.getLayerTables ? db.getLayerTables() : [];
+} catch (e) {
+  // A partially-loaded DB can throw here rather than return [] - treat it as
+  // "no usable tables" and let the contract check report it.
+  __loadErrors.push('getLayerTables: ' + ((e && e.message) || String(e)));
+}
+const __have = new Set(__tables.map((t) => t.name));
+const __missing = __expectedTables.filter((n) => !__have.has(n));
+if (__missing.length > 0) {
+  const __detail = 'missing: ' + __missing.join(', ')
+    + (__loadErrors.length > 0 ? ' (' + __loadErrors.join('; ') + ')' : '');
+  if (__loadErrors.length > 0) {
+    // Mirrors missingLayerMessage() host-side. Throwing is the whole point: it
+    // turns a silent short load into a failed execution, which both reports the
+    // real reason on THIS node and lets runDataInBackend's existing retry take a
+    // second attempt at what is usually a transient PBF/stream hiccup.
+    throw new Error('autk data load produced ' + __missing.length
+      + ' fewer table(s) than the spec asked for - ' + __detail);
+  }
+  console.log('[autk-grammar] ' + __detail
+    + ' - no load error recorded, treating as a genuinely empty query area');
 }
 const __epsg = String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\\d+)/)?.[1] ?? '3395';
 // Tag each layer with the CRS its coordinates are ACTUALLY in. autk-db 2.0.1
@@ -796,7 +1130,7 @@ const __buildingHeight = (props) => {
   return top > base ? null : base + 6;
 };
 const __out = [];
-for (const t of (db.getLayerTables ? db.getLayerTables() : [])) {
+for (const t of __tables) {
   const geojson = await db.getLayer(t.name);
   let type = t.type ?? 'polygons';
   if (type === 'buildings' && Array.isArray(geojson?.features)) {
@@ -1070,6 +1404,29 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     const usable = layers.filter(
         (l): l is { name: string; type: string; geojson: FeatureCollection } => l != null,
     );
+    // Same contract check as the sandbox emit: a load that came back short is a
+    // failure, not a success with fewer layers. Without this, the caller's
+    // "backend failed, fall back in-browser" path would quietly publish the same
+    // short layer array the backend path just refused to.
+    //
+    // Diffed against `usable` - what a consumer actually receives. A layer that
+    // was never created and one that exists but could not be exported are the
+    // same loss downstream: the array comes back short either way. An empty
+    // layer is NOT caught by this, because getLayer returns an empty
+    // FeatureCollection for it and it stays in `usable`; only a getLayer that
+    // throws counts, and that is a defect rather than sparse data.
+    const requested = requestedLayerTables(spec?.data ?? []);
+    if (requested.length > 0) {
+        const have = new Set(usable.map((l) => l.name));
+        const missing = requested.filter((n) => !have.has(n));
+        if (missing.length > 0) {
+            if (loadErrors.length > 0) {
+                throw new Error(missingLayerMessage(missing, loadErrors));
+            }
+            console.warn(`[autk-grammar] ${missingLayerMessage(missing, [])} - no load `
+                + `error recorded, treating as a genuinely empty query area`);
+        }
+    }
     // A load that asked for sources but produced no usable layer AND hit errors
     // is a real failure (e.g. every PBF range fetch 404'd) — throw an ATTRIBUTED
     // error so the node reports the reason, instead of crashing later with an
@@ -1373,6 +1730,10 @@ function buildBatchedUniforms(
 async function applyComputeBlocks(
     layers: Array<{ name: string; type: string; geojson: FeatureCollection }>,
     computeBlocks: any[],
+    /** Appended to for every block that failed, so the caller can refuse to
+     *  report success. A block whose ``dataRef`` matches no upstream layer is
+     *  still skipped quietly - that is a no-op, not a failure. */
+    failures: string[] = [],
 ): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
     if (!Array.isArray(computeBlocks) || computeBlocks.length === 0) return layers;
     const { ComputeGpgpu } = await import('@urban-toolkit/autk-compute');
@@ -1479,7 +1840,14 @@ async function applyComputeBlocks(
             if (sourceCrs && augmented) (augmented as any).crs = sourceCrs;
             result = result.map((l, i) => (i === idx ? { ...l, geojson: augmented } : l));
         } catch (e) {
+            // Recorded, not just warned (#201). A failed block leaves the layer
+            // exactly as it arrived, so swallowing this emitted UNCOMPUTED data
+            // under a green "Done" badge - the node reported success for work
+            // it had not done. The caller turns a non-empty list into an error.
             console.warn(`[autk-grammar] compute block on '${block.dataRef}' failed`, e);
+            failures.push(
+                `${block.dataRef}: ${(e as Error)?.message ?? "compute failed"}`,
+            );
         }
     }
     return result;
@@ -1654,26 +2022,31 @@ function firstCoordinate(coords: any): [number, number] | null {
 // host/port, no route prefix) exactly as a Python node would read it.
 // Absolute URIs (http://, https://, data:, blob:, …) are passed through unchanged.
 // Applies to all file-URL fields across every data source type.
+// Stand-in for "the backend, as reachable from the sandbox" inside a URL that
+// will be fetched by the sandbox's Node subprocess.
+// ``utk_curio/sandbox/app/worker.py::execute_js_code`` replaces it with the
+// backend's real base URL at execution time.
+//
+// Why a token rather than a URL: the browser cannot know which address that
+// subprocess must use. The two run in different network namespaces whenever
+// Curio is containerised (a host-published 5022 is still 5002 inside), so the
+// port the page was served against is not usable there - and neither is any
+// constant. This used to force :5002 for a loopback backend, which meant every
+// OSM/PBF load on a stack NOT using the default port failed with
+// "fetch failed" and silently fell back to the in-browser loader (#248).
+// Resolving it in the process that performs the fetch is correct in all three
+// cases: default ports, a custom-port stack, and a remapped container port.
+export const SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__';
+
 function resolveDataSourceUrls(spec: any, forBackend = false): any {
     if (!Array.isArray(spec.data) || spec.data.length === 0) return spec;
 
-    let backendUrl = (process.env.BACKEND_URL || 'http://localhost:5002').replace(/\/$/, '');
-    // When the URL will be fetched by the sandbox's Node.js subprocess (the data
-    // section runs there), force the loopback host to 127.0.0.1 — node's fetch
-    // can stall on `localhost` resolving to IPv6 ::1. The /file/ route is
-    // unauthenticated, so the node fetch needs no token.
-    if (forBackend) {
-        backendUrl = backendUrl.replace(/:\/\/localhost(:|\/|$)/, '://127.0.0.1$1');
-        // The sandbox is co-located with the backend in the SAME container, so
-        // it reaches it on the backend's fixed *internal* port (5002). Any host
-        // port remapping (e.g. CI on a shared host publishes 5002 as 5022 to
-        // avoid colliding with another stack) does NOT apply inside the
-        // container — fetching the host-mapped port from in-container yields
-        // "fetch failed" and the OSM/PBF data load comes back empty. Force the
-        // internal port for a loopback backend; a public BACKEND_URL (prod) has
-        // no 127.0.0.1 host and is left unchanged.
-        backendUrl = backendUrl.replace(/^(https?:\/\/127\.0\.0\.1):\d+/, '$1:5002');
-    }
+    // For the browser, the host-published URL the page itself talks to. For the
+    // sandbox, the token above - deliberately not a URL. The /file/ route is
+    // unauthenticated, so the node fetch needs no token of the auth kind.
+    const base = forBackend
+        ? SANDBOX_BACKEND_URL_TOKEN
+        : (backendUrl() || 'http://localhost:5002');
     const urlFields = ['pbfFileUrl', 'csvFileUrl', 'jsonFileUrl', 'geojsonFileUrl'];
     const isAbsolute = (url: string) => /^[a-z][a-z\d+\-.]*:/i.test(url);
 
@@ -1682,7 +2055,7 @@ function resolveDataSourceUrls(spec: any, forBackend = false): any {
         for (const field of urlFields) {
             const val = source[field];
             if (typeof val === 'string' && !isAbsolute(val)) {
-                patch[field] = `${backendUrl}/file/${val.replace(/^\/+/, '')}`;
+                patch[field] = `${base}/file/${val.replace(/^\/+/, '')}`;
             }
         }
         return Object.keys(patch).length > 0 ? { ...source, ...patch } : source;

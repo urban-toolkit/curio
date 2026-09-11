@@ -29,13 +29,17 @@ if (typeof window !== 'undefined') {
   w.ReactFlow = ReactFlowNS;
   // ``backendUrl`` is the runtime resolution of the host's ``BACKEND_URL``
   // env var. Packages should read this instead of inlining
-  // ``process.env.BACKEND_URL`` at their own build time — that path bakes
+  // the env var at their own build time — that path bakes
   // the URL into the published catalog bundle and breaks for any
   // deployment that doesn't match the build host.
   w.curio = {
     ...(w.curio ?? {}),
     registerBehavior,
-    backendUrl: process.env.BACKEND_URL ?? '',
+    // A getter, like getAuthToken below: resolved on every read, so a
+    // package bundle sees the runtime value, never a string captured at load.
+    get backendUrl() {
+      return backendUrl();
+    },
     // A getter, not a value: a package bundle evaluates once at load, long
     // before sign-in, so a captured string would be stale forever. Packages
     // whose backend needs to know WHO is calling (the Street Vision node, for
@@ -96,3 +100,4 @@ export type {
 export type {
   GrammarAdapter,
 } from './grammarAdapter';
+import { backendUrl } from '../utils/backendUrl';

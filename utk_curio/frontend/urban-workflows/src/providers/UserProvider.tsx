@@ -23,6 +23,17 @@ interface UserProviderProps {
   skipProjectPage: boolean;
   allowGuest: boolean;
   sharedGuestUsername: string;
+  /**
+   * Is the session browsing as the ONE account every guest sign-in resolves to?
+   *
+   * Not the same question as ``user.is_guest``. The shared guest is a single
+   * ``User`` row that every anonymous visitor shares, so anything scoped to
+   * "this account" -- its dataset store, and the ``publisher`` recorded when it
+   * publishes -- is really scoped to "all guests at once". Surfaces that offer
+   * to write shared state use this to withhold the control; the server refuses
+   * the request regardless (#222).
+   */
+  isSharedGuest: boolean;
   signup: (data: {
     name: string;
     username: string;
@@ -56,6 +67,7 @@ export const UserContext = createContext<UserProviderProps>({
   skipProjectPage: false,
   allowGuest: false,
   sharedGuestUsername: "guest_shared",
+  isSharedGuest: false,
   signup: async () => null,
   signin: async () => null,
   signinGuest: async () => null,
@@ -287,6 +299,9 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         skipProjectPage,
         allowGuest,
         sharedGuestUsername,
+        isSharedGuest: Boolean(
+          user?.is_guest && user.username === sharedGuestUsername
+        ),
         signup,
         signin,
         signinGuest,

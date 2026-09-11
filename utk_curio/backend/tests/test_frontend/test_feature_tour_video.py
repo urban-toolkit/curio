@@ -67,10 +67,12 @@ from playwright.sync_api import expect
 
 from .tour import REPO_ROOT, VIDEO_SIZE, Tour, finalize_video, out_dir, speed
 from .utils import (
+    accept_confirm_dialog,
     CANVAS_DROP_TARGET,
     _DRAG_TO_CANVAS_JS,
     activate_header_icon,
     canvas_nodes,
+    edge_client_point,
     close_tools_palette,
     connect_nodes,
     dismiss_toasts,
@@ -140,7 +142,7 @@ _DEFAULT_MODEL = "gemma4"
 #   connection-builder is the only built-in that accepts a connection target,
 #                    which is the gesture this branch added;
 #   dataflow-builder is the only built-in declaring requiresAgents, so its
-#                    button reads "Add to dataflow (+1 required)".
+#                    button reads "Add to project (+1 required)".
 AGENT_EXPLAINER = "agent.node-explainer@1.0.0"
 AGENT_CONNECTION = "agent.connection-builder@1.0.0"
 AGENT_BUILDER = "agent.dataflow-builder@1.0.0"
@@ -452,27 +454,31 @@ def _agent_card(drawer, coord: str):
 
 
 def _add_agent(ctx: Ctx, drawer, coord: str, *, hold: float = 1200):
-    """Click a card's Add to dataflow and wait for the install to land.
+    """Click a card's Add to project and wait for the install to land.
 
     The button label varies - an agent declaring ``requiresAgents`` reads
-    "Add to dataflow (+1 required)" - so it is matched by prefix and the
-    confirmation is the flip to "Remove from dataflow" rather than the label.
+    "Add to project (+1 required)" - so it is matched by prefix and the
+    confirmation is the flip to "Remove from project" rather than the label.
     """
     page, tour = ctx.page, ctx.tour
     card = _agent_card(drawer, coord)
     expect(card).to_have_count(1, timeout=20000)
     card.scroll_into_view_if_needed()
     tour.focus(card, hold=hold)
-    add = card.get_by_role("button", name=re.compile(r"^Add to dataflow"))
+    add = card.get_by_role("button", name=re.compile(r"^Add to project"))
+    tour.click(add)
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.url.endswith("/install")
         and r.request.method == "POST" and r.ok,
         timeout=60000,
     ):
-        tour.click(add)
+        # Adding confirms first now (#196), listing any required agents.
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to project"
+        )
     expect(
-        card.get_by_role("button", name="Remove from dataflow", exact=True)
+        card.get_by_role("button", name="Remove from project", exact=True)
     ).to_be_visible(timeout=25000)
     return card
 
@@ -606,107 +612,15 @@ def _empty_canvas_point(page) -> tuple[float, float] | None:
 
 
 def _edge_client_point(page) -> tuple[float, float] | None:
-    """A point that ``pickEdgeAtPoint`` will actually resolve to an edge.
+    """The tour's view of the shared sampler, logging why when it finds nothing.
 
-    React Flow draws a wide invisible ``.react-flow__edge-interaction`` path
-    under every edge precisely so a pointer can land on a curve, and
-    ``pickEdgeAtPoint`` hit-tests it with ``elementFromPoint``
-    (``agentCatalogEvents.ts``). Two things make the obvious "take the midpoint"
-    version wrong:
-
-    * a bezier's bounding-box centre is usually empty space, so the point has to
-      come from ``getPointAtLength`` on the path itself; and
-    * the open agent palette is a ~545px strip floating *over* the left of the
-      canvas, so a point that is geometrically on the edge can still be occluded
-      - and ``elementFromPoint`` would return the palette, which resolves to no
-      edge and silently attaches to the canvas instead.
-
-    So this samples along the curve and returns the first point that
-    ``elementFromPoint`` resolves to an edge, which is the same question the drop
-    handler asks. ``None`` means no such point exists right now, and the caller
-    skips the beat rather than recording a mislabelled one.
+    The sampler itself moved to ``utils.py`` so the connection-affordance module
+    can ask the same question this scene does (#296): which point on this curve
+    would ``pickEdgeAtPoint`` actually resolve to an edge.
     """
-    point = page.evaluate(
-        """() => {
-            const path = document.querySelector(
-                '.react-flow__edge .react-flow__edge-interaction'
-            ) || document.querySelector('.react-flow__edge path');
-            if (!path || !path.getPointAtLength) return null;
-            const total = path.getTotalLength();
-            if (!total) return null;
-            const svg = path.ownerSVGElement;
-            const ctm = path.getScreenCTM();
-            const rf = window.__curio_reactFlow;
-            if (!svg || !ctm || !rf) return null;
-
-            const toFlow = (x, y) => (
-                rf.screenToFlowPosition
-                    ? rf.screenToFlowPosition({ x, y })
-                    : rf.project({ x, y })
-            );
-            // handleDrop's precedence, restated: pickNodeAtPoint runs first and
-            // a hit there wins, so a point that is visually on the curve still
-            // attaches to a NODE if it falls inside that node's box. React
-            // Flow's boxes are generous - a node is 525x350 - and the bezier
-            // dips back over them near its ends.
-            const nodes = rf.getNodes();
-            const insideANode = (flow) => nodes.some((n) => {
-                const o = n.positionAbsolute ?? n.position;
-                if (!o) return false;
-                const w = n.width ?? 0;
-                const h = n.height ?? 0;
-                return flow.x >= o.x && flow.x <= o.x + w
-                    && flow.y >= o.y && flow.y <= o.y + h;
-            });
-
-            // Walk outwards from the midpoint, which is the part of the curve
-            // furthest from both node bodies.
-            const fractions = [
-                0.5, 0.48, 0.52, 0.45, 0.55, 0.42, 0.58, 0.4, 0.6, 0.35, 0.65,
-            ];
-            for (const f of fractions) {
-                const at = path.getPointAtLength(total * f);
-                const pt = svg.createSVGPoint();
-                pt.x = at.x;
-                pt.y = at.y;
-                const screen = pt.matrixTransform(ctm);
-                const hit = document.elementFromPoint(screen.x, screen.y);
-                if (!hit || !hit.closest) continue;
-                // Occluded (the palette strip floats over the pane), so
-                // pickEdgeAtPoint would miss it.
-                if (!hit.closest('.react-flow__edge')) continue;
-                // Inside a node's box, so pickNodeAtPoint would claim it first.
-                if (insideANode(toFlow(screen.x, screen.y))) continue;
-                return { point: [screen.x, screen.y] };
-            }
-            // Nothing qualified. Hand back what was measured so the caller can
-            // say why rather than just skipping the beat.
-            const mid = path.getPointAtLength(total / 2);
-            const mpt = svg.createSVGPoint();
-            mpt.x = mid.x;
-            mpt.y = mid.y;
-            const mscreen = mpt.matrixTransform(ctm);
-            const hit = document.elementFromPoint(mscreen.x, mscreen.y);
-            return { why: {
-                midScreen: [Math.round(mscreen.x), Math.round(mscreen.y)],
-                midFlow: toFlow(mscreen.x, mscreen.y),
-                topmost: hit ? (hit.className && hit.className.baseVal !== undefined
-                    ? hit.className.baseVal : String(hit.className || hit.tagName)) : null,
-                nodes: nodes.map((n) => {
-                    const o = n.positionAbsolute ?? n.position;
-                    return { id: n.id, x: o && o.x, y: o && o.y,
-                             w: n.width, h: n.height };
-                }),
-            } };
-        }"""
-    )
-    if not point:
-        return None
-    if point.get("point"):
-        found = point["point"]
-        return (found[0], found[1])
-    _log(f"[tour] no usable point on the edge: {point.get('why')}")
-    return None
+    return edge_client_point(page, on_miss=lambda why: _log(
+        f"[tour] no usable point on the edge: {why}"
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -760,7 +674,7 @@ def scene_projects(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.say(
         "The projects workspace",
-        "Dataflows as cards, with search, filters and a grid or list view.",
+        "Dataflows as cards, with search, sorting and a grid or list view.",
         hold=2600,
     )
     tour.focus(page.get_by_placeholder("Search projects…"), hold=900)
@@ -981,16 +895,19 @@ def scene_data_catalog(ctx: Ctx) -> None:
     expect(card).to_have_count(1, timeout=20000)
     tour.focus(card, hold=1400)
     tour.hush()
-    add = card.get_by_role("button", name="Add to dataflow", exact=True)
+    add = card.get_by_role("button", name="Add to project", exact=True)
+    tour.click(add)
     with page.expect_response(
         lambda r: "/datasets/install" in r.url
         and r.request.method == "POST" and r.ok,
         timeout=60000,
     ):
-        tour.click(add)
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to project"
+        )
     expect(
         drawer.locator(f'{CARD}[data-dataset-id="{DATASET_ID}"]').get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=25000)
     tour.say(
@@ -1182,7 +1099,7 @@ def scene_node_catalog(ctx: Ctx) -> None:
     with page.expect_response(
         lambda r: r.url.endswith("/api/packages/resolve"), timeout=40000
     ):
-        card.get_by_role("button", name="Add to dataflow", exact=True).click()
+        card.get_by_role("button", name="Add to project", exact=True).click()
     dialog = page.get_by_role("dialog").filter(
         has=page.get_by_role("heading", name=f'Add "{PKG_NAME}"', exact=True)
     )
@@ -1192,7 +1109,7 @@ def scene_node_catalog(ctx: Ctx) -> None:
         "Python and JS requirements are read from the package manifest.",
         hold=2800,
     )
-    confirm = dialog.get_by_role("button", name="Add to dataflow", exact=True)
+    confirm = dialog.get_by_role("button", name="Add to project", exact=True)
     tour.hush()
     with page.expect_response(
         lambda r: "/api/packages/projects/" in r.url
@@ -1203,7 +1120,7 @@ def scene_node_catalog(ctx: Ctx) -> None:
         tour.click(confirm)
     expect(dialog).to_have_count(0, timeout=40000)
     expect(
-        card.get_by_role("button", name="Remove from dataflow", exact=True)
+        card.get_by_role("button", name="Remove from project", exact=True)
     ).to_be_visible(timeout=25000)
     tour.say("Installed", "No reload: the palette re-renders in place.", hold=2000)
     tour.hush()
@@ -1280,7 +1197,7 @@ def scene_agent_catalog(ctx: Ctx) -> None:
     tour.beat(900)
     tour.say(
         "Agents can require other agents",
-        "This one reads 'Add to dataflow (+1 required)': the closure comes with it.",
+        "This one reads 'Add to project (+1 required)': the closure comes with it.",
         hold=3000,
     )
     _add_agent(ctx, drawer, AGENT_BUILDER, hold=1800)
@@ -1714,7 +1631,7 @@ def scene_catalog_pages(ctx: Ctx) -> None:
     card = page.locator("article").first
     if card.count():
         tour.click(card, hold=1200)
-        add = page.get_by_role("button", name="Add to my account", exact=True)
+        add = page.get_by_role("button", name="Add to all projects", exact=True)
         if add.count():
             tour.focus(add.first, hold=1600)
     tour.say(

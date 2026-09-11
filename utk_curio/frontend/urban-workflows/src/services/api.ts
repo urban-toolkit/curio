@@ -1,8 +1,9 @@
 import { getToken } from "../utils/authApi";
+import { backendUrl } from "../utils/backendUrl";
 
 export async function fetchData(fileName: string) {
     try {
-        const url = `${process.env.BACKEND_URL}/get?fileName=${encodeURIComponent(fileName)}`;
+        const url = `${backendUrl()}/get?fileName=${encodeURIComponent(fileName)}`;
         console.log(`Fetching ${url}`);
         const _token = getToken();
         const response = await fetch(url, {
@@ -37,8 +38,8 @@ export async function fetchData(fileName: string) {
 export async function fetchPreviewData(fileName: string) {
     try {
         // Use the correct backend URL
-        const backendUrl = process.env.BACKEND_URL || 'http://localhost:5002';
-        const url = `${backendUrl}/get-preview?fileName=${encodeURIComponent(fileName)}`;
+        const base = backendUrl() || 'http://localhost:5002';
+        const url = `${base}/get-preview?fileName=${encodeURIComponent(fileName)}`;
         console.log(`[fetchPreviewData] Fetching preview from ${url}`);
         const _token = getToken();
         const response = await fetch(url, {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, render, act } from '@testing-library/react';
 import type { NodeBehaviorHook, NodeBehaviorData, UseNodeStateReturn, NodeBehaviorResult } from '../../../registry/types';
 
 jest.setTimeout(15000);
@@ -40,6 +40,7 @@ jest.mock('../../../components/editing/OutputContent', () => {
 // `useEdges()` is settable per test so a Play-All test can wire the merge's
 // input slots. Defaults to [] for every other behavior test; reset in afterEach.
 let mockEdges: any[] = [];
+let mockNodes: Record<string, any> = {};
 jest.mock('reactflow', () => ({
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   useStoreApi: () => ({
@@ -47,6 +48,7 @@ jest.mock('reactflow', () => ({
     getState: () => ({ edges: [] }),
   }),
   useEdges: () => mockEdges,
+  useReactFlow: () => ({ getNode: (id: string) => mockNodes[id] }),
 }));
 
 jest.mock('../../../providers/StarterProvider', () => ({
@@ -93,7 +95,8 @@ import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
 import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
 import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
 import { useDataPoolBehavior } from '../../../adapters/node/dataPoolBehavior';
-import { useAutkGrammarBehavior, attachMapInteractionZoomFix } from '../../../adapters/node/autkGrammarBehavior';
+import { useAutkGrammarBehavior, attachMapInteractionZoomFix, requestedLayerTables, SANDBOX_BACKEND_URL_TOKEN, classifyAutkSpec, classifyAutkSpecString, describeAutkRun } from '../../../adapters/node/autkGrammarBehavior';
+import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
@@ -181,6 +184,11 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   });
 
   describe('useDataExportBehavior', () => {
+    afterEach(() => {
+      mockEdges = [];
+      mockNodes = {};
+    });
+
     test('returns expected fields', async () => {
       const result = await callBehavior(useDataExportBehavior);
       assertValidBehaviorResult(result.current);
@@ -188,6 +196,57 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
       expect(typeof result.current.customWidgetsCallback).toBe('function');
       expect(result.current.contentComponent).toBeDefined();
+    });
+
+    // These go through the hook rather than calling resolveExportTarget directly.
+    // The unit test for the "producing node" fallback passed against a code path
+    // no caller reached: the name was read off the export node's own
+    // datasetSource, which nothing writes, so every ordinary dataflow fell
+    // through to "data_export" (#226).
+    function exportButtonLabel(result: any): string {
+      // customWidgetsCallback mutates the element it is handed rather than
+      // returning nodes, so give it one and read the button back out.
+      const host = document.createElement('div');
+      result.current.customWidgetsCallback(host);
+      return host.querySelector('button')?.textContent ?? '';
+    }
+
+    test('names the file after the node feeding it', async () => {
+      mockEdges = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
+      mockNodes = {
+        'upstream-1': {
+          id: 'upstream-1',
+          data: { nodeType: 'curio.builtin/data-loading@1' },
+        },
+      };
+      const result = await callBehavior(useDataExportBehavior, {
+        input: { path: 'p', dataType: 'dataframe' },
+      });
+      expect(exportButtonLabel(result)).not.toContain('data_export');
+    });
+
+    test('prefers a renamed upstream node title', async () => {
+      mockEdges = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
+      mockNodes = {
+        'upstream-1': {
+          id: 'upstream-1',
+          data: {
+            nodeType: 'curio.builtin/data-loading@1',
+            datasetSource: { title: 'boundaries.geojson' },
+          },
+        },
+      };
+      const result = await callBehavior(useDataExportBehavior, {
+        input: { path: 'p', dataType: 'geodataframe' },
+      });
+      expect(exportButtonLabel(result)).toContain('boundaries.geojson');
+    });
+
+    test('falls back to the default stem when nothing is upstream', async () => {
+      const result = await callBehavior(useDataExportBehavior, {
+        input: { path: 'p', dataType: 'dataframe' },
+      });
+      expect(exportButtonLabel(result)).toContain('data_export.csv');
     });
   });
 
@@ -218,12 +277,16 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
     });
 
-    test('returns no contentComponent for non-tabular input (text/value mode)', async () => {
+    test('explains itself instead of rendering nothing (text/value mode)', async () => {
+      // It used to return `undefined` here, so UniversalNode rendered an empty
+      // box and a node with an unshowable payload looked identical to a broken
+      // one (#224). Every branch now requires actual content, and the fallback
+      // says which kind of empty this is.
       const result = await callBehavior(useSimpleVisBehavior, {
         input: { dataType: 'value', data: 42 } as any,
       });
       assertValidBehaviorResult(result.current);
-      expect(result.current.contentComponent).toBeUndefined();
+      expect(result.current.contentComponent).toBeDefined();
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
     });
   });
@@ -346,6 +409,24 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   });
 
   describe('useAutkGrammarBehavior', () => {
+    // Autark refuses to run without a WebGPU adapter now (#201), and jsdom has
+    // no `navigator.gpu` at all - so without this every case in here would take
+    // the refusal path and assert nothing about the grammar. The dedicated
+    // coverage for the refusal itself is
+    // `autkGrammarWebgpuFallback.test.tsx`.
+    beforeEach(() => {
+      __resetWebGpuSupportCache();
+      Object.defineProperty(navigator, 'gpu', {
+        configurable: true,
+        value: { requestAdapter: jest.fn().mockResolvedValue({ name: 'fake' }), getPreferredCanvasFormat: () => 'bgra8unorm' },
+      });
+    });
+
+    afterEach(() => {
+      __resetWebGpuSupportCache();
+      Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
+    });
+
     test('returns applyGrammar, contentComponent, and default spec', async () => {
       const result = await callBehavior(useAutkGrammarBehavior);
       assertValidBehaviorResult(result.current);
@@ -422,6 +503,68 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // … and the node emits the DuckDB artifact reference downstream (DB-backed,
       // like a normal code node), not an in-memory layer array.
       expect(outputCallback).toHaveBeenCalledWith('node-1', { path: 'art-1', dataType: 'list' });
+    });
+
+    test('data-only node says what it loaded instead of leaving the body blank (#282)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+      );
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+        { setOutput },
+      );
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'geojson',
+            geojsonObject: { type: 'FeatureCollection', features: [] },
+            outputTableName: 't',
+          }],
+        }));
+      });
+
+      // The success output names the table rather than carrying an empty
+      // string - a Python node leaves "[1]: Saved to file"; this is the
+      // Autark equivalent.
+      expect(setOutput).toHaveBeenLastCalledWith({
+        code: 'success',
+        content: expect.stringContaining('Loaded 1 table: t'),
+      });
+      // And the body shows it: the wrapper the grammar owns is empty for a
+      // data-only spec, so this sibling is the only thing in the node.
+      const { container } = render(<>{result.current.contentComponent}</>);
+      const summary = container.querySelector('[data-curio-autk-summary="data"]');
+      expect(summary).not.toBeNull();
+      expect(summary!.textContent).toContain('Loaded 1 table: t');
+      expect(container.querySelector('[data-curio-node-empty]')).toBeNull();
+    });
+
+    test('data-only node before its first run says what running it will do (#282)', async () => {
+      const result = await callBehavior(useAutkGrammarBehavior, {
+        code: JSON.stringify({
+          data: [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', features: [] }, outputTableName: 't' }],
+        }),
+      } as any);
+
+      const { container } = render(<>{result.current.contentComponent}</>);
+      const empty = container.querySelector('[data-curio-node-empty="upstream-not-run"]');
+      expect(empty).not.toBeNull();
+      expect(empty!.textContent).toContain('This step loads data');
+      expect(container.querySelector('[data-curio-autk-summary]')).toBeNull();
+    });
+
+    test('render node body is the map box, not an empty-state or summary (#282)', async () => {
+      const result = await callBehavior(useAutkGrammarBehavior, {
+        code: JSON.stringify({ map: { layerRefs: [] } }),
+      } as any);
+
+      const { container } = render(<>{result.current.contentComponent}</>);
+      expect(container.querySelector('[data-curio-node-empty]')).toBeNull();
+      expect(container.querySelector('[data-curio-autk-summary]')).toBeNull();
     });
 
     test('render node loads data in the backend, then runs the grammar in the browser', async () => {
@@ -542,6 +685,338 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
       mockAutkDbGetLayerTables.mockReset();
       mockAutkDbGetLayerTables.mockReturnValue([]);
+    });
+
+    // Regression for #248. autk-db's loadOsm walks autoLoadLayers.layers in
+    // order and lets a per-layer failure propagate, so a throw partway leaves
+    // the earlier tables registered and the later ones absent. Both loaders used
+    // to publish whatever getLayerTables() held, so the node that actually
+    // failed went green and the breakage surfaced two nodes downstream as
+    // "Table table_osm_roads not found" from a spatialQuery.
+    test('data-only node: a SHORT load fails the node and names the missing table (#248)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'sandbox short load', output: { path: '', dataType: 'str' } }),
+      );
+      // The exact #248 state: the load broke partway (a recorded reason) and
+      // three of the four requested layers exist. `roads` is last in the spec,
+      // so `roads` is the one that goes missing.
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockRejectedValue(new Error('undici assert(!this.paused)'));
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([
+        { name: 'table_osm_surface', type: 'surface' },
+        { name: 'table_osm_parks', type: 'parks' },
+        { name: 'table_osm_water', type: 'water' },
+      ]);
+
+      const setOutput = jest.fn();
+      const outputCallback = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+        { setOutput },
+      );
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'osm',
+            pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            outputTableName: 'table_osm',
+            autoLoadLayers: { dropOsmTable: true, layers: ['surface', 'parks', 'water', 'roads'] },
+          }],
+          // no map / plot => data-only node
+        }));
+      });
+
+      // The node ends in error naming the table that is missing, and why .
+      const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+      expect(errCall).toBeTruthy();
+      expect(errCall![0].content).toContain('table_osm_roads');
+      expect(errCall![0].content).toContain('undici');
+      // . and the three layers that DID load are never published downstream, so
+      // no consumer can trip over the missing fourth.
+      expect(outputCallback).not.toHaveBeenCalled();
+      // dropOsmTable drops the raw osm tables on purpose - they must not be
+      // reported as missing, or every spec that sets it would fail.
+      expect(errCall![0].content).not.toContain('table_osm_boundaries');
+
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
+    });
+
+    // The recovery half of #248: a short load is usually a transient in a
+    // city-scale PBF read, and making it a failure is what finally reaches
+    // runDataInBackend's existing retry (which only ever fired on "no
+    // output.path", a shape a partial load never produced).
+    test('data-only node: a load that fails once then succeeds recovers on the retry (#248)', async () => {
+      let attempt = 0;
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) => {
+          attempt += 1;
+          cb(attempt === 1
+            ? {
+              stdout: [],
+              stderr: 'autk data load produced 1 fewer table(s) than the spec asked for'
+                + ' - missing: table_osm_roads',
+              output: { path: '', dataType: 'str' },
+            }
+            : { stdout: [], stderr: '', output: { path: 'art-ok', dataType: 'list' } });
+        },
+      );
+
+      const setOutput = jest.fn();
+      const outputCallback = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+        { setOutput },
+      );
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'osm',
+            pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            outputTableName: 'table_osm',
+            autoLoadLayers: { layers: ['surface', 'parks', 'water', 'roads'] },
+          }],
+        }));
+      });
+
+      expect(interpretCode).toHaveBeenCalledTimes(2);
+      // Recovered: the artifact ref goes downstream and the node is not in error.
+      expect(outputCallback).toHaveBeenCalledWith('node-1', { path: 'art-ok', dataType: 'list' });
+      expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeFalsy();
+    });
+
+    // The other side of the predicate: missing WITHOUT a recorded error is a
+    // genuinely empty query area (autk-db creates a layer table even at zero
+    // features), so it must warn rather than fail. This is what keeps the
+    // contract check from turning sparse data into a red node.
+    test('data-only node: an empty query area with no load error does not fail (#248)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+      );
+      // Load succeeded (nothing recorded), it just found nothing.
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
+
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any },
+        { setOutput },
+      );
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'osm',
+            pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            outputTableName: 'table_osm',
+            autoLoadLayers: { layers: ['parks'] },
+          }],
+        }));
+      });
+
+      const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+      expect(errCall?.[0]?.content ?? '').not.toContain('fewer table');
+    });
+
+    // The case the seven-workflow e2e run turned up: the layers exist in the DB
+    // but getLayer() throws "Cannot read properties of null" for some of them,
+    // so the array published downstream is short. That is the same loss as a
+    // table that was never created - a consumer asking for table_osm_roads
+    // cannot tell the two apart - so it has to fail here too. An genuinely
+    // EMPTY layer is not affected: getLayer returns an empty FeatureCollection
+    // for it and it stays in the published array.
+    test('data-only node: a requested layer that cannot be exported also fails (#248)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'osm: fetch failed', output: { path: '', dataType: 'str' } }),
+      );
+      // The load itself succeeded and created all four tables .
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([
+        { name: 'table_osm_surface', type: 'surface' },
+        { name: 'table_osm_parks', type: 'parks' },
+        { name: 'table_osm_water', type: 'water' },
+        { name: 'table_osm_roads', type: 'roads' },
+      ]);
+      // . but two of them are empty, so exporting them throws.
+      const { AutkDb } = require('@urban-toolkit/autk-db');
+      (AutkDb as jest.Mock).mockImplementationOnce(() => ({
+        init: jest.fn().mockResolvedValue(undefined),
+        loadOsm: (...a: any[]) => mockAutkDbLoadOsm(...a),
+        loadGeojson: jest.fn().mockResolvedValue(undefined),
+        loadCsv: jest.fn().mockResolvedValue(undefined),
+        loadJson: jest.fn().mockResolvedValue(undefined),
+        getLayerTables: (...a: any[]) => mockAutkDbGetLayerTables(...a),
+        getLayer: jest.fn((name: string) => (
+          name === 'table_osm_parks' || name === 'table_osm_water'
+            ? Promise.reject(new TypeError("Cannot read properties of null (reading 'length')"))
+            : Promise.resolve({ type: 'FeatureCollection', features: [] })
+        )),
+      }));
+
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any },
+        { setOutput },
+      );
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'osm',
+            pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            outputTableName: 'table_osm',
+            autoLoadLayers: { layers: ['surface', 'parks', 'water', 'roads'] },
+          }],
+        }));
+      });
+
+      // Reported by name, with the export failure as the reason, rather than
+      // handing a two-layer array to a node that asked for four.
+      const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+      expect(errCall).toBeTruthy();
+      expect(errCall![0].content).toContain('table_osm_parks');
+      expect(errCall![0].content).toContain('table_osm_water');
+      // The two that DID export are not reported as missing.
+      expect(errCall![0].content).not.toContain('table_osm_surface');
+      expect(errCall![0].content).not.toContain('table_osm_roads');
+
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
+    });
+
+    // The browser must not put a host or port in a URL the SANDBOX will fetch:
+    // the two are in different network namespaces under Docker, and on a
+    // custom-port stack no constant is right. Forcing :5002 here made every
+    // OSM/PBF load fail with "fetch failed" on any non-default-port stack,
+    // which silently pushed each Autark data load onto the in-browser
+    // fallback (#248).
+    test('data-only node: the sandbox gets a backend-URL token, never an address (#248)', async () => {
+      let sentCode = '';
+      const interpretCode = jest.fn(
+        (_unresolved, code, _input, _inputTypes, cb) => {
+          sentCode = code;
+          cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } });
+        },
+      );
+
+      const result = await callBehavior(useAutkGrammarBehavior, {
+        jsInterpreter: { interpretCode } as any,
+      });
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'osm',
+            pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            outputTableName: 'table_osm',
+            autoLoadLayers: { layers: ['roads'] },
+          }],
+        }));
+      });
+
+      // The relative path is still resolved against a base .
+      expect(sentCode).toContain(
+        `${SANDBOX_BACKEND_URL_TOKEN}/file/docs/examples/data/niteroi.osm.pbf`,
+      );
+      // . but that base is the token the sandbox resolves at execution time,
+      // not an address guessed in the browser.
+      expect(sentCode).not.toContain('5002');
+      expect(sentCode).not.toContain('127.0.0.1');
+      expect(sentCode).not.toContain('localhost');
+    });
+  });
+
+  // The naming rules the contract check is built on. Kept as a direct unit test
+  // because a wrong name here is invisible in the happy path and shows up only
+  // as a phantom "missing table" failure - or, worse, as the silent short load
+  // of #248 going undetected.
+  describe('classifyAutkSpec / describeAutkRun (#282)', () => {
+    test('a map or plot is a render step, whatever else the spec carries', () => {
+      expect(classifyAutkSpec({ map: {}, data: [{}], compute: [{}] })).toBe('render');
+      expect(classifyAutkSpec({ plot: {} })).toBe('render');
+    });
+
+    test('compute outranks data; data alone is a data step', () => {
+      expect(classifyAutkSpec({ data: [{}], compute: [{ shader: 'x' }] })).toBe('compute');
+      expect(classifyAutkSpec({ data: [{}] })).toBe('data');
+      expect(classifyAutkSpec({ data: [], compute: [] })).toBe('unknown');
+    });
+
+    test('the string form tolerates garbage, so a half-typed spec cannot throw at render', () => {
+      expect(classifyAutkSpecString('{"data": [{}]}')).toBe('data');
+      expect(classifyAutkSpecString('{ not json')).toBe('unknown');
+      expect(classifyAutkSpecString(undefined)).toBe('unknown');
+      expect(classifyAutkSpecString('')).toBe('unknown');
+    });
+
+    test('describeAutkRun pluralises and lists', () => {
+      expect(describeAutkRun('Loaded', 'table', ['a'])).toBe('Loaded 1 table: a');
+      expect(describeAutkRun('Computed', 'layer', ['a (3 rows)', 'b (0 rows)']))
+        .toBe('Computed 2 layers: a (3 rows), b (0 rows)');
+      expect(describeAutkRun('Loaded', 'table', [])).toMatch(/nothing/);
+    });
+  });
+
+  describe('requestedLayerTables (autk data-spec contract)', () => {
+    test('osm: one table per requested layer, using autk-db naming', () => {
+      expect(requestedLayerTables([{
+        type: 'osm',
+        outputTableName: 'table_osm',
+        autoLoadLayers: { layers: ['surface', 'parks', 'water', 'roads'] },
+      }])).toEqual([
+        'table_osm_surface', 'table_osm_parks', 'table_osm_water', 'table_osm_roads',
+      ]);
+    });
+
+    test('osm: dropOsmTable does not make the raw osm tables expected', () => {
+      const names = requestedLayerTables([{
+        type: 'osm',
+        outputTableName: 'table_osm',
+        autoLoadLayers: { dropOsmTable: true, layers: ['roads'] },
+      }]);
+      expect(names).toEqual(['table_osm_roads']);
+      expect(names).not.toContain('table_osm');
+      expect(names).not.toContain('table_osm_boundaries');
+    });
+
+    test('geojson / csv / json: the declared outputTableName', () => {
+      expect(requestedLayerTables([
+        { type: 'geojson', outputTableName: 'g' },
+        { type: 'csv', outputTableName: 'c' },
+        { type: 'json', outputTableName: 'j' },
+      ])).toEqual(['g', 'c', 'j']);
+    });
+
+    test('join: expects nothing (it rewrites a table another source created)', () => {
+      expect(requestedLayerTables([{
+        type: 'join',
+        tableRootName: 'table_osm_roads',
+        tableJoinName: 'lst',
+        output: { type: 'MODIFY_ROOT' },
+      }])).toEqual([]);
+    });
+
+    test('tolerates specs with nothing to promise', () => {
+      expect(requestedLayerTables([])).toEqual([]);
+      expect(requestedLayerTables(undefined as any)).toEqual([]);
+      // osm with no autoLoadLayers splits no layers, so it promises no layer table.
+      expect(requestedLayerTables([{ type: 'osm', outputTableName: 'table_osm' }])).toEqual([]);
     });
   });
 

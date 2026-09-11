@@ -7,7 +7,7 @@ This guide deploys Curio under a `/curio` path prefix on a hostname you already 
 Assumed setup: a Linux server with the hostname already pointing at it, Docker + Compose installed, and [Caddy](https://caddyserver.com) installed as the reverse proxy.
 
 > [!IMPORTANT]
-> The frontend bundle is built **inside the Docker image** with `BACKEND_URL` and `PUBLIC_PATH` baked in at build time. Changing the public URL or path prefix means rebuilding the image, there is no runtime override.
+> The frontend bundle is built **inside the Docker image** with `BACKEND_URL` and `PUBLIC_PATH` baked in at build time. (The baked `BACKEND_URL` is the bundle's *default*: `src/utils/backendUrl.ts` prefers `window.__CURIO_BACKEND_URL__` when a page sets it, which is how the parallel e2e harness points one build at several backends. Deployments still bake the right default.) Changing the public URL or path prefix means rebuilding the image, there is no runtime override.
 
 ## Contents
 
@@ -149,6 +149,28 @@ curl https://lab-name.your-uni.edu/curio/api/live
 Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something looks off, `docker compose logs -f` shows the running container's output.
 
 ## Updating
+
+> **One-time, destructive: archived projects are deleted on this upgrade.**
+> Archive was removed as an action (#261), and alembic revision `f6a7b8c9d0e1`
+> purges what it left behind: every project with `archived_at` set loses its row,
+> its execution-cache entries and its files under
+> `.curio/users/<user>/projects/<id>/`. It runs automatically during the
+> migration step, without prompting, and `downgrade` restores only the column —
+> not the data. The files go rather than just the rows because the guest boot
+> re-imports any project folder that has no row, so a rows-only purge would bring
+> archived guest projects back as active ones.
+>
+> Before upgrading, if anyone was using Archive as a holding area, copy those
+> trees out. To see what would be removed, query the deployment's database
+> (`$DATABASE_URL`, or `instance/urban_workflow.db` when it is unset):
+>
+> ```bash
+> sqlite3 instance/urban_workflow.db \
+>   "SELECT id, user_id, name FROM project WHERE archived_at IS NOT NULL"
+> ```
+>
+> Deployments that never archived anything are unaffected; the purge finds
+> nothing and only the schema changes.
 
 Pulling new code is straightforward, but the `--no-cache` flag is important: Docker's layer cache occasionally fails to invalidate the npm-build step when build args change, which silently produces a frontend bundle still pointing at the old URL. Forcing a clean build is slower but guarantees correctness.
 

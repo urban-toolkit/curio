@@ -1,11 +1,16 @@
-"""Archived-aware usage scans + node-level ref cleanup on delete (#176).
+"""Usage scans across every project + node-level ref cleanup on delete (#176).
 
-``dataset_usage`` scanned only non-archived projects, so uninstall's
-orphan-dir gate could rmtree a store folder an archived project still
-references (restoring the project degraded to a placeholder), and delete left
-archived specs — and every node-level ``metadata.datasetRefs`` binding —
-pointing at the removed dir. The public ``/usage`` endpoint intentionally stays
-active-only.
+``dataset_usage`` once scanned only non-archived projects, so uninstall's
+orphan-dir gate could rmtree a store folder another project still referenced,
+and delete left specs — and every node-level ``metadata.datasetRefs`` binding —
+pointing at the removed dir.
+
+Archive was removed in #261 and its migration purged every archived row, so the
+``include_archived`` widening the fix originally needed is gone. **The property
+it protected is not**: a dataset the user still references anywhere must survive
+an uninstall elsewhere, and deleting it must strip its refs everywhere. These
+cases assert exactly that, now against ordinary projects. If a soft-deleted or
+otherwise hidden project state is ever reintroduced, these scans must see it.
 """
 from __future__ import annotations
 
@@ -39,52 +44,44 @@ def _install(client, token, flow_id, dataset_id):
     assert resp.status_code in (200, 201), resp.get_data(as_text=True)
 
 
-def _archive(db, user, project_id):
-    from utk_curio.backend.app.projects import repositories as projects_repo
-
-    projects_repo.soft_delete(project_id, user.id)
-    db.session.commit()
-
-
-def test_usage_scopes_and_public_endpoint(app, db, client, user_and_token):
+def test_usage_sees_every_project_that_holds_a_ref(app, db, client, user_and_token):
     user, token = user_and_token
-    flow_a = create_project(client, token, name="Active flow")
-    flow_b = create_project(client, token, name="Soon archived")
+    flow_a = create_project(client, token, name="First consumer")
+    flow_b = create_project(client, token, name="Second consumer")
     imported = _import(client, token, name="scoped.csv")
     for flow in (flow_a, flow_b):
         _install(client, token, flow, imported["id"])
-    _archive(db, user, flow_b)
 
-    # Public endpoint stays active-only (archived rows would link to
-    # un-openable projects in the UI).
     rows = client.get(
         f"/api/datasets/{imported['id']}/usage", headers=auth_headers(token)
     ).get_json()["dataflows"]
-    assert {r["dataflowId"] for r in rows} == {flow_a}
+    assert {r["dataflowId"] for r in rows} == {flow_a, flow_b}
 
-    # The archived-inclusive scan used by the destructive gates sees both.
+    # The scan the destructive gates use agrees with the public endpoint. They
+    # diverged while Archive existed, which is what made #176 possible.
     from utk_curio.backend.app.datasets.application.catalog_service import (
         DatasetCatalogService,
     )
     with app.app_context():
         svc = DatasetCatalogService(user)
-        wide = svc.dataset_usage(imported["id"], include_archived=True)
-        assert {u["dataflowId"] for u in wide} == {flow_a, flow_b}
+        assert {u["dataflowId"] for u in svc.dataset_usage(imported["id"])} == {
+            flow_a,
+            flow_b,
+        }
 
 
-def test_uninstall_keeps_store_dir_referenced_by_archived_project(
+def test_uninstall_keeps_store_dir_referenced_by_another_project(
     app, db, client, user_and_token
 ):
-    """The data-loss regression: uninstalling from the last ACTIVE project must
-    not delete the store folder an archived project still references."""
+    """The data-loss regression: uninstalling from one project must not delete
+    the store folder another project still references."""
     user, token = user_and_token
     user_key = str(user.id)
-    flow_a = create_project(client, token, name="Active uninstaller")
-    flow_b = create_project(client, token, name="Archived holder")
+    flow_a = create_project(client, token, name="Uninstaller")
+    flow_b = create_project(client, token, name="Holder")
     imported = _import(client, token, name="held.csv")
     for flow in (flow_a, flow_b):
         _install(client, token, flow, imported["id"])
-    _archive(db, user, flow_b)
 
     store_dir = dataset_dir(user_key, imported["dirName"])
     assert store_dir.is_dir()
@@ -94,14 +91,14 @@ def test_uninstall_keeps_store_dir_referenced_by_archived_project(
         headers=auth_headers(token),
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
-    assert store_dir.is_dir(), "folder referenced by an archived project must survive"
+    assert store_dir.is_dir(), "folder referenced by another project must survive"
 
 
-def test_delete_strips_archived_refs_and_node_bindings(app, db, client, user_and_token):
+def test_delete_strips_refs_and_node_bindings_everywhere(app, db, client, user_and_token):
     user, token = user_and_token
     user_key = str(user.id)
-    flow_a = create_project(client, token, name="Active consumer")
-    flow_b = create_project(client, token, name="Archived consumer")
+    flow_a = create_project(client, token, name="First consumer")
+    flow_b = create_project(client, token, name="Second consumer")
     imported = _import(client, token, name="doomed.csv")
     dataset_id = imported["id"]
     for flow in (flow_a, flow_b):
@@ -118,7 +115,6 @@ def test_delete_strips_archived_refs_and_node_bindings(app, db, client, user_and
              "metadata": {"datasetRefs": [dataset_id]}},
         ]
         project_storage.write_spec(user_key, flow_b, spec)
-    _archive(db, user, flow_b)
 
     resp = client.delete(f"/api/datasets/{dataset_id}", headers=auth_headers(token))
     assert resp.status_code == 200, resp.get_data(as_text=True)
@@ -128,7 +124,6 @@ def test_delete_strips_archived_refs_and_node_bindings(app, db, client, user_and
 
     with app.app_context():
         updated = project_storage.read_spec(user_key, flow_b)
-        # dataflow.datasets ref gone from the ARCHIVED spec too.
         assert all(
             r.get("datasetId") != dataset_id
             for r in updated["dataflow"].get("datasets") or []
@@ -143,4 +138,4 @@ def test_delete_strips_archived_refs_and_node_bindings(app, db, client, user_and
             DatasetCatalogService,
         )
         svc = DatasetCatalogService(user)
-        assert svc.dataset_usage(dataset_id, include_archived=True) == []
+        assert svc.dataset_usage(dataset_id) == []

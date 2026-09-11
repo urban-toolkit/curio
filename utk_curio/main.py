@@ -37,10 +37,15 @@ verbosity = 1
 logger = logging.getLogger(__name__)
 
 
-def setup_logging():
-    log_dir = Path(".curio")
-    log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / "messages.log"
+def setup_logging(server: str = "all"):
+    # CURIO_STATE_DIR relocates every per-stack file (backend/app/common/
+    # user_storage.py); the log follows so two stacks in one checkout do not
+    # truncate each other's -- ``filemode="w"`` below wipes the first
+    # launcher's log the moment a second one starts. A single-server start
+    # gets its own file for the same reason: an e2e shard is two launchers.
+    log_dir = Path(os.environ.get("CURIO_STATE_DIR") or ".curio")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / ("messages.log" if server == "all" else f"messages-{server}.log")
 
     logging.basicConfig(
         filename=log_file,
@@ -102,6 +107,26 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
     os.environ["FLASK_SANDBOX_HOST"] = sandbox_host
     os.environ["FLASK_SANDBOX_PORT"] = str(sandbox_port)
+    # The frontend bundle's DEFAULT backend address is baked in at BUILD time
+    # (webpack substitutes ``process.env.BACKEND_URL`` through dotenv-webpack).
+    # Derive it from the same --backend-host/--backend-port the backend itself
+    # is started with, so the two cannot disagree. It is only the default:
+    # ``src/utils/backendUrl.ts`` prefers ``window.__CURIO_BACKEND_URL__`` when
+    # the page sets it, which is how one build serves several backends (the
+    # parallel e2e harness injects it per browser context).
+    #
+    # This used to come only from a hand-maintained
+    # ``frontend/urban-workflows/.env``, which meant every port change was two
+    # edits and a rebuild, and forgetting either produced a UI that silently
+    # talked to whichever OTHER Curio owned the default port. dotenv-webpack is
+    # configured with ``systemvars: true``, and a real environment variable wins
+    # over the file, so setting it here is enough. An explicit BACKEND_URL from
+    # the caller still wins over both.
+    #
+    # 127.0.0.1 is normalized to localhost because the browser's origin is
+    # localhost by default, and the two are distinct origins to CORS.
+    browser_host = "localhost" if backend_host in ("127.0.0.1", "0.0.0.0") else backend_host
+    os.environ.setdefault("BACKEND_URL", f"http://{browser_host}:{backend_port}")
     # Shared secret proving to the sandbox that a caller is this backend. The
     # sandbox runs arbitrary user code, so its /exec, /execJs, /get and
     # /install routes require it (utk_curio/sandbox/app/auth.py). Minted per
@@ -329,8 +354,34 @@ def check_install_build(dir, force_rebuild=False):
 
     # Check if dist/build directory exists (depending on your setup)
     build_dir = "dist" if os.path.exists("dist") else "build"
+    # ``BACKEND_URL`` is substituted into the bundle at BUILD time, so an
+    # existing build is only reusable if it was built for the backend we are
+    # about to start. Without this, changing --backend-port reused the old
+    # bundle and the UI kept calling the previous port -- which, when another
+    # Curio owns it, means a session quietly driving someone else's backend.
+    # The stamp records what the current build was made for.
+    stamp_path = os.path.join(build_dir, ".curio-backend-url")
+    wanted_url = os.environ.get("BACKEND_URL", "")
+    built_url = None
+    if os.path.exists(stamp_path):
+        try:
+            with open(stamp_path, encoding="utf-8") as fh:
+                built_url = fh.read().strip()
+        except OSError:
+            built_url = None
+
     if not os.path.exists(build_dir):
-        log_info(f"[Frontend] {build_dir} directory not found. Running npm run build...", COLOR_FRONTEND, 0)
+        reason = f"{build_dir} directory not found"
+    elif built_url != wanted_url:
+        reason = (
+            f"built for {built_url or 'an unrecorded backend'}, "
+            f"need {wanted_url or 'the .env default'}"
+        )
+    else:
+        reason = None
+
+    if reason is not None:
+        log_info(f"[Frontend] Running npm run build ({reason})...", COLOR_FRONTEND, 0)
         try:
             subprocess.run(["npm", "run", "build"], check=True, shell=shell_required)
         except subprocess.CalledProcessError as e:
@@ -339,8 +390,22 @@ def check_install_build(dir, force_rebuild=False):
         except Exception as e:
             log_error(f"[Frontend] Failed to run 'npm run build': {e}")
             clean_shutdown()
+        else:
+            # Written after a successful build only, so a failed one does not
+            # leave a stamp claiming the bundle matches.
+            try:
+                os.makedirs(build_dir, exist_ok=True)
+                with open(stamp_path, "w", encoding="utf-8") as fh:
+                    fh.write(wanted_url)
+            except OSError as exc:
+                log_info(
+                    f"[Frontend] Could not record the built backend URL ({exc}); "
+                    f"the next start will rebuild.",
+                    COLOR_FRONTEND,
+                    0,
+                )
     else:
-        log_info(f"[Frontend] {build_dir} directory exists. Skipping npm run build.", COLOR_FRONTEND, 0)
+        log_info(f"[Frontend] {build_dir} is current for {wanted_url}. Skipping npm run build.", COLOR_FRONTEND, 0)
 
 def force_rebuild_frontend():
     log_info(f"[Frontend] Force rebuild requested.", COLOR_FRONTEND, 0)
@@ -455,7 +520,10 @@ def prepare_backend_database():
 
     testing = _is_testing()
     launch_dir = os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd()
-    db_dir = os.path.join(launch_dir, ".curio", "test") if testing else os.path.join(launch_dir, ".curio")
+    # Must agree with config._resolve_database_uri, or the wipe below hits a
+    # file the backend never opens.
+    state_dir = os.environ.get("CURIO_STATE_DIR") or os.path.join(launch_dir, ".curio")
+    db_dir = os.path.join(state_dir, "test") if testing else state_dir
 
     if not os.path.exists(db_dir):
         os.makedirs(db_dir)
@@ -482,10 +550,13 @@ def prepare_backend_database():
             env["DATABASE_URL"] = test_url
             # Testing wipes the SQLA file so every `curio start` lands on
             # an empty-but-migrated DB, like Django's TEST_RUNNER.
-            try:
-                os.remove(test_sqla)
-            except FileNotFoundError:
-                pass
+            # WAL sidecars too: a stale -wal next to a fresh file is ignored by
+            # SQLite but confuses anyone reading the directory.
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.remove(test_sqla + suffix)
+                except FileNotFoundError:
+                    pass
 
         # `flask db upgrade` is idempotent — alembic skips already-applied
         # revisions. Running it on every startup avoids the "schema is
@@ -619,6 +690,18 @@ def start_backend(host, port, no_server=False):
     return process
 
 
+def _skip_dep_install() -> bool:
+    """``CURIO_SKIP_DEP_INSTALL=1``: trust the environment as it is.
+
+    The parallel e2e driver starts several backend+sandbox pairs from one
+    checkout. Without this every launcher would run ``pip install`` into the
+    same interpreter and ``npm install`` into the same ``node_modules`` at the
+    same time. The driver does one warm-up (``curio.py setup`` and a root
+    ``npm install``) before the first pair starts.
+    """
+    return os.environ.get("CURIO_SKIP_DEP_INSTALL", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _ensure_root_node_modules(project_root: str) -> None:
     """Install the repo-root node_modules used by the sandbox's Node.js
     subprocess. ``@urban-toolkit/autk-db`` is declared in the root
@@ -668,7 +751,8 @@ def start_sandbox(host, port):
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(script_dir, ".."))
-    _ensure_root_node_modules(project_root)
+    if not _skip_dep_install():
+        _ensure_root_node_modules(project_root)
     # sandbox_server = os.path.join(script_dir, "sandbox", "server.py")
     env = os.environ.copy()
     env = {**os.environ, "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", "")}
@@ -760,7 +844,7 @@ def install_framework_requirements() -> None:
     )
 
 
-def install_manifest_dependencies() -> None:
+def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     """Walk every installed package manifest — catalog source-of-truth at
     ``<repo>/packages/`` PLUS every user store under
     ``$CURIO_LAUNCH_CWD/.curio/users/<u>/packages/`` — collect their
@@ -797,11 +881,15 @@ def install_manifest_dependencies() -> None:
     )
     from utk_curio.backend.app.packages.seed import example_dep_package_ids
     from utk_curio.backend.app.packages.backend_runtime import dep_destinations
+    from utk_curio.backend.app.common.user_storage import users_base
 
     repo_root = Path(__file__).resolve().parent.parent
-    launch_cwd = Path(os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd())
     catalog = repo_root / "packages"
-    users = launch_cwd / ".curio" / "users"
+    # Asked of the backend rather than spelled out again: under CURIO_TESTING
+    # the per-user tree is ``.curio/test/users/``, and this walk feeding off a
+    # different root than the one the backend seeds into is a boot that
+    # installs no dependencies at all while looking like it worked.
+    users = users_base()
 
     per_pkg: list[tuple[str, dict[str, str]]] = []
     seen: set[str] = set()  # dir_name dedupe across users
@@ -891,6 +979,55 @@ def install_manifest_dependencies() -> None:
         log_error(f"[Setup] Manifest dep install failed: {exc}")
         sys.exit(1)
 
+    _report_unimportable_deps(merged, block=block_on_verify)
+
+
+def _report_unimportable_deps(merged, *, block: bool) -> None:
+    """Warn about deps that installed cleanly but cannot be imported.
+
+    pip exiting 0 is not the same as the library working. A wheel whose native
+    extension cannot load - the ordinary GDAL/CUDA case, and what a broken
+    ``rasterio`` looks like on Windows - records a perfectly good version, so
+    pip reports "already satisfied" and changes nothing on every subsequent
+    start. This is the drifted env the caller above says it exists to catch, and
+    without this check the first sign of it is a raw ``ImportError`` from
+    whichever node happens to run first, long after a setup that looked clean.
+
+    A warning, never a fatal: the stack is still useful and the nodes that avoid
+    the library work normally. The fix is usually outside pip - a matching GDAL,
+    a conda-forge build - so the decision is the operator's, and this line is
+    what lets them make it.
+
+    ``block=False`` runs the probe on a daemon thread, because it costs real
+    time: importing the twelve builtin data-ops libraries in one subprocess
+    takes ~19 s on a developer machine, which is too much to add to every
+    ``start``. The warning then lands while the servers are coming up, which is
+    early enough to be read. ``curio setup`` passes ``block=True``: it exits as
+    soon as it returns, so a background thread would be killed before it
+    reported, and waiting is the point of running setup explicitly.
+    """
+    def _probe() -> None:
+        # Imported here, not at module scope: this file is the launcher and
+        # keeps backend imports lazy, and resolving the attribute at call time
+        # is also what lets a test stand in for the probe.
+        from utk_curio.backend.app.packages import pip_runner
+
+        try:
+            broken = pip_runner.import_failures(merged)
+        except Exception as exc:  # noqa: BLE001 - never stop a boot over a probe
+            log_warning(f"[Setup] Could not verify manifest deps import: {exc}")
+            return
+        for name, reason in sorted(broken.items()):
+            log_warning(
+                f"[Setup] {name} is installed but cannot be imported: {reason}. "
+                f"Nodes that need it will fail when run."
+            )
+
+    if block:
+        _probe()
+    else:
+        threading.Thread(target=_probe, name="dep-import-probe", daemon=True).start()
+
 
 TEST_SUITES = ["all", "unit", "backend", "sandbox", "jest", "e2e"]
 
@@ -910,6 +1047,7 @@ def _parse_test_args(argv, command_prefix="curio"):
         {command_prefix} test backend               # one suite on its own
         {command_prefix} test e2e --use-existing    # E2E against servers already running
         {command_prefix} test e2e --headed --workflows Vega.json,Regression.json
+        {command_prefix} test e2e --parallel 4     # 4 xdist workers, one backend+sandbox pair each
     """,
     )
     parser.add_argument(
@@ -935,6 +1073,13 @@ def _parse_test_args(argv, command_prefix="curio"):
         "--allure-dir", default=None, metavar="DIR",
         help="Write the E2E run's Allure results to DIR",
     )
+    parser.add_argument(
+        "--parallel", default=None, metavar="N",
+        help=(
+            "Run the E2E suite on N pytest-xdist workers, each against its own "
+            "backend+sandbox pair behind one shared frontend; 'auto' = min(4, cores/4)"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -951,6 +1096,8 @@ def _test_script_flags(args) -> list[str]:
         flags += ["--workflows", args.workflows]
     if args.allure_dir:
         flags += ["--allure-dir", args.allure_dir]
+    if args.parallel:
+        flags += ["--parallel", args.parallel]
     return flags
 
 
@@ -1238,7 +1385,7 @@ def main():
 
     args = parser.parse_args()
 
-    setup_logging()
+    setup_logging(args.server)
     verbosity = int(args.verbose)
 
     set_environment_variables(
@@ -1289,7 +1436,9 @@ def main():
 
     if args.command == "setup":
         install_framework_requirements()
-        install_manifest_dependencies()
+        # Blocking: this command exits on the next line, and reporting a broken
+        # install is most of the value of running setup on its own.
+        install_manifest_dependencies(block_on_verify=True)
         sys.exit(0)
 
     if args.command == "start":
@@ -1299,7 +1448,7 @@ def main():
         # Framework first (gives us Flask + manifest-parsing deps), then
         # the manifest walk (covers builtin's data-ops libs + every other
         # installed package's declared python deps).
-        if args.server in ("all", "backend", "sandbox"):
+        if args.server in ("all", "backend", "sandbox") and not _skip_dep_install():
             install_framework_requirements()
             install_manifest_dependencies()
 

@@ -1,6 +1,7 @@
 import { apiFetch, getToken } from "../utils/authApi";
+import { backendUrl } from "../utils/backendUrl";
 
-const BACKEND_URL = process.env.BACKEND_URL || "";
+const BACKEND_URL = backendUrl();
 
 /**
  * REST client for ``/api/agents`` - the three-scope Agent Catalog and its
@@ -10,7 +11,7 @@ const BACKEND_URL = process.env.BACKEND_URL || "";
  * The three scopes, named here as the drawer tabs name them:
  *  - Browse all  (catalog) → ``catalog()`` (the built-in definitions)
  *  - My imports  (account) → ``listImports()`` + ``import``/``removeImport``
- *  - In dataflow (project) → ``listProjectAgents()`` + ``install``/``uninstall``
+ *  - In project → ``listProjectAgents()`` + ``install``/``uninstall``
  *
  * Import (account) and Install (project) are separate commands; neither chains.
  */
@@ -633,14 +634,23 @@ export const agentsApi = {
    * the account's saved provider server-side, so an already-configured user can
    * refresh without retyping their key.
    *
-   * `listable` is false for Anthropic and Gemini, which have no equivalent
-   * listing in the shape the OpenAI SDK speaks; the panel keeps its free-text
-   * box in that case rather than offering an empty menu. */
+   * Hybrid since #241, with both halves coming from the API. `source` is
+   * `"live"` when the endpoint answered just now, or `"remembered"` when it
+   * could not and Curio is replaying what it last reported - `rememberedAt`
+   * says when that was, and `warning` why the live call did not happen.
+   * `listable` means the endpoint itself answered; kept for older callers. */
   providerModels(input?: {
     apiType?: string;
     baseUrl?: string;
     apiKey?: string;
-  }): Promise<{ models: string[]; listable: boolean }> {
+  }): Promise<{
+    models: string[];
+    listable: boolean;
+    source?: "live" | "remembered";
+    remembered?: string[];
+    rememberedAt?: string | null;
+    warning?: string | null;
+  }> {
     return apiFetch("/api/agents/provider-models", {
       method: "POST",
       body: JSON.stringify(input || {}),
@@ -717,6 +727,20 @@ export const agentsApi = {
   /** Unpublish an owned definition (owner only). */
   unpublish(coord: string): Promise<{ coord: string; published: boolean }> {
     return apiFetch(`/api/agents/publications/${coordParam(coord)}`, { method: "DELETE" });
+  },
+
+  /**
+   * One agent's full definition: manifest plus every prompt text.
+   *
+   * Agents had an import (`uploadImport`) with no export on the other side, so
+   * a definition could go into a Curio and never come back out - and the
+   * details screen could describe an agent's prompts only by not showing them.
+   * Returns the exact shape `uploadImport` consumes, so the two round-trip.
+   */
+  readDefinition(
+    coord: string,
+  ): Promise<{ manifest: Record<string, unknown>; prompts: Record<string, string> }> {
+    return apiFetch(`/api/agents/definitions/${coordParam(coord)}`);
   },
 
   /** List the project's private attachments. */

@@ -49,6 +49,7 @@ from utk_curio.backend.app.packages.installer import (
     remove_packageage_from_catalog_dir,
     uninstall_packageage,
 )
+from utk_curio.backend.app.packages import publisher_record
 from utk_curio.backend.app.packages.catalog_family import (
     CatalogReleaseTriple,
     catalog_release_collision_groups,
@@ -358,6 +359,13 @@ def list_catalog_packageages():
             continue
         payload = _manifest_to_payload(manifest, package_mtime_path=entry)
         payload["installed"] = manifest.dir_name in installed_coords
+        # Whether THIS user may withdraw it, which is the same question as
+        # "is this the user's own package". The agent catalog has carried a
+        # `publishable` flag from the start; packages had nothing, so the UI
+        # fell back to `readOnly !== true` and offered Unpublish on everything.
+        payload["publishable"] = publisher_record.is_publisher(
+            root, manifest.dir_name, user_key,
+        )
         out.append(payload)
 
     out.sort(
@@ -399,6 +407,12 @@ def upload_packageage():
     The archive is read into memory once (capped by the installer at
     128 MiB total uncompressed). Multipart form field name is ``file``
     to mirror the existing ``/upload`` endpoint shape.
+
+    Installs the manifest's declared python deps too, and says whether they
+    import. A sideload used to write the files and stop there, and the
+    follow-up "add to project" could not repair it either — that path returns
+    early for a package already in the store — so a sideloaded package's
+    libraries were nobody's job.
     """
     user_key = _user_dir_key(g.user)
     if "file" not in request.files:
@@ -420,6 +434,9 @@ def upload_packageage():
         "package": _manifest_to_payload(result.manifest, package_mtime_path=user_packageage),
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
+        **packages_services.provision_declared_deps(
+            user_key, result.manifest.dir_name, result.manifest,
+        ),
     }), 201
 
 
@@ -437,6 +454,11 @@ def install_from_catalog():
     via :func:`install_packageage_from_directory`. The catalog set is the
     committed packages shipped in ``<repo_root>/packages/`` - same data the
     ``GET /api/packages/catalog`` route advertises.
+
+    Its declared python deps are installed and probed as well. This is the
+    drawer's "Reload from catalog", which a user reaches precisely when the
+    package is misbehaving; answering it by restoring the files and leaving the
+    libraries alone repairs the half that was probably not broken.
     """
     user_key = _user_dir_key(g.user)
     body = request.get_json(silent=True) or {}
@@ -457,6 +479,9 @@ def install_from_catalog():
         "package": _manifest_to_payload(result.manifest, package_mtime_path=user_packageage),
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
+        **packages_services.provision_declared_deps(
+            user_key, result.manifest.dir_name, result.manifest,
+        ),
     }), 201
 
 
@@ -488,12 +513,35 @@ def unpublish_from_catalog(dir_name: str):
     if not PACKAGE_DIR_RE.match(dir_name):
         return _error("dir_name must match <packageId>@<major>")
 
+    catalog = _catalog_root()
+    # Existence BEFORE authorization, so a package that is simply not there
+    # reports 404 rather than "not yours" - a removed package has no publisher
+    # record either, and the ownership gate fails closed, so checking that
+    # first turned every 404 into a confusing 403.
+    if not (catalog / dir_name).is_dir():
+        return _error(f"catalog has no package {dir_name}", 404)
+
+    # Only the publisher may withdraw it. This route was gated by the env flag
+    # alone, so any authenticated user could remove any package from the shared
+    # catalog - including the ones that ship with the deployment. Fails closed
+    # for unrecorded packages, which is every package published before the
+    # record existed. Mirrors the dataset rule in
+    # `CatalogMutations._assert_is_publisher`.
+    if not publisher_record.is_publisher(catalog, dir_name, _user_dir_key(g.user)):
+        return jsonify({
+            "error": (
+                "Only the account that published this package can remove it "
+                "from the shared catalog."
+            ),
+        }), 403
+
     try:
-        removed = remove_packageage_from_catalog_dir(_catalog_root(), dir_name)
+        removed = remove_packageage_from_catalog_dir(catalog, dir_name)
     except InstallerError as exc:
         return _error(str(exc))
     if not removed:
         return _error(f"catalog has no package {dir_name}", 404)
+    publisher_record.forget_publisher(catalog, dir_name)
     return "", 204
 
 
@@ -655,7 +703,9 @@ def patch_package_metadata(dir_name: str):
 def download_packageage_archive(dir_name: str):
     user_key = _user_dir_key(g.user)
     try:
-        body = export_packageage_archive(user_key, dir_name)
+        # Falls back to the committed catalog copy for a package this account
+        # never installed - the catalog page exports every row it lists (#275).
+        body = export_packageage_archive(user_key, dir_name, catalog_root=_catalog_root())
     except (InstallerError, PackageIdError) as exc:
         return _error(str(exc), 404)
     response = Response(body, mimetype="application/zip")
@@ -814,6 +864,10 @@ def factory_publish_catalog():
     except InstallerError as exc:
         return _error(str(exc))
     catalog_path = catalog / result.manifest.dir_name
+    # Who published it. Without this the catalog is a global tree with no
+    # recorded owner, so nothing could tell a package the user authored from one
+    # that shipped with the deployment - see packages/publisher_record.py.
+    publisher_record.record_publisher(catalog, result.manifest.dir_name, user_key)
     return jsonify({
         "package": _manifest_to_payload(result.manifest, package_mtime_path=catalog_path),
         "integrity": result.integrity,
@@ -881,6 +935,13 @@ def factory_install():
     Convenience for the "Save and install" affordance in the wizard's
     Step 5; equivalent to POST /factory/build + POST /upload back to
     back, without the byte round-trip through the browser.
+
+    Including the dependency step, which is where this one bit hardest: the
+    build DERIVES ``dependencies.python`` from the node's source, so writing
+    ``import rasterio`` in a node body produced a manifest declaring rasterio
+    that nothing installed and nothing checked. The node then failed on its
+    first run with an ImportError naming a library the wizard had just claimed
+    to install.
     """
     user_key = _user_dir_key(g.user)
     draft = request.get_json(silent=True) or {}
@@ -927,6 +988,9 @@ def factory_install():
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
         "filename": built.filename,
+        **packages_services.provision_declared_deps(
+            user_key, result.manifest.dir_name, result.manifest,
+        ),
     }), 201
 
 
@@ -997,11 +1061,27 @@ def check_workflow_deps():
     it depends on there; loading it should install any that aren't present.
     A package is "needed" if it isn't in the user's store, OR it is but some
     of its declared python deps aren't actually installed (e.g. a lib was
-    pip-uninstalled out from under it). Response::
+    pip-uninstalled out from under it).
 
-        {"packages": ["<dirName>", ...]}   # need installing, sorted
+    Separately, a dep can be installed at a satisfying version and still not
+    import - a wheel whose native extension fails to load records a perfectly
+    good version. Reinstalling does not fix that (pip reports "already
+    satisfied" and does nothing), so those are reported apart from ``packages``
+    and the client warns instead of installing. Response::
+
+        {"packages": ["<dirName>", ...],   # need installing, sorted
+         "deferred": ["<dirName>", ...],   # ...but not without being asked
+         "broken": [{"package": "<dirName>", "dep": "<lib>", "error": "..."}]}
+
+    ``deferred`` is the subset of ``packages`` whose package id is in
+    ``seed.INSTALL_ON_DEMAND_PACKAGE_IDS`` — too expensive to pull in as a side
+    effect of opening a dataflow (``curio.streetvision`` is ~3 GB of torch).
+    It is an ADDITIVE key: a caller that ignores it behaves exactly as before,
+    and ``packages`` still lists everything that is missing, because the UI
+    needs to be able to SAY what is missing even when it must not install it.
     """
-    from utk_curio.backend.app.packages.pip_runner import is_satisfied
+    from utk_curio.backend.app.packages.pip_runner import import_failures, is_satisfied
+    from utk_curio.backend.app.packages.seed import INSTALL_ON_DEMAND_PACKAGE_IDS
 
     user_key = _user_dir_key(g.user)
     body = request.get_json(silent=True) or {}
@@ -1023,14 +1103,38 @@ def check_workflow_deps():
             for dn in wanted if dn in in_store
         }
     need: set[str] = set()
+    # (package, dep) for every dep pip already considers done. Version-satisfied
+    # but unimportable is a different problem with a different remedy, so those
+    # are probed - and reported, not reinstalled.
+    probe: list[tuple[str, str]] = []
     for dir_name in wanted:
         if dir_name not in in_store:
             need.add(dir_name)
             continue
         # Installed in the store - flag only if a declared dep went missing.
-        if any(not is_satisfied(n, s) for n, s in declared[dir_name].items()):
+        missing = {n for n, spec in declared[dir_name].items() if not is_satisfied(n, spec)}
+        if missing:
             need.add(dir_name)
-    return jsonify({"packages": sorted(need)}), 200
+        probe += [(dir_name, dep) for dep in declared[dir_name] if dep not in missing]
+
+    # ONE probe for the whole request: each dep otherwise pays its own
+    # interpreter start, which cost 4.7s for curio.weather's three libraries on
+    # the first load of a dataflow that declares it.
+    failures = import_failures({dep for _, dep in probe})
+    broken = [
+        {"package": pkg, "dep": dep, "error": failures[dep]}
+        for pkg, dep in probe
+        if dep in failures
+    ]
+    deferred = {
+        dn for dn in need
+        if dn.rsplit("@", 1)[0] in INSTALL_ON_DEMAND_PACKAGE_IDS
+    }
+    return jsonify({
+        "packages": sorted(need),
+        "deferred": sorted(deferred),
+        "broken": broken,
+    }), 200
 
 
 @packages_bp.route("/workflow-deps/install", methods=["POST"])
@@ -1044,7 +1148,12 @@ def install_workflow_deps():
     package's libraries and nodes both become available. A dataflow depends
     on *packages*, not loose libraries; the libraries follow from the package.
 
-    Response: ``{"installedPackages": ["<dirName>", ...]}``.
+    Response: ``{"installedPackages": [...], "importErrors": {lib: reason}}``.
+    ``importErrors`` is populated when a declared library installed but cannot
+    be imported - pip is satisfied by metadata alone, so that case otherwise
+    reads as a clean install and only surfaces later as a node's ImportError.
+    The service answers that question as part of installing, so this route
+    only merges the per-package verdicts.
     """
     from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
 
@@ -1058,13 +1167,18 @@ def install_workflow_deps():
             return _error(f"invalid package dirName: {dir_name!r}")
 
     installed_packages: list[str] = []
+    import_errors: dict[str, str] = {}
     for dir_name in pkg_dirs:
         try:
-            packages_services.install_to_store(user_key, dir_name)
-            installed_packages.append(dir_name)
+            outcome = packages_services.install_to_store(user_key, dir_name)
         except packages_services.PackageServiceError as exc:
             return _error(f"failed to install {dir_name}: {exc}", exc.status)
-    return jsonify({"installedPackages": installed_packages}), 200
+        installed_packages.append(dir_name)
+        import_errors.update(outcome.import_errors)
+    return jsonify({
+        "installedPackages": installed_packages,
+        "importErrors": import_errors,
+    }), 200
 
 
 # ---------------------------------------------------------------------------
@@ -1114,6 +1228,8 @@ def install_to_project_route(project_id: str):
         return _error("project not found", 404)
     except packages_services.PackageServiceError as exc:
         return _packages_error(exc)
+    # ``payload`` already carries ``importErrors``: the install itself answers
+    # whether the libraries work, so no route has to remember to ask.
     return jsonify(payload), 201
 
 
@@ -1148,6 +1264,22 @@ def get_defaults_route():
     # refresh. Seed eagerly here too - idempotent on the seeded path.
     _ensure_user_seeded(user_key)
     return jsonify({"packages": sorted(defaults_io.load_defaults(user_key))}), 200
+
+
+@packages_bp.route("/defaults/<path:dir_name>", methods=["DELETE"])
+@require_auth
+def uninstall_from_defaults_route(dir_name: str):
+    """Stop seeding a package into new projects.
+
+    Detach only -- existing projects and the user store are untouched. Every
+    write derives its user key from ``g.user``, so a caller can only ever edit
+    their own defaults.
+    """
+    try:
+        payload = packages_services.uninstall_from_defaults(g.user, dir_name)
+    except packages_services.PackageServiceError as exc:
+        return _packages_error(exc)
+    return jsonify(payload), 200
 
 
 @packages_bp.route("/defaults", methods=["POST"])
@@ -1252,7 +1384,7 @@ def add_library_route():
     """
     from utk_curio.backend.app.packages import libraries as libs
     from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, PipSpecError, install_python_deps,
+        PipInstallError, PipSpecError, import_failures, install_python_deps,
     )
 
     body = request.get_json(silent=True) or {}
@@ -1281,13 +1413,23 @@ def add_library_route():
     except PipInstallError as exc:
         return _error(f"pip install failed: {exc}", 502)
     libs.add_library(user_key, kind, spec)
+    # pip exiting 0 does not mean the library works, and "skipped" means only
+    # that the metadata was already satisfied. A wheel whose native extension
+    # cannot load - a rasterio built against a different GDAL is the everyday
+    # case - reports a good version, so pip declines to do anything and this
+    # route used to answer "Already installed" for a library that raises
+    # ImportError the moment a node touches it. Say so instead.
+    import_error = import_failures([name]).get(name)
     return jsonify({
         "standalone": libs.list_standalone(user_key),
-        # ``skipped`` is non-empty when the lib was already importable -
-        # the frontend reads this to show "Already installed" instead of
-        # "Installed" so the user knows nothing was actually downloaded.
+        # ``skipped`` is non-empty when pip found the requirement already
+        # satisfied - the frontend reads this to show "Already installed"
+        # instead of "Installed" so the user knows nothing was downloaded.
         "installed": list(report.installed),
         "skipped": list(report.skipped),
+        # Present only when the library cannot actually be imported. The
+        # frontend must treat this as a failure however the two lists read.
+        "importError": import_error,
     }), 201
 
 

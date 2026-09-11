@@ -4,6 +4,7 @@ import { NodeDescriptor } from "../registry/types";
 import { NodeTemplateId } from "../registry/types";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
+import { normalizePortTypes } from "../constants/supportedPortTypes";
 import {
   applyCanvasTemplateConfigToTemplateDraft,
   readCanvasTemplateConfig,
@@ -116,15 +117,15 @@ function ensurePorts(desc: NodeDescriptor): { inP: TemplateDraft["inputPorts"]; 
       ? []
       : desc.inputPorts.map((p) => ({
           id: factoryUiMakeId(),
-          types: p.types.join(","),
+          types: [...p.types],
           cardinality: String(p.cardinality ?? "1"),
         }));
   const outputPortsRaw =
     desc.outputPorts.length === 0
-      ? [{ id: factoryUiMakeId(), types: "JSON", cardinality: "1" }]
+      ? [{ id: factoryUiMakeId(), types: ["JSON"], cardinality: "1" }]
       : desc.outputPorts.map((p) => ({
           id: factoryUiMakeId(),
-          types: p.types.join(","),
+          types: [...p.types],
           cardinality: String(p.cardinality ?? "1"),
         }));
   return { inP: inputPorts, outP: outputPortsRaw };
@@ -276,17 +277,17 @@ function packageTemplatePayloadToTemplateDraft(template: PackageTemplatePayload,
   const inputPorts =
     template.inputPorts?.map((p) => ({
       id: factoryUiMakeId(),
-      types: (p.types ?? []).join(","),
+      types: normalizePortTypes(p.types),
       cardinality: String(p.cardinality ?? "1"),
     })) ?? [];
   const outputPortsRaw =
     template.outputPorts?.length ?
       template.outputPorts.map((p) => ({
         id: factoryUiMakeId(),
-        types: (p.types ?? []).join(","),
+        types: normalizePortTypes(p.types),
         cardinality: String(p.cardinality ?? "1"),
       }))
-    : [{ id: factoryUiMakeId(), types: "JSON", cardinality: "1" }];
+    : [{ id: factoryUiMakeId(), types: ["JSON"], cardinality: "1" }];
   const engine: Engine = template.engine === "javascript" ? "javascript" : "python";
   return {
     id: template.templateId,

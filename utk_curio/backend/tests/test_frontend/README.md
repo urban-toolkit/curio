@@ -19,6 +19,32 @@ pytest utk_curio/backend/tests/test_frontend/ --headed
 CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 ```
 
+### Parallel
+
+```bash
+python curio.py test e2e --parallel 4          # boots the stack + 3 extra pairs, runs 4 xdist workers
+bash scripts/test.sh --e2e-only --parallel auto # auto = min(4, cores/4)
+```
+
+Every worker gets its **own backend+sandbox pair** behind the one frontend. That
+is the unit of isolation, not the test: the suite truncates `user` / `project` /
+`user_session` between tests through `/api/testing/reset-db`, so two workers on
+one backend would delete each other's logged-in users mid-test. Shard 0 is the
+stack as configured; shards 1..N-1 get their ports, sqlite DB, DuckDB store,
+dataset-catalog copy and logs from `backend/tests/shards.py`, relocated under
+`.curio/shards/<k>/` through `CURIO_STATE_DIR`. The bundle picks its backend at
+runtime (`window.__CURIO_BACKEND_URL__`, injected per browser context by the
+`browser` fixture), so one webpack build serves all of them.
+
+Tests are scheduled with `--dist loadgroup`: one group per workflow in
+`test_workflows.py` (its four class-scoped methods share a browser and a login),
+one group per file everywhere else. A missing screenshot baseline **fails**
+under xdist instead of being minted -- see *Screenshot baselines*.
+
+With `--use-existing`, pairs 1..N-1 must already be running on the ports
+`python -m utk_curio.backend.tests.shards K` prints (that is what CI does,
+inside its one container).
+
 ### AUTK / WebGPU note
 
 Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes a minimal flag set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.
@@ -150,6 +176,8 @@ Three things are easy to get wrong against the catalog drawers:
 
 - **Disable motion before navigating.** `page.emulate_media(reduced_motion="reduce")` - both drawer providers read `prefers-reduced-motion` through `useSyncExternalStore`, so this makes presentation synchronous and collapses the 380 ms close timer to zero. Do it *before* `stub_login_and_enter_workflow`; a `page.reload()` afterwards races `ProjectLoader` into the shared-guest fallback.
 - **`to_be_visible()` is not a gate for a drawer.** All three slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. **`aria-hidden="false"` is not a gate either, despite what this file used to say.** It is the presented signal for the Dataset and Agent drawers, but the Node Catalog drawer carried no `aria-hidden` at all until the fix that added it, so waiting for the attribute to flip there waited forever - a whole chapter of the stress run died on that advice. Gate on where the panel actually *is*: `stress.py::wait_for_drawer_presented` polls the dialog's bounding box until its left edge is inside the viewport, which is true of all three regardless of what they advertise. `canvasDrawerParity.test.ts` now keeps the three from diverging again. Never `force=True` on drawer internals - `force` skips the very hit-target check that protects against clicking a mid-slide panel.
+
+  **The agent chat panel slides too, as of #295.** It is a fourth surface on the same 300 ms curve, presented through the same `useSlideDrawerPresentation` the three drawers now share, so everything above applies to `[role="dialog"][aria-label^="Chat with"]` as well. Two differences worth knowing: it carries `aria-hidden="true"` for the length of its exit, so a `get_by_role("dialog")` locator stops matching as soon as it starts closing rather than when it unmounts; and it stays in the DOM through that exit showing the agent it last showed, so a detach is not instantly followed by an empty canvas.
 - **Settle the canvas before clicking anything on a node.** ReactFlow's initial `fitView` animates the viewport, and a visible-but-still-moving element makes `click()` time out with no useful message. Call `_wait_for_reactflow_ready(page)` first.
 
 ## Screenshot baselines
@@ -310,6 +338,11 @@ test_frontend/
   test_spa_deep_link_e2e.py   # a dotted deep link boots the app on the PRODUCTION static server
                               # (needs a built dist/; FAILS rather than skips without one)
   test_library_manager_e2e.py      # Installed-libraries modal -> a node imports the lib
+  test_broken_library_e2e.py       # pip says installed, python cannot import: every install surface
+                                   # says which library and why, and holds the pip-failed and
+                                   # probe-failed answers apart from it (offline via
+                                   # /api/testing/broken-library + /api/testing/pip-behaviour;
+                                   # writes nothing to the shared catalog)
   test_package_roundtrip_e2e.py    # canvas node -> package -> archive -> import -> run it
   test_package_metadata_roundtrip_e2e.py  # Node settings + package metadata survive the archive
   test_workflow_deps_e2e.py   # loading a dataflow auto-installs its declared packages
@@ -370,7 +403,7 @@ fails in milliseconds instead.
 Other things that surprise people here:
 
 - **"Installed" in a drawer means the project lockfile**, not the user store. A
-  fresh project therefore always offers `Add to dataflow`, even though
+  fresh project therefore always offers `Add to project`, even though
   `.curio/users/*/packages/` persists across runs.
 - `curio.builtin@*` is always treated as installed and offers **no** buttons: it
   ships with every instance and can be neither uninstalled nor published.
@@ -379,16 +412,27 @@ Other things that surprise people here:
 - **A plain re-import is expected to 400.** `onPickArchive` never sets
   `replace`, and no UI path does, so re-importing an installed coordinate fails
   by design. Rename the manifest `id` to fork it instead.
-- The **"In dataflow" tab renders `MyPackagesList`, not `PackageCard`**, so the
+- The **"In project" tab renders `MyPackagesList`, not `PackageCard`**, so the
   `data-pkg-dir` attribute is absent there; key on the row's `Remove {name}`
   aria-label.
 - Card roots carry `data-pkg-dir` / `data-dataset-id` / `data-agent-coord`.
   Prefer them over display copy, which has been renamed repeatedly.
-- **Adding an agent needs no permissions dialog.** It is a lockfile write with
-  no pip involved, so watch the install POST itself rather than a confirm step.
-  Removing one *does* confirm, and Playwright's default for a dialog is
-  **dismiss** - without `page.once("dialog", lambda d: d.accept())` the click
-  silently does nothing and later assertions fail for the wrong reason.
+- **Every catalog confirms an add and a remove, with an in-app dialog** (#196,
+  #197). `window.confirm` is gone from all three drawers, so `page.on("dialog",
+  ...)` never fires for them - a test still written that way clicks the card
+  button, silently does nothing, and fails later for the wrong reason. Use
+  `utils.accept_confirm_dialog(page, title=..., button=...)`, and note the
+  ordering: the card click only *opens* the dialog, so the request to wait on
+  is triggered by the confirm, not by the click. The Node catalog keeps its
+  richer `InstallPermissionsDialog` for adds (permissions + dependency
+  conflicts); Data and Agent use the plain ConfirmDialog.
+- **`get_by_role("dialog")` is ambiguous while a drawer is open.** The drawers
+  are themselves `role="dialog"`, so scope by accessible name -
+  `page.get_by_role("dialog", name="Remove Node Explainer?")` - which
+  ConfirmDialog wires from its heading via `aria-labelledby`.
+- **The unsaved-changes guards in `UpMenu` are still native**, so the tours'
+  blanket `page.on("dialog", lambda d: d.accept())` is still required for
+  File > New dataflow. Do not remove it.
 - **The agent palette's footer used to sit below the fold at 1280x720.** Its
   panel hung down from its own trigger, which is the third and lowest in the
   rail, so `Browse Agent Catalog +` (how the Node suite enters) was off screen.
@@ -654,7 +698,7 @@ file and the next run dies at conftest import with `PermissionError: [WinError
 
 | Chapter | What it drives |
 |---|---|
-| `access` | signup validation, real signup, the persona picker, sign out, a wrong password, sign in; the projects page - search, the three status tabs, all three sorts, grid/list, card click / Enter / Space / right-click, Duplicate, Rename, Archive, Delete forever, the detail drawer; Jupyter notebook import |
+| `access` | signup validation, real signup, the persona picker, sign out, a wrong password, sign in; the projects page - search, all three sorts, grid/list, card click / Enter / Space / right-click, Duplicate, Rename, Delete, the detail drawer; Jupyter notebook import |
 | `canvas` | all twelve built-in tiles dropped and identity-checked; header band, resize, comments, pin; every editor tab; Node settings including the port editor; invalid connections and cycles; the guarded delete; Backspace inside Monaco; box select; zoom; minimize/expand all; a node that raises; Play All; Save-as JSON and notebook export |
 | `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.urbanlab.uhvi`, `curio.streetvision` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
 | `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
@@ -716,7 +760,8 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_E2E_USE_EXISTING` | Set to `1` to skip server startup and use running servers. Those servers **must** carry `CURIO_TESTING=1` or every `/api/testing/*` call 404s and the autouse `e2e_clean_db` fixture errors on setup; the CI overlays (`docker-compose.ci.yml`, `docker-compose.ci-isolated.yml`) and `scripts/test.sh` set it. `scripts/test.sh` also exports this variable for its whole run, so the backend unit suite does not claim ownership of a DB the running stack is serving from. |
 | `CURIO_E2E_HOST` | Host for existing servers (default: `localhost`) |
 | `CURIO_E2E_BACKEND_PORT` | Backend port for existing servers (default: `5002`) |
-| `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`) |
+| `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`). Reaches both the `/live` wait in `e2e_existing_servers` **and** the two helpers that call the sandbox directly, via `utils.py::sandbox_base_url`. It used to reach only the first, so on a non-default port `load_artifact_as_dict` and `execute_workflow_programmatically` silently addressed port 2000 and every `test_node_execution` died on an unexplained `401`. |
+| `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get` and `/install` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with** — `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch now fails with that sentence rather than a bare `401`. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
 | `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |
 | `DATABASE_URL_TEST` | SQLAlchemy URL for the test DB (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |

@@ -26,8 +26,13 @@ a normal ``curio.py start`` does not.
 
 from __future__ import annotations
 
+import logging
+import re
+import shutil
+
 from flask import Blueprint, jsonify, request
 
+from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.config import _is_dev, _is_testing
 from utk_curio.backend.app.agents import testing_provider
 from utk_curio.backend.extensions import db
@@ -38,6 +43,8 @@ from utk_curio.backend.app.projects.schemas import ProjectCreate
 
 
 testing_bp = Blueprint("testing", __name__, url_prefix="/api/testing")
+
+log = logging.getLogger(__name__)
 
 
 @testing_bp.before_request
@@ -222,6 +229,45 @@ def dataset_paths():
     return jsonify({"paths": paths}), 200
 
 
+def _clear_test_user_stores() -> list[str]:
+    """Delete the on-disk trees that :func:`reset_db`'s truncate would orphan.
+
+    Emptying ``user`` and leaving ``.curio/test/users/`` behind is not a clean
+    slate, it is a trap: the store path contains ``user.id``, SQLite reissues
+    ids from 1 after a delete, and so the next account created by a test opens
+    onto the previous one's imported agents, installed packages, datasets and
+    projects. Four separate failures in the #186-#203 follow-ups were that,
+    each of them reading as a product bug until the store was listed by hand.
+
+    Removes the per-user tree and its sibling published-agents catalog, which
+    ``agents/publications.py`` derives from the same root and which leaks the
+    same way.
+
+    Refuses to touch anything outside ``.curio/test/``. The blueprint guard
+    already requires ``CURIO_TESTING``, but this function deletes user data, so
+    it re-checks rather than trusting a caller to have been routed correctly:
+    without the flag ``users_base()`` is a developer's real store.
+    """
+    from utk_curio.backend.app.common.user_storage import curio_root, users_base
+
+    if not _is_testing():  # pragma: no cover - the blueprint guard precedes us
+        return []
+    root = curio_root().resolve()
+    if root.name != "test":
+        log.warning("refusing to clear stores: %s is not a test root", root)
+        return []
+
+    cleared = []
+    for target in (users_base(), (root / "agents-catalog").resolve()):
+        if not is_within(target, root):  # pragma: no cover - both are children
+            continue
+        if not target.exists():
+            continue
+        shutil.rmtree(target, ignore_errors=True)
+        cleared.append(target.name)
+    return cleared
+
+
 @testing_bp.route("/reset-db", methods=["POST"])
 def reset_db():
     """Truncate mutable tables so the next test starts with a clean slate.
@@ -236,8 +282,12 @@ def reset_db():
         that set is refused rather than executed: the name goes into raw SQL,
         and "which tables may a test wipe" is a decision for this module, not
         for the request body.
+      * ``stores`` – default ``true``. Also delete the per-user files under
+        ``.curio/test/``, which the truncate would otherwise orphan onto the
+        ids it is about to free. Pass ``false`` only to inspect what a previous
+        test left behind; a test that skips it is asking to inherit it.
 
-    Response: ``{"truncated": [...table names...]}``
+    Response: ``{"truncated": [...], "stores_cleared": [...]}``
     """
     body = request.get_json(silent=True) or {}
     requested = body.get("tables")
@@ -267,7 +317,11 @@ def reset_db():
         except Exception:
             pass
     db.session.commit()
-    return jsonify({"truncated": truncated}), 200
+
+    stores_cleared = []
+    if body.get("stores", True):
+        stores_cleared = _clear_test_user_stores()
+    return jsonify({"truncated": truncated, "stores_cleared": stores_cleared}), 200
 
 
 @testing_bp.route("/stub-project", methods=["POST"])
@@ -406,3 +460,374 @@ def agent_script_reset():
         return denied
     testing_provider.reset()
     return jsonify({"pending": testing_provider.pending()}), 200
+
+
+#: The default identity of the fake distribution :func:`broken_library` mints.
+#: A name no index carries, so a stray ``pip install`` of it can only fail —
+#: nothing here should ever reach a network, and a name collision would make
+#: that hard to notice.
+_BROKEN_LIB_NAME = "brokenlib"
+_BROKEN_LIB_VERSION = "9.9.9"
+_BROKEN_LIB_REASON = (
+    "DLL load failed while importing _base: The specified procedure could not "
+    "be found."
+)
+
+
+def _broken_lib_root():
+    """Where the fake distributions live — inside the test rig's state tree."""
+    from utk_curio.backend.app.common.user_storage import curio_root
+
+    return curio_root() / "broken-libs"
+
+
+@testing_bp.route("/broken-library", methods=["POST"])
+def broken_library():
+    """Make a library that pip considers installed, and python cannot import.
+
+    This is the bug class the import probe exists for, and it is the one an
+    E2E test cannot otherwise stage. pip reports a requirement satisfied from
+    ``importlib.metadata`` alone, so a wheel whose native extension will not
+    load — a rasterio built against a different GDAL is the everyday case —
+    records a perfectly good version, installs "successfully", and raises the
+    first time a node touches it. Every layer above reads pip's exit code as
+    success.
+
+    Reproduced here as a distribution with valid metadata over a module that
+    raises on import. Byte-for-byte the same shape as the real thing, and
+    deterministic and offline, which a genuinely broken wheel is not: the
+    install path finds the version satisfied and SKIPS pip entirely, so nothing
+    in this reaches an index.
+
+    It lives in this process rather than in the harness because that is where
+    the question is asked. ``pip_runner`` probes in a subprocess of the backend,
+    so the fake has to be on the backend's ``sys.path`` (for the metadata read)
+    and its ``PYTHONPATH`` (for the child that attempts the import) — neither of
+    which a pytest process can reach, still less one talking to a container.
+    Same reason ``dataset-paths`` and ``package-store`` resolve here.
+
+    Body (JSON):
+      * ``action``  – ``"install"`` mints it, ``"remove"`` takes it away.
+      * ``name``    – distribution name; defaults to ``brokenlib``.
+      * ``version`` – defaults to ``9.9.9``.
+      * ``reason``  – the ImportError text; defaults to the DLL-load wording.
+
+    Answers ``{"name", "version", "path", "versionSatisfied", "importError"}``
+    so a caller can assert the premise — pip WOULD skip this, and the import
+    DOES fail — before asserting anything about a user-facing surface.
+    """
+    import importlib
+    import importlib.util
+    import os
+    import sys
+
+    from utk_curio.backend.app.packages import pip_runner
+
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "install").strip()
+    name = (body.get("name") or _BROKEN_LIB_NAME).strip()
+    version = (body.get("version") or _BROKEN_LIB_VERSION).strip()
+    reason = body.get("reason") or _BROKEN_LIB_REASON
+
+    if action not in ("install", "remove"):
+        return jsonify({"error": "action must be 'install' or 'remove'"}), 400
+    # The name becomes a directory and a module filename, so keep it to the
+    # shape a distribution name actually has.
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,40}", name):
+        return jsonify({"error": f"invalid name: {name!r}"}), 400
+    if not re.fullmatch(r"[0-9][0-9A-Za-z.]{0,20}", version):
+        return jsonify({"error": f"invalid version: {version!r}"}), 400
+
+    root = _broken_lib_root()
+
+    if action == "remove":
+        # Only what this call names. The API invites naming a distribution, so
+        # removing one must not silently take away the others a test staged.
+        targets = [root / f"{name}.py", *root.glob(f"{name}-*.dist-info")]
+        # Importing the fake leaves compiled bytecode behind, and a stale
+        # __pycache__ entry both outlives the source and keeps the directory
+        # non-empty, which is how the path stayed on sys.path after a removal.
+        targets += list(root.glob(f"__pycache__/{name}.*.pyc"))
+        for path in targets:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            elif path.is_file():
+                path.unlink()
+        remaining = sorted(
+            p.name for p in root.glob("*") if p.name != "__pycache__"
+        ) if root.is_dir() else []
+        if not remaining:
+            shutil.rmtree(root, ignore_errors=True)
+            _drop_from_import_path(str(root))
+        importlib.invalidate_caches()
+        pip_runner.forget_import_probes()
+        return jsonify({"name": name, "removed": True, "remaining": remaining}), 200
+
+    # Checked here rather than beside the other input validation, because it is
+    # only true of `install`: by the time a test removes what it staged, the
+    # name resolves precisely because this route made it resolve.
+    #
+    # A name that ALREADY resolves would not be a fake broken library, it would
+    # be a real broken one: the module lands in a directory that goes on
+    # sys.path[0] and on PYTHONPATH, so `{"name": "json"}` makes every probe
+    # child and every pip child this backend spawns die on startup, and the
+    # import failures the suite then reports are its own doing.
+    if name in sys.stdlib_module_names or importlib.util.find_spec(name) is not None:
+        return jsonify({
+            "error": f"{name!r} already resolves; staging it would shadow a real "
+                     f"module for this backend and every process it spawns",
+        }), 400
+
+    info = root / f"{name}-{version}.dist-info"
+    info.mkdir(parents=True, exist_ok=True)
+    (info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n",
+        encoding="utf-8",
+    )
+    (info / "top_level.txt").write_text(f"{name}\n", encoding="utf-8")
+    # The module raises rather than being absent, because "absent" is a
+    # different bug with a different remedy: pip would reinstall it.
+    (root / f"{name}.py").write_text(
+        f"raise ImportError({reason!r})\n", encoding="utf-8",
+    )
+
+    path = str(root)
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    existing = os.environ.get("PYTHONPATH")
+    if not existing or path not in existing.split(os.pathsep):
+        os.environ["PYTHONPATH"] = (
+            f"{path}{os.pathsep}{existing}" if existing else path
+        )
+    # The metadata finder caches directory listings, and the probe memoises per
+    # (distribution, version) — both would otherwise answer from before this.
+    importlib.invalidate_caches()
+    pip_runner.forget_import_probes()
+
+    return jsonify({
+        "name": name,
+        "version": version,
+        "path": path,
+        # The premise, measured rather than asserted: pip is satisfied ...
+        "versionSatisfied": pip_runner.is_satisfied(name, ""),
+        # ... and the import is not.
+        "importError": pip_runner.import_failures([name]).get(name),
+    }), 200
+
+
+def _drop_from_import_path(path: str) -> None:
+    """Take *path* back off ``sys.path`` and ``PYTHONPATH``."""
+    import os
+    import sys
+
+    while path in sys.path:
+        sys.path.remove(path)
+    existing = os.environ.get("PYTHONPATH")
+    if existing:
+        # Empty entries are preserved: CPython reads one as the launch cwd, so
+        # dropping it would quietly change what every child can import - a
+        # side effect of a teardown, felt only by whatever runs next.
+        kept = [p for p in existing.split(os.pathsep) if p != path]
+        if any(kept):
+            os.environ["PYTHONPATH"] = os.pathsep.join(kept)
+        else:
+            os.environ.pop("PYTHONPATH", None)
+
+
+#: Saved on the first override so ``normal`` can put them back. Module-level
+#: because the override outlives the request that set it — that is the point:
+#: the install it has to affect happens in a LATER request.
+_PIP_ORIGINALS: dict = {}
+
+#: What each mode makes pip do. The messages are fixed so a test can assert on
+#: them without depending on an index, a network or a pip version.
+_PIP_MODES = ("normal", "install-error", "spec-error", "probe-error")
+
+
+@testing_bp.route("/pip-behaviour", methods=["POST"])
+def pip_behaviour():
+    """Make this backend's pip fail on purpose, deterministically.
+
+    The install seam has three answers, and only one of them can be staged from
+    outside the server. "The library installed and does not import" has
+    ``/api/testing/broken-library``; "pip itself failed" and "the probe could
+    not run" have nothing, because both live in a subprocess the backend spawns
+    and neither can be provoked offline — an unreachable index produces a
+    different message every time, and on a machine with a warm wheel cache it
+    may not fail at all.
+
+    So they are staged here, in the process that owns them, for the same reason
+    ``dataset-paths`` and ``package-store`` resolve here: a pytest process (or
+    one talking to a container) cannot reach into this one.
+
+    Body: ``{"mode": "normal" | "install-error" | "spec-error" | "probe-error"}``
+
+      * ``install-error`` — ``install_python_deps`` raises ``PipInstallError``,
+        the shape of pip exiting non-zero.
+      * ``spec-error`` — it raises ``PipSpecError``, the shape of a requirement
+        pip's grammar rejects. A different answer from the caller's side (400
+        rather than 502), which is the distinction worth holding.
+      * ``probe-error`` — both import probes raise, so the diagnostic is the
+        thing that is broken. The install must still succeed and must not
+        report a clean bill of health it did not earn.
+      * ``normal`` — put the real functions back.
+
+    Overriding is idempotent and always restores from the ORIGINALS captured on
+    the first call, so repeated or interleaved modes cannot stack wrappers.
+    """
+    from utk_curio.backend.app.packages import pip_runner
+
+    body = request.get_json(silent=True) or {}
+    mode = (body.get("mode") or "normal").strip()
+    if mode not in _PIP_MODES:
+        return jsonify({"error": f"mode must be one of {list(_PIP_MODES)}"}), 400
+
+    if not _PIP_ORIGINALS:
+        _PIP_ORIGINALS.update({
+            "install_python_deps": pip_runner.install_python_deps,
+            "import_failures": pip_runner.import_failures,
+            "import_failures_in": pip_runner.import_failures_in,
+        })
+
+    for name, original in _PIP_ORIGINALS.items():
+        setattr(pip_runner, name, original)
+
+    if mode == "install-error":
+        def _fail(deps, on_line=None):
+            raise pip_runner.PipInstallError(
+                "ERROR: Could not find a version that satisfies the requirement")
+        pip_runner.install_python_deps = _fail
+    elif mode == "spec-error":
+        def _bad_spec(deps, on_line=None):
+            raise pip_runner.PipSpecError(
+                "'>= 1.26' is not a valid version constraint for 'numpy'")
+        pip_runner.install_python_deps = _bad_spec
+    elif mode == "probe-error":
+        def _no_probe(*a, **kw):
+            raise OSError("no subprocesses here")
+        pip_runner.import_failures = _no_probe
+        pip_runner.import_failures_in = _no_probe
+
+    pip_runner.forget_import_probes()
+    return jsonify({"mode": mode}), 200
+
+
+@testing_bp.route("/package-store", methods=["POST"])
+def package_store():
+    """Read or perturb one file in a user's package store.
+
+    For the #194 delivery regression. A fix can ship inside a package at an
+    unchanged version, and the question that test asks is whether an existing
+    install picks it up — which means the test has to make a store copy stale
+    and then read it back. Neither is possible from the pytest process when the
+    stack runs in a container, because it does not share that filesystem. So it
+    happens here, in the process that does, for the same reason ``dataset-paths``
+    resolves paths here rather than in the harness.
+
+    Body (JSON):
+      * ``username`` – required; whose store to act on.
+      * ``dirName``  – required; ``<packageId>@<major>``, validated.
+      * ``action``   – ``"hash"`` reads, ``"stale"`` perturbs.
+      * ``path``     – file inside the package, POSIX-relative.
+                       Defaults to ``manifest.json``.
+
+    ``hash`` answers ``{"sha256": "...", "catalog_sha256": "..."}`` so a caller
+    can compare the store copy against the catalog it came from in one call.
+    ``stale`` appends a marker byte to the file and drops the package's
+    seed-state record, then answers the same shape — after which the two hashes
+    differ by construction.
+    """
+    import hashlib
+
+    from utk_curio.backend.app.packages import seed_state
+    from utk_curio.backend.app.packages.seed import _catalog_root
+    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE, package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    body = request.get_json(silent=True) or {}
+    username = (body.get("username") or "").strip()
+    dir_name = (body.get("dirName") or "").strip()
+    action = (body.get("action") or "hash").strip()
+    rel = (body.get("path") or "manifest.json").strip()
+
+    if not username or not dir_name:
+        return jsonify({"error": "username and dirName are required"}), 400
+    if not PACKAGE_DIR_RE.match(dir_name):
+        return jsonify({"error": f"invalid dirName: {dir_name!r}"}), 400
+    if action not in ("hash", "stale", "reset"):
+        return jsonify({"error": "action must be 'hash', 'stale' or 'reset'"}), 400
+    # Narrow the writable surface by hand: this route can only ever touch a
+    # file INSIDE one validated package directory.
+    if not rel or rel.startswith("/") or ".." in rel.split("/"):
+        return jsonify({"error": f"invalid path: {rel!r}"}), 400
+
+    user = user_repo.user_by_identifier(username)
+    if user is None:
+        return jsonify({"error": f"no such user: {username}"}), 404
+
+    try:
+        store_root = package_dir(_user_dir_key(user), dir_name)
+    except Exception as exc:  # noqa: BLE001 — traversal guard etc.
+        return jsonify({"error": str(exc)}), 400
+
+    if action == "reset":
+        # Drop the store copy so the next install is a true first install.
+        #
+        # A test cannot get this by using a fresh username. The store is keyed
+        # by user ID, and the e2e harness truncates the ``user`` table between
+        # tests, so SQLite reissues low ids and a brand-new account inherits
+        # whatever the last occupant of that id left on disk — including, for
+        # this test, a deliberately damaged file. That is the hazard the recheck
+        # logged as F6; until it is fixed at the source, a test that needs a
+        # known starting state has to say so explicitly.
+        import shutil
+
+        if store_root.is_dir():
+            shutil.rmtree(store_root, ignore_errors=True)
+        seed_state.clear(_user_dir_key(user), dir_name)
+        return jsonify({"reset": dir_name, "present": store_root.is_dir()}), 200
+
+    target = store_root / rel
+    if not target.is_file():
+        return jsonify({"error": f"not in the store: {dir_name}/{rel}"}), 404
+
+    if action == "stale":
+        from utk_curio.backend.app.packages.installer import (
+            refresh_packageage_integrity,
+        )
+
+        # A marker byte rather than a rewrite: the file stays valid for anything
+        # that only parses it, so the ONLY thing this changes is the hash.
+        with open(target, "ab") as fh:
+            fh.write(b"\n// stale-marker\n")
+        # ...and then rewrite the store copy's own integrity.json to match.
+        #
+        # This is what makes it an UPGRADE rather than a corruption, and the
+        # distinction is the whole point. A real upgrade leaves the user's copy
+        # internally consistent — its files and its integrity map agree, they
+        # are simply an older pair than the catalog's. Perturbing the file alone
+        # leaves the store's map still quoting the original hash, so it matches
+        # the catalog's map and the refresh correctly declines to act: the copy
+        # is damaged, not out of date, and repairing damage is a different job
+        # (`_package_is_healthy`). Skipping this step made the first version of
+        # this endpoint simulate the wrong thing entirely.
+        refresh_packageage_integrity(store_root)
+        seed_state.clear(_user_dir_key(user), dir_name)
+
+    def _sha256(path):
+        h = hashlib.sha256()
+        h.update(path.read_bytes())
+        return h.hexdigest()
+
+    catalog_file = _catalog_root() / dir_name / rel
+    return (
+        jsonify(
+            {
+                "sha256": _sha256(target),
+                "catalog_sha256": _sha256(catalog_file) if catalog_file.is_file() else None,
+                "path": rel,
+                "dirName": dir_name,
+            }
+        ),
+        200,
+    )

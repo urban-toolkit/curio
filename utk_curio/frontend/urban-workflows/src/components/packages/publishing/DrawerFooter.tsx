@@ -1,4 +1,6 @@
 import React, { useRef } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faFileImport } from "@fortawesome/free-solid-svg-icons";
 import styles from "./DrawerFooter.module.css";
 
 export interface DrawerFooterProps {
@@ -7,6 +9,13 @@ export interface DrawerFooterProps {
   onSideload: (file: File) => void;
   /** Accepted file types. Pass ``null`` to accept any file. Defaults to ``.curio.zip`` archives. */
   accept?: string | null;
+  /**
+   * What the button says while an import is in flight. Sideloading now installs
+   * the archive's declared python deps, so this click can sit in pip for
+   * minutes where it used to return in under a second - and a button that
+   * still reads "Import package" while disabled looks broken rather than busy.
+   */
+  busyLabel?: React.ReactNode;
   /** Button content. Defaults to the Node Catalog's "Import package". */
   label?: React.ReactNode;
 }
@@ -20,6 +29,7 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({
   onSideload,
   accept = ".curio.zip,.zip,application/zip",
   label = "Import package",
+  busyLabel = "Importing…",
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,7 +52,13 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({
         disabled={busy}
         onClick={() => fileInputRef.current?.click()}
       >
-        {label}
+        {/* One icon, rendered here rather than passed in, so every drawer's
+            import wears the same glyph. The Data drawer used to pass its own
+            and the Node drawer passed none, so two footers built from this very
+            component still looked different. The Agent drawer has its own
+            footer element and imports the same icon. */}
+        <FontAwesomeIcon icon={faFileImport} aria-hidden />{" "}
+        {busy ? busyLabel : label}
       </button>
     </footer>
   );

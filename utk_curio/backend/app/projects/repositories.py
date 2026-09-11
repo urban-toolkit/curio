@@ -22,21 +22,12 @@ def get_for_user(project_id: str, user_id: int) -> Project:
 
 def list_for_user(
     user_id: int,
-    scope: str = "mine",
     sort: str = "last_opened",
 ) -> List[Project]:
+    # No ``scope``. It only ever varied the ``archived_at`` filter, which #261
+    # removed, leaving "mine" and "recent" returning identical sets — so the
+    # "Recent" tab and the parameter behind it both went (#286).
     q = Project.query.filter_by(user_id=user_id)
-
-    if scope == "archived":
-        q = q.filter(Project.archived_at.isnot(None))
-    elif scope == "all":
-        # Active AND archived — destructive gates (dataset delete/uninstall)
-        # must see refs held by archived projects too (#176).
-        pass
-    elif scope == "recent":
-        q = q.filter(Project.archived_at.is_(None))
-    else:
-        q = q.filter(Project.archived_at.is_(None))
 
     if sort == "name":
         q = q.order_by(Project.name.asc())
@@ -98,14 +89,7 @@ def upsert_project(
     return project
 
 
-def soft_delete(project_id: str, user_id: int) -> Project:
-    project = get_for_user(project_id, user_id)
-    project.archived_at = datetime.now(timezone.utc)
-    db.session.flush()
-    return project
-
-
-def purge_project(project_id: str, user_id: int) -> Project:
+def delete_project_row(project_id: str, user_id: int) -> Project:
     project = get_for_user(project_id, user_id)
     db.session.delete(project)
     db.session.flush()

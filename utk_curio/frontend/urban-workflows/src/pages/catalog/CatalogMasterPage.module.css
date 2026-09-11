@@ -14,6 +14,13 @@
   font-family: var(--curio-font-family);
   background: var(--curio-page-bg);
   color: var(--curio-text-primary);
+  /* Reserve the bottom-right corner for the fixed VersionBadge (#236). The
+     height chain from here is unbroken to the viewport - .outlet, .page, then
+     .browseDrawer at height:100% - so without this the details drawer runs its
+     own CTA under the badge. Bounded height means border-box is load-bearing:
+     the padding has to come out of the 100vh, not add to it. */
+  box-sizing: border-box;
+  padding-bottom: var(--curio-version-badge-reserve);
 }
 
 .outlet {

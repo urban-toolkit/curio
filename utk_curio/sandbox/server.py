@@ -123,7 +123,9 @@ if __name__ == '__main__':
     # Reuse the backend's exclude list and default **stat** reloader so
     # Watchdog's pathlib-based ignores cannot miss deep ``.curio/`` paths
     # (same ``ERR_EMPTY_RESPONSE`` mid-install failure as the backend).
-    from utk_curio.backend.server import (
+    # The leaf module, not backend.server: importing that builds the backend
+    # app and hits its database (see utk_curio/backend/reloader.py).
+    from utk_curio.backend.reloader import (
         DEFAULT_RELOADER_TYPE,
         RELOADER_EXCLUDE_PATTERNS,
     )

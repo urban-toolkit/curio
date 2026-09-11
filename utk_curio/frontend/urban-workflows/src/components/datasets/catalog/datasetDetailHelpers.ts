@@ -1,8 +1,6 @@
 import {
-  DATASET_ORIGIN_LABEL,
   DatasetCatalogItem,
   DatasetFormat,
-  datasetListSourceCaption,
 } from "../../../services/datasetCatalog";
 
 export function formatBytes(value?: number | null): string | null {
@@ -80,12 +78,6 @@ export function datasetInitials(title: string): string {
   const words = title.trim().split(/\s+/).filter(Boolean);
   const seed = words.length > 1 ? `${words[0][0]}${words[1][0]}` : title.slice(0, 2);
   return seed.toUpperCase();
-}
-
-export function formatDatasetLocation(dataset: DatasetCatalogItem): string {
-  const caption = datasetListSourceCaption(dataset);
-  if (caption) return caption;
-  return dataset.path || dataset.uri || DATASET_ORIGIN_LABEL[dataset.origin];
 }
 
 export function formatClass(format: DatasetFormat, styles: Record<string, string>): string {

@@ -271,13 +271,51 @@ def _hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def non_content_filenames() -> frozenset[str]:
+    """Files that live inside a package directory and are NOT the package.
+
+    ``integrity.json`` is the installer's record of what it copied;
+    ``.curio-publisher.json`` is the catalog's record of who published it.
+    Both are bookkeeping written beside the package, and every rule about
+    package CONTENT has to agree on excluding them or they disagree with each
+    other. They did: the archive writer dropped the publisher record while the
+    integrity hasher kept it, so a published package's catalog digest could
+    never match the map written for a copy installed from it, the seeder read
+    that as "the catalog has moved on", and every seed pass re-copied the
+    package and carried one user's key into another user's store.
+    """
+    from utk_curio.backend.app.packages.publisher_record import RECORD_FILENAME
+
+    return frozenset({"integrity.json", RECORD_FILENAME})
+
+
+def is_non_content_filename(name: str) -> bool:
+    """Should *name* be left out of an archive built from a package directory?
+
+    The named files above, plus ANY dotfile. The dotfile rule is provably
+    lossless: ``_safe_member_path`` rejects every member whose segment starts
+    with a dot, so a dotfile could never have been installed from an archive
+    anyway - zipping one only turns an install into "archive member has unsafe
+    segment" for the whole package.
+
+    That is not hypothetical. ``record_publisher`` writes its record through a
+    ``.curio-publisher.json.tmp`` and swallows an ``os.replace`` failure as a
+    warning, so a full disk or a Windows sharing violation can leave the .tmp
+    beside the package. The exact-name rule did not cover it, and every route
+    that re-zips a catalog directory - catalog install, the drawer install,
+    "Reload from catalog", the workflow-deps auto-install, export - would then
+    refuse the package until someone republished it.
+    """
+    return name in non_content_filenames() or name.startswith(".")
+
+
 def _build_integrity(package_root: Path) -> dict[str, str]:
     """Compute SHA-256 of every regular file under *package_root* (sorted)."""
     integrity: dict[str, str] = {}
     for entry in sorted(package_root.rglob("*")):
         if not entry.is_file():
             continue
-        if entry.name == "integrity.json":
+        if is_non_content_filename(entry.name):
             continue
         rel = entry.relative_to(package_root).as_posix()
         integrity[rel] = _hash_file(entry)
@@ -703,36 +741,70 @@ def install_packageage_from_directory(
     """
     if not source_dir.is_dir():
         raise InstallerError(f"catalog source {source_dir} is not a directory")
+    return install_packageage_from_archive(user_key, zip_package_tree(source_dir), replace=replace)
+
+
+def zip_package_tree(source_dir: Path) -> bytes:
+    """A deterministic ``.curio.zip`` of one package directory.
+
+    Sorted walk, deflate, and the two files that are BOOKKEEPING rather than
+    package content left out:
+
+    * ``integrity.json`` — the installer's own record of what it copied,
+      rewritten on every install, so an archive must not carry one.
+    * ``.curio-publisher.json`` — the catalog's record of who published the
+      package. It made a catalog entry uninstallable: the member validator
+      rejects a leading dot, so ``publish-catalog`` produced a directory that
+      ``catalog/install`` then refused with "archive member has unsafe
+      segment", and every route that reaches a catalog copy — the drawer's
+      install, "Reload from catalog", the workflow-deps auto-install — failed
+      on anything published through the product's own route. Leaving it out
+      also keeps one user's ``userKey`` out of every archive the export routes
+      hand to somebody else.
+
+    Shared by the catalog install (which re-zips a catalog directory to reuse
+    the sideload validator) and the export routes, so the two cannot drift
+    apart in what they emit.
+    """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for entry in sorted(source_dir.rglob("*")):
             if not entry.is_file():
                 continue
-            if entry.name == "integrity.json":
+            if is_non_content_filename(entry.name):
                 continue
             rel = entry.relative_to(source_dir).as_posix()
             zf.write(entry, arcname=rel)
-    return install_packageage_from_archive(user_key, buf.getvalue(), replace=replace)
+    return buf.getvalue()
 
 
-def export_packageage_archive(user_key: str, dir_name: str) -> bytes:
-    """Repackage an installed package back into a deterministic ``.curio.zip`` zip.
+def export_packageage_archive(
+    user_key: str,
+    dir_name: str,
+    *,
+    catalog_root: Path | None = None,
+) -> bytes:
+    """Repackage a package back into a deterministic ``.curio.zip`` zip.
 
     Useful for the factory ("Export package" button) and for migrating an
     installed package from one user to another. The archive layout matches
     the one :func:`install_packageage_from_archive` accepts, so a round-trip
     install -> export -> install is lossless.
+
+    The user's own store copy is preferred. When the account has never
+    installed the package but it is in the committed catalog (*catalog_root*),
+    the catalog copy is exported instead: the Node Catalog page offers "View
+    details -> Export" on every row it lists, and a row the user had not added
+    answered ``package X is not installed`` - true, and useless from a page
+    whose whole point is that the package is right there (#275).
     """
     target = package_dir(user_key, dir_name)
-    if not target.is_dir():
-        raise InstallerError(f"package {dir_name} is not installed")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for entry in sorted(target.rglob("*")):
-            if not entry.is_file():
-                continue
-            if entry.name == "integrity.json":
-                continue
-            rel = entry.relative_to(target).as_posix()
-            zf.write(entry, arcname=rel)
-    return buf.getvalue()
+    if target.is_dir():
+        return zip_package_tree(target)
+    if catalog_root is not None:
+        base = catalog_root.resolve()
+        candidate = (base / dir_name).resolve()
+        if is_within(candidate, base) and (candidate / "manifest.json").is_file():
+            return zip_package_tree(candidate)
+        raise InstallerError(f"package {dir_name} is neither installed nor in the catalog")
+    raise InstallerError(f"package {dir_name} is not installed")

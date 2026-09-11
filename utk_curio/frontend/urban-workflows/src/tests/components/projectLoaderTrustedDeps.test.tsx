@@ -48,6 +48,10 @@ jest.mock("../../registry/packageRegistryBootstrap", () => ({
 jest.mock("../../registry/projectPackagesStore", () => ({
   clearCurrentProject: jest.fn(),
   setCurrentProject: jest.fn(),
+  // An unsaved dataflow now gets a real scope seeded from the account defaults
+  // rather than "no project, show everything" (#204).
+  setUnsavedDataflow: jest.fn(),
+  setCurrentProjectPackages: jest.fn(),
 }));
 
 import { ProjectLoader } from "../../components/ProjectLoader";

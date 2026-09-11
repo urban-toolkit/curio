@@ -1,4 +1,6 @@
 """Tests for projects/services.py — business logic."""
+import copy
+
 import pytest
 
 from utk_curio.backend.app.projects import services, storage
@@ -63,7 +65,14 @@ def test_metadata_only_update_preserves_spec_and_outputs(
     loaded = services.load_project(user, detail.id)
 
     assert updated.name == "Renamed"
-    assert loaded["spec"] == saved_spec
+    # A rename now mirrors into ``spec.dataflow.name`` (#230) - the name has two
+    # stores and they have to agree. Everything ELSE in the spec, dataset refs
+    # included, must still come back byte-identical, so the expectation is the
+    # saved spec with exactly that one field moved: still a full-equality check,
+    # just one that no longer asserts the two stores may disagree.
+    expected_spec = copy.deepcopy(saved_spec)
+    expected_spec["dataflow"]["name"] = "Renamed"
+    assert loaded["spec"] == expected_spec
     assert loaded["outputs"] == [{"node_id": "n1", "filename": "kept.data"}]
 
 
@@ -91,33 +100,22 @@ def test_list_projects(app, db, user_and_token, tmp_curio):
     services.save_project(user, ProjectCreate(name="P1", spec=_make_spec()))
     services.save_project(user, ProjectCreate(name="P2", spec=_make_spec()))
 
-    items = services.list_projects(user, scope="mine")
+    items = services.list_projects(user)
     assert len(items) == 2
 
 
-def test_soft_delete(app, db, user_and_token, tmp_curio):
+def test_delete_removes_the_row_and_the_files(app, db, user_and_token, tmp_curio):
+    """Delete is a hard delete. There is no soft variant since Archive was
+    removed (#261) — nothing survives it to be listed under another scope."""
     user, _ = user_and_token
     detail = services.save_project(user, ProjectCreate(name="Del", spec=_make_spec()))
-    services.delete_project(user, detail.id, purge=False)
-
-    items = services.list_projects(user, scope="mine")
-    assert len(items) == 0
-
-    archived = services.list_projects(user, scope="archived")
-    assert len(archived) == 1
-
-
-def test_purge_delete(app, db, user_and_token, tmp_curio):
-    user, _ = user_and_token
-    detail = services.save_project(user, ProjectCreate(name="Purge", spec=_make_spec()))
     proj_dir = storage.project_dir(services._user_dir_key(user), detail.id)
     assert proj_dir.exists()
 
-    services.delete_project(user, detail.id, purge=True)
+    services.delete_project(user, detail.id)
     assert not proj_dir.exists()
 
-    items = services.list_projects(user, scope="mine")
-    assert len(items) == 0
+    assert services.list_projects(user) == []
 
 
 def test_duplicate_project(app, db, user_and_token, tmp_curio):
@@ -461,3 +459,50 @@ def test_load_leaves_a_spec_without_the_packages_key_alone(app, db, user_and_tok
     detail = services.save_project(user, ProjectCreate(name="Legacy", spec=_make_spec()))
     loaded = services.load_project(user, detail.id)
     assert "packages" not in loaded["spec"]["dataflow"]
+
+
+class TestSyncDataflowName:
+    """``_sync_dataflow_name`` mirrors an explicit rename into the spec (#230).
+
+    Kept separate from ``_ensure_dataflow_identity`` on purpose: that one is a
+    backfill and must never overwrite a spec's own name (#148), while this one
+    exists precisely to overwrite it — but only when the caller asked to rename.
+    """
+
+    def test_renames_and_reports_the_change(self):
+        spec = _make_spec("old")
+        assert services._sync_dataflow_name(spec, "new") is True
+        assert spec["dataflow"]["name"] == "new"
+
+    def test_leaves_provenance_id_alone(self):
+        # Already-recorded provenance versions are keyed on the old name, so
+        # rewriting this would orphan them.
+        spec = _make_spec("old")
+        services._sync_dataflow_name(spec, "new")
+        assert spec["dataflow"]["provenance_id"] == "old"
+
+    def test_touches_nothing_else_in_the_spec(self):
+        spec = _make_spec("old")
+        before = {k: v for k, v in spec["dataflow"].items() if k != "name"}
+        services._sync_dataflow_name(spec, "new")
+        after = {k: v for k, v in spec["dataflow"].items() if k != "name"}
+        assert after == before
+
+    def test_reports_no_change_when_the_name_already_matches(self):
+        # The caller uses the return value to decide whether to rewrite the spec
+        # file, so a no-op rename must not dirty it.
+        spec = _make_spec("same")
+        assert services._sync_dataflow_name(spec, "same") is False
+
+    @pytest.mark.parametrize(
+        "spec",
+        [None, "not a dict", 42, {}, {"dataflow": None}, {"dataflow": "nope"}],
+    )
+    def test_tolerates_a_spec_it_cannot_use(self, spec):
+        assert services._sync_dataflow_name(spec, "new") is False
+
+    @pytest.mark.parametrize("name", [None, "", 0, 123])
+    def test_ignores_a_name_that_is_not_a_rename(self, name):
+        spec = _make_spec("old")
+        assert services._sync_dataflow_name(spec, name) is False
+        assert spec["dataflow"]["name"] == "old"

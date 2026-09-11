@@ -259,6 +259,25 @@ export class TrillGenerator {
                 trill_node.metadata.appearance = node.data.appearance;
             }
 
+            // #237: per-node comments persist at metadata.comments, beside
+            // appearance/keywords. Emitted only when non-empty, so a node
+            // nobody commented on serializes byte-identically to before.
+            if(Array.isArray(node.data.comments) && node.data.comments.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.comments = node.data.comments;
+            }
+
+            // #262: the Spatial Join's chosen polygon property persists at
+            // metadata.spatialJoin, beside the other per-node settings.
+            if(node.data.spatialJoin != undefined && typeof node.data.spatialJoin.nameProperty === "string" && node.data.spatialJoin.nameProperty){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.spatialJoin = { nameProperty: node.data.spatialJoin.nameProperty };
+            }
+
             if(typeof node.data.title === "string" && node.data.title)
                 trill_node.title = node.data.title;
 

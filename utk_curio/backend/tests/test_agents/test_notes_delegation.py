@@ -12,6 +12,7 @@ import json
 import pytest
 
 from utk_curio.backend.app.agents import tools as agent_tools
+from utk_curio.backend.app.common.user_storage import users_base
 from utk_curio.backend.app.agents.services import (
     _NOTES_REPLY_CONTRACT,
     _delegated_search_results,
@@ -98,7 +99,11 @@ class TestPresentationTemplates:
     def _install(self, tmp_path, monkeypatch, *, dir_name="curio.notes@1",
                  enlist_project=None):
         monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
-        pkg = tmp_path / ".curio" / "users" / "guest" / "packages" / dir_name
+        # ``users_base()``, not a literal: under CURIO_TESTING the tree is
+        # ``.curio/test/users/``, so a hand-built ``.curio/users/`` is invisible
+        # to the code under test. Called after the monkeypatch above, which is
+        # the env it reads.
+        pkg = users_base() / "guest" / "packages" / dir_name
         pkg.mkdir(parents=True)
         manifest = {
             "id": dir_name.split("@")[0], "version": "1.0.0", "name": "Notes",
@@ -117,8 +122,7 @@ class TestPresentationTemplates:
         }
         (pkg / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         if enlist_project:
-            proj = (tmp_path / ".curio" / "users" / "guest" / "projects"
-                    / enlist_project)
+            proj = users_base() / "guest" / "projects" / enlist_project
             proj.mkdir(parents=True, exist_ok=True)
             (proj / "spec.trill.json").write_text(json.dumps({
                 "dataflow": {"nodes": [], "edges": [], "packages": [dir_name]},
@@ -238,11 +242,7 @@ class TestDataflowBuilderNotesLane:
         pid = resp.get_json()["id"]
         with client.application.app_context():
             user_key = _user_dir_key(user)
-        import os
-        from pathlib import Path
-
-        pkg = (Path(os.environ["CURIO_LAUNCH_CWD"]) / ".curio" / "users"
-               / user_key / "packages" / "curio.notes@1")
+        pkg = users_base() / user_key / "packages" / "curio.notes@1"
         pkg.mkdir(parents=True, exist_ok=True)
         (pkg / "manifest.json").write_text(
             json.dumps(_notes_pkg_manifest()), encoding="utf-8")

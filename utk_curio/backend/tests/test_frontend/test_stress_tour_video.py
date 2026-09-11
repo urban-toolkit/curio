@@ -88,6 +88,7 @@ from .stress import (
 )
 from .utils import (
     _wait_for_reactflow_ready,
+    accept_confirm_dialog,
     activate_header_icon,
     api_json,
     assert_vega_canvas_rendered,
@@ -619,15 +620,14 @@ def chapter_access(run: StressRun) -> None:
         search.fill("no-such-project")
         page.wait_for_timeout(900)
         expect(
-            page.get_by_text("No projects match the current filters.")
+            page.get_by_text("No projects match that search.")
         ).to_be_visible(timeout=8000)
         search.fill("")
         page.wait_for_timeout(700)
 
-    for tab in ("Recent", "Archived", "All projects"):
-        with run.step(f"Filter: {tab}"):
-            tour.click(page.get_by_role("button", name=tab, exact=True).first)
-            page.wait_for_timeout(900)
+    # The "All projects" / "Recent" status tabs used to be cycled here. They
+    # returned the same rows and were removed with the rail (#286); search and
+    # sort are the filters now.
 
     with run.step("Re-sort the list"):
         select = page.get_by_label("Sort projects")
@@ -664,30 +664,34 @@ def chapter_access(run: StressRun) -> None:
         page.wait_for_timeout(2500)
 
     with run.step("Rename through the prompt"):
-        run.state["dialog"]["prompt"] = "Stress Alpha (renamed)"
+        # An in-app PromptDialog now (#197), so the name is typed into a real
+        # field rather than answered through the dialog policy.
         page.locator("[data-project-id]").first.click(button="right")
         page.wait_for_timeout(500)
         tour.click(page.get_by_text("Rename", exact=True).first)
+        rename = page.get_by_role("dialog", name="Rename dataflow")
+        expect(rename).to_be_visible(timeout=10000)
+        rename.get_by_label("Name").fill("Stress Alpha (renamed)")
+        page.wait_for_timeout(600)
+        tour.click(rename.get_by_role("button", name="Rename", exact=True))
         page.wait_for_timeout(2200)
-        run.state["dialog"]["prompt"] = None
 
-    with run.step("Archive one, then find it under Archived"):
-        page.locator("[data-project-id]").last.click(button="right")
-        page.wait_for_timeout(500)
-        tour.click(page.get_by_text("Archive", exact=True).first)
-        page.wait_for_timeout(2000)
-        tour.click(page.get_by_role("button", name="Archived", exact=True).first)
-        page.wait_for_timeout(1500)
-        run.snap("projects-archived")
-
-    with run.step("Delete it forever"):
-        archived = page.locator("[data-project-id]")
-        if archived.count():
-            archived.first.click(button="right")
+    # Archive used to sit between these two steps - right-click Archive, find
+    # it under the Archived tab, then delete it from there. Both the action
+    # and the tab were removed in #261; deletion is the only removal now.
+    with run.step("Delete one from the context menu"):
+        projects = page.locator("[data-project-id]")
+        if projects.count():
+            projects.last.click(button="right")
             page.wait_for_timeout(500)
-            tour.click(page.get_by_text("Delete forever", exact=True).first)
+            tour.click(page.get_by_text("Delete", exact=True).first)
+            # The confirmation is an in-app ConfirmDialog now (#197).
+            confirm = page.get_by_role("dialog", name=re.compile(r"^Permanently delete "))
+            expect(confirm).to_be_visible(timeout=10000)
+            page.wait_for_timeout(800)
+            run.snap("projects-delete-confirm")
+            tour.click(confirm.get_by_role("button", name="Delete", exact=True))
             page.wait_for_timeout(2500)
-        tour.click(page.get_by_role("button", name="All projects", exact=True).first)
         page.wait_for_timeout(1200)
 
     with run.step("Import a Jupyter notebook as a dataflow"):
@@ -961,9 +965,13 @@ def chapter_canvas(run: StressRun) -> None:
         if add.count():
             add.first.click()
             page.wait_for_timeout(600)
-            rows = section.locator("input")
-            if rows.count():
-                rows.first.fill("table")
+            # Was ``rows.first.fill("table")`` against a free-text field. "table"
+            # is not a SupportedType, so it was exactly the value the old editor
+            # accepted and the registry then dropped -- the defect #219 fixed.
+            # The control is a closed dropdown now, so pick a real type.
+            type_select = page.locator('[aria-label="Input ports port 1 type 1"]')
+            if type_select.count():
+                type_select.select_option("DATAFRAME")
         run.snap("node-settings-ports")
 
     with run.step("Cancel out of Node settings"):
@@ -1193,7 +1201,9 @@ def chapter_nodes(run: StressRun) -> None:
                 severity="warning",
             )
 
-    for tab in ("Featured", "Browse all", "In dataflow", "Updates"):
+    # Featured and Updates are gone from the Node drawer: neither was a scope
+    # anything could fall into. What is left is everything, and this project.
+    for tab in ("Browse all", "In project"):
         with run.step(f"Node Catalog tab: {tab}", may_fail=True):
             button = page.locator(DRAWER_NODES).get_by_role(
                 "button", name=re.compile(f"^{re.escape(tab)}")
@@ -1228,28 +1238,28 @@ def chapter_nodes(run: StressRun) -> None:
             card = page.locator(f'article[data-pkg-dir="{dir_name}"]')
             card.first.scroll_into_view_if_needed()
             add = card.first.get_by_role(
-                "button", name=re.compile("Add to dataflow|Install")
+                "button", name=re.compile("Add to project|Install")
             )
             add.first.click()
             # A package declaring permissions puts InstallPermissionsDialog
             # between the click and the POST, so the response cannot be awaited
             # around the click itself. Its confirm button carries the same
-            # "Add to dataflow" wording, which is why it is found by the
+            # "Add to project" wording, which is why it is found by the
             # dialog's own heading rather than by the label.
             page.wait_for_timeout(1200)
             heading = page.get_by_role("heading", name=re.compile('^Add "'))
             if heading.count():
                 run.snap(f"permissions-{dir_name}")
                 # InstallPermissionsDialog's confirm defaults to the very same
-                # "Add to dataflow" wording as the card's button, so it is
+                # "Add to project" wording as the card's button, so it is
                 # scoped to the dialog the heading is a child of.
                 heading.first.locator("xpath=..").get_by_role(
-                    "button", name=re.compile("^Add to dataflow")
+                    "button", name=re.compile("^Add to project")
                 ).first.click()
             # pip runs synchronously inside the request for the heavy packages
             # (torch, rasterio, geopandas), capped at 30 minutes server-side.
             expect(
-                card.first.get_by_role("button", name=re.compile("Remove from dataflow"))
+                card.first.get_by_role("button", name=re.compile("Remove from project"))
             ).to_be_visible(timeout=1_900_000)
             dismiss_toasts(page)
             expected = PACKAGE_DEPS.get(dir_name, ())
@@ -1580,7 +1590,9 @@ def chapter_data(run: StressRun) -> None:
         page.wait_for_timeout(1200)
         run.snap("data-catalog-drawer")
 
-    for tab in ("Featured", "Browse all", "In dataflow", "Computed"):
+    # The Data drawer dropped Featured for the same reason. "Computed" stays:
+    # it is a real scope, the datasets nodes produced.
+    for tab in ("Browse all", "In project", "Computed"):
         with run.step(f"Data Catalog tab: {tab}", may_fail=True):
             page.locator(DRAWER_DATA).get_by_role(
                 "button", name=re.compile(f"^{re.escape(tab)}")
@@ -1604,13 +1616,17 @@ def chapter_data(run: StressRun) -> None:
                          severity="warning")
                 continue
             card.first.scroll_into_view_if_needed()
-            add = card.first.get_by_role("button", name=re.compile("^Add to dataflow"))
+            add = card.first.get_by_role("button", name=re.compile("^Add to project"))
             if not add.count():
                 continue
             add.first.click()
+            # The Data catalog confirms an add now (#196).
+            accept_confirm_dialog(
+                page, title=re.compile(r"^Add "), button="Add to project"
+            )
             expect(
                 card.first.get_by_role(
-                    "button", name=re.compile("Remove from dataflow")
+                    "button", name=re.compile("Remove from project")
                 )
             ).to_be_visible(timeout=300000)
             added += 1
@@ -1809,12 +1825,15 @@ def chapter_data(run: StressRun) -> None:
         card = page.locator(f'article[data-dataset-id="{dataset_id}"]')
         assert card.count(), f"no card for the uploaded dataset {dataset_id}"
         card.first.scroll_into_view_if_needed()
-        add = card.first.get_by_role("button", name=re.compile("^Add to dataflow"))
+        add = card.first.get_by_role("button", name=re.compile("^Add to project"))
         if add.count():
             tour.click(add.first)
+            accept_confirm_dialog(
+                page, title=re.compile(r"^Add "), button="Add to project"
+            )
             expect(
                 card.first.get_by_role(
-                    "button", name=re.compile("Remove from dataflow")
+                    "button", name=re.compile("Remove from project")
                 )
             ).to_be_visible(timeout=120000)
         else:
@@ -2106,7 +2125,7 @@ def chapter_agents(run: StressRun) -> None:
                          step="Add all agents to the dataflow", severity="warning")
                 continue
             card.first.scroll_into_view_if_needed()
-            add = card.first.get_by_role("button", name=re.compile("^Add to dataflow"))
+            add = card.first.get_by_role("button", name=re.compile("^Add to project"))
             if not add.count():
                 installed.append(coord)      # already in, e.g. a required closure
                 continue

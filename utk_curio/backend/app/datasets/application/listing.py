@@ -196,6 +196,28 @@ class CatalogListing:
         # "available", never "installed"; the marker produced phantom installed
         # rows whose Uninstall then 404d (no ref to remove).
 
+        # Whether the user put this dataset in "all projects". A property of the
+        # ACCOUNT, so it is independent of `installed`, which is derived from
+        # one dataflow's spec refs.
+        #
+        # This is what the palette and the drawer need when there is no dataflow
+        # yet: a dataflow is created on its first save, so `installed` is false
+        # for everything and both surfaces rendered empty - even for datasets
+        # the user had just added to every project. They are in this one too,
+        # the moment it exists.
+        try:
+            from utk_curio.backend.app.datasets import defaults as dataset_defaults
+
+            in_all = (
+                dataset_defaults.load_dataset_defaults(self._paths._user_key())
+                if self.user is not None
+                else set()
+            )
+        except Exception:  # noqa: BLE001 - a listing must not fail on this
+            in_all = set()
+        for item in items:
+            item["inAllProjects"] = item.get("id") in in_all
+
         items = dedupe_items(items)
 
         # A computed dataset published to the hub keeps the title captured at
@@ -298,8 +320,13 @@ class CatalogListing:
         if group_osm:
             items = collapse_osm_groups(items)
 
-        if q:
-            needle = q.casefold()
+        # Surrounding whitespace is not part of the needle (#231). Settled here,
+        # the single chokepoint, because the two callers disagreed: the HTTP route
+        # passes ``request.args`` through raw while the agent tool (``agents/tools
+        # .py::_param``) already strips. A whitespace-only query is therefore no
+        # query at all, rather than one that matches nothing.
+        needle = (q or "").strip().casefold()
+        if needle:
             items = [
                 item for item in items
                 if needle in " ".join([
@@ -717,9 +744,7 @@ class CatalogListing:
             "path": resolved,
         }
 
-    def dataset_usage(
-        self, dataset_id: str, *, include_archived: bool = False
-    ) -> list[dict[str, Any]]:
+    def dataset_usage(self, dataset_id: str) -> list[dict[str, Any]]:
         """Dataflows across the user's projects that use *dataset_id*.
 
         Powers the standalone catalog detail page, which has no live canvas:
@@ -730,11 +755,14 @@ class CatalogListing:
         ``[{dataflowId, dataflowName, nodeCount, nodes: [{nodeId, nodeType}]}]``
         sorted by name.
 
-        *include_archived* widens the scan to archived (soft-deleted) projects.
-        The public ``/usage`` endpoint stays active-only (archived rows would
-        reference un-openable projects in the UI), but destructive gates -
-        delete's ref strip and uninstall's orphan-dir check - must see archived
-        refs too, or they destroy data an archived project still uses (#176).
+        Scans every project the user has. This used to take an
+        *include_archived* flag: the destructive gates - delete's ref strip and
+        uninstall's orphan-dir check - had to widen the scan to archived
+        projects or they destroyed data an archived project still used (#176).
+        Archive was removed in #261 and its migration purged every archived
+        row, so there is no longer a class of project this scan can miss. **If
+        a soft-deleted or hidden project state is ever reintroduced, this scan
+        must see it** - that is what #176 was about.
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
@@ -742,9 +770,8 @@ class CatalogListing:
         from utk_curio.backend.app.projects import storage as project_storage
 
         user_key = self._paths._user_key()
-        scope = "all" if include_archived else "mine"
         usages: list[dict[str, Any]] = []
-        for project in projects_repo.list_for_user(self.user.id, scope=scope):
+        for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
             consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id, project.id)
             if consumers is None:

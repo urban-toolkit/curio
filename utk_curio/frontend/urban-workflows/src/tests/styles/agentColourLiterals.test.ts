@@ -44,6 +44,67 @@ const FILES = AGENT_DIRS.flatMap(cssFiles);
 const HEX = /#[0-9a-fA-F]{3,8}\b/;
 const COMMENT = /^\s*(\/\*|\*|\/\/)/;
 
+/**
+ * The lines of *source* that are actually CSS, with comments removed.
+ *
+ * Matching ``COMMENT`` line by line only recognised a line that OPENS a comment
+ * (or continues one drawn in the ``*``-prefixed style). A block comment whose
+ * continuation lines are plain prose — the style used throughout these files —
+ * was therefore treated as code, so an issue reference like ``(#227)`` read as
+ * a three-digit colour literal and failed the check on a file with none.
+ *
+ * Tracking the open/close state removes that class of false positive rather
+ * than teaching the regex about one more comment shape.
+ */
+function codeLines(source: string): string[] {
+  const out: string[] = [];
+  let inBlock = false;
+  for (const raw of source.split("\n")) {
+    let line = raw;
+    if (inBlock) {
+      const end = line.indexOf("*/");
+      if (end === -1) continue;
+      line = line.slice(end + 2);
+      inBlock = false;
+    }
+    // Drop any comment that opens and closes on this line, then note one that
+    // opens and does not.
+    line = line.replace(/\/\*[\s\S]*?\*\//g, " ");
+    const start = line.indexOf("/*");
+    if (start !== -1) {
+      inBlock = true;
+      line = line.slice(0, start);
+    }
+    if (COMMENT.test(line)) continue;
+    out.push(line);
+  }
+  return out;
+}
+
+describe("the comment stripper", () => {
+  // A guard on the guard's own fix: widening what counts as a comment must not
+  // also hide a real literal sitting after one.
+  const offending = (css: string) => codeLines(css).filter((line) => HEX.test(line));
+
+  it("still catches a colour literal", () => {
+    expect(offending(".a { color: #ff0000; }")).toHaveLength(1);
+  });
+
+  it("catches one on the same line as a comment", () => {
+    expect(offending("/* why */ .a { color: #ff0000; }")).toHaveLength(1);
+  });
+
+  it("catches one after a block comment closes", () => {
+    expect(offending("/* a\n   b (#227)\n*/\n.a { color: #ff0000; }")).toHaveLength(1);
+  });
+
+  it("ignores an issue reference inside a block comment", () => {
+    expect(offending("/* fixed the crop\n   in the dock (#227). */\n.a { color: var(--x); }")).toEqual(
+      [],
+    );
+  });
+});
+
 describe("agent stylesheets carry no colour literals", () => {
   it("found the stylesheets it is guarding", () => {
     // A guard on the guard: a moved or renamed directory would make every
@@ -54,11 +115,9 @@ describe("agent stylesheets carry no colour literals", () => {
   it.each(FILES.map((f) => [path.relative(SRC, f).split(path.sep).join("/"), f]))(
     "%s",
     (_name, file) => {
-      const offenders = fs
-        .readFileSync(file, "utf8")
-        .split("\n")
-        .filter((line) => !COMMENT.test(line))
-        .filter((line) => HEX.test(line));
+      const offenders = codeLines(fs.readFileSync(file, "utf8")).filter((line) =>
+        HEX.test(line),
+      );
       expect(offenders).toEqual([]);
     },
   );

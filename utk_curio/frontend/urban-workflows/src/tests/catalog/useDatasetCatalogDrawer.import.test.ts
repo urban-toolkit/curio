@@ -56,6 +56,19 @@ import {
   datasetCatalogApi,
 } from "../../services/datasetCatalog";
 
+type DrawerResult = { current: ReturnType<typeof useDatasetCatalogDrawer> };
+
+/** Presses the confirm button on whatever dialog the drawer just raised
+ *  (#196, #197), and waits for the action behind it. A no-op when the handler
+ *  under test does not confirm, so one helper serves every action. */
+async function acceptPendingConfirm(result: DrawerResult): Promise<void> {
+  const pending = result.current.confirmAction;
+  if (!pending) return;
+  await act(async () => {
+    await pending.run();
+  });
+}
+
 describe("useDatasetCatalogDrawer.onPickImport", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -182,6 +195,8 @@ describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
     await act(async () => {
       await result.current.onInstall(group as never);
     });
+    // The Data catalog confirms an add now (#196), so accept it.
+    await acceptPendingConfirm(result);
 
     // Added each real layer, never the synthetic group id.
     expect(installSpy).toHaveBeenCalledTimes(2);
@@ -191,7 +206,7 @@ describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
     // dataflowDatasets got the real per-layer refs (so a later save won't drop them).
     expect(mockSetDataflowDatasets).toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
-      "Added 2 layers from back_bay to this dataflow.",
+      "Added 2 layers from back_bay to this project.",
       "success",
     );
 
@@ -237,6 +252,7 @@ describe("useDatasetCatalogDrawer refresh flow (#178)", () => {
     await act(async () => {
       await result.current.onInstall(dataset as never);
     });
+    await acceptPendingConfirm(result);
 
     // One event dispatched; the hook's own listener performed the single
     // bust-cache reload — no direct reload from the handler.
@@ -275,7 +291,6 @@ describe("useDatasetCatalogDrawer refresh flow (#178)", () => {
     const usageSpy = jest
       .spyOn(datasetCatalogApi, "datasetUsage")
       .mockResolvedValue([] as never);
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
     const refreshSpy = jest.fn();
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
 
@@ -285,6 +300,9 @@ describe("useDatasetCatalogDrawer refresh flow (#178)", () => {
         handler
       ](dataset);
     });
+    // onUnpublish and onDelete raise a confirmation first (#197); onUninstall
+    // and onPublish act straight away. Accept whichever is pending.
+    await acceptPendingConfirm(result);
 
     expect(apiSpy).toHaveBeenCalled();
     expect(refreshSpy).toHaveBeenCalledTimes(1);
@@ -294,7 +312,6 @@ describe("useDatasetCatalogDrawer refresh flow (#178)", () => {
     expect(mockCatalogReload).toHaveBeenCalledWith();
 
     window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
-    confirmSpy.mockRestore();
     usageSpy.mockRestore();
     apiSpy.mockRestore();
   });
@@ -329,25 +346,25 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
     const deleteSpy = jest
       .spyOn(datasetCatalogApi, "deleteDataset")
       .mockResolvedValue({ id: dataset.id, deleted: true, removedFrom: ["a", "b", "c"] });
-    let confirmMessage = "";
-    const confirmSpy = jest.spyOn(window, "confirm").mockImplementation((msg) => {
-      confirmMessage = String(msg);
-      return true;
-    });
-
     const { result } = renderHook(() => useDatasetCatalogDrawer(true));
     await act(async () => {
       await result.current.onDelete(dataset as never);
     });
 
+    // The usage prefetch resolves BEFORE the dialog opens, so the body is
+    // complete the moment it appears (#177 copy, now in the modal).
+    const confirmMessage = String(result.current.confirmAction?.body ?? "");
     expect(usageSpy).toHaveBeenCalledWith(dataset.id);
+    // The every-dataflow scope is stated whether or not usage resolved.
+    expect(confirmMessage).toContain("every dataflow that uses it");
     expect(confirmMessage).toContain("used in 3 dataflows");
     expect(confirmMessage).toContain("consumed by 2 nodes");
     // The old wording keyed on consumerNodeCount is gone.
     expect(confirmMessage).not.toContain("referenced by 5 nodes");
+
+    await acceptPendingConfirm(result);
     expect(deleteSpy).toHaveBeenCalledWith(dataset.id);
 
-    confirmSpy.mockRestore();
     usageSpy.mockRestore();
     deleteSpy.mockRestore();
   });
@@ -359,20 +376,17 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
     const deleteSpy = jest
       .spyOn(datasetCatalogApi, "deleteDataset")
       .mockResolvedValue({ id: dataset.id, deleted: true, removedFrom: [] });
-    let confirmMessage = "";
-    const confirmSpy = jest.spyOn(window, "confirm").mockImplementation((msg) => {
-      confirmMessage = String(msg);
-      return true;
-    });
-
     const { result } = renderHook(() => useDatasetCatalogDrawer(true));
     await act(async () => {
       await result.current.onDelete(dataset as never);
     });
 
-    expect(confirmMessage).toContain("referenced by 5 nodes");
+    const body = String(result.current.confirmAction?.body ?? "");
+    expect(body).toContain("referenced by 5 nodes");
+    // ...and the scope sentence survives the fallback path, which is the case
+    // where the user knows least about the blast radius.
+    expect(body).toContain("every dataflow that uses it");
 
-    confirmSpy.mockRestore();
     usageSpy.mockRestore();
     deleteSpy.mockRestore();
   });
@@ -389,12 +403,12 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
       removedFrom: [],
       failedDirs: ["computed.flow-1.n1@1"],
     } as never);
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
 
     const { result } = renderHook(() => useDatasetCatalogDrawer(true));
     await act(async () => {
       await result.current.onDelete(dataset as never);
     });
+    await acceptPendingConfirm(result);
 
     expect(deleteSpy).toHaveBeenCalledWith(dataset.id);
     const [message, level] = mockShowToast.mock.calls.at(-1)!;
@@ -407,7 +421,6 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
       "success",
     );
 
-    confirmSpy.mockRestore();
     usageSpy.mockRestore();
     deleteSpy.mockRestore();
   });
@@ -422,18 +435,17 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
       removedFrom: [],
       failedDirs: ["computed.flow-1.n1@1"],
     } as never);
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
 
     const { result } = renderHook(() => useDatasetCatalogDrawer(true));
     await act(async () => {
       await result.current.onDelete(dataset as never);
     });
+    await acceptPendingConfirm(result);
 
     // Called with nothing: wholesale invalidation happens in
     // notifyDatasetCatalogRefresh, so the reload has no key left to bust.
     expect(mockCatalogReload).toHaveBeenCalledWith();
 
-    confirmSpy.mockRestore();
     usageSpy.mockRestore();
     deleteSpy.mockRestore();
   });
@@ -441,16 +453,18 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
   it("does not delete when the dialog is dismissed", async () => {
     const usageSpy = jest.spyOn(datasetCatalogApi, "datasetUsage").mockResolvedValue([]);
     const deleteSpy = jest.spyOn(datasetCatalogApi, "deleteDataset");
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(false);
 
     const { result } = renderHook(() => useDatasetCatalogDrawer(true));
     await act(async () => {
       await result.current.onDelete(dataset as never);
     });
 
+    // The dialog is up but never confirmed — dismissing it must delete nothing.
+    expect(result.current.confirmAction).not.toBeNull();
+    act(() => result.current.dismissConfirm());
+    expect(result.current.confirmAction).toBeNull();
     expect(deleteSpy).not.toHaveBeenCalled();
 
-    confirmSpy.mockRestore();
     usageSpy.mockRestore();
     deleteSpy.mockRestore();
   });

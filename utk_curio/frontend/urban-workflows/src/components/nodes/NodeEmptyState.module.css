@@ -1,0 +1,30 @@
+/* An empty node body, saying which kind of empty it is (#224).
+
+   Fills the body slot rather than sitting at the top of it: the states this
+   replaces rendered nothing at all, so anything less than the full box still
+   reads as "the node is broken and something is missing". */
+.root {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 100%;
+    min-height: 60px;
+    padding: 12px;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.title {
+    font-size: var(--curio-font-size-md);
+    color: var(--curio-text-secondary);
+}
+
+.hint {
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-muted);
+    /* A node body can be narrow; wrapping beats clipping the instruction. */
+    max-width: 26ch;
+    line-height: 1.35;
+}

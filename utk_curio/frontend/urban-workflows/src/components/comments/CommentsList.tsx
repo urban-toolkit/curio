@@ -7,16 +7,24 @@ import {
   faTrash,
 } from "@fortawesome/free-solid-svg-icons";
 
+import { newComment } from "../../utils/nodeComments";
 import { useUserContext } from "../../providers/UserProvider";
 import { useToastContext } from "../../providers/ToastProvider";
 
 export interface IComment {
-  id: number;
+  /** A uuid. Was `comments.length + 1`, which collided after any delete. */
+  id: string;
   text: string;
+  /** Username of the author - the stable identity `canDelete` compares
+   *  against, and what is persisted. `user.name` is the display name. */
+  author: string;
+  /** ISO timestamp. Empty for a comment restored from a spec that predates it. */
+  createdAt: string;
   user: {
     name: string;
     photo: string | null;
   };
+  /** Derived per viewer on read, never persisted (see utils/nodeComments). */
   canDelete: boolean;
   resolved: boolean;
 }
@@ -29,8 +37,8 @@ export const CommentsList = ({
 }: {
   comments: IComment[];
   addComment: (comment: IComment) => void;
-  deleteComment: (commentId: number) => void;
-  toggleResolveComment: (commentId: number) => void;
+  deleteComment: (commentId: string) => void;
+  toggleResolveComment: (commentId: string) => void;
 }) => {
   const { user } = useUserContext();
   const { showToast } = useToastContext();
@@ -40,25 +48,24 @@ export const CommentsList = ({
     if (newCommentText.trim() === "") { showToast("Please write a comment before submitting.", "warning"); return; }
     if (!user) { showToast("Please sign in to post a comment.", "warning"); return; }
 
-    addComment({
-      id: comments.length + 1,
-      text: newCommentText,
-      user: {
+    addComment(
+      newComment(newCommentText, {
+        username: user.username,
         name: user.name,
         photo: user.profile_image,
-      },
-      canDelete: true,
-      resolved: false,
-    });
+      }),
+    );
 
     setNewCommentText("");
   };
 
   return (
     <div style={containerStyles}>
-      {comments.map((comment, index) => (
+      {comments.map((comment) => (
         <div
-          key={index}
+          key={comment.id}
+          data-curio-comment="true"
+          data-curio-comment-resolved={comment.resolved ? "true" : "false"}
           style={{
             ...commentStyles,
             ...(comment.resolved ? { borderColor: "green" } : {}),
@@ -114,6 +121,7 @@ export const CommentsList = ({
                 cursor: "pointer",
                 ...(comment.resolved ? { color: "green" } : {}),
               }}
+              data-curio-comment-resolve="true"
               onClick={() => toggleResolveComment(comment.id)}
             >
               <FontAwesomeIcon
@@ -132,6 +140,7 @@ export const CommentsList = ({
             <FontAwesomeIcon
               icon={faTrash}
               style={{ ...iconStyle, fontSize: "10px" }}
+              data-curio-comment-delete="true"
               onClick={() => deleteComment(comment.id)}
             />
           </div>
@@ -145,12 +154,27 @@ export const CommentsList = ({
         style={{ width: "100%", minHeight: "50px", fontSize: "10px" }}
       ></textarea>
 
-      <div
-        style={{ width: "100%", display: "flex", justifyContent: "flex-end" }}
+      {/* A real button, not a click-handling div: this is the control that
+          posts the comment, and it had no role, no accessible name and no way
+          to reach it from the keyboard. It also had no test hook, so an e2e
+          test could not tell "posted" from "typed but never submitted". */}
+      <button
+        type="button"
+        aria-label="Post comment"
+        data-curio-comment-submit="true"
         onClick={onAddComment}
+        style={{
+          width: "100%",
+          display: "flex",
+          justifyContent: "flex-end",
+          border: 0,
+          background: "transparent",
+          padding: 0,
+          cursor: "pointer",
+        }}
       >
         <FontAwesomeIcon icon={faArrowRight} style={iconStyle as any} />
-      </div>
+      </button>
     </div>
   );
 };

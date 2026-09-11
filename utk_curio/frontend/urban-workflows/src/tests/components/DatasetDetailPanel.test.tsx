@@ -112,23 +112,25 @@ describe("DatasetDetailPanel header actions", () => {
     mockUseDatasetLineage.mockReset();
   });
 
-  it("shows Unpublish (not Publish) for an already-published dataset", () => {
-    renderPanel(lineageFixture(), catalogItem({ origin: "hub", installed: true }));
-    expect(screen.getByRole("button", { name: "Unpublish" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Publish" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("shows Publish for an unpublished dataset", () => {
-    renderPanel(
-      lineageFixture(),
+  it("offers no publish control at all, for any dataset", () => {
+    // This panel used to carry its own Publish / Unpublish pair, with NO
+    // ownership gate: the first fixture below is a `hub` dataset - one the
+    // installation shipped, that the user never published and cannot withdraw -
+    // and it was offered a red "Unpublish" anyway.
+    //
+    // Publishing is decided in the Data Catalog page's right-hand drawer, which
+    // gates on `isUserOwnedDataset`. Having the same decision in two places with
+    // only one of them gated is exactly how the ungated one survived three
+    // rounds of tightening the other.
+    for (const item of [
+      catalogItem({ origin: "hub", installed: true }),
       catalogItem({ origin: "computed", installed: false, publishedToHub: false }),
-    );
-    expect(
-      screen.getByRole("button", { name: "Publish" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Unpublish" })).not.toBeInTheDocument();
+    ]) {
+      const { unmount } = renderPanel(lineageFixture(), item);
+      expect(screen.queryByRole("button", { name: "Unpublish" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("disables Export for multi-part bundle datasets", () => {

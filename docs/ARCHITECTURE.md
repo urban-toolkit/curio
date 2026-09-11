@@ -409,7 +409,7 @@ When a user clicks the play button on a node, the following sequence occurs:
    Returns: { "path": "<new_artifact_id>", "dataType": "<kind>" }
 
 5. Backend reads sandbox response
-   Returns to Frontend: { stdout, stderr, output: { path: <artifact_id>, dataType } }
+   Returns to Frontend: { stdout, stderr, output: { path: <artifact_id>, dataType }, missingModule }
 
 6. Frontend: outputCallback(nodeId, output)
    - Updates FlowProvider.outputs[] with new artifact ID
@@ -685,6 +685,8 @@ The framework needs to boot before any manifests can be walked, so `pip install 
 
 Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → Data ⏷ → Installed libraries) sit in a third bucket, per-user JSON at `.curio/users/<u>/installed-libraries.json`, and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
 
+The same route is reachable without opening that modal: when a node run ends in `ModuleNotFoundError`, `/processPythonCode` carries a `missingModule` field naming the import and the distribution that provides it (`packages/missing_import.py`, sharing `dependency_scanner`'s alias table and passing `pip_runner.validate_python_requirement` before it is offered), and the node's output panel renders an **Install** button beside the traceback. It is a click rather than an automatic install for the same reason the catalog's is: pip reaches the interpreter every node on this instance shares.
+
 ---
 
 ## Backend API Reference
@@ -784,7 +786,7 @@ Catalog and account scope:
 |---|---|---|
 | `/api/agents/catalog` | GET | List the agent definitions available to add (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
 | `/api/agents/provider-default` | GET | The deployment's default provider, base URL and model, so AI Settings can show what a user inherits. The API key is reported as a boolean only |
-| `/api/agents/provider-models` | POST | The models an OpenAI-compatible endpoint reports it serves, so AI Settings can offer a dropdown instead of a free-text box. POST because the panel asks *before* the user saves, carrying the base URL and key on screen; anything omitted falls back to the account's resolved provider. Non-OpenAI providers answer `{models: [], listable: false}` |
+| `/api/agents/provider-models` | POST | The models AI Settings can offer for the endpoint being configured. POST because the panel asks *before* the user saves, carrying the base URL and key on screen; anything omitted falls back to the account's resolved provider. Hybrid (#241), both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is still a 400 |
 | `/api/agents/imports` | GET | List the account's imported definitions, as cards |
 | `/api/agents/imports` | POST | Record `<id>@<version>` in My imports. Never adds to a dataflow |
 | `/api/agents/imports/upload` | POST | Upload a user-authored definition (`manifest` + `prompts` as JSON, no archives). Trust forced to `imported`, digests stamped from the bytes, **409** on an existing coordinate |
@@ -921,7 +923,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/project_agents.py` | The per-dataflow lockfile in `spec.dataflow.agents` |
 | `backend/app/agents/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
 | `backend/app/agents/provider_config.py` | The single provider resolver: guest env, then per-user `llm_*`, then the deployment default |
-| `backend/app/agents/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported |
+| `backend/app/agents/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported. Chat completions, streaming, and the live model listing |
+| `backend/app/agents/model_catalog.py` | Per-account record of what each provider endpoint last reported, replayed when a live listing is impossible (#241). Derived from the API, never hand-authored; a suggestion, never an allowlist |
 | `backend/app/agents/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives |
 | `backend/app/agents/ledger.py` | Append-only per-day record of runs and tokens; flock-guarded. A record, not a gate |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |

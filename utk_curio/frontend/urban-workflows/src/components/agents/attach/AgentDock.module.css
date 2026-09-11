@@ -18,16 +18,43 @@
 /* Avatar chips are the shared AgentAvatarBadge; the chat panel's styles live
    in AgentChatPanel.module.css (concept-aligned visual system). */
 
-/* The dataflow goal, shown in the dock beside the agents that read it. */
-.goalInput {
-  min-width: 260px;
+/* The dataflow goal, shown in the dock beside the agents that read it.
+
+   The label and the input travel together, so the field keeps its name once a
+   value is typed and the placeholder is no longer there to carry it. */
+.goalField {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* The dock is a flex row and this is one of its items; without a min-width
+     of 0 a flex item refuses to shrink below its content, which is what pushed
+     the input past the dock's max-width and cropped it (#227). */
+  min-width: 0;
+  flex: 1 1 auto;
   max-width: 420px;
+}
+
+.goalLabel {
+  flex: 0 0 auto;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-secondary);
+}
+
+.goalInput {
+  /* A real width, not a floor. ``min-width: 260px`` with no width made the
+     input size to its CONTENT inside a flex row, so a placeholder longer than
+     the box was simply clipped -- max-width never came into play. */
+  width: 100%;
+  min-width: 0;
   padding: 4px 10px;
   border: 1px solid var(--curio-border);
   border-radius: 999px;
   background: var(--curio-surface-alt);
   color: var(--curio-text-primary);
   font-size: var(--curio-font-size-sm);
+  /* A value longer than the field is the normal case for a goal, so say so
+     rather than cutting a word in half. */
+  text-overflow: ellipsis;
   outline: none;
 }
 

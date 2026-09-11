@@ -19,6 +19,7 @@ def enrich_points_with_polygons(
     points: List[dict],
     polygon_fc: dict,
     name_property: str = "name",
+    warnings: Optional[List[str]] = None,
 ) -> Tuple[List[dict], List[dict]]:
     """Tag each point with the containing polygon + compute per-polygon aggregates.
 
@@ -31,6 +32,10 @@ def enrich_points_with_polygons(
             features. Each feature should have ``properties.<name_property>``
             as a string; missing names fall back to ``polygon_<index>``.
         name_property: which property field is used as the polygon's tag.
+        warnings: optional list the function appends human-readable warnings
+            to - today, that polygons lacked ``name_property`` (#262). The
+            fallback to ``polygon_<index>`` used to be silent, so a wrong
+            property name looked like a successful join.
 
     Returns:
         ``(enriched_points, aggregates)``. ``enriched_points`` preserves
@@ -45,18 +50,35 @@ def enrich_points_with_polygons(
 
     polygons = []
     names = []
+    unnamed = 0
+    seen_props: set = set()
     for i, feat in enumerate(polygon_fc.get("features", [])):
         try:
             polygons.append(shape(feat["geometry"]))
             props = feat.get("properties") or {}
+            seen_props.update(k for k in props.keys() if isinstance(k, str))
             name = props.get(name_property)
             if not isinstance(name, str) or not name:
                 name = f"polygon_{i}"
+                unnamed += 1
             names.append(name)
         except Exception:
             # Skip malformed features; one bad polygon shouldn't abort the join.
             continue
     tree = STRtree(polygons) if polygons else None
+
+    if warnings is not None and polygons and unnamed:
+        if unnamed == len(polygons):
+            available = ", ".join(sorted(k for k in seen_props if k != "geometry")[:12])
+            warnings.append(
+                f"No polygon has a '{name_property}' property, so tags fall back to "
+                f"polygon_<index>. Available properties: {available or 'none'}."
+            )
+        else:
+            warnings.append(
+                f"{unnamed} of {len(polygons)} polygons lack a '{name_property}' "
+                f"property and are tagged polygon_<index>."
+            )
 
     enriched: List[dict] = []
     groups: dict = {}

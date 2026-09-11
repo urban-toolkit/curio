@@ -1,4 +1,5 @@
 import { apiFetch, getToken } from "../utils/authApi";
+import { backendUrl } from "../utils/backendUrl";
 
 /**
  * REST client for ``/api/packages`` — catalog, factory, and resolver APIs.
@@ -15,7 +16,7 @@ import { apiFetch, getToken } from "../utils/authApi";
  *     reload. Implemented in ``registry/packageRegistryBootstrap.ts`` (also
  *     mounted on ``window.curio`` from ``index.tsx`` for legacy callers).
  */
-const BACKEND_URL = process.env.BACKEND_URL || "";
+const BACKEND_URL = backendUrl();
 
 export interface PortPayload {
   types: string[];
@@ -126,6 +127,18 @@ export interface PackagePayload {
   readme?: string;
   /** When the manifest's package is read-only (e.g. ``curio.builtin@1``). */
   readOnly?: boolean;
+  /**
+   * Catalog endpoint only - whether THIS user published it, and may therefore
+   * withdraw it. The peer of `AgentCard.publishable`.
+   *
+   * The UI used to gate Unpublish on `readOnly !== true`, which is not the same
+   * question: `readOnly` is an author's opt-in that almost no manifest sets, so
+   * the gate matched nearly every package and offered Unpublish on ones that
+   * shipped with the deployment. Computed by the backend from the publisher
+   * record, and enforced there too - the unpublish route now 403s a
+   * non-publisher rather than trusting this flag.
+   */
+  publishable?: boolean;
 }
 
 /** Partial-update body for `PATCH /api/packages/<dirName>` (metadata editor). */
@@ -155,6 +168,21 @@ export interface InstallResponse {
   package: PackagePayload;
   integrity: Record<string, string>;
   replacedExisting: boolean;
+  /**
+   * ``{library: reason}`` for declared python deps that installed but cannot
+   * be imported. These three routes (sideload, "Save and install", "Reload
+   * from catalog") wrote the package files and never ran pip at all, so the
+   * answer used to be neither yes nor no.
+   */
+  importErrors?: Record<string, string>;
+  /**
+   * pip itself failed. Reported rather than raised: the package files are
+   * installed either way on these paths, so an error status would describe
+   * neither outcome.
+   */
+  dependencyError?: string;
+  /** Present exactly when pip changed a shared library under the server. */
+  restartRecommended?: { libs: string[] };
 }
 
 /** Response from ``factory/publish-catalog`` (fixture write). */
@@ -190,17 +218,46 @@ export interface ResolveResponse {
   conflicts: ResolveConflict[];
 }
 
+/** A declared python dep that is installed at a satisfying version but will
+ *  not import — typically a wheel whose native extension fails to load. */
+export interface WorkflowDepImportFailure {
+  /** Package dirName that declares the dep. */
+  package: string;
+  /** Distribution name of the library. */
+  dep: string;
+  /** Last line of the import error, e.g. a DLL load failure. */
+  error: string;
+}
+
 /** Response from `POST /api/packages/workflow-deps/check`. */
 export interface WorkflowDepsCheckResponse {
   /** Declared dependency packages (dirNames) that aren't installed yet, or
    *  are installed but missing one of their declared python deps. */
   packages: string[];
+  /** Deps that are present and version-satisfying but unimportable. Reinstalling
+   *  does NOT fix these — pip reports "already satisfied" and does nothing — so
+   *  they are reported for the user to repair, never auto-installed. Optional:
+   *  an older backend omits it. */
+  broken?: WorkflowDepImportFailure[];
+  /** The subset of `packages` that must NOT be installed without being asked
+   *  - too expensive to pull in as a side effect of opening a dataflow. They
+   *  are still reported as missing, because the canvas has to be able to name
+   *  them; installing them is the user's call, from the catalog (#233).
+   *  Absent on an older backend, which is why every read defaults it. */
+  deferred?: string[];
 }
 
 /** Response from `POST /api/packages/workflow-deps/install`. */
 export interface WorkflowDepsInstallResponse {
   /** Catalog package dirNames installed into the user store. */
   installedPackages: string[];
+  /**
+   * ``{library: reason}`` for declared python deps that installed but cannot
+   * be imported. pip is satisfied by metadata alone, so a wheel whose native
+   * extension is broken installs without complaint; report this rather than
+   * letting the user meet it later as a node's ImportError.
+   */
+  importErrors?: Record<string, string>;
 }
 
 /** Response from project-scoped install / uninstall and `GET /projects/<id>`. */
@@ -216,6 +273,13 @@ export interface ProjectPackagesResponse {
   /** dev/92 B-2: present exactly when this install's pip step actually
    * installed/changed shared libraries under the running server. */
   restartRecommended?: { libs: string[] };
+  /**
+   * ``{library: reason}`` for declared python deps that installed but cannot
+   * be imported. pip counts matching metadata as satisfaction, so a wheel
+   * whose native extension is broken installs without complaint; report this
+   * rather than letting the user meet it later as a node's ImportError.
+   */
+  importErrors?: Record<string, string>;
 }
 
 /** Per-project result row in a global (defaults) install response. */
@@ -229,6 +293,11 @@ export interface DefaultsInstallProjectResult {
 export interface DefaultsInstallResponse {
   /** New user-defaults list after the install. */
   packages: string[];
+  /**
+   * ``{library: reason}`` for declared python deps that installed but cannot
+   * be imported - the same claim the drawer and the dataflow loader make.
+   */
+  importErrors?: Record<string, string>;
   /** Per-project apply results so the UI can surface partial failures. */
   projects: DefaultsInstallProjectResult[];
 }
@@ -268,14 +337,12 @@ async function uploadArchive(
  * than the click handler - we hand it straight to ``URL.createObjectURL``
  * and revoke immediately after.
  */
-export function triggerBlobDownload(blob: Blob, filename: string): void {
-  const objUrl = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = objUrl;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(objUrl);
-}
+// The implementation moved to a leaf module: this file's import graph reaches
+// the whole node-package registry, and components that only wanted to save
+// bytes as a file were dragging that in. Re-exported so existing callers here
+// are unchanged.
+export { triggerBlobDownload } from "../utils/triggerBlobDownload";
+import { triggerBlobDownload } from "../utils/triggerBlobDownload";
 
 /** Download an already-installed package as a ``.curio.zip`` archive. */
 async function downloadArchive(dirName: string): Promise<void> {
@@ -513,13 +580,17 @@ export const packagesApi = {
   },
 
   /** Add a standalone library; backend pip-installs and persists.
-   *  ``installed`` lists what pip actually fetched; ``skipped`` lists
-   *  deps that were already importable (no work done — the UI uses
-   *  this to distinguish "Installed" from "Already installed"). */
+   *  ``installed`` lists what pip actually fetched; ``skipped`` lists deps
+   *  whose requirement was already satisfied (no work done — the UI uses this
+   *  to distinguish "Installed" from "Already installed"). Satisfied is not the
+   *  same as working: ``importError`` carries the reason when the library
+   *  cannot actually be imported, and the UI must report that as a failure
+   *  whatever the other two lists say. */
   addLibrary(kind: "python" | "js", spec: string): Promise<{
     standalone: { python: string[]; js: string[] };
     installed: string[];
     skipped: string[];
+    importError?: string | null;
   }> {
     return apiFetch("/api/packages/libraries", {
       method: "POST",

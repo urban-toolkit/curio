@@ -201,6 +201,33 @@ def set_title(spec: dict, attachment_id: str, title: str | None, *, edited: bool
     return record
 
 
+def detach_all_for_coord(spec: dict, coord: str) -> list[dict]:
+    """Remove every attachment of *coord*; return the records removed.
+
+    Uninstalling an agent from a dataflow used to rewrite ``dataflow.agents``
+    and leave ``dataflow.agentAttachments`` untouched, so the badge stayed on
+    the node and ``run_attachment`` - which, unlike ``attach``, is not gated on
+    the lockfile - kept running it. "Remove from dataflow" has to mean the
+    agent stops acting on the dataflow, which is what the drawer's own
+    confirmation has always told the user it means.
+    """
+    if not isinstance(spec, dict):
+        return []
+    df = spec.setdefault("dataflow", {})
+    if not isinstance(df, dict):
+        return []
+    records = df.get("agentAttachments")
+    if not isinstance(records, list):
+        return []
+    removed = [
+        r for r in records if isinstance(r, dict) and r.get("coord") == coord
+    ]
+    if not removed:
+        return []
+    df["agentAttachments"] = [r for r in records if r not in removed]
+    return removed
+
+
 def detach(spec: dict, attachment_id: str) -> bool:
     """Remove an attachment by id; return True if it was present."""
     df = spec.setdefault("dataflow", {})

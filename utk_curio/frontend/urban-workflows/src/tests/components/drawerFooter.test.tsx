@@ -70,8 +70,28 @@ describe("DrawerFooter", () => {
   it("disables the button while an import is in flight", () => {
     render(<DrawerFooter busy onSideload={jest.fn()} />);
     expect(
-      screen.getByRole("button", { name: "Import package" }).hasAttribute("disabled"),
+      screen.getByRole("button", { name: "Importing…" }).hasAttribute("disabled"),
     ).toBe(true);
+  });
+
+  it("says it is working, because the click can now sit in pip for minutes", () => {
+    // Sideloading installs the archive's declared python deps now. It used to
+    // return in well under a second; a disabled button still reading "Import
+    // package" for two minutes reads as broken rather than busy.
+    const { rerender } = render(<DrawerFooter busy={false} onSideload={jest.fn()} />);
+    expect(screen.getByRole("button", { name: "Import package" })).toBeTruthy();
+
+    rerender(<DrawerFooter busy onSideload={jest.fn()} />);
+    expect(screen.getByRole("button", { name: "Importing…" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Import package" })).toBeNull();
+  });
+
+  it("lets a caller name its own in-flight wording", () => {
+    render(
+      <DrawerFooter busy onSideload={jest.fn()} label="Import dataset"
+                    busyLabel="Importing dataset…" />,
+    );
+    expect(screen.getByRole("button", { name: "Importing dataset…" })).toBeTruthy();
   });
 
   it("accepts a custom label and an unrestricted filter", () => {

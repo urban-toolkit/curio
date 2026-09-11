@@ -160,6 +160,48 @@ def _resolve_definition(user_key: str, coord: str) -> AgentManifest | None:
     return publications.get_published_manifest(coord)
 
 
+def builtin_definition_bundle(coord: str) -> dict | None:
+    """A built-in's ``{manifest, prompts}`` straight from the roster and
+    ``llm-prompts/``, without materializing anything into a store."""
+    spec = builtin.get_builtin_spec(coord)
+    if spec is None:
+        return None
+    manifest = builtin.build_builtin_manifest(spec)
+    prompts: dict[str, str] = {}
+    for key, asset in manifest["prompts"].items():
+        text = builtin.read_prompt_text(coord, key)
+        if text is not None:
+            prompts[asset["path"]] = text
+    return {"manifest": manifest, "prompts": prompts}
+
+
+def read_definition_bundle_anywhere(user_key: str, coord: str) -> dict | None:
+    """The exportable definition of *coord* from wherever it is (#275).
+
+    ``GET /api/agents/definitions/<coord>`` read the user store only, so
+    "View details -> Export" on the Agent Catalog page - which lists the whole
+    roster and the shared catalog - failed for any agent this account had not
+    imported or installed, including every built-in. The precedence here is
+    :func:`_resolve_definition`'s: an owned import shadows everything, then
+    the built-in roster (so a stale materialized copy does not win over the
+    current prompts), then a built-in's store copy, then the published catalog.
+    """
+    store = storage.read_definition_bundle(user_key, coord)
+    if store is not None:
+        trust = ((store.get("manifest") or {}).get("provenance") or {}).get("trust")
+        if trust != "built-in":
+            return store
+    roster = builtin_definition_bundle(coord)
+    if roster is not None:
+        return roster
+    if store is not None:
+        return store
+    try:
+        return storage.read_definition_bundle_from_dir(publications.published_agent_dir(coord))
+    except (AgentManifestError, PathTraversalError):
+        return None
+
+
 def _require_definition(user_key: str, coord: str) -> AgentManifest:
     m = _resolve_definition(user_key, coord)
     if m is None:
@@ -401,18 +443,84 @@ def list_installed_in_project(user_key: str, project_id: str) -> list[dict]:
 
 
 # ── lifecycle commands (explicit, non-chaining) ──────────────────────────────
-def import_agent(user_key: str, coord: str) -> dict:
-    """Record *coord* in the account's My Imports (does not install into a project)."""
+def _fan_out_imports(user, user_key: str, coord: str, *, install: bool) -> list[dict]:
+    """Apply an account-level import decision to every project the user has.
+
+    Recording a coordinate in My Imports writes no project lockfile, and the
+    canvas agents palette reads the lockfile (``listProjectAgents`` ->
+    ``dataflow.agents``). So an imported agent was reported as "In all projects"
+    by the catalog while appearing in none of them - the catalog was describing
+    the account, the palette was describing the project, and the label was
+    simply false.
+
+    This is the same eager walk ``packages.services.install_to_defaults`` does,
+    for the same reason: nothing consults the account list when a project is
+    opened, so only a walk at decision time can make the claim true.
+
+    Best-effort per project - one project with a broken spec must not abort the
+    rest, and never fails the import itself.
+    """
+    if user is None:
+        return []
+    from utk_curio.backend.app.projects import repositories as projects_repo
+
+    results: list[dict] = []
+    for project in projects_repo.list_for_user(user.id):
+        try:
+            if install:
+                install_in_project(user_key, project.id, coord)
+            else:
+                uninstall_from_project(user_key, project.id, coord)
+            results.append({"id": project.id, "ok": True})
+        except Exception as exc:  # noqa: BLE001 - per-project failure is OK
+            log.warning(
+                "agent import fan-out (%s) failed for project %s: %s",
+                "install" if install else "uninstall", project.id, exc,
+            )
+            results.append({"id": project.id, "ok": False, "error": str(exc)})
+    return results
+
+
+def import_agent(user_key: str, coord: str, *, user=None) -> dict:
+    """Record *coord* in My Imports and install it into every project.
+
+    ``user`` is optional so the many existing callers that only hold a
+    ``user_key`` keep working unchanged; without it this records the coordinate
+    and nothing else, exactly as before.
+    """
     _require_definition(user_key, coord)
     _materialize_builtin(user_key, coord)
     imports.add_imported_agent(user_key, coord)
-    return {"coord": coord, "imported": True}
+    projects = _fan_out_imports(user, user_key, coord, install=True)
+    return {"coord": coord, "imported": True, "projects": projects}
 
 
-def remove_import(user_key: str, coord: str) -> dict:
-    """Drop *coord* from My Imports (does not touch project installs)."""
+def remove_import(user_key: str, coord: str, *, user=None) -> dict:
+    """Drop *coord* from My Imports and uninstall it from every project."""
     imports.remove_imported_agent(user_key, coord)
-    return {"coord": coord, "imported": False}
+    projects = _fan_out_imports(user, user_key, coord, install=False)
+    return {"coord": coord, "imported": False, "projects": projects}
+
+
+def seed_project_with_imported_agents(user_key: str, project_id: str) -> None:
+    """Install the account's imported agents into a brand-new project.
+
+    The "future" half of "all your projects, present and future"; the walk above
+    is the "present" half. Best-effort: a stale import must degrade to "that
+    agent is missing here", never to "the project could not be created".
+    """
+    try:
+        coords = imports.load_imported_agents(user_key)
+    except Exception:  # noqa: BLE001
+        return
+    for coord in sorted(coords):
+        try:
+            install_in_project(user_key, project_id, coord)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "seed imported agent %s into project %s failed: %s",
+                coord, project_id, exc,
+            )
 
 
 def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
@@ -490,9 +598,18 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
     if coord in current:
         project_agents.set_project_agents(spec, [c for c in current if c != coord])
         dirty = True
+    # ...and take its attachments with it. Without this the agent was removed
+    # from the lockfile while its badges stayed on the nodes and it kept
+    # running: `attach` is gated on the lockfile but `run_attachment` is not.
+    detached = attachments.detach_all_for_coord(spec, coord)
+    if detached:
+        dirty = True
     if dirty:
         projects_storage.write_spec(user_key, project_id, spec)
-    return {"agents": project_agents.project_agents(spec)}
+    return {
+        "agents": project_agents.project_agents(spec),
+        "detached": [r.get("attachmentId") for r in detached],
+    }
 
 
 def publish_agent(user_key: str, coord: str) -> dict:
@@ -2042,6 +2159,133 @@ def _handle_plan_reply(
     return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
 
 
+def _tool_correction_message(errors: list[str]) -> dict:
+    """The corrective round's feedback for a tool request (#245) — the
+    ``_plan_correction_message`` twin: precise, model-actionable, and explicit
+    that the invalid block never reached the user."""
+    listed = "\n".join(f"- {e}" for e in errors[:10])
+    return {
+        "role": "user",
+        "content": (
+            "[tool validation] Your tool request block was invalid and was NOT "
+            "shown to the user. Fix exactly these problems and resend the "
+            "COMPLETE corrected block (same fence syntax):\n" + listed
+        ),
+    }
+
+
+def _tool_cap_card(errors: list[str]) -> dict:
+    """The visible outcome of a request attempt that never became proposable.
+
+    Distinct from :func:`_round_cap_cutoff_card`, which reports a *valid*
+    request dangling at the round cap. This one reports a request the runtime
+    could never turn into a proposal, and it is the ONLY thing the user sees
+    of that block — see ``_handle_tool_reply`` for why the raw JSON is dropped.
+    """
+    return {
+        "type": "card",
+        "kind": "error",
+        "title": "Proposal not created",
+        "lines": [e[:300] for e in errors[:10]],
+    }
+
+
+def _requested_tool_of(payload: object) -> str | None:
+    if isinstance(payload, dict) and isinstance(payload.get("tool"), str):
+        return payload["tool"]
+    return None
+
+
+def _handle_tool_reply(
+    loop_ctx: dict,
+    reply: str,
+    parts: list,
+    rounds_used: int,
+) -> tuple[str, list, str | None, dict | None]:
+    """In-loop toolRequest recovery (#245) — the dev/56 fence-agnostic scan and
+    the dev/54 correction rounds that plans already have, for tool requests.
+
+    Consulted ONLY after ``extract_content`` produced no request and
+    ``_handle_plan_reply`` returned ``"none"``, so every existing path is
+    byte-unchanged. ``extract_content`` itself is not touched: recovery lives
+    here, exactly as ``extract_plan_attempt`` does for plans.
+
+    Returns ``(kind, payload, visible_override, request)``:
+    ``("none", parts, None, None)`` — not a request attempt, generic fail-open
+    applies; ``("request", parts, stripped, req)`` — recovered, and the caller
+    runs it through the ordinary request path (grant check, mint, and round
+    accounting all unchanged); ``("correct", errors, None, None)`` — feed the
+    errors back and re-round (shares the MAX_TOOL_ROUNDS budget, since a
+    correction costs a real provider call); ``("cap", parts+card, stripped,
+    None)`` — budget exhausted: fail loudly, never silently.
+    """
+    granted = loop_ctx.get("granted") or []
+    if not granted:
+        # A run with no tools cannot be attempting one — an agent quoting the
+        # protocol keeps the pre-#245 fail-open behaviour exactly.
+        return "none", parts, None, None
+
+    def _claimed(payload: object) -> bool:
+        """A request is ours to correct only when it names a GRANTED tool.
+
+        Without this the runtime would 'correct' a model that merely echoed
+        the literal ``{"tool": "<tool id>", "params": {}}`` out of the tail
+        instruction — which is valid JSON — burning rounds on nothing.
+        """
+        tool = _requested_tool_of(payload)
+        return tool is not None and tool in granted
+
+    visible_override: str | None = None
+    fence_guidance = (
+        "put the tool request in a ```curio.v1 fenced block as the VERY LAST "
+        "thing in your reply (not ```json, and with no text after it)"
+    )
+
+    _, tail_body = content.split_tail(reply)
+    errors = content.tool_tail_diagnosis(tail_body)
+    if errors:
+        import json as _json
+
+        try:
+            tool = _requested_tool_of((_json.loads(tail_body) or {}).get("toolRequest"))
+        except (ValueError, TypeError, AttributeError):
+            tool = None
+        if tool is not None and tool not in granted:
+            return "none", parts, None, None
+    else:
+        # No terminal-tail attempt (or a valid one, which never reaches here):
+        # scan every fence, wherever the model put it.
+        stripped, raw = content.extract_tool_request_attempt(reply)
+        if raw is None:
+            return "none", parts, None, None
+        if isinstance(raw, str):
+            # Broken JSON: claim it only when it names a granted tool, so a
+            # malformed block about something else stays the model's text.
+            if not any(f'"{t}"' in raw for t in granted):
+                return "none", parts, None, None
+            errors = (content.tool_tail_diagnosis(raw) or []) + [fence_guidance]
+        else:
+            if not _claimed(raw):
+                return "none", parts, None, None
+            request, request_errors = content.parse_tool_request_verbose(raw)
+            if request is not None:
+                return "request", parts, stripped, request
+            errors = request_errors + [fence_guidance]
+        visible_override = stripped
+
+    if rounds_used < MAX_TOOL_ROUNDS:
+        return "correct", errors, None, None
+    # The cap. Unlike a plan tail (dev/54 releases it — a plan is a spec the
+    # user can read), a mutate request's params are an entire source file:
+    # releasing it IS the bug this fixes (#245 — 60KB of Python rendered as
+    # chat prose under an Apply button that never existed). The model's own
+    # prose still shows; only the machine block drops, and the card names
+    # precisely why, which is more actionable than the JSON ever was.
+    if visible_override is None:
+        visible_override, _ = content.split_tail(reply)
+    return "cap", list(parts) + [_tool_cap_card(errors)], visible_override, None
+
+
 def _resolve_catalog_dataset(project_id: str, dataset_id: object) -> tuple[dict | None, str]:
     """Resolve a dataset id against the project's Data Catalog (dev/50 —
     the datasets domain is the single truth; `ADR-AG-007`). Returns
@@ -2866,12 +3110,20 @@ def _apply_package_install(
             "resolve the conflict in the Nodes Catalog first",
         )
     try:
-        packages_services.install_to_project(user_key, project_id, dir_name)
+        install = packages_services.install_to_project(user_key, project_id, dir_name)
     except Exception as exc:
         raise _mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
             f"the package could not be installed: {exc}",
         ) from exc
+    # pip counts matching metadata as satisfaction, so a wheel whose native
+    # extension cannot load installs without complaint. The install already
+    # asks whether the libraries import; keeping the answer here is what stops
+    # the applied turn saying "package installed" over a package whose first
+    # run raises. NOT a stale/refusal: the package is installed and the repair
+    # (a matching GDAL, a conda-forge build) is the user's, so this is the last
+    # place the failure is still attached to the package that brought it in.
+    broken_line = _broken_library_line(install.get("importErrors"))
     # The install wrote the spec (the package lockfile); re-read so the
     # proposal mirror update below does not clobber the new entry.
     spec = _read_spec_or_404(user_key, project_id)
@@ -2888,7 +3140,7 @@ def _apply_package_install(
     )
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: package installed ({name}).{notes_line}",
+        f"Applied: package installed ({name}).{broken_line}{notes_line}",
         "Applied: package installed",
         [name, dir_name, f"proposal {proposal_id[:8]}"],
         extra_parts=note_parts,
@@ -2899,6 +3151,8 @@ def _apply_package_install(
         "status": "applied",
         "mutationApplied": True,
         "installedPackage": {"dirName": dir_name, "name": name},
+        **({"importErrors": install["importErrors"]}
+           if install.get("importErrors") else {}),
         # dev/105 A4: the lockfile CHANGED — the frontend must refresh its
         # package registry + project-packages store BEFORE the follow-up notes
         # paint, or they render "Loading node…" for a type it does not hold.
@@ -2906,6 +3160,23 @@ def _apply_package_install(
         # dev/105 A3: ordered — the frontend applies them one after another.
         "followUpProposals": follow_ups,
     }
+
+
+def _broken_library_line(import_errors) -> str:
+    """`` rasterio cannot be imported (...).`` for the applied turn, or ``""``.
+
+    One sentence, appended to the turn the user reads after Apply. The wording
+    matches the frontend's ``dependencyFailureNotice`` deliberately: the same
+    failure should not read as a different problem depending on whether a
+    button or an agent reached it.
+    """
+    if not import_errors:
+        return ""
+    named = "; ".join(
+        f"{lib} cannot be imported ({reason})"
+        for lib, reason in sorted(import_errors.items())
+    )
+    return f" But {named}. Nodes needing it will fail until it is repaired."
 
 
 def _queue_enlisted_notes(
@@ -3074,6 +3345,20 @@ def _apply_package_draft(
             " Restart Curio to pick up "
             + ", ".join(str(lib) for lib in restart["libs"])
             + " — running nodes keep the previously loaded versions until then."
+        )
+    # A declared library that installed but cannot be imported. Said here
+    # because this turn is what claims the package was installed: pip counts
+    # metadata as satisfaction, so without this the user reads "built and
+    # installed" and meets the failure later as a node's ImportError.
+    broken_imports = journal.get("importErrors")
+    if isinstance(broken_imports, dict) and broken_imports:
+        restart_line += (
+            " Warning: "
+            + "; ".join(
+                f"{lib} installed but cannot be imported ({reason})"
+                for lib, reason in sorted(broken_imports.items())
+            )
+            + " — nodes needing it will fail until it is repaired."
         )
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
@@ -6901,11 +7186,33 @@ def run_attachment(
                     messages_work.append({"role": "assistant", "content": reply})
                     messages_work.append(_plan_correction_message(payload))
                     continue
-                effective_visible = visible_override if visible_override is not None else visible
-                if effective_visible:
-                    folded.append(effective_visible)
-                final_parts = payload
-                break
+                if kind == "none":
+                    # #245: only once the plan handler has declined — a
+                    # toolRequest the parser could not take (wrong fence,
+                    # trailing prose, correctable params) must never fold into
+                    # the chat as raw JSON.
+                    kind, payload, visible_override, req = _handle_tool_reply(
+                        loop_ctx, reply, parts, rounds_used
+                    )
+                    if kind == "correct":
+                        rounds_used += 1
+                        messages_work.append({"role": "assistant", "content": reply})
+                        messages_work.append(
+                            _tool_correction_message(payload)
+                        )
+                        continue
+                if req is None:
+                    effective_visible = (
+                        visible_override if visible_override is not None else visible
+                    )
+                    if effective_visible:
+                        folded.append(effective_visible)
+                    final_parts = payload
+                    break
+                # A RECOVERED request falls through to the shared request path
+                # below, so grant re-check, mint, cap card and the dev/105 D2
+                # free-refusal accounting all apply to it unchanged.
+                visible = visible_override if visible_override is not None else visible
             if visible:
                 folded.append(visible)
             if rounds_used >= MAX_TOOL_ROUNDS:
@@ -7125,14 +7432,19 @@ def stream_attachment(
         return buf, ""
 
     def _stream_round(
-        messages_work: list, usage_sink: dict, result: dict, hold_plan_tail: bool = False
+        messages_work: list, usage_sink: dict, result: dict,
+        hold_plan_tail: bool = False, hold_request_tail: bool = False,
     ):
         """Stream one provider round: yields ("delta", text) with the dev/39
         tail withholding, then leaves {reply, visible, parts} in *result*.
         ``hold_plan_tail`` (dev/54): an INVALID tail that looks like a plan
         attempt is held (``result["heldPlanTail"]``) instead of flushed — the
         correction round must not leak raw plan JSON to the user; the caller
-        releases it at the round cap (fail-open transparency)."""
+        releases it at the round cap (fail-open transparency).
+        ``hold_request_tail`` (#245): the same for a mutate toolRequest tail —
+        held in ``result["heldToolTail"]`` and, unlike the plan tail, never
+        released: the params are a whole source file, and streaming them as
+        chat prose IS the bug (see ``_handle_tool_reply``)."""
         chunks: list[str] = []
         buf = ""  # pass-mode text not yet emitted
         withheld: str | None = None  # not None → holding a candidate tail
@@ -7176,6 +7488,13 @@ def stream_attachment(
                 # A failed plan attempt (dev/54): held for the correction
                 # round instead of leaking raw JSON into the chat.
                 result["heldPlanTail"] = withheld
+            elif hold_request_tail and '"toolRequest"' in withheld and any(
+                f'"{tool}"' in withheld for tool in MUTATE_PROPOSAL_TOOLS
+            ):
+                # #245: a failed mutate request. The old code fell to the
+                # fail-open branch below and streamed the whole node source
+                # into the transcript as it arrived.
+                result["heldToolTail"] = withheld
             else:
                 # Invalid or non-terminal tail: fail-open (dev/39 §4.2) — the
                 # withheld text is the model's, so it streams after all.
@@ -7217,6 +7536,9 @@ def stream_attachment(
                     usage_sink,
                     result,
                     hold_plan_tail="dataflow.plan.write" in loop_ctx.get("granted", []),
+                    hold_request_tail=bool(
+                        set(loop_ctx.get("granted") or []) & MUTATE_PROPOSAL_TOOLS
+                    ),
                 )
                 _add_usage(usage_total, usage_sink)
                 if usage_sink:
@@ -7246,18 +7568,45 @@ def stream_attachment(
                         )
                         messages_work.append(_plan_correction_message(payload))
                         continue
+                    if kind == "none":
+                        # #245: the toolRequest twin, after the plan handler.
+                        kind, payload, visible_override, req = _handle_tool_reply(
+                            loop_ctx, result["reply"], parts, rounds_used
+                        )
+                        if kind == "correct":
+                            rounds_used += 1
+                            yield (
+                                "tool_revision",
+                                {"attempt": rounds_used, "errors": len(payload)},
+                            )
+                            messages_work.append(
+                                {"role": "assistant", "content": result["reply"]}
+                            )
+                            messages_work.append(
+                                _tool_correction_message(payload)
+                            )
+                            continue
+                        # A held request tail is NOT released at the cap: see
+                        # _handle_tool_reply — a source file is not a spec.
                     if kind == "cap" and result.get("heldPlanTail"):
                         # Fail-open transparency at the cap: the held tail is
                         # the model's text — released, then explained by the
                         # error card in `payload`.
                         yield ("delta", result["heldPlanTail"])
-                    effective_visible = (
-                        visible_override if visible_override is not None else result["visible"]
-                    )
-                    if effective_visible:
-                        folded.append(effective_visible)
-                    final_parts = payload
-                    break
+                    if req is not None:
+                        # A RECOVERED request: fall through to the shared
+                        # request path with the block stripped from the text.
+                        if visible_override is not None:
+                            result["visible"] = visible_override
+                    else:
+                        effective_visible = (
+                            visible_override if visible_override is not None
+                            else result["visible"]
+                        )
+                        if effective_visible:
+                            folded.append(effective_visible)
+                        final_parts = payload
+                        break
                 if result["visible"]:
                     folded.append(result["visible"])
                 if rounds_used >= MAX_TOOL_ROUNDS:

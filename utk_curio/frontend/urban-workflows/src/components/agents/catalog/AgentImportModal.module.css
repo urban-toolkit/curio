@@ -33,6 +33,23 @@
   padding: 8px 10px;
 }
 
+/* Inline reset for the accumulating selection: a plain text control inside the
+   summary line, not a third button competing with Cancel/Import in the footer. */
+.clear {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--curio-text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.clear:hover {
+  color: var(--curio-text-primary);
+}
+
 .error {
   margin: 10px 0 0;
   font-size: 12px;

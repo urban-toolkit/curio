@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 
 // The dev/52 builder strip imports useFlowContext; mocking the provider keeps
 // FlowProvider's heavy module graph (vega etc.) out of this presentational
@@ -47,11 +47,45 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AgentChatPan
 }
 
 describe("AgentChatPanel", () => {
-  it("renders the concept header: name, target, session chip", () => {
+  it("renders the concept header: name and target", () => {
     renderPanel();
     expect(screen.getByText("Node Explainer")).toBeInTheDocument();
     expect(screen.getByText(/attached to canvas/i)).toBeInTheDocument();
-    expect(screen.getByText(/session s1234567/)).toBeInTheDocument();
+  });
+
+  // #228: the header used to read "Attached to node 6bea6863-…" beside a
+  // "session s1234567" chip. Neither told the user which node they were talking
+  // to. Both ids are diagnostic, so they moved into the tooltip.
+  it("names the node it is attached to instead of showing its id", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        target: { kind: "node" as const, targetId: "6bea6863-1f2e-4a11-9b0c-77d2e3f4a5b6" },
+      },
+      targetName: "Data Loading",
+    });
+    expect(screen.getByText(/attached to data loading/i)).toBeInTheDocument();
+    expect(screen.queryByText(/6bea6863/)).toBeNull();
+  });
+
+  it("falls back to the target kind and id when the node cannot be named", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        target: { kind: "node" as const, targetId: "6bea6863" },
+      },
+      targetName: null,
+    });
+    expect(screen.getByText(/attached to node 6bea6863/i)).toBeInTheDocument();
+  });
+
+  it("keeps the session id available as a tooltip, not as header text", () => {
+    renderPanel();
+    expect(screen.queryByText(/session s1234567/)).toBeNull();
+    expect(screen.getByText(/attached to canvas/i)).toHaveAttribute(
+      "title",
+      expect.stringContaining("session s1234567890") as unknown as string,
+    );
   });
 
   it("sends the trimmed message through onSend", async () => {
@@ -196,14 +230,41 @@ describe("AgentChatPanel", () => {
     expect(onRetryHistory).toHaveBeenCalled();
   });
 
-  it("clear conversation confirms first", async () => {
+  // This used to spy on `window.confirm`. The panel raises the app's own
+  // ConfirmDialog now (#197), so the assertion is that a dialog appears and
+  // that confirming it is what runs the clear - not that the browser was asked.
+  it("clear conversation asks in the app's own dialog", async () => {
     const onClearConversation = jest.fn().mockResolvedValue(undefined);
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmSpy = jest.spyOn(window, "confirm");
     renderPanel({ onClearConversation });
     fireEvent.click(screen.getByRole("button", { name: "Clear conversation" }));
-    expect(confirmSpy).toHaveBeenCalled();
+
+    const modal = await waitFor(() => {
+      const el = document.querySelector('[data-curio-modal-shell="true"]');
+      if (!el) throw new Error("no confirmation dialog is open");
+      return el as HTMLElement;
+    });
+    expect(onClearConversation).not.toHaveBeenCalled();
+    fireEvent.click(within(modal).getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(onClearConversation).toHaveBeenCalledTimes(1));
+    expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it("cancelling the clear leaves the transcript alone", async () => {
+    const onClearConversation = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ onClearConversation });
+    fireEvent.click(screen.getByRole("button", { name: "Clear conversation" }));
+    const modal = await waitFor(() => {
+      const el = document.querySelector('[data-curio-modal-shell="true"]');
+      if (!el) throw new Error("no confirmation dialog is open");
+      return el as HTMLElement;
+    });
+    fireEvent.click(within(modal).getByRole("button", { name: "Keep it" }));
+    await waitFor(() =>
+      expect(document.querySelector('[data-curio-modal-shell="true"]')).toBeNull(),
+    );
+    expect(onClearConversation).not.toHaveBeenCalled();
   });
 
   it("header cycling (DEC-042): shows idx/total and walks prev/next", () => {
@@ -530,7 +591,7 @@ describe("AgentChatPanel package-install review (memo dev/84)", () => {
     expect(screen.getByText("network.fetch")).toBeInTheDocument();
     expect(screen.getByText("python · rasterio")).toBeInTheDocument();
     expect(onApplyProposal).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Add to dataflow" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to project" }));
     await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("pk1"));
     await waitFor(() =>
       expect(screen.queryByText('Add "Weather Analysis"')).toBeNull(),
@@ -577,7 +638,7 @@ describe("AgentChatPanel package-install review (memo dev/84)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("p1"));
-    expect(screen.queryByRole("button", { name: "Add to dataflow" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to project" })).toBeNull();
     expect(packagesApi.catalog).not.toHaveBeenCalled();
   });
 });

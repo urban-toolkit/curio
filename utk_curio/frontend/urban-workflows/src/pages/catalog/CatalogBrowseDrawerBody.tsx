@@ -157,9 +157,12 @@ export const CatalogBrowseDrawerBody: React.FC<CatalogBrowseDrawerBodyProps> = (
       {sections}
 
       <div className={styles.drawerCtas}>
+        {/* Order is the vocabulary: the account-level action first, then the
+            publish control, and the way OUT of this panel last. `View details`
+            used to sit between the two actions, splitting them. */}
         {primaryAction}
-        {secondaryAction}
         {publishPill ? <div className={styles.drawerPillRow}>{publishPill}</div> : null}
+        {secondaryAction}
       </div>
     </>
   );

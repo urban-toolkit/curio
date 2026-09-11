@@ -4,6 +4,8 @@ export * from "./datasetCatalogCache";
 export * from "./datasetCatalogHooks";
 export * from "./datasetCatalogTypes";
 export * from "./datasetLoaderSnippets";
+export * from "./useDatasetImport";
 export * from "./datasetPaletteGrouping";
 export * from "./pendingInstallView";
 export * from "./producerLinkage";
+export * from "./datasetReference";

@@ -158,6 +158,9 @@ export interface DatasetCatalogItem {
   schema?: DatasetSchema | null;
   loaderSnippet?: DatasetLoaderSnippet | null;
   installed?: boolean;
+  /** In the user's account-level "all projects" list. Independent of
+   *  `installed`, which is one dataflow's spec refs. */
+  inAllProjects?: boolean;
   /** True when the producer node has been re-executed since the dataset was last installed. */
   needsReinstall?: boolean;
   /** True when a computed dataset (origin="computed") has been published to the Data Catalog.
@@ -444,6 +447,24 @@ export function isDatasetComputed(
  * datasets still count here (the bug in #140 was excluding them). Ephemeral
  * live outputs and merely-browsable hub entries have ``installed`` falsy and
  * are excluded. */
+/**
+ * In the palette / drawer for THIS dataflow.
+ *
+ * `installed` is derived from one dataflow's spec refs, so it is false for
+ * everything until the dataflow exists - and a dataflow is created on its first
+ * save. That left both surfaces empty in a brand-new dataflow even for datasets
+ * the user had just added to every project. `inAllProjects` is the account-level
+ * answer, and `save_project` seeds those into the dataflow the moment it exists,
+ * so counting them here previews a state one save away rather than inventing one.
+ */
+export function isInThisDataflow(
+  dataset: DatasetCatalogItem,
+  hasProject: boolean,
+): boolean {
+  if (isUserInstalledDataset(dataset)) return true;
+  return !hasProject && dataset.inAllProjects === true;
+}
+
 export function isUserInstalledDataset(dataset: DatasetCatalogItem): boolean {
   return dataset.installed === true;
 }
@@ -466,6 +487,48 @@ export function isDatasetFromCatalog(dataset: DatasetCatalogItem): boolean {
  */
 export function isDatasetInstalledFromCatalog(dataset: DatasetCatalogItem): boolean {
   return dataset.installed === true && isDatasetFromCatalog(dataset);
+}
+
+/**
+ * Is this dataset the user's own, rather than something the installation shipped?
+ *
+ * Publishing means "put this into the catalog everyone on this Curio shares".
+ * That only makes sense for something the user made or brought: their upload,
+ * or an output one of their nodes computed. A dataset that came FROM the shared
+ * catalog is already there, and republishing it just writes a duplicate - the
+ * backend has no guard against it, so the affordance has to.
+ *
+ * Told apart by the store folder, the same signal the backend's uninstall uses
+ * (``_remove_orphaned_imported_store_dir`` keys on ``imported.``): catalog
+ * datasets land under their publisher's id (``data.urbanlab.…@1``), uploads
+ * under ``imported.…`` and node outputs under ``computed.…``. ``origin`` cannot
+ * answer this - installing a catalog dataset flips it from ``hub`` to
+ * ``imported``, so an installed catalog row and an upload look identical there.
+ */
+export function isUserOwnedDataset(dataset: DatasetCatalogItem): boolean {
+  const dir = String(dataset.dirName ?? "");
+  if (dir.startsWith("imported.") || dir.startsWith("computed.")) return true;
+  // A live node output that has not been persisted yet has no folder at all,
+  // and is still the user's own.
+  if (!dir && (dataset.origin === "computed" || dataset.origin === "source_node")) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Did this dataset come from the catalog everyone on this Curio shares?
+ *
+ * The positive counterpart to {@link isUserOwnedDataset}, and deliberately not
+ * its negation. Publish must fail CLOSED - never offer to publish unless the
+ * thing is provably the user's - while Delete must fail OPEN, because hiding it
+ * on a row we simply cannot classify would take away a working action. So
+ * Delete asks "do we KNOW this came from the catalog", which a `data.*` store
+ * folder or a still-`hub` origin answers.
+ */
+export function isSharedCatalogDataset(dataset: DatasetCatalogItem): boolean {
+  if (dataset.origin === "hub") return true;
+  return String(dataset.dirName ?? "").startsWith("data.");
 }
 
 /** Live node output in the current session that is not yet in the user dataset store. */

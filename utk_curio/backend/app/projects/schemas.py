@@ -74,7 +74,6 @@ class ProjectSummary:
     last_opened_at: Optional[str]
     created_at: str
     updated_at: str
-    archived_at: Optional[str] = None
     graph_preview: Optional[dict] = None
 
 

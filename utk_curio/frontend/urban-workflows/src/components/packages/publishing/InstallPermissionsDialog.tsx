@@ -24,7 +24,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
   busy,
   onCancel,
   onConfirm,
-  confirmLabel = "Add to dataflow",
+  confirmLabel = "Add to project",
 }) => {
   const hasConflicts = conflicts.length > 0;
   const pythonDeps = Object.entries(pkg.dependencies.python);

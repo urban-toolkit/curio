@@ -95,30 +95,51 @@ async function resolveInput(input: any): Promise<any> {
 }
 
 /*
- * A `dataframe` payload is column-oriented, the shape pandas'
- * `DataFrame.to_dict()` produces:
+ * A `dataframe` payload is column-oriented. Two encodings of that reach this
+ * node, and both must work:
  *
- *   { "population": { "0": 2746, "1": 8804 }, "name": { "0": "Chicago", ... } }
+ *   array   { "population": [2746, 8804],        "name": ["Chicago", ...] }
+ *   row map { "population": { "0": 2746, ... },  "name": { "0": "Chicago" } }
  *
- * Row keys are strings and every column carries the same set of them.
+ * The array form is what Curio actually produces: the sandbox serialises with
+ * `to_dict(orient='list')` (sandbox/util/parsers.py). This node used to require
+ * the row-map form and *explicitly reject* arrays, so `asFrame` returned null
+ * for every real Curio DataFrame, `setFrame(null)` ran, and the node rendered
+ * "Connect a DataFrame upstream and run that node." with nothing thrown and
+ * nothing to debug (#194). The row-map form is kept because `to_dict()` with no
+ * orient produces it, and hand-written specs use it.
  */
-type Frame = Record<string, Record<string, unknown>>;
+type Column = unknown[] | Record<string, unknown>;
+type Frame = Record<string, Column>;
 
 function asFrame(payload: any): Frame | null {
   const frame = payload?.dataType === 'dataframe' ? payload.data : payload;
+  // `Array.isArray` on the FRAME itself still rejects: a row-oriented list of
+  // records is a different shape and is genuinely unsupported here.
   if (!frame || typeof frame !== 'object' || Array.isArray(frame)) return null;
   const columns = Object.keys(frame);
   if (columns.length === 0) return null;
-  // Every value must itself be a row map, otherwise this is some other shape.
-  const looksRight = columns.every(
-    (c) => frame[c] && typeof frame[c] === 'object' && !Array.isArray(frame[c]),
-  );
+  // Each column may be an array or a row map; both are objects.
+  const looksRight = columns.every((c) => frame[c] && typeof frame[c] === 'object');
   return looksRight ? (frame as Frame) : null;
+}
+
+/** One cell, whichever encoding the column uses.
+ *
+ * Mirrors `utils/tabularPreview.ts`, which has always handled both. */
+function cell(column: Column, key: string): unknown {
+  return Array.isArray(column) ? column[Number(key)] : column[key];
 }
 
 function rowKeys(frame: Frame): string[] {
   const first = Object.keys(frame)[0];
-  return first ? Object.keys(frame[first]) : [];
+  if (!first) return [];
+  const column = frame[first];
+  // An array's row keys are its indices, as strings, so everything downstream
+  // keeps working with string keys regardless of encoding.
+  return Array.isArray(column)
+    ? column.map((_, i) => String(i))
+    : Object.keys(column);
 }
 
 /** Columns whose values are numbers — the only ones worth thresholding. */
@@ -239,7 +260,7 @@ export const useColumnFilterBehavior: NodeBehaviorHook = (data, nodeState) => {
     if (!Number.isFinite(limit)) return null;
     const compare = COMPARE[operator];
     return rowKeys(frame).filter((key) => {
-      const value = frame[column][key];
+      const value = cell(frame[column], key);
       return typeof value === 'number' && compare(value, limit);
     });
   }, [frame, column, operator, threshold]);
@@ -254,9 +275,15 @@ export const useColumnFilterBehavior: NodeBehaviorHook = (data, nodeState) => {
       const filtered: Frame = {};
       for (const name of Object.keys(frame)) {
         const source = frame[name];
-        const kept: Record<string, unknown> = {};
-        for (const key of matching) kept[key] = source[key];
-        filtered[name] = kept;
+        // Preserve the input's encoding, so the downstream payload stays
+        // byte-compatible with what `parseOutput` produced upstream.
+        if (Array.isArray(source)) {
+          filtered[name] = matching.map((key) => cell(source, key));
+        } else {
+          const kept: Record<string, unknown> = {};
+          for (const key of matching) kept[key] = source[key];
+          filtered[name] = kept;
+        }
       }
       data.outputCallback(data.nodeId, { data: filtered, dataType: 'dataframe' });
       nodeState.setOutput({

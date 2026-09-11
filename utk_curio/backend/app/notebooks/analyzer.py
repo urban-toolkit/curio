@@ -8,6 +8,34 @@ import re
 
 _PYTHON_BUILTINS = set(dir(builtins))
 
+# A line magic (``%matplotlib inline``), a cell magic (``%%time``) or a shell
+# escape (``!pip install geopandas``). None of these is Python, and none of them
+# survives ``ast.parse``.
+_MAGIC_OR_SHELL_LINE = re.compile(r"^\s*[%!]")
+
+
+def _strip_magics(code: str) -> str:
+    """Blank the IPython lines out of *code* so the Python around them parses.
+
+    Only ever used as a fallback for a cell that did not parse as-is, and only
+    for analysis - the node still shows the user's original source, magics
+    included.
+
+    Without this, the first cell of most real notebooks (``%matplotlib inline``
+    followed by the imports) raises ``SyntaxError``, is classified as neither
+    import-only nor edge-bearing, and lands on the canvas as exactly the
+    disconnected untitled node #235 is about. ``_is_import_only`` has always
+    described itself as tolerating "what a stripped ``%magic`` leaves behind";
+    this is the reader that does the stripping.
+
+    Lines are blanked rather than removed so positions still line up with the
+    source the user sees.
+    """
+    return "\n".join(
+        "" if _MAGIC_OR_SHELL_LINE.match(line) else line
+        for line in code.splitlines()
+    )
+
 # ── AST helpers ───────────────────────────────────────────────────────────────
 
 def _collect_assign_target(node, out):
@@ -78,6 +106,40 @@ def _last_assigned_var(tree):
             if isinstance(t, ast.Name):
                 last = t.id
     return last
+
+
+def _is_import_only(tree, used) -> bool:
+    """True when a cell does nothing but bring names into scope.
+
+    Such a cell is *structurally* incapable of joining the graph: the edge
+    builder deliberately refuses to register import names as producers (so an
+    import cell does not edge to every cell that touches ``pd``), and ``used``
+    has already had import names and builtins subtracted, so it is empty. Zero
+    edges in either direction, every time - which is why a notebook with ten
+    setup cells imported as ten disconnected nodes (#235).
+
+    Recognising them is what lets the importer merge them into one Setup node
+    instead. The bar is deliberately low: imports, ``pass``, and bare string
+    or ellipsis expressions (a docstring, or what a stripped ``%magic`` leaves
+    behind). Anything that computes, assigns, defines or calls disqualifies the
+    cell, because merging it would move code the user can still see and reason
+    about into a node they did not write.
+    """
+    body = list(ast.iter_child_nodes(tree))
+    if not body:
+        # A blank or comment-only cell. Also nothing, and also better merged
+        # away than rendered as an empty node.
+        return True
+    if used:
+        return False
+    for node in body:
+        if isinstance(node, (ast.Import, ast.ImportFrom, ast.Pass)):
+            continue
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            # Docstring, or the remains of a magic the reader stripped.
+            continue
+        return False
+    return True
 
 
 class _UsedNamesVisitor(ast.NodeVisitor):
@@ -169,7 +231,8 @@ def analyze_cells(cells: list[str]) -> dict:
 
     Returns a dict with:
       - 'analysis': per-cell dicts with 'defined', 'used', 'last_var',
-                    and 'altair_spec' (Vega-Lite spec or null).
+                    'altair_spec' (Vega-Lite spec or null), and
+                    'is_import_only' (see :func:`_is_import_only`).
       - 'edges': list of {source, target} cell-index pairs representing
                  data-flow dependencies.
     """
@@ -180,7 +243,24 @@ def analyze_cells(cells: list[str]) -> dict:
         try:
             tree = ast.parse(code)
         except SyntaxError:
-            analysis.append({'defined': [], 'used': [], 'last_var': None, 'altair_spec': None})
+            # Retry without the IPython lines before giving up. A cell is only
+            # re-parsed when it already failed, so a cell that parses as-is is
+            # untouched and this can never change an existing classification.
+            stripped = _strip_magics(code)
+            try:
+                tree = ast.parse(stripped) if stripped != code else None
+            except SyntaxError:
+                tree = None
+
+        if tree is None:
+            # Unparsable even without magics: it gets its own node and its
+            # content untouched. It is NOT import-only - merging code we could
+            # not read into a Setup node would hide the very cell the user has
+            # to go fix.
+            analysis.append({
+                'defined': [], 'used': [], 'last_var': None, 'altair_spec': None,
+                'is_import_only': False,
+            })
             import_names_per_cell.append(set())
             continue
 
@@ -204,6 +284,7 @@ def analyze_cells(cells: list[str]) -> dict:
             'used': list(used),
             'last_var': last_var,
             'altair_spec': altair_spec,
+            'is_import_only': _is_import_only(tree, used),
         })
         import_names_per_cell.append(import_names)
 

@@ -93,17 +93,71 @@ def sandbox_auth_header() -> dict:
     return {'X-Curio-Sandbox-Token': token} if token else {}
 
 
+def sandbox_base_url() -> str:
+    """``http://host:port`` for the sandbox these tests should talk to.
+
+    A couple of helpers below bypass the backend and call the sandbox directly
+    (deliberately - DuckDB wants a single writer). They used to read only
+    ``FLASK_SANDBOX_PORT``, which nothing sets in the ``CURIO_E2E_USE_EXISTING``
+    path: ``e2e_existing_servers`` honours ``CURIO_E2E_SANDBOX_PORT`` and that
+    is the variable the README documents. So on any non-default port the direct
+    callers silently addressed **port 2000** - some other session's sandbox, or
+    nothing - and the failure surfaced as an unexplained ``401`` from a URL the
+    test never mentioned.
+
+    Precedence, most specific first:
+
+    1. ``CURIO_E2E_SANDBOX_PORT`` / ``CURIO_E2E_HOST`` - the documented knobs
+       for "test the servers already running".
+    2. ``FLASK_SANDBOX_PORT`` / ``FLASK_SANDBOX_HOST`` - what ``curio.py start``
+       exports into the sandbox's own process, and what
+       ``test_large_dataframe_e2e`` sets for the children it spawns.
+    3. The stock ``127.0.0.1:2000``.
+    """
+    host = (
+        os.environ.get('CURIO_E2E_HOST')
+        or os.environ.get('FLASK_SANDBOX_HOST')
+        or '127.0.0.1'
+    )
+    port = (
+        os.environ.get('CURIO_E2E_SANDBOX_PORT')
+        or os.environ.get('FLASK_SANDBOX_PORT')
+        or '2000'
+    )
+    return f'http://{host}:{int(port)}'
+
+
+def _explain_sandbox_auth_failure(resp, route: str) -> None:
+    """Turn a sandbox 401/403 into the sentence that actually unblocks you.
+
+    The guarded routes answer 401 when the shared secret does not match, and
+    nothing in the response says which secret it wanted. In the use-existing
+    path the running stack minted its own token unless the operator pinned one,
+    so "export the same CURIO_SANDBOX_TOKEN the stack was started with" is the
+    fix roughly every time - and it is not guessable from the status line.
+    """
+    if resp.status_code not in (401, 403):
+        return
+    have = 'set' if os.environ.get('CURIO_SANDBOX_TOKEN', '').strip() else 'UNSET'
+    raise AssertionError(
+        f"sandbox {route} -> {resp.status_code}: the shared secret was rejected. "
+        f"CURIO_SANDBOX_TOKEN is {have} in this pytest process, and the sandbox "
+        f"at {sandbox_base_url()} expects the value it was started with. "
+        "Start the stack with an explicit CURIO_SANDBOX_TOKEN and export the "
+        "same one here (curio.py start mints a random one otherwise)."
+    )
+
+
 def load_artifact_as_dict(artifact_id: str) -> dict:
     """Fetch a stored artifact from the sandbox and return its parsed representation."""
     import requests as _req
-    sandbox_host = os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1')
-    sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
     resp = _req.get(
-        f'http://{sandbox_host}:{sandbox_port}/get',
+        f'{sandbox_base_url()}/get',
         params={'fileName': artifact_id},
         headers=sandbox_auth_header(),
         timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
     )
+    _explain_sandbox_auth_failure(resp, f'/get fileName={artifact_id}')
     if not resp.ok:
         # Surface the sandbox's structured error body (added in api.py /get)
         # so pytest shows *why* the load failed.
@@ -159,9 +213,19 @@ def resolve_widget_placeholders(code: str) -> str:
     return _WIDGET_RE.sub(_replace, code)
 
 
-PLAYWRIGHT_EXPECTED_DIR = os.path.join(
-    REPO_ROOT, ".curio", "playwright", "expected"
-)
+
+
+def state_root() -> str:
+    """``.curio/`` for this stack -- ``CURIO_STATE_DIR`` when set.
+
+    Per-shard under xdist (backend/tests/shards.py), so the Playwright scratch
+    artifacts below never interleave across workers. Mirrors
+    ``user_storage.curio_root`` minus the ``/test`` suffix.
+    """
+    return os.environ.get("CURIO_STATE_DIR") or os.path.join(REPO_ROOT, ".curio")
+
+
+PLAYWRIGHT_EXPECTED_DIR = os.path.join(state_root(), "playwright", "expected")
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
@@ -623,9 +687,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     """
     import requests as _req
 
-    sandbox_host = os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1')
-    sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
-    sandbox_url = f'http://{sandbox_host}:{sandbox_port}'
+    sandbox_url = sandbox_base_url()
 
     from .workflow_spec import PY_CODE_TYPES
 
@@ -688,6 +750,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
             headers=sandbox_auth_header(),
             timeout=120,
         )
+        _explain_sandbox_auth_failure(resp, '/exec')
         resp.raise_for_status()
         result = resp.json()
 
@@ -871,6 +934,36 @@ def dump_browser_log(
     return log_path
 
 
+def accept_confirm_dialog(
+    page: Page,
+    *,
+    title,
+    button: str,
+    timeout: float = 10000,
+):
+    """Accept the in-app confirmation a catalog raises (#196, #197).
+
+    The three catalogs replaced ``window.confirm`` with a ``ConfirmDialog``
+    built on ``ModalShell``, so ``page.once("dialog", ...)`` no longer fires -
+    a test still relying on it clicks the card button and then silently does
+    nothing, and fails later for the wrong reason.
+
+    The drawers are themselves ``role="dialog"``, so a bare
+    ``get_by_role("dialog")`` is ambiguous whenever one is open. The modal is
+    located by its accessible name instead, which ConfirmDialog wires from its
+    heading through ``aria-labelledby``.
+
+    ``title`` takes a string or a compiled pattern; ``button`` is the confirm
+    button's exact label (it often repeats the card's, e.g. "Add to project").
+    Returns the dialog locator so a caller can assert on its body first.
+    """
+    dialog = page.get_by_role("dialog", name=title)
+    expect(dialog).to_be_visible(timeout=timeout)
+    dialog.get_by_role("button", name=button, exact=True).click()
+    expect(dialog).to_have_count(0, timeout=timeout)
+    return dialog
+
+
 def dismiss_toasts(
     page: Page,
     *,
@@ -902,6 +995,9 @@ def dismiss_toasts(
     Safe to call when there are none. Bounded by *max_rounds*, so a toast that
     genuinely re-fires forever costs a few seconds rather than hanging - it just
     ends up in the screenshot, which is the honest outcome.
+
+    Closes the stack from the bottom up; see the comment on the click for why
+    the top of it may be unreachable.
     """
     container = page.locator('[aria-label="Notifications"]')
     dismissed = 0
@@ -913,11 +1009,27 @@ def dismiss_toasts(
             buttons = container.locator("button.btn-close")
             if buttons.count() == 0:
                 break
+            # From the BOTTOM of the stack, not the top. The region is anchored
+            # to the bottom of the viewport and grows upward, so once enough
+            # toasts are up the oldest is clipped off the TOP of the screen -
+            # and a position:fixed element off-screen cannot be scrolled into
+            # view, so clicking `first` times out and the sweep returns having
+            # closed nothing. `run-all-survives-a-failed-node` ends with five
+            # error toasts and lost 26.87% of its frame to exactly that. The
+            # last toast is always on screen, and closing it brings the rest
+            # down one slot.
             try:
-                buttons.first.click(timeout=1000)
+                buttons.last.click(timeout=1000)
                 dismissed += 1
             except PlaywrightTimeoutError:
-                break
+                # Still unreachable - covered, or mid-transition. Close it the
+                # way its own button would, so one stuck toast cannot wedge the
+                # sweep for every toast behind it.
+                try:
+                    buttons.last.evaluate("el => el.click()")
+                    dismissed += 1
+                except Exception:
+                    break
 
         # Did another arrive during the quiet window? wait_for_function resolving
         # means one showed up, so loop and clear it; a timeout means quiet.
@@ -941,6 +1053,7 @@ def save_workflow_test_screenshot(
     max_diff_ratio: float = 0.20,
     fit_reactflow: bool = True,
     clip_selector: str | None = None,
+    sweep_toasts: bool = False,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 
@@ -961,6 +1074,12 @@ def save_workflow_test_screenshot(
     correct, and eyeball the PNG before committing it. A baseline captured
     against a broken build enshrines the bug as expected output.
 
+    That minting happens in serial runs only. Under xdist (``PYTEST_XDIST_WORKER``
+    set), or whenever ``CURIO_E2E_REQUIRE_BASELINES=1``, a missing baseline is a
+    failure instead: with several workers a mis-derived environment or a grouping
+    bug can change what renders, and a silently written baseline would turn that
+    into a pass. Set ``CURIO_E2E_REQUIRE_BASELINES=0`` to mint anyway.
+
     Set *fit_reactflow* to ``False`` for pages with no canvas (the projects list,
     the catalog). The default path pins the ReactFlow viewport first, which waits
     on ``.react-flow__node`` and would otherwise spend its whole timeout waiting
@@ -970,6 +1089,16 @@ def save_workflow_test_screenshot(
     than the page. The capture is then that element's box, so every pixel is
     about the thing under test and the diff budget is spent on it instead of on
     surrounding chrome.
+
+    Pass *sweep_toasts* instead of calling :func:`dismiss_toasts` yourself
+    beforehand - and never as well as, each sweep costs its own quiet window.
+    Sweeping outside this helper leaves a gap between the region going quiet and
+    the shutter: the viewport wait below is seconds on a loaded runner, and an
+    error toast now stays until it is dismissed, so anything arriving in that gap
+    is in the baseline for good. `run-all-survives-a-failed-node` collected five
+    of them that way on CI - 26.87% of a frame whose budget is 5% - while the two
+    earlier captures of the same walkthrough, taken before the run that raised
+    them, passed.
 
     Returns the path to the expected screenshot file.
     """
@@ -987,12 +1116,25 @@ def save_workflow_test_screenshot(
     if fit_reactflow:
         _wait_for_reactflow_ready(page)
 
+    # After the viewport wait, not before it: this is the last moment the page
+    # can be quieted, so it is the only sweep that holds until the capture.
+    if sweep_toasts:
+        dismiss_toasts(page)
+
     def _capture():
         if clip_selector is not None:
             return _capture_element(page, clip_selector)
         return _capture_full_page(page)
 
     if not os.path.isfile(expected_path):
+        if env_flag("CURIO_E2E_REQUIRE_BASELINES",
+                    default=bool(os.environ.get("PYTEST_XDIST_WORKER"))):
+            raise AssertionError(
+                f"no baseline at {expected_path}. Parallel runs never mint "
+                "baselines: generate it with a serial run (or set "
+                "CURIO_E2E_REQUIRE_BASELINES=0) and eyeball the PNG before "
+                "committing it."
+            )
         _capture().save(expected_path)
 
     expected_img = Image.open(expected_path).convert("RGB")
@@ -1049,7 +1191,7 @@ def save_workflow_test_screenshot(
 def debug_log(location: str, message: str, data: dict = None, hypothesis_id: str = ""):
     """Write a single NDJSON debug entry to ``.curio/playwright.log``."""
     try:
-        log_path = os.path.join(REPO_ROOT, ".curio", "playwright.log")
+        log_path = os.path.join(state_root(), "playwright.log")
         entry = {
             "timestamp": int(time.time() * 1000),
             "location": location,
@@ -1268,7 +1410,14 @@ def _request_json(
         return json.loads(body)
 
 
-def _post_json(url: str, payload: dict, timeout: float = 10.0) -> dict:
+# 60 s, not 10: under ``--parallel`` four backends share the CPU with four
+# Chromiums, and a stub-login that seeds the examples for a fresh user was
+# measured taking 15-48 s to answer. The server does finish; a client that
+# gives up at 10 s turns that into a class-wide setup error.
+HTTP_TIMEOUT_S = 60.0
+
+
+def _post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT_S) -> dict:
     """POST *payload* as JSON to *url* and return the parsed JSON body."""
     return _request_json(url, method="POST", payload=payload, timeout=timeout)
 
@@ -1428,7 +1577,7 @@ def install_session_cookie(page, frontend_url: str, token: str) -> None:
     )
 
 
-def _await_session(backend_url: str, token: str, *, timeout: float = 10.0) -> None:
+def _await_session(backend_url: str, token: str, *, timeout: float = HTTP_TIMEOUT_S) -> None:
     """Block until *token* authenticates, or fail saying it never did.
 
     Not defensive padding - it closes a real race in this harness. The autouse
@@ -1708,6 +1857,122 @@ _DRAG_TO_CANVAS_JS = r"""({ source, targetSelector, clientX, clientY }) => {
 }"""
 
 
+def edge_client_point(page, *, on_miss=None) -> tuple[float, float] | None:
+    """A point that ``pickEdgeAtPoint`` will actually resolve to an edge.
+
+    React Flow draws a wide invisible ``.react-flow__edge-interaction`` path
+    under every edge precisely so a pointer can land on a curve, and
+    ``pickEdgeAtPoint`` hit-tests it with ``elementFromPoint``
+    (``agentCatalogEvents.ts``). Two things make the obvious "take the midpoint"
+    version wrong:
+
+    * a bezier's bounding-box centre is usually empty space, so the point has to
+      come from ``getPointAtLength`` on the path itself; and
+    * the open agent palette is a ~545px strip floating *over* the left of the
+      canvas, so a point that is geometrically on the edge can still be occluded
+      - and ``elementFromPoint`` would return the palette, which resolves to no
+      edge and silently attaches to the canvas instead.
+
+    So this samples along the curve and returns the first point that
+    ``elementFromPoint`` resolves to an edge, which is the same question the drop
+    handler asks. ``None`` means no such point exists right now, and the caller
+    skips the beat rather than recording a mislabelled one.
+
+    "The same question" is meant literally, and it has to be kept that way: an
+    edge that already carries agent badges resolves through them as well as
+    through its own group (``EDGE_AGENT_BADGES_ATTR``, #296), because the badges
+    sit on React Flow's label layer and cover the midpoint this walk starts
+    from. Before that branch was mirrored here, every caller on a canvas with a
+    connection agent attached simply found nothing and skipped.
+    """
+    point = page.evaluate(
+        """() => {
+            const path = document.querySelector(
+                '.react-flow__edge .react-flow__edge-interaction'
+            ) || document.querySelector('.react-flow__edge path');
+            if (!path || !path.getPointAtLength) return null;
+            const total = path.getTotalLength();
+            if (!total) return null;
+            const svg = path.ownerSVGElement;
+            const ctm = path.getScreenCTM();
+            const rf = window.__curio_reactFlow;
+            if (!svg || !ctm || !rf) return null;
+
+            const toFlow = (x, y) => (
+                rf.screenToFlowPosition
+                    ? rf.screenToFlowPosition({ x, y })
+                    : rf.project({ x, y })
+            );
+            // handleDrop's precedence, restated: pickNodeAtPoint runs first and
+            // a hit there wins, so a point that is visually on the curve still
+            // attaches to a NODE if it falls inside that node's box. React
+            // Flow's boxes are generous - a node is 525x350 - and the bezier
+            // dips back over them near its ends.
+            const nodes = rf.getNodes();
+            const insideANode = (flow) => nodes.some((n) => {
+                const o = n.positionAbsolute ?? n.position;
+                if (!o) return false;
+                const w = n.width ?? 0;
+                const h = n.height ?? 0;
+                return flow.x >= o.x && flow.x <= o.x + w
+                    && flow.y >= o.y && flow.y <= o.y + h;
+            });
+
+            // Walk outwards from the midpoint, which is the part of the curve
+            // furthest from both node bodies.
+            const fractions = [
+                0.5, 0.48, 0.52, 0.45, 0.55, 0.42, 0.58, 0.4, 0.6, 0.35, 0.65,
+                0.3, 0.7, 0.25, 0.75, 0.2, 0.8,
+            ];
+            for (const f of fractions) {
+                const at = path.getPointAtLength(total * f);
+                const pt = svg.createSVGPoint();
+                pt.x = at.x;
+                pt.y = at.y;
+                const screen = pt.matrixTransform(ctm);
+                const hit = document.elementFromPoint(screen.x, screen.y);
+                if (!hit || !hit.closest) continue;
+                // Occluded (the palette strip floats over the pane), so
+                // pickEdgeAtPoint would miss it. An edge's own agent badges are
+                // NOT occlusion: pickEdgeAtPoint resolves them back to their
+                // edge, so a point on them is a real drop target for it.
+                if (!hit.closest('.react-flow__edge')
+                    && !hit.closest('[data-curio-edge-badges]')) continue;
+                // Inside a node's box, so pickNodeAtPoint would claim it first.
+                if (insideANode(toFlow(screen.x, screen.y))) continue;
+                return { point: [screen.x, screen.y] };
+            }
+            // Nothing qualified. Hand back what was measured so the caller can
+            // say why rather than just skipping the beat.
+            const mid = path.getPointAtLength(total / 2);
+            const mpt = svg.createSVGPoint();
+            mpt.x = mid.x;
+            mpt.y = mid.y;
+            const mscreen = mpt.matrixTransform(ctm);
+            const hit = document.elementFromPoint(mscreen.x, mscreen.y);
+            return { why: {
+                midScreen: [Math.round(mscreen.x), Math.round(mscreen.y)],
+                midFlow: toFlow(mscreen.x, mscreen.y),
+                topmost: hit ? (hit.className && hit.className.baseVal !== undefined
+                    ? hit.className.baseVal : String(hit.className || hit.tagName)) : null,
+                nodes: nodes.map((n) => {
+                    const o = n.positionAbsolute ?? n.position;
+                    return { id: n.id, x: o && o.x, y: o && o.y,
+                             w: n.width, h: n.height };
+                }),
+            } };
+        }"""
+    )
+    if not point:
+        return None
+    if point.get("point"):
+        found = point["point"]
+        return (found[0], found[1])
+    if on_miss is not None:
+        on_miss(point.get("why"))
+    return None
+
+
 def canvas_nodes(page) -> list[dict]:
     """Every node on the canvas as ``{"id", "nodeType"}``.
 
@@ -1741,6 +2006,93 @@ def canvas_node_type(page, node_id: str) -> str | None:
 def node_locator(page, node_id: str):
     """Return a Playwright ``Locator`` for a ReactFlow node element."""
     return page.locator(f'.react-flow__node[data-id="{node_id}"]')
+
+
+def enable_save_output(page, node_id: str) -> None:
+    """Turn on one node's save-output toggle, so running it leaves a dataset.
+
+    The database-icon switch beside the play button, and it is **off by
+    default** (``CURIO_DEFAULT_SAVE_NODE_OUTPUT``, documented in
+    ``docs/DATA-CATALOG.md``). With it off a run writes a parquet under
+    ``.curio/data/`` and stops there: ``routes.py`` gates the auto-install on
+    ``save_output_dataset``, so no ``computed.<dataflow>.<node>@1`` is ever
+    installed into the account store.
+
+    A test that runs a producing node and then looks for its dataset in a
+    catalog therefore has to flip this first. Three catalog tests did not, and
+    passed anyway for years because the per-user store outlived ``reset-db`` and
+    held 37 ``computed.*`` rows from earlier runs - a ``computed.``-prefixed
+    card was always there to find, just never this test's.
+
+    Clicks the label rather than the input: the checkbox is visually hidden by
+    ``SaveOutputToggle.module.css``, so ``check()`` fails actionability. Scoped
+    inside the node because the id is built from Curio's ``data.nodeId``, which
+    a caller holding React Flow's ``data-id`` cannot assume it has.
+    """
+    node = node_locator(page, node_id)
+    box = node.locator('input[id^="save-output-"]').first
+    box.wait_for(state="attached", timeout=15000)
+    if box.is_checked():
+        return
+    node.locator('label:has(input[id^="save-output-"])').first.click()
+    expect(box).to_be_checked(timeout=10000)
+
+
+def save_dataflow(page, *, timeout: float = 30000) -> None:
+    """Save the open dataflow through the File menu, and wait for the write.
+
+    Gates on the write itself rather than on the File menu closing: the menu can
+    close before the PUT is answered, and a test that then reads the server sees
+    the pre-save spec.
+    """
+    file_btn = page.get_by_role("button", name=re.compile("File"))
+    file_btn.wait_for(state="visible", timeout=15000)
+    file_btn.click(force=True)
+    save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
+    save_btn.wait_for(state="visible", timeout=10000)
+    with page.expect_response(
+        lambda r: "/api/projects" in r.url
+        and r.request.method in ("POST", "PUT")
+        and r.ok,
+        timeout=timeout,
+    ):
+        save_btn.click()
+    save_btn.wait_for(state="hidden", timeout=timeout)
+
+
+def frame_node(page, node_id: str, *, zoom: float = 0.9,
+               settle_ms: float = 1000) -> None:
+    """Pan and zoom the canvas so one node fills the frame.
+
+    For scenes whose subject is *inside* a node. The baseline harness fits the
+    viewport to the whole dataflow, which is right for a scene about the graph
+    and wrong for one about a chart: at fit zoom a 525x350 node is a ~90x60
+    thumbnail, and a screenshot of it cannot show what the scene claims. The
+    `05-vega-lite-multi-view-drilldown` example has 28 nodes, so its captures
+    were two near-identical canvas wallpapers.
+
+    Keeps the full 1280x720 frame rather than clipping to the node, so the
+    surrounding canvas still reads as context.
+
+    ``window.__curio_reactFlow`` is the instance ``MainCanvas.tsx`` exposes for
+    exactly this; ``setCenter`` takes flow coordinates, hence the node's own
+    position plus half its measured size.
+    """
+    page.evaluate(
+        """({ nodeId, zoom }) => {
+            const rf = window.__curio_reactFlow;
+            if (!rf) return;
+            const node = rf.getNodes().find((n) => n.id === nodeId);
+            if (!node) return;
+            const w = node.width || node.measured?.width || 525;
+            const h = node.height || node.measured?.height || 350;
+            rf.setCenter(node.position.x + w / 2, node.position.y + h / 2, {
+                zoom, duration: 700,
+            });
+        }""",
+        {"nodeId": node_id, "zoom": zoom},
+    )
+    page.wait_for_timeout(settle_ms)
 
 
 def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,

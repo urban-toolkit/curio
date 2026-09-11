@@ -170,3 +170,108 @@ describe("useEnsureWorkflowDeps - failure handling", () => {
     );
   });
 });
+
+describe("useEnsureWorkflowDeps - a dep that is installed but will not import", () => {
+  // The gap a version check cannot see: a wheel whose native extension fails to
+  // load records a perfectly good version, so `is_satisfied` says yes and the
+  // dataflow used to load clean - the user meeting the failure later as a raw
+  // ImportError from whichever node ran first.
+  const BROKEN = {
+    package: "curio.weather@1",
+    dep: "rasterio",
+    error: "ImportError: DLL load failed while importing _base",
+  };
+
+  it("warns, naming the library and the actual error", async () => {
+    mockCheck.mockResolvedValue({ packages: [], broken: [BROKEN] });
+
+    await ensure({ dataflow: { packages: ["curio.weather@1"] } });
+
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
+    const [message, level] = mockShowToast.mock.calls[0];
+    expect(level).toBe("error");
+    expect(message).toContain("rasterio");
+    expect(message).toContain("DLL load failed");
+  });
+
+  it("does NOT try to install it — reinstalling cannot fix a broken extension", async () => {
+    // pip would report "already satisfied" and change nothing, so an install
+    // here would be a no-op dressed up as a repair.
+    mockCheck.mockResolvedValue({ packages: [], broken: [BROKEN] });
+
+    await ensure({ dataflow: { packages: ["curio.weather@1"] } });
+
+    expect(mockInstall).not.toHaveBeenCalled();
+  });
+
+  it("still installs what is genuinely missing alongside the warning", async () => {
+    // The two conditions are independent: one package broken, another absent.
+    mockCheck.mockResolvedValue({ packages: ["curio.uhvi@1"], broken: [BROKEN] });
+    mockInstall.mockResolvedValue({ packages: ["curio.uhvi@1"] });
+
+    await ensure({ dataflow: { packages: ["curio.weather@1", "curio.uhvi@1"] } });
+
+    expect(mockInstall).toHaveBeenCalledWith(["curio.uhvi@1"]);
+    const levels = mockShowToast.mock.calls.map((c) => c[1]);
+    expect(levels).toContain("error");
+  });
+
+  it("says nothing when the backend reports nothing broken", async () => {
+    mockCheck.mockResolvedValue({ packages: [], broken: [] });
+
+    await ensure({ dataflow: { packages: ["curio.weather@1"] } });
+
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it("tolerates an older backend that omits the field entirely", async () => {
+    // `broken` is optional in the response type; a missing key must not throw.
+    mockCheck.mockResolvedValue({ packages: [] });
+
+    await ensure({ dataflow: { packages: ["curio.weather@1"] } });
+
+    expect(mockShowToast).not.toHaveBeenCalled();
+    expect(mockInstall).not.toHaveBeenCalled();
+  });
+});
+
+describe("useEnsureWorkflowDeps - one library, one notice", () => {
+  it("does not repeat a library the check already reported", async () => {
+    // /check names installed-but-unimportable libraries, then /install runs and
+    // reports the same ones - pip counts them satisfied and skips, so the
+    // install cannot have repaired them. Two persistent red toasts about one
+    // library reads as two problems.
+    mockCheck.mockResolvedValue({
+      packages: ["curio.weather@1"],
+      broken: [{ package: "curio.weather@1", dep: "rasterio", error: "ImportError: DLL load failed" }],
+    });
+    mockInstall.mockResolvedValue({
+      installedPackages: ["curio.weather@1"],
+      importErrors: { rasterio: "ImportError: DLL load failed" },
+    });
+
+    await ensure({ dataflow: { packages: ["curio.weather@1"] } });
+
+    const mentions = mockShowToast.mock.calls.filter(([msg]) =>
+      String(msg).includes("rasterio"),
+    );
+    expect(mentions).toHaveLength(1);
+  });
+
+  it("still reports a library only the install found", async () => {
+    // The check clears a dep it considers satisfied; the install's probe is
+    // what actually tries the import. Suppressing by name must not suppress
+    // a verdict nobody has shown yet.
+    mockCheck.mockResolvedValue({ packages: ["curio.weather@1"], broken: [] });
+    mockInstall.mockResolvedValue({
+      installedPackages: ["curio.weather@1"],
+      importErrors: { rasterstats: "ImportError: DLL load failed" },
+    });
+
+    await ensure({ dataflow: { packages: ["curio.weather@1"] } });
+
+    expect(
+      mockShowToast.mock.calls.some(([msg]) => String(msg).includes("rasterstats")),
+    ).toBe(true);
+  });
+});

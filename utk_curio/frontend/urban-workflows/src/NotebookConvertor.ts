@@ -10,6 +10,9 @@ interface TrillNode {
   x: number;
   y: number;
   content?: string;
+  /** Display header. Absent here until #235 - which is why every imported
+   *  cell rendered as an identical "Python Computation". */
+  title?: string;
   in?: unknown;
   out?: unknown;
 }
@@ -102,6 +105,20 @@ function wireCode(
   return out;
 }
 
+const COLUMN_STRIDE = 700;
+const ROW_STRIDE = 450;
+
+/**
+ * How many nodes a level may stack before it starts a new column.
+ *
+ * Every node with no incoming edge lands on level 0, so a notebook full of
+ * independent cells used to produce one unbounded vertical column - twenty
+ * cells meant a 9000px drop nobody scrolls through (#235). Wrapping keeps a
+ * level roughly screen-shaped. The cap applies to every level uniformly and
+ * only engages past it, so an ordinary pipeline lays out exactly as before.
+ */
+const MAX_ROWS_PER_LEVEL = 6;
+
 function computeLayout(
   count: number,
   edges: CellEdge[],
@@ -116,8 +133,42 @@ function computeLayout(
   return level.map((lv) => {
     const pos = countPerLevel.get(lv) ?? 0;
     countPerLevel.set(lv, pos + 1);
-    return { x: lv * 700, y: pos * 450 };
+    // Overflow spills into sub-columns to the right of the level. The stride
+    // is half a column so a wrapped level stays visually part of its own
+    // stage rather than reading as the next one.
+    const wrap = Math.floor(pos / MAX_ROWS_PER_LEVEL);
+    return {
+      x: lv * COLUMN_STRIDE + wrap * (COLUMN_STRIDE / 2),
+      y: (pos % MAX_ROWS_PER_LEVEL) * ROW_STRIDE,
+    };
   });
+}
+
+export const SETUP_NODE_TITLE = "Setup / Imports";
+
+/**
+ * Fold several import-only cells into one block of source.
+ *
+ * Lines are deduplicated on their trimmed text and kept in first-seen order,
+ * because notebooks routinely repeat `import pandas as pd` in three separate
+ * setup cells and the merged node should read like something a person wrote.
+ * Blank lines are dropped: the cell boundaries they used to separate no
+ * longer exist.
+ */
+export function mergeImportCells(sources: string[]): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const source of sources) {
+    for (const raw of source.split("\n")) {
+      const line = raw.trimEnd();
+      const key = line.trim();
+      if (key === "") continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(line);
+    }
+  }
+  return lines.join("\n");
 }
 
 export async function notebookToTrill(
@@ -140,10 +191,17 @@ export async function notebookToTrill(
     used: string[];
     last_var: string | null;
     altair_spec: Record<string, unknown> | null;
+    is_import_only?: boolean;
   };
   let cellEdges: CellEdge[] = [];
   let lastVars: (string | null)[] = [];
   let altairSpecs: (Record<string, unknown> | null)[] = [];
+  let importOnly: boolean[] = [];
+  // Whether the analyzer actually answered. Distinct from "returned no edges":
+  // a notebook of genuinely independent cells has none, and fabricating a
+  // chain for it would wire `arg` between cells the AST proved unrelated - and
+  // stretch the layout 700px per cell for dependencies that do not exist.
+  let analyzed = false;
   try {
     const response = await fetch(`${backendUrl}/api/analyzeNotebook`, {
       method: "POST",
@@ -158,6 +216,8 @@ export async function notebookToTrill(
       cellEdges = data.edges ?? [];
       lastVars = (data.analysis ?? []).map((a) => a.last_var ?? null);
       altairSpecs = (data.analysis ?? []).map((a) => a.altair_spec ?? null);
+      importOnly = (data.analysis ?? []).map((a) => a.is_import_only === true);
+      analyzed = Array.isArray(data.analysis);
     }
   } catch {
     console.warn(
@@ -165,13 +225,20 @@ export async function notebookToTrill(
     );
   }
 
-  // Linear fallback when backend returned no edges
-  if (cellEdges.length === 0 && codeCells.length > 1) {
+  // Linear fallback, for when the analyzer could not be reached at all. A
+  // chain is a guess, but a defensible one with no information; it used to
+  // fire whenever the response merely carried no edges, which meant a notebook
+  // the analyzer had correctly found to be independent got the guess anyway.
+  if (!analyzed && codeCells.length > 1) {
     for (let i = 0; i < codeCells.length - 1; i++) {
       cellEdges.push({ source: i, target: i + 1 });
     }
     // No lastVars available — skip wiring in this path
     lastVars = [];
+    // …and no analysis, so nothing can be classified. Merging on a guess would
+    // silently move code the user wrote into a node they did not: without the
+    // backend, every cell keeps its own node exactly as before.
+    importOnly = [];
   }
 
   // Build wiring sets
@@ -182,34 +249,74 @@ export async function notebookToTrill(
     incomingSources.get(target)!.push(source);
   }
 
-  const positions = computeLayout(codeCells.length, cellEdges);
+  // Import-only cells collapse into a single Setup node. They can have no
+  // edges by construction (see analyzer._is_import_only), so removing them
+  // cannot disconnect anything - which is what makes the remap below safe.
+  const mergedCells = codeCells.filter((_, i) => importOnly[i]);
+  const keptIndices = codeCells
+    .map((_, i) => i)
+    .filter((i) => !importOnly[i]);
 
-  const nodeIds = codeCells.map(() => uuid());
+  // Original cell index -> index among the kept cells. Edges, positions and
+  // ids are all in kept-space; wiring stays in original-space, because
+  // `lastVars`/`hasOutgoing`/`incomingSources` are indexed by cell.
+  const keptSlot = new Map<number, number>();
+  keptIndices.forEach((original, slot) => keptSlot.set(original, slot));
 
-  const nodes: TrillNode[] = codeCells.map((code, index) => {
-    const spec = altairSpecs[index] ?? null;
+  const keptEdges: CellEdge[] = cellEdges
+    .filter(({ source, target }) => keptSlot.has(source) && keptSlot.has(target))
+    .map(({ source, target }) => ({
+      source: keptSlot.get(source)!,
+      target: keptSlot.get(target)!,
+    }));
+
+  const positions = computeLayout(keptIndices.length, keptEdges);
+  const nodeIds = keptIndices.map(() => uuid());
+
+  const nodes: TrillNode[] = keptIndices.map((original, slot) => {
+    const code = codeCells[original];
+    const spec = altairSpecs[original] ?? null;
     const nodeType = spec ? NodeType.VIS_VEGA : inferNodeType(code);
     const content = spec
       ? JSON.stringify(spec, null, 2)
       : lastVars.length > 0
-        ? wireCode(code, index, lastVars, hasOutgoing, incomingSources)
+        ? wireCode(code, original, lastVars, hasOutgoing, incomingSources)
         : code;
-    return {
-      id: nodeIds[index],
+    const node: TrillNode = {
+      id: nodeIds[slot],
       type: nodeType,
-      x: positions[index].x,
-      y: positions[index].y,
+      x: positions[slot].x,
+      y: positions[slot].y,
       content,
     };
+    // Name the node after what it produces. Without this every node renders
+    // as its template label, so a twenty-cell notebook imported as twenty
+    // boxes all reading "Python Computation" (#235).
+    const producedName = lastVars[original];
+    if (producedName) node.title = producedName;
+    return node;
   });
 
-  const edgeList: TrillEdge[] = cellEdges
-    .filter(({ source, target }) => nodes[source] && nodes[target])
-    .map(({ source, target }) => ({
+  if (mergedCells.length > 0) {
+    // Placed up and to the left of the pipeline rather than in column 0, where
+    // it would sit on top of the first real stage. Curio hoists a node's
+    // imports into a session-scoped namespace, so one Setup node run first
+    // genuinely serves the rest of the dataflow - this is not just grouping.
+    nodes.unshift({
       id: uuid(),
-      source: nodeIds[source],
-      target: nodeIds[target],
-    }));
+      type: NodeType.COMPUTATION_ANALYSIS,
+      x: -COLUMN_STRIDE / 2,
+      y: -ROW_STRIDE / 2,
+      title: SETUP_NODE_TITLE,
+      content: mergeImportCells(mergedCells),
+    });
+  }
+
+  const edgeList: TrillEdge[] = keptEdges.map(({ source, target }) => ({
+    id: uuid(),
+    source: nodeIds[source],
+    target: nodeIds[target],
+  }));
 
   return {
     dataflow: {

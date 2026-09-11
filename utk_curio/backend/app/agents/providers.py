@@ -230,3 +230,76 @@ def stream_chat_completion(
             text = getattr(delta, "content", None) if delta is not None else None
             if text:
                 yield text
+
+
+class ModelListingUnavailable(RuntimeError):
+    """The endpoint could not be asked what it serves.
+
+    Carries the reason so AI Settings can say *why* the list is missing rather
+    than only that it is: a rejected key, an unreachable host and an endpoint
+    with no listing route are three different things for the user to fix.
+    """
+
+
+def list_provider_models(config: ProviderConfig) -> list[str]:
+    """The model ids *config*'s endpoint says it serves.
+
+    Lives here for the same reason every other provider call does: this module
+    is the one place raw provider SDKs are imported (see the module docstring).
+    The route used to import ``openai`` directly, which also meant Anthropic and
+    Gemini were reported as unlistable when in fact nobody had asked them
+    (#241) - both SDKs have had a models endpoint for some time.
+
+    Raises :class:`ModelListingUnavailable` when the endpoint cannot answer. The
+    caller decides what to do about that; ``model_catalog`` holds the fallback.
+    """
+    api_type = (config.api_type or "").strip()
+
+    if not (config.api_key or "").strip():
+        # No credential means no listing anywhere: OpenAI, Anthropic and Gemini
+        # all authenticate their models endpoint. Refusing here rather than
+        # sending "no-key" keeps a user who has not pasted a key yet from
+        # waiting out a socket timeout for a foregone 401.
+        raise ModelListingUnavailable(
+            "Add an API key above to ask this provider what it serves."
+        )
+
+    try:
+        if api_type == "anthropic":
+            import anthropic
+
+            client = anthropic.Anthropic(api_key=config.api_key, timeout=20.0)
+            return sorted(
+                {m.id for m in client.models.list() if getattr(m, "id", None)}
+            )
+
+        if api_type == "gemini":
+            import google.generativeai as genai
+
+            genai.configure(api_key=config.api_key)
+            out: set[str] = set()
+            for m in genai.list_models():
+                methods = getattr(m, "supported_generation_methods", None) or []
+                # Embedding and tuning-only models are listed too, and offering
+                # one as the chat model produces a failure at the first agent
+                # run rather than here.
+                if "generateContent" not in methods:
+                    continue
+                name = getattr(m, "name", "") or ""
+                # The API returns "models/gemini-2.0-flash"; every other place
+                # in Curio names the bare id.
+                out.add(name.split("/", 1)[-1] if name.startswith("models/") else name)
+            return sorted(n for n in out if n)
+
+        # openai_compatible (default), which also covers Ollama, vLLM, Groq, ...
+        from openai import OpenAI
+
+        kwargs: dict = {"api_key": config.api_key, "timeout": 20.0}
+        if config.base_url:
+            kwargs["base_url"] = config.base_url
+        listing = OpenAI(**kwargs).models.list()
+        return sorted({m.id for m in listing.data if getattr(m, "id", None)})
+    except Exception as exc:  # noqa: BLE001 - every SDK failure is one answer here
+        # A rejected key, an unreachable host and an endpoint without a models
+        # route all mean "cannot offer a live choice".
+        raise ModelListingUnavailable(f"Could not list models: {exc}") from exc

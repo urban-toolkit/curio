@@ -1,6 +1,7 @@
 import Cookies from "js-cookie";
+import { backendUrl } from "./backendUrl";
 
-const BACKEND_URL = process.env.BACKEND_URL || "";
+const BACKEND_URL = backendUrl();
 const TOKEN_KEY = "session_token";
 
 export function getToken(): string | undefined {

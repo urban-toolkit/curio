@@ -20,13 +20,28 @@ export const AgentImportModal: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Accumulate across dialogs, replacing same-named entries.
+   *
+   * This used to `setFiles(read)`, which made the documented package layout
+   * impossible to import. An agent package is `<id>@<version>/manifest.json`
+   * plus `<id>@<version>/prompts/*.txt` (docs/AGENT-CATALOG.md) - two
+   * directories - and one OS file dialog cannot span two directories. So the
+   * manifest and its prompts had to be picked in two goes, and the second go
+   * discarded the first. The only way through was to flatten the package into
+   * a single folder first, which nothing tells the user to do.
+   */
   const pick = async (list: FileList | null) => {
     if (!list) return;
     setError(null);
     const read = await Promise.all(
       Array.from(list).map(async (f) => ({ name: f.name, text: await f.text() })),
     );
-    setFiles(read);
+    setFiles((prev) => {
+      const byName = new Map(prev.map((f) => [f.name, f]));
+      for (const f of read) byName.set(f.name, f);
+      return Array.from(byName.values());
+    });
   };
 
   const submit = async () => {
@@ -51,9 +66,10 @@ export const AgentImportModal: React.FC<{
       <div className={styles.body}>
         <h2 id="agent-import-title" className={styles.title}>Import agent package</h2>
         <p className={styles.hint}>
-          Pick one <code>manifest.json</code> and its <code>.txt</code> prompt files. The
-          import lands in <strong>My imports</strong> as your own definition. Adding it
-          and publishing stay separate actions.
+          Pick a <code>.curio-agent.json</code> exported from an agent&apos;s details
+          screen, or one <code>manifest.json</code> and its <code>.txt</code> prompt
+          files. Those live in separate folders, so you can pick them in more than one
+          go - each selection adds to the list.
         </p>
 
         <label className={styles.picker}>
@@ -70,6 +86,11 @@ export const AgentImportModal: React.FC<{
           <p className={styles.summary}>
             {hasManifest ? "manifest.json" : "no manifest yet"} · {promptCount} prompt file
             {promptCount === 1 ? "" : "s"}
+            {" "}
+            {/* Selections accumulate, so there has to be a way back to empty. */}
+            <button type="button" className={styles.clear} onClick={() => setFiles([])}>
+              Clear
+            </button>
           </p>
         ) : null}
 

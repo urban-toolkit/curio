@@ -3,6 +3,7 @@ import { NodeTemplateId } from "./registry/types";
 import { formatDate, mapTypes } from "./utils/formatters";
 import { getToken } from "./utils/authApi";
 // import { pythonCode } from "./pythonWrapper";
+import { backendUrl } from "./utils/backendUrl";
 
 export class PythonInterpreter {
     // protected _pythonWrapperCode: string[];
@@ -60,7 +61,7 @@ export class PythonInterpreter {
         }
 
         const _token = getToken();
-        const url = process.env.BACKEND_URL + "/processPythonCode";
+        const url = backendUrl() + "/processPythonCode";
         const fetchStartedAt = performance.now();
         // Mirror the JavaScriptInterpreter: cap the wait so a stuck node fails
         // with a clear "execution timed out" message instead of hanging forever.
@@ -138,7 +139,7 @@ export class PythonInterpreter {
                     unresolvedUserCode
                 );
 
-                // fetch(process.env.BACKEND_URL+"/nodeExecProv", {
+                // fetch(backendUrl()+"/nodeExecProv", {
                 //     method: "POST",
                 //     body: JSON.stringify({
                 //         data: {

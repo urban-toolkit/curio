@@ -92,6 +92,7 @@ function InstalledDatasetRow({
               allowPublish={publishAllowed}
               busy={publishingId === dataset.id}
               onPublish={onPublish}
+              publishActionTitle="Publish this dataset into the shared catalog (datasets/)"
             />
           ) : null}
           {onUninstall != null ? (
@@ -149,7 +150,7 @@ export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
 }) => {
   if (datasets.length === 0 && installing.length === 0) return null;
 
-  const label = sectionLabel ?? `Your datasets · ${datasets.length} in dataflow`;
+  const label = sectionLabel ?? `Your datasets · ${datasets.length} in project`;
 
   return (
     <>

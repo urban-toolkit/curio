@@ -239,11 +239,29 @@ Two details in that code that are easy to get wrong:
 - **The session token is in the `session_token` cookie.** The artifact endpoint
   requires it.
 
-A `dataframe` payload is column-oriented, the shape `DataFrame.to_dict()`
-produces:
+A `dataframe` payload is column-oriented. Curio's sandbox serialises with
+`DataFrame.to_dict(orient='list')`, so **each column is an array** and the row
+index is its position:
+
+```js
+{ "population": [2746, 8804], "name": ["Chicago", "…"] }
+```
+
+Hand-written specs and a bare `DataFrame.to_dict()` produce the row-map form
+instead, where each column is an object keyed by row index:
 
 ```js
 { "population": { "0": 2746, "1": 8804 }, "name": { "0": "Chicago", "1": "…" } }
+```
+
+**Accept both.** A node that requires the row-map form silently sees no data
+from any real Curio DataFrame - it has nothing to render and nothing to throw,
+so it just shows its "connect something upstream" hint forever. That is exactly
+how #194 happened, in the example package this document describes. Read a cell
+through a helper rather than indexing directly:
+
+```js
+const cell = (column, key) => (Array.isArray(column) ? column[Number(key)] : column[key]);
 ```
 
 A `geodataframe` payload is a GeoJSON `FeatureCollection`.

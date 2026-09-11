@@ -11,7 +11,11 @@
  * reported success.
  */
 
-import { pickEdgeAtPoint, type AgentDropTarget } from "../../utils/agentCatalogEvents";
+import {
+  EDGE_AGENT_BADGES_ATTR,
+  pickEdgeAtPoint,
+  type AgentDropTarget,
+} from "../../utils/agentCatalogEvents";
 import { attachAgentOnDrop } from "../../utils/agentDropAttach";
 import { composeAgentRunContext } from "../../components/agents/attach/agentRunContext";
 
@@ -72,6 +76,45 @@ describe("pickEdgeAtPoint", () => {
     atPoint(group);
     expect(pickEdgeAtPoint(10, 10)).toBeNull();
     document.body.removeChild(group);
+  });
+
+  it("resolves an edge's own agent badges back to that edge (#296)", () => {
+    // The badges render on React Flow's edge-label layer, a SIBLING of the edge
+    // group, and they are the only pointer-events:auto thing there. So once one
+    // agent is attached, aiming at the label point - the obvious place to aim -
+    // hits the badges and walks up to no edge group at all. Without this, the
+    // second agent dropped on a connection silently lands on the canvas.
+    const badges = document.createElement("div");
+    badges.setAttribute(EDGE_AGENT_BADGES_ATTR, "edge-42");
+    const chip = document.createElement("button");
+    badges.appendChild(chip);
+    document.body.appendChild(badges);
+    atPoint(chip);
+
+    expect(pickEdgeAtPoint(10, 10)).toBe("edge-42");
+    document.body.removeChild(badges);
+  });
+
+  it("still reads a real edge group when the pointer is on the curve", () => {
+    // The badge branch must not shadow the ordinary path: an edge with badges
+    // is still hit normally everywhere except where its chips actually are.
+    const group = document.createElement("div");
+    group.className = "react-flow__edge";
+    group.setAttribute("data-testid", "rf__edge-edge-7");
+    const path = document.createElement("div");
+    path.className = "react-flow__edge-interaction";
+    group.appendChild(path);
+    document.body.appendChild(group);
+
+    const badges = document.createElement("div");
+    badges.setAttribute(EDGE_AGENT_BADGES_ATTR, "edge-7");
+    document.body.appendChild(badges);
+
+    atPoint(path);
+    expect(pickEdgeAtPoint(10, 10)).toBe("edge-7");
+
+    document.body.removeChild(group);
+    document.body.removeChild(badges);
   });
 });
 

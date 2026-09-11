@@ -87,30 +87,30 @@ describe("requiresAgents helpers (dev/106)", () => {
 
   it("a leaf card installs plainly", () => {
     expect(missingRequiredAgents(card())).toEqual([]);
-    expect(installLabel(card())).toBe("Add to dataflow");
+    expect(installLabel(card())).toBe("Add to project");
     expect(installTitle(card())).toBeUndefined();
   });
 
   it("tolerates a payload without the field", () => {
     const legacy = card();
     delete (legacy as Partial<AgentCard>).requiresAgents;
-    expect(installLabel(legacy)).toBe("Add to dataflow");
+    expect(installLabel(legacy)).toBe("Add to project");
   });
 
   it("names what the click adds when a dependency is missing", () => {
     const c = card({ requiresAgents: [ncb] });
-    expect(installLabel(c)).toBe("Add to dataflow (+1 required)");
+    expect(installLabel(c)).toBe("Add to project (+1 required)");
     expect(installTitle(c)).toBe("Also adds Node Content Builder (required)");
   });
 
-  it("a satisfied dependency counts as a plain Add to dataflow", () => {
+  it("a satisfied dependency counts as a plain Add to project", () => {
     const c = card({ requiresAgents: [{ ...ncb, installedInProject: true }] });
-    expect(installLabel(c)).toBe("Add to dataflow");
+    expect(installLabel(c)).toBe("Add to project");
   });
 
   it("an unresolvable dependency is called out (the server will refuse)", () => {
     const c = card({ requiresAgents: [{ ...ncb, id: "agent.ghost", name: "agent.ghost", coord: null, visible: false }] });
-    expect(installLabel(c)).toBe("Add to dataflow (+1 required)");
+    expect(installLabel(c)).toBe("Add to project (+1 required)");
     expect(installTitle(c)).toContain("Cannot add: requires agent.ghost");
   });
 });

@@ -9,7 +9,7 @@
  *     preferred, and the backend `/usage` rows populate the downstream list only
  *     when the canvas resolved none (the standalone catalog page, or a dataflow
  *     that merely imported the dataset), and
- *   * `DatasetDataflowUsageSection` itself: the "Used in dataflows (N)" list,
+ *   * `DatasetDataflowUsageSection` itself: the "Used in projects (N)" list,
  *     its dataflow links, and the "Produced here" row a dataflow gets when it
  *     owns the dataset but no node consumes it.
  *
@@ -187,9 +187,9 @@ describe("DatasetDetailPanel backend usage fallback", () => {
 
     // ...and the usage section itself, which the sibling test file stubs out.
     const usage = within(sidebar()).getByRole("region", {
-      name: "Dataflows using this dataset",
+      name: "Projects using this dataset",
     });
-    expect(within(usage).getByText("Used in dataflows (1)")).toBeInTheDocument();
+    expect(within(usage).getByText("Used in projects (1)")).toBeInTheDocument();
     expect(
       within(usage).getByRole("link", { name: "Saved Accessibility Flow" }),
     ).toHaveAttribute("href", "/dataflow/flow-9");
@@ -223,7 +223,7 @@ describe("DatasetDetailPanel backend usage fallback", () => {
     // list), so wait on it rather than on the downstream list - that way the
     // negative assertion below runs after the fetch resolved, not before it.
     expect(
-      await within(sidebar()).findByText("Used in dataflows (1)"),
+      await within(sidebar()).findByText("Used in projects (1)"),
     ).toBeInTheDocument();
 
     const downstream = within(sidebar()).getByText("Downstream usage (1)")
@@ -243,7 +243,7 @@ describe("DatasetDetailPanel backend usage fallback", () => {
     renderPanel(lineageFixture());
 
     const usage = await within(sidebar()).findByRole("region", {
-      name: "Dataflows using this dataset",
+      name: "Projects using this dataset",
     });
     expect(within(usage).getByText("Produced here")).toBeInTheDocument();
 

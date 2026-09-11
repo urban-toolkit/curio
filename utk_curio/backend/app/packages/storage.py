@@ -120,21 +120,15 @@ class PackageId:
 # Path helpers
 # ---------------------------------------------------------------------------
 
-def _launch_dir() -> Path:
-    return Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd()))
-
-
-def _users_base() -> Path:
-    return (_launch_dir() / ".curio" / "users").resolve()
-
-
-_GUEST_KEY = "guest"
-
-
-def _user_key_segment(user_key: str) -> str:
-    if user_key == _GUEST_KEY or user_key.isdigit():
-        return user_key
-    raise ValueError(f"Invalid user key for storage: {user_key!r}")
+# Re-exported under the module-private names this file has always used, so the
+# ~10 import sites elsewhere are untouched. ``user_storage`` explains why the
+# root moves under ``.curio/test/`` for a test rig.
+from utk_curio.backend.app.common.user_storage import (
+    GUEST_KEY as _GUEST_KEY,
+    launch_dir as _launch_dir,
+    user_key_segment as _user_key_segment,
+    users_base as _users_base,
+)
 
 
 def user_packageages_dir(user_key: str) -> Path:

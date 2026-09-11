@@ -236,3 +236,11 @@
   opacity: 0.65;
   cursor: default;
 }
+
+/* Copy-the-reference, at the end of a palette row (#206). Sized to the row's
+   existing meta chips so it does not change the row's height. */
+.copyButton {
+    flex-shrink: 0;
+    align-self: center;
+    margin-left: auto;
+}

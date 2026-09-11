@@ -60,6 +60,9 @@ export interface AgentCatalogBrowseState {
   onRemoveImport: (agent: AgentCard) => Promise<void>;
   onPublish: (agent: AgentCard) => Promise<void>;
   onUnpublish: (agent: AgentCard) => Promise<void>;
+  /** Re-read the roster. The page's own import modal writes a new definition
+   *  into the account, so it has to ask for the list again afterwards. */
+  reload: () => Promise<void>;
 }
 
 
@@ -233,6 +236,7 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
     selectedCoord,
     setSelectedCoord,
     selectedAgent,
+    reload,
     onImport,
     onRemoveImport,
     onPublish,

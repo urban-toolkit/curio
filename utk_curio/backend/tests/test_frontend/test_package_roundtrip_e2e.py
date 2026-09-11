@@ -48,6 +48,7 @@ import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    accept_confirm_dialog,
     activate_header_icon,
     api_json,
     connect_nodes,
@@ -154,17 +155,22 @@ def _add_dataset_and_get_palette_row(page):
     card = drawer.locator(f'{CARD}[data-dataset-id="{DATASET_ID}"]')
     expect(card).to_have_count(1, timeout=15000)
 
+    card.get_by_role("button", name="Add to project", exact=True).click()
     with page.expect_response(
         lambda r: "/datasets/install" in r.url and r.request.method == "POST" and r.ok,
         timeout=60000,
     ):
-        card.get_by_role("button", name="Add to dataflow", exact=True).click()
+        # The Data catalog confirms an add now (#196), so the card click only
+        # opens the dialog - the POST follows the confirm.
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to project"
+        )
 
     # Re-resolve rather than reuse the handle: the install flips origin
     # hub -> imported, which changes the React key so the card is replaced.
     expect(
         drawer.locator(f'{CARD}[data-dataset-id="{DATASET_ID}"]').get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=20000)
 

@@ -228,6 +228,8 @@ Logged-in users configure their own connection in **AI Settings**, reachable fro
 
 The panel sets the provider, base URL, API key, model, and a HuggingFace token (used only for gated models in the Street Vision node). Each field falls back to the deployment default when you leave it blank, so filling in only one box keeps the rest of the operator's configuration. Key and base URL are not inherited across providers: switching to Anthropic does not lend you the deployment's OpenAI-compatible endpoint.
 
+**An account holds one API key, against one provider.** The provider tabs pick which provider that is; they are not four separate slots. So the saved-key markers show only on the tab the key was saved under, and saving from a different tab replaces it. Before this was made explicit, every tab claimed a saved key, and saving from one of them kept the previous provider's key under the new provider's name.
+
 The following providers are supported:
 
 | Provider | Notes |
@@ -272,7 +274,7 @@ Anthropic Claude:
 ```bash
 GUEST_LLM_API_TYPE=anthropic
 GUEST_LLM_API_KEY=sk-ant-...
-GUEST_LLM_MODEL=claude-haiku-4-5-20251001
+GUEST_LLM_MODEL=claude-haiku-4-5
 ```
 
 If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for guest users rather than failing silently.
@@ -294,7 +296,7 @@ For the full walkthrough, covering concepts, the Save-As flow, the per-package m
 
 ## Data Catalog
 
-Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships eleven datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.
+Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twelve datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.
 
 Three surfaces manage datasets:
 

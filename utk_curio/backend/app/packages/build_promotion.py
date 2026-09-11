@@ -262,6 +262,26 @@ def promote(
                         f"{'restored' if journal['rollback']['status'] == 'rolled-back' else 'NOT fully restored — manual repair required'}: {exc}",
                         502) from exc
 
+            # pip is satisfied by metadata alone, so a wheel whose native
+            # extension cannot load installs without complaint and the
+            # promotion reports success. Record it instead: the applied turn
+            # says "built and installed", which is the last moment this is
+            # connectable to the package that caused it. Not a rollback - the
+            # package itself is sound, and the repair (a matching GDAL, a
+            # different wheel) is the user's.
+            #
+            # Outside the host branch, and asked through the install seam, so
+            # the question follows the deps to wherever `dep_destinations` just
+            # sent them. Inside it, a backend-bearing package - whose deps went
+            # to the overlay - was never probed at all, and a "both" package was
+            # vouched for by the host copy alone.
+            from utk_curio.backend.app.packages import services as _services
+
+            broken = _services._declared_import_failures(user_key, target, manifest)
+            if broken:
+                journal["importErrors"] = broken
+                _save_journal(user_key, journal)
+
         # dev/97: the post-Apply probe — ONE invocation of the INSTALLED
         # entry with the real overlay on PYTHONPATH, catching the overlay
         # shadowing edge at Apply (rollback compensation) instead of at the

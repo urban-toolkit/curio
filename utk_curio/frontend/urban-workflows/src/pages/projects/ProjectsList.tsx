@@ -3,6 +3,8 @@ import CSS from "csstype";
 import { useNavigate } from "react-router-dom";
 import { permanentDeletionNotice } from "../../services/retentionCopy";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
+import { useToastContext } from "../../providers/ToastProvider";
+import { projectActions, type ProjectActionId } from "./projectActions";
 import { notebookToTrill } from "../../NotebookConvertor";
 import DataflowThumbnail from "../../components/DataflowThumbnail";
 import {
@@ -21,9 +23,12 @@ import { CatalogBrowseDrawerBody } from "../catalog/CatalogBrowseDrawerBody";
 import { CatalogBrowseDrawerShell } from "../catalog/CatalogBrowseDrawerShell";
 import shellStyles from "../catalog/CatalogMasterPage.module.css";
 import styles from "./ProjectsBrowseLayout.module.css";
+import ConfirmDialog from "../../components/ConfirmDialog";
+import PromptDialog from "../../components/PromptDialog";
+import { UNREADABLE_FILE_MESSAGE } from "../../utils/dataflowImport";
+import { backendUrl } from "../../utils/backendUrl";
 
 type ViewMode = "grid" | "list";
-type FilterTab = "all" | "recent" | "archived";
 /** Mirrors the sorts projectsApi and `list_for_user` already implement. */
 type ProjectSort = "last_opened" | "name" | "created";
 
@@ -32,20 +37,6 @@ const SORT_OPTIONS: { value: ProjectSort; label: string }[] = [
   { value: "name", label: "Sort: Name" },
   { value: "created", label: "Sort: Created" },
 ];
-
-const FILTER_TABS: FilterTab[] = ["all", "recent", "archived"];
-
-const SCOPE_BY_TAB: Record<FilterTab, "mine" | "recent" | "archived"> = {
-  all: "mine",
-  recent: "recent",
-  archived: "archived",
-};
-
-const TAB_LABELS: Record<FilterTab, string> = {
-  all: "All projects",
-  recent: "Recent",
-  archived: "Archived",
-};
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
@@ -67,16 +58,10 @@ function edgeCount(project: ProjectSummary): number {
 
 const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
-  // Every scope is held at once so the rail can show counts and switching
-  // filters does not wait on a round trip.
-  const [byTab, setByTab] = useState<Record<FilterTab, ProjectSummary[]>>({
-    all: [],
-    recent: [],
-    archived: [],
-  });
+  const { showToast } = useToastContext();
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [sort, setSort] = useState<ProjectSort>("last_opened");
-  const [filter, setFilter] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
   // Tri-state, like the three catalog browse pages: `undefined` is "nothing
   // chosen yet, fall back to the first card", `null` is "the user closed the
@@ -85,17 +70,23 @@ const ProjectsList: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectSummary } | null>(null);
+  // #197: the rename prompt and the delete confirmation are app modals now,
+  // each holding the project it was opened for.
+  const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
+  // The project an action is currently running against. A delete can take a
+  // while, and the buttons were re-clickable throughout.
+  const [busyId, setBusyId] = useState<string | null>(null);
   const importNotebookRef = useRef<HTMLInputElement>(null);
 
+  // One request. There used to be a "Recent" tab fetched alongside this one,
+  // but it returned the same projects in the same order — its only filter was
+  // on ``archived_at``, which no scope varied and #261 removed (#286).
   const loadProjects = useCallback(async () => {
-    const results = await Promise.all(
-      FILTER_TABS.map((tab) =>
-        projectsApi
-          .list({ scope: SCOPE_BY_TAB[tab], sort })
-          .catch(() => [] as ProjectSummary[])
-      )
-    );
-    setByTab({ all: results[0], recent: results[1], archived: results[2] });
+    const rows = await projectsApi
+      .list({ sort })
+      .catch(() => [] as ProjectSummary[]);
+    setProjects(rows);
   }, [sort]);
 
   useEffect(() => {
@@ -108,13 +99,16 @@ const ProjectsList: React.FC = () => {
     return () => document.removeEventListener("click", dismiss);
   }, [contextMenu]);
 
-  const filtered = useMemo(
-    () =>
-      byTab[filter].filter((p) =>
-        p.name.toLowerCase().includes(search.toLowerCase())
-      ),
-    [byTab, filter, search]
-  );
+  const filtered = useMemo(() => {
+    // Trim first, the same normalization the catalog predicates this page's chrome
+    // mirrors already do (packageUtils.matchesSearch, agentListUtils.matchesAgentSearch)
+    // - so a name pasted with a trailing space still matches (#231). No empty-query
+    // short-circuit: `"anything".includes("")` is already true, and keeping the
+    // `.filter()` keeps `filtered` a fresh array every render, which is what the
+    // tri-state auto-select effect below is written against.
+    const needle = search.trim().toLowerCase();
+    return projects.filter((p) => p.name.toLowerCase().includes(needle));
+  }, [projects, search]);
 
   // Mirrors the catalog browse pages: the first item is selected so the detail
   // drawer arrives populated instead of empty.
@@ -123,7 +117,7 @@ const ProjectsList: React.FC = () => {
   // `null` and this effect read it as falsy and re-selected `filtered[0]`; only
   // the dependency array delayed it, so the drawer stayed shut until the next
   // search keystroke, filter click, sort change or post-mutation refetch - and
-  // after a rename or archive it came back on a *different* project than the
+  // after a rename or a delete it came back on a *different* project than the
   // one the user had been reading.
   useEffect(() => {
     if (filtered.length === 0) {
@@ -143,8 +137,7 @@ const ProjectsList: React.FC = () => {
 
   const openProject = (id: string) => navigate("/dataflow/" + id);
 
-  const handleRename = async (project: ProjectSummary) => {
-    const newName = window.prompt("Rename project:", project.name);
+  const performRename = async (project: ProjectSummary, newName: string) => {
     if (!newName || newName === project.name) return;
     try {
       await projectsApi.update(project.id, { name: newName });
@@ -153,6 +146,8 @@ const ProjectsList: React.FC = () => {
       console.error("Rename failed:", err);
     }
   };
+
+  const handleRename = (project: ProjectSummary) => setRenameTarget(project);
 
   const handleDuplicate = async (project: ProjectSummary) => {
     try {
@@ -163,49 +158,85 @@ const ProjectsList: React.FC = () => {
     }
   };
 
-  const handleArchive = async (project: ProjectSummary) => {
+  const performDelete = async (project: ProjectSummary) => {
+    setBusyId(project.id);
     try {
       await projectsApi.delete(project.id);
       loadProjects();
+      showToast(`Deleted "${project.name}".`, "success");
     } catch (err) {
-      console.error("Archive failed:", err);
+      showToast((err as Error)?.message || "Couldn't delete that dataflow.", "error");
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const handleDeleteForever = async (project: ProjectSummary) => {
-    // DEC-057 3.4b: state the live-store scope + the operator's declared
-    // backup posture - never claim irreversibility the platform can't control.
-    if (
-      !window.confirm(
-        `Permanently delete "${project.name}"?\n\n${permanentDeletionNotice()}`,
-      )
-    )
-      return;
-    try {
-      await projectsApi.delete(project.id, { purge: true });
-      loadProjects();
-    } catch (err) {
-      console.error("Delete failed:", err);
+  const handleDelete = (project: ProjectSummary) => setDeleteTarget(project);
+
+  /**
+   * Run one action from {@link projectActions}, whichever surface asked.
+   *
+   * The single dispatch is what keeps the drawer and the context menu in step:
+   * they render the same list and call the same thing, so an action cannot
+   * behave differently depending on where it was clicked (#221).
+   */
+  const runProjectAction = (id: ProjectActionId, project: ProjectSummary) => {
+    switch (id) {
+      case "open":
+        openProject(project.id);
+        return;
+      case "rename":
+        handleRename(project);
+        return;
+      case "duplicate":
+        void handleDuplicate(project);
+        return;
+      case "delete":
+        handleDelete(project);
+        return;
     }
   };
 
+  // Same silence as the canvas's "Load dataflow" had (#238): a notebook that
+  // would not parse produced a console line and a projects list that simply did
+  // not grow, which reads as the click having missed.
   const handleNotebookImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (event: ProgressEvent<FileReader>) => {
+      let json: Record<string, unknown>;
       try {
-        const json = JSON.parse(event.target?.result as string) as Record<string, unknown>;
-        const trillSpec = await notebookToTrill(json, process.env.BACKEND_URL as string);
+        json = JSON.parse(event.target?.result as string) as Record<string, unknown>;
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error("Failed to import Jupyter notebook:", err);
+        showToast(
+          `That file is not valid JSON, so it could not be imported (${detail}).`,
+          "error",
+        );
+        return;
+      }
+      try {
+        const trillSpec = await notebookToTrill(json, backendUrl());
         const name = file.name.replace(/\.ipynb$/i, "");
         await projectsApi.create({ name, spec: trillSpec as unknown as Record<string, unknown>, outputs: [] });
         loadProjects();
       } catch (err) {
+        // Was console-only: picking a file and getting no response at all
+        // reads as a broken button, and a malformed .ipynb is the common case.
         console.error("Failed to import Jupyter notebook:", err);
+        showToast(
+          (err as Error)?.message ||
+            "That notebook could not be converted into a dataflow.",
+          "error",
+        );
       }
     };
-    reader.onerror = (event: ProgressEvent<FileReader>) =>
+    reader.onerror = (event: ProgressEvent<FileReader>) => {
       console.error("Error reading notebook file:", event.target?.error);
+      showToast(UNREADABLE_FILE_MESSAGE, "error");
+    };
     reader.readAsText(file);
   };
 
@@ -222,28 +253,19 @@ const ProjectsList: React.FC = () => {
       <GlobalPageHeader />
       <AppSectionTabs />
 
-      <div className={joined(browseStyles.page, drawerSlotOpen && browseStyles.pageWithDrawer)}>
-        <aside className={browseStyles.categoryRail} aria-label="Project filters">
-          <p className={browseStyles.railLabel}>By status</p>
-          {FILTER_TABS.map((tab) => (
-            <button
-              key={tab}
-              className={joined(
-                browseStyles.railButton,
-                filter === tab && browseStyles.railButtonActive
-              )}
-              type="button"
-              aria-pressed={filter === tab}
-              onClick={() => setFilter(tab)}
-            >
-              <span>{TAB_LABELS[tab]}</span>
-              <span className={tab === "all" ? browseStyles.railCountBadge : browseStyles.railCount}>
-                {byTab[tab].length}
-              </span>
-            </button>
-          ))}
-        </aside>
-
+      {/* No category rail: the three catalog browse pages filter by category,
+          this page had only "All projects" and "Recent" and they were the same
+          set (#286). ``pageNoRail`` collapses the rail column the shared grid
+          reserves, so the header starts at the left edge instead of behind a
+          212px gap. */}
+      <div
+        className={joined(
+          browseStyles.page,
+          styles.pageNoRail,
+          drawerSlotOpen && browseStyles.pageWithDrawer,
+          drawerSlotOpen && styles.pageNoRailWithDrawer
+        )}
+      >
         <main className={styles.main}>
           <section className={browseStyles.browseHeader}>
             <p className={browseStyles.crumb}>Projects</p>
@@ -253,7 +275,7 @@ const ProjectsList: React.FC = () => {
               <span className={browseStyles.titleCount}>{filtered.length}</span>
             </div>
             <p className={browseStyles.pageIntro}>
-              Your dataflows. Open one to keep working on it, or start a new one.
+              Your projects. Open one to keep working on it, or start a new one.
             </p>
             <div className={browseStyles.headerTools}>
               <input
@@ -281,16 +303,6 @@ const ProjectsList: React.FC = () => {
           </section>
 
           <div className={browseStyles.filterBar}>
-            {FILTER_TABS.map((tab) => (
-              <button
-                key={tab}
-                className={joined(browseStyles.chip, filter === tab && browseStyles.chipActive)}
-                type="button"
-                onClick={() => setFilter(tab)}
-              >
-                {TAB_LABELS[tab]}
-              </button>
-            ))}
             <span className={browseStyles.filterSpacer} />
             <select
               className={browseStyles.sortSelect}
@@ -323,8 +335,12 @@ const ProjectsList: React.FC = () => {
 
           {filtered.length === 0 ? (
             <div className={browseStyles.empty}>
-              {search
-                ? "No projects match the current filters."
+              {/* `search.trim()`, matching the needle above: a whitespace-only box
+                  is not a filter, so an empty account must not be told its
+                  projects were filtered out (#231). Search is the only filter
+                  left now the status tabs are gone (#286). */}
+              {search.trim()
+                ? "No projects match that search."
                 : "No projects yet. Create a new dataflow!"}
             </div>
           ) : (
@@ -398,14 +414,9 @@ const ProjectsList: React.FC = () => {
               }
               title={selected.name}
               badges={
-                <>
-                  <span className={browseStyles.drawerCategoryBadge}>
-                    Rev {selected.spec_revision}
-                  </span>
-                  {selected.archived_at ? (
-                    <span className={browseStyles.drawerInstalledBadge}>Archived</span>
-                  ) : null}
-                </>
+                <span className={browseStyles.drawerCategoryBadge}>
+                  Rev {selected.spec_revision}
+                </span>
               }
               subtitle={selected.slug}
               metaLeft={
@@ -423,9 +434,6 @@ const ProjectsList: React.FC = () => {
                 { label: "Last opened", value: catalogRelativeTime(selected.last_opened_at) },
                 { label: "Updated", value: formatDate(selected.updated_at) },
                 { label: "Created", value: formatDate(selected.created_at) },
-                selected.archived_at
-                  ? { label: "Archived", value: formatDate(selected.archived_at) }
-                  : null,
               ]}
               primaryAction={
                 <button
@@ -437,43 +445,29 @@ const ProjectsList: React.FC = () => {
                 </button>
               }
               secondaryAction={
-                <>
-                  <div className={styles.detailButtonRow}>
-                    <button
-                      className={styles.secondaryButton}
-                      type="button"
-                      onClick={() => handleRename(selected)}
-                    >
-                      Rename
-                    </button>
-                    <button
-                      className={styles.secondaryButton}
-                      type="button"
-                      onClick={() => handleDuplicate(selected)}
-                    >
-                      Duplicate
-                    </button>
-                  </div>
-                  <div className={styles.detailButtonRow}>
-                    {selected.archived_at ? (
+                // Rendered from ``projectActions`` — the same list the context
+                // menu below uses, so the two surfaces cannot disagree about
+                // what may be done to a project again (#221). "Open" is the
+                // primary action above, so it is dropped here.
+                <div className={styles.detailButtonRow}>
+                  {projectActions()
+                    .filter((action) => action.id !== "open")
+                    .map((action) => (
                       <button
-                        className={joined(styles.secondaryButton, styles.dangerButton)}
+                        key={action.id}
+                        className={
+                          action.destructive
+                            ? joined(styles.secondaryButton, styles.dangerButton)
+                            : styles.secondaryButton
+                        }
                         type="button"
-                        onClick={() => handleDeleteForever(selected)}
+                        disabled={busyId === selected.id}
+                        onClick={() => runProjectAction(action.id, selected)}
                       >
-                        Delete forever
+                        {action.label}
                       </button>
-                    ) : (
-                      <button
-                        className={styles.secondaryButton}
-                        type="button"
-                        onClick={() => handleArchive(selected)}
-                      >
-                        Archive
-                      </button>
-                    )}
-                  </div>
-                </>
+                    ))}
+                </div>
               }
             />
           )}
@@ -494,23 +488,64 @@ const ProjectsList: React.FC = () => {
             boxShadow: "var(--curio-shadow-context-menu)",
           }}
         >
-          <div style={ctxItemStyle} onClick={() => openProject(contextMenu.project.id)}>
-            Open
-          </div>
-          <div style={ctxItemStyle} onClick={() => { handleRename(contextMenu.project); setContextMenu(null); }}>
-            Rename
-          </div>
-          <div style={ctxItemStyle} onClick={() => { handleDuplicate(contextMenu.project); setContextMenu(null); }}>
-            Duplicate
-          </div>
-          <div style={ctxItemStyle} onClick={() => { handleArchive(contextMenu.project); setContextMenu(null); }}>
-            Archive
-          </div>
-          <div style={{ ...ctxItemStyle, color: "var(--curio-danger)" }} onClick={() => { handleDeleteForever(contextMenu.project); setContextMenu(null); }}>
-            Delete forever
-          </div>
+          {/* The same list the detail drawer renders. Both used to hardcode
+              their own, and disagreed about what a project allowed (#221).
+              Real buttons, not clickable divs: these are actions and were
+              unreachable by keyboard. */}
+          {projectActions().map(
+            (action) => (
+              <button
+                key={action.id}
+                type="button"
+                style={
+                  action.destructive
+                    ? { ...ctxItemStyle, color: "var(--curio-danger)" }
+                    : ctxItemStyle
+                }
+                onClick={() => {
+                  runProjectAction(action.id, contextMenu.project);
+                  setContextMenu(null);
+                }}
+              >
+                {action.label}
+              </button>
+            ),
+          )}
         </div>
       )}
+      {renameTarget ? (
+        <PromptDialog
+          title="Rename dataflow"
+          fieldLabel="Name"
+          initialValue={renameTarget.name}
+          confirmLabel="Rename"
+          onCancel={() => setRenameTarget(null)}
+          onConfirm={(name) => {
+            const project = renameTarget;
+            setRenameTarget(null);
+            void performRename(project, name);
+          }}
+        />
+      ) : null}
+
+      {deleteTarget ? (
+        <ConfirmDialog
+          title={`Permanently delete "${deleteTarget.name}"?`}
+          // DEC-057 3.4b: state the live-store scope + the operator's declared
+          // backup posture - never claim irreversibility the platform can't
+          // control.
+          body={permanentDeletionNotice()}
+          confirmLabel="Delete"
+          destructive
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            const project = deleteTarget;
+            setDeleteTarget(null);
+            void performDelete(project);
+          }}
+        />
+      ) : null}
+
       <VersionBadge />
     </div>
   );
@@ -521,6 +556,14 @@ export default ProjectsList;
 /* ---- Styles ---- */
 
 const ctxItemStyle: CSS.Properties = {
+  // These are <button>s now rather than clickable <div>s, so the browser's own
+  // button chrome has to be reset for the row to look as it did. Worth the
+  // extra lines: the divs were unreachable by keyboard and announced as nothing.
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  background: "none",
+  border: "none",
   padding: "8px 16px",
   color: "var(--curio-text-on-dark)",
   fontSize: "var(--curio-font-size-md)",

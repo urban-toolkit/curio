@@ -20,9 +20,11 @@ const ContentTable = memo(({ tableData, nodeId = '' }: ContentTableProps) => {
   }, [tableData]);
 
   return (
-    <div className="nowheel" style={{ overflowY: 'auto', height: '100%' }}>
-      <TableContainer component={Paper}>
-        <Table aria-label="simple table">
+    // Both axes, not just the vertical one: the Simple View node had the
+    // identical #203 defect as the Data Pool.
+    <div className="nowheel" style={{ overflow: 'auto', height: '100%' }}>
+      <TableContainer component={Paper} sx={{ overflowX: 'visible' }}>
+        <Table aria-label="simple table" sx={{ minWidth: 'max-content' }}>
           {columns.length > 0 && (
             <TableHead>
               <TableRow>

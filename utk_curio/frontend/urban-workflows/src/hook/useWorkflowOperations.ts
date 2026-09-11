@@ -118,9 +118,18 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const pendingInstallsRef = useRef<PendingInstall[]>([]);
     pendingInstallsRef.current = pendingInstalls;
     const pendingInstallTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-    useEffect(() => subscribeProjectPackages(() => {
+    useEffect(() => {
+        // Re-read on subscribe, not only on notify. ``ProjectLoader`` is a
+        // DESCENDANT of this provider, so React runs its route effect first:
+        // the ``setUnsavedDataflow`` / ``setCurrentProject`` it fires on mount
+        // notifies a store nobody is listening to yet, and the mirror keeps the
+        // previous dataflow's list forever (#204). Reading once here closes that
+        // window; the subscription then keeps it live.
         setPackagesState(getCurrentProjectPackagesList());
-    }), []);
+        return subscribeProjectPackages(() => {
+            setPackagesState(getCurrentProjectPackagesList());
+        });
+    }, []);
 
     const setPackages = useCallback((pkgs: string[]) => {
         setCurrentProjectPackages(pkgs);
@@ -148,12 +157,47 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const projectIdRef = useRef<string | null>(null);
     projectIdRef.current = projectId;
     const [projectName, setProjectName] = useState<string>("");
+    // Same treatment for the name (#270). A save queued behind an in-flight
+    // one - the 500 ms install-sync save landing after a manual save - ran a
+    // ``saveCurrentProject`` closed over the name as it was when the chain was
+    // built, and PUT the pre-rename name back over the one the user had just
+    // saved. Synced on render, and pinned synchronously by ``renameDataflow``.
+    const projectNameRef = useRef<string>("");
+    projectNameRef.current = projectName;
     const [projectDirty, setProjectDirty] = useState<boolean>(false);
     const [projectSavedAt, setProjectSavedAt] = useState<Date | null>(null);
     const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed">>({});
     const [viewerMode, setViewerMode] = useState<"owner" | "shared">("owner");
 
+    // True only while ``loadParsedTrill`` replays a persisted dataflow onto the
+    // canvas. That replay drives the very same ``onConnect`` a user drag does -
+    // once per edge - and onConnect marks the project dirty, so a dataflow with
+    // even one edge came back from disk already reading "Unsaved changes" and
+    // the 30s auto-save below then rewrote it for nothing (#229).
+    //
+    // A ref, not state: the replay runs inside a ``setNodes`` updater and has to
+    // read this synchronously. Deliberately NOT a timer or a settle window - it
+    // is opened and closed around the synchronous replay loop alone, so an edit
+    // made a millisecond after the load still marks the dataflow dirty.
+    const hydratingRef = useRef(false);
+
+    // Bumped by every edit. A save captures it before its request and clears the
+    // dirty flag on return only if it has not moved (#270).
+    //
+    // Without that check the flag was cleared by whichever save happened to
+    // return last, including one whose request predated the edit. The edit was
+    // then live in the client and absent from disk while the UI said "saved":
+    // the 30s auto-save stands down (it is gated on ``projectDirty``), the
+    // beforeunload guard unbinds, and the in-app leave guard stops prompting -
+    // so the next navigation dropped the change with no warning. A rename is
+    // the way it was reported, but a node or code edit made mid-save was lost
+    // the same way, which is why this counts edits rather than watching the
+    // name.
+    const dirtyGenerationRef = useRef(0);
+
     const markDirty = useCallback(() => {
+        if (hydratingRef.current) return;
+        dirtyGenerationRef.current += 1;
         setProjectDirty(true);
     }, []);
 
@@ -265,17 +309,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setNodes(() => []);
         }
 
+        // Provenance is recorded below, from these local arrays, NOT by addNode /
+        // onConnect. Those two snapshot `reactFlow.getNodes()`, and React Flow only
+        // syncs `useNodesState` into its zustand store from a useEffect - so inside
+        // this synchronous loop the store still holds the graph as it was before the
+        // load. Every version came out with one node and no edges, which is why a
+        // loaded dataflow's provenance thumbnails were blank and its versions carried
+        // edges whose endpoints were absent (#186, and the crash in #195).
+        const priorNodes: Node[] = merge ? reactFlow.getNodes() : [];
+        const priorEdges: Edge[] = merge ? reactFlow.getEdges() : [];
+        const addedNodes: Node[] = [];
+
         if (merge) {
             // Use reactFlow to get fresh state (avoid stale closure)
-            const currentNodeIds = new Set(reactFlow.getNodes().map((n: Node) => n.id));
+            const currentNodeIds = new Set(priorNodes.map((n: Node) => n.id));
             for (const node of loaded_nodes) {
                 if (!currentNodeIds.has(node.id)) {
-                    addNode(node, workflowName, provenance);
+                    addNode(node, workflowName, false);
+                    addedNodes.push(node);
                 }
             }
         } else {
             for (const node of loaded_nodes) {
-                addNode(node, workflowName, provenance);
+                addNode(node, workflowName, false);
+                addedNodes.push(node);
             }
         }
 
@@ -286,26 +343,73 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // Use reactFlow to get fresh edge ids (avoid stale closure)
         const currentEdgeIds = new Set(reactFlow.getEdges().map((e: Edge) => e.id));
 
+        const addedEdges: any[] = merge
+            ? loaded_edges.filter((e: Edge) => !currentEdgeIds.has(e.id))
+            : [...loaded_edges];
+
+        /** One provenance version per loaded node, then one per loaded edge.
+         *
+         * Built from the arrays this function was handed rather than from the
+         * React Flow store, so each version holds the graph as it stood at that
+         * step: cumulative nodes, then the full node set with cumulative edges.
+         * The invariant that matters is that every version's edges have both
+         * endpoints among its own nodes - `onConnect` dereferences the resolved
+         * target, so a version that breaks it crashes the canvas when a user
+         * clicks it in the provenance graph (#195).
+         */
+        const recordLoadProvenance = () => {
+            const acc: Node[] = [...priorNodes];
+            for (const node of addedNodes) {
+                acc.push(node);
+                TrillGenerator.addNewVersionProvenance(
+                    [...acc], [...priorEdges], workflowName, task || "", "Node added",
+                );
+            }
+            // An edge whose endpoints are not both in `acc` would recreate the very
+            // shape #195 crashes on, so it never enters a version.
+            const present = new Set(acc.map((n: Node) => n.id));
+            const accEdges: any[] = [...priorEdges];
+            for (const edge of addedEdges) {
+                if (!present.has(edge.source) || !present.has(edge.target)) continue;
+                accEdges.push(edge);
+                TrillGenerator.addNewVersionProvenance(
+                    acc, [...accEdges], workflowName, task || "", "Connection added",
+                );
+            }
+        };
+
         console.log("loadParsedTrill second");
         setNodes((prevNodes: any) => {
-            // skipValidation=true: these edges come from a saved/imported trill and
-            // were validated when created. Re-validating on load races the async
-            // node-descriptor registry and would drop valid edges + toast mid-render.
-            if (merge) {
-                for (const edge of loaded_edges) {
-                    if (!currentEdgeIds.has(edge.id)) {
-                        onConnect(edge, prevNodes, undefined, workflowName, provenance, true);
+            // Replaying persisted edges must not dirty the project: ``onConnect``
+            // marks dirty because a user connecting two nodes IS an edit, and this
+            // loop is the same call (#229). Opened and closed INSIDE the updater,
+            // because React may run it long after loadParsedTrill returned (and
+            // twice under StrictMode) - so the window is scoped to exactly the
+            // replay. ``finally`` so a malformed spec throwing inside onConnect
+            // cannot leave dirty-tracking wedged off for the rest of the session.
+            hydratingRef.current = true;
+            try {
+                // skipValidation=true: these edges come from a saved/imported trill and
+                // were validated when created. Re-validating on load races the async
+                // node-descriptor registry and would drop valid edges + toast mid-render.
+                if (merge) {
+                    for (const edge of loaded_edges) {
+                        if (!currentEdgeIds.has(edge.id)) {
+                            onConnect(edge, prevNodes, undefined, workflowName, false, true);
+                        }
+                    }
+                } else {
+                    // Accumulate the spec edges connected so far and hand them to
+                    // onConnect, so merge-handle resolution sees the earlier edges
+                    // of this load (in_N occupancy) instead of an empty list.
+                    const connectedSoFar: any[] = [];
+                    for (const edge of loaded_edges) {
+                        onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true);
+                        connectedSoFar.push(edge);
                     }
                 }
-            } else {
-                // Accumulate the spec edges connected so far and hand them to
-                // onConnect, so merge-handle resolution sees the earlier edges
-                // of this load (in_N occupancy) instead of an empty list.
-                const connectedSoFar: any[] = [];
-                for (const edge of loaded_edges) {
-                    onConnect(edge, prevNodes, connectedSoFar, workflowName, provenance, true);
-                    connectedSoFar.push(edge);
-                }
+            } finally {
+                hydratingRef.current = false;
             }
 
             if (!merge) {
@@ -324,6 +428,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setFitViewOnLoad(true);
             return prevNodes;
         });
+
+        // After the updater, not inside it: a state updater must stay pure, and
+        // `addedEdges` never depended on `prevNodes` anyway.
+        if (provenance) {
+            recordLoadProvenance();
+        }
     }
 
     const updateDefaultCode = useCallback((nodeId: string, content: string) => {
@@ -668,6 +778,31 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         [setDataflowDatasets],
     );
 
+    // The dataflow's name is stored twice: in ``spec.dataflow.name``, which the
+    // canvas title renders, and in the project row's ``name``, which the Projects
+    // list renders. #230: the canvas rename wrote only ``workflowName`` (the spec
+    // side), while ``saveCurrentProject`` sends ``projectName`` - so the save
+    // faithfully re-sent the name the dataflow was loaded under and the Projects
+    // card never moved. One entry point keeps both in step.
+    //
+    // Deliberately NOT solved by flipping the ``||`` precedence below:
+    // ``loadParsedTrill`` also calls ``setWorkflowName``, so preferring the canvas
+    // name there would make File -> Load into an open project silently rename it.
+    //
+    // Returns false for a blank entry so the caller can restore the old title.
+    const renameDataflow = useCallback((rawName: string): boolean => {
+        const next = rawName.trim();
+        if (!next) return false;
+        setWorkflowName(next);
+        projectNameRef.current = next;
+        setProjectName(next);
+        // A rename diverges from disk like any other edit. Nothing said so before,
+        // which went unnoticed only because the phantom dirty flag of #229 was
+        // masking it.
+        markDirty();
+        return true;
+    }, [setWorkflowName, markDirty]);
+
     const saveCurrentProject = useCallback(async (nameOverride?: string) => {
         if (viewerMode === "shared") {
             throw new Error("Shared dataflows are read-only; use Save a copy");
@@ -691,7 +826,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
         const outputRefs: OutputRef[] = buildOutputRefs();
 
-        const name = nameOverride || projectName || workflowNameRef.current;
+        // The ref, not the closure (#270): see projectNameRef.
+        const name = nameOverride || projectNameRef.current || workflowNameRef.current;
+
+        // Everything this request carries has now been read out of the store.
+        // Anything the user changes from here on is NOT in the payload, so it
+        // must survive the response as unsaved work (#270).
+        const dirtyAtSend = dirtyGenerationRef.current;
 
         // Read the live id from the ref, not the closure: a save chained right
         // after a create (serialized install saves) must take the update branch.
@@ -703,13 +844,27 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 name,
             });
             syncDatasetsFromSavedSpec(detail.spec);
+            // Re-pin the client's copy of the name to what the server actually
+            // stored. The create branch already did this, so only the update path
+            // could drift out of date - and it also self-heals a project that
+            // diverged before #230 was fixed. Unless the user renamed while
+            // this save was in flight (#270): then the server is echoing the
+            // name we SENT, and adopting it would silently undo the rename.
+            if (projectNameRef.current === name) {
+                projectNameRef.current = detail.name;
+                setProjectName(detail.name);
+            }
             // The backend prunes attachments for deleted nodes/edges (and
             // preserves the agent lockfile) on save, so reconcile the dock with
             // the freshly-persisted spec — a just-deleted node's tile disappears
             // without a reload. Mirrors the dataset-catalog refresh above.
             notifyAgentDockRefresh();
             setProjectSavedAt(new Date());
-            setProjectDirty(false);
+            // A save did complete, so the timestamp stands - but the flag only
+            // clears if nothing was edited while the request was in flight.
+            if (dirtyGenerationRef.current === dirtyAtSend) {
+                setProjectDirty(false);
+            }
             return detail;
         } else {
             const detail = await projectsApi.create({
@@ -723,9 +878,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             projectIdRef.current = detail.id;
             syncDatasetsFromSavedSpec(detail.spec);
             setProjectId(detail.id);
-            setProjectName(detail.name);
+            if (projectNameRef.current === name) {
+                projectNameRef.current = detail.name;
+                setProjectName(detail.name);
+            }
             setProjectSavedAt(new Date());
-            setProjectDirty(false);
+            if (dirtyGenerationRef.current === dirtyAtSend) {
+                setProjectDirty(false);
+            }
             // The backend merges the user's defaults (e.g. ``curio.builtin@1``)
             // into the spec's lockfile on first save. We need to:
             //  1. Pin the store's `projectId` to the freshly-created id —
@@ -743,22 +903,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
-    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
+    }, [projectId, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
     // Serialize project saves so concurrent callers (e.g. two producing nodes
     // finishing back-to-back) can never run two creates in parallel and POST
     // duplicate projects. Each request runs strictly after all prior ones; once
     // the first create has set projectIdRef, every chained save takes the update
-    // branch. Because saveCurrentProject reads dataflowDatasetsRef/projectIdRef
-    // live (not from a closure), a save enqueued after a ref was staged persists
-    // that ref even if it rode in on an already-running chain.
+    // branch. Because saveCurrentProject reads dataflowDatasetsRef/projectIdRef/
+    // projectNameRef live (not from a closure), a save enqueued after a ref was
+    // staged persists that ref even if it rode in on an already-running chain.
+    //
+    // The chained call goes through a ref too (#270): ``prior.then(() =>
+    // saveCurrentProject())`` captured the *identity* of saveCurrentProject at
+    // enqueue time, so any state it still closes over was as of then.
     const saveChainRef = useRef<Promise<any> | null>(null);
+    const saveCurrentProjectRef = useRef(saveCurrentProject);
+    saveCurrentProjectRef.current = saveCurrentProject;
     const requestProjectSave = useCallback((): Promise<any> => {
         const prior = saveChainRef.current;
         // Start immediately when idle (so the create/update fires synchronously);
         // otherwise chain strictly after the previous save so two creates never run
         // in parallel. ``prior`` is always a never-rejecting tail.
-        const next = prior ? prior.then(() => saveCurrentProject()) : saveCurrentProject();
+        const next = prior
+            ? prior.then(() => saveCurrentProjectRef.current())
+            : saveCurrentProject();
         // Track a caught tail for chaining + cleanup so a failed save can neither
         // surface as an unhandled rejection nor wedge the chain. The caller still
         // gets ``next`` (which may reject) and is expected to handle it.
@@ -961,11 +1129,19 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             outputs: outputRefs,
         });
         syncDatasetsFromSavedSpec(detail.spec);
+        projectIdRef.current = detail.id;
         setProjectId(detail.id);
         setProjectName(detail.name);
         setProjectSavedAt(new Date());
         setProjectDirty(false);
         setViewerMode("owner");
+        // Re-pin the package store to the copy, as saveCurrentProject's create
+        // branch does. Without it the store still names the ORIGINAL dataflow,
+        // so the copy's palette and every lockfile write from it would be
+        // filtered by, and applied to, the dataflow it was copied from.
+        const copiedPackages = (detail?.spec?.dataflow as { packages?: string[] } | undefined)
+            ?.packages;
+        setCurrentProject(detail.id, Array.isArray(copiedPackages) ? copiedPackages : []);
         return detail;
     }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
@@ -1082,10 +1258,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         applyReviewedRemovals,
 
         // Project operations
+        renameDataflow,
         saveCurrentProject,
         saveAsNewProject,
         ensureProjectId,
         persistDataflowForInstall,
+        requestProjectSave,
         loadProject,
         loadSharedProject,
         discardProject,

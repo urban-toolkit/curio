@@ -91,15 +91,6 @@
     background: var(--curio-page-bg);
 }
 
-.sectionLabel {
-    margin: 4px 0 12px;
-    font-size: var(--curio-font-size-xs);
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--curio-text-muted);
-}
-
 .cardList {
     display: flex;
     flex-direction: column;

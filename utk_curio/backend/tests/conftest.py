@@ -38,6 +38,12 @@ _REPO_ROOT = os.path.abspath(
 # CURIO_TEST_WORKSPACE / CURIO_E2E_USE_EXISTING let callers override the
 # workspace; in those cases the caller owns its lifecycle and we don't
 # clean anything up.
+# Under xdist every worker attaches to its own backend+sandbox pair. Derive this
+# worker's ports and state root before anything below (or any backend import)
+# reads the environment. A no-op in a serial run. See shards.py.
+from .shards import apply_shard_env  # noqa: E402
+apply_shard_env()
+
 _PERSISTENT_WS = os.environ.get("CURIO_TEST_WORKSPACE")
 _USE_EXISTING = os.environ.get("CURIO_E2E_USE_EXISTING")
 if _PERSISTENT_WS:
@@ -57,9 +63,13 @@ else:
     # ``.curio/users/``, and the live ``messages.log``. A blanket rmtree of
     # ``.curio/`` would yank the dev DuckDB out from under any concurrently
     # running dev sandbox and break its cached connection.
-    _TEST_OWNED_DIR = os.path.join(_REPO_ROOT, ".curio", "test")
+    _TEST_OWNED_DIR = os.path.join(
+        os.environ.get("CURIO_STATE_DIR") or os.path.join(_REPO_ROOT, ".curio"), "test")
 
-_TEST_DB_DIR = os.path.join(_TEST_WORKSPACE, ".curio", "test")
+# CURIO_STATE_DIR relocates ``.curio`` without moving the data root; it must
+# agree with config._resolve_database_uri and user_storage.curio_root.
+_STATE_DIR = os.environ.get("CURIO_STATE_DIR") or os.path.join(_TEST_WORKSPACE, ".curio")
+_TEST_DB_DIR = os.path.join(_STATE_DIR, "test")
 os.makedirs(_TEST_DB_DIR, exist_ok=True)
 
 _TEST_SQLA_DB = os.path.join(_TEST_DB_DIR, "urban_workflow_test.db")
@@ -69,19 +79,18 @@ _TEST_SQLA_DB = os.path.join(_TEST_DB_DIR, "urban_workflow_test.db")
 # those own the DB lifecycle and the running backend is holding sqlite
 # connections we shouldn't yank.
 if _TEST_OWNED_DIR is not None:
-    try:
-        os.remove(_TEST_SQLA_DB)
-    except FileNotFoundError:
-        pass
+    for _suffix in ("", "-wal", "-shm"):   # the DB and its WAL sidecars
+        try:
+            os.remove(_TEST_SQLA_DB + _suffix)
+        except FileNotFoundError:
+            pass
 
 os.environ["CURIO_TESTING"] = "1"
 os.environ["CURIO_LAUNCH_CWD"] = _TEST_WORKSPACE
 # Tests get their own DuckDB under .curio/test/data/, parallel to the
 # SQLite test DB in .curio/test/. The dev sandbox keeps using
 # .curio/data/, so a pytest run never clobbers dev artifacts.
-os.environ.setdefault("CURIO_SHARED_DATA", os.path.join(
-    _TEST_WORKSPACE, ".curio", "test", "data",
-))
+os.environ.setdefault("CURIO_SHARED_DATA", os.path.join(_TEST_DB_DIR, "data"))
 os.makedirs(os.environ["CURIO_SHARED_DATA"], exist_ok=True)
 
 # Point the backend (and any subprocess that inherits this env — e.g. the
@@ -123,7 +132,12 @@ def _bootstrap_schemas() -> None:
         _db.engine.dispose()
 
 
-_bootstrap_schemas()
+# Under CURIO_E2E_USE_EXISTING the running backend owns the sqlite file and
+# ``prepare_backend_database`` has already migrated it, so this is redundant
+# even serially -- and under xdist it would run once in the controller and
+# once more in every worker, all against the same file.
+if not os.environ.get("CURIO_E2E_USE_EXISTING"):
+    _bootstrap_schemas()
 
 
 # ---------------------------------------------------------------------------
@@ -325,11 +339,51 @@ def pytest_addoption(parser):
         default=False,
         help="enable longrundecorated tests",
     )
+    parser.addoption(
+        "--videos",
+        action="store_true",
+        dest="videos",
+        default=False,
+        help="record the walkthrough screencasts (slow; needs a browser)",
+    )
+    parser.addoption(
+        "--with-examples",
+        action="store_true",
+        dest="examples",
+        default=False,
+        help=(
+            "run the tests that need a stack seeded with the example dataflows "
+            "(the e2e harness then boots with --with-examples, which costs real "
+            "time; scripts/test.sh passes this by default)"
+        ),
+    )
 
 
 def pytest_configure(config):
+    """Exclude the opt-in marks unless their flag was passed.
+
+    Composed rather than assigned. This used to be a bare
+    ``setattr(config.option, "markexpr", "not externalapi")``, which discarded
+    any ``-m`` the caller gave; with a second opt-in mark it would also have
+    dropped whichever exclusion was written last.
+    """
+    config.addinivalue_line("markers", "video: records a screencast; needs --videos")
+    config.addinivalue_line(
+        "markers",
+        "examples: needs a stack seeded with the examples; needs --with-examples",
+    )
+    excluded = []
     if not config.option.longrun:
-        setattr(config.option, "markexpr", "not externalapi")
+        excluded.append("not externalapi")
+    if not config.option.videos:
+        excluded.append("not video")
+    if not config.option.examples:
+        excluded.append("not examples")
+    if not excluded:
+        return
+    existing = getattr(config.option, "markexpr", "") or ""
+    parts = ([f"({existing})"] if existing else []) + excluded
+    setattr(config.option, "markexpr", " and ".join(parts))
 
 
 @pytest.fixture(scope="session")
@@ -382,14 +436,23 @@ def session_app():
     ``config._resolve_database_uri``.
     """
     application = create_app()
+    # Defaults are the production ports, so CI and a plain ``pytest`` run are
+    # unchanged. They are overridable because two checkouts of this repo cannot
+    # otherwise run their suites at the same time -- the second one's servers
+    # collide with the first one's on every port.
+    #
+    # BACKEND_PORT must agree with the frontend's ``BACKEND_URL``, which
+    # dotenv-webpack bakes into the bundle at BUILD time: changing it means
+    # editing ``utk_curio/frontend/urban-workflows/.env`` and rebuilding, not
+    # just exporting a variable.
+    backend_port = int(os.environ.get("BACKEND_PORT") or 5002)
     application.config.update(
         {
             "TESTING": True,
-            "LIVESERVER_PORT": 5002,
-            # Use 5002 so frontend (dotenv .env / default) finds the backend
-            "BACKEND_PORT": 5002,
-            "SANDBOX_PORT": 2000,
-            "FRONTEND_PORT": 8080,
+            "LIVESERVER_PORT": backend_port,
+            "BACKEND_PORT": backend_port,
+            "SANDBOX_PORT": int(os.environ.get("SANDBOX_PORT") or 2000),
+            "FRONTEND_PORT": int(os.environ.get("FRONTEND_PORT") or 8080),
         }
     )
     return application

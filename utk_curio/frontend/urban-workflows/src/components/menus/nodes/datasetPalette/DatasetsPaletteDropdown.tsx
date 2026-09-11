@@ -7,11 +7,13 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../../providers/FlowProvider";
 import { useDatasetCatalogDrawer } from "../../../../providers/datasetCatalog";
+import { PaletteDragHint } from "../PaletteDragHint";
 import { useDatasetPalette } from "../../../../providers/DatasetPaletteContext";
 import { PaletteAccordion } from "../paletteAccordion";
 import {
   DATASET_CATALOG_REFRESH_EVENT,
   groupDatasetsForPalette,
+  isInThisDataflow,
   isUserInstalledDataset,
   sortDatasetPaletteEntries,
   useDatasetCatalog,
@@ -51,7 +53,15 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
 
   const catalog = useDatasetCatalog({
     dataflowId: projectId,
-    includeHub: false,
+    // Matches the drawer. `false` was not a narrower view of the same data - it
+    // takes a different branch server-side: with no `dataflowId` the listing
+    // then skips `user_store.list_items()` entirely, so the account's datasets
+    // were not in the response at all and nothing could mark them. That is why
+    // this palette and the Data Catalog drawer disagreed about the very same
+    // dataflow, and why a dataset added to all projects appeared in one and not
+    // the other. With a project open the extra rows are filtered out below by
+    // `isInThisDataflow` anyway, so this only ever adds what was missing.
+    includeHub: true,
     sort: "recent",
     // Pass saveable live outputs so genuinely-installed computed datasets appear
     // immediately. The list still filters to installed===true (isUserInstalledDataset),
@@ -76,8 +86,11 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
     [catalog.items],
   );
   const installedRows = useMemo(
-    () => rows.filter((item) => isUserInstalledDataset(item)),
-    [rows],
+    // `isInThisDataflow`, not `isUserInstalledDataset`: with no project yet
+    // nothing is `installed`, and this palette rendered empty even for datasets
+    // the user had just added to every project.
+    () => rows.filter((item) => isInThisDataflow(item, Boolean(projectId))),
+    [rows, projectId],
   );
 
   // Fold multilayer OSM PBF imports (layers sharing a groupId) into collapsible
@@ -91,10 +104,13 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
   // Palette sort key. Backed entirely by persisted dataset metadata (import
   // ``createdAt`` / install ``installedAt``), never UI-only state, so the order
   // is stable across reopens. Groups sort as a unit by their representative time.
-  const [sortKey, setSortKey] = useState<DatasetPaletteSortKey>("importedAt");
+  // Fixed, now that the toggle is gone: import time is the stable one - it is
+  // set once when the file is registered and never moves, so reopening the
+  // palette shows the same order.
+  const sortKey: DatasetPaletteSortKey = "importedAt";
   const sortedEntries = useMemo(
     () => sortDatasetPaletteEntries(paletteEntries, sortKey),
-    [paletteEntries, sortKey],
+    [paletteEntries],
   );
 
   // In-flight installs without a real installed row yet, rendered as
@@ -201,30 +217,16 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
               </div>
             ) : null}
             <PaletteAccordion
-              title="Datasets in dataflow"
+              title="Datasets in project"
               count={total}
               selected
               defaultOpen
-              trailing={
-                total > 0 ? (
-                  <button
-                    type="button"
-                    className={styles.sortToggle}
-                    // Toggle without opening/closing the accordion summary.
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setSortKey((key) =>
-                        key === "importedAt" ? "installedAt" : "importedAt",
-                      );
-                    }}
-                    title="Toggle sort between import time and time added"
-                    aria-label={`Sort by ${sortKey === "importedAt" ? "import" : "added"} date; click to change`}
-                  >
-                    Sort: {sortKey === "importedAt" ? "Import date" : "Added date"}
-                  </button>
-                ) : null
-              }
+              /* No sort toggle. Neither peer palette has one, it toggled
+                 between two near-identical timestamps ("Import date" /
+                 "Added date") that differ only for a dataset installed long
+                 after it was imported, and it sat in the accordion's summary
+                 row where it competed with the row's own click target. The
+                 list keeps its stable default order. */
             >
               {installingRows.map((pending) => (
                 <DatasetInstallingRow key={`pending:${pending.key}`} pending={pending} />
@@ -246,6 +248,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
             </PaletteAccordion>
           </div>
           <div className={styles.footer}>
+            <PaletteDragHint item="dataset" />
             <button
               type="button"
               className={styles.catalogButton}

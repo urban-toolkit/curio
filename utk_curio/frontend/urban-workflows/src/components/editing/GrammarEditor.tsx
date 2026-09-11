@@ -3,6 +3,8 @@ import Editor, { Monaco } from "@monaco-editor/react";
 import { ICodeData } from "../../types";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
+import { useFlowContext } from "../../providers/FlowProvider";
+import { registerRunNodeAction } from "./runNodeMonacoAction";
 
 type GrammarEditorProps = {
     output: ICodeData;
@@ -15,6 +17,8 @@ type GrammarEditorProps = {
     defaultValue?: any;
     floatCode?: any;
     readOnly: boolean;
+    /** Lets a rejected applyGrammar become an error output, so the run ends (#271). */
+    setOutputCallback?: (output: { code: string; content: string }) => void;
 };
 
 export default function GrammarEditor({
@@ -28,6 +32,7 @@ export default function GrammarEditor({
     defaultValue,
     floatCode,
     readOnly,
+    setOutputCallback,
 }: GrammarEditorProps) {
     const [grammar, _setGrammar] = useState("{}");
     const grammarRef = useRef(grammar);
@@ -75,6 +80,12 @@ export default function GrammarEditor({
         c.requestCodeChange(nodeId, baseline, local, "grammar");
     };
 
+    // onMount fires once, so the action reads the CURRENT play function through
+    // a ref rather than capturing the first render's (#223).
+    const { playNodesUpTo } = useFlowContext();
+    const runNodeRef = useRef<() => void>(() => {});
+    runNodeRef.current = () => playNodesUpTo(nodeId);
+
     const handleEditorMount = (editor: any, monaco: Monaco) => {
         // Vega-Lite specs carry `$schema: "https://.../v6.json"` (~2 MB). Monaco's
         // built-in JSON support will fetch and validate against that URL on first
@@ -106,6 +117,9 @@ export default function GrammarEditor({
         }
         attachEditor(editor);
         editor.onDidBlurEditorText(proposeOnBlur);
+        // Same chord as the code editor, so a grammar node runs the way a
+        // Python one does (#223).
+        registerRunNodeAction(editor, monaco, () => runNodeRef.current);
     };
 
     useEffect(() => {
@@ -145,7 +159,19 @@ export default function GrammarEditor({
             output.code == "exec" &&
             applyGrammar != undefined
         ) {
-            applyGrammar(replacedCode);
+            // Catch, don't float (#201). An escaped rejection reaches
+            // `window` as `unhandledrejection`, which webpack-dev-server's
+            // runtime-error overlay listens for - so one throw inside the
+            // grammar took the whole screen in development.
+            void Promise.resolve(applyGrammar(replacedCode)).catch((err) => {
+                console.error("[GrammarEditor] applyGrammar failed:", err);
+                // A rejection that only reached the console left the node at
+                // "exec" forever, and with it the Run All guard (#271).
+                setOutputCallback?.({
+                    code: "error",
+                    content: (err as Error)?.message ?? String(err),
+                });
+            });
         }
         replacedCodeDirtyBypass.current = true;
     }, [replacedCodeDirty]);

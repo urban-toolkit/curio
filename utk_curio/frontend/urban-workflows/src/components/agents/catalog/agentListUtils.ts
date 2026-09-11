@@ -43,7 +43,7 @@ export function missingRequiredAgents(card: AgentCard): AgentCard["requiresAgent
 /**
  * The add button's label.
  *
- * "Add to dataflow" is the shared catalog wording - the same string the Node
+ * "Add to project" is the shared catalog wording - the same string the Node
  * and Data drawers use for the same per-dataflow write. This used to say
  * "Install", which `catalogCopy.test.tsx` bans outright because it described
  * neither scope: the drawer writes one dataflow's lockfile, while a browse
@@ -55,8 +55,8 @@ export function missingRequiredAgents(card: AgentCard): AgentCard["requiresAgent
 export function installLabel(card: AgentCard): string {
   const missing = missingRequiredAgents(card);
   return missing.length
-    ? `Add to dataflow (+${missing.length} required)`
-    : "Add to dataflow";
+    ? `Add to project (+${missing.length} required)`
+    : "Add to project";
 }
 
 /** The add button's title - names what else the click adds, or the dependency

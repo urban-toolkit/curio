@@ -1,4 +1,5 @@
 import { getToken } from "../utils/authApi";
+import { backendUrl } from "../utils/backendUrl";
 
 export default async function useStarters() {
     try {
@@ -8,7 +9,7 @@ export default async function useStarters() {
         // token we'd only ever see the built-in presets, and a freshly-dropped
         // package node would have nothing in its starters dropdown.
         const token = getToken();
-        const response = await fetch(process.env.BACKEND_URL + '/starters', {
+        const response = await fetch(backendUrl() + '/starters', {
             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         if (!response.ok) {

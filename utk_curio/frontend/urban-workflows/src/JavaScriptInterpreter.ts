@@ -2,6 +2,7 @@ import { NodeType } from "./constants";
 import { NodeTemplateId } from "./registry/types";
 import { formatDate, mapTypes } from "./utils/formatters";
 import { getToken } from "./utils/authApi";
+import { backendUrl } from "./utils/backendUrl";
 
 export class JavaScriptInterpreter {
     public interpretCode(
@@ -29,7 +30,7 @@ export class JavaScriptInterpreter {
         let startTime = formatDate(new Date());
 
         const _token = getToken();
-        const url = process.env.BACKEND_URL + "/processJavaScriptCode";
+        const url = backendUrl() + "/processJavaScriptCode";
         const fetchStartedAt = performance.now();
         const CLIENT_TIMEOUT_MS = 180_000;
         const controller = new AbortController();

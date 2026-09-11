@@ -21,7 +21,9 @@ import {
   type DatasetLineageNodeUsageRef,
   type LineageStatus,
 } from "../../../services/datasetLineage";
-import { CatalogKindIcon } from "../../catalog/CatalogKindVisuals";
+import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
+import { CopyButton } from "../../CopyButton";
+import { datasetReference } from "../../../services/datasetCatalog";
 import {
   absoluteDate,
   datasetCount,
@@ -33,6 +35,7 @@ import styles from "./DatasetDetailPanel.module.css";
 import { DatasetSchemaPanel } from "./DatasetSchemaPanel";
 import { DatasetTablePreview } from "./DatasetTablePreview";
 import { useDatasetResolvedSchema } from "./useDatasetResolvedSchema";
+import ConfirmDialog from "../../ConfirmDialog";
 
 const TABS = ["Overview", "Schema", "Table Preview", "Lineage"] as const;
 
@@ -284,7 +287,6 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   const { showToast } = useToastContext();
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>(initialTab);
   const [exporting, setExporting] = useState(false);
-  const [publishBusy, setPublishBusy] = useState(false);
   // The standalone catalog page renders without a canvas, so live usage
   // cannot be resolved there and lineage is flagged as partial.
   const lineage = useDatasetLineage(dataset, { dataflowId, canvasAvailable });
@@ -299,6 +301,13 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   // Shared schema resolution so the header/info counts match the schema panel.
   const resolvedSchema = useDatasetResolvedSchema(dataset, dataflowId, liveOutputs);
   const fields = resolvedSchema.fields;
+  // What to paste into a node, and where the bytes are. One helper decides, so
+  // no surface has to reason about ids versus paths (#206).
+  const reference = useMemo(
+    () => (dataset ? datasetReference(dataset) : null),
+    [dataset],
+  );
+
   const columnsLabel =
     fields.length > 0
       ? fields.length.toLocaleString()
@@ -351,40 +360,6 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     }
   };
 
-  const handlePublish = async () => {
-    if (publishBusy) return;
-    setPublishBusy(true);
-    try {
-      await datasetCatalogApi.publishDataset(activeDataset.id, { dataflowId, liveOutputs });
-      notifyDatasetCatalogRefresh();
-      showToast(`Published ${activeDataset.title}.`, "success");
-      onMutated?.();
-    } catch (err) {
-      showToast(`Couldn't publish ${activeDataset.title}`, "error");
-    } finally {
-      setPublishBusy(false);
-    }
-  };
-
-  const handleUnpublish = async () => {
-    if (publishBusy) return;
-    const confirmed = window.confirm(
-      `Unpublish ${activeDataset.title} from the Data Catalog?\n\nThis removes the catalog listing. Copies already added to dataflows are not removed.`,
-    );
-    if (!confirmed) return;
-    setPublishBusy(true);
-    try {
-      await datasetCatalogApi.unpublishDataset(activeDataset.id, { dataflowId });
-      notifyDatasetCatalogRefresh();
-      showToast(`Unpublished ${activeDataset.title}.`, "success");
-      onMutated?.();
-    } catch (err) {
-      showToast(`Couldn't unpublish ${activeDataset.title}`, "error");
-    } finally {
-      setPublishBusy(false);
-    }
-  };
-
   const showSchemaColumn = activeTab === "Overview";
   // The Lineage tab already renders every card in the center column, so the
   // sidebar keeps only its headline summary: the groups collapse and the
@@ -397,73 +372,30 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   return (
     <main className={`${styles.inspector} ${rootClass}`}>
       <div className={styles.pageHeader}>
-        <div className={styles.breadcrumb}>
-          {variant === "page" ? (
-            <>
-              <span>DATA CATALOG</span><span>/</span><span>DATASETS IN DATAFLOW</span><span>/</span>
-            </>
-          ) : (
-            <>
-              <span>DATA CATALOG</span><span>/</span>
-            </>
-          )}
-          <strong>{datasetDisplayTitle(dataset)}</strong>
-        </div>
-
+        {/* No breadcrumb. It read "DATA CATALOG / <dataset name>" directly above
+            a header that already shows the dataset's name in 22px bold, inside
+            a panel opened from the Data Catalog - three tellings of one fact,
+            and the trail led nowhere because none of it was a link. The peers
+            (Agent, Node) never had one. */}
         {variant === "page" && onBack ? (
           <button className={styles.backButton} type="button" onClick={onBack}>Back</button>
         ) : null}
 
-        <div className={styles.headerMain}>
-          <div className={styles.titleBlock}>
-            <CatalogKindIcon kind="dataset" size="md" title="Dataset" />
-            <div>
-              <h1>{datasetDisplayTitle(dataset)}</h1>
-              <div className={styles.inspectorMeta}>
-                <span className={styles.installedBadge}>
-                  {dataset.installed
-                    ? "In dataflow"
-                    : datasetProvenanceLabel(dataset.origin, dataset.format)}
-                </span>
-                <span className={formatClass(dataset.format, styles)}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
-                {countLabel ? <span>{countLabel}</span> : null}
-                {fields.length > 0 ? (
-                  <>
-                    <span className={styles.metaDot} aria-hidden="true">·</span>
-                    <span>{fields.length} columns</span>
-                  </>
-                ) : null}
-                {formatBytes(dataset.sizeBytes) ? (
-                  <>
-                    <span className={styles.metaDot} aria-hidden="true">·</span>
-                    <span>{formatBytes(dataset.sizeBytes)}</span>
-                  </>
-                ) : null}
-                <span className={styles.metaDot} aria-hidden="true">·</span>
-                <span>Updated {relativeTime(dataset.updatedAt)}</span>
-              </div>
-            </div>
-          </div>
-          <div className={styles.inspectorActions}>
-            {published ? (
-              <button
-                className={styles.unpublishButton}
-                type="button"
-                onClick={handleUnpublish}
-                disabled={publishBusy}
-              >
-                {publishBusy ? "Unpublishing…" : "Unpublish"}
-              </button>
-            ) : (
-              <button
-                className={styles.publishButton}
-                type="button"
-                onClick={handlePublish}
-                disabled={publishBusy}
-              >
-                {publishBusy ? "Publishing…" : "Publish"}
-              </button>
-            )}
+        {/* The shared header, the same one the Agent and Node details views
+            render. There used to be two stylesheets and three results - two
+            title sizes, three paddings, and the action in a different place in
+            each - so lining them up meant editing whichever file you were in
+            and they came apart again straight away.
+
+            No publish control in it: this panel is the DETAILS view, and it
+            carried its own red Unpublish with no ownership gate at all, so a
+            dataset the user never published and cannot withdraw offered to
+            withdraw it. That decision is made in one place, the Data Catalog
+            page's right-hand drawer, which gates on `isUserOwnedDataset`. */}
+        <CatalogDetailHeader
+          kind="dataset"
+          title={datasetDisplayTitle(dataset)}
+          actions={
             <button
               className={styles.exportButton}
               type="button"
@@ -477,8 +409,34 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             >
               {exporting ? "Exporting…" : "Export"}
             </button>
+          }
+        >
+          <div className={styles.inspectorMeta}>
+            <span className={styles.installedBadge}>
+              {dataset.installed
+                ? "In project"
+                : datasetProvenanceLabel(dataset.origin, dataset.format)}
+            </span>
+            <span className={formatClass(dataset.format, styles)}>
+              {DATASET_FORMAT_LABEL[dataset.format]}
+            </span>
+            {countLabel ? <span>{countLabel}</span> : null}
+            {fields.length > 0 ? (
+              <>
+                <span className={styles.metaDot} aria-hidden="true">·</span>
+                <span>{fields.length} columns</span>
+              </>
+            ) : null}
+            {formatBytes(dataset.sizeBytes) ? (
+              <>
+                <span className={styles.metaDot} aria-hidden="true">·</span>
+                <span>{formatBytes(dataset.sizeBytes)}</span>
+              </>
+            ) : null}
+            <span className={styles.metaDot} aria-hidden="true">·</span>
+            <span>Updated {relativeTime(dataset.updatedAt)}</span>
           </div>
-        </div>
+        </CatalogDetailHeader>
 
         <nav className={styles.inspectorTabs} aria-label="Dataset detail sections">
           {TABS.map((tab) => (
@@ -525,6 +483,29 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             <h2>Dataset Info</h2>
           </div>
 
+          {/* How to USE this dataset, above what it contains: the details view
+              is where someone comes to find that out, and until now it was the
+              one place that did not say (#206). The reference is what goes into
+              a node -- the location is shown beside it as information, because
+              an absolute path is specific to this machine and pasting it
+              produces code that breaks for the next person. */}
+          <div className={styles.infoSection}>
+            <p className={styles.infoSectionLabel}>Use in a node</p>
+            <div className={styles.referenceRow}>
+              <code className={styles.referenceCode}>{reference?.code}</code>
+              <CopyButton
+                value={reference?.code ?? ""}
+                label="Copy dataset reference"
+                variant="labelled"
+              />
+            </div>
+            {reference?.location ? (
+              <p className={styles.referenceLocation} title={reference.location}>
+                {reference.location}
+              </p>
+            ) : null}
+          </div>
+
           <div className={styles.infoSection}>
             <p className={styles.infoSectionLabel}>General</p>
             <dl className={styles.infoRows}>
@@ -535,7 +516,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               {dataset.schema?.crs ? (
                 <div><dt>CRS</dt><dd>{dataset.schema.crs}</dd></div>
               ) : null}
-              <div><dt>Availability</dt><dd><span className={styles.installedBadge}>{dataset.installed ? "In dataflow" : "Available"}</span></dd></div>
+              <div><dt>Availability</dt><dd><span className={styles.installedBadge}>{dataset.installed ? "In project" : "Available"}</span></dd></div>
               <div><dt>Imported</dt><dd>{absoluteDate(dataset.createdAt ?? dataset.updatedAt)}</dd></div>
               {/*<div><dt>Last updated</dt><dd title={absoluteDate(dataset.updatedAt)}>{relativeTime(dataset.updatedAt)}</dd></div>*/}
               {dataset.sourceUpdatedAt ? (
@@ -589,6 +570,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
           </div>
         </aside>
       </div>
+
     </main>
   );
 };

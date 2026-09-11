@@ -1,12 +1,13 @@
 {
   "sha256": {
-    "README.md": "0d2053e06c16293556162639e2ccad394a57f8fcaf54b586bda012cbf3200681",
-    "manifest.json": "74099f2faee3a2853bcd84f9bb356d784db02e16b63816cf776d38ced5d3bae7",
-    "scripts/behaviors.js": "c66c009292cdb9dbe9adba23517a67c6958420e9acef5061333e4ad91c279dea",
-    "scripts/behaviors.js.map": "ea7081c6ad1c8c6ddf734a34ed8729ce56b0814b829ae273a8a8cb4b43425a4e",
-    "sources/cvGalleryBehavior.tsx": "cf727b31e82da3e069bc49cdf2541259405160d228d1d4d28a89e3527dcf0484",
-    "sources/hfCvInferenceBehavior.tsx": "0483e8fe5098023b99a9c4ec105818a8ddb25d0a37c1c57bb20d8724123e43db",
-    "sources/index.tsx": "d5674f84bfd869a0bbd6dcd2a819d391e250fa5e028e17900fbcf5468a886d0a",
-    "sources/streetViewFetcherBehavior.tsx": "c7a1e685a2538c69222769fd7835c7c9b762eb95b94013640ab3e17a59df7a4f"
+    "README.md": "6ba7c3d5371e7404e593ad230ccddc9f5758da73b89ff68aa932b43114dfbe51",
+    "manifest.json": "b5593fd71e62e181677d0556934e7b2bcba98fa0928189e1037f311b040ec7ac",
+    "scripts/behaviors.js": "1694a0c8874644d0e195ec7d6554dd36f197232ab1134b505c2288f184d9cb43",
+    "scripts/behaviors.js.map": "c44c17f6dcec004f032131baf7134d3402ad9a9affc1ce1087494274e06f8d5e",
+    "sources/apiAuth.ts": "8255fd67fd5c90de4e867c68dc757ebd21bf6668b21352191c6d47dffb146d35",
+    "sources/cvGalleryBehavior.tsx": "8a1e5174e3b719086cd71230c92ed47f8ad7fd4f4c802f8f3c4b3bbbe452ae74",
+    "sources/hfCvInferenceBehavior.tsx": "2b581630c8faac50490ac190f57c6713de42756c5fcd09ebaaadacc1827dfdd5",
+    "sources/index.tsx": "471bc3e14314ef84eee05bd671ca08bee7052b315e61d026b864d43a238ef0c6",
+    "sources/streetViewFetcherBehavior.tsx": "405ce8bf92c3de5150b0883178c0f047c0c59e087e49abb9a0a7be19db7b0b56"
   }
 }

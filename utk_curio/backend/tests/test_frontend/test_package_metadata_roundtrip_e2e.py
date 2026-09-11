@@ -229,10 +229,32 @@ def _port_section(page, title: str):
     return page.get_by_text(title, exact=True).locator("xpath=..")
 
 
-def _set_port_row(section, index: int, types: str, cardinality: str) -> None:
-    """Rewrite one port row. One ``input`` and one ``select`` per row, in order."""
-    section.locator("input").nth(index).fill(types)
-    section.locator("select").nth(index).select_option(cardinality)
+def _port_control(page, label: str):
+    """One port control, addressed by its exact aria-label.
+
+    An attribute selector rather than ``get_by_label``: the port editor renders
+    a bare ``<label>`` for the section heading with no ``htmlFor``, which
+    Playwright's label matching also considers, so the by-label query resolved
+    to more than the control asked for.
+    """
+    return page.locator(f'[aria-label="{label}"]')
+
+
+def _set_port_row(page, title: str, port: int, type_name: str, cardinality: str | None = None) -> None:
+    """Set port *port* (1-based) of *title* to exactly one type, and optionally its cardinality.
+
+    Ports are a ``<select>`` per type now (#219), and every control's accessible
+    name carries its section because "Port 1 type 1" alone names one control in
+    the Input editor and another in the Output one.
+
+    A port that already carries several types keeps only the first: every extra
+    row is removed, which is what makes the manifest assertions exact.
+    """
+    while _port_control(page, f"{title} port {port} type 2").count() > 0:
+        _port_control(page, f"Remove {title} port {port} type 2").click()
+    _port_control(page, f"{title} port {port} type 1").select_option(type_name)
+    if cardinality is not None:
+        _port_control(page, f"{title} port {port} cardinality").select_option(cardinality)
 
 
 def _configure_kind(page) -> None:
@@ -240,19 +262,17 @@ def _configure_kind(page) -> None:
     page.locator("#kind-config-label").fill(KIND_LABEL)
     page.locator("#kind-config-description").fill(KIND_DESCRIPTION)
 
-    inputs = _port_section(page, "Input ports")
-    expect(inputs.locator("input")).to_have_count(1)
-    _set_port_row(inputs, 0, "DATAFRAME", "1")
-    inputs.get_by_role("button", name="+ Add port").click()
-    expect(inputs.locator("input")).to_have_count(2)
-    _set_port_row(inputs, 1, "JSON", "[0,1]")
+    expect(_port_control(page, "Input ports port 1 type 1")).to_have_count(1)
+    _set_port_row(page, "Input ports", 1, "DATAFRAME", "1")
+    _port_control(page, "Add Input ports port").click()
+    expect(_port_control(page, "Input ports port 2 type 1")).to_have_count(1)
+    _set_port_row(page, "Input ports", 2, "JSON", "[0,1]")
 
-    outputs = _port_section(page, "Output ports")
-    expect(outputs.locator("input")).to_have_count(1)
+    expect(_port_control(page, "Output ports port 1 type 1")).to_have_count(1)
     # Cardinality left at the descriptor's "[1,n]" on purpose: it is the one
     # value that must survive *without* being retyped, so the round trip is not
     # trivially satisfied by "whatever the modal last wrote".
-    outputs.locator("input").nth(0).fill("VALUE")
+    _set_port_row(page, "Output ports", 1, "VALUE")
 
 
 def _save_as_new_package(page) -> str:
@@ -307,7 +327,14 @@ def _open_metadata_modal(page, anchor):
     # The modal fetches GET /api/packages before it renders any input, showing a
     # "Loading..." body until then. Gating on a field rather than the heading
     # avoids filling a form that is about to be replaced by the load.
-    expect(page.locator("#pkg-meta-publisher")).to_be_visible(timeout=15000)
+    try:
+        expect(page.locator("#pkg-meta-publisher")).to_be_visible(timeout=15000)
+    except AssertionError:
+        shell = page.locator('[data-curio-modal-shell="true"]')
+        raise AssertionError(
+            "metadata modal never rendered its body; modal says: "
+            + repr(shell.inner_text() if shell.count() else "<no modal>")
+        ) from None
 
 
 def _installed_package(current_server: str, token: str, dir_name: str) -> dict:

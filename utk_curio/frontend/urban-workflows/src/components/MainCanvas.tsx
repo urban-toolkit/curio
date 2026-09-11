@@ -12,6 +12,7 @@ import ReactFlow, {
     useReactFlow,
 } from "reactflow";
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
+import { computeTranslateExtent } from "../utils/canvasExtent";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { useCollab } from "../providers/CollaborationProvider";
@@ -21,6 +22,7 @@ import { packageKeyFromCanonicalNodeType } from "../registry/packageKeys";
 import { NodeType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { DEFAULT_DELETE_KEY_CODES } from "./canvasKeyBindings";
+import { useRunSelectedNodeShortcut } from "../hook/useRunSelectedNodeShortcut";
 import UniversalNode from "./UniversalNode";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { useCode } from "../hook/useCode";
@@ -43,23 +45,11 @@ import {
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
 import { agentsApi } from "../api/agentsApi";
-import { readAgentDragCoord, notifyAgentDockRefresh, pickNodeAtPoint, pickEdgeAtPoint, hasAgentDrag, type AgentDropTarget } from "../utils/agentCatalogEvents";
+import { readAgentDragCoord, notifyAgentDockRefresh, resolveAgentDropTarget, hasAgentDrag, type AgentDropTarget } from "../utils/agentCatalogEvents";
+import { clearAgentDropHover, setAgentDropHoverEdgeId } from "../utils/agentDropHover";
 import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";
-
-/**
- * How far the viewport may pan, in flow coordinates.
- *
- * Without a clamp, `minZoom` 0.05 lets a stray trackpad gesture carry the
- * dataflow far enough off-screen that there is no way back to it short of
- * reloading. The bound is generous rather than tight: it exists to keep the
- * work findable, not to constrain where nodes may sit.
- */
-const CANVAS_EXTENT: [[number, number], [number, number]] = [
-    [-2000, -2000],
-    [6000, 6000],
-];
 
 export function MainCanvas() {
     const { showToast } = useToastContext();
@@ -78,6 +68,27 @@ export function MainCanvas() {
         markDirty,
         saveCurrentProject,
     } = useFlowContext();
+
+    // How far the viewport may pan, tracking the nodes rather than a fixed box
+    // (#234). Two memos on purpose: React Flow re-applies `translateExtent`
+    // through an effect keyed on the value's IDENTITY, so handing it a fresh
+    // array every render would call `d3Zoom.translateExtent()` on every frame
+    // of a drag. `computeTranslateExtent` rounds to a coarse grid, and keying
+    // the tuple on those four numbers keeps the identity stable until a node
+    // actually crosses a boundary.
+    const [extentMinX, extentMinY, extentMaxX, extentMaxY] = useMemo(() => {
+        const [[minX, minY], [maxX, maxY]] = computeTranslateExtent(nodes);
+        return [minX, minY, maxX, maxY];
+    }, [nodes]);
+    const translateExtent = useMemo(
+        () =>
+            [
+                [extentMinX, extentMinY],
+                [extentMaxX, extentMaxY],
+            ] as [[number, number], [number, number]],
+        [extentMinX, extentMinY, extentMaxX, extentMaxY],
+    );
+
     const collab = useCollab();
     const collabRef = useRef(collab);
     collabRef.current = collab;
@@ -166,6 +177,11 @@ export function MainCanvas() {
         viewerMode,
     } = useFlowContext();
 
+    // Ctrl/Cmd+Enter on a selected node. Gated on !dashboardOn to match the
+    // play button, which styles.tsx hides in dashboard mode -- a shortcut for a
+    // control that is not on screen is a surprise (#223).
+    useRunSelectedNodeShortcut(!dashboardOn);
+
     // When real-time collaboration is on, a peer opening the owner's URL
     // lands in ``viewerMode === "shared"`` (loadSharedProject was the only
     // way to bypass the owner-only /api/projects/<id> 404). For collab to
@@ -233,6 +249,10 @@ export function MainCanvas() {
         setDashBoardMode(value);
     }, [setDashBoardMode]);
 
+    // Last dragover point, so a pointer that reports the same coordinate twice
+    // (browsers fire dragover on a timer as well as on movement) costs nothing.
+    const lastDragPointRef = useRef<{ x: number; y: number } | null>(null);
+
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         // Dataset AND agent drags use effectAllowed="copy"; a "move" dropEffect is
@@ -242,6 +262,53 @@ export function MainCanvas() {
         const wantsCopy =
             hasDatasetDrag(event.dataTransfer) || hasAgentDrag(event.dataTransfer);
         event.dataTransfer.dropEffect = wantsCopy ? "copy" : "move";
+
+        // Tell the edges which connection would receive this drop (#296). Only
+        // for agent drags: a dataset or node-creation drag pays nothing, which
+        // is what keeps this off the hot path for every other kind of drag.
+        if (!hasAgentDrag(event.dataTransfer)) {
+            clearAgentDropHover();
+            return;
+        }
+        const last = lastDragPointRef.current;
+        if (last && last.x === event.clientX && last.y === event.clientY) return;
+        lastDragPointRef.current = { x: event.clientX, y: event.clientY };
+        const target = resolveAgentDropTarget({
+            nodes: reactFlow.getNodes(),
+            flowPoint: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+            clientX: event.clientX,
+            clientY: event.clientY,
+        });
+        setAgentDropHoverEdgeId(target.kind === "connection" ? target.targetId : null);
+    }, [reactFlow, screenToFlowPosition]);
+
+    const handleDragLeave = useCallback((event: React.DragEvent) => {
+        // dragleave bubbles from descendants, so a pointer crossing from the
+        // pane onto a node fires one here with relatedTarget still inside the
+        // drop target. Only a relatedTarget outside it - or null, which is how
+        // leaving the window reports - is a real exit.
+        const next = event.relatedTarget as Node | null;
+        if (next && event.currentTarget.contains(next)) return;
+        lastDragPointRef.current = null;
+        clearAgentDropHover();
+    }, []);
+
+    // The end of a drag that never reaches the canvas: Escape cancels it, the
+    // pointer is released over another application, or the drop lands outside
+    // the window. None of those fire dragleave on the pane, and dragend fires on
+    // the drag SOURCE, so the listener has to be global. Capture phase so
+    // nothing downstream can swallow it.
+    useEffect(() => {
+        const clear = () => {
+            lastDragPointRef.current = null;
+            clearAgentDropHover();
+        };
+        window.addEventListener("dragend", clear, true);
+        window.addEventListener("drop", clear, true);
+        return () => {
+            window.removeEventListener("dragend", clear, true);
+            window.removeEventListener("drop", clear, true);
+        };
     }, []);
 
     const handleCanvasDrop = useCallback((event: React.DragEvent) => {
@@ -264,21 +331,19 @@ export function MainCanvas() {
         const agentCoord = readAgentDragCoord(event.dataTransfer);
         if (agentCoord) {
             event.preventDefault();
-            // Hit-test the drop point against node geometry (reliable regardless
-            // of which DOM layer received the drop). A hit → attach to that node;
-            // empty canvas → attach to the canvas.
-            const dropPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-            const hitNodeId = pickNodeAtPoint(reactFlow.getNodes(), dropPos);
-            // Node first, then edge, then canvas: an edge routed underneath a
-            // node should resolve to the node the pointer is actually over.
-            const hitEdgeId = hitNodeId
-                ? null
-                : pickEdgeAtPoint(event.clientX, event.clientY);
-            const target: AgentDropTarget = hitNodeId
-                ? { kind: "node", targetId: hitNodeId }
-                : hitEdgeId
-                    ? { kind: "connection", targetId: hitEdgeId }
-                    : { kind: "canvas" };
+            clearAgentDropHover();
+            lastDragPointRef.current = null;
+            // Node first, then edge, then canvas, hit-tested against node
+            // geometry (reliable regardless of which DOM layer received the
+            // drop) and then the DOM for edges. The SAME resolver feeds the
+            // drag-over highlight, so what lights up under the pointer and what
+            // actually receives the drop cannot disagree (#296).
+            const target: AgentDropTarget = resolveAgentDropTarget({
+                nodes: reactFlow.getNodes(),
+                flowPoint: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+                clientX: event.clientX,
+                clientY: event.clientY,
+            });
             const where =
                 target.kind === "node"
                     ? "the node"
@@ -494,8 +559,7 @@ export function MainCanvas() {
             ))}
             {!dashboardOn && <ToolsMenu />}
             {!dashboardOn && <UpMenu
-                setDashBoardMode={(value) => handleDashboardToggle(value)}
-                setDashboardOn={handleDashboardToggle}
+                setDashBoardMode={handleDashboardToggle}
                 dashboardOn={dashboardOn}
             />}
             {!dashboardOn && <CollaborationSidePanel />}
@@ -505,6 +569,7 @@ export function MainCanvas() {
                 className="curio-canvas-drop-target"
                 style={{ width: "100%", height: "100%" }}
                 onDragOver={!dashboardOn && !isSharedView ? handleDragOver : undefined}
+                onDragLeave={!dashboardOn && !isSharedView ? handleDragLeave : undefined}
                 onDrop={!dashboardOn && !isSharedView ? handleDrop : undefined}
             >
             <ReactFlow
@@ -523,7 +588,7 @@ export function MainCanvas() {
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
-                translateExtent={CANVAS_EXTENT}
+                translateExtent={translateExtent}
                 panOnDrag={!dashboardOn || !dashboardLocked}
                 zoomOnScroll={!dashboardOn || !dashboardLocked}
                 zoomOnPinch={!dashboardOn || !dashboardLocked}
@@ -543,7 +608,6 @@ export function MainCanvas() {
             </ReactFlow>
             {!isSharedView ? <AgentDockOverlay /> : null}
             </div>
-            <input hidden type="file" name="file" id="file" />
 
         </div> : loadingAnimation() }
         <VersionBadge />

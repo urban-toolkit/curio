@@ -56,6 +56,19 @@ _CURIO_PROVIDED: frozenset[str] = frozenset({
 })
 
 
+def pypi_name_for_import(module: str) -> str:
+    """The PyPI distribution that provides importable name *module*.
+
+    One lookup over :data:`_PY_NAME_ALIAS`, shared by the manifest scanner and
+    by the missing-import detector on the node-run path, so the two can never
+    disagree about what ``sklearn`` installs as. Anything not in the table
+    passes through unchanged, which is right for the overwhelming majority of
+    packages and is a guess for the rest - see the detector's docstring for what
+    that does and does not promise.
+    """
+    return _PY_NAME_ALIAS.get(module, module)
+
+
 def scan_python_imports(source: str) -> list[str]:
     """Return a sorted, deduplicated list of top-level imports in *source*.
 
@@ -90,7 +103,7 @@ def scan_python_imports(source: str) -> list[str]:
             continue
         if name in _CURIO_PROVIDED:
             continue
-        filtered.add(_PY_NAME_ALIAS.get(name, name))
+        filtered.add(pypi_name_for_import(name))
     return sorted(filtered)
 
 

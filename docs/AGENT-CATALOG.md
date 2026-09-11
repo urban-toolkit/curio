@@ -201,11 +201,22 @@ simply available in the palette.
 
 **Attaching** it creates a private instance bound to a target:
 
-| Target kind | Bound to | Reached by |
-|---|---|---|
-| `node` | One node on the canvas | Dragging a palette row onto that node. |
-| `connection` | One edge between two nodes | Dragging a palette row onto that edge. |
-| `canvas` | The whole dataflow | Dragging a palette row onto empty canvas. |
+| Target kind | Bound to | Reached by | Shown as |
+|---|---|---|---|
+| `node` | One node on the canvas | Dragging a palette row onto that node. | A badge under the node. |
+| `connection` | One edge between two nodes | Dragging a palette row onto that edge. | A badge at the connection's midpoint, **and** a row in the dock. |
+| `canvas` | The whole dataflow | Dragging a palette row onto empty canvas. | A row in the dock. |
+
+While you drag a palette row across the canvas, the connection that would
+receive the drop is highlighted, so you can see which one you are aiming at
+before you let go. A node under the pointer wins over any edge routed beneath
+it, and the highlight follows that same rule rather than guessing separately.
+
+A connection agent is listed in **both** places on purpose. The badge says
+*which* connection the agent is about, but it is only there while that edge is
+on screen, and it sits behind any node the edge runs under. The dock is the
+roster: always reachable, and the order the chat panel's arrows cycle through.
+Detaching works from either.
 
 Not every agent accepts every target: an agent declares which kinds it is
 compatible with, and its category implies a default. A `canvas` agent dropped on
@@ -260,8 +271,8 @@ account-level setting, edited in **AI Settings** from the header.
 |---|---|
 | Provider | OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint. |
 | Base URL | Only for a custom endpoint: Ollama, LM Studio, vLLM, Groq, Azure. |
-| API key | Stored per account. Leave blank to keep the saved one. |
-| Model | Which model answers. **Fetch models** asks the endpoint above what it serves and turns this into a dropdown; endpoints that publish no list keep a free-text box. Leave blank to inherit the deployment's. |
+| API key | **One per account**, held against the provider you saved it under. The saved-key markers and *Remove saved key* appear only on that provider's tab; on any other tab the field is empty and required, and saving there replaces the stored key rather than adding a second one. Leave blank to keep it while you are on its own tab. |
+| Model | Which model answers. **Fetch models** asks the endpoint above what it serves and turns this into a dropdown; when it cannot be asked, Curio replays what that endpoint last reported. Leave blank to inherit the deployment's. |
 | HuggingFace token | Not for agents: it unlocks *gated* models in the Street Vision node. It sits here because it is the same kind of setting, a model credential you hold per account. Public models need none. |
 
 ### Choosing the model
@@ -272,12 +283,45 @@ the base URL and key currently *on screen* rather than the saved ones — you ar
 usually choosing a model for an endpoint you have not saved yet). What comes
 back becomes a dropdown.
 
-It is a convenience, not a gate. Only OpenAI-compatible endpoints have a
-listing in the shape the OpenAI SDK speaks, so Anthropic and Gemini report
-`listable: false` and the field stays typeable; so does an endpoint that refuses
-the request, with the reason shown beside the button. A model you saved earlier
-stays selected and is marked *(not listed)* if the endpoint stops offering it,
-rather than disappearing from the control that claims to show it.
+It is a convenience, not a gate. A model you saved earlier stays selected and is
+marked *(not listed)* if the endpoint stops offering it, rather than
+disappearing from the control that claims to show it, and the field is free text
+until you press the button.
+
+**The answer is hybrid, and both halves come from the API** (the decision
+recorded for [#241]). Two sources fill the dropdown:
+
+| Source | What it is |
+|---|---|
+| *From this endpoint* | What the endpoint reported just now. OpenAI-compatible endpoints, Anthropic, and Gemini are all asked; for Gemini only models supporting `generateContent` are offered, since an embedding model saved here would fail at the first agent run. |
+| *Last reported by this endpoint (on <date>)* | What it reported the last time it could be asked. Recorded per account on every success (`agents/model_catalog.py`) and replayed when a live listing is impossible - no key pasted yet, offline, or a key without the scope to list. |
+
+**Nothing here is maintained by hand.** An earlier cut shipped a literal table
+of model ids per provider. That drifts the moment a provider ships or retires a
+model, nobody notices because stale entries still look plausible, and it could
+say nothing at all about a custom endpoint - there is no such thing as a model
+somebody's Ollama probably serves. A recording of what an endpoint said about
+itself has none of those problems, and it covers custom endpoints for free:
+fetch once against your own server and it is remembered like any other.
+
+Suggestions are never an allowlist. Nothing rejects a model missing from them,
+the box stays free text, a live listing always wins, and a model you type by
+hand is always accepted. A replay is labelled with the date it was true, because
+presenting a recording as the present tense is how you save a model the endpoint
+no longer has - which surfaces much later as a failed agent run, not here.
+
+Two consequences worth stating. A **brand-new account with no key has nothing to
+suggest**, and the panel says so rather than guessing; the deployment's own
+configured model still shows as the placeholder. And Curio **does not send a
+placeholder key** - every provider authenticates its models endpoint, so with no
+key the replay answers immediately instead of waiting out a socket timeout for a
+foregone 401.
+
+An earlier version of this panel reported Anthropic and Gemini as
+`listable: false` and said *"This provider does not publish a model list"*. That
+was untrue - nobody had asked them - and it is what #241 was filed about.
+
+[#241]: https://github.com/urban-toolkit/curio/issues/241
 
 Whoever runs the Curio install can set a default for all four with
 `curio.py start` flags (see [Operator notes](#operator-notes)). Those flags and

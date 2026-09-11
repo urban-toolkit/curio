@@ -119,12 +119,48 @@
     color: var(--curio-text-primary);
 }
 
-.portRow {
+/* One bordered block per port, holding its cardinality and its type rows.
+   Replaces .portRow, which laid out a single "types, cardinality, remove" line
+   back when every type of a port lived in one comma-separated field (#219). */
+.portGroup {
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-md);
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.portGroupHeader {
     display: grid;
-    grid-template-columns: 2fr 1fr auto;
+    grid-template-columns: 1fr auto auto;
     gap: 8px;
     align-items: center;
     margin-bottom: 8px;
+}
+
+.portGroupTitle {
+    font-size: var(--curio-font-size-md);
+    color: var(--curio-text-secondary);
+}
+
+/* Two columns, so a port declaring all six types is three rows rather than six
+   -- computation-analysis and merge-flow both declare six. */
+.typeGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.typeRow {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+    align-items: center;
+}
+
+.smallBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .smallBtn {

@@ -1,0 +1,55 @@
+{
+  "id": "data.cityofchicago.neighborhoods",
+  "name": "Chicago Neighborhoods",
+  "version": "1.0.0",
+  "format": "geojson",
+  "description": "Boundary polygons for Chicago's 98 neighborhoods, with the primary (pri_neigh) and secondary (sec_neigh) neighborhood names. Vendored from the Chicago Data Portal so the street-vision example does not depend on a live download.",
+  "publisher": "City of Chicago",
+  "license": "Open Data",
+  "tags": [
+    "boundaries",
+    "neighborhoods",
+    "chicago",
+    "geojson"
+  ],
+  "dataFile": "data/neighborhoods.geojson",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Chicago Data Portal (Boundaries - Neighborhoods, y6yq-dbs2)",
+  "createdAt": "2026-09-03T00:00:00Z",
+  "updatedAt": "2026-09-03T00:00:00Z",
+  "featureCount": 98,
+  "rowCount": null,
+  "schema": {
+    "fields": [
+      {
+        "name": "pri_neigh",
+        "type": "STRING",
+        "nullable": false
+      },
+      {
+        "name": "sec_neigh",
+        "type": "STRING",
+        "nullable": false
+      },
+      {
+        "name": "shape_area",
+        "type": "STRING",
+        "nullable": false
+      },
+      {
+        "name": "shape_len",
+        "type": "STRING",
+        "nullable": false
+      },
+      {
+        "name": "geometry",
+        "type": "GEOMETRY",
+        "nullable": false
+      }
+    ],
+    "geometryType": "MultiPolygon",
+    "crs": "EPSG:4326"
+  }
+}

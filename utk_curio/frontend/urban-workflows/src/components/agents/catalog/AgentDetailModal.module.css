@@ -1,0 +1,157 @@
+/* "View details" for an agent. Geometry mirrors the dataset detail modal so the
+   two read as one family; colours come from ../../../styles/curioTokens.css. */
+
+/* The Data Catalog's details header, matched: icon and title on the left, the
+ * action on the right, one rule apart. The three details views were three
+ * different headers - this one stacked an icon and a title with the action
+ * pushed down into the body, while Data put the action on the header row - so
+ * the same screen looked like a different product in each catalog. */
+.header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    /* Right padding clears ModalShell's own close button, which is absolutely
+       positioned in the top-right corner. Without it the header's action landed
+       underneath the X. */
+    padding: 24px 68px 16px 28px;
+    border-bottom: 1px solid var(--curio-border);
+}
+
+/* The icon + title pair, so the action can be the header's other child. */
+.titleBlock {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    min-width: 0;
+}
+
+.title {
+    margin: 0 0 6px;
+    /* 22px/700, the Data panel's heading size. This was 20px/600. */
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--curio-text-primary);
+}
+
+.subtitle {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: var(--curio-text-secondary);
+}
+
+.body {
+    padding: 20px 28px 28px;
+    overflow-y: auto;
+}
+
+.purpose {
+    margin: 0 0 20px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--curio-text-primary);
+}
+
+.section {
+    margin-bottom: 20px;
+}
+
+.sectionLabel {
+    margin: 0 0 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+    color: var(--curio-text-muted);
+}
+
+.infoGrid {
+    display: grid;
+    grid-template-columns: minmax(120px, max-content) 1fr;
+    gap: 6px 20px;
+    margin: 0;
+    font-size: 13px;
+}
+
+.infoLabel {
+    margin: 0;
+    color: var(--curio-text-secondary);
+}
+
+.infoValue {
+    margin: 0;
+    color: var(--curio-text-primary);
+    /* Identifiers and version strings have no spaces to break at. */
+    overflow-wrap: anywhere;
+}
+
+.list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--curio-text-primary);
+}
+
+/* ── Export, and the prompts it exports ──────────────────────────────────── */
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* The action fill, the same as every other action in the catalogs. */
+.exportButton {
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  cursor: pointer;
+}
+
+.exportButton:hover:not(:disabled) {
+  background: var(--curio-top-bar-bg-hover);
+}
+
+.exportButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.promptBlock {
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  background: var(--curio-card-bg);
+  margin-bottom: 8px;
+}
+
+.promptName {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--curio-font-mono, ui-monospace, monospace);
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+/* Prompts are long and contain their own hard wrapping, so preserve it and let
+ * the block scroll rather than stretching the modal. */
+.promptText {
+  margin: 0;
+  padding: 0 12px 12px;
+  max-height: 320px;
+  overflow: auto;
+  font-family: var(--curio-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--curio-text-secondary);
+}

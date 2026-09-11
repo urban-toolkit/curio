@@ -29,6 +29,14 @@ jest.mock("@monaco-editor/react", () => {
             }),
             pushUndoStop: () => {},
             onDidBlurEditorText: () => {},
+            // Ctrl/Cmd+Enter registers through addAction on mount (#223).
+            // Captured so a test can assert the binding, and present at all so
+            // the mount does not run against a fake missing half the API.
+            __actions: [] as any[],
+            addAction(action: any) {
+                editor.__actions.push(action);
+                return { dispose: () => {} };
+            },
             __type(v: string, pos = { lineNumber: 2, column: 3 }) {
                 value = v;
                 position = pos;
@@ -46,7 +54,10 @@ jest.mock("@monaco-editor/react", () => {
         }
         ref.current.props = props;
         React.useEffect(() => {
-            props.onMount?.(ref.current, {});
+            props.onMount?.(ref.current, {
+                KeyMod: { CtrlCmd: 2048 },
+                KeyCode: { Enter: 3 },
+            });
         }, []);
         return React.createElement("div", { "data-testid": "mock-monaco" });
     };

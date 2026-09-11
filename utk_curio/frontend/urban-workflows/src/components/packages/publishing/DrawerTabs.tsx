@@ -5,29 +5,32 @@ import styles from "./DrawerTabs.module.css";
 export interface DrawerTabsProps {
   tab: DrawerTab;
   installedCount: number;
-  updateCount: number;
   onChange: (tab: DrawerTab) => void;
 }
 
-/** Tab strip that lets users switch between Featured / Browse / Installed / Updates views. */
+/** Tab strip for the Node Catalog drawer: Browse all / In project.
+ *
+ * There were two more, and neither did anything. "Featured" and "Updates" were
+ * rendered and clickable, but the drawer collapsed both onto "browse" before
+ * handing the state back (`tab === "featured" || tab === "updates" ? "browse"`)
+ * and its list never depended on `tab` at all - so clicking either left the
+ * same rows on screen with "Browse all" still painted as the selected tab.
+ * "Updates" was the worse of the two: it carried a real accent count, so it
+ * invited a click that then did nothing at all.
+ *
+ * The per-card "update available" line is unaffected - `MyPackagesList` and
+ * `PackageCard` compute that themselves from the catalog row.
+ */
 export const DrawerTabs: React.FC<DrawerTabsProps> = ({
   tab,
   installedCount,
-  updateCount,
   onChange,
 }) => (
   <nav className={styles.tabs} aria-label="Catalog sections">
     <button
       type="button"
-      className={`${styles.tab} ${tab === "featured" ? styles.tabActive : ""}`}
-      onClick={() => onChange("featured")}
-    >
-      Featured
-    </button>
-
-    <button
-      type="button"
       className={`${styles.tab} ${tab === "browse" ? styles.tabActive : ""}`}
+      aria-pressed={tab === "browse"}
       onClick={() => onChange("browse")}
     >
       Browse all
@@ -36,26 +39,13 @@ export const DrawerTabs: React.FC<DrawerTabsProps> = ({
     <button
       type="button"
       className={`${styles.tab} ${tab === "installed" ? styles.tabActive : ""}`}
+      aria-pressed={tab === "installed"}
       onClick={() => onChange("installed")}
     >
-      In dataflow
+      In project
       {installedCount > 0 ? (
         <span className={`${styles.tabBadge} ${styles.tabBadgeDark}`}>{installedCount}</span>
       ) : null}
     </button>
-
-    <button
-      type="button"
-      className={`${styles.tab} ${tab === "updates" ? styles.tabActive : ""} ${
-        updateCount === 0 ? styles.tabMuted : ""
-      }`}
-      onClick={() => onChange("updates")}
-    >
-      Updates
-      {updateCount > 0 ? (
-        <span className={`${styles.tabBadge} ${styles.tabBadgeAccent}`}>{updateCount}</span>
-      ) : null}
-    </button>
   </nav>
 );
-

@@ -35,6 +35,7 @@ import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    accept_confirm_dialog,
     api_json,
     open_tools_palette,
     require_project_page,
@@ -165,7 +166,7 @@ def test_drawer_lists_catalog_agents(
 
     expect(_card(drawer, AGENT_COORD)).to_have_count(1, timeout=15000)
     expect(
-        _card(drawer, AGENT_COORD).get_by_role("button", name="Add to dataflow")
+        _card(drawer, AGENT_COORD).get_by_role("button", name="Add to project")
     ).to_be_visible()
 
     # A wedged user store surfaces here as an error banner. Asserting its
@@ -252,20 +253,26 @@ def test_add_agent_propagates_to_palette(
     card = _card(drawer, AGENT_COORD)
     expect(card).to_have_count(1, timeout=15000)
 
-    # 3. No permissions dialog for an agent - the install is a lockfile write,
-    #    so watch the POST itself rather than a confirm step.
+    # 3. Adding confirms first (#196), as the Data and Node catalogs do, so the
+    #    card click only opens the dialog - the POST follows the confirm.
+    card.get_by_role("button", name="Add to project").click()
+    # 60 s, not 30: under the parallel e2e run the backend answers an install
+    # in 15-48 s (see the harness HTTP timeout), and the Data catalog's
+    # install wait already allows the same.
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.url.endswith("/install")
         and r.request.method == "POST"
         and r.ok,
-        timeout=30000,
+        timeout=60000,
     ):
-        card.get_by_role("button", name="Add to dataflow").click()
+        accept_confirm_dialog(
+            page, title=f"Add {AGENT_NAME}?", button="Add to project"
+        )
 
     # 4. The card flips. Never target a busy label; wait for the settled state.
     expect(
-        card.get_by_role("button", name="Remove from dataflow", exact=True)
+        card.get_by_role("button", name="Remove from project", exact=True)
     ).to_be_visible(timeout=20000)
 
     # 5. THE POINT: close the drawer (its overlay is inset:0 with
@@ -284,24 +291,27 @@ def test_add_agent_propagates_to_palette(
     )
 
     # 7. The round trip back. Removal confirms, as it does in the Node and Data
-    #    drawers, and Playwright's default for a dialog is DISMISS - so without
-    #    this handler the click would silently do nothing and the assertions
-    #    below would fail for the wrong reason.
+    #    drawers - an in-app ConfirmDialog now (#197), not a native one, so it
+    #    is driven by clicking its button rather than by a `dialog` handler.
     drawer = _open_drawer_from_menu(page)
     card = _card(drawer, AGENT_COORD)
     expect(card).to_have_count(1, timeout=20000)
 
-    page.once("dialog", lambda dialog: dialog.accept())
+    card.get_by_role("button", name="Remove from project", exact=True).click()
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.request.method == "DELETE"
         and r.ok,
-        timeout=30000,
+        timeout=60000,
     ):
-        card.get_by_role("button", name="Remove from dataflow", exact=True).click()
+        # The dialog is titled "Remove <name> from this project?" - the same
+        # sentence the Data and Node catalogs use since the copy was unified.
+        accept_confirm_dialog(
+            page, title=f"Remove {AGENT_NAME} from this project?", button="Remove"
+        )
 
     expect(
-        card.get_by_role("button", name=re.compile(r"^Add to dataflow"))
+        card.get_by_role("button", name=re.compile(r"^Add to project"))
     ).to_be_visible(timeout=20000)
 
     # The palette empties without a reload, the mirror of step 5.
@@ -348,17 +358,21 @@ def test_requires_agents_closure_is_disclosed_and_installed(
     # Disclosed before the click: the card names what else the install adds.
     expect(card.get_by_text(re.compile("Requires", re.I))).to_be_visible()
 
+    card.get_by_role("button", name=re.compile(r"^Add to project")).click()
     with page.expect_response(
         lambda r: "/api/agents/projects/" in r.url
         and r.url.endswith("/install")
         and r.request.method == "POST"
         and r.ok,
-        timeout=30000,
+        timeout=60000,
     ):
-        card.get_by_role("button", name=re.compile(r"^Add to dataflow")).click()
+        # The confirmation lists the closure it is about to pull in (dev/106).
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to project"
+        )
 
     expect(
-        card.get_by_role("button", name="Remove from dataflow", exact=True)
+        card.get_by_role("button", name="Remove from project", exact=True)
     ).to_be_visible(timeout=20000)
 
     # The server wrote the whole closure, not just the row that was clicked.

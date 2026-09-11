@@ -1,0 +1,96 @@
+/**
+ * What a Data Export node will hand you, decided from what is connected to it.
+ *
+ * The node used to ask for the format in a dropdown and name every file
+ * ``data_export`` regardless of its input (#226). Both were guesses the node
+ * could make itself: the payload already says what shape it is, and the input
+ * already knows what it is called.
+ */
+
+/** A JSON payload has no better shape to fall back to. */
+const DEFAULT_FORMAT = "json" as const;
+const DEFAULT_STEM = "data_export";
+
+export type ExportFormat = "csv" | "geojson" | "json";
+
+export const EXPORT_MIME: Record<ExportFormat, string> = {
+  csv: "text/csv;charset=utf-8",
+  geojson: "application/geo+json",
+  json: "application/json",
+};
+
+/**
+ * The format the payload is already in.
+ *
+ * Deliberately keyed on ``dataType`` rather than on inspecting the data: it is
+ * the same field ``ConnectionValidator`` and every other node reads, so an
+ * export cannot disagree with what the edge claimed to carry.
+ */
+export function exportFormatFor(dataType: unknown): ExportFormat {
+  const kind = typeof dataType === "string" ? dataType.trim().toLowerCase() : "";
+  if (kind === "geodataframe") return "geojson";
+  if (kind === "dataframe") return "csv";
+  return DEFAULT_FORMAT;
+}
+
+/** Characters a filename cannot carry on Windows, plus the path separators. */
+const UNSAFE_FILENAME_CHARS = /[<>:"|?*]/g;
+const PATH_SEPARATORS = /[\\/]+/g;
+// Escaped rather than written as literal control bytes: the literals made
+// git classify this file as binary, so it landed with no reviewable diff and
+// stayed invisible to grep and ripgrep.
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/g;
+
+/**
+ * Make *name* safe to hand to a browser download.
+ *
+ * A dataset title is user text and reaches this as a filename, so path
+ * separators and the Windows-reserved characters have to go. Returns "" when
+ * nothing usable survives, so the caller can fall back rather than offering a
+ * file called ``_``.
+ */
+export function sanitizeExportStem(name: unknown): string {
+  if (typeof name !== "string") return "";
+  const cleaned = name
+    .trim()
+    // Path separators first: a title of "../../etc/passwd" must not survive as
+    // anything resembling a path.
+    .replace(PATH_SEPARATORS, " ")
+    .replace(UNSAFE_FILENAME_CHARS, "")
+    .replace(CONTROL_CHARS, "")
+    // Collapse whitespace so the name is one token.
+    .replace(/\s+/g, "_")
+    // Leading dots would make a hidden file, or read as a relative path.
+    .replace(/^[.\s_]+/, "")
+    .replace(/[.\s_]+$/, "");
+  // Long titles are common; 80 chars keeps the name recognisable without
+  // risking a path-length limit.
+  return cleaned.slice(0, 80);
+}
+
+export interface ExportTarget {
+  format: ExportFormat;
+  /** The full name the download will carry, extension included. */
+  filename: string;
+}
+
+/**
+ * Resolve the file a run of this node would produce.
+ *
+ * *sourceName* is the best name we have for the input, in preference order:
+ * the linked dataset's title, then the upstream node's display label. Both are
+ * optional, and the fallback is the old hardcoded stem so a node with an
+ * unnamed input still exports something sensible.
+ */
+export function resolveExportTarget(
+  input: { dataType?: unknown; dataset?: unknown } | null | undefined,
+  sourceName?: string | null,
+): ExportTarget {
+  const format = exportFormatFor(input?.dataType);
+  const fromDataset =
+    typeof input?.dataset === "string"
+      ? sanitizeExportStem(input.dataset.replace(/\.[^.]+$/, ""))
+      : "";
+  const stem = fromDataset || sanitizeExportStem(sourceName) || DEFAULT_STEM;
+  return { format, filename: `${stem}.${format}` };
+}

@@ -8,7 +8,7 @@ import type { PackagePayload } from "../../api/packagesApi";
  * Pins the catalog's per-surface copy and the props that vary it.
  *
  * The drawer and the /catalog page do different things with the same
- * components: the drawer edits one dataflow's lockfile ("Add to dataflow")
+ * components: the drawer edits one dataflow's lockfile ("Add to project")
  * while /catalog writes the user's defaults and walks every project ("Add to
  * all projects"). Both used to say "Install", which described neither. A
  * default that silently reverts is the likely regression, so the overrides are
@@ -43,7 +43,7 @@ describe("InstallPermissionsDialog confirm label", () => {
 
   test("defaults to the drawer's per-dataflow wording", () => {
     renderDialog();
-    expect(screen.getByRole("button", { name: "Add to dataflow" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to project" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
   });
 

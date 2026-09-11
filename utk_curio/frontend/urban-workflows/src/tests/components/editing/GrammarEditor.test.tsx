@@ -1,5 +1,5 @@
 import React from "react";
-import { render, act } from "@testing-library/react";
+import { render, act, waitFor } from "@testing-library/react";
 
 // Fake Monaco: uncontrolled model owned by the fake editor; onChange is fired
 // by the __type test helper the way real typing would. executeEdits replaces
@@ -53,6 +53,13 @@ jest.mock("@monaco-editor/react", () => {
     };
     return { __esModule: true, default: MockEditor, __editors: editors };
 });
+
+// The editor reads playNodesUpTo for the Ctrl/Cmd+Enter binding (#223), and
+// FlowProvider pulls in the registry -> adapters -> vega chain, which does not
+// load under jsdom. Same stub pattern the other suites that touch it use.
+jest.mock("../../../providers/FlowProvider", () => ({
+    useFlowContext: () => ({ playNodesUpTo: jest.fn() }),
+}));
 
 jest.mock("../../../providers/CollaborationProvider", () => ({
     useCollab: () => ({
@@ -153,5 +160,37 @@ describe("GrammarEditor content sync (dev/70)", () => {
 
         expect(floatCode).toHaveBeenCalledWith('{"a":1}');
         expect(floatCode).toHaveBeenCalledWith('{"a":12}');
+    });
+});
+
+describe("GrammarEditor run failures reach the node (#271)", () => {
+    beforeEach(() => { __editors.length = 0; });
+
+    test("a rejected applyGrammar becomes an error output instead of a console line", async () => {
+        const setOutputCallback = jest.fn();
+        const applyGrammar = jest.fn().mockRejectedValue(new Error("boom"));
+        const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
+        const props = (dirty: boolean) => ({
+            output: { code: "exec", content: "" },
+            nodeId: "n1",
+            applyGrammar,
+            schema: undefined,
+            replacedCode: "{}",
+            sendCodeToWidgets: jest.fn(),
+            replacedCodeDirty: dirty,
+            defaultValue: DEFAULT_SPEC,
+            floatCode: jest.fn(),
+            readOnly: false,
+            setOutputCallback,
+        });
+        const view = render(<GrammarEditor {...props(false)} />);
+        // The first dirty toggle is swallowed by the mount bypass; the second runs.
+        view.rerender(<GrammarEditor {...props(true)} />);
+
+        await waitFor(() => {
+            expect(setOutputCallback).toHaveBeenCalledWith({ code: "error", content: "boom" });
+        });
+        expect(applyGrammar).toHaveBeenCalledWith("{}");
+        consoleError.mockRestore();
     });
 });

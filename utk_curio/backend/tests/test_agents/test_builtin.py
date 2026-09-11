@@ -232,6 +232,14 @@ class TestNodeBuilderComposite:
         assert text and "Reuse first" in text
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
 
+    def test_instruction_sends_code_through_params_not_the_reply(self):
+        # #245: the runtime now recovers a misplaced request, but the cheapest
+        # fix is the model never misplacing it. Both the direct and the
+        # delegated create paths must name params.content as the code channel.
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert "params.content" in text
+        assert "code in your reply is not a node" in text
+
 
 class TestDatasetFinderComposite:
     """The dev/50 roster entry — spec per dev/15 §3.4 + docs/06, minus

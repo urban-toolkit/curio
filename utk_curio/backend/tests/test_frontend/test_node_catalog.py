@@ -148,12 +148,22 @@ def test_drawer_lists_catalog_packages(
 
     expect(_card(drawer, PKG_DIR)).to_have_count(1, timeout=15000)
     expect(
-        _card(drawer, PKG_DIR).get_by_role("button", name="Add to dataflow", exact=True)
+        _card(drawer, PKG_DIR).get_by_role("button", name="Add to project", exact=True)
     ).to_be_visible()
 
     # curio.builtin ships with every instance and can be neither uninstalled nor
-    # published, so its card must offer nothing.
-    expect(_card(drawer, BUILTIN_DIR).get_by_role("button")).to_have_count(0)
+    # published, so its card must offer no WRITE.
+    #
+    # Asserted per action rather than as "no buttons at all": every card has
+    # carried a details affordance since the catalogs were given a shared card
+    # shape, so a bare button count also forbids reading about the package,
+    # which was never the claim.
+    builtin_card = _card(drawer, BUILTIN_DIR)
+    expect(builtin_card).to_have_count(1, timeout=15000)
+    for action in ("Add to project", "Remove from project", "Publish", "Unpublish"):
+        expect(
+            builtin_card.get_by_role("button", name=action, exact=True)
+        ).to_have_count(0), action
 
     # A wedged user store (a half-copied package dir with no manifest) surfaces
     # here as an error banner. Asserting its absence turns that into a legible
@@ -253,7 +263,7 @@ def test_add_package_propagates_to_palette(
     with page.expect_response(
         lambda r: r.url.endswith("/api/packages/resolve"), timeout=30000
     ):
-        card.get_by_role("button", name="Add to dataflow", exact=True).click()
+        card.get_by_role("button", name="Add to project", exact=True).click()
 
     dialog = page.get_by_role("dialog").filter(
         has=page.get_by_role("heading", name=f'Add "{PKG_NAME}"', exact=True)
@@ -264,7 +274,7 @@ def test_add_package_propagates_to_palette(
     expect(
         dialog.get_by_text("Dependency conflicts with installed packages")
     ).to_have_count(0)
-    confirm = dialog.get_by_role("button", name="Add to dataflow", exact=True)
+    confirm = dialog.get_by_role("button", name="Add to project", exact=True)
     expect(confirm).to_be_enabled()
 
     with page.expect_response(
@@ -281,15 +291,15 @@ def test_add_package_propagates_to_palette(
 
     # 5. The card flips.
     expect(
-        card.get_by_role("button", name="Remove from dataflow", exact=True)
+        card.get_by_role("button", name="Remove from project", exact=True)
     ).to_be_visible(timeout=20000)
-    expect(card.get_by_role("button", name="Add to dataflow", exact=True)).to_have_count(0)
+    expect(card.get_by_role("button", name="Add to project", exact=True)).to_have_count(0)
 
     # 6. Badge count derived from the API: a new project's lockfile may or may
     #    not already carry curio.builtin@1, so a literal would be brittle.
     tabs = drawer.get_by_role("navigation", name="Catalog sections")
-    expect(tabs.get_by_role("button", name=re.compile(r"^In dataflow"))).to_have_text(
-        re.compile(rf"^In dataflow\s*{len(lock_before) + 1}$"), timeout=15000
+    expect(tabs.get_by_role("button", name=re.compile(r"^In project"))).to_have_text(
+        re.compile(rf"^In project\s*{len(lock_before) + 1}$"), timeout=15000
     )
 
     # 7. THE POINT: close the drawer (its overlay is inset:0 with
@@ -311,27 +321,25 @@ def test_add_package_propagates_to_palette(
     )["packages"]
     assert set(lock_after) == set(lock_before) | {PKG_DIR}, lock_after
 
-    # 9. Remove round-trip. Playwright's default dialog action is DISMISS, which
-    #    would make this a silent no-op, so handle it selectively.
-    def _accept_if_about_our_package(dialog_):
-        if PKG_DIR in dialog_.message:
-            dialog_.accept()
-        else:
-            dialog_.dismiss()
-            pytest.fail(f"unexpected confirm: {dialog_.message!r}")
-
-    page.once("dialog", _accept_if_about_our_package)
+    # 9. Remove round-trip. The confirmation is an in-app ConfirmDialog now
+    #    (#197), so it is driven by clicking its button; a `dialog` handler
+    #    would never fire and the click would look like a silent no-op. Its
+    #    body still has to name the package being removed.
     drawer = _open_drawer_from_menu(page)
     card = _card(drawer, PKG_DIR)
+    card.get_by_role("button", name="Remove from project", exact=True).click()
+    confirm = page.get_by_role("dialog", name=f"Remove {PKG_NAME}?")
+    expect(confirm).to_be_visible(timeout=10000)
+    expect(confirm).to_contain_text(PKG_DIR)
     with page.expect_response(
         lambda r: "/api/packages/projects/" in r.url
         and r.request.method == "DELETE",
         timeout=30000,
     ):
-        card.get_by_role("button", name="Remove from dataflow", exact=True).click()
+        confirm.get_by_role("button", name="Remove", exact=True).click()
 
     expect(
-        card.get_by_role("button", name="Add to dataflow", exact=True)
+        card.get_by_role("button", name="Add to project", exact=True)
     ).to_be_visible(timeout=20000)
     drawer.locator("header").get_by_role(
         "button", name="Close Node Catalog drawer"

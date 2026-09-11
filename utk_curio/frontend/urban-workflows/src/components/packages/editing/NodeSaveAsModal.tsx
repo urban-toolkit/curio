@@ -20,6 +20,8 @@ import {
 import { getFlowNodeCanonicalType } from "../../../utils/flowNodeCanonicalType";
 import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
 import { NodeTemplateId } from "../../../registry/types";
+import { dependencyFailureNotice } from "../../../utils/packageDependencyNotice";
+import { withRestartNotice } from "../../../services/packageRestartCopy";
 import styles from "./NodeSaveAsModal.module.css";
 
 const NOOP = () => () => {};
@@ -171,6 +173,11 @@ export function NodeSaveAsModal({
       const { draft, replace, replacedExistingKind } = built;
 
       const result = await packagesApi.factoryInstall(buildFactoryInstallEnvelope(draft, replace));
+      // The build DERIVES dependencies.python from this node's source, so a
+      // body containing `import rasterio` produces a rasterio declaration.
+      // Until the install started honouring it, "Save and install" could
+      // report success over a package whose very first run raises.
+      const depNotice = dependencyFailureNotice(`Saved ${nodeLabel}`, result);
       // When creating a brand-new package via Save As, the package is only in
       // the user store after factoryInstall. refreshPackageRegistry filters
       // by the project lockfile, so the new descriptor would be invisible.
@@ -206,11 +213,19 @@ export function NodeSaveAsModal({
           ),
         );
       }
+      // ONE verdict for one save. The dependency notice already says the save
+      // happened ("Saved <node>, but ..."), so pairing it with a green
+      // "Added ..." tells the user it worked and then that it did not - and
+      // now that an error toast persists, both sit on screen together.
       showToast(
-        replacedExistingKind
-          ? `Replaced "${nodeLabel}" in the package.`
-          : `Added "${nodeLabel}" as a new kind in the package.`,
-        "success",
+        withRestartNotice(
+          depNotice ??
+            (replacedExistingKind
+              ? `Replaced "${nodeLabel}" in the package.`
+              : `Added "${nodeLabel}" as a new kind in the package.`),
+          result.restartRecommended,
+        ),
+        depNotice ? "error" : "success",
       );
       onClose();
     } catch (err) {

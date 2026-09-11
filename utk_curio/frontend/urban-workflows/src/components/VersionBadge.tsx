@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { backendUrl } from "../utils/backendUrl";
 
 /**
  * How node code is being executed, in the words the docs use.
@@ -41,7 +42,7 @@ const VersionBadge: React.FC = () => {
   const [isolation, setIsolation] = useState<string>("");
 
   useEffect(() => {
-    fetch(process.env.BACKEND_URL + "/version", { cache: "no-store" })
+    fetch(backendUrl() + "/version", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!d) return;
@@ -67,7 +68,11 @@ const VersionBadge: React.FC = () => {
         // the badge used to opt out of pointer events entirely.
         pointerEvents: "none",
         userSelect: "none",
-        zIndex: 9999,
+        // On the layering scale (curioTokens.css), not a bare literal. The
+        // badge is page furniture: below every drawer and modal, above the
+        // page background. The full-page shells reserve
+        // --curio-version-badge-reserve so nothing reaches under it (#236).
+        zIndex: "var(--curio-z-version-badge)" as unknown as number,
         fontFamily: "monospace",
       }}
     >

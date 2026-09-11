@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronLeft, faChevronRight, faRobot } from "@fortawesome/free-solid-svg-icons";
 import { agentsApi, type AgentCard } from "../../../../api/agentsApi";
 import { useFlowContext } from "../../../../providers/FlowProvider";
+import { PaletteDragHint } from "../PaletteDragHint";
 import { useAgentCatalogDrawerControls } from "../../../../providers/AgentCatalogDrawerProvider";
 import { AGENT_CATALOG_REFRESH_EVENT } from "../../../../utils/agentCatalogEvents";
 import { PaletteAccordion } from "../paletteAccordion";
@@ -32,11 +33,18 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
   const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
 
   const load = useCallback(async () => {
-    if (!projectId) {
-      setAgents([]);
-      return;
-    }
     try {
+      if (!projectId) {
+        // A dataflow you have just created has no project yet - it is created
+        // on the first save - so there is no lockfile to read and this showed
+        // an EMPTY palette. The account's "in all projects" agents belong here:
+        // they are in every project, and `save_project` seeds them into this one
+        // the moment it exists, so listing them now is not a promise, it is a
+        // preview of a state one save away.
+        const r = await agentsApi.listImports();
+        setAgents(r.agents);
+        return;
+      }
       const r = await agentsApi.listProjectAgents(projectId);
       setAgents(r.agents);
     } catch {
@@ -115,7 +123,7 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
           </div>
           <div className={styles.scroll}>
             <PaletteAccordion
-              title="Agents in dataflow"
+              title="Agents in project"
               count={total}
               selected
               defaultOpen
@@ -130,11 +138,12 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
                 </div>
               )}
             </PaletteAccordion>
-            <p className={styles.hint}>
-              Drag an agent onto a node or the canvas to attach it.
-            </p>
           </div>
           <div className={styles.footer}>
+            {/* Was inline here, and only here. Shared now, so the three
+                palettes cannot say it three different ways - or, as the Data
+                and Node ones did, not at all. */}
+            <PaletteDragHint item="agent" attachesToNode />
             <button
               type="button"
               className={styles.catalogButton}

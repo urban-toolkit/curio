@@ -2,21 +2,24 @@ import fs from "fs";
 import path from "path";
 
 /**
- * One way into an agent's details, from one page.
+ * The two ways into an agent's details, and the one that is forbidden.
  *
- * The Data Catalog learned this the hard way: it once offered two routes to the
- * same screen, a card's "View details ↗" that navigated and a drawer button
- * that opened a modal, so one screen had two names, two containers and an arrow
- * promising a navigation the other path did not make.
+ * The Data Catalog learned this the hard way: it once offered a card's
+ * "View details ↗" that NAVIGATED alongside a drawer button that opened a
+ * modal, so one screen had two names, two containers, and an arrow promising a
+ * navigation the other path did not make. The conclusion was not "one entry
+ * point" - it was "one screen per surface, and no navigation".
  *
- * `/catalog/agents` is built to that conclusion rather than rediscovering it -
- * the card and the drawer share one selection, the page never navigates, and
- * the label is the same word the other two catalogs use. Asserted here so a
- * later "quick link to a detail page" cannot quietly reintroduce the split.
+ * `/catalog/agents` reads that way now: the card click drives the side drawer,
+ * "View details" opens a modal, and neither leaves the page. Routing both to
+ * the SAME setter (which this file used to assert) made the button a no-op -
+ * the drawer is already open on the first card when the page loads, so there
+ * was nothing left for it to change, and below 1100px the drawer column is
+ * `display: none` and the click did nothing on any card at all (issue 189).
  *
- * Read from disk rather than rendered: these are claims about what the page
- * does *not* do, and a component test can only show what a rendered tree does.
- * Same approach as datasetDetailEntryPoints.test.ts.
+ * Read from disk rather than rendered: the load-bearing claims are about what
+ * the page does *not* do, and a component test can only show what a rendered
+ * tree does. Same approach as datasetDetailEntryPoints.test.ts.
  */
 
 const SRC = path.resolve(__dirname, "../..");
@@ -39,13 +42,23 @@ describe("agent detail entry points", () => {
     expect(browse).not.toContain("/catalog/agents/");
   });
 
-  it("routes the card and its View details to one selection", () => {
-    // Both set the selected coordinate; neither opens a second surface. If a
-    // detail route is ever added, it should stay a deep link the UI does not
-    // walk you into - the way /catalog/data/:datasetId does.
+  it("routes the card and its View details to two different surfaces", () => {
+    // The card click drives the side drawer; View details opens the modal. They
+    // must not share a setter: the drawer is already open on the first card
+    // when the page loads, so a View details wired to `setSelectedCoord` has
+    // nothing to change and reads as a dead control.
     const browse = read(BROWSE);
     expect(browse).toContain("onSelect={() => setSelectedCoord(agent.dirName)}");
-    expect(browse).toContain("onViewDetails={() => setSelectedCoord(agent.dirName)}");
+    expect(browse).toContain("onViewDetails={() => setDetailCoord(agent.dirName)}");
+    expect(browse).not.toContain("onViewDetails={() => setSelectedCoord(agent.dirName)}");
+  });
+
+  it("opens details as a modal, not a route", () => {
+    // The modal is what makes the control work below 1100px, where
+    // CatalogBrowseLayout hides the drawer column outright.
+    const browse = read(BROWSE);
+    expect(browse).toContain("AgentDetailModal");
+    expect(read("components/agents/catalog/AgentDetailModal.tsx")).toContain("ModalShell");
   });
 });
 
@@ -75,15 +88,26 @@ describe("the agent browse page reports only what it can know", () => {
 });
 
 describe("the account-scope CTA says what the click does", () => {
-  it("adds to the account, not to every project", () => {
-    // The Node Catalog page says "Add to all projects" because installing
-    // there really does reach every project. An agent import does not - it
-    // makes the agent available to install - so borrowing that label would
-    // overstate it.
+  it("uses one all-projects wording, shared with the Node Catalog", () => {
+    // This deliberately read "Add to my account" while the Node Catalog page
+    // read "Add to all projects", because the two writes are not identical: a
+    // node install really does reach every project, whereas an agent import
+    // makes the agent AVAILABLE to every project - it is not attached to any
+    // one of them until you add it there.
+    //
+    // One vocabulary across the three catalogs was judged worth more than that
+    // distinction, so both now read "Add to all projects"; the page intro
+    // carries the nuance ("makes it available to all your projects") instead of
+    // the button. The drawer's per-row button separately said a bare "Import"
+    // for this same call, which made three names for one operation - and put
+    // an unrelated "Import agent" (upload your own definition) in the same
+    // panel.
     const drawer = read(DRAWER);
-    expect(drawer).toContain("Add to my account");
-    expect(drawer).toContain("Remove from my account");
-    expect(drawer).not.toContain("Add to all projects");
+    expect(drawer).toContain("Add to all projects");
+    expect(drawer).toContain("Remove from all projects");
+    // The retired names. None of them may come back.
+    expect(drawer).not.toContain("Add to my account");
+    expect(drawer).not.toContain("Remove from my account");
     expect(drawer).not.toContain("Add to dataflow");
   });
 

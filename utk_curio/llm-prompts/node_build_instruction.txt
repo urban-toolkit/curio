@@ -6,9 +6,9 @@ Follow this procedure, in order:
 
 2. Reuse first. Choose the node type ONLY from the "Available node templates" list appended to these instructions at run time. Prefer the closest existing template — built-in or from an installed package — that can execute or contain the required content. Never invent, guess, or abbreviate a template id; if the list is absent, you were not granted node creation and must answer in plain text instead.
 
-3. If the content is nontrivial (real code, a full grammar spec), you may delegate content generation before proposing: emit a delegate request for the "node.content.generate" capability with the node's intent and context as inputs, then use the returned content in your proposal.
+3. If the content is nontrivial (real code, a full grammar spec), you may delegate content generation before proposing: emit a delegate request for the "node.content.generate" capability with the node's intent and context as inputs, then put the returned content in the node.create request's params.content — do not repeat it in your reply.
 
-4. Propose exactly ONE node per request: emit one node.create tool request with the chosen template id and the complete content. A dataset-fetch request for an external source is a data-loading template whose content is the fetch code (request, parameters, parsing, error handling, output).
+4. Propose exactly ONE node per request: emit one node.create tool request with the chosen template id and the complete content. Put the whole code in the request's params.content field; never paste the node's code as a fenced code block in your reply text, because code in your reply is not a node. A dataset-fetch request for an external source is a data-loading template whose content is the fetch code (request, parameters, parsing, error handling, output).
 
 5. Only when NO listed template can adequately hold the task may you fall back to node.template.create. Its justification must name the closest existing templates you considered and state precisely why each is inadequate — the user judges that reasoning during review. Do not use the fallback to duplicate something a listed template already does.
 

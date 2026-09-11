@@ -1,6 +1,6 @@
 import React, { Fragment, memo, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faForwardStep } from "@fortawesome/free-solid-svg-icons";
+import { faForwardStep, faStop } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { refreshPackageRegistry } from "../../../api/packagesApi";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
@@ -124,7 +124,7 @@ const ToolsMenu = memo(function ToolsMenu() {
     const packageTypes = paletteTypes.filter((d) => !isBuiltin(d));
     const coreGroups = groupPaletteTypes(coreTypes);
     const packageGroups = groupPalettePackages(packageTypes);
-    const { playAllNodes } = useFlowContext();
+    const { playAllNodes, isRunActive, cancelRun } = useFlowContext();
 
     // Every catalog trigger lives in the left rail and their panels open into
     // the same strip to the right of it, so only one may be open at a time. A
@@ -164,14 +164,18 @@ const ToolsMenu = memo(function ToolsMenu() {
                 <DatasetsPaletteDropdown open={activePalette === "datasets"} setOpen={setDatasetsOpen} />
                 <AgentsPaletteDropdown open={activePalette === "agents"} setOpen={setAgentsOpen} />
                 <div className={styles.playAllRow}>
+                    {/* One button, two states: while a run is in flight it cancels
+                        it. The guard used to be invisible, so the only sign a run
+                        was stuck was that clicks did nothing (#271). */}
                     <button
                         type="button"
                         className={styles.playAllButton}
-                        onClick={playAllNodes}
-                        title="Run all nodes"
-                        aria-label="Run all nodes"
+                        data-run-active={isRunActive ? "true" : undefined}
+                        onClick={isRunActive ? cancelRun : playAllNodes}
+                        title={isRunActive ? "Cancel the run in progress" : "Run all nodes"}
+                        aria-label={isRunActive ? "Cancel run" : "Run all nodes"}
                     >
-                        <FontAwesomeIcon icon={faForwardStep} />
+                        <FontAwesomeIcon icon={isRunActive ? faStop : faForwardStep} />
                     </button>
                 </div>
             </div>

@@ -123,7 +123,7 @@ def get_provider_default():
 @require_auth
 @_map_agent_errors
 def list_provider_models():
-    """The models an OpenAI-compatible endpoint says it serves.
+    """The models AI Settings can offer for the endpoint being configured.
 
     POST rather than GET because AI Settings needs this *before* the user saves:
     they type a base URL and a key, then want to pick a model from what that
@@ -135,12 +135,43 @@ def list_provider_models():
     retyping a secret. A blank ``apiKey`` in particular means "use the saved
     one", matching the panel's own "blank means keep" rule.
 
-    Only ``openai_compatible`` is listable: Anthropic and Gemini have no
-    equivalent ``/models`` in the shape the OpenAI SDK speaks, so they return an
-    empty list and the panel keeps its free-text box rather than pretending.
+    **Hybrid, per #241 - and both halves come from the API.** Two sources:
+
+    - *Live*: what the endpoint reports now. Asked of Anthropic and Gemini too,
+      not only OpenAI-compatible endpoints. The old code never asked them and
+      reported ``listable: false``, which read as "this provider publishes no
+      model list" - a claim that was not true.
+    - *Remembered*: what this endpoint reported the last time it was asked
+      (``agents/model_catalog.py``), recorded per user on every success. Serves
+      as the fallback when a live listing cannot happen, labelled with when it
+      was seen.
+
+    Nothing here is authored by hand. The first cut of this route carried a
+    literal table of model ids, which drifts silently the moment a provider
+    ships or retires one, and could never say anything about a custom endpoint.
+    A recording of what an endpoint said about itself has neither problem.
+
+    Suggestions are never an allowlist: the Model field stays free text, a live
+    listing always wins, and a model typed by hand is always accepted. So a live
+    failure is a 200 with ``source: "remembered"`` and the reason in ``warning``
+    when something was remembered, because "here is what it said last time, and
+    why we could not ask now" beats an error and an empty box. With nothing
+    remembered - a new account that has not pasted a key - the reason *is* the
+    answer and this is a 400.
     """
+    from utk_curio.backend.app.agents.model_catalog import (
+        provider_key,
+        remember_models,
+        remembered_models,
+    )
     from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
         resolve_provider_config,
+    )
+    from utk_curio.backend.app.agents.providers import (
+        ModelListingUnavailable,
+        ProviderConfig,
+        list_provider_models as fetch_models,
     )
 
     data = request.get_json(silent=True) or {}
@@ -149,39 +180,80 @@ def list_provider_models():
     api_key = (data.get("apiKey") or "").strip()
 
     # Fall back to the account's resolved provider for whatever the caller left
-    # blank. Tolerate the resolve failing: it raises when no model is set, and
-    # "no model yet" is the normal state of someone about to choose one here.
+    # blank - but only as far as the caller is asking about that same endpoint.
+    # An account holds one credential triple, so filling the blanks in
+    # unconditionally lent the Anthropic tab the key saved for someone's Ollama,
+    # then labelled the answer "From this endpoint" and filed the recording
+    # under the wrong provider. That is the same thing ``provider_config``'s own
+    # same-provider rule exists to prevent, undone one layer up.
     if not (api_type and base_url and api_key):
         try:
-            resolved = resolve_provider_config(g.user)
-        except Exception:  # noqa: BLE001 - an unconfigured account is expected
+            # A model is what the user is on this screen to choose, so it cannot
+            # be a precondition for asking what models exist - and the resolve
+            # raising over it used to take the deployment's API key down with
+            # it. A guest with no key deployed still raises, and inherits
+            # nothing.
+            resolved = resolve_provider_config(g.user, require_model=False)
+        except ProviderConfigError:
             resolved = None
         if resolved is not None:
             api_type = api_type or (resolved.api_type or "")
-            base_url = base_url or (resolved.base_url or "")
-            api_key = api_key or (resolved.api_key or "")
+            if provider_key(api_type) == provider_key(resolved.api_type):
+                # A blank base URL still means "the endpoint this account
+                # resolved to": the panel sends "" on every non-custom tab, and
+                # inheriting the deployment's endpoint there is what "leave a
+                # field blank to use it" promises.
+                base_url = base_url or (resolved.base_url or "")
+            if provider_key(api_type, base_url) == provider_key(
+                resolved.api_type, resolved.base_url
+            ):
+                # A key belongs to the endpoint it was saved against, and
+                # ``provider_key`` is where Curio already says what "the same
+                # endpoint" means. Once the caller names a different one - a
+                # different provider, or a URL typed on the Custom tab -
+                # inheriting the key would post the account's, or the operator's,
+                # secret to a host neither of them chose.
+                api_key = api_key or (resolved.api_key or "")
 
     api_type = api_type or "openai_compatible"
-    if api_type != "openai_compatible":
-        return jsonify({"models": [], "listable": False}), 200
+    user_key = _user_dir_key(g.user)
 
-    from openai import OpenAI
-
-    kwargs = {"api_key": api_key or "no-key", "timeout": 20.0}
-    if base_url:
-        kwargs["base_url"] = base_url
     try:
-        listing = OpenAI(**kwargs).models.list()
-    except Exception as exc:  # noqa: BLE001 - every SDK failure is the same answer here
-        # A rejected key, an unreachable host and an endpoint without /models
-        # all mean "cannot offer a choice". Report it as a 400 the panel can
-        # show verbatim rather than a 500: the user is mid-edit and the message
-        # is the thing that tells them which field is wrong.
-        return _error(f"Could not list models: {exc}", 400)
-    models = sorted(
-        {m.id for m in listing.data if getattr(m, "id", None)}
-    )
-    return jsonify({"models": models, "listable": True}), 200
+        live = fetch_models(
+            ProviderConfig(
+                api_key=api_key, api_type=api_type, base_url=base_url, model="",
+            )
+        )
+    except ModelListingUnavailable as exc:
+        remembered, seen_at = remembered_models(user_key, api_type, base_url)
+        if not remembered:
+            # Nothing was ever recorded for this endpoint, so the reason IS the
+            # answer. 400 rather than 500: the user is mid-edit and the message
+            # tells them which field to fill in.
+            return _error(str(exc), 400)
+        return jsonify({
+            "models": remembered,
+            "listable": False,
+            "source": "remembered",
+            "remembered": remembered,
+            "rememberedAt": seen_at,
+            "warning": str(exc),
+        }), 200
+
+    # A live answer supersedes the recording, and becomes the next one. Writing
+    # is best-effort inside remember_models: a store that cannot be written must
+    # not turn a working listing into an error.
+    remember_models(user_key, api_type, base_url, live)
+    return jsonify({
+        "models": live,
+        # Kept for callers written against the older shape. It means what it
+        # says: the endpoint itself answered.
+        "listable": True,
+        "source": "live",
+        "remembered": [],
+        "rememberedAt": None,
+        "warning": None,
+    }), 200
 
 
 @agents_bp.route("/imports", methods=["GET"])
@@ -204,7 +276,7 @@ def import_agent():
     if not isinstance(coord, str):
         return _error("body must include 'coord'")
     try:
-        payload = agents_services.import_agent(_user_dir_key(g.user), coord)
+        payload = agents_services.import_agent(_user_dir_key(g.user), coord, user=g.user)
     except AgentServiceError as exc:
         return _svc_error(exc)
     except ValueError as exc:
@@ -231,10 +303,27 @@ def upload_import():
 @agents_bp.route("/imports/<coord>", methods=["DELETE"])
 @require_auth
 def remove_import(coord: str):
-    return jsonify(agents_services.remove_import(_user_dir_key(g.user), coord)), 200
+    return jsonify(agents_services.remove_import(_user_dir_key(g.user), coord, user=g.user)), 200
 
 
 # ── Publish to the Global Catalog (imported-only) ────────────────────────────
+@agents_bp.route("/definitions/<coord>", methods=["GET"])
+@require_auth
+def read_definition(coord: str):
+    """One agent's full definition: its manifest and its prompt texts.
+
+    Powers two things the Agent Catalog could not do: show an agent's prompts on
+    its details screen, and export it. Agents had an import with no export - a
+    definition could go into a Curio and never come back out - and this returns
+    exactly the shape ``POST /api/agents/imports/upload`` consumes, so the two
+    round-trip.
+    """
+    bundle = agents_services.read_definition_bundle_anywhere(_user_dir_key(g.user), coord)
+    if bundle is None:
+        return jsonify({"error": f"no agent definition {coord}"}), 404
+    return jsonify(bundle), 200
+
+
 @agents_bp.route("/publications", methods=["POST"])
 @require_auth
 def publish_agent():

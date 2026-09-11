@@ -28,8 +28,10 @@ import { packagesApi } from "../../api/packagesApi";
  *     happened when none did (or vice versa).
  *   - Package-declared libraries are read-only here: offering Remove on one
  *     would imply the user can drop a dependency their installed package needs.
- *   - JS add is refused by the backend with a 501, and the row must NOT be
- *     persisted optimistically.
+ *   - JS add is refused before it is sent (#239): the backend answers 501, so
+ *     an enabled Add could only ever produce a red "Failed" row for an
+ *     operation the dialog itself invited. If one is somehow sent anyway, the
+ *     row must NOT be persisted optimistically.
  */
 
 const mockList = packagesApi.listLibraries as jest.Mock;
@@ -48,6 +50,11 @@ const open = () => render(<LibraryManagerWindow open closeModal={jest.fn()} />);
 
 const specInput = () =>
   document.querySelector('input[type="text"]') as HTMLInputElement;
+
+const kindSelect = () =>
+  document.querySelector("select") as HTMLSelectElement;
+
+const addButton = () => screen.getByRole("button", { name: "Add" });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -164,6 +171,37 @@ describe("LibraryManagerWindow - adding", () => {
     expect(mockList).toHaveBeenCalledTimes(1);
   });
 
+  it("does not call a library that installed and cannot be imported an install failure", async () => {
+    // pip counts matching metadata as satisfaction, so a wheel whose native
+    // extension cannot load records a perfectly good version and is SKIPPED.
+    // The row said "Couldn't install brokenlib" over a message saying it had
+    // installed - a contradiction that sends the user to reinstall a library
+    // that is already there. What they actually have to fix is the build.
+    mockAdd.mockResolvedValue({
+      standalone: { python: ["brokenlib"], js: [] },
+      installed: [],
+      skipped: ["brokenlib"],
+      importError: "ImportError: DLL load failed while importing _base",
+    });
+    open();
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    fireEvent.change(specInput(), { target: { value: "brokenlib" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(
+      await screen.findByText(
+        /brokenlib installed, but it cannot be imported/, {}, { timeout: 3000 },
+      ),
+    ).toBeTruthy();
+    // The reason is shown, not just the fact.
+    expect(screen.getByText(/DLL load failed while importing _base/)).toBeTruthy();
+    expect(screen.queryByText(/Couldn't install brokenlib/)).toBeNull();
+    // And it is not reported as a success either, which is what it was before
+    // the backend started answering the question at all.
+    expect(screen.queryByText("✓ Already installed")).toBeNull();
+    expect(screen.queryByText("✓ Installed")).toBeNull();
+  });
+
   it("surfaces a failed install and persists no row", async () => {
     mockAdd.mockRejectedValue(
       new Error("JS library install is not yet supported; declare in a node package's manifest instead"),
@@ -189,5 +227,78 @@ describe("LibraryManagerWindow - removing", () => {
     await screen.findByText("numpy");
     fireEvent.click(screen.getByTitle("Remove from your library list"));
     await waitFor(() => expect(mockRemove).toHaveBeenCalledWith("python", "numpy"));
+  });
+});
+
+/**
+ * #239: the dialog marked JavaScript "coming soon" and then enabled Add anyway.
+ *
+ * The backend has always answered 501, so the only thing an enabled Add could
+ * produce was a red "Failed" row for something the dialog had just offered.
+ * The refusal belongs where the user makes the choice, not two round trips
+ * later. The JavaScript option itself stays in the picker: package-declared JS
+ * libraries are listed below, so removing the kind would make that column
+ * meaningless.
+ */
+describe("LibraryManagerWindow - the JavaScript kind", () => {
+  const selectJs = async () => {
+    open();
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    fireEvent.change(kindSelect(), { target: { value: "js" } });
+  };
+
+  it("is still offered, because package-declared JS libraries are listed", async () => {
+    await selectJs();
+    expect(kindSelect().value).toBe("js");
+    expect(
+      Array.from(kindSelect().options).map((o) => o.value),
+    ).toEqual(["python", "js"]);
+  });
+
+  it("disables the spec box and Add", async () => {
+    await selectJs();
+    expect(specInput().hasAttribute("disabled")).toBe(true);
+    expect(addButton().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("explains where a JavaScript dependency does belong", async () => {
+    await selectJs();
+    expect(screen.getByText(/cannot install JavaScript libraries/i)).toBeTruthy();
+    expect(screen.getByText("dependencies.js")).toBeTruthy();
+    expect(screen.getByText("manifest.json")).toBeTruthy();
+  });
+
+  it("points the disabled box at that explanation for a screen reader", async () => {
+    // Otherwise the control is simply dead with no announced reason.
+    await selectJs();
+    const described = specInput().getAttribute("aria-describedby");
+    expect(described).toBeTruthy();
+    expect(document.getElementById(described as string)).not.toBeNull();
+  });
+
+  it("drops the coming-soon placeholder that invited the attempt", async () => {
+    await selectJs();
+    expect(specInput().placeholder).not.toMatch(/coming soon/i);
+  });
+
+  it("sends nothing, even when Enter is pressed in the box", async () => {
+    // The button being disabled does not stop the keydown handler, so the
+    // guard in handleAdd is what this pins.
+    await selectJs();
+    fireEvent.change(specInput(), { target: { value: "lodash@^4.17" } });
+    fireEvent.keyDown(specInput(), { key: "Enter" });
+    fireEvent.click(addButton());
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    expect(mockAdd).not.toHaveBeenCalled();
+  });
+
+  it("re-enables both controls on the way back to Python", async () => {
+    await selectJs();
+    fireEvent.change(kindSelect(), { target: { value: "python" } });
+    expect(specInput().hasAttribute("disabled")).toBe(false);
+    fireEvent.change(specInput(), { target: { value: "numpy" } });
+    expect(addButton().hasAttribute("disabled")).toBe(false);
+    fireEvent.click(addButton());
+    await waitFor(() => expect(mockAdd).toHaveBeenCalledWith("python", "numpy"));
   });
 });

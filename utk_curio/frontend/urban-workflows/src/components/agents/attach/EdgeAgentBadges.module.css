@@ -1,0 +1,16 @@
+/* Agent avatars anchored at a connection's label point. The positioning
+   transform is inline (it carries labelX/labelY, which only the edge knows);
+   everything static lives here. The chips themselves are the shared
+   AgentAvatarBadge. */
+.badges {
+  position: absolute;
+  /* Sized to its chips, never wider. The parent
+     .react-flow__edgelabel-renderer is pointer-events:none, so this element is
+     the only thing on the label layer that can intercept a pointer - and every
+     pixel it covers is a pixel of edge the user can no longer grab. */
+  width: max-content;
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+  z-index: 5;
+}

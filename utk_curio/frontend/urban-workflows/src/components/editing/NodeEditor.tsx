@@ -145,6 +145,12 @@ function NodeEditor({
     useEffect(() => {
         // The play path deliberately gets the un-suppressed version.
         setSendCodeCallback(sendCodeToWidgets);
+        // Unregister on unmount. An editor the per-node ErrorBoundary has
+        // replaced otherwise leaves a live-looking callback behind, so a later
+        // play sets "exec", calls into a dead tree and never completes -
+        // wedging Run All for the whole dataflow (#271). With it gone,
+        // UniversalNode's `!sendCode` branch releases the runner instead.
+        return () => setSendCodeCallback(undefined);
     }, []);
 
     useEffect(() => {
@@ -290,6 +296,7 @@ function NodeEditor({
                                             nodeId={data.nodeId}
                                             applyGrammar={applyGrammar}
                                             schema={schema}
+                                            setOutputCallback={setOutputCallback}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -315,13 +322,29 @@ function NodeEditor({
                                         style={{ height: "100%", overflow: "hidden" }}
                                     >
                                         {outputId != undefined ? (
+                                            // Vega sizes its canvas in CSS px
+                                            // from the compiled spec, so a
+                                            // multi-view chart is taller than
+                                            // the pane and was simply cut off
+                                            // (#202). This div scrolls now;
+                                            // the parent Tab.Pane stays
+                                            // overflow:hidden so the node box
+                                            // itself cannot spill onto the
+                                            // canvas.
+                                            //
+                                            // `nowheel` is load-bearing, not
+                                            // decoration: without it React
+                                            // Flow's ZoomPane swallows the
+                                            // wheel event and zooms the canvas
+                                            // instead of scrolling the chart.
                                             <div
                                                 id={outputId}
-                                                className="nodrag"
+                                                className="nodrag nowheel"
                                                 style={{
                                                     textAlign: "center",
                                                     width: "100%",
                                                     height: "100%",
+                                                    overflow: "auto",
                                                 }}
                                             ></div>
                                         ) : (

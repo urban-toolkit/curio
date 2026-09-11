@@ -13,9 +13,11 @@ import { useEnsureWorkflowDeps } from "../hook/useEnsureWorkflowDeps";
 import { TrillGenerator } from "../TrillGenerator";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import {
-  clearCurrentProject,
   setCurrentProject,
+  setCurrentProjectPackages,
+  setUnsavedDataflow,
 } from "../registry/projectPackagesStore";
+import { packagesApi } from "../api/packagesApi";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -63,14 +65,38 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [id, projectId, navigate]);
 
   useEffect(() => {
-    if (id === "new") {
+    // ``/dataflow`` with no id at all reaches the same canvas as
+    // ``/dataflow/new`` (the route param is optional), so it has to take the
+    // same branch. It used to fall through the UUID guard below and pin
+    // nothing, inheriting whatever the previous dataflow left in the store.
+    if (!id || id === "new") {
       TrillGenerator.reset();
-      // No project loaded — palette shows every installed package. The new
-      // project's lockfile will be seeded from per-user defaults on first save.
-      clearCurrentProject();
-      return;
+      // An unsaved dataflow is still a dataflow, so it gets a scope rather than
+      // "no project, show everything" — that fallback is what put the previous
+      // dataflow's packages in a brand-new one (#204, #220).
+      //
+      // Start empty (builtin always passes the filter) so the leak stops on the
+      // same tick, then widen to the account defaults, which is what the backend
+      // merges into the lockfile on first save. The palette therefore shows the
+      // same set before and after that save.
+      setUnsavedDataflow([]);
+      let cancelled = false;
+      packagesApi
+        .getDefaults()
+        .then((resp) => {
+          // Only if we are still on the unsaved dataflow: a fast navigation to a
+          // real project must not have its lockfile overwritten by this reply.
+          if (!cancelled) setCurrentProjectPackages(resp.packages ?? []);
+        })
+        .catch(() => {
+          // Leaving the scope empty is the safe failure: the palette shows the
+          // builtin package only, rather than every package the account owns.
+        });
+      return () => {
+        cancelled = true;
+      };
     }
-    if (!id || !UUID_RE.test(id)) return;
+    if (!UUID_RE.test(id)) return;
     if (loaded.current === id) return;
     if (projectId === id) return;
 

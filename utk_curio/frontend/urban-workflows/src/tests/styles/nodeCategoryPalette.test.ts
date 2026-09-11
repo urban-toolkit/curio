@@ -39,9 +39,10 @@ const KEYS = ["data", "computation", "vis", "package"] as const;
 /** Surfaces that resolve a class name from a category at runtime. */
 const CATEGORY_SURFACES: { file: string; prefixes: string[] }[] = [
   {
-    // Browse card: strip fill, selected border, and the category tag.
+    // Browse card: strip fill and selected border. Not the category tag -
+    // chips are plain everywhere since #193; the strip carries the category.
     file: "pages/catalog/PackageBrowseCard.module.css",
-    prefixes: ["strip", "cardActive.card", "tagAccent"],
+    prefixes: ["strip", "cardActive.card"],
   },
   {
     // In-canvas drawer card: the icon tile.

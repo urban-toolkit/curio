@@ -106,3 +106,65 @@ class TestSetIntent:
     def test_non_string_intent_raises(self):
         with pytest.raises(AttachmentError, match="intent"):
             attachments.set_intent(self._attached(), "a", 42)
+
+
+class TestDetachAllForCoord:
+    """Removing an agent from a dataflow has to take its attachments with it.
+
+    ``uninstall_from_project`` used to rewrite ``dataflow.agents`` and leave
+    ``dataflow.agentAttachments`` alone, so the badge stayed on the node and the
+    agent kept running: ``attach`` is gated on the lockfile but
+    ``run_attachment`` is not. The drawer's confirmation has always told the
+    user that removing takes the attachments with it.
+    """
+
+    def _spec_with(self, *records):
+        spec = _spec()
+        spec["dataflow"]["agentAttachments"] = list(records)
+        return spec
+
+    def _rec(self, attachment_id, coord, target=None):
+        return {
+            "attachmentId": attachment_id,
+            "coord": coord,
+            "target": target or {"kind": "node", "targetId": "n1"},
+            "sessionId": "s1",
+            "revision": 1,
+        }
+
+    def test_removes_every_attachment_of_that_agent(self):
+        spec = self._spec_with(
+            self._rec("a1", "agent.x@1.0.0"),
+            self._rec("a2", "agent.x@1.0.0", {"kind": "canvas"}),
+            self._rec("a3", "agent.y@1.0.0"),
+        )
+
+        removed = attachments.detach_all_for_coord(spec, "agent.x@1.0.0")
+
+        assert sorted(r["attachmentId"] for r in removed) == ["a1", "a2"]
+        assert [r["attachmentId"] for r in spec["dataflow"]["agentAttachments"]] == ["a3"]
+
+    def test_leaves_other_agents_alone(self):
+        spec = self._spec_with(self._rec("a1", "agent.y@1.0.0"))
+
+        assert attachments.detach_all_for_coord(spec, "agent.x@1.0.0") == []
+        assert len(spec["dataflow"]["agentAttachments"]) == 1
+
+    def test_version_is_part_of_the_identity(self):
+        # Coordinates carry a version; two versions of one agent are two agents.
+        spec = self._spec_with(self._rec("a1", "agent.x@2.0.0"))
+
+        assert attachments.detach_all_for_coord(spec, "agent.x@1.0.0") == []
+        assert len(spec["dataflow"]["agentAttachments"]) == 1
+
+    @pytest.mark.parametrize("spec", [None, {}, {"dataflow": {}}, {"dataflow": {"agentAttachments": "nope"}}])
+    def test_tolerates_a_spec_with_nothing_to_remove(self, spec):
+        assert attachments.detach_all_for_coord(spec, "agent.x@1.0.0") == []
+
+    def test_ignores_malformed_records(self):
+        spec = self._spec_with("not-a-dict", self._rec("a1", "agent.x@1.0.0"))
+
+        removed = attachments.detach_all_for_coord(spec, "agent.x@1.0.0")
+
+        assert [r["attachmentId"] for r in removed] == ["a1"]
+        assert spec["dataflow"]["agentAttachments"] == ["not-a-dict"]

@@ -52,6 +52,39 @@ def _import_bindings_for(session_id):
     return bindings
 
 
+def _code_reads_arg(code):
+    """Whether the node's code actually *reads* the ``arg`` parameter.
+
+    The tripwire below used to ask ``'arg' in code``, a substring test over the
+    whole source. That fires on any occurrence of those three letters - a word
+    in a comment, a URL query string, or an identifier such as ``target``,
+    ``large``, ``margin`` or ``args`` - so a deliberately input-free loader like
+    ``gpd.read_file(<url>)`` was refused for referencing an input it never
+    mentions (#273).
+
+    ``code`` is already indented ready to drop into ``def userCode(arg):``, and
+    the caller has just ``exec``-ed that same wrapped source, so parsing it here
+    cannot fail on syntax. Walking for a load of the name is exact: a *binding*
+    of ``arg`` (the parameter itself, or a reassignment) is a Store and does not
+    count, which is what we want - code that only overwrites ``arg`` does not
+    need an input either.
+    """
+    import ast
+
+    try:
+        tree = ast.parse("def userCode(arg):" + chr(10) + code)
+    except SyntaxError:
+        # Unreachable in practice; fall back to the old test rather than
+        # deciding that a node we cannot parse is input-free.
+        return "arg" in code
+    return any(
+        isinstance(node, ast.Name)
+        and node.id == "arg"
+        and isinstance(node.ctx, ast.Load)
+        for node in ast.walk(tree)
+    )
+
+
 def _hoist_user_imports(code, ns, session_id):
     """Execute the user's top-level imports into ``ns`` and remember them.
 
@@ -377,22 +410,24 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                         checkIOType(synthetic, node_type)
                         incomingInput = input_data
 
-                # Tripwire: if the user code references `arg` but no input was
+                # Tripwire: if the user code reads `arg` but no input was
                 # delivered, the historical behaviour was to bubble up a
                 # confusing `'NoneType' object is not subscriptable` from the
                 # first `arg[…]`. Fail fast here with a message that points the
                 # user at the actual cause (unwired/unrun upstream, or a stale
                 # `data.input` because the merge-flow output effect hadn't
-                # propagated yet). Cheap substring check - false positives
-                # are harmless because we only act when arg is truly None.
-                if incomingInput is None and 'arg' in code:
+                # propagated yet). The check is an AST walk rather than a
+                # substring test, so a node that never reads an input is not
+                # refused for merely containing the letters "arg" (#273).
+                if incomingInput is None and _code_reads_arg(code):
                     raise RuntimeError(
                         "This node received no input but its code references `arg`. "
-                        "Make sure every upstream node has produced output (state "
-                        "'Done') and is wired to this node's input handle before "
-                        "running. If the inputs come through a Merge Flow node, "
-                        "give it a moment after the last upstream finishes so the "
-                        "merged tuple can propagate, then click Run again."
+                        "An upstream node has not run yet, failed, or is not wired "
+                        "to this node's input handle. Check the nodes feeding this "
+                        "one: fix any that show an error, run them until each shows "
+                        "'Done', then run this node again. If the inputs come "
+                        "through a Merge Flow node, give it a moment after the last "
+                        "upstream finishes so the merged tuple can propagate."
                     )
 
                 # Run user code.
@@ -622,6 +657,34 @@ def is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) -> bool
     return all(marker in stderr_text for marker in _NODE_INTERNAL_STREAM_CRASH_MARKERS)
 
 
+# Placeholder the frontend puts where a backend URL belongs in code destined for
+# this sandbox (autkGrammarBehavior.SANDBOX_BACKEND_URL_TOKEN). It is resolved
+# here, in the process that actually performs the fetch, rather than guessed in
+# the browser bundle.
+_SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__'
+
+
+def backend_base_url():
+    """``http://host:port`` for the backend, as reachable from this process.
+
+    ``main.py::set_environment_variables`` exports FLASK_BACKEND_HOST/PORT and
+    start_sandbox passes the environment through, so a sandbox launched with the
+    stack always has the true values - including on a custom-port stack, where
+    the browser's own port would be wrong, and inside a container, where a
+    host-published port is not the one to dial.
+
+    The loopback host is normalised to 127.0.0.1: Node's fetch can stall when
+    ``localhost`` resolves to IPv6 ::1 while Flask listens on IPv4 only.
+    """
+    import os
+
+    host = os.environ.get('FLASK_BACKEND_HOST') or '127.0.0.1'
+    port = os.environ.get('FLASK_BACKEND_PORT') or '5002'
+    if host in ('localhost', '0.0.0.0', '::', '[::]'):
+        host = '127.0.0.1'
+    return f'http://{host}:{port}'
+
+
 def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
     """
     Execute user JavaScript code in an isolated Node.js subprocess.
@@ -649,6 +712,11 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
 
     t0 = time.perf_counter()
     cwd = launch_dir or os.getcwd()
+
+    # Resolve the frontend's backend-URL placeholder now, while the real host and
+    # port are in this process's environment. Done before the import rewriting
+    # below so the substituted code is what gets parsed and run.
+    code = code.replace(_SANDBOX_BACKEND_URL_TOKEN, backend_base_url())
 
     try:
         # Load input from Python DuckDB (same pattern as execute_code).

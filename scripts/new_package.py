@@ -163,7 +163,10 @@ async function resolveInput(input: any): Promise<any> {
   return unwrap(input);
 }
 
-/** A `dataframe` payload is column-oriented: { colName: { rowIdx: value } }. */
+/** A `dataframe` payload is column-oriented. Curio serialises with
+ *  `to_dict(orient='list')`, so each column is an ARRAY; a hand-written
+ *  spec may instead use a row map keyed by index. Accept both - a node
+ *  that requires the row map sees no data at all from Curio (#194). */
 function columnNames(payload: any): string[] {
   const frame = payload?.dataType === 'dataframe' ? payload.data : payload;
   if (!frame || typeof frame !== 'object') return [];

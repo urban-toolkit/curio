@@ -1,5 +1,8 @@
 import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react';
+import { useEdges } from 'reactflow';
 import { NodeBehaviorHook } from '../../registry/types';
+import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
+import { hasIncomingEdge, resolveNodeEmptyReason } from '../../utils/nodeEmptyState';
 import { NodeType, VisInteractionType } from '../../constants';
 import { useProvenanceContext } from '../../providers/ProvenanceProvider';
 import { useFlowContext } from '../../providers/FlowProvider';
@@ -54,6 +57,10 @@ function getMode(input: any): SimpleVisMode {
 }
 
 export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
+  // Which of the empty states this is depends on whether anything is wired in,
+  // which only the graph knows. Same read as mergeFlowBehavior.
+  const edges = useEdges();
+  const connected = hasIncomingEdge(edges, data.nodeId);
   // Lazy init: if input is already present on mount (e.g. in tests) seed the
   // mode so the first render already produces a contentComponent. The effect
   // will overwrite this once it fetches any path reference.
@@ -156,10 +163,10 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // identity — without this, any re-render (e.g. React Flow deselecting the
   // node on a pane click) would yank the user out of the code editor.
   const contentComponent = useMemo<React.ReactNode | undefined>(() => {
-    if (currentMode === 'table') {
+    if (currentMode === 'table' && outputTable.length > 0) {
       return <ContentTable tableData={outputTable} nodeId={data.nodeId} />;
     }
-    if (currentMode === 'image') {
+    if (currentMode === 'image' && images.length > 0) {
       return (
         <ImageGrid
           nodeId={data.nodeId}
@@ -176,8 +183,26 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
         </pre>
       );
     }
-    return undefined;
-  }, [currentMode, outputTable, images, interacted, textContent, data.nodeId, clickImage]);
+    // Every branch above now requires actual content, so this is reached
+    // whenever there is none — where it used to return `undefined` and
+    // UniversalNode rendered nothing at all (#224). `ContentTable` with an
+    // empty array was the same defect wearing a table: it drew an empty
+    // <Table> and looked like a node that had failed.
+    return (
+      <NodeEmptyState
+        reason={
+          resolveNodeEmptyReason({
+            connected,
+            hasInput: data.input != null && data.input !== '',
+            // 'text' is the fallback mode for anything that is not a frame,
+            // so a text mode with no content is a payload we cannot show.
+            tabular: currentMode !== 'text',
+            rowCount: currentMode === 'image' ? images.length : outputTable.length,
+          }) ?? 'not-tabular'
+        }
+      />
+    );
+  }, [currentMode, outputTable, images, interacted, textContent, data.nodeId, data.input, connected, clickImage]);
 
   return {
     contentComponent,

@@ -33,10 +33,39 @@ describe('DataPoolContent', () => {
     expect(screen.getByText('Tab 2')).toBeInTheDocument();
   });
 
-  test('shows "No data available" when tabData is empty', () => {
+  test('says which kind of empty it is when tabData is empty', () => {
+    // Was "No data available." plus a fake "No Data" TAB. The message named the
+    // state but not the cause, so an unconnected pool and one whose upstream
+    // had not run said the same thing; the tab looked like something you could
+    // open (#224). Default props leave `connected` false, which is the
+    // commonest way to arrive here.
     render(<DataPoolContent {...defaultProps} tabData={[]} />);
-    expect(screen.getByText('No data available.')).toBeInTheDocument();
-    expect(screen.getByText('No Data')).toBeInTheDocument();
+    expect(screen.getByText('No data yet')).toBeInTheDocument();
+    expect(screen.getByText("Connect a node to this one's input.")).toBeInTheDocument();
+    expect(screen.queryByText('No Data')).toBeNull();
+  });
+
+  test('points at the upstream node once one is connected', () => {
+    render(<DataPoolContent {...defaultProps} tabData={[]} connected />);
+    expect(screen.getByText('Run the node feeding this one.')).toBeInTheDocument();
+  });
+
+  test('says the input is not tabular when the upstream ran but made no table', () => {
+    // The empty branch passed `tabular: true`, so a connected pool handed a
+    // payload it cannot tabulate reported "The input ran, but came back empty" —
+    // wrong, and uninformative in exactly the way #224 complained about. A
+    // dataframe with zero rows still yields a tab and renders as an empty table,
+    // so reaching here with an input really does mean "not table-shaped".
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        tabData={[]}
+        connected
+        data={{ nodeId: 'test-node', input: { filename: 'artifact_id' } }}
+      />
+    );
+    expect(screen.getByText('Nothing to display')).toBeInTheDocument();
+    expect(screen.queryByText('The input ran, but came back empty.')).toBeNull();
   });
 
   test('renders ContentTable with provided tableData', () => {
@@ -63,6 +92,34 @@ describe('DataPoolContent', () => {
     expect((scroller as HTMLElement).style.overflow).toBe('auto');
   });
 
+  test('the content area owns horizontal scroll too (#203)', () => {
+    // Commit 0b5edea4 ("fixes #156") gave this div `overflow: auto` for the
+    // VERTICAL axis and the x axis was never addressed. It could not have
+    // worked anyway while MUI's TableContainer was absorbing the x overflow -
+    // see the assertion below.
+    const { container } = render(<DataPoolContent {...defaultProps} />);
+    const scroller = container.querySelector('[data-curio-datapool-scroll="true"]') as HTMLElement;
+    // `overflow`, not `overflowY`: one declaration owns both axes.
+    expect(scroller.style.overflow).toBe('auto');
+    expect(scroller.style.overflowY).toBe('');
+    expect(scroller.style.overflowX).toBe('');
+    // minWidth:0 is what lets this box shrink below its content inside the
+    // flex column, so there is something to scroll in the first place.
+    expect(scroller.style.minWidth).toBe('0px');
+  });
+
+  test('the inner table container no longer steals the x overflow (#203)', () => {
+    // MUI's TableContainer defaults to `overflowX: auto`. It receives no
+    // height, so its box was as tall as the content (~3000px for 100 rows)
+    // while the visible node body is ~250px - its horizontal scrollbar was
+    // painted at the bottom of that box, reachable only after scrolling to the
+    // last row. Turning the default off is the load-bearing line.
+    const { container } = render(<DataPoolContent {...defaultProps} />);
+    const inner = container.querySelector('.MuiTableContainer-root') as HTMLElement;
+    if (!inner) return; // no rows rendered in this fixture; the assertion below covers it
+    expect(getComputedStyle(inner).overflowX).not.toBe('auto');
+  });
+
   test('the tab strip scrolls sideways instead of wrapping', () => {
     // Many tables must not steal height from the table below: the strip stays one
     // row tall and scrolls horizontally.
@@ -77,7 +134,7 @@ describe('DataPoolContent', () => {
 
   test('renders with non-array tabData gracefully', () => {
     render(<DataPoolContent {...defaultProps} tabData={null as any} />);
-    expect(screen.getByText('No data available.')).toBeInTheDocument();
+    expect(screen.getByText('No data yet')).toBeInTheDocument();
   });
 
   test('keeps the output table when preview resolves with no rows', async () => {

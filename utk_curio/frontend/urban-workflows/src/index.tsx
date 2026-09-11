@@ -71,6 +71,7 @@ import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
 import { NodeCatalogDrawerProvider } from "./providers/NodeCatalogDrawerProvider";
 import { AgentCatalogDrawerProvider } from "./providers/AgentCatalogDrawerProvider";
+import { listenForPeerDatasetCatalogRefresh } from "./services/datasetCatalog";
 import { DatasetCatalogDrawerProvider } from "./providers/datasetCatalog";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
@@ -79,6 +80,7 @@ import { DatasetPaletteProvider } from "./providers/DatasetPaletteContext";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
 import { RequireAuth } from "./components/RequireAuth";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
@@ -155,6 +157,10 @@ const App: React.FC = () => {
             <ReactFlowProvider>
                 <ProvenanceProvider>
                   <UserProvider>
+                    {/* Backstop under the per-node boundaries (#201): a throw
+                        from page chrome rather than from a node still has to
+                        land somewhere other than a blank document. */}
+                    <ErrorBoundary label="route">
                     <Routes>
                     <Route path="/auth/signin" element={<SignIn />} />
                     <Route path="/auth/signup" element={<SignUp />} />
@@ -209,6 +215,7 @@ const App: React.FC = () => {
                       }
                     />
                     </Routes>
+                    </ErrorBoundary>
                   </UserProvider>
                 </ProvenanceProvider>
             </ReactFlowProvider>
@@ -217,6 +224,23 @@ const App: React.FC = () => {
     </BrowserRouter>
   );
 };
+
+// A rejected promise nobody caught reaches `window` as an `unhandledrejection`,
+// and webpack-dev-server's `client.overlay.runtimeErrors` listens for exactly
+// that - so in development one escaped rejection paints the error overlay over
+// the whole app (#201). Logging it here does not stop the overlay, but it names
+// the rejection in the console instead of leaving only the overlay's stack, and
+// it makes an escaped promise visible in production too, where there is no
+// overlay at all and the failure was previously silent.
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("[curio] unhandled promise rejection:", event.reason);
+});
+
+// Catalog mutations in ANOTHER tab must invalidate this one's cache. Without
+// this the broadcast has no listener and the cross-tab half is inert: adding a
+// dataset to all projects from `/catalog` in one tab left a dataflow open in
+// another serving a listing cached from before the mutation.
+listenForPeerDatasetCatalogRefresh();
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 

@@ -449,6 +449,16 @@ def process_python_code():
         duration_ms=(_time.perf_counter() - t0) * 1000.0,
     )
 
+    # Which library the run was missing, when that is why it failed (#299).
+    # Gated on the canonical failure contract - an EMPTY output path, not a
+    # non-empty stderr, because warnings land in stderr too. `detect` never
+    # raises: a diagnostic that turned one failure into two would be worse than
+    # none, and the traceback is reported either way.
+    missing_module = None
+    if isinstance(output, dict) and not output.get('path'):
+        from utk_curio.backend.app.packages import missing_import
+        missing_module = missing_import.detect(stderr)
+
     return {
         'stdout': stdout,
         'stderr': stderr,
@@ -456,6 +466,7 @@ def process_python_code():
         'output': output,
         'installedDataset': installed_dataset,
         'datasetDiagnostic': dataset_diagnostic,
+        'missingModule': missing_module,
     }
 
 
@@ -677,7 +688,8 @@ def spatial_join():
           "type": "FeatureCollection",
           "features": [...]   # input points augmented with `neighborhood_name`
                               # (and `nbhd_*` aggregates) on properties
-          "metadata": { "aggregates": [...] }   # per-polygon roll-up
+          "metadata": { "aggregates": [...],   # per-polygon roll-up
+                        "warnings": [...] }     # only when non-empty (#262)
         }
 
     Returns 503 if the shapely extras aren't installed (geopandas is already
@@ -709,12 +721,14 @@ def spatial_join():
         props["longitude"] = lon
         point_dicts.append(props)
 
+    warnings: list = []
     try:
         from utk_curio.backend.app.common.spatial import enrich_points_with_polygons
         enriched, aggregates = enrich_points_with_polygons(
             points=point_dicts,
             polygon_fc=polygons_fc,
             name_property=name_property,
+            warnings=warnings,
         )
     except ImportError as e:
         return jsonify({
@@ -742,8 +756,11 @@ def spatial_join():
             "properties": p,
         })
 
+    metadata = {"name": "spatial_join_result", "aggregates": aggregates}
+    if warnings:
+        metadata["warnings"] = warnings
     return jsonify({
         "type": "FeatureCollection",
         "features": out_features,
-        "metadata": {"name": "spatial_join_result", "aggregates": aggregates},
+        "metadata": metadata,
     })

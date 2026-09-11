@@ -1,5 +1,5 @@
 /** Tab identifiers for the Node Catalog Drawer. */
-export type DrawerTab = "featured" | "browse" | "installed" | "updates";
+export type DrawerTab = "browse" | "installed";
 
 /** Sort modes available for the package list. */
 export type SortMode = "new" | "name";

@@ -7,6 +7,13 @@
  * (wait_for_projects_page in backend/tests/test_frontend/utils.py), so that
  * link's accessible name matters.
  */
+// ProjectsList toasts the outcome of a delete (#221), and the real
+// provider is not mounted in these tests. Same stub the other page and drawer
+// suites use.
+jest.mock("../../providers/ToastProvider", () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
+
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
@@ -24,7 +31,6 @@ const PROJECTS = [
     last_opened_at: '2026-02-01T10:00:00Z',
     created_at: '2026-01-01T10:00:00Z',
     updated_at: '2026-02-02T10:00:00Z',
-    archived_at: null,
     graph_preview: { nodes: [{ id: 'a', type: 't', x: 0, y: 0 }], edges: [] },
   },
   {
@@ -37,7 +43,6 @@ const PROJECTS = [
     last_opened_at: null,
     created_at: '2026-01-05T10:00:00Z',
     updated_at: '2026-01-06T10:00:00Z',
-    archived_at: null,
     graph_preview: null,
   },
 ];
@@ -46,6 +51,9 @@ const mockList = jest.fn();
 
 jest.mock('../../providers/UserProvider', () => ({
   useUserContext: () => ({ user: { name: 'Test User' }, signout: jest.fn(), enableUserAuth: true }),
+}));
+jest.mock('../../providers/ToastProvider', () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
 }));
 jest.mock('../../api/projectsApi', () => ({
   projectsApi: {
@@ -63,11 +71,8 @@ jest.mock('../../components/VersionBadge', () => ({ __esModule: true, default: (
 
 import ProjectsList from '../../pages/projects/ProjectsList';
 
-/** The page fetches every scope at once so the rail can show counts. */
-function stubScopes(byScope: Record<string, unknown[]>) {
-  mockList.mockImplementation((params: { scope?: string }) =>
-    Promise.resolve(byScope[params?.scope ?? 'mine'] ?? [])
-  );
+function stubProjects(rows: unknown[]) {
+  mockList.mockImplementation(() => Promise.resolve(rows));
 }
 
 async function renderPage() {
@@ -84,7 +89,7 @@ async function renderPage() {
 
 beforeEach(() => {
   mockList.mockReset();
-  stubScopes({ mine: PROJECTS, recent: [PROJECTS[0]], archived: [] });
+  stubProjects(PROJECTS);
 });
 
 describe('projects page chrome', () => {
@@ -128,51 +133,72 @@ describe('projects page chrome', () => {
   });
 });
 
-describe('projects filter rail', () => {
-  test('the rail lists each scope with its count', async () => {
-    const { getByRole } = await renderPage();
+describe('projects filtering', () => {
+  // #286: the rail held "All projects" and "Recent", which returned the same
+  // rows in the same order - their only filter was on ``archived_at``, which no
+  // scope varied and #261 removed. Both tabs and the rail went with it, so
+  // search is the only filter left.
+  test('there is no status rail, and only one request is made', async () => {
+    const { queryByRole } = await renderPage();
 
-    const rail = getByRole('complementary', { name: 'Project filters' });
-    expect(
-      Array.from(rail.querySelectorAll('button')).map((b) => (b.textContent || '').trim())
-    ).toEqual(['All projects2', 'Recent1', 'Archived0']);
+    expect(queryByRole('complementary', { name: 'Project filters' })).toBeNull();
+    expect(queryByRole('button', { name: /^Recent/ })).toBeNull();
+    // Two identical scopes meant two round trips on every load and sort change.
+    expect(mockList).toHaveBeenCalledTimes(1);
+    expect(mockList.mock.calls[0][0]).not.toHaveProperty('scope');
   });
 
-  test('the active scope is the pressed rail button, and picking one refilters', async () => {
-    const { getByRole } = await renderPage();
-
-    const rail = getByRole('complementary', { name: 'Project filters' });
-    const railButton = (label: string) =>
-      Array.from(rail.querySelectorAll('button')).find((b) =>
-        (b.textContent || '').startsWith(label)
-      ) as HTMLButtonElement;
-
-    expect(railButton('All projects').getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText('Bike lanes')).toBeTruthy();
+  // #231: the filter used the raw input value as the needle, so a name pasted with
+  // a trailing space matched nothing. Every other search surface in the app
+  // (packageUtils.matchesSearch, agentListUtils.matchesAgentSearch, the dataset
+  // drawer) already trimmed; this page was the outlier.
+  test('a padded query still matches, and whitespace alone is not a filter', async () => {
+    const { getByPlaceholderText } = await renderPage();
 
     await act(async () => {
-      fireEvent.click(railButton('Recent'));
+      fireEvent.change(getByPlaceholderText('Search projects…'), {
+        target: { value: '  Bike lanes  ' },
+      });
     });
 
-    expect(railButton('Recent').getAttribute('aria-pressed')).toBe('true');
-    expect(railButton('All projects').getAttribute('aria-pressed')).toBe('false');
-    // "recent" holds only the first project.
-    expect(screen.queryByText('Bike lanes')).toBeNull();
+    // getAllByText, not getByText: the selected project is rendered twice - once
+    // as a card and once in the detail drawer beside it (see the assertion at
+    // 'the drawer opens on the first project' above).
+    expect(screen.getAllByText('Bike lanes').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Air quality')).toBeNull();
+
+    // A box holding only spaces is an empty query, not one that matches nothing -
+    // otherwise the second half of the fix (the empty-state copy) would still tell
+    // the user their projects had been filtered out.
+    await act(async () => {
+      fireEvent.change(getByPlaceholderText('Search projects…'), {
+        target: { value: '   ' },
+      });
+    });
+
+    expect(screen.getAllByText('Bike lanes').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Air quality').length).toBeGreaterThan(0);
+    expect(screen.queryByText('No projects match that search.')).toBeNull();
   });
 
-  test('an empty scope shows the empty state and no card area', async () => {
-    const { getByRole, container } = await renderPage();
-
-    const rail = getByRole('complementary', { name: 'Project filters' });
-    const archived = Array.from(rail.querySelectorAll('button')).find((b) =>
-      (b.textContent || '').startsWith('Archived')
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      fireEvent.click(archived);
-    });
+  test('an empty account shows the empty state and no card area', async () => {
+    stubProjects([]);
+    const { container } = await renderPage();
 
     expect(screen.getByText('No projects yet. Create a new dataflow!')).toBeTruthy();
+    expect(container.querySelector('[data-curio-projects-scroll="true"]')).toBeNull();
+  });
+
+  test('a search that matches nothing says so, without blaming a filter', async () => {
+    const { getByPlaceholderText, container } = await renderPage();
+
+    await act(async () => {
+      fireEvent.change(getByPlaceholderText('Search projects…'), {
+        target: { value: 'nothing-matches-this' },
+      });
+    });
+
+    expect(screen.getByText('No projects match that search.')).toBeTruthy();
     expect(container.querySelector('[data-curio-projects-scroll="true"]')).toBeNull();
   });
 });
@@ -325,11 +351,48 @@ describe('projects detail drawer', () => {
     expect(getByRole('heading', { name: 'Bike lanes' })).toBeTruthy();
   });
 
-  test('an unarchived project offers Archive, not Delete forever', async () => {
+  test('the drawer offers Delete, and no Archive', async () => {
+    // This asserted the opposite until #221: the drawer hid deletion until a
+    // project was archived, while the right-click menu offered it to anything,
+    // so the same project was told two different things about what could be
+    // done to it. The archive step was never a safety mechanism -- the confirm
+    // dialog is what makes deletion deliberate -- and it was removed outright
+    // in #261. The label lost its "forever" with it.
     const { getByRole, queryByRole } = await renderPage();
 
-    expect(getByRole('button', { name: 'Archive' })).toBeTruthy();
+    expect(getByRole('button', { name: 'Delete' })).toBeTruthy();
+    expect(queryByRole('button', { name: 'Archive' })).toBeNull();
     expect(queryByRole('button', { name: 'Delete forever' })).toBeNull();
+  });
+
+  test('deleting from the drawer asks first', async () => {
+    const { getByRole } = await renderPage();
+
+    await act(async () => {
+      fireEvent.click(getByRole('button', { name: 'Delete' }));
+    });
+
+    // The existing ConfirmDialog, with the retention copy it already carried.
+    expect(getByRole('heading', { name: /Permanently delete/ })).toBeTruthy();
+  });
+
+  test('the drawer and the context menu offer the same actions', async () => {
+    // The anti-drift assertion, and the point of the refactor: both surfaces
+    // render from ``projectActions``, so they cannot disagree again.
+    const { container, getByRole } = await renderPage();
+
+    const card = container.querySelector('[data-project-id="p1"]') as HTMLElement;
+    await act(async () => {
+      fireEvent.contextMenu(card);
+    });
+
+    // Open is the drawer's primary action ("Open dataflow"), so compare the rest.
+    for (const label of ['Rename', 'Duplicate', 'Delete']) {
+      expect(
+        screen.getAllByRole('button', { name: label }).length,
+      ).toBeGreaterThanOrEqual(2);
+    }
+    expect(getByRole('button', { name: 'Open dataflow' })).toBeTruthy();
   });
 
   test('closing the drawer collapses it', async () => {
@@ -347,7 +410,7 @@ describe('projects detail drawer', () => {
     // The test above passes by doing nothing after the click. The bug was that
     // Close and "nothing chosen yet" were the same value, so the auto-select
     // effect resurrected the drawer on the next thing that rebuilt `filtered` -
-    // a keystroke, a filter, a sort, or the refetch after a rename or archive.
+    // a keystroke, a filter, a sort, or the refetch after a rename or delete.
     // Searching is the cheapest of those to reproduce.
     const { getByRole, getByPlaceholderText, queryByRole } = await renderPage();
 

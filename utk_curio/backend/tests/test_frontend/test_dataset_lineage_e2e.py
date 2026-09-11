@@ -57,6 +57,7 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import expect
 
 from .utils import (
+    accept_confirm_dialog,
     api_json,
     canvas_node_type,
     connect_nodes,
@@ -65,6 +66,7 @@ from .utils import (
     open_tools_palette,
     require_project_page,
     require_user_auth,
+    save_dataflow,
     save_workflow_test_screenshot,
     require_owner_view,
     stub_login_and_enter_workflow,
@@ -107,7 +109,7 @@ EMPTY_USAGE = "No nodes or dataflows are currently using this dataset."
 # account-level DELETE runs ``unpublish_dataset`` first, which 403s because this
 # user is not the publisher of a committed catalog dataset. The copy is harmless
 # to a re-run because installed-ness is scoped to a dataflow, not to the store,
-# so a fresh project still shows the card offering "Add to dataflow".
+# so a fresh project still shows the card offering "Add to project".
 
 
 def _unversioned(node_type: str | None) -> str:
@@ -151,17 +153,22 @@ def _add_dataset_from_catalog(page, palette):
     card = drawer.locator(f'{CARD}[data-dataset-id="{DATASET_ID}"]')
     expect(card).to_have_count(1, timeout=15000)
 
+    card.get_by_role("button", name="Add to project", exact=True).click()
     with page.expect_response(
         lambda r: "/datasets/install" in r.url and r.request.method == "POST" and r.ok,
         timeout=60000,
     ):
-        card.get_by_role("button", name="Add to dataflow", exact=True).click()
+        # The Data catalog confirms an add now (#196), so the card click only
+        # opens the dialog - the POST follows the confirm.
+        accept_confirm_dialog(
+            page, title=re.compile(r"^Add "), button="Add to project"
+        )
 
     # Re-resolve rather than reuse the handle: the install flips origin
     # hub -> imported, which changes the React key so the card is replaced.
     expect(
         drawer.locator(f'{CARD}[data-dataset-id="{DATASET_ID}"]').get_by_role(
-            "button", name="Remove from dataflow", exact=True
+            "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=20000)
 
@@ -222,25 +229,6 @@ def _close_details_and_drawer(page):
     _close_drawer(page)
 
 
-def _save_dataflow(page):
-    file_btn = page.get_by_role("button", name=re.compile("File"))
-    file_btn.wait_for(state="visible", timeout=15000)
-    file_btn.click(force=True)
-    save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
-    save_btn.wait_for(state="visible", timeout=10000)
-    # Gate on the write itself, not on the menu closing. The File menu can close
-    # before the PUT is answered, and a test that then reads the server sees the
-    # pre-save spec - which showed up as an intermittent nodeCount of 0 here.
-    with page.expect_response(
-        lambda r: "/api/projects" in r.url
-        and r.request.method in ("POST", "PUT")
-        and r.ok,
-        timeout=30000,
-    ):
-        save_btn.click()
-    save_btn.wait_for(state="hidden", timeout=30000)
-
-
 def test_wiring_a_consumer_grows_dataset_lineage(
     app_frontend: "FrontendPage",
     current_server: str,
@@ -299,12 +287,12 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     expect(center.get_by_text(re.compile(r"^Inputs \("))).to_have_count(0)
     # The badge renders nothing at all while the dataset has no connections.
     expect(card.get_by_text(re.compile(r"\d[↑↓]"))).to_have_count(0)
-    # "Add to dataflow" wrote the dataflow's dataset ref into the saved spec, so
+    # "Add to project" wrote the dataflow's dataset ref into the saved spec, so
     # the backend already lists this dataflow as *using* the dataset - but with
     # no consumer node, which is the "Produced here" row. Owning a dataset is not
     # consuming it, and the section is the one surface where the difference shows.
-    usage_section = center.locator('section[aria-label="Dataflows using this dataset"]')
-    expect(usage_section.get_by_text("Used in dataflows (1)")).to_be_visible(
+    usage_section = center.locator('section[aria-label="Projects using this dataset"]')
+    expect(usage_section.get_by_text("Used in projects (1)")).to_be_visible(
         timeout=15000
     )
     expect(usage_section.get_by_text("Produced here")).to_be_visible()
@@ -356,7 +344,7 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     # 6. AFTER, ON THE SERVER. The backend resolves consumers from the saved spec
     #    with its own copy of the carrier rule; this is the assertion that the
     #    two implementations agree about the graph the user just drew.
-    _save_dataflow(page)
+    save_dataflow(page)
 
     # First what the save persisted, then what the backend derives from it. Split
     # in two so a failure says which half broke: the spec write (no edge, or the
@@ -383,8 +371,8 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     # 7. And the panel shows that same consumer arriving from the server: the
     #    usage section is fetched, not derived from the canvas.
     _, center, _ = _open_lineage_tab(page)
-    usage_section = center.locator('section[aria-label="Dataflows using this dataset"]')
-    expect(usage_section.get_by_text("Used in dataflows (1)")).to_be_visible(
+    usage_section = center.locator('section[aria-label="Projects using this dataset"]')
+    expect(usage_section.get_by_text("Used in projects (1)")).to_be_visible(
         timeout=15000
     )
     expect(usage_section.get_by_role("link", name="Dataset Lineage")).to_be_visible()

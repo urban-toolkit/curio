@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 
 import pytest
 
-from utk_curio.backend.app.agents import ledger, storage
+from utk_curio.backend.app.agents import ledger, publications, storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 
@@ -1534,14 +1535,74 @@ class TestMyImportsInstalledState:
         card = next(c for c in cards if c["dirName"] == self.COORD)
         assert card["installedInProject"] is True
 
-    def test_imported_but_not_installed_shows_not_installed(self, client, user_and_token, tmp_curio, alice_project):
+    def test_importing_now_installs_into_existing_projects(self, client, user_and_token, tmp_curio, alice_project):
+        """Importing reaches every project the user already has.
+
+        This asserted the opposite: an import recorded a coordinate and touched
+        no project lockfile. That was reported as a bug, and it was one - the
+        Agent Catalog labelled an imported agent "In all projects" while the
+        canvas agents palette, which reads the PROJECT lockfile
+        (``listProjectAgents`` -> ``dataflow.agents``), showed it in none of
+        them. Two surfaces describing two different things under one label.
+
+        The catalog's claim is the one that was kept, so the import now does the
+        same eager per-project walk ``packages.services.install_to_defaults``
+        does, and ``save_project`` seeds new projects the same way. Nothing
+        consults the account list when a project is opened, so only the walk can
+        make the label true.
+        """
         _, token = user_and_token
         client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth(token))
         cards = client.get(
             f"/api/agents/imports?projectId={alice_project}", headers=_auth(token)
         ).get_json()["agents"]
         card = next(c for c in cards if c["dirName"] == self.COORD)
-        assert card["installedInProject"] is False
+        assert card["installedInProject"] is True
+
+    def test_removing_the_import_takes_it_out_of_projects_again(self, client, user_and_token, tmp_curio, alice_project):
+        """The inverse walk, or "Remove from all projects" would leave the agent
+        in every project it had been pushed into."""
+        _, token = user_and_token
+        client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth(token))
+        client.delete(f"/api/agents/imports/{self.COORD}", headers=_auth(token))
+        cards = client.get(
+            f"/api/agents/imports?projectId={alice_project}", headers=_auth(token)
+        ).get_json()["agents"]
+        assert all(c["dirName"] != self.COORD for c in cards) or next(
+            c for c in cards if c["dirName"] == self.COORD
+        )["installedInProject"] is False
+
+    def test_a_project_created_afterwards_gets_imported_agents(self, client, user_and_token, tmp_curio):
+        """The "future" half. Without the seed in `save_project`, an agent the
+        user imported would be missing from every project made later."""
+        _, token = user_and_token
+        client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth(token))
+        created = client.post(
+            "/api/projects",
+            json={"name": "Made after the import", "spec": {"dataflow": {"nodes": [], "edges": []}}},
+            headers=_auth(token),
+        )
+        assert created.status_code in (200, 201), created.get_data(as_text=True)
+        new_id = created.get_json()["id"]
+        cards = client.get(
+            f"/api/agents/imports?projectId={new_id}", headers=_auth(token)
+        ).get_json()["agents"]
+        card = next(c for c in cards if c["dirName"] == self.COORD)
+        assert card["installedInProject"] is True
+
+        # And through the endpoint the CANVAS actually reads. The agents palette
+        # calls `listProjectAgents` -> GET /api/agents/projects/<id>, which is
+        # the project lockfile; the listing above is the account view with a
+        # project marker on it. Asserting only the account view would pass while
+        # the left bar in a new dataflow stayed empty, which is exactly the
+        # symptom that was reported.
+        palette = client.get(
+            f"/api/agents/projects/{new_id}", headers=_auth(token)
+        ).get_json()["agents"]
+        assert any(c["dirName"] == self.COORD for c in palette), (
+            f"a new project's agent lockfile should carry the account's imports; "
+            f"got {[c['dirName'] for c in palette]}"
+        )
 
     def test_without_project_id_behaves_as_before(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
@@ -2657,6 +2718,18 @@ class TestNodeCreate:
             f'"params": {{"nodeType": "{node_type}", "content": "{content}"{extra}}}}}}}\n```'
         )
 
+    def _create_tail_json(self, **params):
+        """The same block built with json.dumps (#245) — ``_create_tail`` is an
+        f-string and cannot express a multi-line source body."""
+        import json as _json
+
+        params.setdefault("nodeType", "curio.builtin/computation-analysis")
+        return (
+            "```curio.v1\n"
+            + _json.dumps({"toolRequest": {"tool": "node.create", "params": params}})
+            + "\n```"
+        )
+
     def _setup(self, client, user, token, project_id, monkeypatch, replies=None):
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -2764,6 +2837,60 @@ class TestNodeCreate:
         assert inserted["content"] == "print('new')"
         # Apply is deterministic — no quota consumed.
         assert ledger.aggregates(_user_dir_key(user))["runs"] == runs_before
+
+    def test_large_content_node_create_mints_and_applies(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """Issue #245 — the reported bug, end to end.
+
+        A node body past the old 1KB params cap was refused by the tail parser
+        and the whole reply failed open, so the raw request JSON became the
+        chat message and no node ever reached the canvas. The mints have always
+        accepted content up to PROPOSAL_CONTENT_MAX_CHARS; only the parser
+        disagreed.
+        """
+        user, token = user_and_token
+        source = (
+            "import pandas as pd\n\n\n"
+            "def summarise(path, column):\n"
+            '    """Load a CSV and return the mean of one numeric column."""\n'
+            "    df = pd.read_csv(path)\n"
+            "    if column not in df.columns:\n"
+            '        raise ValueError(f"column {column} missing")\n'
+            '    series = pd.to_numeric(df[column], errors="coerce").dropna()\n'
+            '    return {"mean": float(series.mean()), "count": int(series.size)}\n'
+        ) * 40  # ~14KB: a realistic node, far past the old cap
+        assert len(source) > 4096
+        # extract_node_content trims the boundary, as it has always done.
+        stored = source.strip()
+        tail = self._create_tail_json(content=source, title="CSV mean", goal="summarise a column")
+        att_id, _ = self._setup(
+            client, token=token, user=user, project_id=alice_project, monkeypatch=monkeypatch,
+            replies=[tail, "Proposed a CSV summariser — review it above."],
+        )
+        r = self._run(client, token, alice_project, att_id)
+        assert r.status_code == 200
+        body = r.get_json()
+
+        proposal = self._proposal_from_run(r)
+        assert proposal["tool"] == "node.create"
+        assert proposal["status"] == "pending"
+        # The leak: none of the machine block may survive as chat prose.
+        assert "curio.v1" not in body["reply"]
+        assert "toolRequest" not in body["reply"]
+        assert "nodeType" not in body["reply"]
+        assert "import pandas" not in body["reply"]
+
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200
+        created = resp.get_json()["createdNode"]
+        assert created["content"] == stored  # whole body, not truncated
+        nodes = self._spec_nodes(user, alice_project)
+        assert len(nodes) == 2
+        assert next(n for n in nodes if n["id"] == created["id"])["content"] == stored
+
         # The transcript logged the result card.
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
@@ -5102,6 +5229,210 @@ class TestPlanToolRequestForm:
         assert content_mod.parse_parts(_json.dumps(big)) is None
 
 
+class TestToolRequestRecovery:
+    """#245 — a tool request the parser could not take must never fold into the
+    chat as raw JSON.
+
+    Plans got fence-agnostic recognition (dev/56) and correction rounds
+    (dev/54); tool requests never did, so a node.create in a ```json fence, or
+    one followed by a closing sentence, or one whose params were correctable,
+    was demoted to inert text — and for a mutate tool that text is a whole
+    source file rendered under an Apply button that never existed.
+    """
+
+    def _helper(self):
+        return TestNodeCreate()
+
+    def _json_fence(self, content="print('recovered')", trailing="Click Apply above."):
+        import json as _json
+
+        block = _json.dumps({"toolRequest": {"tool": "node.create", "params": {
+            "nodeType": "curio.builtin/computation-analysis", "content": content}}})
+        return f"Here is the node.\n\n```json\n{block}\n```\n\n{trailing}"
+
+    def _run(self, client, user, token, project, monkeypatch, replies):
+        helper = self._helper()
+        att_id, calls = helper._setup(
+            client, user=user, token=token, project_id=project,
+            monkeypatch=monkeypatch, replies=replies,
+        )
+        return helper._run(client, token, project, att_id), calls, att_id, helper
+
+    def test_json_fence_request_mints_and_strips_the_block(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        r, calls, _, _ = self._run(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._json_fence(), "Proposed."],
+        )
+        body = r.get_json()
+        assert any(p["type"] == "proposal" for p in body["content"])
+        # The block is stripped; the model's own prose survives.
+        assert "toolRequest" not in body["reply"]
+        assert "```" not in body["reply"]
+        assert "Click Apply above." in body["reply"]
+
+    def test_non_terminal_curio_fence_is_recovered(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # extract_content deliberately refuses a non-terminal block (dev/90
+        # A10's conservative boundary); recovery claims it at the runtime layer.
+        import json as _json
+
+        user, token = user_and_token
+        block = _json.dumps({"toolRequest": {"tool": "node.create", "params": {
+            "nodeType": "curio.builtin/computation-analysis", "content": "print(1)"}}})
+        reply = f"Adding it.\n\n```curio.v1\n{block}\n```\n\nDone."
+        r, _, _, _ = self._run(client, user, token, alice_project, monkeypatch,
+                               replies=[reply, "Proposed."])
+        body = r.get_json()
+        assert any(p["type"] == "proposal" for p in body["content"])
+        assert "toolRequest" not in body["reply"]
+
+    def test_large_content_survives_recovery(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Both halves of #245 at once: a wrong fence AND a body past the old cap.
+        user, token = user_and_token
+        source = "import pandas as pd\n# analysis\n" * 400
+        r, _, att_id, helper = self._run(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._json_fence(content=source), "Proposed."],
+        )
+        proposal = helper._proposal_from_run(r)
+        assert proposal["tool"] == "node.create"
+        assert "import pandas" not in r.get_json()["reply"]
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.get_json()["createdNode"]["content"] == source.strip()
+
+    def test_broken_json_request_corrects_then_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        broken = ('Attempt one.\n\n```curio.v1\n'
+                  '{"toolRequest": {"tool": "node.create", "params": {oops}\n```')
+        helper = self._helper()
+        r, calls, _, _ = self._run(
+            client, user, token, alice_project, monkeypatch,
+            replies=[broken, helper._create_tail_json(content="print('fixed')"), "Proposed."],
+        )
+        assert len(calls) >= 2
+        # `calls` aliases the live message list, so scan the whole conversation
+        # rather than indexing a snapshot that no longer exists.
+        feedback = "\n".join(m["content"] for m in calls[-1] if isinstance(m.get("content"), str))
+        assert "[tool validation]" in feedback
+        assert "not valid JSON" in feedback
+        body = r.get_json()
+        assert any(p["type"] == "proposal" for p in body["content"])
+        # The invalid attempt never reaches the user — not its prose, not its JSON.
+        assert "Attempt one." not in body["reply"]
+        assert "toolRequest" not in body["reply"]
+
+    def test_oversized_content_corrects_instead_of_leaking(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Past PROPOSAL_CONTENT_MAX_CHARS the parser and the mint agree, so the
+        # model gets a correctable refusal naming the real field.
+        from utk_curio.backend.app.agents import content as content_mod
+
+        user, token = user_and_token
+        helper = self._helper()
+        r, calls, _, _ = self._run(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                helper._create_tail_json(
+                    content="x" * (content_mod.PROPOSAL_CONTENT_MAX_CHARS + 1)),
+                helper._create_tail_json(content="print('small enough')"),
+                "Proposed.",
+            ],
+        )
+        feedback = "\n".join(m["content"] for m in calls[-1] if isinstance(m.get("content"), str))
+        assert "[tool validation]" in feedback
+        assert "params.content is" in feedback  # the error names the real field
+        body = r.get_json()
+        assert any(p["type"] == "proposal" for p in body["content"])
+        assert "x" * 200 not in body["reply"]
+
+    def test_persistent_failure_contains_the_raw_json(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """The deliberate inverse of the plan cap, which asserts
+        ``"curio.v1" in body["reply"]``.
+
+        A plan tail is a spec the user can read, so dev/54 releases it at the
+        cap. A mutate request's params are an entire source file — releasing
+        that IS the #245 bug, so the block drops and the card explains instead.
+        """
+        user, token = user_and_token
+        broken = ('```curio.v1\n{"toolRequest": {"tool": "node.create", '
+                  '"params": {oops}\n```')
+        r, calls, _, _ = self._run(client, user, token, alice_project, monkeypatch,
+                                   replies=[broken])
+        body = r.get_json()
+        assert len(calls) == 4  # the shared MAX_TOOL_ROUNDS budget, then the cap
+        assert all(p["type"] != "proposal" for p in body["content"])
+        card = next(p for p in body["content"] if p["type"] == "card")
+        assert card["title"] == "Proposal not created"
+        assert "not valid JSON" in card["lines"][0]
+        assert "curio.v1" not in body["reply"]
+        assert "toolRequest" not in body["reply"]
+
+    def test_echoed_syntax_does_not_burn_a_round(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The tail instruction's own literal template is valid JSON. Correcting
+        # a model that merely quoted it would spend the budget on nothing.
+        user, token = user_and_token
+        echoed = ('To create a node I would send:\n\n```json\n'
+                  '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n```')
+        r, calls, _, _ = self._run(client, user, token, alice_project, monkeypatch,
+                                   replies=[echoed])
+        assert len(calls) == 1
+        assert "<tool id>" in r.get_json()["reply"]  # fail-open, untouched
+
+    def test_ungranted_tool_is_not_claimed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # A request naming a tool this run does not hold stays the model's text.
+        import json as _json
+
+        user, token = user_and_token
+        block = _json.dumps({"toolRequest": {"tool": "package.install",
+                                             "params": {"dirName": "x@1"}}})
+        r, calls, _, _ = self._run(client, user, token, alice_project, monkeypatch,
+                                   replies=[f"Consider:\n\n```json\n{block}\n```"])
+        assert len(calls) == 1
+        assert "package.install" in r.get_json()["reply"]
+
+    def test_stream_holds_the_raw_request_tail(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        import json as _json
+
+        user, token = user_and_token
+        helper = self._helper()
+        att_id, _ = helper._setup(client, user=user, token=token, project_id=alice_project,
+                                  monkeypatch=monkeypatch, replies=["ignored"])
+        script = [
+            '```curio.v1\n{"toolRequest": {"tool": "node.create", "params": {oops}\n```',
+            helper._create_tail_json(content="print('fixed')"),
+            "Proposed.",
+        ]
+        calls = []
+
+        def _fake_stream(config, messages, **kwargs):
+            calls.append(messages)
+            reply = script[min(len(calls) - 1, len(script) - 1)]
+            for i in range(0, len(reply), 9):
+                yield reply[i:i + 9]
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "build it"}, headers=_auth(token),
+        )
+        events = []
+        for block in r.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            if "event" in lines:
+                events.append((lines["event"], _json.loads(lines["data"])))
+        kinds = [k for k, _ in events]
+        assert "tool_revision" in kinds
+        # The invalid tail never streamed as text.
+        text = "".join(p.get("text", "") for k, p in events if k == "delta")
+        assert "curio.v1" not in text and "toolRequest" not in text
+        done = events[-1][1]
+        assert any(p["type"] == "proposal" for p in done["content"])
+
+
 class TestFenceAgnosticPlanRecognition:
     """dev/56 — the user's exact scenario: a valid plan in a ```json fence
     with prose after it must mint; the runtime meets the model where it
@@ -6929,6 +7260,68 @@ class TestPackageRecommendationTools:
         assert body["installedPackage"] == {"dirName": self.PKG, "name": "Weather Analysis"}
         assert self.PKG in self._lockfile(client, user, alice_project)
 
+    def test_apply_says_when_an_installed_library_cannot_be_imported(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The applied turn is the last place this is connectable to the package.
+
+        pip counts matching metadata as satisfaction, so a wheel whose native
+        extension cannot load installs without complaint - and this apply threw
+        the install's verdict away, logged "Applied: package installed", and
+        left the user to meet it as a node ImportError with nothing tying the
+        two together. Reported, not refused: the package IS installed and the
+        repair is the user's.
+        """
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(
+            pip_runner, "import_failures",
+            lambda deps: {"rasterio": "ImportError: DLL load failed"},
+        )
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(self.PKG), "Proposed - review above."],
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        # The install stands ...
+        assert body["mutationApplied"] is True
+        assert self.PKG in self._lockfile(client, user, alice_project)
+        # ... and it says which library and why.
+        assert body["importErrors"] == {"rasterio": "ImportError: DLL load failed"}
+
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        applied = [t for t in turns if "package installed" in json.dumps(t)]
+        assert applied, turns
+        text = json.dumps(applied[-1])
+        assert "rasterio" in text and "cannot be imported" in text, text
+
+    def test_apply_stays_quiet_when_the_libraries_work(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The success control: a working package must not grow a warning."""
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(self.PKG), "Proposed - review above."],
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+
+        body = resp.get_json()
+        assert body["mutationApplied"] is True
+        assert "importErrors" not in body, body
+
     def test_mint_refuses_builtin_unknown_and_installed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.packages.services import install_to_project
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -7375,13 +7768,17 @@ class TestRestartHonestyOnApply:
         build_jobs.reset_registry()
 
     def _apply_draft_with_pip(self, client, token, alice_project, monkeypatch,
-                              *, installed, skipped):
+                              *, installed, skipped, import_errors=None):
         from utk_curio.backend.app.packages import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "install_python_deps",
             lambda deps, on_line=None: pip_runner.InstallReport(
                 installed=list(installed), skipped=list(skipped)),
+        )
+        # The probe spawns a real interpreter, so it is always stubbed here.
+        monkeypatch.setattr(
+            pip_runner, "import_failures", lambda deps: dict(import_errors or {}),
         )
         helper = TestPackageBuilderTools()
         params = helper._draft_params()
@@ -7417,6 +7814,38 @@ class TestRestartHonestyOnApply:
                             if "Applied: package" in (t.get("text") or ""))
         assert "Restart Curio to pick up weather-sdk" in applied_text
         assert "previously loaded versions" in applied_text
+
+    def test_a_library_that_cannot_be_imported_is_reported_on_the_applied_turn(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """The turn that claims the package installed must not overclaim.
+
+        pip counts metadata as satisfaction, so a wheel whose native extension
+        cannot load promotes "successfully". This turn is the last place the
+        failure is still connectable to the package that introduced it - after
+        it, the user meets a node's ImportError with nothing linking the two.
+        """
+        _, token = user_and_token
+        body, turns = self._apply_draft_with_pip(
+            client, token, alice_project, monkeypatch,
+            installed=["weather-sdk"], skipped=[],
+            import_errors={"weather-sdk": "ImportError: DLL load failed"})
+
+        applied_text = next(t["text"] for t in turns
+                            if "Applied: package" in (t.get("text") or ""))
+        assert "cannot be imported" in applied_text
+        assert "DLL load failed" in applied_text
+        # The package itself still installed - this is a warning, not a rollback.
+        assert body["status"] == "applied"
+
+    def test_working_libraries_add_no_warning(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        _, turns = self._apply_draft_with_pip(
+            client, token, alice_project, monkeypatch,
+            installed=["weather-sdk"], skipped=[])
+        applied_text = next(t["text"] for t in turns
+                            if "Applied: package" in (t.get("text") or ""))
+        assert "cannot be imported" not in applied_text
 
     def test_skipped_only_apply_stays_silent(
             self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -7488,9 +7917,86 @@ class TestProviderModels:
     model only shows up much later as a failed agent run. So the panel asks the
     endpoint what it serves - and it has to be able to ask *before* the user
     saves, which is why this is a POST carrying the credentials on screen.
+
+    #241 made the answer hybrid, and both halves come from the API. Anthropic
+    and Gemini are now actually *asked* (the route used to report them
+    unlistable without trying, which was not true), and when a live listing
+    cannot happen the route replays what that endpoint last reported rather than
+    answering with an error and an empty box.
+
+    Nothing here is authored: the fallback is a recording, so the tests below
+    always establish it by performing a successful fetch first. And nothing is
+    ever an allowlist - no assertion here should ever say a model was refused.
     """
 
     URL = "/api/agents/provider-models"
+
+    @pytest.fixture(autouse=True)
+    def _no_real_calls(self, monkeypatch):
+        """Make an unstubbed provider call fail loudly instead of dialling out.
+
+        The suite's ``DEFAULT_LLM_BASE_URL`` is unroutable on purpose so a
+        forgotten stub cannot reach anything - but that only protects the
+        OpenAI-compatible path. The Anthropic and Gemini SDKs ignore
+        ``base_url`` and always talk to their own hosts, so listing them needs
+        its own net. Each ``_fake_*`` helper below overrides these.
+        """
+        import anthropic
+        import google.generativeai as genai
+        import openai
+
+        def _boom(*_a, **_k):
+            raise AssertionError("this test reached a real provider SDK")
+
+        monkeypatch.setattr(openai, "OpenAI", _boom)
+        monkeypatch.setattr(anthropic, "Anthropic", _boom)
+        monkeypatch.setattr(genai, "configure", _boom)
+        monkeypatch.setattr(genai, "list_models", _boom)
+
+    @pytest.fixture(autouse=True)
+    def _fresh_store(self, tmp_path, monkeypatch):
+        """Give each case its own suggestion store.
+
+        The fallback is a recording now, so a leaked one from a previous test
+        would let a case pass without ever having fetched anything.
+        """
+        from utk_curio.backend.app.agents import model_catalog
+
+        monkeypatch.setattr(model_catalog, "_users_base", lambda: tmp_path)
+
+    @staticmethod
+    def _no_deployment_key(monkeypatch):
+        """Drop the suite's stand-in operator key.
+
+        ``conftest`` configures one for every agents test, and the route
+        inherits it for any field the caller left blank - which is exactly the
+        behaviour under test when the question is "what happens with no key".
+        """
+        from utk_curio.backend.app.agents import provider_config
+
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "")
+
+    @staticmethod
+    def _no_deployment_base_url(monkeypatch):
+        """Resolve to plain OpenAI rather than the suite's custom endpoint."""
+        from utk_curio.backend.app.agents import provider_config
+
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "")
+
+    @staticmethod
+    def _no_deployment_model(monkeypatch):
+        """Ship the real default: an operator key with no model named.
+
+        ``conftest`` pins ``DEFAULT_LLM_MODEL`` to a stand-in for every test in
+        this package, which means ``resolve_provider_config`` always finds a
+        model and its "no model" refusal is never reached here. That pin is what
+        hid the bug this helper exists to expose: ``CURIO_DEFAULT_LLM_MODEL``
+        ships empty while an operator may well set the key, and the listing
+        route used to lose the key along with the refused config.
+        """
+        from utk_curio.backend.app.agents import provider_config
+
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "")
 
     @staticmethod
     def _fake_openai(monkeypatch, *, models=(), raises=None):
@@ -7520,6 +8026,56 @@ class TestProviderModels:
         monkeypatch.setattr(openai, "OpenAI", _Client)
         return seen
 
+    @staticmethod
+    def _fake_anthropic(monkeypatch, *, models=(), raises=None):
+        """Stand in for the Anthropic SDK's ``client.models.list()``."""
+        seen = {}
+
+        class _Models:
+            def list(self):
+                if raises is not None:
+                    raise raises
+                return [type("M", (), {"id": i})() for i in models]
+
+        class _Client:
+            def __init__(self, **kwargs):
+                seen.update(kwargs)
+                self.models = _Models()
+
+        import anthropic
+
+        monkeypatch.setattr(anthropic, "Anthropic", _Client)
+        return seen
+
+    @staticmethod
+    def _fake_gemini(monkeypatch, *, models=(), raises=None):
+        """Stand in for ``google.generativeai.list_models()``.
+
+        *models* is a list of ``(name, methods)`` pairs because the real listing
+        mixes chat models with embedding and tuning-only ones, and filtering
+        those out is the part worth testing.
+        """
+        seen = {}
+
+        def _configure(**kwargs):
+            seen.update(kwargs)
+
+        def _list_models():
+            if raises is not None:
+                raise raises
+            return [
+                type("M", (), {"name": n, "supported_generation_methods": ms})()
+                for n, ms in models
+            ]
+
+        import google.generativeai as genai
+
+        monkeypatch.setattr(genai, "configure", _configure)
+        monkeypatch.setattr(genai, "list_models", _list_models)
+        return seen
+
+    # -- the live path ----------------------------------------------------
+
     def test_lists_what_the_endpoint_serves(self, client, user_and_token, monkeypatch):
         self._fake_openai(monkeypatch, models=["llama4-nim", "gemma4"])
         _, token = user_and_token
@@ -7533,7 +8089,10 @@ class TestProviderModels:
             },
         ).get_json()
         # Sorted, so the menu order does not depend on the server's.
-        assert body == {"models": ["gemma4", "llama4-nim"], "listable": True}
+        assert body["models"] == ["gemma4", "llama4-nim"]
+        assert body["listable"] is True
+        assert body["source"] == "live"
+        assert body["warning"] is None
 
     def test_uses_the_credentials_in_the_request(self, client, user_and_token, monkeypatch):
         # The panel calls this mid-edit, before Save. Listing against the saved
@@ -7552,24 +8111,149 @@ class TestProviderModels:
         assert seen["base_url"] == "https://typed.example.test/"
         assert seen["api_key"] == "sk-typed"
 
-    def test_a_provider_without_a_listing_is_not_an_error(
+    def test_anthropic_is_asked_rather_than_assumed_unlistable(
         self, client, user_and_token, monkeypatch
     ):
-        # Anthropic and Gemini have no OpenAI-shaped /models. Saying so lets the
-        # panel keep its free-text box rather than show an empty menu.
-        self._fake_openai(monkeypatch, models=["unused"])
-        _, token = user_and_token
-        res = client.post(
-            self.URL, headers=_auth(token), json={"apiType": "anthropic"},
+        # #241: the route used to answer {"models": [], "listable": false} for
+        # Anthropic without calling anything, and the panel rendered that as
+        # "This provider does not publish a model list."
+        seen = self._fake_anthropic(
+            monkeypatch, models=["claude-sonnet-5", "claude-haiku-4-5"],
         )
-        assert res.status_code == 200
-        assert res.get_json() == {"models": [], "listable": False}
+        _, token = user_and_token
+        body = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "apiKey": "sk-ant-typed"},
+        ).get_json()
+        assert seen["api_key"] == "sk-ant-typed"
+        assert body["listable"] is True
+        assert "claude-sonnet-5" in body["models"]
 
-    def test_a_rejected_key_is_a_400_that_says_why(
+    def test_gemini_offers_only_models_that_can_chat(
         self, client, user_and_token, monkeypatch
     ):
-        # The user is mid-edit and the message is what tells them which field is
-        # wrong, so it has to reach them rather than becoming a bare 500.
+        # The real listing mixes in embedding and tuning-only models. Offering
+        # one as the chat model fails at the first agent run, not here.
+        self._fake_gemini(
+            monkeypatch,
+            models=[
+                ("models/gemini-2.0-flash", ["generateContent", "countTokens"]),
+                ("models/text-embedding-004", ["embedContent"]),
+            ],
+        )
+        _, token = user_and_token
+        body = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "gemini", "apiKey": "AIza-typed"},
+        ).get_json()
+        # And the "models/" prefix is stripped: every other place in Curio
+        # names the bare id.
+        assert body["models"] == ["gemini-2.0-flash"]
+        assert body["listable"] is True
+
+    # -- the curated fallback ---------------------------------------------
+
+    def test_a_provider_that_cannot_be_reached_replays_its_last_listing(
+        self, client, user_and_token, monkeypatch
+    ):
+        # An error and an empty box leaves the user with nothing to pick. What
+        # the endpoint said last time, plus why we could not ask now, leaves
+        # them able to finish.
+        _, token = user_and_token
+        body_json = {"apiType": "anthropic", "apiKey": "sk-ant-typed"}
+
+        self._fake_anthropic(monkeypatch, models=["claude-sonnet-5"])
+        assert client.post(self.URL, headers=_auth(token), json=body_json).status_code == 200
+
+        self._fake_anthropic(monkeypatch, raises=RuntimeError("connection refused"))
+        res = client.post(self.URL, headers=_auth(token), json=body_json)
+        assert res.status_code == 200
+        body = res.get_json()
+        assert body["source"] == "remembered"
+        assert body["listable"] is False
+        assert body["models"] == ["claude-sonnet-5"]
+        assert body["rememberedAt"], "the panel has to be able to say when"
+        assert "connection refused" in body["warning"]
+
+    def test_a_live_listing_becomes_the_next_fallback(
+        self, client, user_and_token, monkeypatch
+    ):
+        # The recording is refreshed on every success, which is the whole point:
+        # the suggestions track the provider without anyone maintaining them.
+        _, token = user_and_token
+        body_json = {"apiType": "gemini", "apiKey": "AIza-typed"}
+
+        self._fake_gemini(
+            monkeypatch, models=[("models/old-model", ["generateContent"])],
+        )
+        client.post(self.URL, headers=_auth(token), json=body_json)
+        self._fake_gemini(
+            monkeypatch, models=[("models/new-model", ["generateContent"])],
+        )
+        client.post(self.URL, headers=_auth(token), json=body_json)
+
+        self._fake_gemini(monkeypatch, raises=RuntimeError("offline"))
+        body = client.post(self.URL, headers=_auth(token), json=body_json).get_json()
+        assert body["models"] == ["new-model"]
+
+    def test_no_key_replays_the_last_listing_without_a_round_trip(
+        self, client, user_and_token, monkeypatch
+    ):
+        # Every provider authenticates its models endpoint, so sending a
+        # placeholder key only buys a socket timeout for a foregone 401. The
+        # autouse guard is the assertion that nothing was dialled.
+        _, token = user_and_token
+
+        self._fake_anthropic(monkeypatch, models=["claude-sonnet-5"])
+        client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "apiKey": "sk-ant-typed"},
+        )
+
+        self._no_deployment_key(monkeypatch)
+        body = client.post(
+            self.URL, headers=_auth(token), json={"apiType": "anthropic"},
+        ).get_json()
+        assert body["source"] == "remembered"
+        assert body["models"] == ["claude-sonnet-5"]
+        assert "API key" in body["warning"]
+
+    def test_a_recording_is_scoped_to_the_endpoint_that_produced_it(
+        self, client, user_and_token, monkeypatch
+    ):
+        # One provider's models must never be offered for another, and a custom
+        # endpoint is its own provider even under the same api_type.
+        _, token = user_and_token
+        self._fake_anthropic(monkeypatch, models=["claude-sonnet-5"])
+        client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "apiKey": "sk-ant-typed"},
+        )
+
+        self._no_deployment_key(monkeypatch)
+        self._no_deployment_base_url(monkeypatch)
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "openai_compatible", "baseUrl": "http://ollama.test/v1"},
+        )
+        # Nothing was ever recorded for that endpoint, so there is nothing to
+        # replay - not Anthropic's list.
+        assert res.status_code == 400
+
+    # -- when there is nothing to fall back to ----------------------------
+
+    def test_a_rejected_key_with_nothing_recorded_is_a_400_that_says_why(
+        self, client, user_and_token, monkeypatch
+    ):
+        # Nothing has ever been recorded for this endpoint, so the reason IS
+        # the answer. The user is mid-edit and the message is what tells them
+        # which field is wrong, so it has to reach them rather than becoming a
+        # bare 500.
         self._fake_openai(
             monkeypatch, raises=RuntimeError("401 invalid proxy server token"),
         )
@@ -7577,16 +8261,36 @@ class TestProviderModels:
         res = client.post(
             self.URL,
             headers=_auth(token),
-            json={"apiType": "openai_compatible", "baseUrl": "https://x.test/"},
+            json={
+                "apiType": "openai_compatible",
+                "baseUrl": "https://x.test/",
+                "apiKey": "sk-wrong",
+            },
         )
         assert res.status_code == 400
         assert "invalid proxy server token" in res.get_json()["error"]
 
+    def test_a_new_account_with_no_key_is_told_to_add_one(
+        self, client, user_and_token, monkeypatch
+    ):
+        # The honest cold start: nothing recorded, no key, so no suggestions -
+        # and the Model field stays free text, which costs nothing.
+        self._no_deployment_key(monkeypatch)
+        _, token = user_and_token
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "openai_compatible", "baseUrl": "https://x.test/"},
+        )
+        assert res.status_code == 400
+        assert "API key" in res.get_json()["error"]
+
     def test_an_unconfigured_account_can_still_ask(
         self, client, user_and_token, monkeypatch
     ):
-        # resolve_provider_config raises when no model is set, and "no model
-        # yet" is the normal state of someone about to choose one here.
+        # An account with nothing saved asks with only what is on screen. Note
+        # this omits apiType, so it also pins that a missing provider is
+        # inherited from the resolved account.
         self._fake_openai(monkeypatch, models=["gemma4"])
         _, token = user_and_token
         res = client.post(
@@ -7597,6 +8301,194 @@ class TestProviderModels:
         assert res.status_code == 200
         assert res.get_json()["models"] == ["gemma4"]
 
+    def test_a_deployment_key_is_not_lost_when_no_default_model_is_set(
+        self, client, user_and_token, monkeypatch
+    ):
+        """A model is what this screen is for, so it cannot gate asking (#241).
+
+        ``resolve_provider_config`` refuses when no model resolves, and the
+        route threw the whole config away with the refusal - including the
+        operator's API key. Since ``CURIO_DEFAULT_LLM_MODEL`` ships empty, an
+        operator who deploys a key and leaves the model to their users had
+        every one of them told to add a key the server was already holding.
+        """
+        self._no_deployment_model(monkeypatch)
+        seen = self._fake_openai(monkeypatch, models=["gemma4"])
+        _, token = user_and_token
+
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "openai_compatible", "baseUrl": "", "apiKey": ""},
+        )
+
+        assert res.status_code == 200, res.get_json()
+        assert res.get_json()["models"] == ["gemma4"]
+        # The deployment's credentials were used, not discarded.
+        assert seen["api_key"] == "test-key"
+        assert seen["base_url"] == "http://127.0.0.1:9/v1"
+
+    def test_a_key_saved_for_one_provider_is_not_lent_to_another(
+        self, client, db, user_and_token, monkeypatch
+    ):
+        """One credential per account must not mean one credential everywhere.
+
+        The account holds a single provider triple, and the route filled every
+        blank field from it regardless of which tab asked. So opening Anthropic
+        with an Ollama credential saved listed the Ollama endpoint and labelled
+        the answer "From this endpoint" - the exact class of unverified claim
+        #241 exists to remove.
+        """
+        self._no_deployment_key(monkeypatch)
+        user, token = user_and_token
+        user.llm_api_type = "openai_compatible"
+        user.llm_base_url = "http://ollama.local/v1"
+        user.llm_api_key = "sk-ollama-secret"
+        db.session.commit()
+
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "baseUrl": "", "apiKey": ""},
+        )
+
+        # Refused for want of a key, rather than answered with another
+        # provider's. The Anthropic SDK is booby-trapped by _no_real_calls, so
+        # a leak would fail loudly here instead of passing quietly.
+        assert res.status_code == 400
+        assert "API key" in res.get_json()["error"]
+
+    def test_a_typed_endpoint_is_not_handed_another_endpoints_key(
+        self, client, user_and_token, monkeypatch
+    ):
+        """Typing a URL must not post the operator's secret to it.
+
+        The Custom tab sends a base URL the user typed. Inheriting the blank
+        key alongside it sent whatever the account resolved - here the
+        deployment's key - to a host neither the operator nor the user chose.
+        """
+        seen = self._fake_openai(monkeypatch, models=["anything"])
+        _, token = user_and_token
+
+        res = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={
+                "apiType": "openai_compatible",
+                "baseUrl": "http://typed.example.test/v1",
+                "apiKey": "",
+            },
+        )
+
+        assert res.status_code == 400
+        assert "API key" in res.get_json()["error"]
+        # The strong half: the SDK was never even constructed, so nothing was
+        # sent anywhere. An assertion on the status alone would still pass if
+        # the key leaked and the endpoint merely refused it.
+        assert seen == {}
+
+    def test_a_recording_is_filed_under_the_endpoint_that_answered(
+        self, client, user_and_token, monkeypatch
+    ):
+        """Record and replay have to agree on which endpoint spoke.
+
+        The base URL is part of an endpoint's identity, so inheriting the
+        deployment's URL into an Anthropic request filed that listing under
+        ``anthropic@<the openai-compatible url>``. The replay then looked for it
+        under plain ``anthropic`` and missed.
+        """
+        self._fake_anthropic(monkeypatch, models=["claude-haiku-4-5"])
+        _, token = user_and_token
+        recorded = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "baseUrl": "", "apiKey": "sk-typed"},
+        )
+        assert recorded.status_code == 200
+        assert recorded.get_json()["models"] == ["claude-haiku-4-5"]
+
+        # The recording must be filed under "anthropic", not under anthropic
+        # plus whatever unrelated base URL the account happened to resolve to.
+        # Proven by moving that URL: the replay below can only find the entry if
+        # the deployment's endpoint never entered its identity in the first
+        # place. Without the fix the write went to
+        # ``anthropic@http://127.0.0.1:9/v1`` and this lookup misses.
+        self._no_deployment_base_url(monkeypatch)
+        self._no_deployment_key(monkeypatch)
+        replayed = client.post(
+            self.URL,
+            headers=_auth(token),
+            json={"apiType": "anthropic", "baseUrl": "", "apiKey": ""},
+        )
+
+        assert replayed.status_code == 200, replayed.get_json()
+        body = replayed.get_json()
+        assert body["source"] == "remembered"
+        assert body["models"] == ["claude-haiku-4-5"]
+
     def test_requires_auth(self, client):
         assert client.post(self.URL, json={}).status_code == 401
 
+
+
+class TestReadDefinition:
+    """``GET /api/agents/definitions/<coord>`` reads from wherever the agent is (#275).
+
+    It read the user store only, so "View details -> Export" on the Agent
+    Catalog page - which lists the whole roster and the shared catalog - failed
+    for any agent this account had not imported, including every built-in, and
+    the page could only say "Export failed".
+    """
+
+    BUILTIN = "agent.node-researcher@1.0.0"
+
+    def test_a_builtin_is_readable_without_ever_importing_it(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        r = client.get(f"/api/agents/definitions/{self.BUILTIN}", headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        assert body["manifest"]["id"] == "agent.node-researcher"
+        assert body["manifest"]["provenance"]["trust"] == "built-in"
+        declared = {asset["path"] for asset in body["manifest"]["prompts"].values()}
+        assert declared, "a built-in declares its prompt files"
+        # Every declared prompt travels with its text, from llm-prompts/.
+        assert declared <= set(body["prompts"]), (declared, set(body["prompts"]))
+        assert all(body["prompts"][p].strip() for p in declared)
+
+    def test_an_owned_import_is_readable(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        coord = _write_def(user)
+        r = client.get(f"/api/agents/definitions/{coord}", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.get_json()["manifest"]["id"] == "agent.node-explainer"
+
+    def test_a_published_only_definition_is_readable(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        coord = _write_def(user, agent_id="agent.shared-only")
+        src = storage.agent_definition_dir(_user_dir_key(user), coord)
+        publications.publish_from_dir(src, coord)
+        shutil.rmtree(src)  # this account no longer holds a copy
+
+        r = client.get(f"/api/agents/definitions/{coord}", headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["manifest"]["id"] == "agent.shared-only"
+
+    def test_an_unknown_coordinate_is_still_404(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        r = client.get("/api/agents/definitions/agent.nope@1.0.0", headers=_auth(token))
+        assert r.status_code == 404
+        assert "agent.nope@1.0.0" in r.get_json()["error"]
+
+    def test_an_exported_builtin_round_trips_through_upload(self, client, user_and_token, tmp_curio):
+        """What Export writes for a built-in, Import accepts - under a new id."""
+        _, token = user_and_token
+        bundle = client.get(f"/api/agents/definitions/{self.BUILTIN}", headers=_auth(token)).get_json()
+        manifest = dict(bundle["manifest"])
+        manifest["id"] = "agent.node-researcher-copy"
+        manifest["provenance"] = {"publisher": "alice", "trust": "imported"}
+        r = client.post(
+            "/api/agents/imports/upload",
+            json={"manifest": manifest, "prompts": bundle["prompts"]},
+            headers=_auth(token),
+        )
+        assert r.status_code in (200, 201), r.get_json()

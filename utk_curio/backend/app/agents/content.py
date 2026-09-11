@@ -205,23 +205,111 @@ _TOOL_PARAM_BUDGETS = {
     "package.draft.apply": PLAN_TAIL_MAX_BYTES,  # dev/89
 }
 
+# #245: the mutate contracts whose params carry a node's SOURCE — the very
+# bytes their mints already accept up to PROPOSAL_CONTENT_MAX_CHARS. The
+# classic 1KB params cap refused at PARSE time what the mint accepts at 64KB,
+# so every non-trivial node.create failed open (§4.2) and the model's whole
+# request landed in the chat as raw JSON with no node and no review card.
+#
+# The budget is scoped to the CONTENT FIELD, not to the tool: a per-tool
+# budget would also hand the tool's other params a 256KB allowance, which is
+# exactly the smuggling shape the dev/89 tail tests pin against. The path is
+# per-tool because node.template.create NESTS its content one level down.
+_CONTENT_PARAM_PATHS = {
+    "node.create": ("content",),
+    "node.content.write": ("content",),
+    "node.template.create": ("template", "content"),
+}
+# Everything BESIDE the content field keeps a classic-tail budget: nodeType,
+# nodeId, title, goal and appearance are tiny, and node.template.create's
+# justification is prose the review card shows. Not the 1KB tool cap (that
+# would starve the justification), and never the plan budget.
+_CONTENT_PARAM_REST_MAX_BYTES = TAIL_MAX_BYTES
 
-def _parse_tool_request(raw: object) -> dict | None:
+#: The tools whose TAIL may exceed TAIL_MAX_BYTES (both gates in parse_parts).
+_BIG_TAIL_TOOLS = frozenset(_TOOL_PARAM_BUDGETS) | frozenset(_CONTENT_PARAM_PATHS)
+
+
+def _pop_content_field(params: dict, path: tuple[str, ...]) -> tuple[str | None, dict]:
+    """Split *params* into ``(content_string, everything_else)`` for a
+    content-class tool.
+
+    The field is lifted only when it is actually a ``str``: a wrong-typed one
+    stays in the remainder, so the mint's own "must be a non-empty string"
+    refusal still fires and small malformed payloads behave exactly as before.
+    """
+    cursor: object = params
+    for key in path[:-1]:
+        if not isinstance(cursor, dict):
+            return None, params
+        cursor = cursor.get(key)
+    if not isinstance(cursor, dict) or not isinstance(cursor.get(path[-1]), str):
+        return None, params
+    content_text = cursor[path[-1]]
+    # Shallow copies down the path — the caller's params are never mutated.
+    rest = dict(params)
+    branch = rest
+    for key in path[:-1]:
+        branch[key] = dict(branch[key])
+        branch = branch[key]
+    branch.pop(path[-1], None)
+    return content_text, rest
+
+
+def parse_tool_request_verbose(raw: object) -> tuple[dict | None, list[str]]:
+    """Validate one ``toolRequest`` payload with field-level errors (#245).
+
+    The verbose sibling of :func:`_parse_tool_request`, mirroring the plan
+    pair (:func:`_parse_dataflow_plan` / :func:`_parse_dataflow_plan_verbose`):
+    the runtime's correction rounds feed these strings back to the model, so
+    each one must name the real field path and the real number.
+    """
     if not isinstance(raw, dict):
-        return None
+        return None, ["toolRequest must be an object"]
     tool = raw.get("tool")
     if not (isinstance(tool, str) and _TOOL_ID_RE.match(tool)):
-        return None
+        return None, ["toolRequest.tool must be a tool id like node.create"]
     params = raw.get("params", {})
     if not isinstance(params, dict):
-        return None
-    try:
+        return None, ["toolRequest.params must be an object"]
+    errors: list[str] = []
+    path = _CONTENT_PARAM_PATHS.get(tool)
+    if path is not None:
+        where = "params." + ".".join(path)
+        content_text, rest = _pop_content_field(params, path)
+        if content_text is not None and len(content_text) > PROPOSAL_CONTENT_MAX_CHARS:
+            errors.append(
+                f"{where} is {len(content_text)} chars "
+                f"(max {PROPOSAL_CONTENT_MAX_CHARS})"
+            )
+        try:
+            rest_bytes = len(json.dumps(rest).encode("utf-8"))
+        except (TypeError, ValueError) as exc:
+            return None, [f"toolRequest.params is not JSON-serializable: {exc}"]
+        if rest_bytes > _CONTENT_PARAM_REST_MAX_BYTES:
+            errors.append(
+                f"the params other than {where} are {rest_bytes} bytes "
+                f"(max {_CONTENT_PARAM_REST_MAX_BYTES}) — put the code in "
+                f"{where}, not in other fields"
+            )
+    else:
         budget = _TOOL_PARAM_BUDGETS.get(tool, _TOOL_PARAMS_MAX_BYTES)
-        if len(json.dumps(params).encode("utf-8")) > budget:
-            return None
-    except (TypeError, ValueError):
-        return None
-    return {"type": "toolRequest", "tool": tool, "params": params}
+        try:
+            params_bytes = len(json.dumps(params).encode("utf-8"))
+        except (TypeError, ValueError) as exc:
+            return None, [f"toolRequest.params is not JSON-serializable: {exc}"]
+        if params_bytes > budget:
+            errors.append(f"toolRequest.params is {params_bytes} bytes (max {budget})")
+    if errors:
+        return None, errors
+    return {"type": "toolRequest", "tool": tool, "params": params}, []
+
+
+def _parse_tool_request(raw: object) -> dict | None:
+    """Strict-parse contract (the T2 rule): a valid request or ``None`` — the
+    verbose sibling carries the correction detail (#245)."""
+    request, errors = parse_tool_request_verbose(raw)
+    return request if not errors else None
 
 
 def _bounded_str(value: object, max_chars: int) -> str | None:
@@ -600,6 +688,70 @@ def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     return errors
 
 
+def tool_tail_diagnosis(tail_body: str | None) -> list[str] | None:
+    """Classify a terminal tail body as a toolRequest attempt (#245).
+
+    The ``plan_tail_diagnosis`` twin, and the same three-way contract:
+    ``None`` — not a request attempt, so generic fail-open applies untouched;
+    ``[]`` — a valid request; ``[errors]`` — a request attempt with correctable
+    problems, JSON breakage included, which is exactly what the corrective
+    round feeds back.
+    """
+    if not isinstance(tail_body, str) or '"toolRequest"' not in tail_body:
+        return None
+    try:
+        payload = json.loads(tail_body)
+    except (ValueError, TypeError) as exc:
+        return [f"the block is not valid JSON: {exc}"]
+    if not isinstance(payload, dict) or "toolRequest" not in payload:
+        return None
+    _, errors = parse_tool_request_verbose(payload["toolRequest"])
+    return errors
+
+
+def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
+    """Fence-agnostic toolRequest recognition (#245) — the dev/56 treatment
+    plans already get, applied to tool requests.
+
+    Consulted only after the terminal curio.v1 paths found nothing. Live
+    models put the block in a ```json fence, or follow it with a closing
+    sentence, either of which demotes a perfectly good request to inert text —
+    and for a mutate tool that text is a whole source file rendered as chat.
+
+    Scans every fenced block for a request payload: ``{"toolRequest": …}`` or
+    the bare ``{"tool": …, "params": {…}}`` object. Returns
+    ``(reply_with_the_block_stripped, payload)`` where payload is the raw
+    request dict, the unparseable block body (``str`` — so the JSON error still
+    feeds back), or ``None`` when the reply carries no request attempt. The
+    caller owns the grant check: this is grammar, not authority.
+    """
+    if not isinstance(reply, str) or "```" not in reply:
+        return reply, None
+    for match in reversed(list(_FENCE_RE.finditer(reply))):
+        body = match.group(1)
+        marked = '"toolRequest"' in body
+        if not marked and '"tool"' not in body:
+            continue
+        if len(body.encode("utf-8")) > PLAN_TAIL_MAX_BYTES:
+            continue
+        stripped = (reply[: match.start()] + reply[match.end():]).strip()
+        try:
+            payload = json.loads(body)
+        except (ValueError, TypeError):
+            if marked:
+                return stripped, body  # a request-ish block with broken JSON
+            continue  # a broken unmarked block is too ambiguous to claim
+        if not isinstance(payload, dict):
+            continue
+        if isinstance(payload.get("toolRequest"), dict):
+            return stripped, payload["toolRequest"]
+        # The wrapper-less form: a bare request object. Claimed only on the
+        # full shape, so a chatty JSON block never parses as one by accident.
+        if isinstance(payload.get("tool"), str) and isinstance(payload.get("params"), dict):
+            return stripped, payload
+    return reply, None
+
+
 def _parse_delegate_request(raw: object) -> dict | None:
     if not isinstance(raw, dict):
         return None
@@ -643,11 +795,11 @@ def parse_parts(body: str) -> list[dict] | None:
         # Plans get their own budget (dev/52; the toolRequest form too,
         # dev/55): the classic cap was sized for prompts/tool requests. The
         # substring check bounds json.loads cost before parsing; the
-        # payload-key check below closes the loophole.
+        # payload-key check below closes the loophole. #245 adds the
+        # content-class node tools, whose params carry a node's source.
         if body_bytes > PLAN_TAIL_MAX_BYTES or (
             '"dataflowPlan"' not in body
-            and '"dataflow.plan.write"' not in body
-            and '"package.draft.apply"' not in body  # dev/89: draft-class tails
+            and not any(f'"{tool}"' in body for tool in _BIG_TAIL_TOOLS)
             # dev/90 A6: authoring delegations carry look specs + findings.
             and not ('"delegateRequest"' in body and any(
                 f'"{capability}"' in body
@@ -663,12 +815,14 @@ def parse_parts(body: str) -> list[dict] | None:
     if body_bytes > TAIL_MAX_BYTES and "dataflowPlan" not in payload:
         req = payload.get("toolRequest")
         delegate_req = payload.get("delegateRequest")
-        big_tool = (isinstance(req, dict)
-                    and req.get("tool") in ("dataflow.plan.write", "package.draft.apply"))
+        big_tool = isinstance(req, dict) and req.get("tool") in _BIG_TAIL_TOOLS
         big_delegate = (isinstance(delegate_req, dict)  # dev/90 A6
                         and delegate_req.get("capability") in PACKAGE_AUTHORING_CAPABILITIES)
         if not (big_tool or big_delegate):
             return None  # the enlarged budget is for plan/draft/authoring payloads only
+        # A content-class tool's enlarged tail is spent on its CONTENT FIELD;
+        # parse_tool_request_verbose still holds every other param to the
+        # classic cap, so a padded non-content param cannot ride it (#245).
     if "proposal" in payload or "proposals" in payload:
         return None  # never accepted from the model (memo dev/41 §4.1)
     if "toolRequest" in payload and "delegateRequest" in payload:
@@ -756,6 +910,47 @@ def extract_content(reply: str) -> tuple[str, list[dict]]:
     return visible, parts
 
 
+# The tool whose grant means an agent is expected to propose dataset candidates.
+# Used to decide whether the candidates schema belongs in this run's tail.
+_CANDIDATES_TOOL = "catalog.search"
+
+# The datasetCandidates schema, shown to agents that can actually produce one.
+#
+# The Dataset Finder's intent tells it to "propose candidates as ONE
+# datasetCandidates block with two lanes", but until this existed nothing ever
+# showed it the shape — the tail taught only suggestedPrompts and toolRequest.
+# Asked by name for a structured block whose syntax it had never seen, the model
+# invented one, usually XML. That is not a terminal ``curio.v1`` fence, so the
+# parser never saw it and the documented fail-open folded the raw markup into the
+# visible transcript, losing the whole candidates card along with it (#269).
+#
+# It lives here rather than in the prompt file for the same reason the rest of
+# the tail does (dev/38): an edited intent can neither strip nor spoof it.
+CANDIDATES_INSTRUCTION = (
+    "When you have dataset candidates to propose, end your reply with exactly "
+    "one fenced block of this form instead:\n"
+    "```curio.v1\n"
+    '{"datasetCandidates": {"lanes": {'
+    '"external": [{"name": "<dataset name>", '
+    '"sourceType": "api|endpoint|portal|catalog|document|database", '
+    '"url": "https://...", "provider": "<who publishes it>", '
+    '"format": "<e.g. GeoJSON>", "coverage": "<area and years>", '
+    '"requirement": "<key or licence needed, if any>", '
+    '"fit": {"score": 0, "rationale": "<why it fits>"}}], '
+    '"catalog": [{"name": "<dataset name>", '
+    '"datasetId": "<id from catalog.search>", "sourceType": "catalog", '
+    '"installed": false, '
+    '"fit": {"score": 0, "rationale": "<why it fits>"}}]}}}\n'
+    "```\n"
+    "Both lanes are optional but at least one row is required, at most 8 rows "
+    "each. Every catalog row needs the datasetId catalog.search returned; only "
+    "http(s) URLs are accepted; fit.score is 0-100. Names stay under 120 "
+    "characters and the other text fields under 160. Do not invent any other "
+    "markup for candidates — a block that does not match this shape is shown to "
+    "the user as raw text."
+)
+
+
 def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
     """The system-turn tail instruction for one run (memo dev/41).
 
@@ -764,11 +959,15 @@ def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
     exactly the granted ids with their registry descriptions and the
     ``toolRequest`` syntax. The list is server-resolved grants — never the
     manifest's raw declarations.
+
+    A run that can search the catalog also gets the ``datasetCandidates`` schema
+    (#269): those agents are asked for that block by name, so they have to be
+    told what it looks like.
     """
     if not grants:
         return TAIL_INSTRUCTION
     lines = "\n".join(f"- {tool_id}: {description}" for tool_id, description in grants)
-    return (
+    instruction = (
         f"{TAIL_INSTRUCTION}\n\n"
         "You may also use these tools, granted for this conversation:\n"
         f"{lines}\n"
@@ -779,6 +978,9 @@ def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
         '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n'
         "```"
     )
+    if any(tool_id == _CANDIDATES_TOOL for tool_id, _ in grants):
+        instruction = f"{instruction}\n\n{CANDIDATES_INSTRUCTION}"
+    return instruction
 
 
 def delegation_instruction(entries: list[tuple[str, str]]) -> str:

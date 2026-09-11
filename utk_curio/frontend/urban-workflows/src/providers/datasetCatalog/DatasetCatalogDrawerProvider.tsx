@@ -1,19 +1,14 @@
 import React, {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import { DatasetCatalogDrawer } from "../../components/datasets/catalog";
 import { useFlowContext } from "../FlowProvider";
 import { prefetchDatasetCatalog } from "../../services/datasetCatalog";
-
-const DRAWER_MOTION_MS = 300;
+import { useSlideDrawerPresentation } from "../../hook/useSlideDrawerPresentation";
 
 type DatasetCatalogDrawerContextValue = {
   openDatasetCatalogDrawer: () => void;
@@ -23,71 +18,15 @@ type DatasetCatalogDrawerContextValue = {
 
 const DatasetCatalogDrawerContext = createContext<DatasetCatalogDrawerContextValue | null>(null);
 
-function subscribeReducedMotion(onStoreChange: () => void): () => void {
-  const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-  mq.addEventListener("change", onStoreChange);
-  return () => mq.removeEventListener("change", onStoreChange);
-}
-
-function getReducedMotionSnapshot(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 export function DatasetCatalogDrawerProvider({ children }: { children: React.ReactNode }) {
   const { projectId } = useFlowContext();
-  const prefersReducedMotion = useSyncExternalStore(
-    subscribeReducedMotion,
-    getReducedMotionSnapshot,
-    () => false,
-  );
-  const [mounted, setMounted] = useState(false);
-  const [presented, setPresented] = useState(false);
-  const preOpenFocusRef = useRef<HTMLElement | null>(null);
-  const exitTimerRef = useRef<number | null>(null);
-  const exitSettledRef = useRef(false);
-
-  const clearExitTimer = useCallback(() => {
-    if (exitTimerRef.current != null) {
-      window.clearTimeout(exitTimerRef.current);
-      exitTimerRef.current = null;
-    }
-  }, []);
-
-  const finishClose = useCallback(() => {
-    if (exitSettledRef.current) return;
-    exitSettledRef.current = true;
-    clearExitTimer();
-    setPresented(false);
-    // Unmount the portal once the exit settles. Without this `mounted` stays
-    // true forever after the first open, leaking the drawer's effects and the
-    // DATASET_CATALOG_REFRESH_EVENT listener (and stacking duplicates on reopen).
-    setMounted(false);
-    const el = preOpenFocusRef.current;
-    preOpenFocusRef.current = null;
-    queueMicrotask(() => el?.focus?.());
-  }, [clearExitTimer]);
-
-  const closeDatasetCatalogDrawer = useCallback(() => {
-    clearExitTimer();
-    setPresented(false);
-    exitTimerRef.current = window.setTimeout(
-      finishClose,
-      prefersReducedMotion ? 0 : DRAWER_MOTION_MS + 80,
-    );
-  }, [clearExitTimer, finishClose, prefersReducedMotion]);
-
-  const openDatasetCatalogDrawer = useCallback(() => {
-    clearExitTimer();
-    exitSettledRef.current = false;
-    preOpenFocusRef.current = document.activeElement as HTMLElement | null;
-    setMounted(true);
-    if (prefersReducedMotion) {
-      setPresented(true);
-      return;
-    }
-    setPresented(false);
-    window.requestAnimationFrame(() => setPresented(true));
-  }, [clearExitTimer, prefersReducedMotion]);
+  const {
+    mounted,
+    presented,
+    open: openDatasetCatalogDrawer,
+    close: closeDatasetCatalogDrawer,
+    finishExit: finishClose,
+  } = useSlideDrawerPresentation();
 
   // Warm the catalog cache at startup so both surfaces are ready before the
   // user interacts with them: the drawer default query (includeHub) and the
@@ -106,24 +45,25 @@ export function DatasetCatalogDrawerProvider({ children }: { children: React.Rea
     });
   }, [projectId]);
 
+  // Gated on `mounted`, like its two peers: `presented` goes false a frame
+  // into the exit slide, which released the lock while the drawer was still
+  // visibly on screen and let the page jump behind it.
   useEffect(() => {
-    if (!presented) return;
+    if (!mounted) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prevOverflow;
     };
-  }, [presented]);
-
-  useEffect(() => () => clearExitTimer(), [clearExitTimer]);
+  }, [mounted]);
 
   const ctx = useMemo(
     () => ({
       openDatasetCatalogDrawer,
       closeDatasetCatalogDrawer,
-      isDatasetCatalogDrawerOpen: presented,
+      isDatasetCatalogDrawerOpen: mounted,
     }),
-    [closeDatasetCatalogDrawer, openDatasetCatalogDrawer, presented],
+    [closeDatasetCatalogDrawer, openDatasetCatalogDrawer, mounted],
   );
 
   const drawer = mounted

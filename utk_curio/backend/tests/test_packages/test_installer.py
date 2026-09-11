@@ -583,3 +583,178 @@ def test_validate_copy_lands_beside_the_tree_it_validates(tmp_curio, make_archiv
     assert seen, "the validate copy should declare an explicit parent dir"
     assert all(d and "package-staging" in d for d in seen), seen
 
+
+
+def test_zip_package_tree_is_what_both_install_and_export_emit(tmp_path):
+    """One zip writer for the catalog install and the export routes (#275).
+
+    The two loops were byte-for-byte copies; when export learned to read the
+    catalog they became one function, and this pins what it leaves out.
+    """
+    from utk_curio.backend.app.packages.installer import zip_package_tree
+
+    src = tmp_path / "pkg@1"
+    (src / "sources").mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    (src / "sources" / "a.py").write_text("print(1)", encoding="utf-8")
+    (src / "integrity.json").write_text("{}", encoding="utf-8")
+
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        names = zf.namelist()
+    assert names == ["manifest.json", "sources/a.py"]
+
+
+def test_a_published_catalog_package_can_be_installed_again(tmp_path):
+    """publish-catalog wrote a sidecar that catalog/install then refused.
+
+    ``record_publisher`` drops ``.curio-publisher.json`` beside a published
+    package, the member validator rejects a leading dot, and the catalog
+    install re-zips the directory to reuse that validator - so every route
+    reaching a catalog copy (the drawer install, "Reload from catalog", the
+    workflow-deps auto-install) answered "archive member has unsafe segment"
+    for anything published through Curio's own route.
+    """
+    from utk_curio.backend.app.packages.installer import (
+        _safe_member_path, zip_package_tree,
+    )
+    from utk_curio.backend.app.packages.publisher_record import record_publisher
+
+    src = tmp_path / "pkg@1"
+    (src / "sources").mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    (src / "sources" / "a.py").write_text("print(1)", encoding="utf-8")
+    record_publisher(tmp_path, "pkg@1", "7")
+    dotfiles = [p.name for p in src.iterdir() if p.name.startswith(".")]
+    assert dotfiles, "record_publisher wrote no sidecar; this test has no subject"
+
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        names = zf.namelist()
+
+    # Every member survives the validator the install runs them through, which
+    # is the check that used to raise. Asserted over the whole list rather than
+    # against one filename, so a second piece of catalog bookkeeping cannot
+    # reintroduce the bug under a different name.
+    for name in names:
+        _safe_member_path(name)
+    assert names == ["manifest.json", "sources/a.py"]
+
+
+def test_an_exported_archive_carries_nobodys_user_key(tmp_path):
+    """The same exclusion, for the other reason.
+
+    The sidecar records the publisher's ``userKey``, and ``zip_package_tree``
+    also builds what the export routes hand to another person. Read back
+    through ZipFile rather than searched for in the raw bytes: the members are
+    deflated, so a substring check over the blob passes whether the file is in
+    there or not.
+    """
+    from utk_curio.backend.app.packages.installer import zip_package_tree
+    from utk_curio.backend.app.packages.publisher_record import record_publisher
+
+    src = tmp_path / "pkg@1"
+    src.mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    record_publisher(tmp_path, "pkg@1", "someone-elses-key")
+
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        contents = b"".join(zf.read(n) for n in zf.namelist())
+
+    assert b"someone-elses-key" not in contents
+
+
+def test_a_published_package_does_not_read_as_stale_forever(tmp_path):
+    """The archive writer and the integrity hasher must agree on what a package IS.
+
+    They did not: ``zip_package_tree`` dropped the publisher record while
+    ``_build_integrity`` kept it, so the catalog digest of a published package
+    could never match the map written for a copy installed from it. The seeder
+    compares exactly those two, reads the mismatch as "the catalog has moved
+    on", and re-copies the package on every pass.
+    """
+    from utk_curio.backend.app.packages.installer import _build_integrity, zip_package_tree
+    from utk_curio.backend.app.packages.publisher_record import record_publisher
+
+    src = tmp_path / "pkg@1"
+    (src / "sources").mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    (src / "sources" / "a.py").write_text("print(1)", encoding="utf-8")
+    record_publisher(tmp_path, "pkg@1", "7")
+
+    catalog_digest = _build_integrity(src)
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        shipped = set(zf.namelist())
+
+    # What the seeder compares: the computed catalog map against the map an
+    # install of that same tree can produce.
+    assert set(catalog_digest) == shipped
+
+
+def test_the_publisher_record_is_not_copied_into_a_users_store(tmp_path):
+    """It names who published the package, and a store copy belongs to someone else."""
+    from utk_curio.backend.app.packages.publisher_record import record_publisher
+    from utk_curio.backend.app.packages.seed import _swap_in_package
+
+    src = tmp_path / "catalog" / "pkg@1"
+    src.mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    record_publisher(tmp_path / "catalog", "pkg@1", "someone-elses-key")
+
+    dest_base = tmp_path / "store"
+    dest_base.mkdir()
+    assert _swap_in_package(src, dest_base / "pkg@1", dest_base) is True
+
+    copied = sorted(p.name for p in (dest_base / "pkg@1").iterdir())
+    # integrity.json is not in the source here; the point is what did NOT travel.
+    assert ".curio-publisher.json" not in copied, copied
+    assert "manifest.json" in copied, copied
+
+
+def test_a_half_written_publisher_record_leaves_the_package_installable(tmp_path):
+    """``record_publisher`` can leave its .tmp behind, and did not have to.
+
+    It writes through ``.curio-publisher.json.tmp`` and swallows an os.replace
+    failure as a warning, so a full disk or a Windows sharing violation strands
+    the temp file beside the package. The exclusion was by exact name, so the
+    stray was zipped - and every member is validated on extract, where a leading
+    dot is refused. One environment hiccup made the package uninstallable for
+    everyone, through every route that re-zips a catalog directory.
+    """
+    from utk_curio.backend.app.packages.installer import (
+        _safe_member_path, zip_package_tree,
+    )
+
+    src = tmp_path / "pkg@1"
+    (src / "sources").mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    (src / "sources" / "a.py").write_text("print(1)", encoding="utf-8")
+    (src / ".curio-publisher.json.tmp").write_text('{"userKey": "7"}', encoding="utf-8")
+
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        names = zf.namelist()
+
+    assert names == ["manifest.json", "sources/a.py"], names
+    for name in names:
+        _safe_member_path(name)
+
+
+def test_no_dotfile_is_ever_shipped_because_none_could_be_installed(tmp_path):
+    """The rule is lossless by construction, which is why it can be a blanket one.
+
+    ``_safe_member_path`` refuses any segment starting with a dot, so a dotfile
+    in an archive can only ever abort the install - it can never be content
+    somebody meant to ship.
+    """
+    from utk_curio.backend.app.packages.installer import (
+        InstallerError, _safe_member_path, zip_package_tree,
+    )
+
+    src = tmp_path / "pkg@1"
+    src.mkdir(parents=True)
+    (src / "manifest.json").write_text("{}", encoding="utf-8")
+    for stray in (".DS_Store", ".gitignore", ".anything"):
+        (src / stray).write_text("x", encoding="utf-8")
+        with pytest.raises(InstallerError, match="unsafe segment"):
+            _safe_member_path(stray)
+
+    with zipfile.ZipFile(io.BytesIO(zip_package_tree(src))) as zf:
+        assert zf.namelist() == ["manifest.json"]

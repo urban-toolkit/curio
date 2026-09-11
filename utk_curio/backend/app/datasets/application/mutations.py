@@ -209,6 +209,10 @@ class CatalogMutations:
     def publish_dataset(self, dataset_id: str, metadata: dict[str, Any], *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root
 
+        # Publishing writes into the shared catalog tree, which every account
+        # reads. Gate it on the account before anything is computed (#222).
+        self._assert_can_manage_shared_catalog("publish")
+
         item = deepcopy(self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs))
         for key in ("title", "description", "license", "tags"):
             if key in metadata:
@@ -243,6 +247,12 @@ class CatalogMutations:
 
         dir_name = f"{catalog_id}@1"
         dest = catalog_root() / dir_name
+        # Publishing is a write to a path derived from the dataset id, so two
+        # accounts can land on the same ``dest``. Check the incumbent's manifest
+        # BEFORE mkdir: creating the tree first is itself a mutation, so a
+        # refusal that runs after it has already damaged the entry it refused
+        # to touch (#222).
+        self._assert_can_publish_to(dest, catalog_id)
         (dest / "data").mkdir(parents=True, exist_ok=True)
 
         # Copy data file into the catalog data/ subdirectory. A publishable
@@ -597,6 +607,96 @@ class CatalogMutations:
         installed_item["installed"] = True
         return installed_item
 
+    # ------------------------------------------------------------------
+    # Account-level defaults ("Add to all projects")
+    # ------------------------------------------------------------------
+
+    def install_dataset_to_defaults(self, dataset_id: str) -> dict[str, Any]:
+        """Add *dataset_id* to every project the user has, present and future.
+
+        The dataset twin of ``packages.services.install_to_defaults``, and
+        deliberately the same two-part shape, because "all your projects,
+        present and future" is two different mechanisms wearing one label:
+
+        * **Present** - an eager one-shot walk that installs the dataset into
+          each existing project right now. Opening an old project does not
+          consult defaults, so nothing but this walk can put the dataset there.
+        * **Future** - the id joins the user's default-datasets list, which
+          ``projects.services.save_project`` seeds into each new project's spec.
+
+        Best-effort per project, like its package peer: one project with a
+        malformed spec must not abort the other nineteen. Returns
+        ``{"datasets": [...], "projects": [{"id", "ok", "error?"}]}``.
+        """
+        if self.user is None:
+            raise DatasetCatalogError("Authorization required", 401)
+        from utk_curio.backend.app.datasets import defaults as dataset_defaults
+        from utk_curio.backend.app.projects import repositories as projects_repo
+
+        user_key = self._paths._user_key()
+        dataset_defaults.add_to_dataset_defaults(user_key, dataset_id)
+
+        results: list[dict[str, Any]] = []
+        for project in projects_repo.list_for_user(self.user.id):
+            try:
+                # install_dataset is idempotent: it replaces any existing ref
+                # for this id rather than appending a duplicate.
+                self.install_dataset(project.id, dataset_id)
+                results.append({"id": project.id, "ok": True})
+            except Exception as exc:  # noqa: BLE001 - per-project failure is OK
+                logger.warning(
+                    "install_dataset_to_defaults: failed to patch project %s: %s",
+                    project.id, exc,
+                )
+                results.append({"id": project.id, "ok": False, "error": str(exc)})
+
+        return {
+            "datasets": sorted(dataset_defaults.load_dataset_defaults(user_key)),
+            "projects": results,
+        }
+
+    def remove_dataset_from_defaults(self, dataset_id: str) -> dict[str, Any]:
+        """Stop seeding *dataset_id* into new projects, and detach it from the
+        existing ones.
+
+        The mirror of :meth:`install_dataset_to_defaults`, and the reason the
+        dataset list is user-managed in both directions where the package list
+        is not: a package can be an invisible transitive requirement, so
+        removing it by hand could break a node. A dataset is a file the user
+        chose, and nothing else silently depends on it.
+
+        Uninstall is per-project detach only - it never deletes the dataset
+        itself, which stays in the account catalog.
+        """
+        if self.user is None:
+            raise DatasetCatalogError("Authorization required", 401)
+        from utk_curio.backend.app.datasets import defaults as dataset_defaults
+        from utk_curio.backend.app.projects import repositories as projects_repo
+
+        user_key = self._paths._user_key()
+        dataset_defaults.remove_from_dataset_defaults(user_key, dataset_id)
+
+        results: list[dict[str, Any]] = []
+        for project in projects_repo.list_for_user(self.user.id):
+            try:
+                # Detach only. Left to its default this would delete the
+                # user's uploaded file the moment the last project let go of it.
+                self.uninstall_dataset(
+                    project.id, dataset_id, delete_orphaned_import=False,
+                )
+                results.append({"id": project.id, "ok": True})
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "remove_dataset_from_defaults: failed to patch project %s: %s",
+                    project.id, exc,
+                )
+                results.append({"id": project.id, "ok": False, "error": str(exc)})
+
+        return {
+            "datasets": sorted(dataset_defaults.load_dataset_defaults(user_key)),
+            "projects": results,
+        }
+
     def _osm_group_member_ids(self, dataflow_id: str | None, group_id: str) -> list[str]:
         result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
         return [
@@ -614,14 +714,37 @@ class CatalogMutations:
         # Return the group item so the response reflects the "all installed" state.
         return self._owner.get_dataset(group_id, dataflow_id=dataflow_id)
 
-    def uninstall_dataset(self, dataflow_id: str, dataset_id: str) -> dict[str, Any]:
+    def uninstall_dataset(
+        self,
+        dataflow_id: str,
+        dataset_id: str,
+        *,
+        delete_orphaned_import: bool = True,
+    ) -> dict[str, Any]:
+        """Detach *dataset_id* from one dataflow.
+
+        ``delete_orphaned_import`` controls the side effect below: when this was
+        the LAST reference to an ``imported.*`` dataset, its account-store folder
+        is deleted too, so "Remove from dataflow" on your own upload really does
+        remove it rather than leaving an orphan nothing can reach.
+
+        "Remove from all projects" passes ``False``. It walks every project and
+        would otherwise hit exactly that last-reference case and silently delete
+        the user's file - the opposite of what a detach-from-projects action
+        promises, and the same accidental deletion the per-dataflow flow was
+        criticised for.
+        """
         # An OSM group id uninstalls every member layer.
         if is_osm_group_id(dataset_id):
             member_ids = self._osm_group_member_ids(dataflow_id, dataset_id)
             removed = False
             for member_id in member_ids:
                 try:
-                    self.uninstall_dataset(dataflow_id, member_id)
+                    self.uninstall_dataset(
+                        dataflow_id,
+                        member_id,
+                        delete_orphaned_import=delete_orphaned_import,
+                    )
                     removed = True
                 except DatasetCatalogError:
                     # A layer that wasn't installed is fine during a group uninstall.
@@ -661,7 +784,8 @@ class CatalogMutations:
         # no OTHER dataflow (or node binding) still references the dataset — a
         # dataset shared by another project must survive.
         if (
-            removed_ref
+            delete_orphaned_import
+            and removed_ref
             and self.user is not None
             and removed_ref.get("origin") not in ("computed", "source_node")
         ):
@@ -676,10 +800,9 @@ class CatalogMutations:
 
         Best-effort: any failure (still-referenced, usage lookup error, or a
         locked file) leaves the folder in place and never fails the uninstall.
-        Archived projects count as users — their refs must keep resolving when
-        the project is restored (#176)."""
+        Every project the user has counts as a user of the dataset (#176)."""
         try:
-            still_used = self._owner.dataset_usage(dataset_id, include_archived=True)
+            still_used = self._owner.dataset_usage(dataset_id)
         except Exception:  # noqa: BLE001 – if usage can't be resolved, keep the folder
             return
         if still_used:
@@ -695,6 +818,61 @@ class CatalogMutations:
             index_repo.safe_forget(user_key, dir_name)
         except Exception:  # noqa: BLE001
             pass
+
+    def _assert_can_manage_shared_catalog(self, verb: str) -> None:
+        """Raise 403 unless the caller is an account that may write shared state.
+
+        Separate from :meth:`_assert_is_publisher`, which asks "is this yours?".
+        This asks the prior question: is the caller an identity ownership can be
+        attributed to at all? Every guest sign-in resolves to one shared ``User``
+        row, so for a guest the answer is no and no ownership check downstream
+        can recover it.
+        """
+        from utk_curio.backend.app.users.capabilities import can_manage_shared_catalog
+
+        if not can_manage_shared_catalog(self.user):
+            raise DatasetCatalogError(
+                f"Guest sessions share one account, so they cannot {verb} "
+                f"datasets in the shared Data Catalog. Sign in to {verb}.",
+                403,
+            )
+
+    def _assert_can_publish_to(self, dest: "Path", catalog_id: str) -> None:
+        """Raise 403 when *dest* is already published by someone else.
+
+        The publish path is derived from the dataset id, so two accounts can
+        resolve to the same directory. Without this, publishing was an
+        unauthenticated overwrite of whatever was already there: the reporter of
+        #222 guessed a missing server-side check and this was it.
+
+        A *free* destination is the normal case and passes. So does one this
+        caller published -- republishing your own dataset is how an update is
+        applied. Mirrors :meth:`_assert_is_publisher` deliberately, including
+        failing closed on an unreadable manifest.
+        """
+        from utk_curio.backend.app.datasets.domain.manifest import (
+            ManifestError,
+            load_dataset_manifest_from_dir,
+        )
+
+        if not (dest / "manifest.json").is_file():
+            # Nothing published here (or a leftover with no recorded owner):
+            # there is no incumbent to protect.
+            return
+        caller = str(self.user) if self.user is not None else None
+        try:
+            publisher = load_dataset_manifest_from_dir(dest).publisher
+        except (ManifestError, OSError, ValueError):
+            # Present but unreadable -> the owner is unknowable, so fail closed
+            # rather than let a truncated manifest become an overwrite vector.
+            publisher = None
+        if not caller or publisher != caller:
+            raise DatasetCatalogError(
+                f"'{catalog_id}' is already published by someone else. "
+                f"Publish it under a different name, or ask its publisher to "
+                f"update it.",
+                403,
+            )
 
     def _assert_is_publisher(self, catalog_dir: "Path", dataset_id: str) -> None:
         """Raise 403 unless the caller published *catalog_dir*.
@@ -757,6 +935,17 @@ class CatalogMutations:
             raise DatasetCatalogError(f"Dataset '{dataset_id}' is not in the Data Catalog", 404)
 
         dir_name = catalog_dir.name
+
+        # Account gate, ahead of the ownership gate rather than instead of it.
+        # ``_assert_is_publisher`` skips a directory with no manifest so legacy
+        # leftovers stay removable, and it compares ``str(user)`` -- the same
+        # string for every shared guest. Both are right for a real account and
+        # both are holes for the guest, so the guest is refused first (#222).
+        #
+        # Placed AFTER the 404 above on purpose: ``delete_dataset`` cascades
+        # through here and re-raises a 403, so gating before the lookup would
+        # stop a guest deleting a dataset of their own that was never published.
+        self._assert_can_manage_shared_catalog("unpublish")
 
         # Ownership gate (security): only the user who published this dataset may
         # remove it from the SHARED catalog tree. Without this, any authenticated
@@ -843,20 +1032,20 @@ class CatalogMutations:
                 raise
 
         # 2. Remove the dataset's references from every dataflow that holds any
-        #    (archived included, #176) — both the ``dataflow.datasets`` ref and
-        #    node-level ``metadata.datasetRefs`` bindings — so no project is
-        #    left pointing at a deleted asset.
+        #    (#176) — both the ``dataflow.datasets`` ref and node-level
+        #    ``metadata.datasetRefs`` bindings — so no project is left pointing
+        #    at a deleted asset.
         removed_from: list[str] = []
         try:
-            usages = self._owner.dataset_usage(dataset_id, include_archived=True)
+            usages = self._owner.dataset_usage(dataset_id)
         except Exception:  # noqa: BLE001 – best-effort; still delete the asset
             usages = []
         for usage in usages:
             df_id = usage.get("dataflowId") if isinstance(usage, dict) else None
             if not df_id:
                 continue
-            # Per-dataflow isolation: one unreadable (possibly archived) spec
-            # must not abort the cascade for the others.
+            # Per-dataflow isolation: one unreadable spec must not abort the
+            # cascade for the others.
             try:
                 if self.installed.remove_dataset_references(df_id, dataset_id):
                     removed_from.append(df_id)

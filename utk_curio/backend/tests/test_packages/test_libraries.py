@@ -119,6 +119,13 @@ def test_aggregate_combines_standalone_and_package(
 # HTTP endpoints
 # ---------------------------------------------------------------------------
 
+
+def _report(*, installed, skipped):
+    """Stand-in for pip_runner.InstallReport."""
+    from utk_curio.backend.app.packages.pip_runner import InstallReport
+
+    return InstallReport(installed=list(installed), skipped=list(skipped))
+
 class TestLibraryRoutes:
     def test_list_empty_for_fresh_user(self, client, user_and_token):
         _, token = user_and_token
@@ -139,6 +146,61 @@ class TestLibraryRoutes:
         assert resp.status_code == 201, resp.get_data(as_text=True)
         listed = client.get("/api/packages/libraries", headers=_auth(token)).get_json()
         assert listed["standalone"]["python"] == ["numpy"]
+
+    def test_a_library_that_cannot_be_imported_says_so(
+        self, client, user_and_token, monkeypatch
+    ):
+        """pip exiting 0 is not the same as the library working.
+
+        A wheel whose native extension cannot load records a perfectly good
+        version, so pip finds the requirement satisfied and does nothing. The
+        route answered with empty ``installed`` and a populated ``skipped``,
+        which the dialog renders as a green "Already installed" badge - for a
+        library that raises ImportError the moment a node touches it.
+        """
+        from utk_curio.backend.app.packages import routes as pkg_routes
+
+        monkeypatch.setattr(
+            pkg_routes, "_split_lib_spec", lambda spec: ("rasterio", ""),
+            raising=False,
+        )
+        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        monkeypatch.setattr(pip_runner, "install_python_deps",
+                            lambda deps: _report(installed=[], skipped=["rasterio"]))
+        monkeypatch.setattr(
+            pip_runner, "import_failures",
+            lambda deps: {"rasterio": "ImportError: DLL load failed"},
+        )
+
+        _, token = user_and_token
+        resp = client.post(
+            "/api/packages/libraries",
+            json={"kind": "python", "spec": "rasterio"},
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 201
+        body = resp.get_json()
+        assert body["importError"], "a broken library reported success"
+        assert "DLL load failed" in body["importError"]
+
+    def test_a_working_library_reports_no_import_error(
+        self, client, user_and_token, monkeypatch
+    ):
+        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        monkeypatch.setattr(pip_runner, "install_python_deps",
+                            lambda deps: _report(installed=["numpy"], skipped=[]))
+        monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+
+        _, token = user_and_token
+        resp = client.post(
+            "/api/packages/libraries",
+            json={"kind": "python", "spec": "numpy"},
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 201
+        assert resp.get_json()["importError"] is None
 
     def test_post_rejects_empty_spec(self, client, user_and_token):
         _, token = user_and_token

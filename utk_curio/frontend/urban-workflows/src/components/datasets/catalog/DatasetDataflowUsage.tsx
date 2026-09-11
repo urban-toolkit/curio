@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   DatasetDataflowUsageRef,
@@ -52,7 +52,7 @@ function consumerLabel(flow: DatasetDataflowUsageRef): string | null {
 }
 
 /**
- * "Used in dataflows" section: one row per dataflow that consumes the dataset,
+ * "Used in projects" section: one row per project that consumes the dataset,
  * linking to the dataflow and naming its consumer (downstream) nodes. Renders
  * nothing when the dataset isn't used anywhere.
  */
@@ -60,19 +60,55 @@ export const DatasetDataflowUsageSection: React.FC<{
   datasetId: string | undefined;
 }> = ({ datasetId }) => {
   const usage = useDatasetDataflowUsage(datasetId);
-  if (usage.length === 0) return null;
+
+  // One row per project id. The backend already emits one entry per project,
+  // so a repeat would be a fault upstream - but the heading counts this list,
+  // and a duplicate would have inflated the count as well as the rows.
+  const rows = useMemo(() => {
+    const byId = new Map<string, DatasetDataflowUsageRef>();
+    for (const flow of usage) {
+      if (!byId.has(flow.dataflowId)) byId.set(flow.dataflowId, flow);
+    }
+    return Array.from(byId.values());
+  }, [usage]);
+
+  // Two DIFFERENT projects can carry the same name, and a row showed nothing
+  // but that name - so "Used in projects (2)" listed what looked like the same
+  // project twice. Both rows were truthful and linked to different projects;
+  // there was just nothing on screen to tell them apart. Disambiguate only the
+  // names that actually collide, so the common case stays clean.
+  const collidingNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const flow of rows) {
+      const name = flow.dataflowName || "Untitled dataflow";
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return new Set(
+      Array.from(counts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([name]) => name),
+    );
+  }, [rows]);
+
+  if (rows.length === 0) return null;
 
   return (
-    <section className={styles.section} aria-label="Dataflows using this dataset">
-      <p className={styles.label}>Used in dataflows ({usage.length})</p>
+    <section className={styles.section} aria-label="Projects using this dataset">
+      <p className={styles.label}>Used in projects ({rows.length})</p>
       <ul className={styles.list}>
-        {usage.map((flow) => {
+        {rows.map((flow) => {
           const consumers = consumerLabel(flow);
+          const name = flow.dataflowName || "Untitled dataflow";
           return (
             <li key={flow.dataflowId} className={styles.item}>
               <Link to={`/dataflow/${flow.dataflowId}`} className={styles.link}>
-                {flow.dataflowName || "Untitled dataflow"}
+                {name}
               </Link>
+              {collidingNames.has(name) ? (
+                <span className={styles.disambiguator} title={flow.dataflowId}>
+                  {flow.dataflowId.slice(0, 8)}
+                </span>
+              ) : null}
               {consumers ? (
                 <span className={styles.consumers}>Consumed by {consumers}</span>
               ) : (

@@ -14,9 +14,10 @@ Design choices:
   upgrade, not the current contract.
 - **Uses ``sys.executable -m pip``** so the install lands in whichever
   interpreter the Curio backend is running under (conda env or venv).
-- **Idempotent.** Already-importable + version-matching deps are
-  detected with ``importlib.metadata`` and skipped — repeat installs of
-  the same package are essentially no-ops.
+- **Idempotent.** Deps already present at a matching version are detected
+  with ``importlib.metadata`` and skipped — repeat installs of the same
+  package are essentially no-ops. Note that metadata presence is not
+  importability: see :func:`import_failure`.
 - **Never touches Curio's core ``pyproject`` deps.** Uninstall walks
   package manifests, but base-install libraries (``flask``,
   ``geopandas``, ``shapely`` …) aren't listed in any package manifest,
@@ -27,7 +28,9 @@ Design choices:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -36,6 +39,10 @@ from importlib.metadata import PackageNotFoundError, version as installed_versio
 from typing import Callable, Iterable, Mapping, Optional
 
 log = logging.getLogger(__name__)
+
+#: Hard cap on one import probe. Generous enough for a slow cold import of a
+#: large library, short enough that a hung extension cannot stall a page load.
+_IMPORT_PROBE_TIMEOUT = 60
 
 # Hard cap on a single pip invocation. Torch on a cold conda env without
 # a wheel cache can take ~10 minutes on a moderate connection — 30 minutes
@@ -162,6 +169,353 @@ def _is_satisfied(name: str, spec: str) -> bool:
         return True  # unparseable — let pip be the authority
 
 
+#: Top-level modules a distribution ships that are never the import people mean.
+#: ``pythermalcomfort`` maps to ``['pythermalcomfort', 'tests']``; probing
+#: ``tests`` would be meaningless and, worse, could pass while the real module
+#: is broken.
+_NON_LIBRARY_MODULES = frozenset({"tests", "test", "docs", "doc", "examples", "example"})
+
+#: Probing costs a subprocess, and a broken install does not heal on its own, so
+#: the verdict is memoised per (distribution, version). An install bumps or adds
+#: a version, which changes the key; ``forget_import_probes`` covers a
+#: same-version repair (``--force-reinstall``).
+_import_probe_cache: dict[tuple[str, str], Optional[str]] = {}
+
+
+def forget_import_probes() -> None:
+    """Drop memoised import verdicts, after anything that may have repaired one."""
+    _import_probe_cache.clear()
+
+
+def _canonical_dist_name(name: str) -> str:
+    """PEP 503 normalisation — ``PyYAML``, ``py-yaml`` and ``py_yaml`` are one name."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _module_for_distribution(name: str) -> str:
+    """The top-level module *name* is imported as.
+
+    A distribution's name is not its module: ``pillow`` imports as ``PIL``,
+    ``scikit-learn`` as ``sklearn``. ``packages_distributions()`` carries the
+    real mapping, so use it and fall back to the PEP 503-ish normalisation only
+    when the distribution is not installed (where the probe will fail anyway).
+
+    Matched by PEP 503 normalisation, NOT by equality. A requirement names a
+    distribution the way pip accepts it - ``pyyaml`` - while the mapping keys it
+    the way its metadata spells it - ``PyYAML``. An exact-match lookup missed,
+    fell through to ``name.replace("-", "_")``, and reported a working library
+    as ``No module named 'pyyaml'``: a fabricated failure, on the surface whose
+    whole job is telling the user which library is broken.
+    """
+    try:
+        from importlib.metadata import packages_distributions
+    except ImportError:  # pragma: no cover - Python < 3.10
+        return name.replace("-", "_")
+
+    try:
+        mapping = packages_distributions()
+    except Exception:  # pragma: no cover - defensive; probe falls back
+        return name.replace("-", "_")
+
+    wanted = _canonical_dist_name(name)
+    candidates = [
+        mod for mod, dists in mapping.items()
+        if any(_canonical_dist_name(d) == wanted for d in dists)
+    ]
+    if not candidates:
+        return name.replace("-", "_")
+    normalized = name.replace("-", "_").lower()
+    for mod in candidates:
+        if mod.lower() == normalized:
+            return mod
+    real = [m for m in candidates if m.lower() not in _NON_LIBRARY_MODULES]
+    # A private accelerator module is not what the requirement means: PyYAML
+    # ships ``yaml`` and ``_yaml``, and sorting alone picks the underscore.
+    public = [m for m in (real or candidates) if not m.startswith("_")]
+    return sorted(public or real or candidates)[0]
+
+
+def distributions_for_module(module: str) -> list[str]:
+    """Every installed distribution that provides top-level *module*.
+
+    The inverse of :func:`_module_for_distribution`, over the same
+    ``packages_distributions()`` map, and answering a different question: not
+    "what does this requirement import as" but "is anything already providing
+    this import". The node-run missing-import detector asks it to tell a library
+    that is genuinely absent (pip would fix it) apart from one that is installed
+    and still will not import (pip would report it satisfied and change
+    nothing) - a distinction ``test_broken_library_stub`` exists to witness.
+
+    Metadata only: it imports nothing and spawns nothing, so it is cheap enough
+    to sit on a failed execution's response path. An empty list is the common
+    case and the one that means "offer to install it".
+    """
+    try:
+        from importlib.metadata import packages_distributions
+    except ImportError:  # pragma: no cover - Python < 3.10
+        return []
+
+    try:
+        mapping = packages_distributions()
+    except Exception:  # pragma: no cover - defensive
+        return []
+
+    return sorted(dict.fromkeys(mapping.get(module, [])))
+
+
+#: Imports every requested module in ONE interpreter and reports each verdict.
+#: Reads the ``{distribution: module}`` map on stdin so no name has to survive
+#: shell quoting, and writes ``{distribution: reason}`` for the failures.
+#: ``BaseException`` because a broken extension is not restricted to raising
+#: ``Exception`` — some abort with ``SystemExit`` on import.
+_PROBE_SRC = """
+import importlib, json, sys
+mapping = json.load(sys.stdin)
+out = {}
+for dist, module in mapping.items():
+    try:
+        importlib.import_module(module)
+    except BaseException as exc:
+        out[dist] = "{}: {}".format(type(exc).__name__, exc)
+print(json.dumps(out))
+"""
+
+
+def _run_probe(mapping: Mapping[str, str]) -> Optional[dict[str, str]]:
+    """Verdicts for *mapping* from one subprocess, or None if it could not run.
+
+    None means "no answer", never "all fine" — the caller falls back rather than
+    reporting a clean bill of health it did not earn.
+    """
+    if not mapping:
+        return {}
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", _PROBE_SRC],
+            input=json.dumps(mapping),
+            capture_output=True,
+            text=True,
+            timeout=min(300, _IMPORT_PROBE_TIMEOUT * len(mapping)),
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        log.warning("import probe for %s failed to run: %s", sorted(mapping), exc)
+        return None
+    # A module that hard-crashes the interpreter (segfault in a native
+    # extension) takes the whole batch's output with it, so a non-zero exit or
+    # unparseable stdout is treated as "no answer" and retried one at a time.
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        return None
+    try:
+        parsed = json.loads(proc.stdout)
+    except ValueError:
+        return None
+    return {k: v for k, v in parsed.items() if isinstance(v, str)}
+
+
+def import_failures(deps: Iterable[str]) -> dict[str, str]:
+    """``{distribution: reason}`` for every dep in *deps* that cannot be imported.
+
+    Metadata presence is not importability. A wheel whose native extension
+    cannot load — the common case for GDAL/CUDA-backed builds — records a
+    perfectly good version, so a version check alone reports it satisfied and
+    the failure only surfaces later, as a raw ``ImportError`` from whichever
+    node happens to run first.
+
+    Probed in a SUBPROCESS, deliberately: importing an arbitrary library into
+    the backend process to test it would load torch-sized dependencies into a
+    long-lived server, and a segfaulting extension would take the server with it
+    rather than being reported.
+
+    **One subprocess for the whole set.** Probing per dep cost 4.7 s for
+    ``curio.weather``'s three libraries (pythermalcomfort 1.9 + rasterio 1.0 +
+    rasterstats 1.8) because each paid its own interpreter start and re-imported
+    the shared GDAL stack; batched they overlap. The verdict is memoised per
+    ``(distribution, version)``, so the cost is paid once per backend process —
+    but it is paid on a dataflow load, which is why it is worth batching.
+
+    Uses ``sys.executable``, matching :func:`install_python_deps` — the probe
+    asks about the interpreter the installs land in.
+    """
+    failures: dict[str, str] = {}
+    to_probe: dict[str, str] = {}     # distribution -> module
+    versions: dict[str, str] = {}
+
+    for name in deps:
+        try:
+            ver = installed_version(name)
+        except PackageNotFoundError:
+            failures[name] = f"{name} is not installed"
+            continue
+        key = (name, ver)
+        if key in _import_probe_cache:
+            cached = _import_probe_cache[key]
+            if cached:
+                failures[name] = cached
+            continue
+        versions[name] = ver
+        to_probe[name] = _module_for_distribution(name)
+
+    if not to_probe:
+        return failures
+
+    verdicts = _run_probe(to_probe)
+    if verdicts is None:
+        # The batch gave no answer. Retry singly so one hard-crashing module
+        # cannot hide the verdict for every other dep in the set.
+        for name, module in to_probe.items():
+            one = _run_probe({name: module})
+            if one is None:
+                continue          # still no answer: report nothing, cache nothing
+            reason = one.get(name)
+            _import_probe_cache[(name, versions[name])] = reason
+            if reason:
+                failures[name] = reason
+        return failures
+
+    for name in to_probe:
+        reason = verdicts.get(name)
+        _import_probe_cache[(name, versions[name])] = reason
+        if reason:
+            failures[name] = reason
+    return failures
+
+
+#: Same question as :data:`_PROBE_SRC`, asked inside an interpreter that can see
+#: an OVERLAY. Resolution moves into the child because it has to: an overlay's
+#: distributions are invisible to the parent, so the parent's
+#: ``installed_version`` would answer "not installed" for every one of them and
+#: invent a failure that isn't there. The module-name rule mirrors
+#: :func:`_module_for_distribution`; the one constant they share is passed in
+#: rather than restated.
+_TARGET_PROBE_SRC = """
+import importlib, json, re, sys
+from importlib.metadata import PackageNotFoundError, packages_distributions, version
+
+payload = json.load(sys.stdin)
+names = payload["names"]
+non_library = set(payload["nonLibrary"])
+try:
+    dists = packages_distributions()
+except BaseException:
+    dists = {}
+out = {}
+for name in names:
+    try:
+        version(name)
+    except PackageNotFoundError:
+        out[name] = name + " is not installed"
+        continue
+    fallback = name.replace("-", "_")
+    wanted = re.sub(r"[-_.]+", "-", name).lower()
+    candidates = [
+        m for m, ds in dists.items()
+        if any(re.sub(r"[-_.]+", "-", d).lower() == wanted for d in ds)
+    ]
+    module = None
+    for mod in candidates:
+        if mod.lower() == fallback.lower():
+            module = mod
+            break
+    if module is None:
+        real = [m for m in candidates if m.lower() not in non_library]
+        public = [m for m in (real or candidates) if not m.startswith("_")]
+        module = sorted(public or real or candidates)[0] if candidates else fallback
+    try:
+        importlib.import_module(module)
+    except BaseException as exc:
+        out[name] = "{}: {}".format(type(exc).__name__, exc)
+print(json.dumps(out))
+"""
+
+
+def import_failures_in(deps: Iterable[str], search_path: str) -> dict[str, str]:
+    """``{distribution: reason}`` for deps that cannot be imported with
+    *search_path* on ``sys.path`` — the OVERLAY's environment, not the host's.
+
+    :func:`install_python_deps_to_target` installs into a directory the backend
+    process never imports from; workers receive it on ``PYTHONPATH``. So the
+    only interpreter that can answer "does this library work" for an overlay is
+    one configured the way a worker is, which is what this spawns.
+
+    Deliberately not memoised. :func:`~.backend_runtime.build_overlay` wipes and
+    rebuilds, so a repair can land without the version moving, and the answer is
+    wanted once per install — after a pip run that already cost seconds.
+
+    Empty on a probe that cannot run: "no answer" is never "all fine".
+    """
+    names = sorted({d for d in deps})
+    if not names or not search_path:
+        return {}
+    verdicts = _run_target_probe(names, search_path)
+    if verdicts is not None:
+        return verdicts
+    # The batch gave no answer. Retry one at a time, exactly as the host probe
+    # does: a module whose native extension aborts the interpreter takes the
+    # whole batch's stdout with it, and without this one such dep turns every
+    # OTHER dep's verdict into silence — which the caller reads as "all fine".
+    failures: dict[str, str] = {}
+    for name in names:
+        one = _run_target_probe([name], search_path)
+        if one:
+            failures.update(one)
+    return failures
+
+
+def _run_target_probe(names, search_path) -> Optional[dict[str, str]]:
+    """Verdicts for *names* from one overlay-aware subprocess, or None.
+
+    None means "no answer", never "all fine" — same contract as
+    :func:`_run_probe`, so the caller can fall back rather than report a clean
+    bill of health it did not earn.
+    """
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        f"{search_path}{os.pathsep}{existing}" if existing else str(search_path)
+    )
+    payload = json.dumps({"names": names, "nonLibrary": sorted(_NON_LIBRARY_MODULES)})
+    # The WORKER's interpreter, not this process's. An overlay exists to be
+    # imported by a backend handler, and handlers run under
+    # ``backend_runtime.sandbox_interpreter()`` - which an operator can pin
+    # elsewhere with CURIO_BACKEND_SANDBOX_PYTHON. Probing sys.executable would
+    # then answer for an interpreter nothing imports the overlay from. Identical
+    # to sys.executable in the default configuration, so this changes nothing
+    # until someone pins it, which is exactly when it would have been wrong.
+    from utk_curio.backend.app.packages import backend_runtime
+
+    try:
+        proc = subprocess.run(
+            [backend_runtime.sandbox_interpreter(), "-c", _TARGET_PROBE_SRC],
+            input=payload,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=min(300, _IMPORT_PROBE_TIMEOUT * len(names)),
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        log.warning("overlay import probe for %s failed to run: %s", names, exc)
+        return None
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        log.warning(
+            "overlay import probe for %s gave no answer (rc=%s)", names, proc.returncode,
+        )
+        return None
+    try:
+        parsed = json.loads(proc.stdout)
+    except ValueError:
+        return None
+    return {k: v for k, v in parsed.items() if isinstance(v, str)}
+
+
+def import_failure(name: str) -> Optional[str]:
+    """Why importing *name* fails, or ``None`` if it imports cleanly.
+
+    Convenience wrapper over :func:`import_failures`; prefer that when checking
+    more than one dep, so they share a single interpreter start.
+    """
+    return import_failures([name]).get(name)
+
+
 def is_satisfied(name: str, spec: str) -> bool:
     """Public wrapper over :func:`_is_satisfied` for callers outside this
     module (e.g. the ``/api/packages/workflow-deps/check`` route)."""
@@ -173,7 +527,14 @@ def install_python_deps(
     *,
     on_line: Optional[Callable[[str], None]] = None,
 ) -> InstallReport:
-    """Pip-install every dep in *deps* that isn't already importable.
+    """Pip-install every dep in *deps* that isn't already present at a
+    satisfying version.
+
+    "Present" means ``importlib.metadata`` knows it and the version matches -
+    NOT that it imports. A wheel whose native extension is broken is skipped
+    here, correctly: pip would report "already satisfied" and change nothing.
+    :func:`import_failure` is what notices that case, and the workflow-deps
+    check reports it rather than pretending an install would repair it.
 
     If *on_line* is supplied, pip's stdout+stderr are streamed live: each
     line is passed to the callback as it arrives, and nothing is buffered.
@@ -241,6 +602,9 @@ def install_python_deps(
             raise PipInstallError(
                 f"pip install failed (exit {rc}): {tail.strip()}"
             )
+        # pip ran: a repair may have landed without the version changing, which
+        # the (name, version) memo key would otherwise hide.
+        forget_import_probes()
         return InstallReport(installed=to_install, skipped=skipped)
 
     # Buffered path (API consumers): capture, surface tail on failure.
@@ -259,6 +623,7 @@ def install_python_deps(
         raise PipInstallError(
             f"pip install failed (exit {proc.returncode}): {tail.strip()}"
         )
+    forget_import_probes()
     return InstallReport(installed=to_install, skipped=skipped)
 
 
