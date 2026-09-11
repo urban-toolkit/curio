@@ -4,14 +4,13 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import { useFlowContext } from "./FlowProvider";
 import { AgentCatalogDrawer } from "../components/agents/catalog/AgentCatalogDrawer";
 import { modalStackDepth } from "../components/ModalShell";
+import { useSlideDrawerPresentation } from "../hook/useSlideDrawerPresentation";
 
 /**
  * Mounts the Agent Catalog drawer and exposes open/close controls, mirroring
@@ -24,9 +23,6 @@ import { modalStackDepth } from "../components/ModalShell";
  * project. Rendered via a portal so it overlays the canvas.
  */
 
-/** Panel slide duration — keep in sync with `.panel` in AgentCatalogDrawer.module.css */
-const DRAWER_MOTION_MS = 300;
-
 type AgentCatalogDrawerContextValue = {
   openAgentCatalogDrawer: () => void;
   closeAgentCatalogDrawer: () => void;
@@ -35,78 +31,19 @@ type AgentCatalogDrawerContextValue = {
 
 const AgentCatalogDrawerContext = createContext<AgentCatalogDrawerContextValue | null>(null);
 
-// jsdom (tests) has no matchMedia — degrade to "no reduced motion".
-function subscribeReducedMotion(onStoreChange: () => void): () => void {
-  if (typeof window.matchMedia !== "function") return () => undefined;
-  const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-  mq.addEventListener("change", onStoreChange);
-  return () => mq.removeEventListener("change", onStoreChange);
-}
-
-function getReducedMotionSnapshot(): boolean {
-  return typeof window.matchMedia === "function"
-    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    : false;
-}
-
 export function AgentCatalogDrawerProvider({ children }: { children: React.ReactNode }) {
-  const prefersReducedMotion = useSyncExternalStore(
-    subscribeReducedMotion,
-    getReducedMotionSnapshot,
-    () => false,
-  );
+  const {
+    mounted,
+    presented,
+    open: openAgentCatalogDrawer,
+    close: closeAgentCatalogDrawer,
+    finishExit: finishClose,
+  } = useSlideDrawerPresentation();
 
-  const [mounted, setMounted] = useState(false);
-  const [presented, setPresented] = useState(false);
   // DEC-042: the roster header carries the Pin only — pinned blocks the
   // backdrop/Escape dismissals (programmatic close still works).
   const [pinned, setPinned] = useState(false);
   const { projectId, ensureProjectId } = useFlowContext();
-  const preOpenFocusRef = useRef<HTMLElement | null>(null);
-  const exitTimerRef = useRef<number | null>(null);
-  const exitSettledRef = useRef(false);
-
-  const clearExitTimer = useCallback(() => {
-    if (exitTimerRef.current != null) {
-      window.clearTimeout(exitTimerRef.current);
-      exitTimerRef.current = null;
-    }
-  }, []);
-
-  const finishClose = useCallback(() => {
-    if (exitSettledRef.current) return;
-    exitSettledRef.current = true;
-    clearExitTimer();
-    setMounted(false);
-    setPresented(false);
-    const el = preOpenFocusRef.current;
-    preOpenFocusRef.current = null;
-    queueMicrotask(() => el?.focus?.());
-  }, [clearExitTimer]);
-
-  const closeAgentCatalogDrawer = useCallback(() => {
-    clearExitTimer();
-    setPresented(false);
-    exitTimerRef.current = window.setTimeout(
-      finishClose,
-      prefersReducedMotion ? 0 : DRAWER_MOTION_MS + 80,
-    );
-  }, [clearExitTimer, finishClose, prefersReducedMotion]);
-
-  const openAgentCatalogDrawer = useCallback(() => {
-    clearExitTimer();
-    exitSettledRef.current = false;
-    preOpenFocusRef.current = document.activeElement as HTMLElement | null;
-    setMounted(true);
-    setPresented(false);
-    if (prefersReducedMotion) {
-      setPresented(true);
-      return;
-    }
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => setPresented(true));
-    });
-  }, [clearExitTimer, prefersReducedMotion]);
 
   useEffect(() => {
     if (!presented) return;
@@ -129,8 +66,6 @@ export function AgentCatalogDrawerProvider({ children }: { children: React.React
       document.body.style.overflow = prevOverflow;
     };
   }, [mounted]);
-
-  useEffect(() => () => clearExitTimer(), [clearExitTimer]);
 
   const ctx = useMemo(
     () => ({

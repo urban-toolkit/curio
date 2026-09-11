@@ -1,13 +1,15 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useReactFlow, useStore } from "reactflow";
 import { resolveNodeDisplayLabel } from "../../../utils/palettePackageFactoryDraft";
 import { AgentDock } from "./AgentDock";
 import { AgentChatPanel } from "./AgentChatPanel";
+import type { AgentAttachment } from "../../../api/agentsApi";
 import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
 import { composeAgentRunContext } from "./agentRunContext";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useSlideDrawerPresentation } from "../../../hook/useSlideDrawerPresentation";
 
 /**
  * Canvas overlay for CANVAS-target agents: a persistent dock centered at the
@@ -51,7 +53,41 @@ export const AgentDockOverlay: React.FC = () => {
       [openNodeId],
     ),
   );
-  // Attachment id whose settings modal is open (memo dev/42), or null.
+  // The chat is a sliding right-hand surface like the three catalog drawers, so
+  // it presents through the same machine (#295). Hooks run above the `!ctx`
+  // return, which is why the selection is read defensively here.
+  const {
+    mounted: chatMounted,
+    presented: chatPresented,
+    open: openChatPanel,
+    close: closeChatPanel,
+    finishExit: finishChatExit,
+  } = useSlideDrawerPresentation();
+
+  const selectedId = ctx?.selectedId ?? null;
+  const chatWasOpenRef = useRef(false);
+  useEffect(() => {
+    const isOpen = selectedId != null;
+    // Only the transitions matter. Cycling from one agent to another keeps
+    // `isOpen` true, so the panel never re-slides for a content swap - the
+    // arrows change who is in the panel, not whether there is one.
+    if (isOpen === chatWasOpenRef.current) return;
+    chatWasOpenRef.current = isOpen;
+    if (isOpen) openChatPanel();
+    else closeChatPanel();
+  }, [selectedId, openChatPanel, closeChatPanel]);
+
+  // What the panel showed last, so the exit slide has something to render.
+  // Index and total are pinned alongside it: detaching the open agent empties
+  // the roster, and reading them live would repaint the header as "0 / 0" for
+  // the length of the slide out.
+  const lastShownRef = useRef<{
+    attachment: AgentAttachment;
+    index: number;
+    total: number;
+    targetName: string | null;
+  } | null>(null);
+
   if (!ctx) return null;
 
   // Canvas agents plus connection agents. A connection attachment has no node
@@ -71,6 +107,23 @@ export const AgentDockOverlay: React.FC = () => {
     selectedIdx >= 0 && selectedIdx < ctx.attachments.length - 1
       ? ctx.attachments[selectedIdx + 1]
       : null;
+
+  if (selected) {
+    lastShownRef.current = {
+      attachment: selected,
+      index: selectedIdx + 1,
+      total: ctx.attachments.length,
+      targetName: selectedTargetName,
+    };
+  }
+  // During the exit the selection is already gone, so the panel renders what it
+  // last showed rather than disappearing a frame before it finishes sliding.
+  const shown = selected ?? lastShownRef.current?.attachment ?? null;
+  const shownIndex = selected ? selectedIdx + 1 : lastShownRef.current?.index ?? 1;
+  const shownTotal = selected ? ctx.attachments.length : lastShownRef.current?.total ?? 1;
+  const shownTargetName = selected
+    ? selectedTargetName
+    : lastShownRef.current?.targetName ?? null;
 
   const onDetach = (attachmentId: string) => {
     if (ctx.selectedId === attachmentId) ctx.closeChat();
@@ -95,26 +148,28 @@ export const AgentDockOverlay: React.FC = () => {
           the viewport top — its dark header sits at the top-bar level per the
           concept — instead of being clipped under the main top menu inside the
           canvas container. */}
-      {selected
+      {chatMounted && shown
         ? createPortal(
             <AgentChatPanel
-              attachment={selected}
-              targetName={selectedTargetName}
-              index={selectedIdx + 1}
-              total={ctx.attachments.length}
+              attachment={shown}
+              presented={chatPresented}
+              onExitComplete={finishChatExit}
+              targetName={shownTargetName}
+              index={shownIndex}
+              total={shownTotal}
               onPrev={prev ? () => ctx.openChat(prev.attachmentId) : undefined}
               onNext={next ? () => ctx.openChat(next.attachmentId) : undefined}
-              turns={ctx.transcripts[selected.attachmentId] ?? []}
-              loadingHistory={ctx.hydratingId === selected.attachmentId}
-              historyError={ctx.hydrateErrors[selected.attachmentId] ?? null}
-              onRetryHistory={() => ctx.hydrateSession(selected.attachmentId)}
+              turns={ctx.transcripts[shown.attachmentId] ?? []}
+              loadingHistory={ctx.hydratingId === shown.attachmentId}
+              historyError={ctx.hydrateErrors[shown.attachmentId] ?? null}
+              onRetryHistory={() => ctx.hydrateSession(shown.attachmentId)}
               onSend={(message) =>
                 // Grounded context (memo dev/44): composed from the LIVE
                 // canvas on every send — unsaved nodes included, never stale.
                 ctx.sendMessage(
-                  selected.attachmentId,
+                  shown.attachmentId,
                   message,
-                  composeAgentRunContext(selected, {
+                  composeAgentRunContext(shown, {
                     nodes: getNodes(),
                     edges: getEdges(),
                     workflowName: workflowNameRef.current,
@@ -123,35 +178,35 @@ export const AgentDockOverlay: React.FC = () => {
                 )
               }
               onClose={ctx.closeChat}
-              toolActivity={ctx.toolActivity[selected.attachmentId] ?? []}
-              runStatus={ctx.runStatus[selected.attachmentId] ?? null}
+              toolActivity={ctx.toolActivity[shown.attachmentId] ?? []}
+              runStatus={ctx.runStatus[shown.attachmentId] ?? null}
               onApplyProposal={(proposalId) =>
-                ctx.applyProposal(selected.attachmentId, proposalId)
+                ctx.applyProposal(shown.attachmentId, proposalId)
               }
               onApplyPlanNode={(proposalId, ref) =>
-                ctx.applyPlanNode(selected.attachmentId, proposalId, ref)
+                ctx.applyPlanNode(shown.attachmentId, proposalId, ref)
               }
               onSavePlanGoal={(proposalId, ref, goal) =>
-                ctx.savePlanGoal(selected.attachmentId, proposalId, ref, goal)
+                ctx.savePlanGoal(shown.attachmentId, proposalId, ref, goal)
               }
               onApplyPlanEdges={async (proposalId, indices) => {
-                await ctx.applyPlanEdges(selected.attachmentId, proposalId, indices);
+                await ctx.applyPlanEdges(shown.attachmentId, proposalId, indices);
               }}
               onSolvePlanNode={async (ref) => {
-                await ctx.validateNode(selected.attachmentId, { ref });
+                await ctx.validateNode(shown.attachmentId, { ref });
               }}
               onRunPlanNode={async (ref) => {
-                await ctx.runNode(selected.attachmentId, { ref });
+                await ctx.runNode(shown.attachmentId, { ref });
               }}
-              onSimulate={(mode) => ctx.runSimulation(selected.attachmentId, mode)}
-              onCancelSimulate={() => ctx.cancelSimulation(selected.attachmentId)}
-              simulationActivity={ctx.simulationActivity[selected.attachmentId]}
-              onSolve={(nodeIds) => ctx.solveAttachment(selected.attachmentId, nodeIds)}
-              solveProgress={ctx.solveProgress[selected.attachmentId]}
-              solveErrors={ctx.solveErrors[selected.attachmentId]}
-              onCancelSolve={() => ctx.cancelSolve(selected.attachmentId)}
+              onSimulate={(mode) => ctx.runSimulation(shown.attachmentId, mode)}
+              onCancelSimulate={() => ctx.cancelSimulation(shown.attachmentId)}
+              simulationActivity={ctx.simulationActivity[shown.attachmentId]}
+              onSolve={(nodeIds) => ctx.solveAttachment(shown.attachmentId, nodeIds)}
+              solveProgress={ctx.solveProgress[shown.attachmentId]}
+              solveErrors={ctx.solveErrors[shown.attachmentId]}
+              onCancelSolve={() => ctx.cancelSolve(shown.attachmentId)}
               onDismissProposal={(proposalId) =>
-                ctx.dismissProposal(selected.attachmentId, proposalId)
+                ctx.dismissProposal(shown.attachmentId, proposalId)
               }
               // dev/72: delegation entries and plan-row chips link to the
               // delegated agent's chat; existence-checked against the live
@@ -160,9 +215,9 @@ export const AgentDockOverlay: React.FC = () => {
               delegateExists={(id) =>
                 ctx.attachments.some((a) => a.attachmentId === id)
               }
-              onSaveIntent={(intent) => ctx.saveIntent(selected.attachmentId, intent)}
-              onSaveTitle={(title) => ctx.saveTitle(selected.attachmentId, title)}
-              onClearConversation={() => ctx.clearConversation(selected.attachmentId)}
+              onSaveIntent={(intent) => ctx.saveIntent(shown.attachmentId, intent)}
+              onSaveTitle={(title) => ctx.saveTitle(shown.attachmentId, title)}
+              onClearConversation={() => ctx.clearConversation(shown.attachmentId)}
             />,
             document.body,
           )
