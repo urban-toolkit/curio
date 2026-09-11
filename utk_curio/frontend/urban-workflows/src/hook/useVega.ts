@@ -207,9 +207,47 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
     return counts;
   };
 
+  // dev/137: the fields this document plots, and how many rows hold a usable
+  // value in them. A chart handed rows that are all null in its encoded field
+  // draws nothing whether the renderer drops those rows or draws zero-extent
+  // marks — so the DATA decides, not the scene graph.
+  const encodedFields = (spec: any): string[] => {
+    const out: string[] = [];
+    const walk = (node: any) => {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) { node.forEach(walk); return; }
+      for (const [key, value] of Object.entries(node)) {
+        if (key === "encoding" && value && typeof value === "object") {
+          for (const channel of Object.values(value as Record<string, any>)) {
+            const field = (channel as any)?.field;
+            if (typeof field === "string" && field && !out.includes(field)) {
+              out.push(field);
+            }
+          }
+        }
+        walk(value);
+      }
+    };
+    walk(spec);
+    return out;
+  };
+
+  const usableRowCount = (values: any[], fields: string[]): number | undefined => {
+    if (!Array.isArray(values) || fields.length === 0) return undefined;
+    return values.filter((row) =>
+      fields.some((field) => {
+        const value = row?.[field];
+        return value !== null && value !== undefined && value !== ""
+          && !(typeof value === "number" && Number.isNaN(value));
+      }),
+    ).length;
+  };
+
   const compileGrammar = async (specObj: any) => {
     let values: any = await parseInputData(data.input);
     const rowsIn = Array.isArray(values) ? values.length : undefined;
+    const usableFields = encodedFields(specObj);
+    const usableRows = usableRowCount(values, usableFields);
 
     specObj["data"] = { values: values, name: "data" };
     // Multi-view specs keep their authored size (vega-lite discards a
@@ -410,7 +448,8 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
 
     // dev/136: what this render actually amounted to. Awaited last, so the
     // listeners above are attached exactly when they were before.
-    return { rowsIn, drawn: await rendered };
+    // dev/137: plus what the DATA held in the fields this document plots.
+    return { rowsIn, drawn: await rendered, usableRows, usableFields };
   };
 
 

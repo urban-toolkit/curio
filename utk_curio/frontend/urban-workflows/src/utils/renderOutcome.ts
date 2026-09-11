@@ -23,6 +23,17 @@ export type RenderCause = "no-layers" | "no-input-rows" | "nothing-drawn" | null
 export interface RenderCounts {
   /** Rows/features handed to the renderer. `undefined` = could not count. */
   rowsIn?: number;
+  /**
+   * Rows whose ENCODED fields hold a usable value (dev/137). A chart can be
+   * handed rows that are all null in the field it plots — the owner's
+   * `7a27b702` joined with `how="left"` on keys that cannot match — and then
+   * the renderer either drops them (no marks) or draws zero-extent ones. Both
+   * are an empty picture, so the data decides rather than the scene graph.
+   * `undefined` = could not count.
+   */
+  usableRows?: number;
+  /** The field(s) whose values were counted, for the message. */
+  usableFields?: string[];
   /** Marks/items the renderer actually drew. `undefined` = could not count. */
   drawn?: number;
   /** Layers the document asked for (Autark). */
@@ -94,7 +105,27 @@ export function renderOutcome(counts: RenderCounts): RenderOutcome {
     };
   }
 
-  // 3. Rows arrived and none of them became a mark: an encoding, a transform
+  // 3. Rows arrived and NONE of them hold a value in the fields this document
+  //    plots. Counted from the data, so a renderer that draws a zero-extent
+  //    mark for a null cannot read as "drawn" (dev/137).
+  if (
+    typeof rowsIn === "number" && rowsIn > 0 &&
+    typeof counts.usableRows === "number" && counts.usableRows === 0
+  ) {
+    const fields = names(counts.usableFields);
+    return {
+      empty: true,
+      cause: "nothing-drawn",
+      message: bounded(
+        `rendered nothing — ${rowsIn} row${rowsIn === 1 ? "" : "s"} arrived and ` +
+        `every value of ${fields} is null, so there is nothing to plot. The ` +
+        "upstream node that produces those columns is what must change — a " +
+        "join that matched nothing leaves rows with no data in them.",
+      ),
+    };
+  }
+
+  // 4. Rows arrived and none of them became a mark: an encoding, a transform
   //    or a scale domain removed every one. The document is what must change.
   if (
     typeof rowsIn === "number" && rowsIn > 0 &&

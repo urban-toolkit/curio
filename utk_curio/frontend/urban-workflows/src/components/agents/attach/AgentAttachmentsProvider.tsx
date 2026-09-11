@@ -742,6 +742,35 @@ export const AgentAttachmentsProvider: React.FC<{
           ...prev,
           [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: status },
         }));
+      /**
+       * dev/137: drop what an earlier pass said about this node.
+       *
+       * dev/131 made Solve a SESSION of passes, and these maps were only ever
+       * written — so the owner's `7a27b702` showed every pill *solved*,
+       * "Finished — nothing left to do", and at the same time "not fixed after
+       * 15 attempts …" and "pending — waiting — upstream '1b133767' has no
+       * content yet" for a node that ended solved with 620 characters of
+       * content. Both lines were true of an earlier pass. A panel that says
+       * two contradictory things is worse than either, so the event that
+       * supersedes a line is what removes it.
+       */
+      const forget = (nodeId: string) => {
+        const drop = (prev: Record<string, Record<string, unknown>>) => {
+          const forAttachment = prev[attachmentId];
+          if (!forAttachment || !(nodeId in forAttachment)) return prev;
+          const { [nodeId]: _gone, ...rest } = forAttachment;
+          return { ...prev, [attachmentId]: rest };
+        };
+        setSolveErrors((prev) => drop(prev) as Record<string, Record<string, string>>);
+        setSolveNotices((prev) => drop(prev) as Record<string, Record<string, string>>);
+        setSolveRemedies(
+          (prev) =>
+            drop(prev) as Record<
+              string,
+              Record<string, import("../../../api/agentsApi").AgentRemedy>
+            >,
+        );
+      };
       return (name: string, payload: Record<string, unknown>) => {
         if (name === "solve_pass" || name === "solve_waiting") {
           // dev/131: the session keeps making passes; `waiting` names the
@@ -764,6 +793,13 @@ export const AgentAttachmentsProvider: React.FC<{
             const { [attachmentId]: _gone, ...rest } = prev;
             return rest;
           });
+          // dev/137: a node this pass will attempt again carries nothing from
+          // the pass before it.
+          if (Array.isArray(payload.targets)) {
+            for (const target of payload.targets) {
+              if (typeof target === "string") forget(target);
+            }
+          }
           return;
         }
         if (name === "solve_wave") {
@@ -787,6 +823,9 @@ export const AgentAttachmentsProvider: React.FC<{
           const notExecutable = status === "solved" && verification?.status === "not-executable";
           // dev/118: a browser-rendered kind is WRITTEN, never "verified".
           mark(nodeId, notExecutable ? "written" : status === "solved" && payload.verdict === "pass" ? "verified" : status);
+          // dev/137: this result is the node's current truth — whatever an
+          // earlier pass said about it is gone before the new state is written.
+          forget(nodeId);
           const notice =
             notExecutable && typeof verification?.reason === "string"
               ? verification.reason
@@ -865,7 +904,17 @@ export const AgentAttachmentsProvider: React.FC<{
           setSolveEndedBy((prev) => ({ ...prev, [attachmentId]: endedBy }));
         }
         const waiting = (result as { waiting?: unknown } | undefined)?.waiting;
-        if (Array.isArray(waiting)) {
+        if (endedBy === "complete") {
+          // dev/137: a session that finished everything waits for nothing.
+          // "Finished — nothing left to do" over a pending line was the other
+          // half of the owner's contradictory panel.
+          setSolveWaiting((prev) => {
+            const { [attachmentId]: _done, ...rest } = prev;
+            return rest;
+          });
+        } else if (Array.isArray(waiting)) {
+          // Stopped, out of budget or blocked: those nodes DO still wait, and
+          // saying so is the honest line.
           setSolveWaiting((prev) => ({
             ...prev,
             [attachmentId]: (waiting as Array<Record<string, unknown>>).map((w) => ({

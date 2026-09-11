@@ -110,6 +110,11 @@ const Harness: React.FC = () => {
           .map(([n, e]) => `${n}:${e}`)
           .join("|") || "∅"}
       </div>
+      <div data-testid="solve-waiting">
+        {(ctx.solveWaiting["a1"] ?? [])
+          .map((w) => `${w.nodeId}:${w.kind}`)
+          .join("|") || "∅"}
+      </div>
       <div data-testid="selected">{ctx.selectedId ?? "none"}</div>
       <div data-testid="hydrating">{ctx.hydratingId ?? "none"}</div>
       <div data-testid="turns">{turns.map((t) => `${t.role}:${t.text}`).join("|")}</div>
@@ -765,6 +770,78 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     await act(async () => {
       finish({ attachmentId: "a1", executionId: "e2", results: {}, appliedContents: [], builderSession: { phase: "ready" } });
     });
+  });
+
+  it("dev/137: a later result clears what an earlier pass said about the node", async () => {
+    let emit: (name: string, payload: Record<string, unknown>) => void = () => undefined;
+    let finish: (r: Awaited<ReturnType<typeof api.solveAttachmentStream>>) => void = () => undefined;
+    api.solveAttachmentStream.mockImplementation(
+      (_p: string, _a: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        emit = onEvent;
+        return new Promise((res) => {
+          finish = res as (r: unknown) => void;
+        }) as ReturnType<typeof api.solveAttachmentStream>;
+      },
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("solve"));
+    await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
+    // Pass 1: n1 fails, n2 waits on it. This is the owner's `7a27b702` panel.
+    act(() => {
+      emit("solve_pass", { pass: 1, targets: ["n1", "n2"], waiting: [] });
+      emit("node_result", { nodeId: "n1", status: "failed",
+        error: "not fixed after 15 attempts — execution-error: SyntaxError: invalid syntax" });
+      emit("node_result", { nodeId: "n2", status: "pending",
+        reason: "waiting — upstream node 'n1' has no content yet — solve or fill it first" });
+    });
+    expect(screen.getByTestId("solve-errors")).toHaveTextContent("n1:not fixed after 15 attempts");
+    expect(screen.getByTestId("solve-notices")).toHaveTextContent("n2:pending");
+    // Pass 2 attempts them again: the previous pass's lines go FIRST.
+    act(() => {
+      emit("solve_pass", { pass: 2, targets: ["n1", "n2"], waiting: [] });
+    });
+    expect(screen.getByTestId("solve-errors")).toHaveTextContent("∅");
+    expect(screen.getByTestId("solve-notices")).toHaveTextContent("∅");
+    // …and when they solve, nothing contradicts the pill.
+    act(() => {
+      emit("node_result", { nodeId: "n1", status: "solved", verdict: "pass", content: "df" });
+      emit("node_result", { nodeId: "n2", status: "solved", verdict: "pass", content: "df" });
+    });
+    expect(screen.getByTestId("solve-errors")).toHaveTextContent("∅");
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:verified|n2:verified");
+    await act(async () => {
+      finish({
+        attachmentId: "a1", executionId: "e1",
+        results: { n1: { status: "solved" }, n2: { status: "solved" } },
+        appliedContents: [], builderSession: { phase: "ready" },
+        endedBy: "complete",
+        waiting: [{ nodeId: "n2", kind: "upstream", reason: "waiting — upstream" }],
+      } as never);
+    });
+    // A session that finished everything waits for nothing — the other half of
+    // the contradiction ("Finished — nothing left to do" over a pending line).
+    expect(screen.getByTestId("solve-waiting")).toHaveTextContent("∅");
+  });
+
+  it("dev/137: a session that did NOT finish keeps saying what it waits for", async () => {
+    let finish: (r: Awaited<ReturnType<typeof api.solveAttachmentStream>>) => void = () => undefined;
+    api.solveAttachmentStream.mockImplementation(
+      () => new Promise((res) => {
+        finish = res as (r: unknown) => void;
+      }) as ReturnType<typeof api.solveAttachmentStream>,
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("solve"));
+    await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
+    await act(async () => {
+      finish({
+        attachmentId: "a1", executionId: "e1", results: {}, appliedContents: [],
+        builderSession: { phase: "applied" },
+        endedBy: "budget",
+        waiting: [{ nodeId: "n9", kind: "dataset-selection", reason: "awaiting your selection" }],
+      } as never);
+    });
+    expect(screen.getByTestId("solve-waiting")).toHaveTextContent("n9:dataset-selection");
   });
 
   it("dev/118: waves, written-not-executed pills and pending/skipped notices ride the stream and clear on done", async () => {

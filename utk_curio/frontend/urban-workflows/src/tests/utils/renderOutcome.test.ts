@@ -30,6 +30,31 @@ describe("renderOutcome", () => {
     expect(outcome.message).toContain("not at fault");
   });
 
+  it("reports an all-null encoded field, whatever the scene graph drew", () => {
+    // dev/137, the owner's `7a27b702`: the join left every `population` value
+    // null, so the chart either drops those rows or draws zero-extent bars —
+    // both are an empty picture, and the DATA is what says so.
+    const outcome = renderOutcome({
+      rowsIn: 2, usableRows: 0, usableFields: ["population"], drawn: 2,
+    });
+    expect(outcome.empty).toBe(true);
+    expect(outcome.cause).toBe("nothing-drawn");
+    expect(outcome.message).toContain("2 rows arrived");
+    expect(outcome.message).toContain("every value of population is null");
+    // The join that emptied it is upstream, and the message says so.
+    expect(outcome.message).toContain("upstream node that produces those columns");
+  });
+
+  it("some usable values is not empty, even with few of them", () => {
+    expect(renderOutcome({ rowsIn: 10, usableRows: 1, usableFields: ["x"], drawn: 1 }).empty)
+      .toBe(false);
+  });
+
+  it("an uncounted usable set falls through to the mark count", () => {
+    expect(renderOutcome({ rowsIn: 3, drawn: 0 }).cause).toBe("nothing-drawn");
+    expect(renderOutcome({ rowsIn: 3, usableRows: undefined, drawn: 3 }).empty).toBe(false);
+  });
+
   it("blames the document when rows arrived and no mark was drawn", () => {
     const outcome = renderOutcome({ rowsIn: 3, drawn: 0 });
     expect(outcome.cause).toBe("nothing-drawn");
