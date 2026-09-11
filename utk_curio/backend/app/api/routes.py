@@ -571,6 +571,37 @@ def report_node_runtime():
     return '', 204
 
 
+@bp.route('/nodeRuntime', methods=['GET'])
+@require_auth
+def read_node_runtime():
+    """What this node's last run and last render did (memo dev/138).
+
+    The same records the agents read (``DEC-052``'s journal, split per origin
+    by dev/137), so the reason a user sees IN THE NODE and the reason an agent
+    is handed cannot differ. Query: ``?dataflowId=…&nodeId=…``.
+
+    Read-only, the caller's own storage key, and an empty answer (never a 404)
+    when the node has no record: "nothing recorded" is a normal state, and the
+    node body must not render an error because of it.
+    """
+    from utk_curio.backend.app.execution import runtime_journal
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    node_id = (request.args.get('nodeId') or '').strip()
+    dataflow_id = (request.args.get('dataflowId') or '').strip()
+    user = getattr(g, 'user', None)
+    if not node_id or not dataflow_id:
+        return jsonify({'error': "'dataflowId' and 'nodeId' are required"}), 400
+    if user is None:
+        return jsonify({'error': 'authentication required'}), 401
+    user_key = _user_dir_key(user)
+    return jsonify({
+        'nodeId': node_id,
+        'run': runtime_journal.read_record(user_key, dataflow_id, node_id),
+        'render': runtime_journal.read_render_record(user_key, dataflow_id, node_id),
+    }), 200
+
+
 @bp.route('/processJavaScriptCode', methods=['POST'])
 @require_auth
 def process_javascript_code():

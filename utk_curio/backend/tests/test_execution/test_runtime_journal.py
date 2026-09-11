@@ -565,3 +565,64 @@ class TestAnAbsentOutputIsAFailedRun:
         assert runtime_journal.is_absent_output({"path": "a", "dataType": "dataframe"}) is False
         assert runtime_journal.is_absent_output({"path": "a", "dataType": "tensor"}) is False
         assert runtime_journal.is_absent_output(None) is True
+
+
+class TestTheReadEndpoint:
+    """dev/138: the node reads the SAME record the agents read, so a user and
+    an agent can never see different explanations of one node."""
+
+    def _project(self, client, token):
+        body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": []}}, "outputs": []}
+        return client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
+
+    def test_it_returns_both_records(self, client, user_and_token, tmp_curio):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = self._project(client, token)
+        key = _user_dir_key(user)
+        runtime_journal.record_execution(
+            key, pid, "n1", code="return df", stdout=[], stderr="",
+            output={"path": "art-1", "dataType": "dataframe"},
+            started_at="2026-09-11T01:00:00Z", duration_ms=5,
+        )
+        runtime_journal.record_browser_execution(
+            key, pid, "n1", status="error", message="rendered nothing — 0 rows",
+            kind="empty-render:no-input-rows",
+        )
+        body = client.get(
+            f"/nodeRuntime?dataflowId={pid}&nodeId=n1", headers=_auth(token),
+        ).get_json()
+        assert body["run"]["status"] == "ok"
+        assert body["run"]["output"]["dataType"] == "dataframe"
+        assert body["render"]["status"] == "error"
+        assert body["render"]["kind"] == "empty-render:no-input-rows"
+
+    def test_nothing_recorded_is_an_empty_answer_not_a_404(
+        self, client, user_and_token, tmp_curio
+    ):
+        # A node with no record is a normal state; the node body must not show
+        # an error because of it.
+        user, token = user_and_token
+        pid = self._project(client, token)
+        response = client.get(
+            f"/nodeRuntime?dataflowId={pid}&nodeId=ghost", headers=_auth(token),
+        )
+        assert response.status_code == 200
+        assert response.get_json() == {"nodeId": "ghost", "run": None, "render": None}
+
+    def test_it_validates_and_requires_auth(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        pid = self._project(client, token)
+        assert client.get(f"/nodeRuntime?dataflowId={pid}", headers=_auth(token)).status_code == 400
+        assert client.get("/nodeRuntime?nodeId=n1", headers=_auth(token)).status_code == 400
+        assert client.get(f"/nodeRuntime?dataflowId={pid}&nodeId=n1").status_code in (401, 403)
+
+    def test_another_users_project_reads_as_empty(self, client, user_and_token, tmp_curio):
+        # The caller's own storage key is used, so a foreign id simply has
+        # nothing under it.
+        user, token = user_and_token
+        body = client.get(
+            "/nodeRuntime?dataflowId=not-mine&nodeId=n1", headers=_auth(token),
+        ).get_json()
+        assert body == {"nodeId": "n1", "run": None, "render": None}

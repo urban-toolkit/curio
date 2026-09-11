@@ -17,6 +17,7 @@ import { useFlowContext } from '../providers/FlowProvider';
 import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
 import ErrorBoundary from "./ErrorBoundary";
+import { NodeOutcomeStrip } from './nodes/NodeOutcomeStrip';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -82,7 +83,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const showLoading = behavior.showLoading ?? false;
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn, projectId } = useFlowContext();
   const collab = useCollab();
   const lastTriggerExecRef = useRef<number>(data.triggerExec ?? 0);
   const outputCodeRef = useRef(output?.code);
@@ -291,6 +292,19 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           behavior.contentComponent ?? null
         )}
         </ErrorBoundary>
+
+        {/* dev/138: the node carries its own reason. A toast fades and a code
+            node's traceback lives in its output area, but a grammar or
+            presentation node had no surface at all — so a failed render was a
+            red word with no text. Outside the boundary on purpose: a node whose
+            content subtree crashed is exactly the one that must still say why. */}
+        {!dashboardOn && (
+          <NodeOutcomeStrip
+            nodeId={data.nodeId}
+            projectId={projectId}
+            output={output}
+          />
+        )}
 
         {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </NodeContainer>
