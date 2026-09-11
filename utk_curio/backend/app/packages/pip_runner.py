@@ -235,6 +235,34 @@ def _module_for_distribution(name: str) -> str:
     return sorted(public or real or candidates)[0]
 
 
+def distributions_for_module(module: str) -> list[str]:
+    """Every installed distribution that provides top-level *module*.
+
+    The inverse of :func:`_module_for_distribution`, over the same
+    ``packages_distributions()`` map, and answering a different question: not
+    "what does this requirement import as" but "is anything already providing
+    this import". The node-run missing-import detector asks it to tell a library
+    that is genuinely absent (pip would fix it) apart from one that is installed
+    and still will not import (pip would report it satisfied and change
+    nothing) - a distinction ``test_broken_library_stub`` exists to witness.
+
+    Metadata only: it imports nothing and spawns nothing, so it is cheap enough
+    to sit on a failed execution's response path. An empty list is the common
+    case and the one that means "offer to install it".
+    """
+    try:
+        from importlib.metadata import packages_distributions
+    except ImportError:  # pragma: no cover - Python < 3.10
+        return []
+
+    try:
+        mapping = packages_distributions()
+    except Exception:  # pragma: no cover - defensive
+        return []
+
+    return sorted(dict.fromkeys(mapping.get(module, [])))
+
+
 #: Imports every requested module in ONE interpreter and reports each verdict.
 #: Reads the ``{distribution: module}`` map on stdin so no name has to survive
 #: shell quoting, and writes ``{distribution: reason}`` for the failures.
