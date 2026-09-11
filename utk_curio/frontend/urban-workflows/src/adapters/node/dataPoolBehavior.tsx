@@ -5,7 +5,9 @@ import useTableData from '../../hook/useTableData';
 import { ICodeData, ICodeDataContent } from '../../types';
 import { IPropagation } from '../../providers/FlowProvider';
 import DataPoolContent from './components/DataPoolContent';
-import { hasIncomingEdge } from '../../utils/nodeEmptyState';
+import { hasIncomingEdge, NODE_EMPTY_COPY, resolveNodeEmptyReason } from '../../utils/nodeEmptyState';
+import { reportNodeRuntime } from '../../services/nodeRuntimeReport';
+import { useFlowContext } from '../../providers/FlowProvider';
 import { ResolutionType, VisInteractionType, NodeType } from '../../constants';
 
 export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -13,6 +15,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // only the graph knows (#224).
   const poolEdges = useEdges();
   const connected = hasIncomingEdge(poolEdges, data.nodeId);
+  const { projectId: flowProjectId } = useFlowContext();
   const [output, setOutput] = useState<ICodeData>({ code: '', content: '' });
   const [plotResolutionMode, setPlotResolutionMode] = useState<string>(ResolutionType.OVERWRITE);// how interaction conflicts are solved in the context of one plot
   const [resolutionMode, setResolutionMode] = useState<string>(ResolutionType.OVERWRITE);// how interaction conflicts between plots are resolved
@@ -524,6 +527,44 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
     if (displayTable) return createTableData(displayTable as ICodeDataContent);
     return [];
   }, [output, tabData, activeTab, createTableData]);
+
+  // dev/138 (closes dev/137 F1): the pool is the node that DETECTS a bad
+  // input — "this input is not tabular data" is its own sentence — and it
+  // reported nothing to the journal, because its outcome lives in this
+  // behavior's local state rather than in `nodeState.output`, so dev/135's
+  // reporter never fired for it. In the owner's `edd71e67` the pool was the
+  // only node that knew the upstream had produced something unusable.
+  //
+  // Only the two REAL failures are reported. A pool that is not wired yet owes
+  // nothing, and one whose upstream has not run is waiting rather than broken
+  // — its upstream reports its own outcome.
+  useEffect(() => {
+    const hasInput = data.input != null && data.input !== "";
+    const reason = resolveNodeEmptyReason({
+      connected,
+      hasInput,
+      tabular: tabData.length > 0,
+      rowCount: tableData.length,
+    });
+    if (reason === "disconnected" || reason === "upstream-not-run") return;
+    const projectId = (data as { projectId?: string }).projectId ?? flowProjectId;
+    if (!projectId) return;
+    if (reason === null) {
+      void reportNodeRuntime({
+        dataflowId: projectId, nodeId: data.nodeId, status: "ok",
+        outputType: (data.input as { dataType?: string } | null)?.dataType ?? "",
+      });
+      return;
+    }
+    const copy = NODE_EMPTY_COPY[reason];
+    void reportNodeRuntime({
+      dataflowId: projectId,
+      nodeId: data.nodeId,
+      status: "error",
+      message: `${copy.title} — ${copy.hint}`,
+      kind: `bad-input:${reason}`,
+    });
+  }, [connected, data, tabData.length, tableData.length, flowProjectId]);
 
   // Memoize so the JSX reference is stable across re-renders. NodeEditor
   // auto-switches to the "output" tab whenever `contentComponent` changes
