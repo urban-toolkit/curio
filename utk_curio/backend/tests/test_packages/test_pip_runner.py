@@ -425,14 +425,26 @@ class TestDistributionNameNormalisation:
     def test_a_real_installed_distribution_reports_no_failure(self):
         """The end-to-end half, over a dependency every install really has.
 
-        Flask's metadata spells it with a capital F while its module is
-        lowercase, so an equality lookup falls through to the requirement's own
-        spelling and probes ``import Flask`` — which fails on any case-sensitive
-        filesystem, inventing a failure for a library that imports fine.
+        ``python-dotenv`` is the witness because it fails BOTH ways under the
+        old equality lookup: its metadata spells it with hyphens while pip
+        accepts the underscore a manifest may well carry, and its module is
+        ``dotenv``, which the requirement never names. So an equality match
+        misses, the fallback yields ``python_dotenv``, and the probe reports
+        ``No module named 'python_dotenv'`` for a library that imports fine -
+        the fabricated failure #232 was about.
+
+        Flask cannot stand in here: its module is its distribution name
+        lowercased, so the buggy fallback happens to land on the right module
+        and the test would pass against the bug it exists to catch.
+
+        Unstubbed on purpose - this is the one test in the class that runs the
+        real mapping, the real ``installed_version`` and the real subprocess
+        probe end to end.
         """
         pip_runner.forget_import_probes()
-        assert pip_runner.import_failures(["Flask"]) == {}
-        assert pip_runner.import_failures(["flask"]) == {}
+        assert pip_runner._module_for_distribution("python_dotenv") == "dotenv"
+        assert pip_runner.import_failures(["python_dotenv"]) == {}
+        assert pip_runner.import_failures(["python-dotenv"]) == {}
 
     def test_separators_are_normalised_the_pep_503_way(self):
         assert pip_runner._canonical_dist_name("py-yaml") == "py-yaml"
