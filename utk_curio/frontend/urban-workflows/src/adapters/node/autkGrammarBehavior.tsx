@@ -9,6 +9,7 @@ import { VisInteractionType, NodeType } from '../../constants';
 import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { backendUrl } from '../../utils/backendUrl';
+import { runAndAlwaysSettle } from './autkRunSettlement';
 
 export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     const { showToast } = useToastContext();
@@ -495,18 +496,22 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             if (o.code === 'success' || o.code === 'error') settled = true;
             nodeState.setOutput(o);
         };
-        try {
-            await runGrammar(specString, emit);
-        } catch (err: any) {
-            const msg = err?.message ?? String(err);
-            console.error('[autk-grammar] node error:', msg);
-            emit({ code: 'error', content: msg });
-            showToast(msg, 'error');
-        } finally {
-            if (!settled) {
+        // The net itself lives in autkRunSettlement so it can be tested; see the
+        // note there for why it is unreachable through this hook.
+        await runAndAlwaysSettle(() => runGrammar(specString, emit), {
+            settled: () => settled,
+            onError: (msg) => {
+                // The toast is transient and the node UI has no error tab, so
+                // also log to console - the only durable place tooling (and the
+                // e2e browser-log dump) can read the failure from.
+                console.error('[autk-grammar] node error:', msg);
+                emit({ code: 'error', content: msg });
+                showToast(msg, 'error');
+            },
+            onUnreported: () => {
                 emit({ code: 'error', content: 'The Autark node stopped without reporting a result.' });
-            }
-        }
+            },
+        });
     };
 
     /** Re-probe WebGPU and, if it is there now, run the last spec (#272). */

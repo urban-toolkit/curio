@@ -181,8 +181,23 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // made a millisecond after the load still marks the dataflow dirty.
     const hydratingRef = useRef(false);
 
+    // Bumped by every edit. A save captures it before its request and clears the
+    // dirty flag on return only if it has not moved (#270).
+    //
+    // Without that check the flag was cleared by whichever save happened to
+    // return last, including one whose request predated the edit. The edit was
+    // then live in the client and absent from disk while the UI said "saved":
+    // the 30s auto-save stands down (it is gated on ``projectDirty``), the
+    // beforeunload guard unbinds, and the in-app leave guard stops prompting -
+    // so the next navigation dropped the change with no warning. A rename is
+    // the way it was reported, but a node or code edit made mid-save was lost
+    // the same way, which is why this counts edits rather than watching the
+    // name.
+    const dirtyGenerationRef = useRef(0);
+
     const markDirty = useCallback(() => {
         if (hydratingRef.current) return;
+        dirtyGenerationRef.current += 1;
         setProjectDirty(true);
     }, []);
 
@@ -814,6 +829,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // The ref, not the closure (#270): see projectNameRef.
         const name = nameOverride || projectNameRef.current || workflowNameRef.current;
 
+        // Everything this request carries has now been read out of the store.
+        // Anything the user changes from here on is NOT in the payload, so it
+        // must survive the response as unsaved work (#270).
+        const dirtyAtSend = dirtyGenerationRef.current;
+
         // Read the live id from the ref, not the closure: a save chained right
         // after a create (serialized install saves) must take the update branch.
         const existingId = projectIdRef.current;
@@ -840,7 +860,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             // without a reload. Mirrors the dataset-catalog refresh above.
             notifyAgentDockRefresh();
             setProjectSavedAt(new Date());
-            setProjectDirty(false);
+            // A save did complete, so the timestamp stands - but the flag only
+            // clears if nothing was edited while the request was in flight.
+            if (dirtyGenerationRef.current === dirtyAtSend) {
+                setProjectDirty(false);
+            }
             return detail;
         } else {
             const detail = await projectsApi.create({
@@ -859,7 +883,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 setProjectName(detail.name);
             }
             setProjectSavedAt(new Date());
-            setProjectDirty(false);
+            if (dirtyGenerationRef.current === dirtyAtSend) {
+                setProjectDirty(false);
+            }
             // The backend merges the user's defaults (e.g. ``curio.builtin@1``)
             // into the spec's lockfile on first save. We need to:
             //  1. Pin the store's `projectId` to the freshly-created id —

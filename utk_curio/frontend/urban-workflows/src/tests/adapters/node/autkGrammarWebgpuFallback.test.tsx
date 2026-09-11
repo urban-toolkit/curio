@@ -46,7 +46,11 @@ jest.mock(
 );
 
 import { useAutkGrammarBehavior } from '../../../adapters/node/autkGrammarBehavior';
-import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
+import {
+  __resetWebGpuSupportCache,
+  __setWebGpuAdapterRetryBudget,
+  WEBGPU_ADAPTER_RETRY_BUDGET_MS,
+} from '../../../utils/webgpuSupport';
 
 const MAP_SPEC = JSON.stringify({ map: { layerRefs: [] } });
 const COMPUTE_SPEC = JSON.stringify({
@@ -105,7 +109,16 @@ function withoutGpu() {
 beforeEach(() => {
   jest.clearAllMocks();
   __resetWebGpuSupportCache();
+  // The subject here is the fallback panel and the node's output, not the
+  // retry policy - which has its own suite (webgpuSupport.test.ts) and its own
+  // fake-timer harness. Without this every "no adapter" case below would sit
+  // through the real budget on real timers (#272).
+  __setWebGpuAdapterRetryBudget(0);
   withoutGpu();
+});
+
+afterEach(() => {
+  __setWebGpuAdapterRetryBudget(WEBGPU_ADAPTER_RETRY_BUDGET_MS);
 });
 
 describe('an Autark node on a browser without WebGPU', () => {
@@ -227,6 +240,9 @@ describe('an Autark node on a browser that does have WebGPU', () => {
 
 describe('Firefox: the adapter arrives on the second ask (#272)', () => {
   test('null on the first requestAdapter, an adapter on the retry, and the grammar runs', async () => {
+    // The one case here that IS about the retry, so it needs a budget to retry
+    // within. One backoff step (150 ms) on real timers is the whole cost.
+    __setWebGpuAdapterRetryBudget(500);
     Object.defineProperty(navigator, 'gpu', {
       configurable: true,
       value: {
