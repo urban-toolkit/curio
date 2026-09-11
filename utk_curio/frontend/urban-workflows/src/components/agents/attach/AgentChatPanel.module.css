@@ -26,6 +26,26 @@
   border-left: 1px solid var(--curio-border, var(--curio-border));
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
   overflow: hidden;
+  /* Slides in from the right, on the same curve and duration as the three
+     catalog drawers (#295). The panel already claimed "catalog-drawer sizing
+     parity" above and was the one right-hand surface in the product that
+     appeared and vanished instantly - which read as a glitch beside its peers,
+     and made a detach look like the whole panel had crashed rather than
+     closed. Keep in step with `.drawer` in CatalogDrawerShell.module.css and
+     with DRAWER_MOTION_MS in useSlideDrawerPresentation. */
+  transform: translate3d(100%, 0, 0);
+  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+
+.panelPresented {
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    transition-duration: 0.01ms;
+  }
 }
 
 /* ── header (DEC-042, dev/21): ONE dark top header for the opened agent view —
