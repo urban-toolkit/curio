@@ -381,6 +381,39 @@ whose pool said *"Nothing to display"* and whose chart drew empty axes. If the
 emptiness is genuinely what you want, write that code in the editor yourself;
 Solve will not claim it verified something that produced nothing.
 
+### A node shows its own reason, and `return None` is not an output
+
+Two things a node owes you when it fails (memo dev/138).
+
+**The reason stays in the node.** A toast tells you something happened now; the
+node itself carries the reason afterwards — one line in its body, expandable,
+and still there after a reload because it is read from the same runtime record
+the agents read. A code node's traceback, a chart's *"rendered nothing…"*, a
+pool's *"this input is not tabular data"*: all in the node, all in the same
+words an agent is handed.
+
+**An absent output is a failure, not a success.** A node whose code ends in
+`return None` still stores an artifact — typed `null` — and that used to read as
+success in three places at once: the run journal (an artifact exists), the
+consumer type check (`null` has no port, so it fell through the *unmapped type*
+escape) and the shape check (a payload with no shape cannot be counted). So a
+node that produced nothing was written, called **solved**, and every node below
+it went empty. Now the absence is named wherever it is seen, and the refusal
+quotes the node's own conclusion back:
+
+> the code ran and returned NO output (the sandbox typed it `'null'`) … Your
+> code says: *"A join is not possible with the provided columns."* — if that is
+> your conclusion, it is the right one to state: return that sentence as your
+> whole answer, with no code at all, and it is recorded as this node's honest
+> outcome.
+
+That last part matters more than the check: **saying "this cannot be done" is an
+accepted answer** in Curio, and it always was. A node that says so is more
+useful than one that runs and produces nothing.
+
+An output type Curio does not recognize is still accepted — *absent* and
+*unknown* are different things, and only the first is a failure.
+
 ### Rows with nothing in them are empty too
 
 A result can be non-empty and still contain nothing (memo dev/137). The common

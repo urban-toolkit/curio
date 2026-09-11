@@ -1,7 +1,11 @@
 # dev/138 — A node carries its own failure, and `return None` is not an output
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `ea429b63`. Every claim below was read from
-the owner's project `edd71e67-4806-47ee-8cfd-2149406e73f2` on disk.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-73`, and **no new
+`DEC`**: `DEC-052`'s journal gains one predicate, and `DEC-073`'s "a verified node is one the
+runtime checked" is read for the output's existence. Commits `6ada9d43` (absent output),
+`03efb9db` (the loop's refusal), `b91f812a` (the node's own reason), `6acd780f` (the pool + the
+prompt), + this docs commit. Closes dev/137 **F1**. Every claim below was read from the owner's
+project `edd71e67-4806-47ee-8cfd-2149406e73f2` on disk.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `ea429b63` (dev/137's docs commit).
@@ -278,3 +282,40 @@ solved.
   model's own words so the correction is grounded in what it already concluded.
 - The pool's four reasons keep one vocabulary (`nodeEmptyState`) across the body, the report and the
   journal.
+
+---
+
+## 11. What changed while building
+
+1. **A fail-open write path hid its own bug.** The first version of the journal change referenced
+   `stderr_text` before it was assigned; `record_execution`'s own
+   `except Exception: pass` swallowed the `NameError`, so **nothing was written at all** and twelve
+   tests failed in a cascade that pointed everywhere except the cause. The ordering is now explicit,
+   and the lesson is recorded here because the same swallow protects every future edit to that
+   function.
+2. **"Absent" and "unknown" needed to be separated in three places, not one.** The journal's
+   predicate, the consumer type check's fail-open escape and the loop's verdict each had their own
+   way of shrugging at `null`; one list (`NULL_OUTPUT_TYPES`) and one predicate
+   (`is_absent_output`) now serve all three, and a type this build does not recognize still passes
+   — which a test pins, because turning a new sandbox type into a false failure would be a worse
+   bug than the one being fixed.
+3. **The refusal quotes the node's own comment.** `declared_conclusion` reads the last comment line
+   longer than twenty characters — enough to skip `# ok` and `# TODO`. The owner's node had already
+   worked out the answer (*"A join is not possible with the provided columns."*); what it lacked was
+   being told that this conclusion has somewhere to go. That is a prompt-and-diagnosis pair, not a
+   check.
+4. **The strip lives OUTSIDE the per-node error boundary.** A node whose content subtree crashed is
+   exactly the one that must still say why, so the strip is a sibling of the boundary rather than a
+   child of it.
+5. **The pool reports directly rather than through `nodeState.setOutput`.** Its outcome lives in the
+   behavior's own state (`outputOverride`), and routing a failure through the shared node output
+   would have changed what downstream logic reads from `output.content`. Reporting from the behavior
+   keeps the data path untouched and still reaches the journal.
+6. **`GET /nodeRuntime` answers empty rather than 404** for a node with no record: "nothing
+   recorded" is a normal state, and a node body must not render an error because of it.
+
+Recorded and not done: **F1** — the strip shows the latest outcome only (history is provenance's
+job); **F2** — a node's *notice*-level states (a pool waiting on its upstream) are reported as
+silence rather than as a status, which is honest but means the journal cannot distinguish "waiting"
+from "never ran"; **F3** — the two datasets in `edd71e67` still cannot be joined, and the honest
+repair is a population dataset keyed by community area (dev/126/132's lane).
