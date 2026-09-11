@@ -567,12 +567,22 @@ def execute_read_tool(
             node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
             if node is None:
                 return "error", f"node {node_id!r} not found in the saved spec"
+            # dev/137: two origins describe two different things about one node
+            # — what its CODE did and what its RENDER drew. The run leads when
+            # there is one; a grammar node has only its render; and a code node
+            # that also rendered carries both, because a run that passed can
+            # still have drawn nothing (dev/136).
             record = runtime_journal.read_record(user_key, project_id, node_id)
-            if record is None:
+            render = runtime_journal.read_render_record(user_key, project_id, node_id)
+            if record is None and render is None:
                 return "ok", json.dumps(
                     {"nodeId": node_id, "status": "never-executed"}, ensure_ascii=False
                 )
-            record = dict(record)
+            record = dict(record or render or {})
+            if record is not None and render is not None and (
+                runtime_journal.read_record(user_key, project_id, node_id) is not None
+            ):
+                record["render"] = render
             executed_sha = record.get("executedCodeSha256")
             current_sha = runtime_journal.normalized_code_sha256(str(node.get("content") or ""))
             # Best-effort staleness signal: the run predates the current content.

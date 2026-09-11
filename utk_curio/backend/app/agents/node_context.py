@@ -82,20 +82,15 @@ def compose_node_context(
     def _status(nid: str) -> str:
         return (runtime.get(nid) or {}).get("status") or "never-executed"
 
-    def _runtime_block(nid: str) -> dict:
-        """What this node's last run DID (memo dev/135), bounded.
-
-        Read from the journal record itself rather than from the status map, so
-        the message and the output type ride along; a node that never ran gets
-        the status word alone, because there is nothing else true to say.
-        """
-        status = _status(nid)
-        block: dict = {"status": status}
-        if status == "never-executed":
-            return block
-        record = runtime_journal.read_record(user_key, project_id, nid) or {}
+    def _describe(record: dict | None) -> dict:
+        """One journal record as a bounded block, or ``{}``."""
+        record = record if isinstance(record, dict) else {}
+        if not record:
+            return {}
+        status = str(record.get("status") or "")
+        block: dict = {"status": status} if status else {}
         message = str(
-            record.get("stderrTail") if status == "error" else record.get("stdoutTail")
+            (record.get("stderrTail") if status == "error" else record.get("stdoutTail"))
             or ""
         ).strip()
         if message:
@@ -105,10 +100,36 @@ def compose_node_context(
             block["outputType"] = str(output["dataType"])[:60]
         if record.get("origin"):
             block["origin"] = str(record["origin"])[:20]
+        if record.get("kind"):
+            # dev/136: `empty-render:<cause>` — what KIND of outcome this was.
+            block["kind"] = str(record["kind"])[:40]
         if record.get("startedAt") or record.get("updatedAt"):
             block["ranAt"] = str(record.get("startedAt") or record.get("updatedAt"))[:40]
         if isinstance(record.get("durationMs"), (int, float)):
             block["durationMs"] = int(record["durationMs"])
+        return block
+
+    def _runtime_block(nid: str) -> dict:
+        """What this node's last run and last render DID (dev/135, dev/137).
+
+        dev/137: two origins describe two different things about one node — what
+        its CODE did (the artifact, the dataType, the traceback) and what its
+        RENDER drew — and neither may stand in for the other. The block leads
+        with the run when there is one (a code node), falls back to the render
+        (a grammar node has only that), and carries the render beside it when
+        both exist, because a node whose code passed can still have drawn
+        nothing.
+        """
+        status = _status(nid)
+        if status == "never-executed":
+            return {"status": status}
+        run = runtime_journal.read_record(user_key, project_id, nid)
+        render = runtime_journal.read_render_record(user_key, project_id, nid)
+        block = _describe(run) or _describe(render) or {"status": status}
+        if run and render:
+            described = _describe(render)
+            if described:
+                block["render"] = described
         return block
 
     def _row(nid: str) -> dict:

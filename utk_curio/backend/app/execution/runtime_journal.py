@@ -191,51 +191,57 @@ def record_browser_execution(
     if status not in STATUSES:
         return False
     text = str(message or "")[-BROWSER_MESSAGE_CHARS:]
-    record_execution(
-        user_key, project_id, node_id,
-        code=code,
-        stdout=[],
-        stderr=text if status == STATUS_ERROR else "",
-        # A browser run produces no artifact; the declared type is what it can
-        # honestly report about its output.
-        output={"path": "", "dataType": str(output_type or "")},
-        started_at=started_at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        duration_ms=duration_ms,
-        status=status,
-        origin=ORIGIN_BROWSER,
-        kind=kind,
-    )
-    if status != STATUS_ERROR and text:
-        # A successful render may still have something to say (a warning, a
-        # layer count). It rides stdout so nothing reads it as a failure.
-        _amend_stdout(user_key, project_id, node_id, text)
+    # dev/137: its OWN file. dev/135 wrote through `record_execution`, which is
+    # latest-per-node — and the client always writes LAST (the sandbox responds,
+    # React settles the output, the reporter posts), so every code node's run
+    # record was being overwritten by a render report carrying no artifact, no
+    # dataType and no traceback. The owner's `7a27b702` had six records and all
+    # six said `origin: browser`, including four Python nodes. Two origins, two
+    # files: a run keeps its own facts forever.
+    try:
+        previous = read_render_record(user_key, project_id, node_id)
+        try:
+            seq = int((previous or {}).get("executionSeq") or 0) + 1
+        except (TypeError, ValueError):
+            seq = 1
+        record = {
+            "nodeId": node_id,
+            "status": status,
+            "stderrTail": text if status == STATUS_ERROR else "",
+            "stdoutTail": "" if status == STATUS_ERROR else text[-_STDOUT_TAIL_CHARS:],
+            # A browser run produces no artifact; the declared type is what it
+            # can honestly report about its output.
+            "output": {"path": "", "dataType": str(output_type or "")},
+            "startedAt": started_at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "durationMs": int(duration_ms or 0),
+            "executionSeq": seq,
+            "executedCodeSha256": normalized_code_sha256(str(code or "")),
+            "validation": False,
+            "origin": ORIGIN_BROWSER,
+            **({"kind": str(kind)[:_KIND_CHARS]} if kind else {}),
+            "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        directory = projects_storage.ensure_project_dir(user_key, project_id) / "runtime"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f"{_node_segment(node_id)}{_RENDER_SUFFIX}").write_text(
+            json.dumps(record, ensure_ascii=False), encoding="utf-8",
+        )
+    except Exception:
+        # Observational store: a render must never fail over its journal.
+        pass
     return True
 
 
-def _amend_stdout(user_key: str, project_id: str, node_id: str, text: str) -> None:
-    """Best-effort: put a non-failure message where a reader looks for notes."""
-    try:
-        record = read_record(user_key, project_id, node_id)
-        if not isinstance(record, dict):
-            return
-        record["stdoutTail"] = text[-_STDOUT_TAIL_CHARS:]
-        path = (
-            projects_storage.project_dir(user_key, project_id)
-            / "runtime"
-            / f"{_node_segment(node_id)}.json"
-        )
-        path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
-    except Exception:
-        pass
+#: dev/137: the file a BROWSER report writes, beside the run's own. Two origins
+#: describe two different things about one node — what its code did, and what
+#: its render drew — and neither may erase the other.
+_RENDER_SUFFIX = ".render.json"
 
 
-def read_record(user_key: str, project_id: str, node_id: str) -> dict | None:
-    """The node's latest outcome, or None (never executed / unreadable)."""
+def _read_json(user_key: str, project_id: str, filename: str) -> dict | None:
     try:
         path = (
-            projects_storage.project_dir(user_key, project_id)
-            / "runtime"
-            / f"{_node_segment(node_id)}.json"
+            projects_storage.project_dir(user_key, project_id) / "runtime" / filename
         )
         if not path.is_file():
             return None
@@ -243,6 +249,41 @@ def read_record(user_key: str, project_id: str, node_id: str) -> dict | None:
         return data if isinstance(data, dict) else None
     except Exception:
         return None
+
+
+def read_record(user_key: str, project_id: str, node_id: str) -> dict | None:
+    """The node's latest RUN outcome, or None (never executed / unreadable).
+
+    dev/137: "run" means the sandbox or a validation pass — what the node's
+    CODE did. A browser render has its own record (:func:`read_render_record`),
+    so this one keeps exactly the meaning every caller since dev/67-2 has read
+    it with.
+    """
+    return _read_json(user_key, project_id, f"{_node_segment(node_id)}.json")
+
+
+def read_render_record(user_key: str, project_id: str, node_id: str) -> dict | None:
+    """What this node's last RENDER did, or None (memo dev/137).
+
+    A grammar node has only this; a code node may have both, and then they
+    describe different things — the code's run and the picture it produced.
+    """
+    return _read_json(
+        user_key, project_id, f"{_node_segment(node_id)}{_RENDER_SUFFIX}"
+    )
+
+
+def read_outcome(user_key: str, project_id: str, node_id: str) -> dict | None:
+    """The record that best describes this node's last activity (dev/137).
+
+    The RUN when there is one — it carries the artifact, the dataType and the
+    traceback — else the render. Callers that want one specific origin ask for
+    it by name.
+    """
+    return (
+        read_record(user_key, project_id, node_id)
+        or read_render_record(user_key, project_id, node_id)
+    )
 
 
 #: dev/129: how much of a recorded failure the repair loop is handed. The
@@ -269,7 +310,12 @@ def last_failure(user_key: str, project_id: str, node_id: str) -> dict | None:
     caller compares ``codeSha256`` with ``normalized_code_sha256(content)`` and
     knows whether the failure is about the code that is still there.
     """
+    # dev/137: the RUN's failure first — a traceback is the stronger evidence
+    # and the repair loop's historical input — then the render's, which is the
+    # only one a grammar node can have (dev/136's branch reads it).
     record = read_record(user_key, project_id, node_id)
+    if not isinstance(record, dict) or record.get("status") != "error":
+        record = read_render_record(user_key, project_id, node_id)
     if not isinstance(record, dict) or record.get("status") != "error":
         return None
     stderr = str(record.get("stderrTail") or "")
@@ -305,7 +351,11 @@ def status_map(user_key: str, project_id: str) -> dict[str, dict]:
         directory = projects_storage.project_dir(user_key, project_id) / "runtime"
         if not directory.is_dir():
             return out
-        for path in sorted(directory.glob("*.json")):
+        # dev/137: a run record wins over a render record for the same node —
+        # the runs are read after, so they overwrite the renders' entries.
+        renders = sorted(directory.glob(f"*{_RENDER_SUFFIX}"))
+        runs = [p for p in sorted(directory.glob("*.json")) if p not in set(renders)]
+        for path in [*renders, *runs]:
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except Exception:

@@ -175,7 +175,10 @@ class TestBrowserExecutions:
             KEY, PID, "vega-1",
             status="error", message=self.VEGA_ERROR, duration_ms=12,
         ) is True
-        record = runtime_journal.read_record(KEY, PID, "vega-1")
+        # dev/137: a browser report has its OWN record — a render must never
+        # erase what the node's code did.
+        assert runtime_journal.read_record(KEY, PID, "vega-1") is None
+        record = runtime_journal.read_render_record(KEY, PID, "vega-1")
         assert record["status"] == "error"
         assert record["origin"] == "browser"
         assert record["stderrTail"] == self.VEGA_ERROR
@@ -189,7 +192,7 @@ class TestBrowserExecutions:
         runtime_journal.record_browser_execution(
             KEY, PID, "vega-2", status="ok", output_type="dataframe", duration_ms=8,
         )
-        record = runtime_journal.read_record(KEY, PID, "vega-2")
+        record = runtime_journal.read_render_record(KEY, PID, "vega-2")
         assert record["status"] == "ok"
         assert record["output"]["dataType"] == "dataframe"
         assert record["stderrTail"] == ""
@@ -198,7 +201,7 @@ class TestBrowserExecutions:
         runtime_journal.record_browser_execution(
             KEY, PID, "autk-1", status="ok", message="4 layers drawn",
         )
-        record = runtime_journal.read_record(KEY, PID, "autk-1")
+        record = runtime_journal.read_render_record(KEY, PID, "autk-1")
         assert record["status"] == "ok"
         assert record["stdoutTail"] == "4 layers drawn"
         assert record["stderrTail"] == ""  # nothing reads it as a failure
@@ -217,20 +220,20 @@ class TestBrowserExecutions:
 
     def test_a_running_status_is_not_a_failure(self, tmp_curio):
         runtime_journal.record_browser_execution(KEY, PID, "autk-2", status="running")
-        assert runtime_journal.read_record(KEY, PID, "autk-2")["status"] == "running"
+        assert runtime_journal.read_render_record(KEY, PID, "autk-2")["status"] == "running"
         assert runtime_journal.last_failure(KEY, PID, "autk-2") is None
 
     def test_an_unknown_status_is_refused_and_writes_nothing(self, tmp_curio):
         assert runtime_journal.record_browser_execution(
             KEY, PID, "ghost", status="exploded", message="x",
         ) is False
-        assert runtime_journal.read_record(KEY, PID, "ghost") is None
+        assert runtime_journal.read_render_record(KEY, PID, "ghost") is None
 
     def test_the_message_is_bounded(self, tmp_curio):
         runtime_journal.record_browser_execution(
             KEY, PID, "vega-4", status="error", message="e" * 9000,
         )
-        record = runtime_journal.read_record(KEY, PID, "vega-4")
+        record = runtime_journal.read_render_record(KEY, PID, "vega-4")
         assert len(record["stderrTail"]) <= runtime_journal.BROWSER_MESSAGE_CHARS
 
     def test_it_never_raises(self, tmp_curio):
@@ -306,7 +309,7 @@ class TestTheBrowserReportRoute:
                        message=self.VEGA_ERROR, durationMs=12, code='{"mark": "bar"}')
         assert r.status_code == 204
         key = _user_dir_key(user)
-        record = runtime_journal.read_record(key, pid, "vega-1")
+        record = runtime_journal.read_render_record(key, pid, "vega-1")
         assert record["status"] == "error" and record["origin"] == "browser"
         assert record["stderrTail"] == self.VEGA_ERROR
         assert runtime_journal.status_map(key, pid)["vega-1"]["origin"] == "browser"
@@ -328,7 +331,7 @@ class TestTheBrowserReportRoute:
         assert self._post(client, token, dataflowId="not-mine", nodeId="n1",
                           status="error", message="x").status_code == 204
         key = _user_dir_key(user)
-        assert runtime_journal.read_record(key, "not-mine", "n1") is None
+        assert runtime_journal.read_render_record(key, "not-mine", "n1") is None
         assert not projects_storage.project_dir(key, "not-mine").is_dir()
 
     def test_the_payload_is_validated(self, client, user_and_token, tmp_curio):
@@ -350,7 +353,7 @@ class TestTheBrowserReportRoute:
                    outputType="dataframe", message="m" * 9000,
                    output={"path": "art-stolen", "dataType": "dataframe"},
                    path="art-stolen")
-        record = runtime_journal.read_record(_user_dir_key(user), pid, "vega-2")
+        record = runtime_journal.read_render_record(_user_dir_key(user), pid, "vega-2")
         assert record["output"] == {"path": "", "dataType": "dataframe"}
         assert len(record["stdoutTail"]) <= 2000
         assert record["status"] == "ok"
@@ -365,7 +368,7 @@ class TestTheBrowserReportRoute:
         for duration in (-5, "nonsense", None):
             self._post(client, token, dataflowId=pid, nodeId="vega-3", status="ok",
                        durationMs=duration)
-            record = runtime_journal.read_record(_user_dir_key(user), pid, "vega-3")
+            record = runtime_journal.read_render_record(_user_dir_key(user), pid, "vega-3")
             assert record["durationMs"] == 0
 
 
@@ -382,7 +385,7 @@ class TestTheOutcomeKind:
             KEY, PID, "vega-9", status="error", message=self.EMPTY,
             kind="empty-render:nothing-drawn",
         )
-        record = runtime_journal.read_record(KEY, PID, "vega-9")
+        record = runtime_journal.read_render_record(KEY, PID, "vega-9")
         assert record["kind"] == "empty-render:nothing-drawn"
         failure = runtime_journal.last_failure(KEY, PID, "vega-9")
         assert failure["kind"] == "empty-render:nothing-drawn"
@@ -392,14 +395,14 @@ class TestTheOutcomeKind:
         runtime_journal.record_browser_execution(
             KEY, PID, "vega-10", status="error", message="it threw",
         )
-        assert "kind" not in runtime_journal.read_record(KEY, PID, "vega-10")
+        assert "kind" not in runtime_journal.read_render_record(KEY, PID, "vega-10")
         assert "kind" not in runtime_journal.last_failure(KEY, PID, "vega-10")
 
     def test_the_kind_is_bounded(self, tmp_curio):
         runtime_journal.record_browser_execution(
             KEY, PID, "vega-11", status="error", message="x", kind="k" * 500,
         )
-        assert len(runtime_journal.read_record(KEY, PID, "vega-11")["kind"]) <= 40
+        assert len(runtime_journal.read_render_record(KEY, PID, "vega-11")["kind"]) <= 40
 
     def test_the_route_passes_it_through(self, client, user_and_token, tmp_curio):
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -411,5 +414,96 @@ class TestTheOutcomeKind:
             "dataflowId": pid, "nodeId": "vega-1", "status": "error",
             "message": self.EMPTY, "kind": "empty-render:no-input-rows",
         }, headers=_auth(token))
-        record = runtime_journal.read_record(_user_dir_key(user), pid, "vega-1")
+        record = runtime_journal.read_render_record(_user_dir_key(user), pid, "vega-1")
         assert record["kind"] == "empty-render:no-input-rows"
+
+
+class TestTwoOriginsNeverEraseEachOther:
+    """dev/137, the regression the owner's `7a27b702` exposed.
+
+    Its journal held six records and every one said ``origin: browser`` —
+    including four PYTHON nodes whose editors showed a successful sandbox run.
+    dev/135 wrote a browser report through ``record_execution``, which is
+    latest-per-node, and the client always writes LAST (the sandbox responds,
+    React settles the output, the reporter posts). So every code node's
+    artifact, dataType and traceback were being overwritten by a render report
+    that had none of them.
+    """
+
+    TRACEBACK = "Traceback (most recent call last):\n  KeyError: 'tract_id'"
+
+    def test_a_browser_report_leaves_the_run_record_untouched(self, tmp_curio):
+        runtime_journal.record_execution(
+            KEY, PID, "py-1", code="return df", stdout=["ran"], stderr="",
+            output={"path": "art-42", "dataType": "geodataframe"},
+            started_at="2026-09-11T00:00:00Z", duration_ms=41,
+        )
+        runtime_journal.record_browser_execution(
+            KEY, PID, "py-1", status="ok", output_type="", duration_ms=0,
+        )
+        run = runtime_journal.read_record(KEY, PID, "py-1")
+        assert run["origin"] == "sandbox"
+        assert run["output"] == {"path": "art-42", "dataType": "geodataframe"}
+        assert run["stdoutTail"] == "ran"
+        # And the render is readable in its own right.
+        render = runtime_journal.read_render_record(KEY, PID, "py-1")
+        assert render["origin"] == "browser" and render["output"]["path"] == ""
+
+    def test_a_play_traceback_survives_a_later_browser_ok(self, tmp_curio):
+        """The repair loop's input, restored: dev/129 reads this."""
+        code = "joined = a.merge(b, on='id')\nreturn joined"
+        runtime_journal.record_execution(
+            KEY, PID, "py-2", code=code, stdout=[], stderr=self.TRACEBACK,
+            output={"path": "", "dataType": "str"},
+            started_at="2026-09-11T00:00:00Z", duration_ms=3,
+        )
+        runtime_journal.record_browser_execution(KEY, PID, "py-2", status="ok")
+        failure = runtime_journal.last_failure(KEY, PID, "py-2")
+        assert failure is not None, "the Play traceback must still be the failure"
+        assert "KeyError" in failure["stderr"]
+        assert failure["origin"] == "play"
+        assert runtime_journal.failure_matches(failure, code) is True
+
+    def test_a_render_failure_is_found_when_the_run_did_not_fail(self, tmp_curio):
+        """dev/136's branch: a grammar node has no run, and a code node whose
+        run PASSED can still have drawn nothing."""
+        runtime_journal.record_execution(
+            KEY, PID, "vega-a", code="{}", stdout=[], stderr="",
+            output={"path": "art-1", "dataType": "dataframe"},
+            started_at="2026-09-11T00:00:00Z", duration_ms=1,
+        )
+        runtime_journal.record_browser_execution(
+            KEY, PID, "vega-a", status="error", message="rendered nothing — 0 rows",
+            kind="empty-render:no-input-rows",
+        )
+        failure = runtime_journal.last_failure(KEY, PID, "vega-a")
+        assert failure["origin"] == "browser"
+        assert failure["kind"] == "empty-render:no-input-rows"
+
+    def test_the_run_wins_in_the_status_map_and_in_read_outcome(self, tmp_curio):
+        runtime_journal.record_browser_execution(KEY, PID, "py-3", status="error",
+                                                 message="render blew up")
+        runtime_journal.record_execution(
+            KEY, PID, "py-3", code="return 1", stdout=[], stderr="",
+            output={"path": "art-7", "dataType": "dataframe"},
+            started_at="2026-09-11T00:00:00Z", duration_ms=2,
+        )
+        assert runtime_journal.status_map(KEY, PID)["py-3"]["origin"] == "sandbox"
+        assert runtime_journal.read_outcome(KEY, PID, "py-3")["origin"] == "sandbox"
+        # A node with ONLY a render is described by it.
+        runtime_journal.record_browser_execution(KEY, PID, "vega-b", status="ok",
+                                                 output_type="dataframe")
+        assert runtime_journal.status_map(KEY, PID)["vega-b"]["origin"] == "browser"
+        assert runtime_journal.read_outcome(KEY, PID, "vega-b")["origin"] == "browser"
+
+    def test_the_render_record_keeps_its_own_sequence(self, tmp_curio):
+        for _ in range(3):
+            runtime_journal.record_browser_execution(KEY, PID, "vega-c", status="ok")
+        assert runtime_journal.read_render_record(KEY, PID, "vega-c")["executionSeq"] == 3
+        # …and does not disturb the run's.
+        runtime_journal.record_execution(
+            KEY, PID, "vega-c", code="x", stdout=[], stderr="",
+            output={"path": "p", "dataType": "dataframe"},
+            started_at="2026-09-11T00:00:00Z", duration_ms=1,
+        )
+        assert runtime_journal.read_record(KEY, PID, "vega-c")["executionSeq"] == 1

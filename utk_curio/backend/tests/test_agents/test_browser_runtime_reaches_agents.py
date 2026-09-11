@@ -109,8 +109,10 @@ class TestABrowserFailureReachesEveryAgentPath:
         ctx = node_context.compose_node_context(key, pid, _spec(client, token, pid), "vega-1")
         assert ctx["runtime"]["status"] == "ok"
         assert ctx["runtime"]["outputType"] == "dataframe"
-        # A render produces no artifact, and the record says so honestly.
-        assert runtime_journal.read_record(key, pid, "vega-1")["output"]["path"] == ""
+        # A render produces no artifact, and its own record says so honestly
+        # (dev/137: a render never writes over a run's record).
+        assert runtime_journal.read_render_record(key, pid, "vega-1")["output"]["path"] == ""
+        assert runtime_journal.read_record(key, pid, "vega-1") is None
 
     def test_the_agent_tool_reads_it_too(self, client, user_and_token, tmp_curio):
         """`node.runtime.read` is the model-chosen reader — same record, so it

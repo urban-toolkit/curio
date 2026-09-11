@@ -131,3 +131,38 @@ class TestTheRuntimeBlock:
         )
         runtime = node_context.compose_node_context(KEY, PID, _spec(), "n1")["runtime"]
         assert len(runtime["message"]) <= 240
+
+
+class TestTheRunAndTheRenderTogether:
+    """dev/137: two origins describe two different things about one node."""
+
+    def test_a_code_node_keeps_its_run_and_carries_its_render_beside_it(self, tmp_curio):
+        runtime_journal.record_execution(
+            KEY, PID, "n1", code="return df", stdout=[], stderr="",
+            output={"path": "art-9", "dataType": "geodataframe"},
+            started_at="2026-09-11T00:00:00Z", duration_ms=12,
+        )
+        runtime_journal.record_browser_execution(
+            KEY, PID, "n1", status="error", message="rendered nothing — 0 rows",
+            kind="empty-render:no-input-rows",
+        )
+        runtime = node_context.compose_node_context(KEY, PID, _spec(), "n1")["runtime"]
+        # The RUN leads: its artifact type is what the code produced.
+        assert runtime["status"] == "ok"
+        assert runtime["origin"] == "sandbox"
+        assert runtime["outputType"] == "geodataframe"
+        # And the render rides beside it, because a run that passed can still
+        # have drawn nothing.
+        assert runtime["render"]["status"] == "error"
+        assert runtime["render"]["kind"] == "empty-render:no-input-rows"
+        assert "0 rows" in runtime["render"]["message"]
+
+    def test_a_grammar_node_is_described_by_its_render_alone(self, tmp_curio):
+        runtime_journal.record_browser_execution(
+            KEY, PID, "n1", status="error", message="rendered nothing — 3 rows arrived",
+            kind="empty-render:nothing-drawn",
+        )
+        runtime = node_context.compose_node_context(KEY, PID, _spec(), "n1")["runtime"]
+        assert runtime["origin"] == "browser"
+        assert runtime["kind"] == "empty-render:nothing-drawn"
+        assert "render" not in runtime      # there is no second thing to report
