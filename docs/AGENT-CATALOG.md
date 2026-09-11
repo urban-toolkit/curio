@@ -201,11 +201,22 @@ simply available in the palette.
 
 **Attaching** it creates a private instance bound to a target:
 
-| Target kind | Bound to | Reached by |
-|---|---|---|
-| `node` | One node on the canvas | Dragging a palette row onto that node. |
-| `connection` | One edge between two nodes | Dragging a palette row onto that edge. |
-| `canvas` | The whole dataflow | Dragging a palette row onto empty canvas. |
+| Target kind | Bound to | Reached by | Shown as |
+|---|---|---|---|
+| `node` | One node on the canvas | Dragging a palette row onto that node. | A badge under the node. |
+| `connection` | One edge between two nodes | Dragging a palette row onto that edge. | A badge at the connection's midpoint, **and** a row in the dock. |
+| `canvas` | The whole dataflow | Dragging a palette row onto empty canvas. | A row in the dock. |
+
+While you drag a palette row across the canvas, the connection that would
+receive the drop is highlighted, so you can see which one you are aiming at
+before you let go. A node under the pointer wins over any edge routed beneath
+it, and the highlight follows that same rule rather than guessing separately.
+
+A connection agent is listed in **both** places on purpose. The badge says
+*which* connection the agent is about, but it is only there while that edge is
+on screen, and it sits behind any node the edge runs under. The dock is the
+roster: always reachable, and the order the chat panel's arrows cycle through.
+Detaching works from either.
 
 Not every agent accepts every target: an agent declares which kinds it is
 compatible with, and its category implies a default. A `canvas` agent dropped on

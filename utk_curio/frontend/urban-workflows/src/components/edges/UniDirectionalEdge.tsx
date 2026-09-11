@@ -9,6 +9,7 @@ import {
 } from 'reactflow';
 import { useAgentDropHoverEdge } from '../../hook/useAgentDropHoverEdge';
 import { EDGE_DROP_HOVER_ATTR, edgeDropHighlightStyle } from './edgeDropHighlight';
+import { EdgeAgentBadges } from '../agents/attach/EdgeAgentBadges';
 
 export default function UniDirectionalEdge({
   id,
@@ -70,6 +71,7 @@ export default function UniDirectionalEdge({
         markerEnd={markerEnd}
         style={edgeDropHighlightStyle(data?.keywordHighlighted ? '#1E1F23' : 'grey', dropHovered)}
       />
+      <EdgeAgentBadges edgeId={id} labelX={labelX} labelY={labelY} />
     </g>
   );
 }

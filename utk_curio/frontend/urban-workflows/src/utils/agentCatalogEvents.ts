@@ -42,6 +42,13 @@ export type AgentDropTarget =
   | { kind: "canvas" };
 
 /**
+ * Written by `EdgeAgentBadges` onto the element holding a connection's agent
+ * avatars, and read by `pickEdgeAtPoint` below. It lives here, beside its
+ * reader, so the hit-test keeps depending on nothing.
+ */
+export const EDGE_AGENT_BADGES_ATTR = "data-curio-edge-badges";
+
+/**
  * The edge under a drop point, or null.
  *
  * Hit-tested through the DOM rather than by re-deriving bezier geometry:
@@ -69,6 +76,17 @@ export type AgentDropTarget =
 export function pickEdgeAtPoint(clientX: number, clientY: number): string | null {
   if (typeof document === "undefined" || !document.elementFromPoint) return null;
   const el = document.elementFromPoint(clientX, clientY);
+  // An edge's own agent badges sit on React Flow's edge-label layer, which is a
+  // sibling of the edge group rather than a child of it, and they are the only
+  // pointer-events:auto thing on that layer. So the label point - the most
+  // natural place to aim - stops resolving to its edge the moment one agent is
+  // attached, and a second drop there falls through to the canvas branch. That
+  // is the same failure `data-testid` was added below to fix, arriving from the
+  // other direction, so it is answered the same way: ask the badges which edge
+  // they belong to (#296).
+  const badges = el?.closest?.(`[${EDGE_AGENT_BADGES_ATTR}]`);
+  const fromBadges = badges?.getAttribute?.(EDGE_AGENT_BADGES_ATTR);
+  if (fromBadges) return fromBadges;
   const edge = el?.closest?.(".react-flow__edge");
   if (!edge) return null;
   const direct = edge.getAttribute?.("data-id");
