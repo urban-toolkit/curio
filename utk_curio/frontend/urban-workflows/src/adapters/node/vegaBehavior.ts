@@ -17,7 +17,12 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
       // every agent reading the journal was told the node was fine.
       const outcome = renderOutcome(counts ?? {});
       if (outcome.empty) {
-        nodeState.setOutput({ code: 'error', content: outcome.message, outputType: '' });
+        nodeState.setOutput({
+          code: 'error', content: outcome.message, outputType: '',
+          // dev/136: the harness reads this rather than the prose — the
+          // cause rides the kind, because the fix differs per cause.
+          kind: `empty-render:${outcome.cause}`,
+        } as any);
         showToast(outcome.message, 'error');
         return;
       }

@@ -7187,6 +7187,8 @@ _HEAD_FIRST_KINDS = (
     # dev/129/133/134: these details are composed prose, not tracebacks — the
     # sentence that says what is wrong is the FIRST one.
     "document-invalid", "empty-result",
+    # dev/136: and the render that drew nothing.
+    "empty-render",
 )
 
 
@@ -8315,6 +8317,68 @@ def _verified_content_rounds(
                 continue
             evidence = verdict_result.setdefault("evidence", {})
             if document["status"] == document_validation.STATUS_VALID:
+                # dev/136: a valid document is not a drawn picture. When the
+                # node's last RENDER drew nothing and the document on it is the
+                # one that drew nothing, passing here would end the loop on a
+                # chart the user is looking at empty — the owner's report. The
+                # recorded render failure becomes this round's verdict instead.
+                render_cause = (
+                    result_shape.empty_render_cause((recorded_failure or {}).get("kind"))
+                    if use_current and isinstance(recorded_failure, dict) else None
+                )
+                if render_cause is not None:
+                    upstream_rows = (extra_inputs or {}).get("upstreamOutputs")
+                    refusal = result_shape.empty_render_refusal(
+                        message=str((recorded_failure or {}).get("stderr") or ""),
+                        cause=render_cause,
+                        upstream_outputs=upstream_rows,
+                    )
+                    if not result_shape.is_document_at_fault(render_cause):
+                        # Nothing arrived, so no document could have drawn
+                        # anything: dev/133's rule, applied to a picture. The
+                        # node WAITS on its upstream (dev/118's vocabulary) and
+                        # its document is left exactly as it is.
+                        return {
+                            "verdict": "fail",
+                            "evidence": {
+                                "kind": "empty-render",
+                                "detail": refusal,
+                                "upstreamEmpty": True,
+                            },
+                            "rounds": rounds_used,
+                            "candidate": candidate,
+                            "delegations": delegations,
+                            "roundsTrace": rounds_trace + [
+                                f"round {rounds_used}: the document is valid and its "
+                                "last render drew nothing — its input was empty"
+                            ],
+                            "attempts": attempts + [{
+                                "round": rounds_used,
+                                "contentSha256": _content_sha(candidate),
+                                "verdict": "fail", "kind": "empty-render",
+                                "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                                "source": "current content",
+                                **_attempt_code_field(candidate),
+                            }],
+                            "stoppedBy": "blocker",
+                        }
+                    verdict_result = {
+                        "verdict": "fail",
+                        "evidence": {"kind": "empty-render", "detail": refusal[:2000]},
+                    }
+                    yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                    rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+                    attempts.append({
+                        "round": rounds_used, "contentSha256": _content_sha(candidate),
+                        "verdict": "fail", "kind": "empty-render",
+                        "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                        "source": "current content",
+                        **_attempt_code_field(candidate),
+                    })
+                    previous_attempt = candidate
+                    previous_error = refusal
+                    url_evidence = []
+                    continue
                 evidence["documentValidated"] = document_validation.canonical_suffix(node_type)
             else:
                 evidence["documentUnchecked"] = str(document.get("why") or "")[:300]

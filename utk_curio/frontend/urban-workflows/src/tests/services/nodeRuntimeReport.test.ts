@@ -47,6 +47,18 @@ describe("reportFromNodeOutput", () => {
     expect(reportFromNodeOutput(undefined, IDENTITY)).toBeNull();
   });
 
+  it("carries the kind a renderer stamped, and none when there is none", () => {
+    // dev/136: an empty render travels as itself, so the harness reads a field
+    // rather than matching the message's prose.
+    const empty = reportFromNodeOutput(
+      { code: "error", content: "rendered nothing — 0 rows arrived", kind: "empty-render:no-input-rows" },
+      IDENTITY,
+    );
+    expect(empty?.kind).toBe("empty-render:no-input-rows");
+    const threw = reportFromNodeOutput({ code: "error", content: "boom" }, IDENTITY);
+    expect(threw).not.toHaveProperty("kind");
+  });
+
   it("never reports an error with no message at all", () => {
     const report = reportFromNodeOutput({ code: "error", content: "   " }, IDENTITY);
     expect(report?.message).toBe("This node reported an error without a message.");
@@ -105,6 +117,17 @@ describe("reportNodeRuntime", () => {
     await expect(
       reportNodeRuntime({ ...IDENTITY, status: "error", message: "boom" }),
     ).resolves.toBe(true);
+  });
+
+  it("posts the kind and re-reports when only the kind changed", async () => {
+    await reportNodeRuntime({ ...IDENTITY, status: "error", message: "rendered nothing",
+                              kind: "empty-render:nothing-drawn" });
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.kind).toBe("empty-render:nothing-drawn");
+    // The same sentence with a different CAUSE is a different outcome.
+    await reportNodeRuntime({ ...IDENTITY, status: "error", message: "rendered nothing",
+                              kind: "empty-render:no-input-rows" });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   it("bounds the message it sends", async () => {

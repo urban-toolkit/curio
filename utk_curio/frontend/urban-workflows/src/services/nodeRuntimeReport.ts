@@ -37,6 +37,13 @@ export interface NodeRuntimeReport {
   durationMs?: number;
   /** The content that ran, so the repair loop can digest-match it (dev/129). */
   code?: string;
+  /**
+   * What KIND of outcome this is, when the node can say (dev/136).
+   * ``empty-render`` is the one that matters: a render that failed is not the
+   * same problem as a render that drew nothing, and the corrections differ —
+   * so the harness must not have to match prose to tell them apart.
+   */
+  kind?: "empty-render" | string;
 }
 
 const MESSAGE_CHARS = 2000;
@@ -47,7 +54,7 @@ const lastReported = new Map<string, string>();
 function fingerprint(report: NodeRuntimeReport): string {
   return `${report.status}::${(report.message ?? "").slice(0, MESSAGE_CHARS)}::${
     report.outputType ?? ""
-  }`;
+  }::${report.kind ?? ""}`;
 }
 
 /** Forget a node's last report (a new project, or a deliberate re-report). */
@@ -85,6 +92,7 @@ export async function reportNodeRuntime(report: NodeRuntimeReport): Promise<bool
         outputType: report.outputType ?? "",
         durationMs: report.durationMs ?? 0,
         code: report.code ?? "",
+        kind: report.kind ?? "",
       }),
       // A node's outcome is worth reporting even if the user navigates away
       // in the same tick; the payload is small enough for the keepalive cap.
@@ -108,7 +116,14 @@ export async function reportNodeRuntime(report: NodeRuntimeReport): Promise<bool
  * an outcome and the record would immediately be overwritten.
  */
 export function reportFromNodeOutput(
-  output: { code?: string; content?: unknown; outputType?: string; dataType?: string } | undefined,
+  output: {
+    code?: string;
+    content?: unknown;
+    outputType?: string;
+    dataType?: string;
+    /** dev/136: set by a renderer that knows WHY it produced nothing. */
+    kind?: string;
+  } | undefined,
   identity: { dataflowId: string; nodeId: string; code?: string },
 ): NodeRuntimeReport | null {
   const code = typeof output?.code === "string" ? output.code : "";
@@ -126,5 +141,9 @@ export function reportFromNodeOutput(
     message,
     outputType: output?.outputType || output?.dataType || "",
     code: identity.code ?? "",
+    // dev/136: an empty render travels as itself. The renderer stamps the
+    // kind; a plain failure carries none, and the harness reads the difference
+    // instead of matching the message's prose.
+    ...(output?.kind ? { kind: String(output.kind) } : {}),
   };
 }

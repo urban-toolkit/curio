@@ -563,6 +563,10 @@ def report_node_runtime():
         output_type=str(body.get('outputType') or '')[:60],
         duration_ms=max(duration, 0.0),
         code=str(body.get('code') or ''),
+        # dev/136: an empty render is not the same problem as a render that
+        # threw, and the harness must not have to match prose to tell them
+        # apart. Bounded and free-form: an unknown kind is just a label.
+        kind=str(body.get('kind') or '')[:40],
     )
     return '', 204
 

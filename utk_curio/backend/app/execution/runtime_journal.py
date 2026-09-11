@@ -64,6 +64,11 @@ STATUSES = (STATUS_OK, STATUS_ERROR, STATUS_RUNNING)
 #: A browser message is a sentence, not a traceback: bounded on arrival here as
 #: well as at the route, so no caller can grow the record.
 BROWSER_MESSAGE_CHARS = 2000
+
+#: dev/136: an outcome's kind, when the reporter knows one (``empty-render``).
+#: Free-form and bounded: an unrecognized kind is a label, never a branch.
+_KIND_CHARS = 40
+KIND_EMPTY_RENDER = "empty-render"
 # Node ids come from specs (untrusted for path purposes): filename-safe only.
 _NODE_SEGMENT_RE = re.compile(r"[^A-Za-z0-9._-]")
 
@@ -98,6 +103,7 @@ def record_execution(
     validation: bool = False,
     status: str | None = None,
     origin: str | None = None,
+    kind: str = "",
 ) -> None:
     """Persist one execution outcome. Best-effort: never raises.
 
@@ -145,6 +151,9 @@ def record_execution(
                 origin if origin in ORIGINS
                 else (ORIGIN_VALIDATION if validation else ORIGIN_SANDBOX)
             ),
+            # dev/136: what KIND of outcome this is, when the reporter knows —
+            # `empty-render` is the one the harness branches on.
+            **({"kind": str(kind)[:_KIND_CHARS]} if kind else {}),
             "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         directory = projects_storage.ensure_project_dir(user_key, project_id) / "runtime"
@@ -167,6 +176,7 @@ def record_browser_execution(
     duration_ms: float = 0,
     code: str = "",
     started_at: str | None = None,
+    kind: str = "",
 ) -> bool:
     """Journal an outcome a node reported from the CLIENT (memo dev/135).
 
@@ -193,6 +203,7 @@ def record_browser_execution(
         duration_ms=duration_ms,
         status=status,
         origin=ORIGIN_BROWSER,
+        kind=kind,
     )
     if status != STATUS_ERROR and text:
         # A successful render may still have something to say (a warning, a
@@ -272,6 +283,9 @@ def last_failure(user_key: str, project_id: str, node_id: str) -> dict | None:
             ORIGIN_BROWSER if record.get("origin") == ORIGIN_BROWSER
             else "validation" if record.get("validation") else "play"
         ),
+        # dev/136: so a reader can tell a render that FAILED from one that drew
+        # nothing — the corrections differ.
+        **({"kind": str(record["kind"])} if record.get("kind") else {}),
     }
 
 

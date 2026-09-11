@@ -164,3 +164,72 @@ def refusal_text(
         "thing, or say plainly that these inputs cannot be joined."
     )
     return head[:_DETAIL_CHARS]
+
+
+# --- dev/136: the RENDER half of "this produced nothing" ----------------------
+#
+# dev/133 answers it for an artifact; a grammar node produces none. What it
+# produces is a picture, and a picture can be empty while its document is
+# perfectly valid — so the renderer counts what it drew (frontend
+# ``renderOutcome``) and reports the verdict here as a journal record whose
+# ``kind`` is ``empty-render:<cause>``. The cause decides who is at fault, and
+# therefore what the harness does next.
+
+#: The kind a renderer stamps on an empty render, with its cause appended.
+EMPTY_RENDER_KIND = "empty-render"
+#: The causes the frontend's ``renderOutcome`` can report, in its own words.
+CAUSE_NO_LAYERS = "no-layers"
+CAUSE_NO_INPUT_ROWS = "no-input-rows"
+CAUSE_NOTHING_DRAWN = "nothing-drawn"
+EMPTY_RENDER_CAUSES = (CAUSE_NO_LAYERS, CAUSE_NO_INPUT_ROWS, CAUSE_NOTHING_DRAWN)
+
+
+def empty_render_cause(kind: object) -> str | None:
+    """``"empty-render:no-input-rows"`` → ``"no-input-rows"``, else None.
+
+    An unrecognized cause reads as ``""`` (an empty render whose reason this
+    build does not know) and a kind that is not an empty render at all reads as
+    None — so a caller can always tell "not this" from "this, reason unknown".
+    """
+    text = str(kind or "")
+    if not text.startswith(EMPTY_RENDER_KIND):
+        return None
+    _, _, cause = text.partition(":")
+    cause = cause.strip()
+    return cause if cause in EMPTY_RENDER_CAUSES else ""
+
+
+def is_document_at_fault(cause: object) -> bool:
+    """Whether an empty render is the DOCUMENT's problem (dev/136).
+
+    ``no-input-rows`` is the one that is not: nothing arrived, so no document
+    could have drawn anything and rewriting it would be the wrong repair —
+    dev/133's rule, applied to a picture.
+    """
+    return str(cause or "") != CAUSE_NO_INPUT_ROWS
+
+
+def empty_render_refusal(
+    *,
+    message: str,
+    cause: object = "",
+    upstream_outputs: list | None = None,
+) -> str:
+    """What the model is told about a render that drew nothing (dev/136).
+
+    The renderer's own sentence first — it holds the counts — then what this
+    node's inputs actually contain, so the correction is written against the
+    data rather than against the goal.
+    """
+    head = "the document is valid and its last render drew NOTHING: " + str(message or "").strip()
+    rows = [row for row in (upstream_outputs or []) if isinstance(row, dict)]
+    if rows and is_document_at_fault(cause):
+        described = "; ".join(
+            _slot_line(index, row) for index, row in enumerate(rows[:_MAX_SLOTS])
+        )
+        head += f". This node's input holds: {described}"
+        head += (
+            ". Encode fields that exist and hold values, and remove any filter "
+            "or scale domain that excludes every row; return the whole document."
+        )
+    return head[:_DETAIL_CHARS]

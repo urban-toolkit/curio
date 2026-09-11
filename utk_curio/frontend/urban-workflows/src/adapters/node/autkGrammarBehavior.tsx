@@ -405,7 +405,8 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 };
                 const outcome = renderOutcome(renderCounts);
                 if (outcome.empty) {
-                    emit({ code: 'error', content: outcome.message });
+                    emit({ code: 'error', content: outcome.message,
+                           kind: `empty-render:${outcome.cause}` } as any);
                     showToast(outcome.message, 'error');
                     return;
                 }
@@ -507,7 +508,8 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     'rendered nothing — every layer this run produced is empty ('
                     + summary + '). The source it loads, or the query that '
                     + 'filters it, is what must change.';
-                emit({ code: 'error', content: message });
+                emit({ code: 'error', content: message,
+                       kind: 'empty-render:nothing-drawn' } as any);
                 showToast(message, 'error');
                 return;
             }

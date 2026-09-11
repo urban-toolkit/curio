@@ -367,3 +367,49 @@ class TestTheBrowserReportRoute:
                        durationMs=duration)
             record = runtime_journal.read_record(_user_dir_key(user), pid, "vega-3")
             assert record["durationMs"] == 0
+
+
+class TestTheOutcomeKind:
+    """dev/136: an empty render is not the same problem as a render that threw,
+    and the corrections differ — so the kind travels as a field, not as prose
+    the harness would have to match."""
+
+    EMPTY = ("rendered nothing — 12 rows arrived and no mark was drawn: an "
+             "encoding, a transform or a scale domain removed every row.")
+
+    def test_the_kind_rides_the_record_and_the_failure_projection(self, tmp_curio):
+        runtime_journal.record_browser_execution(
+            KEY, PID, "vega-9", status="error", message=self.EMPTY,
+            kind="empty-render:nothing-drawn",
+        )
+        record = runtime_journal.read_record(KEY, PID, "vega-9")
+        assert record["kind"] == "empty-render:nothing-drawn"
+        failure = runtime_journal.last_failure(KEY, PID, "vega-9")
+        assert failure["kind"] == "empty-render:nothing-drawn"
+        assert failure["origin"] == "browser"
+
+    def test_a_record_with_no_kind_carries_none(self, tmp_curio):
+        runtime_journal.record_browser_execution(
+            KEY, PID, "vega-10", status="error", message="it threw",
+        )
+        assert "kind" not in runtime_journal.read_record(KEY, PID, "vega-10")
+        assert "kind" not in runtime_journal.last_failure(KEY, PID, "vega-10")
+
+    def test_the_kind_is_bounded(self, tmp_curio):
+        runtime_journal.record_browser_execution(
+            KEY, PID, "vega-11", status="error", message="x", kind="k" * 500,
+        )
+        assert len(runtime_journal.read_record(KEY, PID, "vega-11")["kind"]) <= 40
+
+    def test_the_route_passes_it_through(self, client, user_and_token, tmp_curio):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": []}}, "outputs": []}
+        pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
+        client.post("/nodeRuntime", json={
+            "dataflowId": pid, "nodeId": "vega-1", "status": "error",
+            "message": self.EMPTY, "kind": "empty-render:no-input-rows",
+        }, headers=_auth(token))
+        record = runtime_journal.read_record(_user_dir_key(user), pid, "vega-1")
+        assert record["kind"] == "empty-render:no-input-rows"
