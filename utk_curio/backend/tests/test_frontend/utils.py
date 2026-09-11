@@ -1034,6 +1034,7 @@ def save_workflow_test_screenshot(
     max_diff_ratio: float = 0.20,
     fit_reactflow: bool = True,
     clip_selector: str | None = None,
+    sweep_toasts: bool = False,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 
@@ -1070,6 +1071,16 @@ def save_workflow_test_screenshot(
     about the thing under test and the diff budget is spent on it instead of on
     surrounding chrome.
 
+    Pass *sweep_toasts* instead of calling :func:`dismiss_toasts` yourself
+    beforehand - and never as well as, each sweep costs its own quiet window.
+    Sweeping outside this helper leaves a gap between the region going quiet and
+    the shutter: the viewport wait below is seconds on a loaded runner, and an
+    error toast now stays until it is dismissed, so anything arriving in that gap
+    is in the baseline for good. `run-all-survives-a-failed-node` collected five
+    of them that way on CI - 26.87% of a frame whose budget is 5% - while the two
+    earlier captures of the same walkthrough, taken before the run that raised
+    them, passed.
+
     Returns the path to the expected screenshot file.
     """
     from PIL import Image, ImageChops, ImageEnhance
@@ -1085,6 +1096,11 @@ def save_workflow_test_screenshot(
     # zoom/pan regardless of when the in-app setTimeout(fitView) fires.
     if fit_reactflow:
         _wait_for_reactflow_ready(page)
+
+    # After the viewport wait, not before it: this is the last moment the page
+    # can be quieted, so it is the only sweep that holds until the capture.
+    if sweep_toasts:
+        dismiss_toasts(page)
 
     def _capture():
         if clip_selector is not None:
