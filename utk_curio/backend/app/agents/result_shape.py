@@ -345,3 +345,67 @@ def empty_render_refusal(
             "or scale domain that excludes every row; return the whole document."
         )
     return head[:_DETAIL_CHARS]
+
+
+# --- dev/138: an output that is not there at all ------------------------------
+
+#: How much of the node's own reasoning the refusal quotes back. A comment is
+#: the model's own conclusion, and quoting it is what makes the correction
+#: land: it is not being told something new, it is being told that what it
+#: already worked out has a place to go.
+_QUOTED_COMMENT_CHARS = 240
+
+
+def declared_conclusion(code: object) -> str:
+    """The last substantive COMMENT line in this code, or ``""`` (dev/138).
+
+    The owner's `edd71e67` node was a correct diagnosis followed by
+    ``return None``: *"These IDs do not match in type or scale … A join is not
+    possible with the provided columns."* Quoting that back is the difference
+    between a refusal the model argues with and one it recognizes.
+    """
+    if not isinstance(code, str):
+        return ""
+    lines = [line.strip() for line in code.splitlines()]
+    comments = [
+        line.lstrip("#").strip()
+        for line in lines
+        if line.startswith("#") and len(line.lstrip("#").strip()) > 20
+    ]
+    return comments[-1][:_QUOTED_COMMENT_CHARS] if comments else ""
+
+
+def absent_output_refusal(
+    *,
+    code: object = "",
+    output_data_type: str = "",
+    upstream_outputs: list | None = None,
+) -> str:
+    """What the model is told when its code produced NO output (dev/138)."""
+    head = (
+        "the code ran and returned NO output"
+        + (f" (the sandbox typed it {output_data_type!r})" if output_data_type else "")
+        + " — a node must return the data it produces, and nothing downstream "
+        "can read an absent output"
+    )
+    conclusion = declared_conclusion(code)
+    if conclusion:
+        head += (
+            f". Your code says: {conclusion!r} — if that is your conclusion, it "
+            "is the right one to state: return that sentence as your whole "
+            "answer, with no code at all, and it is recorded as this node's "
+            "honest outcome"
+        )
+    else:
+        head += (
+            ". If the data cannot be produced from these inputs, say so in one "
+            "line with no code, and it is recorded as this node's honest "
+            "outcome"
+        )
+    rows = [row for row in (upstream_outputs or []) if isinstance(row, dict)]
+    if rows:
+        described = "; ".join(
+            _slot_line(index, row) for index, row in enumerate(rows[:_MAX_SLOTS])
+        )
+        head += f". What you were given: {described}"
+    return head[:_DETAIL_CHARS]

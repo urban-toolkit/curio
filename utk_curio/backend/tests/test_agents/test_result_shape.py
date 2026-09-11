@@ -205,3 +205,35 @@ class TestNullColumnsAreEmptinessToo:
         assert 'how="left"' in text
         assert "say so in one line and return no code" in text
         assert len(text) <= 900
+
+
+class TestTheAbsentOutputRefusal:
+    """dev/138: quoting the node's own conclusion is what makes it land."""
+
+    OWNERS = ("# These IDs do not match in type or scale.\n"
+              "# A join is not possible with the provided columns.\n\nreturn None")
+
+    def test_the_last_substantive_comment_is_the_conclusion(self):
+        assert rs.declared_conclusion(self.OWNERS) == (
+            "A join is not possible with the provided columns."
+        )
+        # Short markers ("# fix", "# TODO") are not conclusions.
+        assert rs.declared_conclusion("# ok\nreturn None") == ""
+        assert rs.declared_conclusion("return None") == ""
+        assert rs.declared_conclusion(None) == ""
+
+    def test_the_refusal_quotes_it_and_names_the_decline(self):
+        text = rs.absent_output_refusal(
+            code=self.OWNERS, output_data_type="null",
+            upstream_outputs=[{"goal": "Boundaries", "schema": BOUNDARIES}],
+        )
+        assert text.startswith("the code ran and returned NO output")
+        assert "'null'" in text
+        assert "A join is not possible with the provided columns." in text
+        assert "with no code at all" in text
+        assert "What you were given:" in text
+        assert len(text) <= 900
+
+    def test_without_a_conclusion_it_still_names_the_decline(self):
+        text = rs.absent_output_refusal(code="return None")
+        assert "say so in one line with no code" in text

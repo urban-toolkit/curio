@@ -8383,6 +8383,40 @@ def _verified_content_rounds(
             else:
                 evidence["documentUnchecked"] = str(document.get("why") or "")[:300]
                 evidence["documentPassive"] = bool(document.get("passive"))
+        if verdict_result.get("verdict") == "pass":
+            # dev/138: the run passed and produced NO output — `return None`
+            # types as "null", which read as success in three places at once.
+            # The journal and the consumer type check now name it too; here it
+            # becomes the round's own verdict, with the node's own conclusion
+            # quoted back and the decline path named.
+            from utk_curio.backend.app.execution import runtime_journal as _journal
+
+            produced = (verdict_result.get("evidence") or {}).get("output") or {}
+            if _journal.is_absent_output(produced):
+                refusal = result_shape.absent_output_refusal(
+                    code=candidate,
+                    output_data_type=str(
+                        (verdict_result.get("evidence") or {}).get("outputDataType") or ""
+                    ),
+                    upstream_outputs=(extra_inputs or {}).get("upstreamOutputs"),
+                )
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "empty-result", "detail": refusal[:2000]},
+                }
+                yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+                attempts.append({
+                    "round": rounds_used, "contentSha256": _content_sha(candidate),
+                    "verdict": "fail", "kind": "empty-result",
+                    "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                    "source": "current content" if use_current else "generated",
+                    **_attempt_code_field(candidate),
+                })
+                previous_attempt = candidate
+                previous_error = refusal
+                url_evidence = []
+                continue
         if verdict_result.get("verdict") == "pass" and result_summary_fn is not None:
             # dev/133: "it ran" is not "it worked". A node that produced a
             # countable result with NO rows in it, out of inputs that had rows,

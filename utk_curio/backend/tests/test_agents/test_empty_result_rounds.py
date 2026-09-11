@@ -239,3 +239,87 @@ class TestAJoinThatProducedNullsIsEmptyToo:
         # is upstream, so this node is not corrected for it.
         assert outcome["verdict"] == "pass"
         assert [a["kind"] for a in outcome["attempts"]] == ["executed"]
+
+
+class TestReturnNoneIsNotAnOutput:
+    """dev/138: the owner's `edd71e67`, verbatim.
+
+    Its Python node was a correct diagnosis followed by `return None` — and the
+    sandbox typed the artifact "null", which read as success in the journal, in
+    the consumer type check and (honestly) in the shape check. The round passed
+    and everything below the node was empty.
+    """
+
+    OWNERS_NODE = """import pandas as pd
+import geopandas as gpd
+
+# Access inputs via arg based on inputContract
+gdf_boundaries = arg[0]
+df_population = arg[1]
+
+# These IDs do not match in type or scale (area_numbe is small int, tract_id is long census id).
+# A join is not possible with the provided columns.
+
+return None"""
+    REAL = "joined = arg[0].merge(arg[1], on='community')\nreturn joined"
+
+    def _exec_typing_none(self):
+        produced: list = []
+
+        class _Exec2(_Exec):
+            def __call__(self, endpoint, payload):
+                none = "return None" in payload["code"]
+                produced.append(none)
+                return {"stdout": [], "stderr": "",
+                        "output": {"path": f"art-{len(produced)}",
+                                   "dataType": "null" if none else "geodataframe"}}
+
+        def _summary(artifact_id: str):
+            return {"kind": "geotable", "rowCount": 2,
+                    "columns": [{"name": "community", "dtype": "str"},
+                                {"name": "population", "dtype": "int"}],
+                    "sampleRows": [{"community": "Loop", "population": 4521}]}
+
+        return _Exec2(), _summary
+
+    def test_it_fails_the_round_and_quotes_the_nodes_own_conclusion(self, app, tmp_curio):
+        exec_fn, summary_fn = self._exec_typing_none()
+        events, outcome, inputs = _rounds(
+            app, {"id": "n1", "type": CA, "goal": "Join density", "content": ""},
+            replies=[self.OWNERS_NODE, self.REAL], exec_fn=exec_fn,
+            result_summary_fn=summary_fn,
+            extra_inputs={"upstreamOutputs": UPSTREAMS},
+        )
+        assert outcome["attempts"][0]["kind"] == "empty-result"
+        error = inputs[1]["validationError"]
+        assert "returned NO output" in error
+        assert "'null'" in error
+        # Its own words, quoted back — the correction is not news to it.
+        assert "A join is not possible with the provided columns." in error
+        # And the path that exists is named.
+        assert "return that sentence as your whole answer, with no code at all" in error
+        # The real join passes and is written.
+        assert outcome["verdict"] == "pass"
+        assert outcome["candidate"] == self.REAL
+
+    def test_without_a_comment_the_refusal_still_names_the_decline(self, app, tmp_curio):
+        exec_fn, summary_fn = self._exec_typing_none()
+        events, outcome, inputs = _rounds(
+            app, {"id": "n1", "type": CA, "goal": "Join density", "content": ""},
+            replies=["return None", self.REAL], exec_fn=exec_fn,
+            result_summary_fn=summary_fn,
+            extra_inputs={"upstreamOutputs": UPSTREAMS},
+        )
+        error = inputs[1]["validationError"]
+        assert "say so in one line with no code" in error
+        assert "What you were given:" in error
+
+    def test_a_real_output_is_untouched(self, app, tmp_curio):
+        exec_fn, summary_fn = self._exec_typing_none()
+        events, outcome, inputs = _rounds(
+            app, {"id": "n1", "type": CA, "goal": "Join density", "content": ""},
+            replies=[self.REAL], exec_fn=exec_fn, result_summary_fn=summary_fn,
+            extra_inputs={"upstreamOutputs": UPSTREAMS},
+        )
+        assert outcome["verdict"] == "pass" and outcome["rounds"] == 1
+        assert [a["kind"] for a in outcome["attempts"]] == ["executed"]
