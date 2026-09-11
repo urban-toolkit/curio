@@ -89,6 +89,118 @@ def inputs_had_rows(upstream_outputs: list | None) -> bool | None:
     return True
 
 
+def column_names(summary: dict | None) -> list[str]:
+    """Every column a summary names (its parts' included)."""
+    names: list[str] = []
+    if not isinstance(summary, dict):
+        return names
+    for column in summary.get("columns") or []:
+        name = column.get("name") if isinstance(column, dict) else None
+        if isinstance(name, str) and name and name not in names:
+            names.append(name)
+    for part in summary.get("parts") or []:
+        for name in column_names(part if isinstance(part, dict) else None):
+            if name not in names:
+                names.append(name)
+    return names
+
+
+def null_columns(summary: dict | None) -> list[str]:
+    """Columns whose every SAMPLED value is null (memo dev/137).
+
+    dev/133's own **F1**: a result can be non-empty and still contain nothing.
+    The owner's `7a27b702` is the proof — a ``how="left"`` join on keys that
+    cannot match kept two rows and filled every population column with null, so
+    the row count passed, the chart's field check passed (the column exists),
+    and both plots were empty.
+
+    Read from dev/127's bounded preview only: "every SAMPLED value is null" is
+    what the evidence supports, and that is what the refusal says. A summary
+    with no sample rows yields nothing — an unverifiable claim is never made.
+    """
+    if not isinstance(summary, dict):
+        return []
+    # A merge hands a LIST of frames; a column is all-null when it is all-null
+    # in every part that has it, so the samples are gathered across them.
+    samples: list[dict] = [
+        row for row in (summary.get("sampleRows") or []) if isinstance(row, dict)
+    ]
+    for part in summary.get("parts") or []:
+        if isinstance(part, dict):
+            samples.extend(
+                row for row in (part.get("sampleRows") or []) if isinstance(row, dict)
+            )
+    if not samples:
+        return []
+    empty: list[str] = []
+    for name in column_names(summary):
+        seen = [row[name] for row in samples if name in row]
+        if seen and all(value is None for value in seen):
+            empty.append(name)
+    return empty
+
+
+def created_null_columns(
+    summary: dict | None, upstream_outputs: list | None
+) -> list[str]:
+    """The all-null columns THIS node emptied — never one that arrived empty.
+
+    dev/133's attribution rule, applied to values. The comparison is about
+    null-ness, not about presence: in the owner's `7a27b702` the joined frame's
+    ``population`` column is all null while the population TABLE it came from
+    had values (4521, 3890, …), so "the name exists upstream" would have
+    excluded exactly the case this check is for. A column is this node's doing
+    when it is all-null here and was NOT all-null in any input that had it.
+    With no upstream described, every all-null column counts — a loader that
+    read nothing useful is the loader's problem.
+    """
+    nulls = null_columns(summary)
+    if not nulls:
+        return []
+    arrived_empty: set = set()
+    for row in (upstream_outputs or []):
+        if not isinstance(row, dict):
+            continue
+        schema = row.get("schema")
+        upstream_nulls = set(null_columns(schema))
+        present = set(column_names(schema))
+        for name in nulls:
+            if name in present and name in upstream_nulls:
+                arrived_empty.add(name)
+    return [name for name in nulls if name not in arrived_empty]
+
+
+def null_refusal_text(
+    *,
+    columns: list,
+    summary: dict | None,
+    upstream_outputs: list | None = None,
+) -> str:
+    """What the model is told about rows that hold nothing (dev/137)."""
+    count = row_count(summary)
+    named = ", ".join(str(c) for c in columns[:_MAX_COLUMNS_NAMED])
+    head = (
+        f"the code ran and produced {count if count is not None else 'some'} "
+        f"row{'' if count == 1 else 's'}, but every sampled value of {named} is "
+        "NULL — the result has rows and no data in them"
+    )
+    rows = [row for row in (upstream_outputs or []) if isinstance(row, dict)]
+    if rows:
+        described = "; ".join(
+            _slot_line(index, row) for index, row in enumerate(rows[:_MAX_SLOTS])
+        )
+        head += f". Its inputs were: {described}"
+    head += (
+        ". A join that matched nothing with how=\"left\" (or a fill) does exactly "
+        "this: compare the key columns' VALUES, not their names, and join on "
+        "columns whose values are the same kind of thing. Never keep rows of "
+        "nulls, fabricate values, or let a join that matched nothing stand so "
+        "the dataflow can proceed — if these inputs cannot be joined, say so in "
+        "one line and return no code."
+    )
+    return head[:_DETAIL_CHARS]
+
+
 def _columns_line(summary: dict | None) -> str:
     """``community str e.g. "Loop", area_numbe int e.g. 32`` — the columns AND
     a value each, because the names are what misled the author."""

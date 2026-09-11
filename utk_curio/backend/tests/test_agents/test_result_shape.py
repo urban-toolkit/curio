@@ -118,3 +118,90 @@ class TestTheDiagnosis:
             summary=JOINED_EMPTY, upstream_outputs=[{"goal": "wide", "schema": wide}],
         )
         assert "12 more" in text  # 20 columns, 8 named
+
+
+class TestNullColumnsAreEmptinessToo:
+    """dev/137, dev/133's own F1 arriving as a live defect.
+
+    The owner's `7a27b702`: a `how="left"` join on keys that cannot match kept
+    two rows and filled every population column with null. The row count
+    passed, the chart's field check passed (the column exists) and both plots
+    were empty — a result can be non-empty and still contain nothing.
+    """
+
+    JOINED = {
+        "kind": "geotable", "rowCount": 2,
+        "columns": [{"name": "community", "dtype": "str"},
+                    {"name": "area_numbe", "dtype": "int"},
+                    {"name": "population", "dtype": "unknown"},
+                    {"name": "median_income", "dtype": "unknown"}],
+        "sampleRows": [
+            {"community": "Loop", "area_numbe": 32, "population": None,
+             "median_income": None},
+            {"community": "Hyde Park", "area_numbe": 41, "population": None,
+             "median_income": None},
+        ],
+    }
+    BOUNDARIES_IN = [{"goal": "Chicago Boundaries", "argIndex": 0, "schema": BOUNDARIES}]
+
+    def test_the_owners_join_is_reported_by_its_null_columns(self):
+        assert rs.null_columns(self.JOINED) == ["population", "median_income"]
+        assert rs.is_empty(self.JOINED) is False      # it HAS rows
+        assert rs.row_count(self.JOINED) == 2
+
+    def test_a_partially_null_column_is_data_not_a_defect(self):
+        partly = dict(self.JOINED, sampleRows=[
+            {"community": "Loop", "population": 4521},
+            {"community": "Hyde Park", "population": None},
+        ])
+        assert rs.null_columns(partly) == []
+
+    def test_a_column_that_ARRIVED_null_is_not_this_nodes_doing(self):
+        upstream = [{"goal": "Population", "schema": {
+            "kind": "table", "rowCount": 3,
+            "columns": [{"name": "population", "dtype": "unknown"}],
+            "sampleRows": [{"population": None}],
+        }}]
+        # `population` came in null; only `median_income` is this node's.
+        assert rs.created_null_columns(self.JOINED, upstream) == ["median_income"]
+
+    def test_a_column_whose_NAME_exists_upstream_but_HAD_values_is_this_nodes_doing(self):
+        """The owner's actual case: the population TABLE has values (4521,
+        3890), and the joined frame's `population` is all null — so "the name
+        exists upstream" would have excluded exactly the defect."""
+        upstream = [{"goal": "Population Data", "schema": {
+            "kind": "table", "rowCount": 3,
+            "columns": [{"name": "population", "dtype": "int"},
+                        {"name": "median_income", "dtype": "int"}],
+            "sampleRows": [{"population": 4521, "median_income": 61200}],
+        }}]
+        assert rs.created_null_columns(self.JOINED, upstream) == [
+            "population", "median_income",
+        ]
+
+    def test_with_no_upstream_described_every_null_column_counts(self):
+        # A loader that read nothing useful is the loader's problem.
+        assert rs.created_null_columns(self.JOINED, None) == [
+            "population", "median_income",
+        ]
+
+    def test_no_sample_rows_means_no_claim(self):
+        assert rs.null_columns(dict(self.JOINED, sampleRows=[])) == []
+        assert rs.null_columns({"kind": "table", "rowCount": 5}) == []
+        assert rs.null_columns(None) == []
+
+    def test_parts_are_walked(self):
+        merged = {"kind": "parts", "parts": [self.JOINED]}
+        assert "population" in rs.null_columns(merged)
+
+    def test_the_refusal_names_the_columns_the_rows_and_the_prohibition(self):
+        text = rs.null_refusal_text(
+            columns=["population", "median_income"], summary=self.JOINED,
+            upstream_outputs=self.BOUNDARIES_IN,
+        )
+        assert "produced 2 rows" in text
+        assert "every sampled value of population, median_income is NULL" in text
+        assert "area_numbe int e.g. 32" in text          # what the input HAS
+        assert 'how="left"' in text
+        assert "say so in one line and return no code" in text
+        assert len(text) <= 900

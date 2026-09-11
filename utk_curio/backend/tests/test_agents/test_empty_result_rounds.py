@@ -160,3 +160,82 @@ class TestAnEmptyResultIsAFailedRound:
         assert carry is not None
         assert carry["kind"] == "empty-result"
         assert carry["code"] == BAD_JOIN
+
+
+class TestAJoinThatProducedNullsIsEmptyToo:
+    """dev/137: the owner's `7a27b702`, end to end in the loop.
+
+    Its transformation node said out loud what it did — *"The current datasets
+    have mismatched keys… To allow the dataflow to proceed and be tested, we
+    perform a join… this will likely result in an empty GDF"* — and used
+    ``how="left"``, so two rows of nulls passed dev/133's row count and both
+    plots below were empty.
+    """
+
+    LEFT_JOIN = ("joined = arg[0].merge(arg[1], left_on='area_numbe', "
+                 "right_on='tract_id', how='left')\nreturn joined")
+    REAL_JOIN = ("joined = arg[0].merge(arg[1], left_on='community', "
+                 "right_on='community')\nreturn joined")
+
+    def _summaries(self):
+        """A fake sandbox + describer: the left join yields rows of NULLS, the
+        real one yields rows with values."""
+        produced: list = []
+
+        class _Exec2(_Exec):
+            def __call__(self, endpoint, payload):
+                produced.append("how='left'" in payload["code"])
+                return {"stdout": [], "stderr": "",
+                        "output": {"path": f"art-{len(produced)}", "dataType": "geodataframe"}}
+
+        def _summary(artifact_id: str):
+            index = int(str(artifact_id).rsplit("-", 1)[-1]) - 1
+            nulls = produced[index] if 0 <= index < len(produced) else False
+            return {
+                "kind": "geotable", "rowCount": 2,
+                "columns": [{"name": "community", "dtype": "str"},
+                            {"name": "population", "dtype": "unknown" if nulls else "int"}],
+                "sampleRows": [
+                    {"community": "Loop", "population": None if nulls else 4521},
+                    {"community": "Hyde Park", "population": None if nulls else 3890},
+                ],
+            }
+
+        return _Exec2(), _summary
+
+    def test_rows_of_nulls_fail_the_round_and_name_the_columns(self, app, tmp_curio):
+        exec_fn, summary_fn = self._summaries()
+        events, outcome, inputs = _rounds(
+            app, {"id": "n1", "type": CA, "goal": "Join density", "content": ""},
+            replies=[self.LEFT_JOIN, self.REAL_JOIN], exec_fn=exec_fn,
+            result_summary_fn=summary_fn,
+            extra_inputs={"upstreamOutputs": UPSTREAMS},
+        )
+        assert outcome["attempts"][0]["kind"] == "empty-result"
+        error = inputs[1]["validationError"]
+        assert "every sampled value of population is NULL" in error
+        assert 'how="left"' in error
+        assert "say so in one line and return no code" in error
+        # The real join has values, so it passes and is written.
+        assert outcome["verdict"] == "pass"
+        assert outcome["candidate"] == self.REAL_JOIN
+
+    def test_a_column_that_arrived_null_is_not_this_nodes_fault(self, app, tmp_curio):
+        exec_fn, summary_fn = self._summaries()
+        upstream_nulls = [
+            UPSTREAMS[0],
+            {"goal": "Population Data", "argIndex": 1, "schema": {
+                "kind": "table", "rowCount": 3,
+                "columns": [{"name": "population", "dtype": "unknown"}],
+                "sampleRows": [{"population": None}],
+            }},
+        ]
+        events, outcome, inputs = _rounds(
+            app, {"id": "n1", "type": CA, "goal": "Join density", "content": ""},
+            replies=[self.LEFT_JOIN], exec_fn=exec_fn, result_summary_fn=summary_fn,
+            extra_inputs={"upstreamOutputs": upstream_nulls},
+        )
+        # `population` came in null: dev/133's attribution rule says the blame
+        # is upstream, so this node is not corrected for it.
+        assert outcome["verdict"] == "pass"
+        assert [a["kind"] for a in outcome["attempts"]] == ["executed"]

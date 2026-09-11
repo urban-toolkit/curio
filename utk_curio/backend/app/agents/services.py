@@ -8398,6 +8398,39 @@ def _verified_content_rounds(
                 except Exception:  # noqa: BLE001 — a shape we cannot read is not a failure
                     summary = None
             upstream_rows = (extra_inputs or {}).get("upstreamOutputs")
+            # dev/137 (dev/133's own F1): a result can be non-empty and still
+            # contain nothing. A `how="left"` join on keys that cannot match
+            # keeps its rows and fills the other side with nulls — the row
+            # count passes, the field check passes (the column exists), and
+            # every plot below is empty. An all-null column this node CREATED
+            # is the same verdict as no rows at all.
+            null_created = (
+                result_shape.created_null_columns(summary, upstream_rows)
+                if not result_shape.is_empty(summary) else []
+            )
+            if null_created and result_shape.inputs_had_rows(upstream_rows) is not False:
+                refusal = result_shape.null_refusal_text(
+                    columns=null_created,
+                    summary=summary,
+                    upstream_outputs=upstream_rows,
+                )
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "empty-result", "detail": refusal[:2000]},
+                }
+                yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+                attempts.append({
+                    "round": rounds_used, "contentSha256": _content_sha(candidate),
+                    "verdict": "fail", "kind": "empty-result",
+                    "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                    "source": "current content" if use_current else "generated",
+                    **_attempt_code_field(candidate),
+                })
+                previous_attempt = candidate
+                previous_error = refusal
+                url_evidence = []
+                continue
             if result_shape.is_empty(summary) and (
                 result_shape.inputs_had_rows(upstream_rows) is not False
             ):
