@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useReactFlow, useStore } from "reactflow";
 import { resolveNodeDisplayLabel } from "../../../utils/palettePackageFactoryDraft";
@@ -53,8 +53,6 @@ export const AgentDockOverlay: React.FC = () => {
       [openNodeId],
     ),
   );
-  // Attachment id whose settings modal is open (memo dev/42), or null.
-
   // The chat is a sliding right-hand surface like the three catalog drawers, so
   // it presents through the same machine (#295). Hooks run above the `!ctx`
   // return, which is why the selection is read defensively here.
