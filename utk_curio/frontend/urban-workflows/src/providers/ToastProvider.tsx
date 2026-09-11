@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useCallback, ReactNode } from "react";
+import React, { createContext, useState, useContext, useCallback, useMemo, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Toast } from "react-bootstrap";
 
@@ -6,6 +6,13 @@ export type ToastVariant = "error" | "warning" | "info" | "success";
 
 interface ToastItem {
     id: number;
+    message: string;
+    variant: ToastVariant;
+}
+
+/** Every occurrence of one message, rendered as a single toast. */
+interface ToastGroup {
+    ids: number[];
     message: string;
     variant: ToastVariant;
 }
@@ -58,9 +65,37 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
         }
     }, []);
 
-    const dismiss = useCallback((id: number) => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
+    const dismiss = useCallback((ids: readonly number[]) => {
+        setToasts((prev) => prev.filter((t) => !ids.includes(t.id)));
     }, []);
+
+    /**
+     * One entry per distinct message, in the order the first of them arrived.
+     *
+     * Repeats collapse instead of stacking. A failure that fans out raises the
+     * same sentence once per occurrence - one per Autark node that probes
+     * WebGPU, one per library in a batch install - and since an error stays
+     * until it is dismissed, five of them were taller than the window: the
+     * oldest was clipped off the TOP of the screen, close button and all, and
+     * could not be dismissed at all.
+     *
+     * Grouped at render rather than counted at insert, so each occurrence keeps
+     * its own id and its own auto-dismiss timer (a repeated info toast counts
+     * back down as they expire) and the state updater stays a pure function of
+     * the previous state.
+     */
+    const groups = useMemo(() => {
+        const byMessage = new Map<string, ToastGroup>();
+        for (const toast of toasts) {
+            const key = JSON.stringify([toast.variant, toast.message]);
+            const seen = byMessage.get(key);
+            if (seen) seen.ids.push(toast.id);
+            else byMessage.set(key, {
+                ids: [toast.id], message: toast.message, variant: toast.variant,
+            });
+        }
+        return [...byMessage.values()];
+    }, [toasts]);
 
     const toastContainer = (
         <div
@@ -86,11 +121,11 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                 maxWidth: "360px",
             }}
         >
-            {toasts.map((toast) => (
+            {groups.map((toast) => (
                     <Toast
-                        key={toast.id}
+                        key={toast.ids[0]}
                         show
-                        onClose={() => dismiss(toast.id)}
+                        onClose={() => dismiss(toast.ids)}
                         role={toast.variant === "error" ? "alert" : "status"}
                         aria-live={toast.variant === "error" ? "assertive" : "polite"}
                         aria-atomic="true"
@@ -114,6 +149,25 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                             <strong className="me-auto">
                                 {VARIANT_TITLE[toast.variant]}
                             </strong>
+                            {toast.ids.length > 1 && (
+                                // How many times it happened, rather than one
+                                // toast per time. Reads as a tally, so the
+                                // sentence underneath is still read once.
+                                <span
+                                    data-testid="toast-count"
+                                    title={`Reported ${toast.ids.length} times`}
+                                    style={{
+                                        marginRight: "8px",
+                                        padding: "0 6px",
+                                        borderRadius: "10px",
+                                        backgroundColor: "rgba(255,255,255,0.25)",
+                                        fontSize: "11px",
+                                        fontVariantNumeric: "tabular-nums",
+                                    }}
+                                >
+                                    &times;{toast.ids.length}
+                                </span>
+                            )}
                         </Toast.Header>
                         <Toast.Body style={{ fontSize: "13px", padding: "8px 12px" }}>
                             {toast.message}
