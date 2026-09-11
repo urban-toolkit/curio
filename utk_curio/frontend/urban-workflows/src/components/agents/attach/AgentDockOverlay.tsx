@@ -90,9 +90,18 @@ export const AgentDockOverlay: React.FC = () => {
 
   if (!ctx) return null;
 
-  // Canvas agents plus connection agents. A connection attachment has no node
-  // to hang a badge on, and rendering it nowhere would leave it invisible and
-  // undetachable while still counting in the chat header's "n of m".
+  // Canvas agents plus connection agents.
+  //
+  // Connection agents are listed here AS WELL AS on their own edge
+  // (`EdgeAgentBadges`, #296), and the duplication is deliberate. The badge is
+  // the locator - it says which connection this agent is about - but it is only
+  // reachable while that edge is on screen at a legible zoom, and it is painted
+  // behind any node the edge happens to run under. The dock is the roster:
+  // viewport-anchored, always reachable, and the one place that enumerates
+  // every agent not pinned to a node, which is also the order the chat header's
+  // "n of m" arrows cycle through. The two never disagree - same attachments,
+  // same AgentAvatarBadge, same `selectedId` - so clicking either lights up
+  // both.
   const canvasAttachments = ctx.attachments.filter(
     (a) => a.target.kind === "canvas" || a.target.kind === "connection",
   );
