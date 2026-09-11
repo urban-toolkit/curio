@@ -409,7 +409,7 @@ When a user clicks the play button on a node, the following sequence occurs:
    Returns: { "path": "<new_artifact_id>", "dataType": "<kind>" }
 
 5. Backend reads sandbox response
-   Returns to Frontend: { stdout, stderr, output: { path: <artifact_id>, dataType } }
+   Returns to Frontend: { stdout, stderr, output: { path: <artifact_id>, dataType }, missingModule }
 
 6. Frontend: outputCallback(nodeId, output)
    - Updates FlowProvider.outputs[] with new artifact ID
@@ -684,6 +684,8 @@ Spec syntax accepts PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`), bare ver
 The framework needs to boot before any manifests can be walked, so `pip install -r requirements.txt` (or `pip install utk-curio`) seeds enough of an env that the launcher can read `manifest.dependencies.python` and continue. Heavy ML/data libraries are intentionally NOT in the framework requirements: a fresh `pip install utk-curio` is small and fast, and the multi-GB pulls happen lazily when the user actually installs the matching package (Street Vision pulls `torch` only after they click Install in the catalog).
 
 Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → Data ⏷ → Installed libraries) sit in a third bucket, per-user JSON at `.curio/users/<u>/installed-libraries.json`, and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
+
+The same route is reachable without opening that modal: when a node run ends in `ModuleNotFoundError`, `/processPythonCode` carries a `missingModule` field naming the import and the distribution that provides it (`packages/missing_import.py`, sharing `dependency_scanner`'s alias table and passing `pip_runner.validate_python_requirement` before it is offered), and the node's output panel renders an **Install** button beside the traceback. It is a click rather than an automatic install for the same reason the catalog's is: pip reaches the interpreter every node on this instance shares.
 
 ---
 
