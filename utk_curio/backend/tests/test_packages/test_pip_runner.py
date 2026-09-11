@@ -397,30 +397,56 @@ class TestDistributionNameNormalisation:
     keys it the way the metadata spells it. Matching those by equality invented
     failures on the one surface whose job is naming real ones."""
 
-    def test_a_casing_mismatch_does_not_invent_a_broken_library(self):
-        # PyYAML is a base-install dependency and imports fine. A manifest
-        # (or the factory's source scanner) writes it lowercase, which is what
-        # pip accepts; packages_distributions() keys it "PyYAML".
-        pip_runner.forget_import_probes()
-        assert pip_runner._module_for_distribution("pyyaml") == "yaml"
-        assert pip_runner.import_failures(["pyyaml"]) == {}
+    #: What ``packages_distributions()`` reports for a PyYAML and a Pillow
+    #: install: the metadata spelling against a module no requirement ever
+    #: names, plus PyYAML's private accelerator. Stubbed rather than read off
+    #: the running interpreter, because neither library is a Curio dependency —
+    #: on a clean install (the CI image) the real mapping has no entry for
+    #: either, and these tests then assert against the not-installed fallback
+    #: instead of the matching rule they exist for.
+    _MAPPING = {"yaml": ["PyYAML"], "_yaml": ["PyYAML"], "PIL": ["Pillow"]}
 
-    def test_the_spelling_in_the_metadata_resolves_the_same_way(self):
-        pip_runner.forget_import_probes()
+    @pytest.fixture
+    def mapping(self, monkeypatch):
+        import importlib.metadata
+
+        monkeypatch.setattr(
+            importlib.metadata, "packages_distributions", lambda: dict(self._MAPPING)
+        )
+
+    def test_a_casing_mismatch_does_not_invent_a_broken_library(self, mapping):
+        # A manifest (or the factory's source scanner) writes "pyyaml", which
+        # is what pip accepts; packages_distributions() keys it "PyYAML".
+        assert pip_runner._module_for_distribution("pyyaml") == "yaml"
+
+    def test_the_spelling_in_the_metadata_resolves_the_same_way(self, mapping):
         assert pip_runner._module_for_distribution("PyYAML") == "yaml"
-        assert pip_runner.import_failures(["PyYAML"]) == {}
+
+    def test_a_real_installed_distribution_reports_no_failure(self):
+        """The end-to-end half, over a dependency every install really has.
+
+        Flask's metadata spells it with a capital F while its module is
+        lowercase, so an equality lookup falls through to the requirement's own
+        spelling and probes ``import Flask`` — which fails on any case-sensitive
+        filesystem, inventing a failure for a library that imports fine.
+        """
+        pip_runner.forget_import_probes()
+        assert pip_runner.import_failures(["Flask"]) == {}
+        assert pip_runner.import_failures(["flask"]) == {}
 
     def test_separators_are_normalised_the_pep_503_way(self):
         assert pip_runner._canonical_dist_name("py-yaml") == "py-yaml"
         assert pip_runner._canonical_dist_name("py_yaml") == "py-yaml"
         assert pip_runner._canonical_dist_name("Py.Yaml") == "py-yaml"
 
-    def test_a_private_accelerator_is_not_the_module_the_requirement_means(self):
+    def test_a_private_accelerator_is_not_the_module_the_requirement_means(
+        self, mapping
+    ):
         # PyYAML ships both `yaml` and `_yaml`; sorting alone picks the
         # underscore, which is an implementation detail, not the library.
         assert not pip_runner._module_for_distribution("pyyaml").startswith("_")
 
-    def test_the_known_renames_still_resolve(self):
+    def test_the_known_renames_still_resolve(self, mapping):
         assert pip_runner._module_for_distribution("pillow") == "PIL"
 
 
