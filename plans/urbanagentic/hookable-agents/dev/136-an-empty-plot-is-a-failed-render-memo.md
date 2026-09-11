@@ -1,7 +1,10 @@
 # dev/136 — An empty plot is a failed render: Curio counts what was drawn, and the harness fixes what emptied it
 
-**Status: PROPOSED (2026-09-10) on `imp/agentcatalog` @ `f5cf04b7`. Every line number below was read
-on that commit.**
+**Status: IMPLEMENTED (2026-09-10) on `imp/agentcatalog` — `BL-P5-20260910-71`, and **no new
+`DEC`**: `DEC-073`'s "a verified node is one the runtime checked" read for a picture, and
+`DEC-052`'s journal carrying one more fact. Commits `b1066d3a` (the decision + Vega), `11cc2f38`
+(Autark), `d47f0188` (the kind + the harness), + this docs commit. Every line number below was
+read on `f5cf04b7`.**
 
 Date: 2026-09-10
 Branch / tree: `imp/agentcatalog` @ `f5cf04b7` (dev/135's docs commit).
@@ -293,3 +296,37 @@ chart; and a Vega node over real rows whose encoding removes everything gets a c
 - The loop gains one branch, not a second loop: the same rounds, budget, trail and transcript.
 - The trade-off (a deliberately empty chart now reads as a failure) is stated in the docs, as
   dev/133's was.
+
+---
+
+## 11. What changed while building
+
+1. **The count had to be taken after the render, not during it.** `view.runAsync()` was
+   fire-and-forget, so `compileGrammar` returned before anything was drawn. The existing chain is
+   kept intact (the padding fix, the resize, the tupleid map) and its result is now awaited **last**
+   — after the signal listeners are attached and the output is forwarded — so the ordering every
+   other feature depends on is unchanged and the counts are still real.
+2. **Text and rule marks count.** An annotation-only chart draws no symbols and is not empty; the
+   mark-type allowlist is what keeps that true.
+3. **The cause rides the KIND, not the prose.** The memo planned `kind: "empty-render"` and the
+   counts in the message; the harness then needed the cause to decide whether to correct the
+   document or name the upstream, and matching prose for that is exactly what the field exists to
+   avoid. The kind is `empty-render:<cause>`, and `result_shape.empty_render_cause` is the one
+   reader: an unknown cause still reads as an empty render (reason unknown) and a non-render kind
+   reads as None, so "not this" and "this, reason unknown" stay distinguishable.
+4. **`emptyRunRows` reads counts `describeAutkRun` was already writing.** The all-empty
+   data/compute case needed no new instrumentation — the row counts were in the sentence and
+   nothing read them. A summary with no counts (a render node's, or *"the spec names no tables"*)
+   makes no claim.
+5. **An invalid document is still fixed first, and a render that threw is untouched.** Both
+   orderings are pinned by tests, because getting either wrong would make the new branch swallow a
+   defect that already had a correct repair.
+6. **The test fixtures had to satisfy dev/134's field check.** A document whose fields are not in
+   the upstream schema is refused before any render verdict is consulted — which is correct, and
+   worth knowing when writing a fixture that means to exercise emptiness alone.
+
+Recorded and not done: **F1** — whether a *non-empty* plot is a good plot is still unchecked
+(dev/129 F1's headless render idea); **F2** — nothing counts marks for a package's own
+visualization kind, which reports its own outcome through the same seam if it wants one; **F3** — a
+deliberately empty chart now reads as a failure, stated in the docs as dev/133's equivalent
+trade-off is.

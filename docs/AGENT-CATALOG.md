@@ -381,6 +381,32 @@ whose pool said *"Nothing to display"* and whose chart drew empty axes. If the
 emptiness is genuinely what you want, write that code in the editor yourself;
 Solve will not claim it verified something that produced nothing.
 
+### An empty plot is a failed render
+
+A document can be schema-valid, encode columns that exist, compile without an
+error — and draw nothing (memo dev/136). Curio counts what a render actually
+produced, and reports an empty one as a **failure** rather than a green *Done*
+over a blank panel. Which failure depends on what emptied it, because the fix
+does:
+
+| What the renderer saw | What it says | Who must change |
+|---|---|---|
+| Every layer the document asks for was dropped (its `dataRef` names a table this dataflow does not produce) | *rendered nothing — every layer this document asks for names data the dataflow does not produce (asked for: …; available: …)* | the **document** |
+| No rows arrived | *rendered nothing — 0 rows arrived at this node … this document is not at fault* | the **upstream node** |
+| Rows arrived and no mark was drawn | *rendered nothing — 12 rows arrived and no mark was drawn: an encoding, a transform or a scale domain removed every row* | the **document** |
+
+Solving such a node then does the right thing per cause: a document at fault is
+**corrected** — the loop no longer passes a document merely because it
+validates — while an empty input leaves the document alone and reports the
+upstream, because no document could have drawn data that never arrived. A
+partial loss is not a failure: an Autark map that drew some of its layers says
+which it lost, and keeps its success.
+
+Two limits worth knowing. A chart that is *deliberately* empty now reads as a
+failure — the same trade-off the empty-result check makes, and the editor is
+where you keep such a chart. And a renderer that cannot count what it drew
+makes no claim at all: an emptiness Curio cannot verify is never reported.
+
 ### What an agent knows about a node's last run
 
 Every execution leaves a record, **wherever it ran** (memo dev/135). A node's
