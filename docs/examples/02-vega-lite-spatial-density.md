@@ -59,9 +59,6 @@ A log-binned histogram of `TOTAL_ROOF_SQFT`, useful because rooftop sizes span s
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "Histogram of Total Roof Size of Buildings in Chicago (log-scaled)",
-  "data": {
-    "name": "data"
-  },
   "transform": [
     { "filter": "datum.TOTAL_ROOF_SQFT > 0" },
     {

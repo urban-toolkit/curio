@@ -136,9 +136,11 @@ export interface DefaultSpecRule {
 
 const SCHEMA_URL = "https://vega.github.io/schema/vega-lite/v6.json";
 
+// No `data` block: the node replaces the root `data` with its own rows when
+// it compiles the spec (useVega.compileGrammar), so one written here would
+// only ever be overwritten.
 const base = (rest: Record<string, unknown>) => ({
   $schema: SCHEMA_URL,
-  data: { name: "data" },
   ...rest,
 });
 

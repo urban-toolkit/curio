@@ -48,7 +48,6 @@ Load the CSV → run a `clean()` step that drops missing rows, fills medians, re
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "data": {"name": "energy_transformed_1"},
   "mark": "rect",
   "encoding": {
     "x": {"field": "BUILDING TYPE", "type": "nominal"},

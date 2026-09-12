@@ -90,12 +90,12 @@ function markType(spec: any): string | null {
 /**
  * Does this unit read from somewhere other than the node's own input?
  *
- * Not simply `unit.data != null`: every Curio spec declares
- * `"data": {"name": "data"}`, the named reference to the rows the node hands
- * vega. Treating that as a foreign source silently disabled injection for
- * essentially every real spec, while d3's tolerance for a `geometry`-shaped
- * datum made it *look* like it still worked. Only a `url` or inline `values`
- * means the unit brings its own data.
+ * Not simply `unit.data != null`: a spec may carry a `"data": {"name": ...}`
+ * block, which is inert (the node replaces the root `data` with its own rows
+ * at compile time) but used to be common. Treating it as a foreign source
+ * silently disabled injection for those specs, while d3's tolerance for a
+ * `geometry`-shaped datum made it *look* like it still worked. Only a `url`
+ * or inline `values` means the unit brings its own data.
  */
 function hasOwnData(unit: any): boolean {
   const data = unit?.data;

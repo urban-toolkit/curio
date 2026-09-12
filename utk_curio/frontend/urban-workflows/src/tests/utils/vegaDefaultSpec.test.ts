@@ -219,7 +219,8 @@ describe("the ladder", () => {
     for (const schema of schemas) {
       const spec = pick(schema);
       expect(spec.$schema).toContain("vega-lite");
-      expect(spec.data).toEqual({ name: "data" });
+      // The node supplies the data itself; a block here would be inert.
+      expect(spec.data).toBeUndefined();
       expect(spec.mark).toBeTruthy();
     }
   });

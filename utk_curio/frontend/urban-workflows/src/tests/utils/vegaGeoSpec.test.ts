@@ -191,10 +191,11 @@ describe("normalizeGeoSpec injection", () => {
   });
 
   test('a named "data" reference means the node own rows, not a foreign source', () => {
-    // Every Curio spec carries `"data": {"name": "data"}`. Reading that as a
-    // separate data source suppressed injection for essentially every real
-    // spec -- and d3 is tolerant enough of a `geometry`-shaped datum that it
-    // still drew *something*, so the unit tests looked fine.
+    // Older specs carry an inert `"data": {"name": "data"}` block (the node
+    // overwrites the root data with its own rows). Reading that as a separate
+    // data source suppressed injection for every such spec -- and d3 is
+    // tolerant enough of a `geometry`-shaped datum that it still drew
+    // *something*, so the unit tests looked fine.
     const spec: any = { mark: "geoshape", data: { name: "data" } };
 
     normalizeGeoSpec(spec, rows(), { geometryName: "geometry" });

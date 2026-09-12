@@ -46,9 +46,6 @@ return gdf
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "ZIP polygons, drawn from a bare geoshape mark.",
-  "data": {
-    "name": "data"
-  },
   "mark": "geoshape",
   "encoding": {
     "color": {

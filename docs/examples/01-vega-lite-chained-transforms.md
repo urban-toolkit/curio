@@ -143,7 +143,6 @@ Bars encode the issue count per feature type, coloured by mean severity. The dat
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "data": {"name": "feature_stats"},
   "mark": "bar",
   "encoding": {
     "x": {"field": "label_type", "type": "nominal", "title": "Feature Type"},
@@ -172,7 +171,6 @@ Neighborhoods sit on the y-axis (sorted by count, descending) so the long catego
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "height": {"step": 14},
-  "data": {"name": "neighborhood_stats"},
   "mark": "circle",
   "encoding": {
     "x": {"field": "count", "type": "quantitative", "title": "Number of Features"},
