@@ -231,6 +231,35 @@ describe('useSpatialJoinBehavior', () => {
     expect(nodeState.setOutput).not.toHaveBeenCalledWith(expect.objectContaining({ code: 'error' }));
   });
 
+  test('a second input arriving while the first still resolves does not lose the first', async () => {
+    // Example 15's order: polygons loader first, points loader right behind it.
+    // The polygon artifact is still downloading when the points reference
+    // lands; a cancel-on-new-input cleanup dropped it and the join waited
+    // forever for polygons it had been handed.
+    const { fetchData } = require('../../../services/api');
+    let releasePolygons: (v: unknown) => void = () => {};
+    (fetchData as jest.Mock)
+      .mockImplementationOnce(() => new Promise(resolve => { releasePolygons = resolve; }))
+      .mockResolvedValueOnce({ dataType: 'geodataframe', data: POINTS, schema: {} });
+    const fetchMock = mockFetch(joined([]));
+    const nodeState = makeNodeState();
+
+    const { rerender } = renderHook(
+      ({ input }: { input: unknown }) => useSpatialJoinBehavior(makeData({ input }), nodeState),
+      { initialProps: { input: { path: 'polygons-artifact', dataType: 'geodataframe' } } },
+    );
+    await waitFor(() => expect(fetchData).toHaveBeenCalledWith('polygons-artifact'));
+    // The points reference arrives before the polygon download has finished.
+    rerender({ input: { path: 'points-artifact', dataType: 'geodataframe' } });
+    await waitFor(() => expect(fetchData).toHaveBeenCalledWith('points-artifact'));
+    await act(async () => { releasePolygons({ dataType: 'geodataframe', data: POLYGONS, schema: {} }); });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.points.features).toHaveLength(1);
+    expect(body.polygons.features[0].properties.pri_neigh).toBe('Loop');
+  });
+
   test('before any input the body says what to connect', () => {
     mockFetch(joined([]));
     const { result } = renderHook(() => useSpatialJoinBehavior(makeData(), makeNodeState()));

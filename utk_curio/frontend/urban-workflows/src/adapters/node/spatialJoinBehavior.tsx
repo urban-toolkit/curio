@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useEdges, Position } from 'reactflow';
 import { NodeBehaviorHook, HandleDef } from '../../registry/types';
 import { useFlowContext } from '../../providers/FlowProvider';
@@ -126,34 +126,49 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   //   - framework hands us an array indexed by handle (when dynamicHandles
   //     are declared), OR
   //   - framework hands us a single scalar; classify by geometry type.
+  // The two inputs arrive as successive `data.input` values, one per upstream
+  // run, and each has to land in its own slot. So a later arrival must NOT
+  // cancel an earlier one that is still resolving: with the polygons loader
+  // first and the points loader right behind it (example 15's order, and the
+  // generic canvas test's), the points reference arrived while the polygon
+  // artifact was still downloading, a cleanup-style cancel dropped it, and the
+  // join waited forever for polygons it had already been handed. Instead, each
+  // resolution carries a sequence number and only a newer resolution of the
+  // SAME slot may overwrite an older one; unmount is the only thing that stops
+  // a result from landing.
+  const aliveRef = useRef(true);
+  useEffect(() => () => { aliveRef.current = false; }, []);
+  const resolveSeqRef = useRef(0);
+  const appliedSeqRef = useRef<[number, number]>([0, 0]);
+  const placeResolved = useCallback((v: any, seq: number) => {
+    if (!aliveRef.current) return;
+    const kind = classifyFC(v);
+    const idx: 0 | 1 | null = kind === 'points' ? 0 : kind === 'polygons' ? 1 : null;
+    if (idx === null || seq < appliedSeqRef.current[idx]) return;
+    appliedSeqRef.current[idx] = seq;
+    setSlots(prev => {
+      const next: [any | undefined, any | undefined] = [prev[0], prev[1]];
+      next[idx] = v;
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (data.input === undefined || data.input === '' || data.input === null) return;
-    let cancelled = false;
+    const seq = ++resolveSeqRef.current;
+    const onError = (e: any) => {
+      if (aliveRef.current) nodeState.setOutput({ code: 'error', content: e?.message || String(e) });
+    };
     if (Array.isArray(data.input)) {
       Promise.all(data.input.slice(0, 2).map(resolveInput))
-        .then(values => {
-          if (cancelled) return;
-          setSlots(prev => {
-            const next: [any | undefined, any | undefined] = [prev[0], prev[1]];
-            values.forEach((v, i) => { next[i] = v; });
-            return next;
-          });
-        })
-        .catch(e => nodeState.setOutput({ code: 'error', content: e?.message || String(e) }));
+        .then(values => { values.forEach(v => placeResolved(v, seq)); })
+        .catch(onError);
     } else {
-      resolveInput(data.input)
-        .then(v => {
-          if (cancelled) return;
-          const kind = classifyFC(v);
-          if (kind === 'points') setSlots(prev => [v, prev[1]]);
-          else if (kind === 'polygons') setSlots(prev => [prev[0], v]);
-        })
-        .catch(e => nodeState.setOutput({ code: 'error', content: e?.message || String(e) }));
+      resolveInput(data.input).then(v => placeResolved(v, seq)).catch(onError);
     }
-    return () => { cancelled = true; };
     // nodeState is stable for the node's lifetime; only a new input re-resolves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.input]);
+  }, [data.input, placeResolved]);
 
   // Slot-indexed override (Merge-Flow pattern) — the framework calls this
   // with (value, slotIdx) when each handle's upstream output arrives.
