@@ -53,6 +53,8 @@ EXAMPLE_INVARIANTS = [
      }, False),
     ("11-autark-pbf-loading.json", 2, 1,
      {"curio.builtin/autk-grammar": 2}, False),
+    ("16-simple-view-tables-and-images.json", 4, 2,
+     {"curio.builtin/data-loading": 2, "curio.builtin/vis-simple": 2}, False),
 ]
 
 

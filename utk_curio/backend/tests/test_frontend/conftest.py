@@ -120,6 +120,7 @@ WORKFLOW_FILES = [
     # skip rather than a silent omission.
     "docs/examples/10-street-vision-cv-analysis.json",
     "docs/examples/11-autark-pbf-loading.json",
+    "docs/examples/16-simple-view-tables-and-images.json",
 ]
 
 

@@ -1,0 +1,78 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "table-source",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "content": "# One of the two paths in this example. A plain table: nothing in this frame\n# looks like a picture, so Simple View renders it as a table.\nimport pandas as pd\n\nREADINGS = [\n    (\"Lincoln Park\", 2, 55.0, 21.0),\n    (\"The Loop\", 2, 9.5, 74.0),\n    (\"Hyde Park\", 2, 47.0, 33.5),\n    (\"Pilsen\", 1, 22.0, 61.0),\n    (\"Rogers Park\", 1, 38.5, 40.0),\n]\n\nreturn pd.DataFrame(\n    READINGS,\n    columns=[\"neighborhood\", \"tiles\", \"vegetation_pct\", \"paved_pct\"],\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Emit a plain table of neighborhood readings.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "table-view",
+        "type": "curio.builtin/vis-simple",
+        "x": 645,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "No image column, so Simple View renders a table.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "image-source",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 430,
+        "content": "# The other path. This node draws its own pictures, so the example needs no\n# files and no network: Simple View shows whatever a frame carries, wherever\n# the frame came from. Two image columns, so the cards put them side by side\n# and the node offers an \"Image column\" picker.\nimport base64\nimport io\n\nimport pandas as pd\nfrom PIL import Image, ImageDraw\n\n# tile id, neighborhood, percent of the tile that reads as vegetation\nTILES = [\n    (\"T-01\", \"Lincoln Park\", 62),\n    (\"T-02\", \"Lincoln Park\", 48),\n    (\"T-03\", \"The Loop\", 12),\n    (\"T-04\", \"The Loop\", 7),\n    (\"T-05\", \"Hyde Park\", 39),\n    (\"T-06\", \"Hyde Park\", 55),\n]\n\nWIDTH, HEIGHT = 96, 64\n\n\ndef as_data_uri(img):\n    \"\"\"A column of data: URIs needs no server and survives a save.\"\"\"\n    buffer = io.BytesIO()\n    img.save(buffer, format=\"PNG\")\n    return \"data:image/png;base64,\" + base64.b64encode(buffer.getvalue()).decode()\n\n\ndef tile_image(pct):\n    \"\"\"A stand-in aerial tile: the greener the band, the higher the reading.\"\"\"\n    img = Image.new(\"RGB\", (WIDTH, HEIGHT), (203, 213, 225))\n    draw = ImageDraw.Draw(img)\n    band = round(HEIGHT * pct / 100)\n    draw.rectangle([0, HEIGHT - band, WIDTH, HEIGHT], fill=(34, 139, 76))\n    draw.line([0, HEIGHT // 2, WIDTH, HEIGHT // 2], fill=(148, 163, 184), width=3)\n    return as_data_uri(img)\n\n\ndef mask_image(pct):\n    \"\"\"The same tile as a vegetation mask: the second picture on each card.\"\"\"\n    img = Image.new(\"RGB\", (WIDTH, HEIGHT), (15, 23, 42))\n    draw = ImageDraw.Draw(img)\n    band = round(HEIGHT * pct / 100)\n    draw.rectangle([0, HEIGHT - band, WIDTH, HEIGHT], fill=(74, 222, 128))\n    return as_data_uri(img)\n\n\nreturn pd.DataFrame(\n    [\n        {\n            \"tile_id\": tile_id,\n            \"neighborhood\": neighborhood,\n            \"vegetation_pct\": pct,\n            \"image\": tile_image(pct),\n            \"thumbnail\": mask_image(pct),\n        }\n        for tile_id, neighborhood, pct in TILES\n    ]\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render six tiles and a vegetation mask for each, as data: URIs.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "image-view",
+        "type": "curio.builtin/vis-simple",
+        "x": 645,
+        "y": 430,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Two image columns, so each card shows the tile beside its mask.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-table-sourceout-table-viewin",
+        "source": "table-source",
+        "target": "table-view"
+      },
+      {
+        "id": "reactflow__edge-image-sourceout-image-viewin",
+        "source": "image-source",
+        "target": "image-view"
+      }
+    ],
+    "name": "Simple View: tables and images",
+    "description": "Two independent paths into Simple View: a plain table, and a frame whose generated image columns render as cards.",
+    "task": "Show what Simple View does with a frame that has no pictures, and with one that has two columns of them.",
+    "timestamp": 0,
+    "provenance_id": "simple-view-tables-and-images",
+    "packages": [
+      "curio.builtin@1"
+    ]
+  }
+}
