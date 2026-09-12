@@ -5,8 +5,8 @@
       {
         "id": "e1a123c1-8837-47a5-9b63-038e5ebcb530",
         "type": "curio.builtin/data-loading",
-        "x": 328.59505352598796,
-        "y": 144.76139201765037,
+        "x": 0,
+        "y": 215,
         "content": "import pandas as pd\n\n# Trim early: read only the columns downstream uses (parquet projects them in\n# the file format, so the other four are never decoded), parse dates up front,\n# and store CAMERA ID as a category. Without these, the resulting DataFrame\n# is ~130 MB (400k rows x 9 cols of mostly strings) and the inter-node\n# serialization times out the frontend with a NetworkError.\ndataset_path = curio_dataset_path(\"data.cityofchicago.speed-camera-violations\")\ndf = pd.read_parquet(\n    dataset_path,\n    columns=['CAMERA ID', 'VIOLATION DATE', 'VIOLATIONS', 'LATITUDE', 'LONGITUDE'],\n)\ndf['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'], format='%m/%d/%Y')\ndf.dropna(inplace=True)\ndf['CAMERA ID'] = df['CAMERA ID'].astype('category')\nreturn df\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -18,8 +18,8 @@
       {
         "id": "cb340f83-0a4d-457a-be66-691672f330d3",
         "type": "curio.builtin/computation-analysis",
-        "x": 1015.7273164593021,
-        "y": 186.5957786737569,
+        "x": 645,
+        "y": 215,
         "content": "import pandas as pd\n\ndf = arg\ndf['Year'] = df['VIOLATION DATE'].dt.year\n\nyr_sum = (df.groupby(['CAMERA ID', 'Year'], observed=True)['VIOLATIONS']\n          .sum()\n          .reset_index()\n          .rename(columns={'VIOLATIONS': 'total_violations'}))\n\ntop_ids = (df.groupby('CAMERA ID', observed=True)['VIOLATIONS']\n             .sum()\n             .sort_values(ascending=False)\n             .head(5)\n             .index\n             .tolist())\n\nyr_sum = yr_sum[yr_sum['CAMERA ID'].isin(top_ids)]\n\ncamera_pos = (df.groupby('CAMERA ID', observed=True)[['LATITUDE', 'LONGITUDE']]\n                .mean()\n                .reset_index())\n\nyr_sum = yr_sum.merge(camera_pos, on='CAMERA ID')\n\nreturn yr_sum\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -31,8 +31,8 @@
       {
         "id": "c2ba6e0e-e239-4167-a382-ffd1993cb3d1",
         "type": "curio.builtin/vis-vega",
-        "x": 1628.101264659358,
-        "y": 60,
+        "x": 1290,
+        "y": 0,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": { \"name\": \"table\" },\n  \"width\": 320,\n  \"height\": 260,\n  \"config\": { \"bar\": { \"continuousBandSize\": 18 } },\n  \"mark\": { \"type\": \"bar\" },\n  \"encoding\": {\n    \"x\": { \"field\": \"Year\", \"type\": \"quantitative\", \"title\": \"Year\" },\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"total_violations\",\n      \"type\": \"quantitative\",\n      \"title\": \"Total Violations\"\n    },\n    \"color\": {\n      \"field\": \"CAMERA ID\",\n      \"type\": \"nominal\",\n      \"legend\": { \"title\": \"Camera ID\" }\n    }\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -44,8 +44,8 @@
       {
         "id": "c2ba6e0e-e239-4167-a382-ffd1993cb3d2",
         "type": "curio.builtin/vis-vega",
-        "x": 1628.101264659358,
-        "y": 420,
+        "x": 1290,
+        "y": 430,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": { \"name\": \"table\" },\n  \"width\": 320,\n  \"height\": 260,\n  \"transform\": [\n    {\n      \"aggregate\": [\n        { \"op\": \"sum\", \"field\": \"total_violations\", \"as\": \"total\" }\n      ],\n      \"groupby\": [\"Year\"]\n    },\n    { \"sort\": { \"field\": \"Year\" } }\n  ],\n  \"mark\": { \"type\": \"line\", \"point\": true },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"Year\",\n      \"type\": \"quantitative\",\n      \"title\": \"Year\"\n    },\n    \"y\": {\n      \"field\": \"total\",\n      \"type\": \"quantitative\",\n      \"title\": \"Total Violations\"\n    }\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",

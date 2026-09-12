@@ -57,7 +57,17 @@ import {
     faXmark,
     faAnglesUp
 } from "@fortawesome/free-solid-svg-icons";
-import { AccessLevelType, NodeType, SupportedType } from "../constants";
+import {
+    AccessLevelType,
+    DEFAULT_NODE_HEIGHT,
+    DEFAULT_NODE_WIDTH,
+    MIN_NODE_HEIGHT,
+    MIN_NODE_WIDTH,
+    MINIMIZED_NODE_HEIGHT,
+    MINIMIZED_NODE_WIDTH,
+    NodeType,
+    SupportedType,
+} from "../constants";
 import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
 import { NodeTemplateId } from "../registry/types";
 import {
@@ -80,8 +90,6 @@ import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplicat
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 import { useDatasetPalette } from "../providers/DatasetPaletteContext";
 
-const MIN_NODE_WIDTH = 200;
-const MIN_NODE_HEIGHT = 150;
 
 // Node Container
 export const NodeContainer = ({
@@ -281,17 +289,17 @@ export const NodeContainer = ({
     useEffect(() => {
         if (!noContent) {
             if (minimized) {
-                setCurrentNodeWidth(70);
-                setCurrentNodeHeight(40);
+                setCurrentNodeWidth(MINIMIZED_NODE_WIDTH);
+                setCurrentNodeHeight(MINIMIZED_NODE_HEIGHT);
             } else {
                 if (nodeWidth == undefined) {
-                    setCurrentNodeWidth(525);
+                    setCurrentNodeWidth(DEFAULT_NODE_WIDTH);
                 } else {
                     setCurrentNodeWidth(nodeWidth);
                 }
 
                 if (nodeHeight == undefined) {
-                    setCurrentNodeHeight(350);
+                    setCurrentNodeHeight(DEFAULT_NODE_HEIGHT);
                 } else {
                     setCurrentNodeHeight(nodeHeight);
                 }
@@ -307,11 +315,11 @@ export const NodeContainer = ({
         if (noContent) return;
 
         if (nodeWidth == undefined || nodeWidth < MIN_NODE_WIDTH) {
-            setCurrentNodeWidth(525);
+            setCurrentNodeWidth(DEFAULT_NODE_WIDTH);
         }
 
         if (nodeHeight == undefined || nodeHeight < MIN_NODE_HEIGHT) {
-            setCurrentNodeHeight(350);
+            setCurrentNodeHeight(DEFAULT_NODE_HEIGHT);
         }
     }, []);
 
@@ -1054,13 +1062,13 @@ export const NodeContainer = ({
                     onClick={() => {
                         if (!noContent) {
                             if (nodeWidth == undefined) {
-                                setCurrentNodeWidth(525);
+                                setCurrentNodeWidth(DEFAULT_NODE_WIDTH);
                             } else {
                                 setCurrentNodeWidth(nodeWidth);
                             }
 
                             if (nodeHeight == undefined) {
-                                setCurrentNodeHeight(350);
+                                setCurrentNodeHeight(DEFAULT_NODE_HEIGHT);
                             } else {
                                 setCurrentNodeHeight(nodeHeight);
                             }

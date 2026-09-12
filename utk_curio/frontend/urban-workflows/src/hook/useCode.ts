@@ -10,6 +10,7 @@ import { TrillGenerator } from "../TrillGenerator";
 import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { DatasetNodeSource } from "../services/datasetCatalog";
+import { deoverlapNodes } from "../utils/deoverlapLayout";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -213,6 +214,25 @@ export function useCode(): IUseCode {
 
             nodes.push(generateCodeNode(node.type, nodeMeta));
 
+        }
+
+        // Nothing else corrects layout: the loop above copies the spec's x/y
+        // straight onto the canvas, so a legacy file or a hand-edited spec can
+        // render with its boxes on top of each other. Separating them here
+        // covers every way a dataflow reaches the canvas - opening a project,
+        // a shared link, File -> Load, and the revert branch below - because
+        // all four build their nodes through this one loop.
+        //
+        // It must happen BEFORE loadParsedTrill: rewriting positions after the
+        // nodes are in the React Flow store would emit `position` changes,
+        // which MainCanvas treats as an edit and would mark every project dirty
+        // on open (#229). Pre-mount there is no change to emit.
+        //
+        // Skipped for a suggestion, which is a subset merged into a live graph:
+        // separating it in isolation would miss every collision with what is
+        // already on canvas and drag the suggestion off the node it explains.
+        if (suggestionType === undefined) {
+            nodes = deoverlapNodes(nodes);
         }
 
         for(const edge of trill.dataflow.edges){

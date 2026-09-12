@@ -136,6 +136,22 @@ python scripts/validate_trill.py --all --resolve          # also check types res
 `--resolve` adds the manifest check the schema cannot do: every node type must
 correspond to a template under `packages/`.
 
+## Laying a dataflow out
+
+The schema says nothing about where a node sits, so a spec can be perfectly valid
+and still draw its boxes on top of each other. That is a layout question, and it
+has its own tool:
+
+```bash
+python scripts/tidy_example_layout.py --all            # check, exit 1 on drift
+python scripts/tidy_example_layout.py --all --write    # apply
+```
+
+It rewrites nothing but `x` and `y` on `dataflow.nodes[]`, and it refuses a file
+it cannot reproduce byte-for-byte rather than reformatting it. Scope is the
+curated gallery examples only — `docs/examples/dataflows/` is hand-tuned fixture
+material and `.curio/` is your own work.
+
 CI validates the 31 committed examples on every push. It cannot see your own
 projects — `.curio/` is gitignored — which is what the CLI is for.
 
