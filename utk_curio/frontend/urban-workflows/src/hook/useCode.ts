@@ -53,6 +53,13 @@ type CreateCodeNodeOptions = {
     // #237: persisted per-node comments (canonical shape metadata.comments).
     // Opaque here - utils/nodeComments owns the mapping to live IComment.
     comments?: unknown[];
+    // #262: the Spatial Join's polygon property (canonical shape
+    // metadata.spatialJoin). #276: Simple View's image column
+    // (metadata.simpleVis). Both were read off the spec in loadTrill and then
+    // dropped here, because this factory builds node data from an explicit
+    // list: the setting survived a save and never a load.
+    spatialJoin?: { nameProperty?: string };
+    simpleVis?: { imageColumn?: string };
 };
 
 interface IUseCode {
@@ -329,6 +336,8 @@ export function useCode(): IUseCode {
             appearance = undefined,
             title = undefined,
             comments = undefined,
+            spatialJoin = undefined,
+            simpleVis = undefined,
         } = options;
 
         const node: Node = {
@@ -370,6 +379,8 @@ export function useCode(): IUseCode {
                 appearance,
                 title,
                 comments,
+                spatialJoin,
+                simpleVis,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset
