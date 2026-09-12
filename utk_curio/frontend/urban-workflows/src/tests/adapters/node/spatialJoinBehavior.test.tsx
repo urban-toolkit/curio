@@ -7,7 +7,7 @@
  * property is reported instead of silently tagging everything polygon_<i>.
  */
 import React from 'react';
-import { renderHook, render, act, fireEvent } from '@testing-library/react';
+import { renderHook, render, act, fireEvent, waitFor } from '@testing-library/react';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../../registry/types';
 
 jest.mock('reactflow', () => ({
@@ -23,6 +23,12 @@ jest.mock('../../../providers/FlowProvider', () => ({
 const mockShowToast = jest.fn();
 jest.mock('../../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
+}));
+
+// The artifact fetch the node uses to resolve `{ path, dataType }` inputs. Kept
+// separate from the `global.fetch` mock, which stands in for the join route.
+jest.mock('../../../services/api', () => ({
+  fetchData: jest.fn(),
 }));
 
 import {
@@ -195,6 +201,34 @@ describe('useSpatialJoinBehavior', () => {
     const { container } = render(<>{result.current.contentComponent}</>);
     expect(container.querySelector('[data-curio-spatial-join-warning]')!.textContent).toBe(warning);
     expect(container.querySelector('[data-curio-spatial-join-status]')!.textContent).toMatch(/Tagged 1 of 1/);
+  });
+
+  test('an artifact reference is fetched and classified before the join', async () => {
+    // What every Python node hands a consumer is `{ path, dataType }`, not rows
+    // (normalizeFlowInput). Classifying that by geometry type found nothing, so
+    // a join fed by a sandbox node never fired; example 10's polygons come out
+    // of a Data Transformation node and never reached the polygon slot.
+    const { fetchData } = require('../../../services/api');
+    (fetchData as jest.Mock)
+      .mockResolvedValueOnce({ dataType: 'geodataframe', data: POINTS, schema: {} })
+      .mockResolvedValueOnce({ dataType: 'geodataframe', data: POLYGONS, schema: {} });
+    const fetchMock = mockFetch(joined([]));
+    const nodeState = makeNodeState();
+
+    const { rerender } = renderHook(
+      ({ input }: { input: unknown }) => useSpatialJoinBehavior(makeData({ input }), nodeState),
+      { initialProps: { input: { path: 'points-artifact', dataType: 'geodataframe' } } },
+    );
+    await waitFor(() => expect(fetchData).toHaveBeenCalledWith('points-artifact'));
+    rerender({ input: { path: 'polygons-artifact', dataType: 'geodataframe' } });
+    await waitFor(() => expect(fetchData).toHaveBeenCalledWith('polygons-artifact'));
+
+    // Both slots resolved and classified: the join fires with the rows, not the references.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.points.features).toHaveLength(1);
+    expect(body.polygons.features[0].properties.pri_neigh).toBe('Loop');
+    expect(nodeState.setOutput).not.toHaveBeenCalledWith(expect.objectContaining({ code: 'error' }));
   });
 
   test('before any input the body says what to connect', () => {

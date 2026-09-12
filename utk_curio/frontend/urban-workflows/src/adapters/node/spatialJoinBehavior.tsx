@@ -3,6 +3,7 @@ import { useEdges, Position } from 'reactflow';
 import { NodeBehaviorHook, HandleDef } from '../../registry/types';
 import { useFlowContext } from '../../providers/FlowProvider';
 import { useToastContext } from '../../providers/ToastProvider';
+import { fetchData } from '../../services/api';
 import { backendUrl } from '../../utils/backendUrl';
 
 /**
@@ -53,6 +54,21 @@ function unwrap(value: any): any {
     return value.data;
   }
   return value;
+}
+
+// What an upstream Python node hands us is an artifact reference,
+// `{ path, dataType }` (normalizeFlowInput), never the rows. `classifyFC` can
+// make nothing of that, so a join fed by any sandbox node never fired: only an
+// inline FeatureCollection (HF CV Inference's, a JS node's) ever reached a
+// slot, and example 10's polygons, which come out of a Data Transformation
+// node, never did. Resolve the reference through /get first; the envelope that
+// comes back is `{ dataType, data, schema }` and `data` is the FeatureCollection.
+async function resolveInput(value: any): Promise<any> {
+  if (value && typeof value === 'object' && typeof value.path === 'string' && value.data === undefined) {
+    const envelope = await fetchData(value.path);
+    return envelope?.data ?? envelope;
+  }
+  return unwrap(value);
 }
 
 /** Distinct property names across the first *limit* polygon features, for the datalist. */
@@ -111,20 +127,32 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   //     are declared), OR
   //   - framework hands us a single scalar; classify by geometry type.
   useEffect(() => {
+    if (data.input === undefined || data.input === '' || data.input === null) return;
+    let cancelled = false;
     if (Array.isArray(data.input)) {
-      setSlots(prev => {
-        const next: [any | undefined, any | undefined] = [prev[0], prev[1]];
-        for (let i = 0; i < Math.min(data.input.length, 2); i++) {
-          next[i] = data.input[i];
-        }
-        return next;
-      });
-    } else if (data.input !== undefined && data.input !== '' && data.input !== null) {
-      const v = unwrap(data.input);
-      const kind = classifyFC(v);
-      if (kind === 'points') setSlots(prev => [v, prev[1]]);
-      else if (kind === 'polygons') setSlots(prev => [prev[0], v]);
+      Promise.all(data.input.slice(0, 2).map(resolveInput))
+        .then(values => {
+          if (cancelled) return;
+          setSlots(prev => {
+            const next: [any | undefined, any | undefined] = [prev[0], prev[1]];
+            values.forEach((v, i) => { next[i] = v; });
+            return next;
+          });
+        })
+        .catch(e => nodeState.setOutput({ code: 'error', content: e?.message || String(e) }));
+    } else {
+      resolveInput(data.input)
+        .then(v => {
+          if (cancelled) return;
+          const kind = classifyFC(v);
+          if (kind === 'points') setSlots(prev => [v, prev[1]]);
+          else if (kind === 'polygons') setSlots(prev => [prev[0], v]);
+        })
+        .catch(e => nodeState.setOutput({ code: 'error', content: e?.message || String(e) }));
     }
+    return () => { cancelled = true; };
+    // nodeState is stable for the node's lifetime; only a new input re-resolves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.input]);
 
   // Slot-indexed override (Merge-Flow pattern) — the framework calls this
