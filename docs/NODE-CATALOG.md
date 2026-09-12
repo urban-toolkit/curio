@@ -275,7 +275,9 @@ Same pattern, [`src/registry/grammarAdapter.ts`](../utk_curio/frontend/urban-wor
 ## See also
 
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): the Data Catalog, which applies the same install and publish model to datasets.
-- [`docs/USAGE.md`](USAGE.md): installation and operating Curio.
+- [`docs/USAGE.md`](USAGE.md): installation and operating Curio, including the
+  [Vega-Lite node](USAGE.md#vega-lite-node): how a `GeoDataFrame` is drawn and how its
+  geometry columns are addressed.
 - [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json): the manifest JSON Schema.
 - [`docs/schemas/trill.v1.json`](schemas/trill.v1.json): the dataflow JSON Schema. A node's `type` is a
   coordinate into a manifest's `templates[].id`; that schema validates the coordinate's shape, this one

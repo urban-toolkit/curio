@@ -189,6 +189,18 @@ Nodes tied to a dataset show a small pill on their title bar: **DATASET** when t
 
 Every runnable node has a small database-icon toggle immediately to the right of its play button. It is **off by default**, so saving is opt-in per node; the deployment-wide default is controlled by `CURIO_DEFAULT_SAVE_NODE_OUTPUT`. When it is on, running the node saves its output into your per-user dataset store as `computed.<dataflowId>.<nodeId>@1`.
 
+A `GeoDataFrame` output is stored as **GeoParquet**, and reloads as a
+`GeoDataFrame`: its CRS survives, and so does *every* geometry column, not only
+the active one: a frame with both a `geometry` and a `centroid` column comes
+back with both still typed as geometry. That makes a node's map output a
+reusable input: save it, then read it downstream with
+`gpd.read_parquet(curio_dataset_path("computed.<dataflowId>.<nodeId>"))` and
+draw it again. (A `GeoDataFrame` with no active geometry column is stored as a
+plain table; GeoParquet cannot represent one.)
+
+In preview tables, a geometry column is shown as WKT (`POINT (0.67 0.33)`)
+rather than raw coordinates, in both the catalog browser and the Data Pool.
+
 Every output type a node can declare is saved, not just tabular ones:
 
 | Node output | Saved as |
