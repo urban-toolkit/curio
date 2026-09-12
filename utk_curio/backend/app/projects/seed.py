@@ -90,6 +90,31 @@ def _example_id(stem: str, user=None) -> str:
     return str(uuid.uuid5(_EXAMPLES_NAMESPACE, f"{user.id}:{stem}"))
 
 
+def example_project_ids(user) -> set[str]:
+    """The project ids this user's seeded examples occupy.
+
+    Derived, not stored: ``Project`` has no "this one shipped with Curio"
+    column, and it does not need one - an example's id is ``uuid5`` of its
+    filename (scoped to the account since #200), so the set can be recomputed
+    from ``docs/examples/`` whenever it is asked for.
+
+    Callers use it to keep a shipped dataflow out of reach of Delete. That rule
+    matches the one the Data Catalog has had since "hide delete for anything
+    that came from the shared catalog": you may edit and rename what Curio
+    seeded for you, but removing it is not yours to do - and since #270 a
+    deleted example never comes back, so the mis-click was permanent.
+    """
+    examples_dir = _repo_root() / "docs" / "examples"
+    if not examples_dir.exists():
+        return set()
+    return {_example_id(p.stem, user) for p in _example_files(examples_dir)}
+
+
+def is_example_project(user, project_id: str) -> bool:
+    """Is ``project_id`` one of the examples Curio seeded for ``user``?"""
+    return project_id in example_project_ids(user)
+
+
 def seed_example_projects(
     user, *, prune: bool | None = None, overwrite: bool | None = None,
 ) -> int:

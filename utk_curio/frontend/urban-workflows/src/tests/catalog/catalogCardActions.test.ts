@@ -75,7 +75,10 @@ describe("catalog card actions", () => {
       ...packageCardActions({ isInstalled: false, hasUpdate: false }),
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
     ];
-    expect(every.some((a) => a.id === "publish" || a.id === "unpublish")).toBe(false);
+    // Widened on purpose: the two ids are not in `CatalogCardActionId` at all,
+    // which is half the guarantee - the other half is that no builder emits one.
+    const ids: string[] = every.map((a) => a.id);
+    expect(ids.some((id) => id === "publish" || id === "unpublish")).toBe(false);
   });
 
   test("nothing on a browse card is painted as a deletion", () => {

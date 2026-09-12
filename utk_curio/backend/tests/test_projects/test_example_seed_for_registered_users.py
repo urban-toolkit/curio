@@ -165,6 +165,25 @@ def test_seed_is_idempotent(app, db, user_and_token):
     assert first == second, "re-seeding duplicated the examples"
 
 
+def _lose_example_row(user, project_id: str) -> None:
+    """Remove a seeded example the way the product no longer lets a user.
+
+    ``services.delete_project`` refuses an example outright now - what Curio
+    seeded is not the account's to delete. These cases are about the SEEDER,
+    though: the marker still has to hold for the accounts that deleted their
+    examples before that guard existed, and for a row lost any other way (a
+    spec file gone from disk makes ``list_projects`` drop the row). So the row
+    is removed at the repository, under the service's policy rather than
+    through it.
+    """
+    from utk_curio.backend.app.projects import repositories as _repo
+    from utk_curio.backend.extensions import db as _db
+
+    storage.delete_tree(str(user.id), project_id)
+    _repo.delete_project_row(project_id, user.id)
+    _db.session.commit()
+
+
 def test_backfill_does_not_resurrect_a_deleted_example(app, db, user_and_token):
     """The marker is what makes the listing back-fill safe to run every time."""
     user, _ = user_and_token
@@ -172,7 +191,7 @@ def test_backfill_does_not_resurrect_a_deleted_example(app, db, user_and_token):
     assert ensure_user_examples_seeded(user) == len(_example_stems())
 
     victim = list_for_user(user.id)[0]
-    services.delete_project(user, victim.id)
+    _lose_example_row(user, victim.id)
     assert victim.id not in {p.id for p in list_for_user(user.id)}
 
     # A second call is a no-op, so the deliberate deletion stands.
@@ -241,7 +260,7 @@ def test_the_same_account_is_still_seeded_only_once(app, db, user_and_token):
     assert ensure_user_examples_seeded(user) == len(_example_stems())
 
     victim = list_for_user(user.id)[0]
-    services.delete_project(user, victim.id)
+    _lose_example_row(user, victim.id)
 
     assert ensure_user_examples_seeded(user) == 0
     assert victim.id not in {p.id for p in list_for_user(user.id)}
@@ -341,7 +360,7 @@ def test_backfill_still_creates_an_example_that_is_missing(app, db, user_and_tok
     user, _ = user_and_token
     ensure_user_examples_seeded(user)
     victim = list_for_user(user.id)[0]
-    services.delete_project(user, victim.id)
+    _lose_example_row(user, victim.id)
     assert victim.id not in {p.id for p in list_for_user(user.id)}
     _drop_marker(user)
 

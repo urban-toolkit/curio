@@ -397,6 +397,30 @@ describe('projects detail drawer', () => {
     expect(getByRole('button', { name: 'Open dataflow' })).toBeTruthy();
   });
 
+  test('a seeded example offers no Delete on either surface', async () => {
+    // Curio put it in the list; the user did not, and cannot take it back out.
+    // The same rule the Data Catalog applies to shared-catalog datasets, and it
+    // matters more here: since #270 a deleted example is never re-seeded, so
+    // the mis-click had no undo. The server refuses the request too.
+    mockList.mockResolvedValue([{ ...PROJECTS[0], id: 'ex1', is_example: true }]);
+    const { container, queryByRole, getByRole } = await renderPage();
+
+    // The drawer, open on the only card.
+    expect(queryByRole('button', { name: 'Delete' })).toBeNull();
+    // Everything else it could always do.
+    for (const label of ['Rename', 'Duplicate']) {
+      expect(getByRole('button', { name: label })).toBeTruthy();
+    }
+
+    // And the right-click menu, which renders the same list.
+    const card = container.querySelector('[data-project-id="ex1"]') as HTMLElement;
+    await act(async () => {
+      fireEvent.contextMenu(card);
+    });
+    expect(queryByRole('menuitem', { name: 'Delete' })).toBeNull();
+    expect(getByRole('menuitem', { name: 'Rename' })).toBeTruthy();
+  });
+
   test('closing the drawer collapses it', async () => {
     const { getByRole, queryByRole } = await renderPage();
 

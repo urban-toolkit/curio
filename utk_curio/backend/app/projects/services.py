@@ -374,7 +374,7 @@ def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
     return {"nodes": nodes, "edges": edges}
 
 
-def _to_summary(p, graph_preview=None) -> ProjectSummary:
+def _to_summary(p, graph_preview=None, is_example=False) -> ProjectSummary:
     return ProjectSummary(
         id=p.id,
         name=p.name,
@@ -386,6 +386,7 @@ def _to_summary(p, graph_preview=None) -> ProjectSummary:
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
         graph_preview=graph_preview,
+        is_example=is_example,
     )
 
 
@@ -896,10 +897,17 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
     # deleted on purpose is not resurrected on the next listing. Imported here
     # rather than at module scope: ``seed`` imports this module for
     # ``_is_shared_guest`` / ``_user_dir_key``.
-    from utk_curio.backend.app.projects.seed import ensure_user_examples_seeded
+    from utk_curio.backend.app.projects.seed import (
+        ensure_user_examples_seeded,
+        example_project_ids,
+    )
 
     ensure_user_examples_seeded(user)
     projects = repo.list_for_user(user.id, sort=sort)
+    # Once for the whole listing: the set is read off ``docs/examples/``, and
+    # every row below is checked against it so the page knows which cards may
+    # not offer Delete.
+    example_ids = example_project_ids(user)
     ukey = _user_dir_key(user)
     summaries = []
     dropped_stale_row = False
@@ -911,7 +919,13 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
             repo.delete_project_row(p.id, user.id)
             dropped_stale_row = True
             continue
-        summaries.append(_to_summary(p, graph_preview=_extract_graph_preview(spec)))
+        summaries.append(
+            _to_summary(
+                p,
+                graph_preview=_extract_graph_preview(spec),
+                is_example=p.id in example_ids,
+            )
+        )
     if dropped_stale_row:
         db.session.commit()
     return summaries
@@ -940,8 +954,21 @@ def delete_project(user, project_id: str) -> None:
     this and was removed (#261): it never cleared, so it was a second permanent
     state that merely read as the cautious one. The confirm dialog is what
     makes deletion deliberate.
+
+    An example Curio seeded is refused outright. The UI does not offer Delete
+    for one, and this is the half that holds when the request does not come
+    from the UI - the same posture the Data Catalog takes towards a dataset
+    that came from the shared catalog. It matters more here than it reads: the
+    per-account marker added in #270 means a deleted example is never seeded
+    again, so there was no way back from the mis-click.
     """
+    from utk_curio.backend.app.projects.seed import is_example_project
+
     repo.get_for_user(project_id, user.id)  # 404s before anything is touched
+    if is_example_project(user, project_id):
+        raise ProjectError(
+            "Example dataflows ship with Curio and cannot be deleted.", 403
+        )
     storage.delete_tree(_user_dir_key(user), project_id)
     repo.delete_project_row(project_id, user.id)
     db.session.commit()

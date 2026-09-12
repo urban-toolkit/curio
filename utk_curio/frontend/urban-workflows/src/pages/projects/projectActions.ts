@@ -25,24 +25,40 @@ export interface ProjectAction {
   destructive?: boolean;
 }
 
+/** The one property of a project that changes what may be done to it. */
+export interface ProjectActionState {
+  /** Seeded from ``docs/examples/`` - Curio put it there, the user did not. */
+  isExample?: boolean;
+}
+
 /**
  * The actions available for a project, in the order they are shown.
  *
  * Destructive last, matching the order the catalogs already use — the way out
  * is offered after every way on.
  *
- * Takes no state: every project offers the same set. Archive used to make this
- * conditional, and was removed (#261) because it never cleared — no restore
- * route, no unarchive action — so it was a second permanent state that merely
- * read as the cautious one next to deletion. "Delete" dropped its "forever"
- * along with it: with no softer-sounding sibling to contrast against, the plain
- * verb plus the ``Permanently delete "…"?`` confirmation carries it.
+ * Archive used to make this conditional, and was removed (#261) because it
+ * never cleared — no restore route, no unarchive action — so it was a second
+ * permanent state that merely read as the cautious one next to deletion.
+ * "Delete" dropped its "forever" along with it: with no softer-sounding sibling
+ * to contrast against, the plain verb plus the ``Permanently delete "…"?``
+ * confirmation carries it.
+ *
+ * One state remains, and it subtracts rather than adds: an example dataflow
+ * offers no Delete. The same rule the Data Catalog has had since "hide delete
+ * for anything that came from the shared catalog" - what Curio seeded is yours
+ * to open, rename and edit, but not to remove. It reads as fussy until you
+ * notice there is no way back: since #270 the per-account marker means a
+ * deleted example is never seeded again, so the mis-click was permanent. The
+ * server refuses the same request, for the callers that never see this list.
  */
-export function projectActions(): ProjectAction[] {
+export function projectActions(state: ProjectActionState = {}): ProjectAction[] {
   return [
     { id: "open", label: "Open" },
     { id: "rename", label: "Rename" },
     { id: "duplicate", label: "Duplicate" },
-    { id: "delete", label: "Delete", destructive: true },
+    ...(state.isExample
+      ? []
+      : [{ id: "delete" as const, label: "Delete", destructive: true }]),
   ];
 }

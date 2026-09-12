@@ -31,6 +31,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
+from playwright.sync_api import expect
 
 from .utils import (
     require_project_page,
@@ -140,3 +141,45 @@ def test_each_account_gets_its_own_copy(
         "both accounts were served the same project ids, so they are sharing "
         f"one set of rows rather than owning a copy each: {sorted(first & second)}"
     )
+
+
+def test_a_seeded_example_offers_no_way_to_delete_it(
+    app_frontend: "FrontendPage", frontend_server: str, page
+):
+    """What Curio seeded is the account's to use, not to remove.
+
+    The Data Catalog has hidden Delete for anything that came from the shared
+    catalog for a while; dataflows had no equivalent, so every example card
+    offered it. #270 is what made that dangerous rather than untidy: keying the
+    seeding marker to the account means a deleted example is never seeded
+    again, and nothing in the product restores one.
+
+    Both surfaces are checked here because they render from one list
+    (``projectActions``) and the point is that neither can disagree with it. The
+    unit tests cover that list and the server's refusal; what only a browser can
+    show is that ``is_example`` survives the trip from the seeder through
+    ``GET /api/projects`` to the card.
+    """
+    require_user_auth()
+    require_project_page()
+
+    username = f"exdel_{uuid.uuid4().hex[:10]}"
+    signup_e2e_user(page, frontend_server, name="Example Delete User", username=username)
+    wait_for_projects_page(page, timeout=30000)
+
+    card = page.locator("[data-project-id]").first
+    card.wait_for(state="visible", timeout=30000)
+    card.click()
+
+    # The detail drawer, open on the selected example.
+    expect(page.get_by_role("button", name="Rename", exact=True)).to_be_visible(
+        timeout=20000
+    )
+    expect(page.get_by_role("button", name="Delete", exact=True)).to_have_count(0)
+
+    # And the right-click menu, which renders the same list.
+    card.click(button="right")
+    menu = page.get_by_role("menu", name="Dataflow actions")
+    expect(menu).to_be_visible(timeout=10000)
+    expect(menu.get_by_role("menuitem", name="Rename")).to_be_visible()
+    expect(menu.get_by_role("menuitem", name="Delete")).to_have_count(0)

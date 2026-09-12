@@ -44,6 +44,10 @@ export interface ProjectSummary {
   created_at: string;
   updated_at: string;
   graph_preview?: GraphPreview | null;
+  /** Seeded from ``docs/examples/``. Curio put it there, so Delete is not
+   *  offered for it - see `projectActions`. Absent on older responses, which
+   *  read as "not an example" and leave the actions as they were. */
+  is_example?: boolean;
 }
 
 /** A computed output the backend could not auto-install on a save (e.g. its

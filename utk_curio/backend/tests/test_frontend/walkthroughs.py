@@ -2101,7 +2101,11 @@ def project_drawer_offers_delete(ctx: Ctx) -> None:
     expect(page.get_by_role("button", name="Archive", exact=True)).to_have_count(0)
     ctx.capture("drawer-actions")
 
-    ctx.say("Delete, on every project",
+    # "On every project" until #285: a dataflow Curio seeded offers no Delete,
+    # because there is no way to get it back (the #270 marker never re-seeds a
+    # deleted one). This scene opens on the dataflow the harness created, which
+    # is the user's own and therefore still deletable.
+    ctx.say("Delete, on the dataflows you made",
             "The confirm is what makes deleting deliberate.")
 
 

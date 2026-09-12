@@ -16,10 +16,37 @@ import { projectActions } from "../../pages/projects/projectActions";
 const ids = () => projectActions().map((a) => a.id);
 
 describe("projectActions", () => {
-  test("every project offers the same four actions", () => {
-    // No Archive, and no state parameter that could reintroduce a divergence
-    // between the drawer and the context menu.
+  test("a project the user made offers four actions", () => {
+    // No Archive. The one piece of state left subtracts Delete from a seeded
+    // example; nothing adds an action, so the two surfaces still cannot show
+    // different sets for the same project.
     expect(ids()).toEqual(["open", "rename", "duplicate", "delete"]);
+  });
+
+  test("a seeded example offers no Delete", () => {
+    // What Curio put in the list is the user's to open, rename and edit, but
+    // not to remove - the rule the Data Catalog has applied to shared-catalog
+    // datasets all along. And there is no way back from it: since #270 a
+    // deleted example is never seeded again.
+    expect(projectActions({ isExample: true }).map((a) => a.id)).toEqual([
+      "open",
+      "rename",
+      "duplicate",
+    ]);
+  });
+
+  test("an example loses nothing else", () => {
+    // Only the way out is withheld. An example is still fully usable.
+    const example = projectActions({ isExample: true }).map((a) => a.id);
+    for (const id of ["open", "rename", "duplicate"]) {
+      expect(example).toContain(id);
+    }
+  });
+
+  test("an unset flag reads as an ordinary project", () => {
+    // Older responses carry no `is_example`, and must not silently lose Delete.
+    expect(projectActions({}).map((a) => a.id)).toEqual(ids());
+    expect(projectActions({ isExample: undefined }).map((a) => a.id)).toEqual(ids());
   });
 
   test("delete is marked destructive", () => {
@@ -33,7 +60,7 @@ describe("projectActions", () => {
     expect(others.every((a) => !a.destructive)).toBe(true);
   });
 
-  test("the way out comes last", () => {
+  test("the way out comes last, when it is offered at all", () => {
     // The order the catalogs already use: every way on is offered before the
     // way out.
     const list = projectActions();

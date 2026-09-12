@@ -680,9 +680,16 @@ def chapter_access(run: StressRun) -> None:
     # it under the Archived tab, then delete it from there. Both the action
     # and the tab were removed in #261; deletion is the only removal now.
     with run.step("Delete one from the context menu"):
-        projects = page.locator("[data-project-id]")
-        if projects.count():
-            projects.last.click(button="right")
+        # The tour's OWN project, not `projects.last`. A stack seeded with
+        # --with-examples fills this list with example dataflows, and an example
+        # offers no Delete at all (#285) - Curio put it there, so it is not the
+        # account's to remove. Whichever card happened to sort last was a coin
+        # flip on whether the menu had the row this step clicks.
+        mine = page.locator("[data-project-id]").filter(
+            has_text="Stress Alpha (renamed)"
+        )
+        if mine.count():
+            mine.first.click(button="right")
             page.wait_for_timeout(500)
             tour.click(page.get_by_text("Delete", exact=True).first)
             # The confirmation is an in-app ConfirmDialog now (#197).

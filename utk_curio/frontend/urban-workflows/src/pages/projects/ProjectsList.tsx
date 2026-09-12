@@ -444,7 +444,7 @@ const ProjectsList: React.FC = () => {
                 // what may be done to a project again (#221). "Open" is the
                 // primary action above, so it is dropped here.
                 <div className={styles.detailButtonRow}>
-                  {projectActions()
+                  {projectActions({ isExample: selected.is_example })
                     .filter((action) => action.id !== "open")
                     .map((action) => (
                       <button
@@ -477,7 +477,7 @@ const ProjectsList: React.FC = () => {
           x={contextMenu.x}
           y={contextMenu.y}
           ariaLabel="Dataflow actions"
-          items={projectActions()}
+          items={projectActions({ isExample: contextMenu.project.is_example })}
           onSelect={(id) =>
             runProjectAction(id as ProjectActionId, contextMenu.project)
           }
