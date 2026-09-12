@@ -1,0 +1,108 @@
+{
+  "dataflow": {
+    "description": "A GeoDataFrame drawn directly by the Vega-Lite node: ZIP polygons, their centroids, and ordinary charts over the same frame.",
+    "nodes": [
+      {
+        "id": "7d6ee405-d7c2-5d65-bb0a-9a8036d63ca3",
+        "type": "curio.builtin/data-loading",
+        "x": 60,
+        "y": 120,
+        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.urbanlab.chicago-boundary\")\ngdf = gpd.read_file(dataset_path)\n\nreturn gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "baf968ea-dc8c-55e3-b5ce-c8840776e399",
+        "type": "curio.builtin/data-transformation",
+        "x": 760,
+        "y": 120,
+        "content": "gdf = arg\n\n# A second geometry column. Centroids are taken in a projected CRS so they land\n# in the right place, then brought back to lon/lat.\ngdf[\"centroid\"] = gdf.to_crs(3395).geometry.centroid.to_crs(4326)\n\nreturn gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "6d1d13a4-290e-5f4b-a7ea-837c29637799",
+        "type": "curio.builtin/vis-vega",
+        "x": 1500,
+        "y": 120,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"ZIP polygons, drawn from a bare geoshape mark.\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"mark\": \"geoshape\",\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "db6dc088-7a87-5dd6-982a-84d321b443cd",
+        "type": "curio.builtin/vis-vega",
+        "x": 1500,
+        "y": 450,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Two geometry columns drawn as two layers.\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"geoshape\",\n        \"stroke\": \"white\",\n        \"strokeWidth\": 0.5\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"shape_area\",\n          \"type\": \"quantitative\",\n          \"title\": \"Area\",\n          \"scale\": {\n            \"scheme\": \"blues\"\n          }\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"geoshape\",\n        \"color\": \"#c2410c\"\n      },\n      \"encoding\": {\n        \"shape\": {\n          \"field\": \"centroid\",\n          \"type\": \"geojson\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "356f2856-6c1c-5468-9576-169732d00abc",
+        "type": "curio.builtin/vis-vega",
+        "x": 1500,
+        "y": 780,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Bar and scatter over the same frame.\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"vconcat\": [\n    {\n      \"mark\": \"bar\",\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"zip\",\n          \"type\": \"nominal\",\n          \"sort\": \"-y\"\n        },\n        \"y\": {\n          \"field\": \"shape_area\",\n          \"type\": \"quantitative\",\n          \"aggregate\": \"mean\"\n        }\n      }\n    },\n    {\n      \"mark\": \"point\",\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"shape_len\",\n          \"type\": \"quantitative\"\n        },\n        \"y\": {\n          \"field\": \"shape_area\",\n          \"type\": \"quantitative\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-7d6ee405-d7c2-5d65-bb0a-9a8036d63ca3out-baf968ea-dc8c-55e3-b5ce-c8840776e399in",
+        "source": "7d6ee405-d7c2-5d65-bb0a-9a8036d63ca3",
+        "target": "baf968ea-dc8c-55e3-b5ce-c8840776e399"
+      },
+      {
+        "id": "reactflow__edge-7d6ee405-d7c2-5d65-bb0a-9a8036d63ca3out-6d1d13a4-290e-5f4b-a7ea-837c29637799in",
+        "source": "7d6ee405-d7c2-5d65-bb0a-9a8036d63ca3",
+        "target": "6d1d13a4-290e-5f4b-a7ea-837c29637799"
+      },
+      {
+        "id": "reactflow__edge-baf968ea-dc8c-55e3-b5ce-c8840776e399out-db6dc088-7a87-5dd6-982a-84d321b443cdin",
+        "source": "baf968ea-dc8c-55e3-b5ce-c8840776e399",
+        "target": "db6dc088-7a87-5dd6-982a-84d321b443cd"
+      },
+      {
+        "id": "reactflow__edge-7d6ee405-d7c2-5d65-bb0a-9a8036d63ca3out-356f2856-6c1c-5468-9576-169732d00abcin",
+        "source": "7d6ee405-d7c2-5d65-bb0a-9a8036d63ca3",
+        "target": "356f2856-6c1c-5468-9576-169732d00abc"
+      }
+    ],
+    "name": "Vega-Lite GeoDataFrame maps",
+    "task": "",
+    "timestamp": 1789200000000,
+    "provenance_id": "DefaultWorkflow",
+    "datasets": [
+      {
+        "datasetId": "data.urbanlab.chicago-boundary",
+        "dirName": "data.urbanlab.chicago-boundary@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-11T00:00:00Z"
+      }
+    ]
+  }
+}
