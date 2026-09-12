@@ -47,7 +47,7 @@
     },
     {
       "category": "computation",
-      "description": "Run HuggingFace segmentation or detection models on a collection of image points. Input: a GEODATAFRAME whose features carry image_url (any source works — Street View Fetcher, Data Loading, or a custom Python node). Output: per-image inference results as JSON.",
+      "description": "Run HuggingFace segmentation or detection models on a collection of image points. Input: a GEODATAFRAME whose features carry image_url (any source works — Street View Fetcher, Data Loading, or a custom Python node). Output: a GEODATAFRAME of the same image points, with each detected class flattened into its own column plus dominant_class, dominant_pct and an overlay_url a Simple View can display.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,
@@ -66,7 +66,7 @@
       "outputPorts": [
         {
           "cardinality": "1",
-          "types": ["JSON"]
+          "types": ["GEODATAFRAME"]
         }
       ],
       "paletteOrder": 1
