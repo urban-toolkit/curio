@@ -64,10 +64,33 @@ on:
 permissions:
   contents: read
 
-# The self-hosted runner on `utk` shares one GPU and a fixed set of CI ports.
-# Never let two runs execute concurrently or they fight over the GPU/ports.
+# The self-hosted runner on `utk` shares one GPU and a fixed set of CI ports, so
+# two jobs must never execute at once.
+#
+# Keyed per ref, not repo-wide. A repo-wide group serialises too, but GitHub
+# keeps only ONE run pending per group, so each newly queued run evicted the
+# previously pending one: runs were cancelled having started zero jobs, twice on
+# main itself, which leaves main unverified while still looking untouched. Per
+# ref, a new push still supersedes its own branch's pending run, which is what
+# you want, without discarding anyone else's.
+#
+# Allowing runs from different refs to be in progress at once is safe here, but
+# it rests on TWO invariants. Break either and the GPU/port contention is back:
+#
+#   1. Exactly ONE registered runner (`utk-gpu`) carries the
+#      [self-hosted, linux, gpu, curio] labels all three jobs ask for, so it runs
+#      a single job at a time and GitHub queues the rest. Two runs interleave
+#      their jobs; they never execute together. (The jobs within one run cannot
+#      collide regardless, since they use distinct compose projects: curio-ci,
+#      curio-ci-iso, curio-ci-exec-user.)
+#   2. `cancel-in-progress: false`, so an in-progress run is never cancelled.
+#      Eviction can then only ever kill a run that has started zero jobs, and a
+#      job-less run holds no containers, ports or GPU handle to leak. Flip this
+#      to true to save queue time and that stops being true: a cancelled job can
+#      skip its `if: always()` teardown and strand a compose project that the
+#      next run then trips over.
 concurrency:
-  group: utk-ci
+  group: utk-ci-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
