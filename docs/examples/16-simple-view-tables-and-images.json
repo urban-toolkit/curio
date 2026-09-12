@@ -71,8 +71,6 @@
     "task": "Show what Simple View does with a frame that has no pictures, and with one that has two columns of them.",
     "timestamp": 0,
     "provenance_id": "simple-view-tables-and-images",
-    "packages": [
-      "curio.builtin@1"
-    ]
+    "packages": []
   }
 }
