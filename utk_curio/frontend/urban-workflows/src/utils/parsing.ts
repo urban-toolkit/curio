@@ -87,12 +87,36 @@ export type ParsedGeoDataframe = {
  *
  * The wrapper shares the coordinate arrays by reference; nothing is copied.
  */
+/**
+ * The active geometry column of a geodataframe payload, or null.
+ *
+ * The sandbox wire shape always declares `geometry_name` (null when the frame
+ * has no active geometry, see test_geodataframe_wire_shape.py). A payload
+ * without the key never came off that wire: it is plain GeoJSON assembled in
+ * the browser or by a backend route, as Spatial Join, a Data Pool layer or a
+ * JS node emit. GeoJSON has exactly one geometry per feature, so that IS the
+ * active column, and "geometry" is its conventional name (geopandas' default).
+ * Before this fallback every geoshape over such a payload ended in
+ * "No geometry to draw", example 10's map among them.
+ *
+ * The inference steps aside when a property already uses the name "geometry":
+ * attaching the Feature there would overwrite a real column.
+ */
+export const activeGeometryName = (data: any): string | null => {
+  if (data == null || typeof data !== "object") return null;
+  if ("geometry_name" in data) return data.geometry_name ?? null;
+  const features: any[] = Array.isArray(data.features) ? data.features : [];
+  if (!features.some((f) => f?.geometry != null)) return null;
+  if (features.some((f) => f?.properties && "geometry" in f.properties)) return null;
+  return "geometry";
+};
+
 export const parseGeoDataframeWithGeometry = (
   data: any,
   withGeometry: boolean,
 ): ParsedGeoDataframe => {
   const features: any[] = Array.isArray(data?.features) ? data.features : [];
-  const geometryName: string | null = data?.geometry_name ?? null;
+  const geometryName: string | null = activeGeometryName(data);
   const crsName: string | undefined = data?.crs?.properties?.name;
 
   const attachGeometry = withGeometry && geometryName != null;

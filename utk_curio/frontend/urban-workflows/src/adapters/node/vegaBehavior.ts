@@ -7,6 +7,7 @@ import { useToastContext } from '../../providers/ToastProvider';
 import { fetchPreviewData } from '../../services/api';
 import { hasIncomingEdge } from '../../utils/nodeEmptyState';
 import { defaultSpecText, isEmptySpecBuffer } from '../../utils/vegaDefaultSpec';
+import { activeGeometryName } from '../../utils/parsing';
 
 export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { showToast } = useToastContext();
@@ -66,7 +67,7 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
       // feature properties, which never list the active geometry column, and a
       // GeoDataFrame of string attributes came out as a bar of counts.
       const schema = envelope.schema ?? payload.schema ?? input.schema ?? null;
-      const geometryName = isGeo ? (payload.geometry_name ?? null) : null;
+      const geometryName = isGeo ? activeGeometryName(payload) : null;
       const rows = isGeo
         ? (payload.features ?? []).map((f: any) => f?.properties ?? {})
         : rowsFromColumns(payload);

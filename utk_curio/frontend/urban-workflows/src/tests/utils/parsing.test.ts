@@ -105,6 +105,46 @@ describe("parseGeoDataframeWithGeometry", () => {
     expect(parseGeoDataframeWithGeometry({}, true).values).toEqual([]);
     expect(parseGeoDataframeWithGeometry({ features: [] }, true).values).toEqual([]);
   });
+
+  test("plain GeoJSON with no geometry_name is drawn from its feature geometry", () => {
+    // Spatial Join, Data Pool layers and JS nodes emit a FeatureCollection that
+    // never went through the sandbox, so it carries no `geometry_name`. GeoJSON
+    // has one geometry per feature: that is the active column, under its
+    // conventional name. Before this, every geoshape over such a payload said
+    // "No geometry to draw" (example 10's map among them).
+    const data = payload();
+    delete data.geometry_name;
+
+    const { values, geometryName } = parseGeoDataframeWithGeometry(data, true);
+
+    expect(geometryName).toBe("geometry");
+    expect(values[0].geometry).toEqual({ type: "Feature", geometry: polygon });
+    expect(values[0].zip).toBe("60601");
+  });
+
+  test("the GeoJSON inference steps aside when a property is already called geometry", () => {
+    const data = payload({
+      features: [
+        { type: "Feature", properties: { zip: "60601", geometry: "a string" }, geometry: polygon },
+      ],
+    });
+    delete data.geometry_name;
+
+    const { values, geometryName } = parseGeoDataframeWithGeometry(data, true);
+
+    expect(geometryName).toBeNull();
+    expect(values[0].geometry).toBe("a string");
+  });
+
+  test("an explicit geometry_name of null still means no active geometry", () => {
+    // The sandbox says so deliberately (a frame with no active geometry); the
+    // GeoJSON fallback must not second-guess it.
+    const { geometryName } = parseGeoDataframeWithGeometry(
+      payload({ geometry_name: null }), true,
+    );
+
+    expect(geometryName).toBeNull();
+  });
 });
 
 describe("parseGeoDataframe", () => {

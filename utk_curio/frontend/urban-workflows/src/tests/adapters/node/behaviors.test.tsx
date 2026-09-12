@@ -57,6 +57,9 @@ jest.mock('../../../providers/StarterProvider', () => ({
 }));
 
 jest.mock('../../../utils/parsing', () => ({
+  // The real geometry-name resolver: the Vega fill depends on it, and a stub
+  // returning undefined would make every geo case below silently fall back.
+  activeGeometryName: jest.requireActual('../../../utils/parsing').activeGeometryName,
   shortenString: (s: string) => s,
 }));
 
@@ -317,6 +320,24 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       });
 
       expect(fetchPreviewData).toHaveBeenCalledWith('artifact-1');
+      await waitFor(() => expect(result.current.defaultValueOverride).toBeDefined());
+      const spec = JSON.parse(result.current.defaultValueOverride as string);
+      expect(spec.mark).toBe('geoshape');
+      expect(spec.encoding.shape).toEqual({ field: 'geometry', type: 'geojson' });
+    });
+
+    test('an inline FeatureCollection with no geometry_name still starts as a map', async () => {
+      // Spatial Join hands its consumer plain GeoJSON, inline and undeclared.
+      const result = await callBehavior(useVegaBehavior, {
+        input: {
+          dataType: 'geodataframe',
+          data: {
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', properties: { zip: '60601' }, geometry: { type: 'Point', coordinates: [0, 0] } }],
+          },
+        } as any,
+      });
+
       await waitFor(() => expect(result.current.defaultValueOverride).toBeDefined());
       const spec = JSON.parse(result.current.defaultValueOverride as string);
       expect(spec.mark).toBe('geoshape');
