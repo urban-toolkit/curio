@@ -36,6 +36,8 @@ from utk_curio.sandbox.util.codec import (
     _restore_frame_from_parquet,
     _serialize_parquet_meta,
     _write_dataframe_parquet,
+    active_geometry_name,
+    is_geospatial_frame,
     detect_kind,
     make_json_safe,
     safe_json_loads,
@@ -295,7 +297,7 @@ def load_dataset_parquet(path):
     """
     try:
         frame = gpd.read_parquet(path)
-        geometry_col = frame.geometry.name
+        geometry_col = active_geometry_name(frame)
     except Exception:
         frame = pd.read_parquet(path)
         geometry_col = None
@@ -324,13 +326,41 @@ def normalize_dataframe_for_json(df):
 
 
 def fix_json_strings(gdf):
+    """Make every non-active column of a GeoDataFrame JSON-safe.
+
+    Two things here are easy to get wrong. The column to skip is the frame's
+    *active* geometry column, whatever it is called -- keying off the literal
+    'geometry' mangles a frame whose geometry is named `geom`, and leaves a
+    plain string column that happens to be called 'geometry' untouched when it
+    should be processed.
+
+    And a *secondary* geometry column (a `centroid`, an `envelope`) is a normal
+    column here: it must not go through `safe_json_loads`, which only makes
+    sense for strings, but it does need `_make_serializable` to turn its shapely
+    objects into GeoJSON dicts.
+    """
     gdf = gdf.copy()
+    active = active_geometry_name(gdf)
+
     for col in gdf.columns:
-        if col != 'geometry':
+        if col == active:
+            continue
+        if str(gdf[col].dtype) != 'geometry':
             gdf[col] = gdf[col].apply(safe_json_loads)
-            gdf[col] = gdf[col].apply(_make_serializable)
+        gdf[col] = gdf[col].apply(_make_serializable)
 
     return gdf
+
+def _frame_schema(frame):
+    """Column name -> pandas dtype string, e.g. ``{'pop': 'int64'}``.
+
+    The same shape the `data-summary` node already produces and renders. It
+    travels with the payload so that consumers do not have to sniff values:
+    telling a date from a string, or a zip code from a measurement, is exactly
+    where guessing goes wrong.
+    """
+    return frame.dtypes.astype(str).to_dict()
+
 
 # Output Functions
 def parseOutput(output):
@@ -350,12 +380,17 @@ def parseOutput(output):
     elif isinstance(output, dict):
         json_output['data'] = output
         json_output['dataType'] = type(output).__name__
-    elif isinstance(output, pd.DataFrame) and not isinstance(output, gpd.GeoDataFrame):
+    elif isinstance(output, pd.DataFrame) and not is_geospatial_frame(output):
         clean_df = normalize_dataframe_for_json(output)
         json_output['data'] = clean_df.to_dict(orient='list')
         json_output['dataType'] = 'dataframe'
-    elif isinstance(output, gpd.GeoDataFrame):
+        json_output['schema'] = _frame_schema(output)
+    elif is_geospatial_frame(output):
         gdf = fix_json_strings(output)
+        # `is_geospatial_frame` guarantees an active column, so `.to_json()`,
+        # `.crs` and `.geometry` are all safe from here on. A GeoDataFrame
+        # without one took the `dataframe` branch above.
+        active = active_geometry_name(output)
         geojson_dict = json.loads(gdf.to_json())
         # geopandas ≥1.0 removed the non-standard 'crs' key from to_json() output
         # (deprecated since 0.9, following RFC 7946). Re-inject it so that
@@ -368,8 +403,16 @@ def parseOutput(output):
                     'type': 'name',
                     'properties': {'name': f'urn:ogc:def:crs:EPSG::{epsg}'},
                 }
+        # Which column holds the geometry, under its own pandas name. Without
+        # this the browser has to guess, and cannot tell a frame whose geometry
+        # is called `geom` from one that has no geometry at all.
+        geojson_dict['geometry_name'] = active
         json_output['data'] = geojson_dict
         json_output['dataType'] = 'geodataframe'
+        # Top level, exactly as on the dataframe branch: the column types are a
+        # property of the frame, not of the GeoJSON, and a consumer should not
+        # have to know which branch it is on to read them.
+        json_output['schema'] = _frame_schema(output)
         if hasattr(output, 'metadata') and 'name' in output.metadata:
             parsed_geojson = json_output['data']
             parsed_geojson['metadata'] = {'name': output.metadata['name']}
@@ -538,10 +581,10 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                 )
 
         # --- GeoDataFrame MUST come before DataFrame (gpd.GeoDataFrame subclasses pd.DataFrame) ---
-        elif isinstance(value, gpd.GeoDataFrame):
+        elif is_geospatial_frame(value):
             prepared, encoded_object_columns = _prepare_frame_for_parquet(
                 value,
-                geometry_col=value.geometry.name,
+                geometry_col=active_geometry_name(value),
             )
             rel_path = _stored_artifact_rel_path(art_id)
             parquet_path = _resolve_stored_artifact_path(rel_path, create_parent=True)
@@ -656,7 +699,7 @@ def load_from_duckdb(art_id, session_id=None):
             result = _restore_frame_from_parquet(
                 result,
                 encoded_object_columns,
-                geometry_col=result.geometry.name,
+                geometry_col=active_geometry_name(result),
             )
             # Restore the .metadata attribute stashed at save time (see save_to_duckdb).
             if frame_meta:
@@ -798,10 +841,10 @@ def save_dataset_parquet(output, kind):
     full_path = data_dir / filename
 
     try:
-        if isinstance(output, gpd.GeoDataFrame):
+        if is_geospatial_frame(output):
             # GeoParquet preserves CRS and geometry column automatically.
             prepared, encoded_object_columns = _prepare_frame_for_parquet(
-                output, geometry_col=output.geometry.name
+                output, geometry_col=active_geometry_name(output)
             )
             prepared.to_parquet(full_path)
             meta_json = _serialize_parquet_meta(

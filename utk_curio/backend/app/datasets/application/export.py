@@ -248,11 +248,19 @@ def _serialize_parquet_for_export(path: Path) -> tuple[bytes, str, str]:
 
     from utk_curio.sandbox.util.parsers import restore_parquet_sidecar
 
+    from utk_curio.sandbox.util.codec import active_geometry_name
+
+    # A GeoParquet file can still have no *active* geometry column. There is no
+    # GeoJSON to write in that case (``to_json`` would raise), so treat it as
+    # ordinary tabular data and fall through to the CSV path below.
+    if geo_frame is not None and active_geometry_name(geo_frame) is None:
+        geo_frame = None
+
     if geo_frame is not None:
         # Decode JSON-encoded object columns (the <file>.decode.json sidecar) so
         # list/dict properties export as real values, not double-encoded strings.
         geo_frame = restore_parquet_sidecar(
-            geo_frame, path, geometry_col=geo_frame.geometry.name
+            geo_frame, path, geometry_col=active_geometry_name(geo_frame)
         )
         # ``to_json`` serializes feature properties via ``json.dumps``, which
         # can't natively encode pandas/numpy temporal values (e.g. Timestamp).

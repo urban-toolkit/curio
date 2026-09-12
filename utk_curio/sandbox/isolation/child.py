@@ -314,7 +314,7 @@ def rebuild_input(spec, scratch_dir):
         frame = codec._restore_frame_from_parquet(
             frame,
             spec.get("encoded_object_columns") or [],
-            geometry_col=frame.geometry.name,
+            geometry_col=codec.active_geometry_name(frame),
         )
         frame_metadata = spec.get("frame_metadata")
         if frame_metadata:
@@ -378,7 +378,7 @@ def serialize_output(value, scratch_dir, *, slot="out"):
     if kind == "geodataframe":
         name = f"{slot}.parquet"
         prepared, encoded = codec._prepare_frame_for_parquet(
-            value, geometry_col=value.geometry.name
+            value, geometry_col=codec.active_geometry_name(value)
         )
         prepared.to_parquet(os.path.join(scratch_dir, name))
         meta = {"encoded_object_columns": encoded}
