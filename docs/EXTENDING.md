@@ -239,7 +239,7 @@ Each entry names a *behavior key* (a string), not a JS module path. The same key
 
 ### 4.2 Plus a fourth template in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json)
 
-A generic Spatial Join that takes points + polygons and tags each point with the containing polygon's properties:
+A generic Spatial Join that takes points + polygons and tags each point with a column of the containing polygon (or emits the polygons with a count of points inside each):
 
 ```jsonc
 { "id": "spatial-join", "behavior": "spatial-join",

@@ -93,6 +93,25 @@ export function resolveNameProperty(data: any): string {
 
 export type SpatialJoinOutput = 'points' | 'polygons';
 
+/** The two input handles' colours, repeated as swatches wherever the text names them. */
+export const POINTS_HANDLE_COLOR = '#3b82f6';
+export const POLYGONS_HANDLE_COLOR = '#22c55e';
+
+/** A small hollow ring in a handle's colour, inline with the text that names it: the look of the handle before it is wired. */
+function HandleSwatch({ color }: { color: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-curio-handle-swatch={color}
+      style={{
+        display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+        boxSizing: 'border-box', backgroundColor: '#ffffff', border: `2px solid ${color}`,
+        verticalAlign: 'middle', marginRight: 4,
+      }}
+    />
+  );
+}
+
 /** Which shape the node emits: the tagged points (default) or the polygons with counts. */
 export function resolveOutputMode(data: any): SpatialJoinOutput {
   return data?.spatialJoin?.output === 'polygons' ? 'polygons' : 'points';
@@ -245,16 +264,18 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   const datalistId = `spatial-join-props-${data.nodeId}`;
 
   const contentComponent = React.useMemo<React.ReactNode>(() => {
-    const status = lastResult
+    const blue = <><HandleSwatch color={POINTS_HANDLE_COLOR} />blue handle</>;
+    const green = <><HandleSwatch color={POLYGONS_HANDLE_COLOR} />green handle</>;
+    const status: React.ReactNode = lastResult
       ? lastResult.output === 'polygons'
         ? `${lastResult.tagged} of ${lastResult.total} polygons received points; each polygon now carries point_count.`
         : `Tagged ${lastResult.tagged} of ${lastResult.total} points; the polygons' \`${nameProperty}\` is now the points' \`${lastResult.column}\` column.`
       : !slots[0] && !slots[1]
-        ? 'Connect points (top) and polygons (bottom), then run the nodes feeding this one.'
+        ? <>Connect points to the {blue} and polygons to the {green}, then run the nodes feeding this one.</>
         : !slots[0]
-          ? 'Waiting for the points input (top handle).'
+          ? <>Waiting for the points input ({blue}).</>
           : !slots[1]
-            ? 'Waiting for the polygons input (bottom handle).'
+            ? <>Waiting for the polygons input ({green}).</>
             : 'Joining\u2026';
     return (
       <div
@@ -338,8 +359,11 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
       style: {
         top: '33%', width: '12px', height: '12px', borderRadius: '50%',
         boxSizing: 'border-box',
-        backgroundColor: pointsConnected ? '#3b82f6' : '#ffffff',
-        border: pointsConnected ? '2px solid #3b82f6' : '2px solid #b8b8b8',
+        backgroundColor: pointsConnected ? POINTS_HANDLE_COLOR : '#ffffff',
+        // The ring wears the colour before anything is wired, so the text that
+        // says "the blue handle" points at something visibly blue; it fills in
+        // once an edge arrives.
+        border: `2px solid ${POINTS_HANDLE_COLOR}`,
         zIndex: 10, pointerEvents: 'auto',
       },
     },
@@ -350,8 +374,8 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
       style: {
         top: '66%', width: '12px', height: '12px', borderRadius: '50%',
         boxSizing: 'border-box',
-        backgroundColor: polygonsConnected ? '#22c55e' : '#ffffff',
-        border: polygonsConnected ? '2px solid #22c55e' : '2px solid #b8b8b8',
+        backgroundColor: polygonsConnected ? POLYGONS_HANDLE_COLOR : '#ffffff',
+        border: `2px solid ${POLYGONS_HANDLE_COLOR}`,
         zIndex: 10, pointerEvents: 'auto',
       },
     },

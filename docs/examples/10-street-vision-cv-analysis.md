@@ -108,7 +108,7 @@ return gdf
 
 ## Step 5: Tag each image with its neighborhood (`Spatial Join`)
 
-The Spatial Join node (built-in, in `curio.builtin@1`) has a small body with its two settings and two distinct input handles on the left edge: **points** (top, blue dot) and **polygons** (bottom, green dot). Wire the `Simple View` output to the points handle and the polygons output (from Step 4) to the polygons handle.
+The Spatial Join node (built-in, in `curio.builtin@1`) has a small body with its two settings and two input handles on the left edge, each a hollow ring that fills in once wired: **points** (the upper, blue one) and **polygons** (the lower, green one). Wire the `Simple View` output to the points handle and the polygons output (from Step 4) to the polygons handle.
 
 The node tags with the polygon column you pick in its body, `name` by default. The Chicago neighborhoods file calls it `pri_neigh` and the NYC boroughs file `BoroName`; this example keeps the default and renames the column upstream with a `Data Transformation` node, so the tag lands in a column called `name`:
 

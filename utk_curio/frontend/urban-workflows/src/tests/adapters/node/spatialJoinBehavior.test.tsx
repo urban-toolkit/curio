@@ -288,5 +288,10 @@ describe('useSpatialJoinBehavior', () => {
     const { result } = renderHook(() => useSpatialJoinBehavior(makeData(), makeNodeState()));
     const { container } = render(<>{result.current.contentComponent}</>);
     expect(container.querySelector('[data-curio-spatial-join-status]')!.textContent).toMatch(/Connect points/);
+    // The words name the handles by colour, and each name carries its swatch.
+    const status = container.querySelector('[data-curio-spatial-join-status]')!;
+    expect(status.textContent).toMatch(/blue handle.*green handle/);
+    const swatches = Array.from(status.querySelectorAll('[data-curio-handle-swatch]')).map(el => el.getAttribute('data-curio-handle-swatch'));
+    expect(swatches).toEqual(['#3b82f6', '#22c55e']);
   });
 });
