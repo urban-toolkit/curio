@@ -64,6 +64,8 @@ EXAMPLE_INVARIANTS = [
       "curio.builtin/vis-vega": 7}, False),
     ("15-vega-lite-spec-forms-and-catalogs.json", 11, 7,
      {"curio.builtin/data-loading": 4, "curio.builtin/vis-vega": 7}, False),
+    ("16-simple-view-tables-and-images.json", 4, 2,
+     {"curio.builtin/data-loading": 2, "curio.builtin/vis-simple": 2}, False),
 ]
 
 
