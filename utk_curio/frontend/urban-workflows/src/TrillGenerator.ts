@@ -278,6 +278,16 @@ export class TrillGenerator {
                 trill_node.metadata.spatialJoin = { nameProperty: node.data.spatialJoin.nameProperty };
             }
 
+            // #276: Simple View's chosen image column persists at
+            // metadata.simpleVis, so a node pinned to the overlays stays
+            // pinned across a save.
+            if(node.data.simpleVis != undefined && typeof node.data.simpleVis.imageColumn === "string" && node.data.simpleVis.imageColumn){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.simpleVis = { imageColumn: node.data.simpleVis.imageColumn };
+            }
+
             if(typeof node.data.title === "string" && node.data.title)
                 trill_node.title = node.data.title;
 

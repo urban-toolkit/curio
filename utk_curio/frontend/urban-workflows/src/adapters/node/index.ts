@@ -15,4 +15,4 @@ export { useSpatialJoinBehavior } from './spatialJoinBehavior';
 
 export { standardInOut, outputOnly, inputOnly, withBidirectional } from './handleHelpers';
 
-export { ContentTable, DataPoolContent, ImageGrid } from './components';
+export { ContentTable, DataPoolContent, ImageCardGrid } from './components';
