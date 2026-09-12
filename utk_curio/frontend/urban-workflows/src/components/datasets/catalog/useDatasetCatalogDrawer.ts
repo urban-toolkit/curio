@@ -28,6 +28,7 @@ import {
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
+import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
 
@@ -486,7 +487,12 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`,
       // The prefetch above runs *before* the dialog opens, so the body is
       // complete the moment it appears rather than filling in under the user.
       setConfirmAction({
-        title: `Delete ${title}?`,
+        // Same sentence the projects page asks, for the same act: both surfaces
+        // used to word the verb differently once the button copy converged on
+        // plain "Delete" (#285). The permanence moved off the button, so it has
+        // to be somewhere - and the title is where the projects page already
+        // put it.
+        title: `Permanently delete "${title}"?`,
         // The every-dataflow scope is stated unconditionally. It used to depend
         // on `usageNote`, which is empty whenever the usage lookup returns
         // nothing or fails — so the case where the user knows least about the
@@ -495,7 +501,12 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`,
           `Delete ${title} from your Data Catalog?\n\n` +
           `This deletes the dataset itself, and removes it from every dataflow ` +
           `that uses it, not just this one.` +
-          usageNote,
+          usageNote +
+          // The live-store scope and the operator's backup posture, in the one
+          // sentence every permanent-deletion confirmation carries. The title
+          // now claims permanence, so the body has to qualify it exactly as
+          // the projects page's does.
+          `\n\n${permanentDeletionNotice()}`,
         // Plain "Delete": the projects page dropped its "forever" when Archive
         // went (#261), and one destructive verb across both surfaces beats two
         // wordings for the same act (#285). The permanence is stated in the
