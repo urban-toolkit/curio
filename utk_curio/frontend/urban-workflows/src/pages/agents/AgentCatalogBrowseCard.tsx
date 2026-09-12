@@ -11,6 +11,9 @@ export interface AgentCatalogBrowseCardProps {
   selected: boolean;
   onSelect: () => void;
   onViewDetails: () => void;
+  /** Right-click. The grid owns the menu, so the card only reports the event
+   *  and selects itself - the same thing a left-click does. */
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 /**
@@ -30,6 +33,7 @@ export function AgentCatalogBrowseCard({
   selected,
   onSelect,
   onViewDetails,
+  onContextMenu,
 }: AgentCatalogBrowseCardProps) {
   const categoryKey = agentCategoryKey(agent.category);
   // Tags read as the agent's shape: what it does, then what it attaches to.
@@ -56,6 +60,7 @@ export function AgentCatalogBrowseCard({
       data-agent-coord={agent.dirName}
       role="button"
       tabIndex={0}
+      onContextMenu={onContextMenu}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onSelect();

@@ -387,10 +387,12 @@ describe('projects detail drawer', () => {
     });
 
     // Open is the drawer's primary action ("Open dataflow"), so compare the rest.
+    // The menu is the shared `CardContextMenu` since #285, so its rows announce
+    // as menu items while the drawer's announce as buttons - one of each is the
+    // assertion, not two buttons.
     for (const label of ['Rename', 'Duplicate', 'Delete']) {
-      expect(
-        screen.getAllByRole('button', { name: label }).length,
-      ).toBeGreaterThanOrEqual(2);
+      expect(screen.getByRole('menuitem', { name: label })).toBeTruthy();
+      expect(screen.getByRole('button', { name: label })).toBeTruthy();
     }
     expect(getByRole('button', { name: 'Open dataflow' })).toBeTruthy();
   });

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import CSS from "csstype";
 import { useNavigate } from "react-router-dom";
 import { permanentDeletionNotice } from "../../services/retentionCopy";
+import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
 import { useToastContext } from "../../providers/ToastProvider";
 import { projectActions, type ProjectActionId } from "./projectActions";
@@ -92,12 +92,6 @@ const ProjectsList: React.FC = () => {
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
-
-  useEffect(() => {
-    const dismiss = () => setContextMenu(null);
-    if (contextMenu) document.addEventListener("click", dismiss);
-    return () => document.removeEventListener("click", dismiss);
-  }, [contextMenu]);
 
   const filtered = useMemo(() => {
     // Trim first, the same normalization the catalog predicates this page's chrome
@@ -475,43 +469,20 @@ const ProjectsList: React.FC = () => {
       </div>
 
       {contextMenu && (
-        <div
-          style={{
-            position: "fixed",
-            top: contextMenu.y,
-            left: contextMenu.x,
-            backgroundColor: "var(--curio-top-bar-bg)",
-            border: "1px solid var(--curio-border-context-menu)",
-            borderRadius: "var(--curio-radius-sm)",
-            zIndex: 9999,
-            minWidth: "160px",
-            boxShadow: "var(--curio-shadow-context-menu)",
-          }}
-        >
-          {/* The same list the detail drawer renders. Both used to hardcode
-              their own, and disagreed about what a project allowed (#221).
-              Real buttons, not clickable divs: these are actions and were
-              unreachable by keyboard. */}
-          {projectActions().map(
-            (action) => (
-              <button
-                key={action.id}
-                type="button"
-                style={
-                  action.destructive
-                    ? { ...ctxItemStyle, color: "var(--curio-danger)" }
-                    : ctxItemStyle
-                }
-                onClick={() => {
-                  runProjectAction(action.id, contextMenu.project);
-                  setContextMenu(null);
-                }}
-              >
-                {action.label}
-              </button>
-            ),
-          )}
-        </div>
+        /* The same list the detail drawer renders. Both used to hardcode their
+           own, and disagreed about what a project allowed (#221). The menu
+           itself is shared with the three catalog grids, which had no menu at
+           all until #285. */
+        <CardContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          ariaLabel="Dataflow actions"
+          items={projectActions()}
+          onSelect={(id) =>
+            runProjectAction(id as ProjectActionId, contextMenu.project)
+          }
+          onDismiss={() => setContextMenu(null)}
+        />
       )}
       {renameTarget ? (
         <PromptDialog
@@ -552,23 +523,3 @@ const ProjectsList: React.FC = () => {
 };
 
 export default ProjectsList;
-
-/* ---- Styles ---- */
-
-const ctxItemStyle: CSS.Properties = {
-  // These are <button>s now rather than clickable <div>s, so the browser's own
-  // button chrome has to be reset for the row to look as it did. Worth the
-  // extra lines: the divs were unreachable by keyboard and announced as nothing.
-  display: "block",
-  width: "100%",
-  textAlign: "left",
-  background: "none",
-  border: "none",
-  padding: "8px 16px",
-  color: "var(--curio-text-on-dark)",
-  fontSize: "var(--curio-font-size-md)",
-  cursor: "pointer",
-};
-
-
-

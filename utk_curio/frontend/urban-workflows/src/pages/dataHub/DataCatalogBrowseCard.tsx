@@ -17,6 +17,9 @@ export interface DataCatalogBrowseCardProps {
   /** In the user's "all projects" list. Account-level, so it outranks the
    *  per-project state below it. */
   inAllProjects?: boolean;
+  /** Right-click. The grid owns the menu, so the card only reports the event
+   *  and selects itself - the same thing a left-click does. */
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 export function DataCatalogBrowseCard({
@@ -24,6 +27,7 @@ export function DataCatalogBrowseCard({
   selected,
   onSelect,
   onViewDetails,
+  onContextMenu,
   inAllProjects = false,
 }: DataCatalogBrowseCardProps) {
   const fresh = isFresh(dataset.updatedAt);
@@ -44,6 +48,7 @@ export function DataCatalogBrowseCard({
       data-dataset-id={dataset.id}
       role="button"
       tabIndex={0}
+      onContextMenu={onContextMenu}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onSelect();

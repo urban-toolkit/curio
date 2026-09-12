@@ -26,6 +26,11 @@ import {
   quickFormatFilters,
 } from "./dataHubBrowseConstants";
 import { CatalogHeaderImport } from "../catalog/CatalogHeaderImport";
+import { CardContextMenu } from "../../components/catalog/CardContextMenu";
+import {
+  datasetCardActions,
+  type CatalogCardActionId,
+} from "../../components/catalog/catalogCardActions";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
 export const DataCatalogBrowse: React.FC = () => {
@@ -41,6 +46,14 @@ export const DataCatalogBrowse: React.FC = () => {
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [defaults, setDefaults] = useState<Set<string>>(new Set());
   const [defaultsBusyId, setDefaultsBusyId] = useState<string | null>(null);
+  // Right-click. The card reports the event, the grid owns the menu - the same
+  // division the projects page has used all along, and which the three catalog
+  // pages had no equivalent of until #285.
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    dataset: DatasetCatalogItem;
+  } | null>(null);
   // Client-side, unlike the format/origin facets: "in all projects" is a
   // property of the ACCOUNT, and the listing endpoint has no notion of it.
   const [scope, setScope] = useState<"" | "defaults">("");
@@ -174,6 +187,23 @@ export const DataCatalogBrowse: React.FC = () => {
     },
     [catalog.reload, showToast],
   );
+
+  const runDatasetAction = (id: CatalogCardActionId, dataset: DatasetCatalogItem) => {
+    switch (id) {
+      case "add-to-all-projects":
+        void handleAddToAllProjects(dataset);
+        return;
+      case "remove-from-all-projects":
+        void handleRemoveFromAllProjects(dataset);
+        return;
+      case "view-details":
+        setDetailDatasetId(dataset.id);
+        return;
+      // A dataset is never offered the package catalog's update.
+      case "update-all-projects":
+        return;
+    }
+  };
 
   const handleUnpublish = useCallback(
     async (dataset: DatasetCatalogItem) => {
@@ -407,6 +437,13 @@ export const DataCatalogBrowse: React.FC = () => {
               onSelect={() => setSelectedId(dataset.id)}
               onViewDetails={() => setDetailDatasetId(dataset.id)}
               inAllProjects={defaults.has(dataset.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                // Select first: the menu acts on this dataset, so the drawer
+                // beside it should not still be describing another one.
+                setSelectedId(dataset.id);
+                setContextMenu({ x: e.clientX, y: e.clientY, dataset });
+              }}
             />
           ))}
         </section>
@@ -426,6 +463,19 @@ export const DataCatalogBrowse: React.FC = () => {
         onViewDetails={(dataset) => setDetailDatasetId(dataset.id)}
         onLayoutChange={setDrawerSlotOpen}
       />
+
+      {contextMenu ? (
+        <CardContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          ariaLabel="Dataset actions"
+          items={datasetCardActions({
+            inAllProjects: defaults.has(contextMenu.dataset.id),
+          })}
+          onSelect={(id) => runDatasetAction(id as CatalogCardActionId, contextMenu.dataset)}
+          onDismiss={() => setContextMenu(null)}
+        />
+      ) : null}
 
       {detailDatasetId ? (
         <DatasetDetailModal
