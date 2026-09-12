@@ -101,7 +101,11 @@ def test_a_freshly_loaded_dataflow_is_not_dirty(
     require_owner_view(page)
     # Wait for the EDGE, not just a node: the edge is what the replay processes,
     # so before it renders the bug has not had its chance to happen yet.
-    page.locator(".react-flow__edge").first.wait_for(state="visible", timeout=45000)
+    #
+    # `attached` rather than `visible` - this spec's first edge joins two nodes
+    # the layout aligns exactly, so it is a horizontal line with a zero-height
+    # SVG geometry box. Visibly drawn, but not "visible" to a box measurement.
+    page.locator(".react-flow__edge").first.wait_for(state="attached", timeout=45000)
     dismiss_toasts(page)
 
     disk = page.locator("[data-curio-save-state]")

@@ -2249,7 +2249,13 @@ def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
 
     # The edge is what the replay processes; before it renders, the bug has not
     # had its chance to happen.
-    page.locator(".react-flow__edge").first.wait_for(state="visible", timeout=45000)
+    #
+    # `attached`, not `visible`: an edge between two nodes the layout has aligned
+    # is a perfectly horizontal line, whose SVG geometry box is zero-height. The
+    # stroke is drawn and a human sees it, but Playwright measures the box and
+    # calls it hidden. Example 01's first edge is exactly that case. Existence is
+    # what this wait is actually about.
+    page.locator(".react-flow__edge").first.wait_for(state="attached", timeout=45000)
 
     disk = page.locator("[data-curio-save-state]")
     state = disk.get_attribute("data-curio-save-state")
