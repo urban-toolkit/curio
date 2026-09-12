@@ -55,6 +55,20 @@ describe("classifyColumns", () => {
     expect(roles(cols)).toEqual({ shape: "geometry" });
   });
 
+  test("the declared geometry column is included even when no row carries it", () => {
+    // A FeatureCollection keeps the active geometry on the feature, not among
+    // its properties, so a schema-less payload's sample rows never mention it.
+    // This is the shape /get-preview hands a node whose input is an artifact.
+    const rows = Array.from({ length: 12 }, (_, i) => ({
+      zip: String(60600 + (i % 11)),
+      kind: "boundary",
+    }));
+
+    const cols = classifyColumns(null, rows, "geometry");
+
+    expect(roles(cols)).toEqual({ zip: "nominal", kind: "nominal", geometry: "geometry" });
+  });
+
   test("__row_index__ is never a chart field", () => {
     const cols = classifyColumns({ __row_index__: "int64", pop: "int64" }, []);
 
@@ -106,6 +120,18 @@ describe("the ladder", () => {
     expect(spec.mark).toBe("geoshape");
     expect(spec.encoding.shape).toEqual({ field: "geom", type: "geojson" });
     expect(spec.encoding.color.field).toBe("pop");
+  });
+
+  test("a GeoDataFrame that arrives without a schema still gives a map", () => {
+    // Every attribute a string and the geometry named but not carried in the
+    // rows: before the geometry column was included by name this came out as
+    // the last ladder row, a bar of counts by zip.
+    const rows = Array.from({ length: 12 }, (_, i) => ({ zip: String(60600 + (i % 11)) }));
+
+    const spec = chooseDefaultSpec(classifyColumns(null, rows, "geometry")) as any;
+
+    expect(spec.mark).toBe("geoshape");
+    expect(spec.encoding.shape).toEqual({ field: "geometry", type: "geojson" });
   });
 
   test("geometry alone gives an uncoloured map", () => {

@@ -45,17 +45,27 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     let cancelled = false;
 
     const fill = async () => {
-      let payload: any = input.data;
+      // Whatever arrives is parseOutput's envelope, `{ dataType, data, schema }`,
+      // with the column dtypes BESIDE `data`, not inside it. In the app an input
+      // is an artifact reference (`{ path, dataType }`, see normalizeFlowInput),
+      // so the envelope is the /get-preview response; only merge bundles and
+      // Data Pool layers arrive inline.
+      let envelope: any = input;
       if (input.path) {
         // /get-preview returns 100 rows, which is cheaper than /get and plenty
         // for classifying columns.
-        const preview = await fetchPreviewData(input.path);
-        payload = preview?.data ?? preview;
+        envelope = await fetchPreviewData(input.path);
       }
-      if (cancelled || payload == null) return;
+      if (cancelled || envelope == null) return;
+      const payload: any = envelope.data;
+      if (payload == null) return;
 
-      const isGeo = input.dataType === 'geodataframe';
-      const schema = payload.schema ?? input.schema ?? null;
+      const isGeo = (envelope.dataType ?? input.dataType) === 'geodataframe';
+      // The schema comes off the envelope. Reading it off the payload was a bug:
+      // a FeatureCollection carries none, so the classifier fell back to the
+      // feature properties, which never list the active geometry column, and a
+      // GeoDataFrame of string attributes came out as a bar of counts.
+      const schema = envelope.schema ?? payload.schema ?? input.schema ?? null;
       const geometryName = isGeo ? (payload.geometry_name ?? null) : null;
       const rows = isGeo
         ? (payload.features ?? []).map((f: any) => f?.properties ?? {})

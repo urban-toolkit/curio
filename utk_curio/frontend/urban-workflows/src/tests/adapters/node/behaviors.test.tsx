@@ -1,5 +1,5 @@
 import React from 'react';
-import { renderHook, render, act } from '@testing-library/react';
+import { renderHook, render, act, waitFor } from '@testing-library/react';
 import type { NodeBehaviorHook, NodeBehaviorData, UseNodeStateReturn, NodeBehaviorResult } from '../../../registry/types';
 
 jest.setTimeout(15000);
@@ -283,6 +283,41 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     test('an empty buffer plus an arriving input populates', async () => {
       const result = await callBehavior(useVegaBehavior, { input: geoInput });
 
+      const spec = JSON.parse(result.current.defaultValueOverride as string);
+      expect(spec.mark).toBe('geoshape');
+      expect(spec.encoding.shape).toEqual({ field: 'geometry', type: 'geojson' });
+    });
+
+    test('an artifact input is classified from the preview envelope, geometry included', async () => {
+      // What the app actually hands a downstream node is an artifact reference,
+      // never the data (normalizeFlowInput). The preview fetched for it is
+      // parseOutput's envelope, with the dtypes BESIDE the FeatureCollection.
+      // Reading them off the FeatureCollection, which has none, left the
+      // classifier with the feature properties, where the geometry column never
+      // appears, and a GeoDataFrame of string attributes became a bar of counts.
+      const { fetchPreviewData } = require('../../../services/api');
+      (fetchPreviewData as jest.Mock).mockResolvedValueOnce({
+        dataType: 'geodataframe',
+        data: {
+          type: 'FeatureCollection',
+          geometry_name: 'geometry',
+          features: Array.from({ length: 12 }, (_, i) => ({
+            type: 'Feature',
+            properties: { zip: String(60600 + (i % 11)), shape_area: String(i) },
+            geometry: null,
+          })),
+        },
+        schema: { zip: 'str', shape_area: 'str', geometry: 'geometry' },
+        filename: 'artifact-1',
+        preview: true,
+      });
+
+      const result = await callBehavior(useVegaBehavior, {
+        input: { path: 'artifact-1', dataType: 'geodataframe' } as any,
+      });
+
+      expect(fetchPreviewData).toHaveBeenCalledWith('artifact-1');
+      await waitFor(() => expect(result.current.defaultValueOverride).toBeDefined());
       const spec = JSON.parse(result.current.defaultValueOverride as string);
       expect(spec.mark).toBe('geoshape');
       expect(spec.encoding.shape).toEqual({ field: 'geometry', type: 'geojson' });

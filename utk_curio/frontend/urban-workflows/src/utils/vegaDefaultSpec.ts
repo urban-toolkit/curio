@@ -95,6 +95,11 @@ export function classifyColumns(
   const rows = Array.isArray(sampleRows) ? sampleRows : [];
   const sample = rows.find((row) => row && typeof row === "object") ?? {};
   const names = schema ? Object.keys(schema) : Object.keys(sample);
+  // The active geometry column is *named* by the payload rather than carried
+  // in its rows: a FeatureCollection keeps that geometry on the feature, so it
+  // never appears among the property keys a sample row exposes. Without this a
+  // GeoDataFrame that arrives without a schema reads as having no geometry.
+  if (geometryName && !names.includes(geometryName)) names.push(geometryName);
 
   const columns: ClassifiedColumn[] = [];
   for (const name of names) {
