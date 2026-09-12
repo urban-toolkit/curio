@@ -92,7 +92,12 @@ import geopandas as gpd
 dataset_path = curio_dataset_path("data.cityofchicago.neighborhoods")
 gdf = gpd.read_file(dataset_path)
 
-gdf.metadata = {"name": "chicago_neighborhoods"}
+# __dict__, not plain assignment: pandas warns about creating a column via
+# a new attribute name, and that warning lands in this node's output with
+# an absolute site-packages path. NOT gdf.attrs, and do not just delete the
+# line: the sandbox reads this name (sandbox/util/parsers.py) and both of
+# those drop it silently from the emitted FeatureCollection.
+gdf.__dict__["metadata"] = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
@@ -109,7 +114,12 @@ The node hardcodes the polygon tag column to `properties.name`. The Chicago neig
 import geopandas as gpd
 
 gdf = arg.rename(columns={"pri_neigh": "name"})
-gdf.metadata = {"name": "chicago_neighborhoods"}
+# __dict__, not plain assignment: pandas warns about creating a column via
+# a new attribute name, and that warning lands in this node's output with
+# an absolute site-packages path. NOT gdf.attrs, and do not just delete the
+# line: the sandbox reads this name (sandbox/util/parsers.py) and both of
+# those drop it silently from the emitted FeatureCollection.
+gdf.__dict__["metadata"] = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
