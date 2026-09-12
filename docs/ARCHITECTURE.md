@@ -18,6 +18,7 @@ This document describes the internal architecture of Curio for contributors who 
 * [Data Between Nodes](#data-between-nodes)
   * [Supported Data Types](#supported-data-types)
   * [DuckDB-Based Data Transfer](#duckdb-based-data-transfer)
+  * [Resolving Geometry in Vega-Lite Nodes](#resolving-geometry-in-vega-lite-nodes)
   * [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)
   * [Connection Validation](#connection-validation)
 * [Execution Pipeline](#execution-pipeline)
@@ -295,7 +296,7 @@ Nodes communicate using one of these typed payloads (defined as `SupportedType` 
 | Type | Python equivalent | Description |
 |---|---|---|
 | `DATAFRAME` | `pandas.DataFrame` | Tabular data |
-| `GEODATAFRAME` | `geopandas.GeoDataFrame` | Tabular data with geometry |
+| `GEODATAFRAME` | `geopandas.GeoDataFrame` | Tabular data with geometry, in one or more geometry columns |
 | `VALUE` | `int / float / bool / str` | Scalar value |
 | `LIST` | `list` | Array of values |
 | `JSON` | `dict` | Key-value object |
@@ -325,7 +326,7 @@ CREATE TABLE artifacts (
 | kind | Storage | Notes |
 |---|---|---|
 | `dataframe` | `blob` (Parquet) | Serialized with `pyarrow`; efficient columnar format |
-| `geodataframe` | `blob` (GeoParquet) | CRS preserved automatically; `.metadata` stashed in `value_json` |
+| `geodataframe` | `blob` (GeoParquet) | CRS and *every* geometry column preserved, not only the active one; `.metadata` stashed in `value_json`. A GeoDataFrame with no active geometry column is stored as `dataframe`; GeoParquet cannot represent one |
 | `bool` | `value_int` | `1` = True, `0` = False |
 | `int` | `value_int` | |
 | `float` | `value_float` | |
@@ -345,6 +346,30 @@ CREATE TABLE artifacts (
 4. The frontend stores the artifact ID in `FlowProvider.outputs` and passes it as `INodeData.input` to downstream nodes.
 5. When a downstream node executes, it sends the artifact ID to the sandbox, which calls `load_from_duckdb(id)` to reconstruct the Python object, with no re-serialization of the original data needed.
 6. For previewing data in the UI, the frontend fetches via `GET /get-preview?fileName=<artifact_id>`, which loads the artifact and returns only the first 100 rows as JSON.
+
+### Resolving Geometry in Vega-Lite Nodes
+
+The `vis-vega` node also resolves upstream data in its own way, for a narrower
+reason: Vega-Lite needs to be told *which column holds the geometry*, and a
+`GeoDataFrame` can have several.
+
+The payload carries `geometry_name` (see **Supported Data Types** above), so the
+node does not guess. [`vegaGeoSpec.ts`](../utk_curio/frontend/urban-workflows/src/utils/vegaGeoSpec.ts)
+applies one rule with three outcomes: use the declared active column; or, when
+none is declared, the single column whose values are geometry; or, when there
+are none or several, inject nothing and show the user which columns it found.
+Each geometry column keeps its own pandas name in the row, so `"field": "geom"`
+addresses it exactly as an attribute column would.
+
+Two things are then filled in that Vega-Lite would otherwise get wrong:
+`encoding.shape` on a `geoshape` mark, and an explicit `projection`:
+`identity`+`reflectY` for projected coordinates, `mercator` for lon/lat. Both
+are skipped whenever the author has written their own.
+
+This is gated on **the spec**, not the payload: a bar chart over a GeoDataFrame
+never has geometry attached, so it carries exactly the columns it always did.
+That matters because shipped dataflows chart multi-megabyte GeoJSON as bar
+charts, and the rows are re-shipped through `changeset()` on every brush.
 
 ### Referencing Upstream Data in Autark Nodes
 

@@ -264,7 +264,46 @@ through a helper rather than indexing directly:
 const cell = (column, key) => (Array.isArray(column) ? column[Number(key)] : column[key]);
 ```
 
-A `geodataframe` payload is a GeoJSON `FeatureCollection`.
+A `geodataframe` payload is a GeoJSON `FeatureCollection` with three extra
+keys the sandbox adds, and one rule about `properties` that is easy to miss:
+
+```js
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature",
+      "geometry": { "type": "Polygon", "coordinates": [...] },   // the ACTIVE column
+      "properties": { "zip": "60601",
+                      "centroid": { "type": "Point", ... } } }   // everything else
+  ],
+  "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::4326" } },
+  "geometry_name": "geom"     // the active geometry column's pandas name, or null
+}
+```
+
+- **`geometry_name`** is the active geometry column's real name. It is not
+  always `"geometry"` - `gdf.rename_geometry("geom")` is legal and common - so
+  read this rather than assuming. It is `null` when the frame has no active
+  geometry column at all.
+- **The active column is excluded from `properties`.** geopandas puts it in
+  `feature.geometry` instead, which is why a geometry column can keep its own
+  name without ever colliding with a real property of the same name.
+- **Secondary geometry columns are ordinary properties**, carrying a GeoJSON
+  geometry *object* (the `__geo_interface__` mapping), not a `Feature` and not
+  WKT. A frame with `gdf["centroid"] = gdf.centroid` has two geometry columns
+  and only the first is in `feature.geometry`.
+- **`crs`** is absent when the frame has no CRS.
+
+Both payload kinds also carry a top-level **`schema`** alongside `dataType`:
+a `{column: dtype}` map straight from `df.dtypes`, e.g.
+`{"zip": "str", "pop": "int64", "geom": "geometry"}`. Read it rather than
+sniffing values - guessing a date from a string, or a zip code from a
+measurement, is exactly where that goes wrong. Note pandas 3 reports a string
+column as `"str"` where pandas 2 said `"object"`, so accept both.
+
+A GeoDataFrame with **no active geometry column** arrives as a `dataframe`,
+not an empty `geodataframe`. It cannot be stored as GeoParquet either, so
+treating it as a table is the only answer that stays consistent end to end.
 
 ---
 
