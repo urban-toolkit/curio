@@ -79,6 +79,14 @@ function deriveView(parsedInput: any): {
   imageColumns: string[];
   textContent: string;
 } {
+  // Nothing wired in yet, or an upstream that has not run. There is no payload
+  // to describe, so every branch stays empty and the caller falls through to
+  // the empty state that says which of those it is (#224). Without this guard a
+  // freshly dropped node has `input === ''`, whose JSON is the two-character
+  // string `""`, which is truthy and renders as a text payload.
+  if (parsedInput == null || parsedInput === '') {
+    return { mode: 'text', rows: [], imageColumns: [], textContent: '' };
+  }
   const rows = isFrame(parsedInput) ? buildTableRows(parsedInput) : [];
   const imageColumns = resolveImageColumns(rows);
   if (imageColumns.length > 0) return { mode: 'image', rows, imageColumns, textContent: '' };

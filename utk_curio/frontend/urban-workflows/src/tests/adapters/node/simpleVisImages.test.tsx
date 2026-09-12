@@ -189,6 +189,19 @@ describe('Simple View image modes', () => {
   });
 });
 
+describe('Simple View with nothing to show', () => {
+  it('renders the empty state, not an empty text payload', async () => {
+    // A freshly dropped node carries `input: ''`. Rendering that as text put a
+    // bare `""` in the box instead of the message saying what to wire in
+    // (#224), which the empty-nodes-say-why walkthrough caught.
+    await act(async () => {
+      render(<Harness data={nodeData('')} />);
+    });
+    expect(document.querySelector('[data-curio-node-empty]')).toBeInTheDocument();
+    expect(screen.queryByText('""')).not.toBeInTheDocument();
+  });
+});
+
 describe('resolveImageColumnChoice', () => {
   it('defaults to all, and reads the persisted choice', () => {
     expect(resolveImageColumnChoice(undefined)).toBe(ALL_IMAGE_COLUMNS);
