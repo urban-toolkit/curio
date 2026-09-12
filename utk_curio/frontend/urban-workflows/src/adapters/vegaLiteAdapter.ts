@@ -7,36 +7,10 @@
  */
 
 import { GrammarAdapter, registerGrammarAdapter } from '../registry/grammarAdapter';
-import { parseDataframe, parseGeoDataframe } from '../utils/parsing';
-import { fetchData } from '../services/api';
+import { prepareVegaInput } from '../utils/vegaInput';
 
 const vega = require('vega');
 const lite = require('vega-lite');
-
-async function parseInputData(input: any): Promise<any[]> {
-  if (!input || input === '') {
-    throw new Error('Input data must be provided');
-  }
-
-  const inputType = input.dataType;
-  if (inputType !== 'dataframe' && inputType !== 'geodataframe') {
-    throw new Error(`${inputType} is not a valid input type for Vega-Lite`);
-  }
-
-  const parserMap: Record<string, (data: any) => any> = {
-    dataframe: parseDataframe,
-    geodataframe: parseGeoDataframe,
-  };
-
-  const parser = parserMap[inputType];
-  if (!parser) return [];
-
-  if (input.path) {
-    const fetched = await fetchData(input.path);
-    return parser(fetched.data);
-  }
-  return parser(input.data);
-}
 
 export const vegaLiteAdapter: GrammarAdapter = {
   grammarId: 'vega-lite',
@@ -58,7 +32,9 @@ export const vegaLiteAdapter: GrammarAdapter = {
     const specObj = typeof spec === 'string' ? JSON.parse(spec as string) : { ...spec as any };
     const inputData = data as any;
 
-    const values = await parseInputData(inputData);
+    // Shares the node's input path so the two cannot drift apart -- geometry
+    // resolution included.
+    const { values } = await prepareVegaInput(inputData, specObj);
     specObj.data = { values, name: 'data' };
     specObj.height = 'container';
     specObj.width = 'container';

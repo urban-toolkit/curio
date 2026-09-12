@@ -81,3 +81,43 @@ describe("hasIncomingEdge", () => {
     expect(hasIncomingEdge([{ target: "n2" }], "")).toBe(false);
   });
 });
+
+describe("the grammar states", () => {
+  // Added for the Vega-Lite node, which rendered no empty state at all: when
+  // nothing compiled, its output div was simply blank — the exact #224
+  // complaint, still true of the most-used visualisation node.
+  const GRAMMAR_REASONS: NodeEmptyReason[] = [
+    "input-type-rejected",
+    "geometry-unresolved",
+    "geometry-ambiguous",
+  ];
+
+  test("each has something to say", () => {
+    for (const reason of GRAMMAR_REASONS) {
+      expect(NODE_EMPTY_COPY[reason].title.trim()).not.toBe("");
+      expect(NODE_EMPTY_COPY[reason].hint.trim()).not.toBe("");
+    }
+  });
+
+  test("they do not read the same as each other", () => {
+    const hints = GRAMMAR_REASONS.map((r) => NODE_EMPTY_COPY[r].hint);
+    expect(new Set(hints).size).toBe(GRAMMAR_REASONS.length);
+  });
+
+  test("the geometry hints name the thing the user has to type", () => {
+    // A message that says only "something is wrong with your geometry" is the
+    // failure this replaces. Each one has to be actionable on its own.
+    expect(NODE_EMPTY_COPY["geometry-ambiguous"].hint).toContain('"geojson"');
+    expect(NODE_EMPTY_COPY["geometry-unresolved"].hint).toContain("geoshape");
+  });
+
+  test("adding them left the tabular states untouched", () => {
+    // Data Pool, Simple View and autk-grammar read these; the change was meant
+    // to be purely additive.
+    expect(NODE_EMPTY_COPY.disconnected.hint).toBe("Connect a node to this one's input.");
+    expect(NODE_EMPTY_COPY["upstream-not-run"].hint).toBe("Run the node feeding this one.");
+    expect(
+      resolveNodeEmptyReason({ connected: true, hasInput: true, tabular: true, rowCount: 3 }),
+    ).toBeNull();
+  });
+});
