@@ -303,7 +303,7 @@
     {
       "bidirectional": true,
       "category": "vis_simple",
-      "description": "Displays incoming data: renders a table for DataFrames, an image grid for image DataFrames, or passes through other values.",
+      "description": "Displays incoming data: a table for DataFrames and GeoDataFrames, or a card per row when the frame carries an image column, showing the image beside that row's values. Other values pass through.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,

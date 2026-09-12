@@ -37,7 +37,7 @@ Three patterns cover essentially every node Curio ships:
 
 | Pattern | Examples | Backend? |
 |---|---|---|
-| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, `cv-gallery` | None. The behavior hook does its work in the browser. |
+| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar` | None. The behavior hook does its work in the browser. |
 | **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary` | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. |
 | **Custom blueprint** | `streetvision` (calls Google Street View + HuggingFace + runs `torch` inference), `spatial-join` (shapely STRtree) | A new Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/). Right call when the node needs external APIs, long-running jobs, persistent state, or heavy native dependencies that the sandbox can't reasonably ship. |
 
@@ -222,18 +222,16 @@ def inference_run():
 
 ## 4. Walked example: the Street Vision package
 
-The merge of [PR #120](https://github.com/urban-toolkit/curio/pull/120) decomposed two large student-contributed nodes into four small reusable ones and ported a companion FastAPI service into Curio's Flask backend. The artefacts that landed:
+The merge of [PR #120](https://github.com/urban-toolkit/curio/pull/120) decomposed two large student-contributed nodes into three small reusable ones and ported a companion FastAPI service into Curio's Flask backend. The artefacts that landed:
 
-### 4.1 Three templates in [`packages/curio.streetvision@1/manifest.json`](../packages/curio.streetvision@1/manifest.json)
+### 4.1 Two templates in [`packages/curio.streetvision@1/manifest.json`](../packages/curio.streetvision@1/manifest.json)
 
 ```jsonc
 "templates": [
   { "id": "street-view-fetcher", "behavior": "street-view-fetcher",
     "inputPorts": [],                                                  "outputPorts": [{"types":["GEODATAFRAME"]}] },
   { "id": "hf-cv-inference",     "behavior": "hf-cv-inference",
-    "inputPorts": [{"types":["GEODATAFRAME","JSON"]}],                 "outputPorts": [{"types":["JSON"]}] },
-  { "id": "cv-gallery",          "behavior": "cv-gallery",
-    "inputPorts": [{"types":["JSON"]}],                                "outputPorts": [{"types":["GEODATAFRAME"]}] }
+    "inputPorts": [{"types":["GEODATAFRAME","JSON"]}],                 "outputPorts": [{"types":["GEODATAFRAME"]}] }
 ]
 ```
 
@@ -255,13 +253,12 @@ A generic Spatial Join that takes points + polygons and tags each point with the
 
 This one belongs in `curio.builtin@1`, not `curio.streetvision@1`, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
-### 4.3 Four behavior hooks
+### 4.3 Three behavior hooks
 
-The three Street Vision hooks ship inside the package itself, at [`packages/curio.streetvision@1/sources/`](../packages/curio.streetvision@1/sources/); the generic one lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/).
+The two Street Vision hooks ship inside the package itself, at [`packages/curio.streetvision@1/sources/`](../packages/curio.streetvision@1/sources/); the generic one lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/).
 
 - [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx): place picker, bbox preview, and fetch button. Hits `/api/streetvision/data/streetview/{search_place,coverage,fetch}`, emits a GEODATAFRAME via `data.outputCallback`.
-- [`hfCvInferenceBehavior.tsx`](../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx): reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5.
-- [`cvGalleryBehavior.tsx`](../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx): a pure frontend node. Gallery + per-image inspector + aggregate stats; re-emits the results as a GEODATAFRAME.
+- [`hfCvInferenceBehavior.tsx`](../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx): reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5. Converts the finished run into a GEODATAFRAME with [`resultsToFeatureCollection.ts`](../packages/curio.streetvision@1/sources/resultsToFeatureCollection.ts), kept as a separate pure module so the shape every downstream node depends on can be tested without React.
 - [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two distinct input handles, mounted via `dynamicHandles` (the same mechanism Merge Flow uses). Worth reading if you ever need a 2-input node.
 
 Each is registered as a global behavior key in [`registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts):
@@ -269,11 +266,10 @@ Each is registered as a global behavior key in [`registry/builtinBehaviors.ts`](
 ```typescript
 registerBehavior('street-view-fetcher', useStreetViewFetcherBehavior);
 registerBehavior('hf-cv-inference',     useHfCvInferenceBehavior);
-registerBehavior('cv-gallery',          useCvGalleryBehavior);
 registerBehavior('spatial-join',        useSpatialJoinBehavior);
 ```
 
-Even though three of those templates live in a separate (non-built-in) package, their behavior hooks are registered globally; packages reference behavior keys by name, not by import.
+Even though two of those templates live in a separate (non-built-in) package, their behavior hooks are registered globally; packages reference behavior keys by name, not by import.
 
 ### 4.4 The backend Flask blueprint at [`utk_curio/backend/app/streetvision/`](../utk_curio/backend/app/streetvision/)
 

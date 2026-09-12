@@ -190,7 +190,7 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 | Data | `data-loading`, `data-transformation`, `data-summary`, `data-export`, `data-pool` |
 | Computation | `computation-analysis`, `js-computation`, `merge-flow`, `spatial-join` |
 | Grammar (Autark) | `autk-grammar`, one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
-| Chart/table visualization | `vis-vega`, `vis-simple` |
+| Chart/table visualization | `vis-vega`, `vis-simple` (a table, or a card per row when the frame carries images) |
 
 Third-party packages (or first-party optional ones, like `curio.streetvision@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
 
@@ -255,15 +255,14 @@ Behaviors register against a single global registry, [`behaviorRegistry.ts::regi
 
 **2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"behaviorScript": "scripts/behaviors.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageBehaviorScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each hook it ships.
 
-**Worked example: `curio.streetvision@1`** ships three custom behaviors:
+**Worked example: `curio.streetvision@1`** ships two custom behaviors:
 
 | Behavior key | Hook | Purpose |
 |---|---|---|
 | `street-view-fetcher` | `useStreetViewFetcherBehavior` | Place geocoding, bbox preview, Google Street View image batch fetch |
-| `hf-cv-inference` | `useHfCvInferenceBehavior` | HuggingFace model picker + segmentation/detection job polling |
-| `cv-gallery` | `useCvGalleryBehavior` | Per-image gallery + overlay inspection UI |
+| `hf-cv-inference` | `useHfCvInferenceBehavior` | HuggingFace model picker + segmentation/detection job polling, emitting a GEODATAFRAME |
 
-Each sits in `packages/curio.streetvision@1/sources/*.tsx`, webpack-bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps each template to one. The catalog install copies the package directory; boot loads the bundle; the user gets three custom-rendered nodes without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
+Each sits in `packages/curio.streetvision@1/sources/*.tsx`, webpack-bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps each template to one. The catalog install copies the package directory; boot loads the bundle; the user gets two custom-rendered nodes without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
 
 ### UniversalNode: One Component for All Types
 
