@@ -60,6 +60,13 @@ RUN if [ -n "$BACKEND_URL" ]; then \
 WORKDIR /src/utk_curio/frontend/urban-workflows
 RUN npm install && npm run build
 
+# Jest runs in this stage too (`docker build --target frontend_builder`, then
+# `npm test`, in .github/workflows/docker-compose.yml), and
+# src/tests/utils/deoverlapExamples.test.ts reads the shipped examples from
+# <repo>/docs/examples. Only the specs, not the PNG baselines beside them, and
+# after the build so an example edit does not invalidate the npm layers.
+COPY docs/examples/*.json /src/docs/examples/
+
 # -----------------------------------------------------------------------------
 # Stage 3: Final image: Python runtime + built frontend assets
 # -----------------------------------------------------------------------------
