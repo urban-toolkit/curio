@@ -6,7 +6,7 @@
         "id": "cd0fd9a5-8bbc-5f1f-b9aa-9962113713a1",
         "type": "curio.builtin/data-loading",
         "x": 0,
-        "y": 645,
+        "y": 555,
         "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.urbanlab.chicago-boundary\")\ngdf = gpd.read_file(dataset_path)\n\nreturn gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -19,7 +19,7 @@
         "id": "c6f4d823-e04d-5e45-a453-e3f04fc6d5ed",
         "type": "curio.builtin/data-loading",
         "x": 0,
-        "y": 1075,
+        "y": 985,
         "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\ndataset_path = curio_dataset_path(\"data.cityofchicago.green-roofs\")\ndf = pd.read_csv(dataset_path).dropna(subset=[\"LONGITUDE\", \"LATITUDE\"])\npoints = [Point(xy) for xy in zip(df[\"LONGITUDE\"], df[\"LATITUDE\"])]\n\nreturn gpd.GeoDataFrame(df, geometry=points, crs=4326)",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -32,7 +32,7 @@
         "id": "5cef2475-e2df-54a5-bcd3-d773a197b268",
         "type": "curio.builtin/data-loading",
         "x": 0,
-        "y": 1505,
+        "y": 1415,
         "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.projectsidewalk.chicago-labels\")\ngdf = gpd.read_parquet(dataset_path)\n\nreturn gdf[[\"label_type\", \"severity\", \"geometry\"]].head(400)",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -42,23 +42,26 @@
         }
       },
       {
-        "id": "169d1527-af88-57bd-ad93-76f6f92d934b",
-        "type": "curio.builtin/data-loading",
-        "x": 0,
-        "y": 1935,
-        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\nroofs = pd.read_csv(curio_dataset_path(\"data.cityofchicago.green-roofs\"))\nroofs = roofs.dropna(subset=[\"LONGITUDE\", \"LATITUDE\"])\nroofs = gpd.GeoDataFrame(\n    roofs,\n    geometry=[Point(xy) for xy in zip(roofs[\"LONGITUDE\"], roofs[\"LATITUDE\"])],\n    crs=4326,\n)\n\nzips = gpd.read_file(curio_dataset_path(\"data.urbanlab.chicago-boundary\"))\njoined = gpd.sjoin(roofs, zips, predicate=\"within\")\n\nreturn joined[[\"zip\", \"TOTAL_ROOF_SQFT\", \"geometry\"]]",
+        "id": "bd66665d-d0ca-5d58-9637-d3049048b6d9",
+        "type": "curio.builtin/spatial-join",
+        "x": 768,
+        "y": 90,
+        "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "",
+        "goal": "Tag each green roof with the ZIP polygon it falls in. Points on the top handle, polygons on the bottom; the polygon property used as the tag is a setting on the node.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "spatialJoin": {
+            "nameProperty": "zip"
+          }
         }
       },
       {
         "id": "9bc82604-dcd7-52f8-a1be-5f0bebec4ffd",
         "type": "curio.builtin/vis-vega",
         "x": 645,
-        "y": 0,
+        "y": 340,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"An explicit shape encoding is respected, never overwritten.\",\n  \"mark\": \"geoshape\",\n  \"encoding\": {\n    \"shape\": {\n      \"field\": \"geometry\",\n      \"type\": \"geojson\"\n    },\n    \"color\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    }\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -71,7 +74,7 @@
         "id": "8b9ab2fb-91f3-5025-93dd-3ebb93052132",
         "type": "curio.builtin/vis-vega",
         "x": 645,
-        "y": 430,
+        "y": 770,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"A projection written by hand survives untouched.\",\n  \"mark\": \"geoshape\",\n  \"projection\": {\n    \"type\": \"albersUsa\"\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -84,7 +87,7 @@
         "id": "e5b42b9c-2847-5ee4-8cf1-99dd825b3938",
         "type": "curio.builtin/vis-vega",
         "x": 645,
-        "y": 860,
+        "y": 1200,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"One projection, declared above both layers.\",\n  \"projection\": {\n    \"type\": \"equalEarth\"\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"geoshape\",\n        \"fill\": \"#e2e8f0\",\n        \"stroke\": \"white\"\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"geoshape\",\n        \"fill\": null,\n        \"stroke\": \"#94a3b8\"\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -96,8 +99,8 @@
       {
         "id": "c8c02477-e544-5335-8f56-54394182f6c2",
         "type": "curio.builtin/vis-vega",
-        "x": 645,
-        "y": 1290,
+        "x": 1290,
+        "y": 555,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Two maps side by side.\",\n  \"hconcat\": [\n    {\n      \"mark\": \"geoshape\",\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"zip\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"geoshape\",\n        \"fill\": \"#e2e8f0\",\n        \"stroke\": \"white\"\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -110,7 +113,7 @@
         "id": "661b8783-a2be-5843-9f37-99ea35f48592",
         "type": "curio.builtin/vis-vega",
         "x": 1290,
-        "y": 1075,
+        "y": 985,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Rooftop points, from longitude and latitude.\",\n  \"mark\": {\n    \"type\": \"circle\",\n    \"opacity\": 0.4\n  },\n  \"encoding\": {\n    \"longitude\": {\n      \"field\": \"LONGITUDE\",\n      \"type\": \"quantitative\"\n    },\n    \"latitude\": {\n      \"field\": \"LATITUDE\",\n      \"type\": \"quantitative\"\n    },\n    \"size\": {\n      \"field\": \"TOTAL_ROOF_SQFT\",\n      \"type\": \"quantitative\"\n    }\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -122,9 +125,9 @@
       {
         "id": "9cf84371-6163-5acb-93ee-111fbadbc465",
         "type": "curio.builtin/vis-vega",
-        "x": 1290,
-        "y": 1935,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Rooftop points joined to their ZIP polygon.\",\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"geoshape\",\n        \"fill\": \"#e2e8f0\",\n        \"stroke\": \"white\"\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"circle\",\n        \"color\": \"#c2410c\",\n        \"opacity\": 0.5\n      },\n      \"encoding\": {\n        \"size\": {\n          \"field\": \"TOTAL_ROOF_SQFT\",\n          \"type\": \"quantitative\"\n        }\n      }\n    }\n  ]\n}",
+        "x": 1935,
+        "y": 0,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Rooftop points tagged with their ZIP by the Spatial Join node.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"opacity\": 0.6\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"neighborhood_name\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"neighborhood_name\",\n        \"title\": \"ZIP\"\n      },\n      {\n        \"field\": \"TOTAL_ROOF_SQFT\",\n        \"title\": \"roof sqft\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -136,7 +139,7 @@
         "id": "d5bab88e-8724-587f-8fc2-8c7fc04e2f60",
         "type": "curio.builtin/vis-vega",
         "x": 1290,
-        "y": 1505,
+        "y": 1415,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Loaded with gpd.read_parquet rather than read_file.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"filled\": true\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"label_type\",\n      \"type\": \"nominal\"\n    }\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -173,14 +176,30 @@
         "target": "661b8783-a2be-5843-9f37-99ea35f48592"
       },
       {
-        "id": "reactflow__edge-169d1527-af88-57bd-ad93-76f6f92d934bout-9cf84371-6163-5acb-93ee-111fbadbc465in",
-        "source": "169d1527-af88-57bd-ad93-76f6f92d934b",
-        "target": "9cf84371-6163-5acb-93ee-111fbadbc465"
-      },
-      {
         "id": "reactflow__edge-5cef2475-e2df-54a5-bcd3-d773a197b268out-d5bab88e-8724-587f-8fc2-8c7fc04e2f60in",
         "source": "5cef2475-e2df-54a5-bcd3-d773a197b268",
         "target": "d5bab88e-8724-587f-8fc2-8c7fc04e2f60"
+      },
+      {
+        "id": "reactflow__edge-c6f4d823-e04d-5e45-a453-e3f04fc6d5edout-bd66665d-d0ca-5d58-9637-d3049048b6d9in_points",
+        "source": "c6f4d823-e04d-5e45-a453-e3f04fc6d5ed",
+        "sourceHandle": "out",
+        "target": "bd66665d-d0ca-5d58-9637-d3049048b6d9",
+        "targetHandle": "in_points"
+      },
+      {
+        "id": "reactflow__edge-cd0fd9a5-8bbc-5f1f-b9aa-9962113713a1out-bd66665d-d0ca-5d58-9637-d3049048b6d9in_polygons",
+        "source": "cd0fd9a5-8bbc-5f1f-b9aa-9962113713a1",
+        "sourceHandle": "out",
+        "target": "bd66665d-d0ca-5d58-9637-d3049048b6d9",
+        "targetHandle": "in_polygons"
+      },
+      {
+        "id": "reactflow__edge-bd66665d-d0ca-5d58-9637-d3049048b6d9out-9cf84371-6163-5acb-93ee-111fbadbc465in",
+        "source": "bd66665d-d0ca-5d58-9637-d3049048b6d9",
+        "sourceHandle": "out",
+        "target": "9cf84371-6163-5acb-93ee-111fbadbc465",
+        "targetHandle": "in"
       }
     ],
     "name": "Vega-Lite spec forms and catalogs",

@@ -18,7 +18,9 @@ flowchart LR
   L1 --> V18[Vega-Lite<br/>layer inheritance]
   L1 --> V19[Vega-Lite<br/>hconcat]
   L2[Data Loading<br/>green roofs] --> V20[Vega-Lite<br/>lon/lat channels]
-  L4[Data Loading<br/>spatial join] --> V23[Vega-Lite<br/>joined layers]
+  L2 --> SJ[Spatial Join<br/>tag by zip]
+  L1 --> SJ
+  SJ --> V23[Vega-Lite<br/>joined points]
   L3[Data Loading<br/>GeoParquet] --> V24[Vega-Lite<br/>GeoParquet]
 ```
 
@@ -62,24 +64,41 @@ return gdf[["label_type", "severity", "geometry"]].head(400)
 GeoParquet, read with `gpd.read_parquet`. The spec is no different from the
 geojson one.
 
-```python
-import geopandas as gpd
-import pandas as pd
-from shapely.geometry import Point
+The join is a node, not code. `Spatial Join` takes the green-roof points on
+its top handle and the ZIP polygons on its bottom handle, and tags every point
+with the polygon it falls in. The polygon property used as the tag is a
+setting on the node (`name` by default); here it is `zip`, so the tag column
+the node adds, `neighborhood_name`, holds the ZIP code. What comes out is the
+points again, as plain GeoJSON, which the map draws without declaring
+anything about geometry:
 
-roofs = pd.read_csv(curio_dataset_path("data.cityofchicago.green-roofs"))
-roofs = roofs.dropna(subset=["LONGITUDE", "LATITUDE"])
-roofs = gpd.GeoDataFrame(
-    roofs,
-    geometry=[Point(xy) for xy in zip(roofs["LONGITUDE"], roofs["LATITUDE"])],
-    crs=4326,
-)
-
-zips = gpd.read_file(curio_dataset_path("data.urbanlab.chicago-boundary"))
-joined = gpd.sjoin(roofs, zips, predicate="within")
-
-return joined[["zip", "TOTAL_ROOF_SQFT", "geometry"]]
+```json
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "description": "Rooftop points tagged with their ZIP by the Spatial Join node.",
+  "mark": {
+    "type": "geoshape",
+    "opacity": 0.6
+  },
+  "encoding": {
+    "color": {
+      "field": "neighborhood_name",
+      "type": "nominal",
+      "legend": null
+    },
+    "tooltip": [
+      {
+        "field": "neighborhood_name",
+        "title": "ZIP"
+      },
+      {
+        "field": "TOTAL_ROOF_SQFT",
+        "title": "roof sqft"
+      }
+    ]
+  }
+}
 ```
 
-A csv promoted to points and joined to the geojson polygons, then drawn as two
-layers from the one frame.
+Every point keeps its own columns, so `TOTAL_ROOF_SQFT` is still there for the
+tooltip, and `neighborhood_name` colours the dots by ZIP.

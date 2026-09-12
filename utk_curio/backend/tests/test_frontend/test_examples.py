@@ -62,8 +62,9 @@ EXAMPLE_INVARIANTS = [
     ("14-vega-lite-crs-and-geometry-types.json", 15, 14,
      {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 7,
       "curio.builtin/vis-vega": 7}, False),
-    ("15-vega-lite-spec-forms-and-catalogs.json", 11, 7,
-     {"curio.builtin/data-loading": 4, "curio.builtin/vis-vega": 7}, False),
+    ("15-vega-lite-spec-forms-and-catalogs.json", 11, 9,
+     {"curio.builtin/data-loading": 3, "curio.builtin/spatial-join": 1,
+      "curio.builtin/vis-vega": 7}, False),
     ("16-simple-view-tables-and-images.json", 4, 2,
      {"curio.builtin/data-loading": 2, "curio.builtin/vis-simple": 2}, False),
 ]
