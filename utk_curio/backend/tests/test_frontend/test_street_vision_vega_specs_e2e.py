@@ -152,6 +152,37 @@ def _spec() -> dict:
     }
 
 
+def _distinct_canvas_colours(page, node_id: str, *, min_alpha: int = 200) -> int:
+    """How many distinct opaque, non-white colours a Vega node's canvas holds.
+
+    Sampled on a 4px grid, then rounded to 16 levels per channel so
+    antialiasing does not inflate the count. A chart whose colour encoding
+    resolved has one colour per category plus the axes; one whose field is
+    missing has the palette's first colour and nothing else.
+    """
+    return page.evaluate(
+        """(containerId) => {
+            const el = document.getElementById(containerId);
+            const canvas = el && el.querySelector('canvas');
+            if (!canvas) return 0;
+            const ctx = canvas.getContext('2d');
+            const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const seen = new Set();
+            for (let y = 0; y < height; y += 4) {
+                for (let x = 0; x < width; x += 4) {
+                    const i = (y * width + x) * 4;
+                    const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+                    if (a < %d) continue;
+                    if (r > 235 && g > 235 && b > 235) continue;
+                    seen.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+                }
+            }
+            return seen.size;
+        }""" % min_alpha,
+        f"vega{node_id}",
+    )
+
+
 def test_the_street_vision_vega_specs_draw_from_a_spatial_join(
     app_frontend: "FrontendPage",
     current_server: str,
@@ -179,12 +210,30 @@ def test_the_street_vision_vega_specs_draw_from_a_spatial_join(
     # Spatial Join fires on its own once both slots hold data.
     wait_for_node_done(page, JOIN_ID, node_type="SPATIAL_JOIN", timeout_ms=120000)
 
-    # The map: a geoshape layer over the joined points. Before the fixes it was
-    # blank three times over (empty "table" dataset, unresolvable field paths,
-    # no geometry attached).
+    # Every synthetic point sits inside its own ZIP polygon, so the join must
+    # tag all of them. This also proves the tag column the specs read is the
+    # one the backend writes (`joined`): the node counts tagged features by it.
+    status = node_locator(page, JOIN_ID).locator("[data-curio-spatial-join-status]")
+    status.wait_for(state="visible", timeout=30000)
+    assert "Tagged 61 of 61 points" in status.inner_text(), status.inner_text()
+
+    # The map: a geoshape layer over the joined points, coloured by the
+    # per-polygon dominant class. Before the fixes it was blank three times
+    # over (empty "table" dataset, unresolvable field paths, no geometry
+    # attached). `assert_vega_canvas_rendered` only proves *something* was
+    # drawn, and axes count, so the colour count is what says the encodings
+    # resolved: a missing field paints every mark the palette's first colour.
     play_node(page, MAP_ID)
     assert_vega_canvas_rendered(page, MAP_ID)
+    assert _distinct_canvas_colours(page, MAP_ID) >= 6, (
+        "the map drew, but in too few colours for a dominant-class scale: the "
+        "colour field did not resolve on the joined rows"
+    )
 
-    # The bars: images per neighborhood, coloured by dominant class.
+    # The bars: images per polygon, coloured by dominant class. With the filter
+    # on `joined` dropping every row this chart is just its axes.
     play_node(page, BARS_ID)
     assert_vega_canvas_rendered(page, BARS_ID)
+    assert _distinct_canvas_colours(page, BARS_ID) >= 6, (
+        "the bar chart drew only its axes: the rows carried no `joined` column"
+    )

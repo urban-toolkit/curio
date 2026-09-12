@@ -686,8 +686,9 @@ def spatial_join():
     Response:
         {
           "type": "FeatureCollection",
-          "features": [...]   # input points augmented with `neighborhood_name`
-                              # (and `nbhd_*` aggregates) on properties
+          "features": [...]   # input points with a `joined` property (the polygon's
+                              # tag) and, when they carry a dominant class, the
+                              # `joined_*` per-polygon roll-ups
           "metadata": { "aggregates": [...],   # per-polygon roll-up
                         "warnings": [...] }     # only when non-empty (#262)
         }

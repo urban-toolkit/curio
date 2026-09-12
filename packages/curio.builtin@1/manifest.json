@@ -389,7 +389,7 @@
         "nodeHeight": 170,
         "nodeWidth": 280
       },
-      "description": "Tag each point with the polygon it falls in (point-in-polygon spatial join). Two distinct input handles: points (top) and polygons (bottom); each accepts a GEODATAFRAME / GeoJSON FeatureCollection. Output points carry the containing polygon's tag as `neighborhood_name` plus per-polygon roll-up aggregates. Choose which polygon property is used as the tag in the node body - it defaults to `name`; Chicago's neighborhoods use `pri_neigh`, NYC's boroughs `BoroName`. The node warns when no polygon carries the chosen property.",
+      "description": "Tag each point with the polygon it falls in (point-in-polygon spatial join). Two distinct input handles: points (top) and polygons (bottom); each accepts a GEODATAFRAME / GeoJSON FeatureCollection. The output is the input points with one added column, `joined`, holding the containing polygon's tag (null for a point outside every polygon); points that carry a `dominant_class` also get the per-polygon roll-ups `joined_dominant_class`, `joined_dominant_pct` and `joined_count`. Which polygon property becomes the tag is a setting in the node body: `name` by default; Chicago's neighborhoods use `pri_neigh`, its ZIP boundaries `zip`, NYC's boroughs `BoroName`. The node warns when no polygon carries the chosen property.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,

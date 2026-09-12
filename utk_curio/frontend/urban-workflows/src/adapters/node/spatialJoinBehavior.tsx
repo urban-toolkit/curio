@@ -202,7 +202,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
       })
       .then(fc => {
         const features: any[] = Array.isArray(fc?.features) ? fc.features : [];
-        const tagged = features.filter(f => f?.properties?.neighborhood_name != null).length;
+        const tagged = features.filter(f => f?.properties?.joined != null).length;
         const warnings: string[] = Array.isArray(fc?.metadata?.warnings) ? fc.metadata.warnings : [];
         setLastResult({ tagged, total: features.length, warnings });
         data.outputCallback(data.nodeId, { data: fc, dataType: 'geodataframe' });
@@ -227,7 +227,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   const contentComponent = React.useMemo<React.ReactNode>(() => {
     const status = lastResult
-      ? `Tagged ${lastResult.tagged} of ${lastResult.total} points with \`${nameProperty}\`.`
+      ? `Tagged ${lastResult.tagged} of ${lastResult.total} points with \`${nameProperty}\`, in a new \`joined\` column.`
       : !slots[0] && !slots[1]
         ? 'Connect points (top) and polygons (bottom), then run the nodes feeding this one.'
         : !slots[0]
@@ -242,13 +242,13 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', fontSize: 12, lineHeight: 1.4 }}
       >
         <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <span>Polygon property used as the tag</span>
+          <span>Tag each point with this polygon property</span>
           <input
             type="text"
             list={datalistId}
             value={draft}
             placeholder={DEFAULT_NAME_PROPERTY}
-            aria-label="Polygon property used as the tag"
+            aria-label="Tag each point with this polygon property"
             onChange={e => setDraft(e.target.value)}
             onBlur={e => commitNameProperty(e.target.value)}
             onKeyDown={e => {
@@ -259,6 +259,11 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
           <datalist id={datalistId}>
             {polygonProps.map(p => <option key={p} value={p} />)}
           </datalist>
+          <span style={{ opacity: 0.7, fontSize: 11 }}>
+            Every point gets a <code>joined</code> column holding this property of the
+            polygon it falls in. <code>{DEFAULT_NAME_PROPERTY}</code> by default; pick from the
+            polygons' own properties once they arrive.
+          </span>
         </label>
         <span data-curio-spatial-join-status="true" style={{ opacity: 0.85 }}>{status}</span>
         {lastResult?.warnings.map((w, i) => (

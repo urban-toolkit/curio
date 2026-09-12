@@ -143,7 +143,7 @@ describe('useSpatialJoinBehavior', () => {
     const { result } = renderHook(() => useSpatialJoinBehavior(data, makeNodeState()));
 
     const { container } = render(<>{result.current.contentComponent}</>);
-    const input = container.querySelector('input[aria-label="Polygon property used as the tag"]') as HTMLInputElement;
+    const input = container.querySelector('input[aria-label="Tag each point with this polygon property"]') as HTMLInputElement;
     expect(input).not.toBeNull();
     expect(input.value).toBe('name');
 
@@ -162,7 +162,7 @@ describe('useSpatialJoinBehavior', () => {
     const { result } = renderHook(() => useSpatialJoinBehavior(data, makeNodeState()));
 
     const { container } = render(<>{result.current.contentComponent}</>);
-    const input = container.querySelector('input[aria-label="Polygon property used as the tag"]') as HTMLInputElement;
+    const input = container.querySelector('input[aria-label="Tag each point with this polygon property"]') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.keyDown(input, { key: 'Enter', target: { value: '   ' } });
 
@@ -185,7 +185,7 @@ describe('useSpatialJoinBehavior', () => {
   test('a backend warning reaches the body, the output and a toast; the join still completes', async () => {
     const warning = "No polygon has a 'name' property, so tags fall back to polygon_<index>. Available properties: pri_neigh, sec_neigh.";
     mockFetch(joined(
-      [{ type: 'Feature', geometry: null, properties: { neighborhood_name: 'polygon_0' } }],
+      [{ type: 'Feature', geometry: null, properties: { joined: 'polygon_0' } }],
       [warning],
     ));
     const data = makeData();

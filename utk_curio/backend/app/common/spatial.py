@@ -39,9 +39,19 @@ def enrich_points_with_polygons(
 
     Returns:
         ``(enriched_points, aggregates)``. ``enriched_points`` preserves
-        input order and adds ``neighborhood_name`` plus the rolled-up
-        ``nbhd_*`` fields (any may be None if a point fell outside every
-        polygon). ``aggregates`` is a per-polygon roll-up keyed by name.
+        input order and adds one column, ``joined``: the containing polygon's
+        tag, or None for a point outside every polygon. When the points carry
+        a ``dominant_class`` (the street-vision case) three more columns are
+        projected onto every point: ``joined_dominant_class``,
+        ``joined_dominant_pct`` and ``joined_count``, the roll-up of the
+        polygon the point fell in. Points without a dominant class get no
+        roll-up columns at all, rather than three empty ones. ``aggregates``
+        is that per-polygon roll-up, keyed by ``joined``.
+
+        The names are deliberately generic. The join was carved out of the
+        street-vision pipeline, whose tag column was ``neighborhood_name``
+        and whose roll-ups were ``nbhd_*``, which read as nonsense on a roof
+        tagged with a ZIP code.
     """
     # shapely is a heavy-ish geospatial dep; keep it lazy so a Curio install
     # without the spatial extras can still import this module.
@@ -92,7 +102,7 @@ def enrich_points_with_polygons(
                 if polygons[idx].contains(pt):
                     tag = names[idx]
                     break
-        enriched.append({**p, "neighborhood_name": tag})
+        enriched.append({**p, "joined": tag})
         if tag:
             groups.setdefault(tag, []).append(p)
 
@@ -109,7 +119,7 @@ def enrich_points_with_polygons(
         avg_pct = sum(relevant_pcts) / max(len(relevant_pcts), 1)
         top3 = [{"class": c, "count": cnt} for c, cnt in counter.most_common(3)]
         aggregates.append({
-            "neighborhood_name": name,
+            "joined": name,
             "image_count": len(group),
             "dominant_class": top_class,
             "dominant_pct": round(avg_pct, 2),
@@ -117,19 +127,15 @@ def enrich_points_with_polygons(
         })
 
     # Project per-polygon aggregates back onto each member point so a Vega-Lite
-    # `lookup` (basemap.name → point.neighborhood_name) can pick up the
-    # rolled-up class/pct/count without us shipping a separate dataset.
-    agg_lookup = {a["neighborhood_name"]: a for a in aggregates}
-    for ep in enriched:
-        nm = ep.get("neighborhood_name")
-        if nm and nm in agg_lookup:
-            a = agg_lookup[nm]
-            ep["nbhd_dominant_class"] = a["dominant_class"]
-            ep["nbhd_dominant_pct"] = a["dominant_pct"]
-            ep["nbhd_image_count"] = a["image_count"]
-        else:
-            ep["nbhd_dominant_class"] = None
-            ep["nbhd_dominant_pct"] = None
-            ep["nbhd_image_count"] = None
+    # spec can colour by the rolled-up class/pct/count without us shipping a
+    # separate dataset. Only when there is a roll-up at all: a join over points
+    # with no dominant class adds nothing here.
+    if aggregates:
+        agg_lookup = {agg["joined"]: agg for agg in aggregates}
+        for ep in enriched:
+            agg = agg_lookup.get(ep.get("joined"))
+            ep["joined_dominant_class"] = agg["dominant_class"] if agg else None
+            ep["joined_dominant_pct"] = agg["dominant_pct"] if agg else None
+            ep["joined_count"] = agg["image_count"] if agg else None
 
     return enriched, aggregates

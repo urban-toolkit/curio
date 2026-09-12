@@ -66,9 +66,9 @@ geojson one.
 
 The join is a node, not code. `Spatial Join` takes the green-roof points on
 its top handle and the ZIP polygons on its bottom handle, and tags every point
-with the polygon it falls in. The polygon property used as the tag is a
-setting on the node (`name` by default); here it is `zip`, so the tag column
-the node adds, `neighborhood_name`, holds the ZIP code. What comes out is the
+with the polygon it falls in. Which polygon property becomes the tag is a
+setting on the node (`name` by default); here it is `zip`, so the one column the
+node adds, `joined`, holds the ZIP code. What comes out is the
 points again, as plain GeoJSON, which the map draws without declaring
 anything about geometry:
 
@@ -82,13 +82,13 @@ anything about geometry:
   },
   "encoding": {
     "color": {
-      "field": "neighborhood_name",
+      "field": "joined",
       "type": "nominal",
       "legend": null
     },
     "tooltip": [
       {
-        "field": "neighborhood_name",
+        "field": "joined",
         "title": "ZIP"
       },
       {
@@ -101,4 +101,4 @@ anything about geometry:
 ```
 
 Every point keeps its own columns, so `TOTAL_ROOF_SQFT` is still there for the
-tooltip, and `neighborhood_name` colours the dots by ZIP.
+tooltip, and `joined` colours the dots by ZIP.

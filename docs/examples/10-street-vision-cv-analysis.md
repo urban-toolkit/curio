@@ -130,8 +130,8 @@ return gdf
 
 The node emits the input points augmented with:
 
-- `neighborhood_name`: the matching polygon's tag value, or null for points outside every polygon.
-- `nbhd_dominant_class` / `nbhd_dominant_pct` / `nbhd_image_count`: per-polygon roll-ups projected back onto every member point so a Vega-Lite `lookup` can read them directly.
+- `joined`: the matching polygon's tag value, or null for points outside every polygon.
+- `joined_dominant_class` / `joined_dominant_pct` / `joined_count`: per-polygon roll-ups projected back onto every member point so a Vega-Lite `lookup` can read them directly.
 
 ## Step 6: Map view (`Vega-Lite`)
 
@@ -149,7 +149,7 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
       "mark": {"type": "geoshape", "stroke": "#888", "strokeWidth": 0.4},
       "encoding": {
         "color": {
-          "field": "nbhd_dominant_class",
+          "field": "joined_dominant_class",
           "type": "nominal",
           "scale": {
             "domain": ["road","sidewalk","building","vegetation","sky","car"],
@@ -158,9 +158,9 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
           "legend": {"title": "Dominant class"}
         },
         "tooltip": [
-          {"field": "neighborhood_name", "title": "neighborhood"},
-          {"field": "nbhd_dominant_class", "title": "dominant"},
-          {"field": "nbhd_dominant_pct",   "title": "avg %"}
+          {"field": "joined", "title": "neighborhood"},
+          {"field": "joined_dominant_class", "title": "dominant"},
+          {"field": "joined_dominant_pct",   "title": "avg %"}
         ]
       }
     }
@@ -178,15 +178,15 @@ A second `Vega-Lite` wired off the same Spatial Join output:
   "width": 400,
   "height": {"step": 16},
   "transform": [
-    {"filter": "datum.neighborhood_name != null"},
+    {"filter": "datum.joined != null"},
     {
       "aggregate": [{"op": "count", "as": "image_count"}],
-      "groupby": ["neighborhood_name", "dominant_class"]
+      "groupby": ["joined", "dominant_class"]
     }
   ],
   "mark": "bar",
   "encoding": {
-    "y": {"field": "neighborhood_name", "type": "nominal", "sort": "-x", "title": null},
+    "y": {"field": "joined", "type": "nominal", "sort": "-x", "title": null},
     "x": {"field": "image_count", "type": "quantitative", "title": "images"},
     "color": {
       "field": "dominant_class",

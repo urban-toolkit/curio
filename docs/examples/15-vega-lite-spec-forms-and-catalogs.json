@@ -127,7 +127,7 @@
         "type": "curio.builtin/vis-vega",
         "x": 1935,
         "y": 0,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Rooftop points tagged with their ZIP by the Spatial Join node.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"opacity\": 0.6\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"neighborhood_name\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"neighborhood_name\",\n        \"title\": \"ZIP\"\n      },\n      {\n        \"field\": \"TOTAL_ROOF_SQFT\",\n        \"title\": \"roof sqft\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Rooftop points tagged with their ZIP by the Spatial Join node.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"opacity\": 0.6\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"joined\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"joined\",\n        \"title\": \"ZIP\"\n      },\n      {\n        \"field\": \"TOTAL_ROOF_SQFT\",\n        \"title\": \"roof sqft\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
