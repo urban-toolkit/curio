@@ -108,9 +108,9 @@ return gdf
 
 ## Step 5: Tag each image with its neighborhood (`Spatial Join`)
 
-The Spatial Join node (built-in, in `curio.builtin@1`) renders as a small icon-only block, just like Merge Flow, with two distinct input handles on the left edge: **points** (top, blue dot) and **polygons** (bottom, green dot). Wire the `Simple View` output to the points handle and the polygons output (from Step 4) to the polygons handle.
+The Spatial Join node (built-in, in `curio.builtin@1`) has a small body with its two settings and two distinct input handles on the left edge: **points** (top, blue dot) and **polygons** (bottom, green dot). Wire the `Simple View` output to the points handle and the polygons output (from Step 4) to the polygons handle.
 
-The node hardcodes the polygon tag column to `properties.name`. The Chicago neighborhoods file uses `pri_neigh`, the NYC boroughs file uses `BoroName`, etc., so insert a `Data Transformation` node between Data Loading and Spatial Join to rename the relevant property to `name`:
+The node tags with the polygon column you pick in its body, `name` by default. The Chicago neighborhoods file calls it `pri_neigh` and the NYC boroughs file `BoroName`; this example keeps the default and renames the column upstream with a `Data Transformation` node, so the tag lands in a column called `name`:
 
 ```python
 # Spatial Join hardcodes the polygon tag column to `name`. Chicago's file uses
@@ -130,8 +130,9 @@ return gdf
 
 The node emits the input points augmented with:
 
-- `joined`: the matching polygon's tag value, or null for points outside every polygon.
-- `joined_dominant_class` / `joined_dominant_pct` / `joined_count`: per-polygon roll-ups projected back onto every member point so a Vega-Lite `lookup` can read them directly.
+- `name`: the matching polygon's `name`, or null for points outside every polygon. The tag column takes the polygon column's own name; this example keeps the node's default, `name`, which is why the transformation above renames `pri_neigh`.
+- `name_point_count`: how many images fell in the same neighborhood.
+- `name_dominant_class` / `name_dominant_pct`: per-neighborhood roll-ups of the images' dominant class, projected back onto every member point so a Vega-Lite spec can colour by them directly.
 
 ## Step 6: Map view (`Vega-Lite`)
 
@@ -149,7 +150,7 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
       "mark": {"type": "geoshape", "stroke": "#888", "strokeWidth": 0.4},
       "encoding": {
         "color": {
-          "field": "joined_dominant_class",
+          "field": "name_dominant_class",
           "type": "nominal",
           "scale": {
             "domain": ["road","sidewalk","building","vegetation","sky","car"],
@@ -158,9 +159,9 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
           "legend": {"title": "Dominant class"}
         },
         "tooltip": [
-          {"field": "joined", "title": "neighborhood"},
-          {"field": "joined_dominant_class", "title": "dominant"},
-          {"field": "joined_dominant_pct",   "title": "avg %"}
+          {"field": "name", "title": "neighborhood"},
+          {"field": "name_dominant_class", "title": "dominant"},
+          {"field": "name_dominant_pct",   "title": "avg %"}
         ]
       }
     }
@@ -178,15 +179,15 @@ A second `Vega-Lite` wired off the same Spatial Join output:
   "width": 400,
   "height": {"step": 16},
   "transform": [
-    {"filter": "datum.joined != null"},
+    {"filter": "datum.name != null"},
     {
       "aggregate": [{"op": "count", "as": "image_count"}],
-      "groupby": ["joined", "dominant_class"]
+      "groupby": ["name", "dominant_class"]
     }
   ],
   "mark": "bar",
   "encoding": {
-    "y": {"field": "joined", "type": "nominal", "sort": "-x", "title": null},
+    "y": {"field": "name", "type": "nominal", "sort": "-x", "title": null},
     "x": {"field": "image_count", "type": "quantitative", "title": "images"},
     "color": {
       "field": "dominant_class",
@@ -209,4 +210,4 @@ For a Lincoln Park run with the SegFormer-Cityscapes model and `vegetation` as t
 - **Jobs don't survive a backend restart.** Inference state is in-memory; restart loses any in-flight job. Re-run.
 - **Cost.** Street View Static API requests are billed past Google's free tier. The Fetcher node caps requests at 200; default 20.
 - **CPU inference is slow.** A single SegFormer pass per panorama takes a few seconds on CPU; a 20-image run lands around 1 to 2 minutes. With a GPU it's near-realtime.
-- **The neighborhood `name` property is per-dataset.** Chicago uses `pri_neigh`, NYC uses `BoroName`, a generic FeatureCollection uses `name`. Set this in the Spatial Join node's "Polygon name property" field; default is `name`.
+- **The neighborhood `name` column is per-dataset.** Chicago uses `pri_neigh`, NYC uses `BoroName`, a generic FeatureCollection uses `name`. Set this in the Spatial Join node's "Polygon name property" field; default is `name`.

@@ -18,9 +18,10 @@ flowchart LR
   L1 --> V18[Vega-Lite<br/>layer inheritance]
   L1 --> V19[Vega-Lite<br/>hconcat]
   L2[Data Loading<br/>green roofs] --> V20[Vega-Lite<br/>lon/lat channels]
-  L2 --> SJ[Spatial Join<br/>tag by zip]
+  L2 --> SJ[Spatial Join<br/>count by zip]
   L1 --> SJ
-  SJ --> V23[Vega-Lite<br/>joined points]
+  SJ --> V23[Vega-Lite<br/>choropleth]
+  SJ --> V25[Vega-Lite<br/>roofs per ZIP]
   L3[Data Loading<br/>GeoParquet] --> V24[Vega-Lite<br/>GeoParquet]
 ```
 
@@ -65,40 +66,81 @@ GeoParquet, read with `gpd.read_parquet`. The spec is no different from the
 geojson one.
 
 The join is a node, not code. `Spatial Join` takes the green-roof points on
-its top handle and the ZIP polygons on its bottom handle, and tags every point
-with the polygon it falls in. Which polygon property becomes the tag is a
-setting on the node (`name` by default); here it is `zip`, so the one column the
-node adds, `joined`, holds the ZIP code. What comes out is the
-points again, as plain GeoJSON, which the map draws without declaring
-anything about geometry:
+its top handle and the ZIP polygons on its bottom handle, and works out which
+polygon each point falls in. Its two settings are which polygon column is the
+tag (`name` by default; `zip` here) and what comes out: the points, each tagged
+with that column under its own name, or, as here, the polygons, each with a
+`point_count`. The polygons feed two views. A choropleth first:
 
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Rooftop points tagged with their ZIP by the Spatial Join node.",
+  "description": "Green roofs per ZIP, as a choropleth of the Spatial Join's polygon output.",
   "mark": {
     "type": "geoshape",
-    "opacity": 0.6
+    "stroke": "white",
+    "strokeWidth": 0.5
   },
   "encoding": {
     "color": {
-      "field": "joined",
-      "type": "nominal",
-      "legend": null
+      "field": "point_count",
+      "type": "quantitative",
+      "title": "green roofs",
+      "scale": {
+        "scheme": "greens"
+      }
     },
     "tooltip": [
       {
-        "field": "joined",
+        "field": "zip",
         "title": "ZIP"
       },
       {
-        "field": "TOTAL_ROOF_SQFT",
-        "title": "roof sqft"
+        "field": "point_count",
+        "title": "green roofs"
       }
     ]
   }
 }
 ```
 
-Every point keeps its own columns, so `TOTAL_ROOF_SQFT` is still there for the
-tooltip, and `joined` colours the dots by ZIP.
+Then the same rows as bars, the ZIPs with the most green roofs on top:
+
+```json
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "description": "Green roofs per ZIP, as bars over the same polygon output.",
+  "transform": [
+    {
+      "filter": "datum.point_count > 0"
+    }
+  ],
+  "mark": "bar",
+  "encoding": {
+    "y": {
+      "field": "zip",
+      "type": "nominal",
+      "sort": "-x",
+      "title": "ZIP"
+    },
+    "x": {
+      "field": "point_count",
+      "type": "quantitative",
+      "title": "green roofs"
+    },
+    "tooltip": [
+      {
+        "field": "zip",
+        "title": "ZIP"
+      },
+      {
+        "field": "point_count",
+        "title": "green roofs"
+      }
+    ]
+  }
+}
+```
+
+Nothing in either spec says where the geometry is or which column carries the
+count: the join's output is a plain GeoDataFrame like any other input.
