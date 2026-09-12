@@ -31,6 +31,11 @@ code with the marker `[!! path$FILE !!]`.
 
 Next, drag a `Vega-Lite` node onto the canvas and connect its input handle to the output of the `Data Loading` node. Switch to the `Grammar` view and enter the following Vega-Lite specification:
 
+> If the upstream node has already run, the editor will have filled itself in with a
+> starter spec chosen from the data's column types. Overwrite it with the spec below;
+> Curio only ever fills an *empty* editor, and never touches what you have typed. See
+> [the starter spec](USAGE.md#the-starter-spec).
+
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",

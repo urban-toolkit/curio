@@ -64,6 +64,10 @@ Two things are filled in for you: the `shape` encoding that points the mark at
 your geometry column, and a `projection` fitted to your data. Write either
 yourself and yours is kept.
 
+If the loader had already run when you dropped this node, even that much would
+have been written for you: a frame with geometry and a number is the first row
+of the [starter-spec ladder](../USAGE.md#the-starter-spec).
+
 Attribute columns keep their own names, so `"field": "zip"` works here exactly as
 it would in a bar chart.
 
