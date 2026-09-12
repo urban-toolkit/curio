@@ -30,6 +30,7 @@ jest.mock('../../../providers/ToastProvider', () => ({
 
 jest.mock('../../../services/api', () => ({
   fetchData: jest.fn().mockResolvedValue({ data: {}, dataType: 'dataframe' }),
+  fetchPreviewData: jest.fn().mockResolvedValue({ data: {}, dataType: 'dataframe' }),
 }));
 
 jest.mock('../../../components/editing/OutputContent', () => {
@@ -255,6 +256,69 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const result = await callBehavior(useVegaBehavior);
       assertValidBehaviorResult(result.current);
       expect(typeof result.current.applyGrammar).toBe('function');
+    });
+
+    // ── default spec on connect ──────────────────────────────────────────
+    //
+    // The safety property throughout: a default is only ever offered into an
+    // empty buffer. A wrong default the user has to notice and undo is worse
+    // than no default at all.
+
+    const geoInput = {
+      dataType: 'geodataframe',
+      data: {
+        type: 'FeatureCollection',
+        geometry_name: 'geometry',
+        schema: { zip: 'str', pop: 'int64', geometry: 'geometry' },
+        features: [{ properties: { zip: '60601', pop: 1 }, geometry: null }],
+      },
+    } as any;
+
+    const frameInput = {
+      dataType: 'dataframe',
+      data: { zone: ['N', 'S'], pop: [1, 2] },
+      schema: { zone: 'str', pop: 'int64' },
+    } as any;
+
+    test('an empty buffer plus an arriving input populates', async () => {
+      const result = await callBehavior(useVegaBehavior, { input: geoInput });
+
+      const spec = JSON.parse(result.current.defaultValueOverride as string);
+      expect(spec.mark).toBe('geoshape');
+      expect(spec.encoding.shape).toEqual({ field: 'geometry', type: 'geojson' });
+    });
+
+    test('a plain DataFrame gets a chart from the ladder, not a map', async () => {
+      const result = await callBehavior(useVegaBehavior, { input: frameInput });
+
+      const spec = JSON.parse(result.current.defaultValueOverride as string);
+      expect(spec.mark).toBe('bar');
+      expect(spec.encoding.x.field).toBe('zone');
+    });
+
+    test('a non-empty buffer is never touched', async () => {
+      // The whole safety property.
+      const result = await callBehavior(
+        useVegaBehavior,
+        { input: geoInput, defaultCode: '{"mark": "bar"}' },
+      );
+
+      expect(result.current.defaultValueOverride).toBeUndefined();
+    });
+
+    test('no input leaves the buffer empty', async () => {
+      // An edge alone carries no schema, so there is nothing to fill from.
+      const result = await callBehavior(useVegaBehavior, { input: '' as any });
+
+      expect(result.current.defaultValueOverride).toBeUndefined();
+    });
+
+    test('an input with nothing chartable in it fills nothing', async () => {
+      const result = await callBehavior(useVegaBehavior, {
+        input: { dataType: 'dataframe', data: {}, schema: {} } as any,
+      });
+
+      expect(result.current.defaultValueOverride).toBeUndefined();
     });
   });
 
