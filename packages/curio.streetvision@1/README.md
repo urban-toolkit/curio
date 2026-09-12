@@ -1,17 +1,17 @@
 # Street Vision (curio.streetvision@1)
 
-Three nodes for street-level computer vision pipelines in Curio:
+Two nodes for street-level computer vision pipelines in Curio:
 
 - **Street View Fetcher.** Geocode a place name, sample Google Street View imagery in its bounding box, emit a GEODATAFRAME of image points (each feature carrying `image_url`, `pano_id`, `latitude`, `longitude`).
-- **HF CV Inference.** Run HuggingFace segmentation or detection models on the image points. Pluggable input: works with the Street View Fetcher *or* any node that emits a GEODATAFRAME with an `image_url` property. Emits per-image inference results as JSON.
-- **CV Gallery.** Inspect results in a gallery + per-image overlay view + aggregate stats, then re-emit as a GEODATAFRAME for downstream nodes (Spatial Join, Vega-Lite, AUTK Map).
+- **HF CV Inference.** Run HuggingFace segmentation or detection models on the image points. Pluggable input: works with the Street View Fetcher *or* any node that emits a GEODATAFRAME with an `image_url` property. Emits a GEODATAFRAME of the same points, with each detected class flattened into its own column plus `dominant_class`, `dominant_pct` and an `overlay_url`, ready for Spatial Join, Vega-Lite or AUTK Map.
 
 A typical pipeline:
 
 ```
-Street View Fetcher → HF CV Inference → CV Gallery → Spatial Join → Vega-Lite
-                                                       ↑
-                                       Data Loading (neighborhood polygons)
+Street View Fetcher → HF CV Inference → Spatial Join → Vega-Lite
+                            │                ↑
+                            │   Data Loading (neighborhood polygons)
+                            └─→ Simple View (the images, with their overlays)
 ```
 
 See [`docs/examples/10-street-vision-cv-analysis.md`](../../docs/examples/10-street-vision-cv-analysis.md) for a worked walkthrough.
@@ -49,4 +49,4 @@ A GPU is *not* required, but with one you'll see roughly 10× faster inference.
 
 ## Origin
 
-The original CV pipeline + node design was contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) in [PR #120](https://github.com/urban-toolkit/curio/pull/120) as a CS 524 university project. The merged version decomposes the two original monolithic nodes (`STREET_VISION`, `CV_ANALYSIS`) into the three reusable nodes here plus a generic `Spatial Join` node in `curio.builtin@1`, and ports the FastAPI service to a Flask blueprint inside Curio so users don't need a separate companion service.
+The original CV pipeline + node design was contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) in [PR #120](https://github.com/urban-toolkit/curio/pull/120) as a CS 524 university project. The merged version decomposes the two original monolithic nodes (`STREET_VISION`, `CV_ANALYSIS`) into the two reusable nodes here plus a generic `Spatial Join` node in `curio.builtin@1`, and ports the FastAPI service to a Flask blueprint inside Curio so users don't need a separate companion service.

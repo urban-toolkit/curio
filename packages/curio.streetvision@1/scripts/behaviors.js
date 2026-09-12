@@ -47,1004 +47,6 @@ function authHeaders() {
 
 /***/ },
 
-/***/ "../../../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx"
-/*!****************************************************************************!*\
-  !*** ../../../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx ***!
-  \****************************************************************************/
-(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
-
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   useCvGalleryBehavior: () => (/* binding */ useCvGalleryBehavior)
-/* harmony export */ });
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _apiAuth__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./apiAuth */ "../../../packages/curio.streetvision@1/sources/apiAuth.ts");
-function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
-var _curio;
-function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
-function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
-function _iterableToArray(r) { if ("undefined" != typeof Symbol && null != r[Symbol.iterator] || null != r["@@iterator"]) return Array.from(r); }
-function _arrayWithoutHoles(r) { if (Array.isArray(r)) return _arrayLikeToArray(r); }
-function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
-function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
-function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
-function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
-function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
-function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
-function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
-function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
-function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
-function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t["return"] && (u = t["return"](), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
-function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
-
-
-
-/**
- * CV Gallery behavior.
- *
- * Receives the inference results JSON emitted by HF CV Inference upstream
- * (shape: `{type:'street_vision_results', results: ResultItem[], ...}`).
- * Renders a gallery + per-image inspector + aggregate stats panel, then
- * pushes the data downstream as a GEODATAFRAME-shaped FeatureCollection so
- * downstream nodes (Spatial Join, Vega-Lite, AUTK Map, …) consume it cleanly.
- *
- * Adapted from
- *   utk_curio/frontend/urban-workflows/src/adapters/node/cvAnalysisBehavior.tsx
- * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120). The
- * neighborhood-enrichment + Vega-Lite-template parts of the original have
- * been factored out — neighborhood tagging is now the separate generic
- * Spatial Join node (curio.builtin@1/spatial-join), and Vega-Lite specs
- * live in the user-facing docs example.
- */
-
-// See streetViewFetcherBehavior for the rationale on runtime URL resolution.
-var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/streetvision");
-// Cityscapes-flavored palette; kept in sync with the inference service's
-// overlay PNG palette so colors in the gallery match colors in the overlays.
-var CLASS_COLORS = {
-  road: '#4A90D9',
-  sidewalk: '#8B5CF6',
-  building: '#2ECC71',
-  wall: '#95A5A6',
-  fence: '#BDC3C7',
-  pole: '#E74C3C',
-  'traffic light': '#F39C12',
-  'traffic sign': '#E67E22',
-  vegetation: '#F5A623',
-  terrain: '#1ABC9C',
-  sky: '#3498DB',
-  person: '#9B59B6',
-  rider: '#C0392B',
-  car: '#2C3E50',
-  truck: '#7F8C8D',
-  bus: '#D35400',
-  train: '#16A085',
-  motorcycle: '#8E44AD',
-  bicycle: '#27AE60'
-};
-var DEFAULT_COLOR = '#94a3b8';
-var S = {
-  root: {
-    padding: '12px 14px',
-    fontFamily: '"Roboto","Helvetica","Arial",sans-serif',
-    fontSize: 13,
-    color: '#333',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 2
-  },
-  logo: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    background: 'linear-gradient(135deg,#8b5cf6,#a78bfa)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 700,
-    flexShrink: 0
-  },
-  title: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: '#1a1a2e',
-    lineHeight: 1.2
-  },
-  sub: {
-    fontSize: 10,
-    color: '#888',
-    marginTop: 1
-  },
-  link: {
-    background: 'none',
-    border: 'none',
-    color: '#8b5cf6',
-    fontSize: 11,
-    fontWeight: 600,
-    cursor: 'pointer',
-    marginLeft: 'auto',
-    padding: '4px 8px'
-  },
-  btn: {
-    padding: '8px 12px',
-    border: 'none',
-    borderRadius: 8,
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    width: '100%'
-  },
-  btnGreen: {
-    background: '#f0fdf4',
-    color: '#166534',
-    border: '1px solid #bbf7d0'
-  },
-  btnDisabled: {
-    background: '#f3f4f6',
-    color: '#9ca3af',
-    border: '1px solid #e5e7eb',
-    cursor: 'not-allowed'
-  },
-  card: {
-    background: '#f8fafc',
-    border: '1px solid #e2e8f0',
-    borderRadius: 8,
-    padding: '10px 12px',
-    fontSize: 12
-  },
-  badge: {
-    display: 'inline-block',
-    padding: '2px 6px',
-    borderRadius: 4,
-    fontSize: 10,
-    fontWeight: 600
-  },
-  sectionLabel: {
-    fontSize: 10,
-    fontWeight: 600,
-    textTransform: 'uppercase',
-    color: '#94a3b8',
-    letterSpacing: 1,
-    marginBottom: 4
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: 8,
-    marginTop: 6
-  },
-  gridCard: {
-    border: '1px solid #e2e8f0',
-    borderRadius: 8,
-    overflow: 'hidden',
-    cursor: 'pointer',
-    background: '#fff'
-  },
-  gridImg: {
-    width: '100%',
-    height: 90,
-    objectFit: 'cover',
-    display: 'block',
-    background: '#f1f5f9'
-  },
-  gridInfo: {
-    padding: '6px 8px',
-    fontSize: 10,
-    color: '#64748b'
-  },
-  tabBar: {
-    display: 'flex',
-    gap: 2,
-    marginBottom: 10
-  },
-  tab: {
-    padding: '5px 10px',
-    fontSize: 11,
-    fontWeight: 500,
-    cursor: 'pointer',
-    border: 'none',
-    borderBottom: '2px solid transparent',
-    background: 'none',
-    color: '#64748b'
-  },
-  tabActive: {
-    borderBottomColor: '#8b5cf6',
-    color: '#8b5cf6',
-    fontWeight: 600
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: 6,
-    marginTop: 6
-  },
-  statCard: {
-    background: '#f8fafc',
-    border: '1px solid #e2e8f0',
-    borderRadius: 8,
-    padding: '8px 10px',
-    textAlign: 'center'
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: '#1a1a2e'
-  },
-  statLabel: {
-    fontSize: 9,
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-    marginTop: 2
-  }
-};
-
-// Convert results → GEODATAFRAME-shaped FeatureCollection. The Table view +
-// Vega-Lite both read `feature.properties.*` and `feature.geometry`.
-function buildFeatureCollection(results) {
-  var round = function round(n, places) {
-    return n == null ? null : Number(n.toFixed(places));
-  };
-  // Union of all detected class keys so the table doesn't show holes when
-  // one image didn't surface a class that another did.
-  var allClassKeys = new Set();
-  results.forEach(function (r) {
-    if (r.class_ratios) Object.keys(r.class_ratios).forEach(function (k) {
-      return allClassKeys.add(k);
-    });
-    if (r.object_counts) Object.keys(r.object_counts).forEach(function (k) {
-      return allClassKeys.add(k);
-    });
-  });
-  var features = results.map(function (r) {
-    var lat = round(r.latitude, 5);
-    var lon = round(r.longitude, 5);
-    var props = {
-      image_id: r.image_id,
-      image_url: r.image_url,
-      latitude: lat,
-      longitude: lon
-    };
-    allClassKeys.forEach(function (k) {
-      props[k] = 0;
-    });
-    if (r.class_ratios) {
-      Object.entries(r.class_ratios).forEach(function (_ref) {
-        var _ref2 = _slicedToArray(_ref, 2),
-          k = _ref2[0],
-          v = _ref2[1];
-        props[k] = round(v * 100, 1);
-      });
-      props.analysis_type = 'segmentation';
-    }
-    if (r.object_counts) {
-      Object.entries(r.object_counts).forEach(function (_ref3) {
-        var _ref4 = _slicedToArray(_ref3, 2),
-          k = _ref4[0],
-          v = _ref4[1];
-        props[k] = v;
-      });
-      props.analysis_type = 'detection';
-    }
-    var dominantClass = null;
-    var dominantPct = -Infinity;
-    allClassKeys.forEach(function (k) {
-      var v = props[k];
-      if (typeof v === 'number' && v > dominantPct) {
-        dominantPct = v;
-        dominantClass = k;
-      }
-    });
-    props.dominant_class = dominantClass;
-    props.dominant_pct = dominantPct === -Infinity ? 0 : dominantPct;
-    return {
-      type: 'Feature',
-      geometry: lat != null && lon != null ? {
-        type: 'Point',
-        coordinates: [lon, lat]
-      } : null,
-      properties: props
-    };
-  });
-  return {
-    type: 'FeatureCollection',
-    features: features,
-    metadata: {
-      name: 'cv_inference_results'
-    }
-  };
-}
-var useCvGalleryBehavior = function useCvGalleryBehavior(data, nodeState) {
-  var _inspectedItem$longit;
-  var _useState = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('waiting'),
-    _useState2 = _slicedToArray(_useState, 2),
-    view = _useState2[0],
-    setView = _useState2[1];
-  var _useState3 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
-    _useState4 = _slicedToArray(_useState3, 2),
-    payload = _useState4[0],
-    setPayload = _useState4[1];
-  var _useState5 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]),
-    _useState6 = _slicedToArray(_useState5, 2),
-    results = _useState6[0],
-    setResults = _useState6[1];
-  var _useState7 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
-    _useState8 = _slicedToArray(_useState7, 2),
-    inspectIdx = _useState8[0],
-    setInspectIdx = _useState8[1];
-  var _useState9 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('source'),
-    _useState0 = _slicedToArray(_useState9, 2),
-    inspectTab = _useState0[0],
-    setInspectTab = _useState0[1];
-  var _useState1 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
-    _useState10 = _slicedToArray(_useState1, 2),
-    pushed = _useState10[0],
-    setPushed = _useState10[1];
-  var _useState11 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('gallery'),
-    _useState12 = _slicedToArray(_useState11, 2),
-    activeGalleryTab = _useState12[0],
-    setActiveGalleryTab = _useState12[1];
-  var _useState13 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
-    _useState14 = _slicedToArray(_useState13, 2),
-    pushError = _useState14[0],
-    setPushError = _useState14[1];
-
-  // Receive results from upstream.
-  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
-    if (data.input == null || data.input === '') return;
-    try {
-      var raw = typeof data.input === 'string' ? JSON.parse(data.input) : data.input;
-      // Accept either the explicit `street_vision_results` envelope OR a bare
-      // ResultItem[] (forward-compat for users wiring custom inference nodes).
-      var nextResults = [];
-      var nextPayload = null;
-      if (Array.isArray(raw)) {
-        nextResults = raw;
-        nextPayload = {
-          results: nextResults,
-          total_images: nextResults.length
-        };
-      } else if (raw && raw.type === 'street_vision_results' && Array.isArray(raw.results)) {
-        nextResults = raw.results;
-        nextPayload = raw;
-      } else if (raw && Array.isArray(raw.results)) {
-        nextResults = raw.results;
-        nextPayload = raw;
-      }
-      if (nextResults.length > 0) {
-        setPayload(nextPayload);
-        setResults(nextResults);
-        setView('gallery');
-        setPushed(false);
-      }
-    } catch (_unused) {
-      // Not parseable — ignore. The waiting view stays up.
-    }
-  }, [data.input]);
-  var imgSrc = function imgSrc(item) {
-    var raw = item.image_url || '';
-    if (raw.startsWith('/api/')) return "".concat(API_BASE.replace(/\/api\/streetvision$/, '')).concat(raw);
-    return raw;
-  };
-  var overlayUrl = function overlayUrl(item) {
-    return !item.demo_mode && item.class_ratios ? "".concat(API_BASE, "/inference/overlay/").concat(encodeURIComponent(item.image_id)) : null;
-  };
-
-  // Overlays are cached per user, and the route resolves *which* user from the
-  // Authorization header. A bare `<img src>` cannot send one, so a signed-in
-  // user's request resolved to the shared guest key and 404'd on every tile.
-  // Fetch with the header instead and render the bytes through an object URL.
-  var _useState15 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
-    _useState16 = _slicedToArray(_useState15, 2),
-    overlayObjectUrl = _useState16[0],
-    setOverlayObjectUrl = _useState16[1];
-  var _useState17 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
-    _useState18 = _slicedToArray(_useState17, 2),
-    overlayFailed = _useState18[0],
-    setOverlayFailed = _useState18[1];
-  var aggStats = results.length > 0 ? function () {
-    var allClasses = new Map();
-    results.forEach(function (r) {
-      if (r.class_ratios) {
-        Object.entries(r.class_ratios).forEach(function (_ref5) {
-          var _ref6 = _slicedToArray(_ref5, 2),
-            k = _ref6[0],
-            v = _ref6[1];
-          if (!allClasses.has(k)) allClasses.set(k, []);
-          allClasses.get(k).push(v);
-        });
-      }
-      if (r.object_counts) {
-        Object.entries(r.object_counts).forEach(function (_ref7) {
-          var _ref8 = _slicedToArray(_ref7, 2),
-            k = _ref8[0],
-            v = _ref8[1];
-          if (!allClasses.has(k)) allClasses.set(k, []);
-          allClasses.get(k).push(v);
-        });
-      }
-    });
-    var averages = {};
-    allClasses.forEach(function (vals, key) {
-      averages[key] = vals.reduce(function (a, b) {
-        return a + b;
-      }, 0) / vals.length;
-    });
-    var withGeo = results.filter(function (r) {
-      return r.latitude != null;
-    }).length;
-    return {
-      averages: averages,
-      classCount: allClasses.size,
-      geoCount: withGeo
-    };
-  }() : null;
-  var pushDownstream = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(function () {
-    if (results.length === 0) return;
-    setPushError(null);
-    try {
-      var fc = buildFeatureCollection(results);
-      data.outputCallback(data.nodeId, {
-        data: fc,
-        dataType: 'geodataframe'
-      });
-      nodeState.setOutput({
-        code: 'success',
-        content: ''
-      });
-      setPushed(true);
-    } catch (e) {
-      setPushError("Push failed: ".concat(e.message));
-    }
-  }, [results, data, nodeState]);
-  var inspectedItem = inspectIdx !== null ? results[inspectIdx] : null;
-  var isSegmentation = (payload === null || payload === void 0 ? void 0 : payload.model_type) === 'segmentation';
-  var inspectedOverlayUrl = inspectedItem ? overlayUrl(inspectedItem) : null;
-  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
-    if (!inspectedOverlayUrl) {
-      setOverlayObjectUrl(null);
-      setOverlayFailed(false);
-      return;
-    }
-    var objectUrl = null;
-    var cancelled = false;
-    setOverlayObjectUrl(null);
-    setOverlayFailed(false);
-    fetch(inspectedOverlayUrl, {
-      headers: (0,_apiAuth__WEBPACK_IMPORTED_MODULE_1__.authHeaders)()
-    }).then(function (r) {
-      return r.ok ? r.blob() : Promise.reject(new Error("HTTP ".concat(r.status)));
-    }).then(function (blob) {
-      if (cancelled) return;
-      objectUrl = URL.createObjectURL(blob);
-      setOverlayObjectUrl(objectUrl);
-    })["catch"](function () {
-      if (!cancelled) setOverlayFailed(true);
-    });
-    // Revoke on unmount and whenever the inspected image changes, or each
-    // visit to the inspector leaks a blob for the lifetime of the document.
-    return function () {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [inspectedOverlayUrl]);
-  var contentComponent = /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.root
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.header
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.logo
-  }, "CV"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.title
-  }, "CV Gallery"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.sub
-  }, "Inference results inspector")), view === 'inspect' && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-    style: S.link,
-    onClick: function onClick() {
-      setInspectIdx(null);
-      setView('gallery');
-    }
-  }, "\u2190 Gallery")), view === 'waiting' && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: _objectSpread(_objectSpread({}, S.card), {}, {
-      textAlign: 'center',
-      padding: '24px 16px'
-    })
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      fontSize: 32,
-      marginBottom: 8,
-      opacity: 0.3
-    }
-  }, "\uD83D\uDD0D"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      fontWeight: 600,
-      color: '#334155',
-      marginBottom: 4
-    }
-  }, "Waiting for Data"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      fontSize: 11,
-      color: '#94a3b8',
-      lineHeight: 1.5
-    }
-  }, "Connect an ", /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("strong", null, "HF CV Inference"), " node upstream and run it. Results will appear here automatically.")), view === 'gallery' && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 6,
-      fontSize: 12
-    }
-  }, (payload === null || payload === void 0 ? void 0 : payload.model_type) && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-    style: _objectSpread(_objectSpread({}, S.badge), {}, {
-      background: '#f3e8ff',
-      color: '#7c3aed'
-    })
-  }, payload.model_type), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-    style: {
-      color: '#334155',
-      fontWeight: 600
-    }
-  }, results.length, " result", results.length !== 1 ? 's' : '')), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.tabBar
-  }, [['gallery', 'Gallery'], ['stats', 'Aggregate Stats']].map(function (_ref9) {
-    var _ref0 = _slicedToArray(_ref9, 2),
-      k = _ref0[0],
-      label = _ref0[1];
-    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-      key: k,
-      style: _objectSpread(_objectSpread({}, S.tab), activeGalleryTab === k ? S.tabActive : {}),
-      onClick: function onClick() {
-        return setActiveGalleryTab(k);
-      }
-    }, label);
-  })), activeGalleryTab === 'gallery' && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: _objectSpread(_objectSpread({}, S.grid), {}, {
-      maxHeight: 360,
-      overflowY: 'auto'
-    })
-  }, results.map(function (item, i) {
-    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      key: item.image_id || i,
-      style: S.gridCard,
-      onClick: function onClick() {
-        setInspectIdx(i);
-        setInspectTab('source');
-        setView('inspect');
-      }
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
-      src: imgSrc(item),
-      alt: item.image_id,
-      style: S.gridImg,
-      onError: function onError(e) {
-        e.target.style.background = '#e2e8f0';
-      }
-    }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      style: S.gridInfo
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      title: item.image_id,
-      style: {
-        fontWeight: 600,
-        color: '#334155',
-        marginBottom: 2,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap'
-      }
-    }, item.image_id && item.image_id.length > 6 ? item.image_id.slice(0, 6) + '…' : item.image_id), item.class_ratios && Object.entries(item.class_ratios).slice(0, 3).map(function (_ref1) {
-      var _ref10 = _slicedToArray(_ref1, 2),
-        k = _ref10[0],
-        v = _ref10[1];
-      return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-        key: k,
-        style: {
-          marginRight: 6
-        }
-      }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-        style: {
-          display: 'inline-block',
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: CLASS_COLORS[k] || DEFAULT_COLOR,
-          marginRight: 2,
-          verticalAlign: 'middle'
-        }
-      }), k, ": ", (v * 100).toFixed(0), "%");
-    }), item.object_counts && Object.entries(item.object_counts).slice(0, 3).map(function (_ref11) {
-      var _ref12 = _slicedToArray(_ref11, 2),
-        k = _ref12[0],
-        v = _ref12[1];
-      return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-        key: k,
-        style: {
-          marginRight: 6
-        }
-      }, k, ": ", v);
-    })));
-  })), activeGalleryTab === 'stats' && aggStats && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10
-    }
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statsGrid
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statCard
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statValue
-  }, results.length), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statLabel
-  }, "Images")), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statCard
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statValue
-  }, aggStats.classCount), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statLabel
-  }, "Classes")), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statCard
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statValue
-  }, aggStats.geoCount), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statLabel
-  }, "Geo-located")), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statCard
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statValue
-  }, (payload === null || payload === void 0 ? void 0 : payload.model_type) === 'segmentation' ? 'Seg' : 'Det'), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.statLabel
-  }, "Analysis"))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.sectionLabel
-  }, isSegmentation ? 'Avg. Class Distribution' : 'Avg. Object Counts'), Object.entries(aggStats.averages).sort(function (_ref13, _ref14) {
-    var _ref15 = _slicedToArray(_ref13, 2),
-      a = _ref15[1];
-    var _ref16 = _slicedToArray(_ref14, 2),
-      b = _ref16[1];
-    return b - a;
-  }).map(function (_ref17) {
-    var _ref18 = _slicedToArray(_ref17, 2),
-      cls = _ref18[0],
-      avg = _ref18[1];
-    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      key: cls,
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        marginBottom: 4
-      }
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-      style: {
-        display: 'inline-block',
-        width: 8,
-        height: 8,
-        borderRadius: 2,
-        background: CLASS_COLORS[cls] || DEFAULT_COLOR,
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-      style: {
-        fontSize: 11,
-        color: '#64748b',
-        width: 70,
-        textAlign: 'right'
-      }
-    }, cls), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      style: {
-        flex: 1,
-        height: 8,
-        background: '#e2e8f0',
-        borderRadius: 4,
-        overflow: 'hidden'
-      }
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      style: {
-        height: '100%',
-        width: isSegmentation ? "".concat(avg * 100, "%") : "".concat(Math.min(avg / Math.max.apply(Math, _toConsumableArray(Object.values(aggStats.averages))) * 100, 100), "%"),
-        background: CLASS_COLORS[cls] || DEFAULT_COLOR,
-        borderRadius: 4,
-        transition: 'width 0.3s'
-      }
-    })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-      style: {
-        fontSize: 10,
-        color: '#334155',
-        width: 40,
-        textAlign: 'right',
-        fontWeight: 600
-      }
-    }, isSegmentation ? "".concat((avg * 100).toFixed(1), "%") : avg.toFixed(1)));
-  }))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-    style: _objectSpread(_objectSpread({}, S.btn), results.length > 0 ? S.btnGreen : S.btnDisabled),
-    onClick: pushDownstream,
-    disabled: results.length === 0
-  }, pushed ? '✓ Data Pushed — Re-push' : '▶ Push to Downstream'), pushed && !pushError && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      fontSize: 10,
-      color: '#22c55e',
-      textAlign: 'center'
-    }
-  }, results.length, " features pushed as GEODATAFRAME"), pushError && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      fontSize: 10,
-      color: '#92400e',
-      textAlign: 'center',
-      padding: '6px 8px',
-      background: '#fef9c3',
-      border: '1px solid #fde68a',
-      borderRadius: 6
-    }
-  }, pushError)), view === 'inspect' && inspectedItem && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      position: 'relative'
-    }
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: S.tabBar
-  }, [['source', 'Source'], ['overlay', 'CV Overlay'], ['side', 'Side by Side']].map(function (_ref19) {
-    var _ref20 = _slicedToArray(_ref19, 2),
-      k = _ref20[0],
-      label = _ref20[1];
-    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-      key: k,
-      style: _objectSpread(_objectSpread({}, S.tab), inspectTab === k ? S.tabActive : {}),
-      onClick: function onClick() {
-        return setInspectTab(k);
-      }
-    }, label);
-  })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      display: inspectTab === 'side' ? 'grid' : 'block',
-      gridTemplateColumns: '1fr 1fr',
-      gap: 4
-    }
-  }, (inspectTab === 'source' || inspectTab === 'side') && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
-    src: imgSrc(inspectedItem),
-    alt: "source",
-    style: {
-      width: '100%',
-      borderRadius: 6,
-      background: '#f1f5f9'
-    },
-    onError: function onError(e) {
-      e.target.style.background = '#e2e8f0';
-    }
-  }), (inspectTab === 'overlay' || inspectTab === 'side') && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      position: 'relative'
-    }
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
-    src: imgSrc(inspectedItem),
-    alt: "base",
-    style: {
-      width: '100%',
-      borderRadius: 6,
-      background: '#f1f5f9'
-    },
-    onError: function onError(e) {
-      e.target.style.background = '#e2e8f0';
-    }
-  }), overlayObjectUrl && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
-    src: overlayObjectUrl,
-    alt: "overlay",
-    style: {
-      position: 'absolute',
-      inset: 0,
-      width: '100%',
-      height: '100%',
-      objectFit: 'contain',
-      mixBlendMode: 'multiply',
-      opacity: 0.6
-    }
-  }), !overlayObjectUrl && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      position: 'absolute',
-      inset: 0,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'rgba(0,0,0,0.25)',
-      borderRadius: 6
-    }
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-    style: {
-      color: '#fff',
-      fontSize: 11,
-      background: 'rgba(0,0,0,0.5)',
-      padding: '4px 10px',
-      borderRadius: 6
-    }
-  }, inspectedItem.demo_mode ? 'Demo, no real overlay' : !inspectedOverlayUrl || overlayFailed ? 'Overlay unavailable' : 'Loading overlay...')))), inspectedItem.class_ratios && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      marginTop: 10
-    }
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      fontSize: 11,
-      fontWeight: 600,
-      color: '#334155',
-      marginBottom: 4
-    }
-  }, "Class Breakdown"), Object.entries(inspectedItem.class_ratios).sort(function (_ref21, _ref22) {
-    var _ref23 = _slicedToArray(_ref21, 2),
-      a = _ref23[1];
-    var _ref24 = _slicedToArray(_ref22, 2),
-      b = _ref24[1];
-    return b - a;
-  }).map(function (_ref25) {
-    var _ref26 = _slicedToArray(_ref25, 2),
-      cls = _ref26[0],
-      ratio = _ref26[1];
-    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      key: cls,
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        marginBottom: 3
-      }
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-      style: {
-        display: 'inline-block',
-        width: 8,
-        height: 8,
-        borderRadius: 2,
-        background: CLASS_COLORS[cls] || DEFAULT_COLOR,
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-      style: {
-        fontSize: 10,
-        color: '#64748b',
-        width: 65,
-        textAlign: 'right'
-      }
-    }, cls), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      style: {
-        flex: 1,
-        height: 6,
-        background: '#e2e8f0',
-        borderRadius: 3,
-        overflow: 'hidden'
-      }
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      style: {
-        height: '100%',
-        width: "".concat(ratio * 100, "%"),
-        background: CLASS_COLORS[cls] || DEFAULT_COLOR,
-        borderRadius: 3
-      }
-    })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-      style: {
-        fontSize: 10,
-        color: '#334155',
-        width: 32,
-        textAlign: 'right'
-      }
-    }, (ratio * 100).toFixed(0), "%"));
-  })), inspectedItem.object_counts && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      marginTop: 10
-    }
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      fontSize: 11,
-      fontWeight: 600,
-      color: '#334155',
-      marginBottom: 4
-    }
-  }, "Object Counts"), Object.entries(inspectedItem.object_counts).sort(function (_ref27, _ref28) {
-    var _ref29 = _slicedToArray(_ref27, 2),
-      a = _ref29[1];
-    var _ref30 = _slicedToArray(_ref28, 2),
-      b = _ref30[1];
-    return b - a;
-  }).map(function (_ref31) {
-    var _ref32 = _slicedToArray(_ref31, 2),
-      cls = _ref32[0],
-      count = _ref32[1];
-    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      key: cls,
-      style: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        fontSize: 11,
-        color: '#64748b',
-        marginBottom: 2
-      }
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, cls), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-      style: {
-        fontWeight: 600,
-        color: '#334155'
-      }
-    }, count));
-  })), inspectedItem.detections && inspectedItem.detections.length > 0 && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      marginTop: 10
-    }
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      fontSize: 11,
-      fontWeight: 600,
-      color: '#334155',
-      marginBottom: 4
-    }
-  }, "Detections"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      maxHeight: 100,
-      overflowY: 'auto'
-    }
-  }, inspectedItem.detections.map(function (det, i) {
-    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      key: i,
-      style: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        fontSize: 10,
-        color: '#64748b',
-        marginBottom: 2
-      }
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, det.label), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-      style: _objectSpread(_objectSpread({}, S.badge), {}, {
-        background: det.confidence > 0.7 ? '#dcfce7' : '#fef9c3',
-        color: det.confidence > 0.7 ? '#166534' : '#92400e'
-      })
-    }, (det.confidence * 100).toFixed(0), "%"));
-  }))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      marginTop: 8,
-      fontSize: 10,
-      color: '#94a3b8'
-    }
-  }, inspectedItem.image_id, inspectedItem.latitude != null && " \xB7 ".concat(inspectedItem.latitude.toFixed(4), ", ").concat((_inspectedItem$longit = inspectedItem.longitude) === null || _inspectedItem$longit === void 0 ? void 0 : _inspectedItem$longit.toFixed(4))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      marginTop: 8
-    }
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-    style: _objectSpread(_objectSpread({}, S.link), {}, {
-      marginLeft: 0,
-      opacity: inspectIdx > 0 ? 1 : 0.3
-    }),
-    onClick: function onClick() {
-      return inspectIdx > 0 && setInspectIdx(inspectIdx - 1);
-    },
-    disabled: inspectIdx === 0
-  }, "\u2190 Prev"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-    style: S.link,
-    onClick: function onClick() {
-      setInspectIdx(null);
-      setView('gallery');
-    }
-  }, "Back to Gallery"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-    style: _objectSpread(_objectSpread({}, S.link), {}, {
-      marginLeft: 0,
-      opacity: inspectIdx < results.length - 1 ? 1 : 0.3
-    }),
-    onClick: function onClick() {
-      return inspectIdx < results.length - 1 && setInspectIdx(inspectIdx + 1);
-    },
-    disabled: inspectIdx === results.length - 1
-  }, "Next \u2192"))));
-  return {
-    contentComponent: contentComponent
-  };
-};
-
-/***/ },
-
 /***/ "../../../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx"
 /*!********************************************************************************!*\
   !*** ../../../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx ***!
@@ -1058,6 +60,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
 /* harmony import */ var _apiAuth__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./apiAuth */ "../../../packages/curio.streetvision@1/sources/apiAuth.ts");
+/* harmony import */ var _resultsToFeatureCollection__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./resultsToFeatureCollection */ "../../../packages/curio.streetvision@1/sources/resultsToFeatureCollection.ts");
 var _curio;
 function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
 function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
@@ -1083,6 +86,7 @@ function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == 
 
 
 
+
 /**
  * HuggingFace CV Inference behavior.
  *
@@ -1102,8 +106,8 @@ function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == 
 // See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/streetvision");
 
-// Shared with cvGalleryBehavior, which needs the same identity to read back
-// the overlays this node's runs wrote. See sources/apiAuth.ts.
+// The overlays a run writes are cached per user, and the route resolves which
+// user from this header, so the same identity has to reach it on the way back. See sources/apiAuth.ts.
 
 var CLASS_SUGGESTIONS = ['building', 'road', 'sidewalk', 'vegetation', 'pole', 'fence', 'wall', 'traffic sign'];
 var S = {
@@ -1540,20 +544,23 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
       pollRef.current = undefined;
     }
   }, []);
-  var pushResults = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(function (jobResults, jid) {
-    var payload = {
-      type: 'street_vision_results',
-      job_id: jid,
-      model_type: task,
-      total_images: jobResults.length,
-      results: jobResults
-    };
-    data.outputCallback(data.nodeId, JSON.stringify(payload));
+  var pushResults = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(function (jobResults, _jid) {
+    // A bare string is read by Curio's propagation layer as a DuckDB artifact
+    // id (`normalizeFlowInput` wraps it as `{ path: <the string> }`), so the
+    // JSON envelope this used to emit arrived downstream as an unparseable
+    // reference and nothing could read it (#276). Emit the `{ data, dataType }`
+    // wrapper every other behavior emits, carrying the FeatureCollection that
+    // Spatial Join, Simple View and Vega-Lite all consume directly.
+    var fc = (0,_resultsToFeatureCollection__WEBPACK_IMPORTED_MODULE_2__.resultsToFeatureCollection)(jobResults);
+    data.outputCallback(data.nodeId, {
+      data: fc,
+      dataType: 'geodataframe'
+    });
     nodeState.setOutput({
       code: 'success',
       content: ''
     });
-  }, [data, task, nodeState]);
+  }, [data, nodeState]);
   var handleRun = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(function () {
     if (!selectedModel || images.length === 0 || selectedClasses.length === 0) return;
     setJobError(null);
@@ -1687,6 +694,10 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
     };
   }, [stopPolling]);
   var pct = totalImages > 0 ? Math.round(processed / totalImages * 100) : 0;
+  // The per-class summary the CV Gallery used to carry. It is derived from
+  // `results`, which this node already holds, so retiring that node did not
+  // have to lose it.
+  var stats = (0,_resultsToFeatureCollection__WEBPACK_IMPORTED_MODULE_2__.aggregateStats)(results);
   var allReady = !!selectedModel && selectedClasses.length > 0 && images.length > 0 && backendUp;
   var fmtDl = function fmtDl(n) {
     return typeof n === 'number' ? n >= 1000 ? "".concat((n / 1000).toFixed(n >= 10000 ? 0 : 1), "k") : String(n) : '—';
@@ -2023,7 +1034,40 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
       fontSize: 11,
       color: '#15803d'
     }
-  }, results.length, " images processed")))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
+  }, results.length, " images processed")))), stats && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    style: S.card
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    style: S.label
+  }, "Run summary"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 12,
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("strong", null, stats.classCount), " classes"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("strong", null, stats.geoCount), " geolocated"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, task === 'segmentation' ? 'Segmentation' : 'Detection')), Object.entries(stats.averages).sort(function (a, b) {
+    return b[1] - a[1];
+  }).slice(0, 6).map(function (_ref3) {
+    var _ref4 = _slicedToArray(_ref3, 2),
+      label = _ref4[0],
+      avg = _ref4[1];
+    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      key: label,
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        fontSize: 11
+      }
+    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
+      style: {
+        color: '#475569'
+      }
+    }, label), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
+      style: {
+        color: '#1a1a2e',
+        fontWeight: 600
+      }
+    }, task === 'segmentation' ? "".concat((avg * 100).toFixed(1), "%") : avg.toFixed(1)));
+  })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
     style: _objectSpread(_objectSpread({}, S.btn), {}, {
       background: '#f0fdf4',
       color: '#166534',
@@ -2037,6 +1081,182 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
     contentComponent: contentComponent
   };
 };
+
+/***/ },
+
+/***/ "../../../packages/curio.streetvision@1/sources/resultsToFeatureCollection.ts"
+/*!************************************************************************************!*\
+  !*** ../../../packages/curio.streetvision@1/sources/resultsToFeatureCollection.ts ***!
+  \************************************************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   aggregateStats: () => (/* binding */ aggregateStats),
+/* harmony export */   overlayUrlFor: () => (/* binding */ overlayUrlFor),
+/* harmony export */   resultsToFeatureCollection: () => (/* binding */ resultsToFeatureCollection)
+/* harmony export */ });
+function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t["return"] && (u = t["return"](), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+/**
+ * Inference results to a GEODATAFRAME-shaped FeatureCollection.
+ *
+ * This used to live in the CV Gallery, which meant the gallery was the only
+ * thing standing between HF CV Inference and every downstream node: Spatial
+ * Join reads `dominant_class` / `dominant_pct` from these properties, and the
+ * example's Vega specs read the flattened per-class columns. Retiring the
+ * gallery moved the conversion here, so the inference node emits a
+ * GEODATAFRAME directly (#276).
+ *
+ * Kept as a pure function, separate from the behavior, so the shape every
+ * downstream consumer depends on can be tested without React.
+ */
+
+/**
+ * Where Simple View can fetch the segmentation overlay for an image.
+ *
+ * Relative on purpose: the path is resolved against the running backend, so a
+ * dataflow saved on one deployment still works on another. The route reads
+ * WHICH user is asking from the bearer token, which is why Simple View fetches
+ * these rather than putting them straight in an `<img src>`.
+ */
+function overlayUrlFor(imageId) {
+  return "/api/streetvision/inference/overlay/".concat(encodeURIComponent(imageId));
+}
+function resultsToFeatureCollection(results) {
+  var round = function round(n, places) {
+    return n == null ? null : Number(n.toFixed(places));
+  };
+
+  // A run reports per-image failures in the same array as its successes, as
+  // `{image_id, error}` with no geometry and no classes. Carrying those would
+  // put a row with no picture and no values in front of the user and skew the
+  // dominant-class scan, so they never become features.
+  var usable = results.filter(function (r) {
+    return r && !r.error;
+  });
+
+  // Union of all detected class keys so the table doesn't show holes when
+  // one image didn't surface a class that another did.
+  var allClassKeys = new Set();
+  usable.forEach(function (r) {
+    if (r.class_ratios) Object.keys(r.class_ratios).forEach(function (k) {
+      return allClassKeys.add(k);
+    });
+    if (r.object_counts) Object.keys(r.object_counts).forEach(function (k) {
+      return allClassKeys.add(k);
+    });
+  });
+  var features = usable.map(function (r) {
+    var lat = round(r.latitude, 5);
+    var lon = round(r.longitude, 5);
+    var props = {
+      image_id: r.image_id,
+      image_url: r.image_url,
+      latitude: lat,
+      longitude: lon
+    };
+    allClassKeys.forEach(function (k) {
+      props[k] = 0;
+    });
+    if (r.class_ratios) {
+      Object.entries(r.class_ratios).forEach(function (_ref) {
+        var _ref2 = _slicedToArray(_ref, 2),
+          k = _ref2[0],
+          v = _ref2[1];
+        props[k] = round(v * 100, 1);
+      });
+      props.analysis_type = 'segmentation';
+      // Only a segmentation run writes an overlay PNG.
+      props.overlay_url = overlayUrlFor(r.image_id);
+    }
+    if (r.object_counts) {
+      Object.entries(r.object_counts).forEach(function (_ref3) {
+        var _ref4 = _slicedToArray(_ref3, 2),
+          k = _ref4[0],
+          v = _ref4[1];
+        props[k] = v;
+      });
+      props.analysis_type = 'detection';
+    }
+    var dominantClass = null;
+    var dominantPct = -Infinity;
+    allClassKeys.forEach(function (k) {
+      var v = props[k];
+      if (typeof v === 'number' && v > dominantPct) {
+        dominantPct = v;
+        dominantClass = k;
+      }
+    });
+    props.dominant_class = dominantClass;
+    props.dominant_pct = dominantPct === -Infinity ? 0 : dominantPct;
+    return {
+      type: 'Feature',
+      geometry: lat != null && lon != null ? {
+        type: 'Point',
+        coordinates: [lon, lat]
+      } : null,
+      properties: props
+    };
+  });
+  return {
+    type: 'FeatureCollection',
+    features: features,
+    metadata: {
+      name: 'cv_inference_results'
+    }
+  };
+}
+
+/**
+ * Per-class averages across a run, for the node's own summary.
+ *
+ * The denominator is the number of images that reported that class, not the
+ * number of images, so a class only some images contain is not diluted by the
+ * ones that never saw it.
+ */
+function aggregateStats(results) {
+  var usable = results.filter(function (r) {
+    return r && !r.error;
+  });
+  if (usable.length === 0) return null;
+  var allClasses = new Map();
+  usable.forEach(function (r) {
+    var push = function push(k, v) {
+      if (!allClasses.has(k)) allClasses.set(k, []);
+      allClasses.get(k).push(v);
+    };
+    if (r.class_ratios) Object.entries(r.class_ratios).forEach(function (_ref5) {
+      var _ref6 = _slicedToArray(_ref5, 2),
+        k = _ref6[0],
+        v = _ref6[1];
+      return push(k, v);
+    });
+    if (r.object_counts) Object.entries(r.object_counts).forEach(function (_ref7) {
+      var _ref8 = _slicedToArray(_ref7, 2),
+        k = _ref8[0],
+        v = _ref8[1];
+      return push(k, v);
+    });
+  });
+  var averages = {};
+  allClasses.forEach(function (vals, key) {
+    averages[key] = vals.reduce(function (a, b) {
+      return a + b;
+    }, 0) / vals.length;
+  });
+  return {
+    averages: averages,
+    classCount: allClasses.size,
+    geoCount: usable.filter(function (r) {
+      return r.latitude != null;
+    }).length
+  };
+}
 
 /***/ },
 
@@ -2699,7 +1919,6 @@ var __webpack_exports__ = {};
 __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _streetViewFetcherBehavior__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./streetViewFetcherBehavior */ "../../../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx");
 /* harmony import */ var _hfCvInferenceBehavior__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./hfCvInferenceBehavior */ "../../../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx");
-/* harmony import */ var _cvGalleryBehavior__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./cvGalleryBehavior */ "../../../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx");
 /**
  * Entry point for the curio.streetvision@1 dynamic behavior bundle.
  *
@@ -2720,7 +1939,6 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
-
 // `window.curio.registerBehavior` is exposed by Curio's main bundle at boot
 // (src/registry/index.ts). We avoid a `declare global` for portability —
 // babel-preset-typescript outside the host tsconfig refuses ambient
@@ -2729,7 +1947,6 @@ __webpack_require__.r(__webpack_exports__);
 function registerAll(curio) {
   curio.registerBehavior('street-view-fetcher', _streetViewFetcherBehavior__WEBPACK_IMPORTED_MODULE_0__.useStreetViewFetcherBehavior);
   curio.registerBehavior('hf-cv-inference', _hfCvInferenceBehavior__WEBPACK_IMPORTED_MODULE_1__.useHfCvInferenceBehavior);
-  curio.registerBehavior('cv-gallery', _cvGalleryBehavior__WEBPACK_IMPORTED_MODULE_2__.useCvGalleryBehavior);
 }
 if (typeof window !== 'undefined') {
   var w = window;

@@ -1,12 +1,13 @@
 """The overlay route serves the caller's own overlay, and nobody else's.
 
-``/inference/overlay/<image_id>`` carries no ``@require_auth`` (the CV Gallery
-is a package behavior that may run in a ``--no-project`` install), so it
-resolves the user from the Bearer token and falls back to the shared guest key.
-That makes the header load-bearing in a way that is easy to miss: the gallery
-used to load overlays through a plain ``<img src>``, which cannot carry one, so
-every signed-in user's request resolved to "guest", missed, and rendered
-"Overlay unavailable" over an overlay that existed on disk the whole time.
+``/inference/overlay/<image_id>`` carries no ``@require_auth`` (it is read by
+package and built-in nodes alike, which may run in a ``--no-project`` install),
+so it resolves the user from the Bearer token and falls back to the shared
+guest key. That makes the header load-bearing in a way that is easy to miss: a
+plain ``<img src>`` cannot carry one, so every signed-in user's request
+resolved to "guest", missed, and showed nothing over an overlay that existed on
+disk the whole time. Simple View fetches these with the token and renders the
+bytes through an object URL for exactly this reason (#276).
 
 These tests pin both halves of the contract: with the token you get your file,
 without it you do not get somebody else's.

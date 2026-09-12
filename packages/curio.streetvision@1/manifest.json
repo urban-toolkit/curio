@@ -15,7 +15,7 @@
       "huggingface_hub": ">=0.20"
     }
   },
-  "description": "Street-level computer vision nodes: fetch Google Street View imagery, run HuggingFace segmentation/detection models on the panoramas, and inspect the results in a rich gallery. The catalog install will pip-install torch/transformers/ultralytics on first install. Users paste their Google Maps API key directly into the Street View Fetcher node.",
+  "description": "Street-level computer vision nodes: fetch Google Street View imagery, run HuggingFace segmentation/detection models on the panoramas. The catalog install will pip-install torch/transformers/ultralytics on first install. Users paste their Google Maps API key directly into the Street View Fetcher node.",
   "id": "curio.streetvision",
   "license": "MIT",
   "behaviorScript": "scripts/behaviors.js",
@@ -70,33 +70,7 @@
         }
       ],
       "paletteOrder": 1
-    },
-    {
-      "category": "vis_simple",
-      "description": "Inspect CV inference results: image gallery, segmentation overlays, side-by-side compare, per-image class breakdowns, and aggregate stats. Re-emits the same payload downstream as a GEODATAFRAME so subsequent nodes (Spatial Join, Vega-Lite, AUTK Map, …) can consume it.",
-      "editor": "none",
-      "engine": "python",
-      "hasCode": false,
-      "hasGrammar": false,
-      "hasWidgets": false,
-      "iconRef": "fa-solid:eye",
-      "id": "cv-gallery",
-      "inputPorts": [
-        {
-          "cardinality": "1",
-          "types": ["JSON"]
-        }
-      ],
-      "label": "CV Gallery",
-      "behavior": "cv-gallery",
-      "outputPorts": [
-        {
-          "cardinality": "1",
-          "types": ["GEODATAFRAME"]
-        }
-      ],
-      "paletteOrder": 2
     }
   ],
-  "version": "1.0.1"
+  "version": "1.1.0"
 }
