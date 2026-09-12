@@ -29,13 +29,13 @@
       },
       {
         "id": "5d2ac264-58a5-431d-83cd-d6785c6fd176",
-        "type": "curio.streetvision/cv-gallery",
+        "type": "curio.builtin/vis-simple",
         "x": 1200,
         "y": 0,
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Inspect the per-image overlays and stats, then click 'Push to Downstream' to emit a GEODATAFRAME.",
+        "goal": "Inspect the panoramas the model scored. Each card shows the street view beside its segmentation overlay, with that image's dominant class underneath.",
         "metadata": {
           "keywords": []
         }
@@ -74,7 +74,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Tag each image point with the polygon it falls in. Wire CV Gallery to in_points (top) and Data Transformation to in_polygons (bottom).",
+        "goal": "Tag each image point with the polygon it falls in. Wire Simple View to in_points (top) and Data Transformation to in_polygons (bottom).",
         "metadata": {
           "keywords": []
         }
@@ -158,7 +158,7 @@
       }
     ],
     "name": "Street-level computer vision",
-    "description": "curio.streetvision@1 Fetcher to HF Inference to Gallery to Spatial Join to Vega-Lite polygons + bars.",
+    "description": "curio.streetvision@1 Fetcher to HF Inference to Simple View to Spatial Join to Vega-Lite polygons + bars.",
     "task": "",
     "timestamp": 1778306678524,
     "provenance_id": "Street-level computer vision",

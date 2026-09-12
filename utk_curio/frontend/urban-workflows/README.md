@@ -30,7 +30,7 @@ Tuples are reserved for multiple outputs
 - Interaction edges are only used to send interactions. All interactions are received through input
 - for a geojson be interpreter as storing buildings data one of its columns has to be named "building_id"
 - Generic triangle layers have to be on the 3395 projection but buildings on the 4326 projection. Surface also need to be in 3395 projection.
-- Images need to inside geodataframes with image_id and image_content columns. image_content needs to be byte code enconded in a byte64 string
+- Images display from a dataframe or a geodataframe. Name the column image_url (a URL or data: URI) or image_content (raw base64 bytes); image, thumbnail and overlay_url are recognized too, and an unnamed column is used when its values are data: URIs or URLs ending in an image extension. A same-origin /api/... value is fetched with the signed-in user's token, so images Curio itself serves per user resolve correctly
 - Some boxes have hot reload like Data Pool and Vis Image but other require running the code.
 - Support to two of most important types: raster (rasterio) and vector (geopandas)
 - What get passed by to each box in the case of raster data is the rasterio.io.DatasetReader. So if you want to send raster data from one box to the other you have to write to a file, read it and send the reader.

@@ -227,6 +227,14 @@
             "nameProperty": { "type": "string", "minLength": 1 }
           }
         },
+        "simpleVis": {
+          "type": "object",
+          "description": "Settings of a Simple View node (#276). `imageColumn` pins the node to one image column; absent means every image column is shown side by side.",
+          "additionalProperties": false,
+          "properties": {
+            "imageColumn": { "type": "string", "minLength": 1 }
+          }
+        },
         "comments": {
           "type": "array",
           "items": { "$ref": "#/$defs/comment" },

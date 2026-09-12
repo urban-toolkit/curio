@@ -179,6 +179,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.spatialJoin != undefined)
                 nodeMeta.spatialJoin = node.metadata.spatialJoin;
 
+            // #276: the Simple View's chosen image column round-trips too.
+            if(node.metadata != undefined && node.metadata.simpleVis != undefined)
+                nodeMeta.simpleVis = node.metadata.simpleVis;
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
