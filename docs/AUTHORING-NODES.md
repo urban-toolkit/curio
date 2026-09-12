@@ -307,6 +307,17 @@ treating it as a table is the only answer that stays consistent end to end.
 
 ---
 
+### Pre-filling your editor from the input
+
+A grammar node can offer a starter spec once it knows what the data looks like.
+The hook is `defaultValueOverride` in your behavior, which
+[`UniversalNode`](../utk_curio/frontend/urban-workflows/src/components/UniversalNode.tsx)
+gives top priority in the `defaultValue` chain. Gate it on an **empty buffer**
+and fill at most once: `useMonacoExternalValue` no-ops when the value is
+unchanged, so re-asserting is safe for the cursor and undo stack, but that is
+not licence to overwrite what someone has typed. `vegaBehavior.ts` is the
+worked example.
+
 ## Things that will trip you up
 
 All of these are real, and none of them produce an obvious error message.

@@ -355,6 +355,46 @@ a `GeoDataFrame` carries exactly the columns it always did.
 
 Worked example: [GeoDataFrame maps in Vega-Lite](examples/12-vega-lite-geodataframe-maps.md).
 
+### The starter spec
+
+A newly dropped `Vega-Lite` node opens **empty**. When an input arrives, and
+only while the spec buffer is still empty, the editor fills with a complete
+starter spec chosen from the input's column types. It never overwrites anything
+you have typed, and it never runs the node: you still press play.
+
+Connecting an edge is not enough on its own. An edge carries no column types
+until the upstream node has actually produced output, so a connected-but-unrun
+node stays empty and says *"Run the node feeding this one"*. The spec appears
+the moment that run finishes.
+
+Columns are classified from the pandas dtypes the payload carries, not by
+guessing from values:
+
+| pandas dtype | role |
+|---|---|
+| `geometry`, or the frame's active geometry column | geometry |
+| `datetime64[*]`, `period[*]`, `timedelta64[*]` | temporal |
+| `int*`, `uint*`, `float*` | quantitative |
+| `bool`, `object`, `str`, `string`, `category` | nominal |
+| `__row_index__`, and nominal columns with one distinct value per row (identifiers) | ignored |
+
+The first matching rule wins:
+
+| the input has | you get |
+|---|---|
+| geometry + at least one quantitative | `geoshape` choropleth, coloured by the first quantitative column |
+| geometry only | `geoshape`, no colour |
+| temporal + quantitative | `line`, time on x |
+| nominal + quantitative | `bar`, **explicitly aggregated** with `mean` |
+| two or more quantitative | `point` scatter of the first two |
+| one quantitative | `bar` histogram: binned x, `count` y |
+| one nominal | `bar` of counts |
+| nothing usable | the editor stays empty; a wrong default is worse than none |
+
+The bar rules state their `aggregate` rather than relying on Vega-Lite's
+implicit behaviour, which silently draws one bar per row.
+
+
 ## Data Catalog
 
 Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twelve datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.

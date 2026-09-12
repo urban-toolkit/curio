@@ -8,7 +8,7 @@ import { useToastContext } from "../providers/ToastProvider";
 import { applyContainerSizing } from "../utils/vegaSpecSizing";
 import { prepareVegaInput } from "../utils/vegaInput";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
-import { NODE_EMPTY_COPY } from "../utils/nodeEmptyState";
+import { NODE_EMPTY_COPY, resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 // The same stylesheet NodeEmptyState uses, so a blank Vega node looks exactly
 // like a blank Data Pool or Simple View rather than merely similar.
 import emptyStyles from "../components/nodes/NodeEmptyState.module.css";
@@ -22,7 +22,19 @@ if (typeof window !== 'undefined') {
   (window as any).__curio_vegaLite = lite;
 }
 
-export const useVega = ({ data, code }: { data: any; code: string; }) => {
+export const useVega = ({
+  data,
+  code,
+  connected = true,
+  hasSpec = true,
+}: {
+  data: any;
+  code: string;
+  /** Is anything wired into this node's input? */
+  connected?: boolean;
+  /** Does the editor hold a spec to compile? */
+  hasSpec?: boolean;
+}) => {
   const { showToast } = useToastContext();
   const [interactions, _setInteractions] = useState<any>({}); // {signal: {type: point/interval, data: }} // if type point data contains list of object ids. If type is interval data is an object where each key is an attribute with intervals or lists
 
@@ -48,6 +60,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
   // Why the node body is blank, when it is. Persistent, unlike a toast.
   const [emptyReason, setEmptyReason] = useState<NodeEmptyReason | null>(null);
   const [emptyDetail, setEmptyDetail] = useState<string | null>(null);
+  const hasRunRef = React.useRef(false);
 
   const setEmptyState = (prepared: { emptyReason?: NodeEmptyReason; detail?: string }) => {
     setEmptyReason(prepared.emptyReason ?? null);
@@ -159,6 +172,23 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
   }, [data.input]);
 
 
+  // The states that exist *before* anything compiles: nothing connected, an
+  // upstream that has not run, an empty editor. Nothing else would report these
+  // -- `prepareVegaInput` only runs on a compile or an input change -- so the
+  // node body would just sit blank, which is the complaint #224 was filed
+  // about, still true of the most-used visualisation node.
+  useEffect(() => {
+    if (currentViewRef.current != null) return;
+    const reason = resolveGrammarEmptyReason({
+      connected,
+      hasInput: data.input != null && data.input !== "",
+      hasSpec,
+      hasRun: hasRunRef.current,
+      inputProblem: emptyReason,
+    });
+    if (reason != null) renderEmptyState(reason, emptyDetail);
+  }, [connected, hasSpec, data.input, emptyReason, emptyDetail]);
+
   useEffect(() => {
     const ro = new ResizeObserver(() => {
       if (currentViewRef.current != null) {
@@ -234,6 +264,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
     // and would otherwise outlive the message it described.
     const host = document.getElementById("vega" + data.nodeId);
     host?.removeAttribute("data-curio-node-empty");
+    hasRunRef.current = true;
 
     let view = new vega.View(vega.parse(vegaspec))
       .logLevel(vega.Warn) // set view logging level

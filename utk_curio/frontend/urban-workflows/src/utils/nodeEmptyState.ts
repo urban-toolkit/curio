@@ -20,6 +20,12 @@ export type NodeEmptyReason =
   | "no-rows"
   /** Ran and produced something this node cannot render as a table. */
   | "not-tabular"
+  /** Connected and fed, but no spec has been written yet. */
+  | "no-spec"
+  /** A spec is written, but the node has not been run. */
+  | "not-run"
+  /** The spec compiled and ran, but drew nothing. */
+  | "rendered-empty"
   /** The input arrived, but this node cannot chart that kind of payload. */
   | "input-type-rejected"
   /** A geoshape spec, but the data has no geometry column to draw. */
@@ -56,6 +62,18 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
     hint: "This input is not tabular data.",
   },
   // The grammar states below are reported by a chart node rather than a table.
+  "no-spec": {
+    title: "No spec yet",
+    hint: "Write a Vega-Lite spec, or connect an input to generate one.",
+  },
+  "not-run": {
+    title: "Not drawn yet",
+    hint: "Press play to draw this spec.",
+  },
+  "rendered-empty": {
+    title: "Nothing was drawn",
+    hint: "The spec ran, but produced no marks.",
+  },
   // They are persistent node-body copy on purpose: these used to be toasts,
   // which decay after a few seconds and leave exactly the unexplained blank
   // node #224 was filed about.
@@ -107,5 +125,49 @@ export function resolveNodeEmptyReason(inputs: NodeEmptyInputs): NodeEmptyReason
   if (!inputs.hasInput) return "upstream-not-run";
   if (!inputs.tabular) return "not-tabular";
   if (inputs.rowCount <= 0) return "no-rows";
+  return null;
+}
+
+
+/** What a *grammar* node (Vega-Lite, and later autk-grammar) has, or lacks. */
+export interface GrammarEmptyInputs {
+  /** True when an edge terminates on this node. */
+  connected: boolean;
+  /** True once an input payload has actually arrived. */
+  hasInput: boolean;
+  /** True when the editor holds something to compile. */
+  hasSpec: boolean;
+  /** True once a compile has been attempted. */
+  hasRun: boolean;
+  /** Set when preparing the input failed in a specific, nameable way. */
+  inputProblem?: NodeEmptyReason | null;
+  /** True when a compile succeeded but produced no marks. */
+  renderedEmpty?: boolean;
+}
+
+/**
+ * Which state a grammar node is in, or ``null`` when it has a chart to show.
+ *
+ * A sibling of ``resolveNodeEmptyReason`` rather than an extension of it. The
+ * two take genuinely different inputs -- a chart has no notion of rows or of
+ * being "tabular", and a table has no notion of a spec -- and folding them into
+ * one function would mean a union of unrelated fields where half are always
+ * undefined. They share the copy table and the component, which is where
+ * consistency actually matters to the user.
+ *
+ * Order encodes precedence, most fundamental first: there is no point telling
+ * someone their spec drew nothing when the real problem is that nothing is
+ * connected. The input problem is checked before the spec, because an input
+ * this node cannot read is a fact about the data that no spec will fix.
+ */
+export function resolveGrammarEmptyReason(
+  inputs: GrammarEmptyInputs,
+): NodeEmptyReason | null {
+  if (!inputs.connected) return "disconnected";
+  if (!inputs.hasInput) return "upstream-not-run";
+  if (inputs.inputProblem) return inputs.inputProblem;
+  if (!inputs.hasSpec) return "no-spec";
+  if (!inputs.hasRun) return "not-run";
+  if (inputs.renderedEmpty) return "rendered-empty";
   return null;
 }

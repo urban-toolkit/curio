@@ -287,6 +287,33 @@ Number of outputs possible for each node (if you want to output more than one da
 
 Note that there is no problem connecting the output of a node into the input of multiple nodes.
 
+### The starter spec a VIS_VEGA node writes for itself
+
+When a VIS_VEGA node is connected to a node that has already run, and its editor
+is still empty, Curio fills it with a starter spec chosen from the input's
+column types. Generate specs that agree with this ladder unless the user asks
+for something else -- otherwise the AI and the node produce different charts for
+the same input, which is worse than either alone. First match wins:
+
+- geometry + at least one quantitative column -> geoshape choropleth, colored by
+  the first quantitative column
+- geometry only -> geoshape, no color
+- temporal + quantitative -> line, time on x
+- nominal + quantitative -> bar, with an EXPLICIT "aggregate": "mean" on y
+- two or more quantitative -> point scatter of the first two
+- one quantitative -> bar histogram, binned x and "aggregate": "count" on y
+- one nominal -> bar of counts
+- nothing usable -> no spec at all
+
+Column roles come from pandas dtypes: `geometry` is geometry; `datetime64`,
+`period` and `timedelta` are temporal; `int`, `uint` and `float` are
+quantitative; `bool`, `object`, `str`, `string` and `category` are nominal.
+Never chart `__row_index__`, and avoid a nominal column that has one distinct
+value per row -- it is an identifier and produces one bar per row.
+
+Always state an aggregate on a bar chart. Without one, Vega-Lite silently draws
+one bar per row.
+
 ### Maps in Vega-Lite
 
 A node that returns a GeoDataFrame can be charted as a map directly. Do NOT
