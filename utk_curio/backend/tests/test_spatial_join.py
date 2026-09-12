@@ -26,24 +26,24 @@ POINT = {"latitude": 1.0, "longitude": 1.0}
 
 def test_a_matching_property_tags_and_warns_nothing():
     warnings: list[str] = []
-    enriched, _ = enrich_points_with_polygons(
+    enriched, _, _ = enrich_points_with_polygons(
         [POINT], {"features": [_square({"pri_neigh": "Loop"})]},
         name_property="pri_neigh", warnings=warnings,
     )
-    assert enriched[0]["joined"] == "Loop"
+    assert enriched[0]["pri_neigh"] == "Loop"
     assert warnings == []
 
 
 def test_a_property_no_polygon_carries_is_reported_with_the_alternatives():
     warnings: list[str] = []
-    enriched, _ = enrich_points_with_polygons(
+    enriched, _, _ = enrich_points_with_polygons(
         [POINT], {"features": [_square({"pri_neigh": "Loop", "sec_neigh": "LOOP"})]},
         name_property="name", warnings=warnings,
     )
     # The join still runs, and still falls back - but says so.
-    assert enriched[0]["joined"] == "polygon_0"
+    assert enriched[0]["name"] == "polygon_0"
     assert len(warnings) == 1
-    assert "No polygon has a 'name' property" in warnings[0]
+    assert "No polygon has a 'name' column" in warnings[0]
     assert "pri_neigh" in warnings[0] and "sec_neigh" in warnings[0]
 
 
@@ -54,28 +54,59 @@ def test_a_partial_miss_counts_the_polygons():
         {"features": [_square({"name": "A"}), _square({"other": "B"})]},
         name_property="name", warnings=warnings,
     )
-    assert warnings == ["1 of 2 polygons lack a 'name' property and are tagged polygon_<index>."]
+    assert warnings == ["1 of 2 polygons lack a 'name' column and are tagged polygon_<index>."]
 
 
-def test_a_join_without_a_dominant_class_adds_only_the_joined_column():
+def test_a_join_without_a_dominant_class_adds_the_tag_and_a_count():
     """Roofs tagged with a ZIP code are not a street-vision run.
 
-    The roll-ups (``joined_dominant_class`` and friends) exist for points that
+    The roll-ups (``<tag>_dominant_class`` and friends) exist for points that
     carry a ``dominant_class``; for anything else they used to arrive as three
     empty columns on every point, which is how example 15 showed a roof with a
     ``neighborhood_name`` of "60647" and two null neighborhood fields.
     """
-    enriched, aggregates = enrich_points_with_polygons(
+    enriched, aggregates, tag_column = enrich_points_with_polygons(
         [{**POINT, "sqft": 120}], {"features": [_square({"name": "Loop"})]},
         name_property="name",
     )
-    assert aggregates == []
-    assert enriched[0]["joined"] == "Loop"
-    assert set(enriched[0]) == {"latitude", "longitude", "sqft", "joined"}
+    assert tag_column == "name"
+    assert aggregates == [{"name": "Loop", "point_count": 1}]
+    assert enriched[0]["name"] == "Loop"
+    assert set(enriched[0]) == {"latitude", "longitude", "sqft", "name", "name_point_count"}
 
 
-def test_points_with_a_dominant_class_get_the_joined_roll_ups():
-    enriched, aggregates = enrich_points_with_polygons(
+def test_a_column_the_points_already_have_is_not_clobbered():
+    enriched, _, tag_column = enrich_points_with_polygons(
+        [{**POINT, "name": "roof 12"}], {"features": [_square({"name": "Loop"})]},
+        name_property="name",
+    )
+    assert tag_column == "name_polygon"
+    assert enriched[0]["name"] == "roof 12"
+    assert enriched[0]["name_polygon"] == "Loop"
+
+
+def test_the_polygon_output_carries_a_count_per_polygon():
+    from utk_curio.backend.app.common.spatial import polygons_with_counts
+
+    far_square = {
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [[[10, 10], [12, 10], [12, 12], [10, 12], [10, 10]]]},
+        "properties": {"name": "Empty"},
+    }
+    polygons = {"features": [_square({"name": "Loop"}), far_square]}
+    _, aggregates, tag_column = enrich_points_with_polygons(
+        [POINT, {"latitude": 1.5, "longitude": 1.5}], polygons, name_property="name",
+    )
+
+    out = polygons_with_counts(polygons, aggregates, tag_column, "name")
+
+    assert [f["properties"]["point_count"] for f in out] == [2, 0]
+    assert out[0]["geometry"]["type"] == "Polygon"
+    assert "dominant_class" not in out[0]["properties"]
+
+
+def test_points_with_a_dominant_class_get_the_roll_ups():
+    enriched, aggregates, tag_column = enrich_points_with_polygons(
         [
             {**POINT, "dominant_class": "road", "dominant_pct": 60},
             {"latitude": 1.5, "longitude": 1.5, "dominant_class": "road", "dominant_pct": 40},
@@ -83,17 +114,17 @@ def test_points_with_a_dominant_class_get_the_joined_roll_ups():
         {"features": [_square({"name": "Loop"})]},
         name_property="name",
     )
-    assert aggregates[0]["joined"] == "Loop"
-    assert enriched[0]["joined_dominant_class"] == "road"
-    assert enriched[0]["joined_dominant_pct"] == 50
-    assert enriched[0]["joined_count"] == 2
+    assert aggregates[0]["name"] == "Loop"
+    assert enriched[0]["name_dominant_class"] == "road"
+    assert enriched[0]["name_dominant_pct"] == 50
+    assert enriched[0]["name_point_count"] == 2
 
 
 def test_callers_that_pass_no_list_get_the_old_silent_behaviour():
-    enriched, _ = enrich_points_with_polygons(
+    enriched, _, _ = enrich_points_with_polygons(
         [POINT], {"features": [_square({"pri_neigh": "Loop"})]},
     )
-    assert enriched[0]["joined"] == "polygon_0"
+    assert enriched[0]["name"] == "polygon_0"
 
 
 def _fc(features):
@@ -107,11 +138,12 @@ def test_route_passes_the_property_through_and_forwards_warnings(client):
     ok = client.post("/spatial_join", json={"points": points, "polygons": polygons, "name_property": "pri_neigh"})
     assert ok.status_code == 200, ok.get_json()
     body = ok.get_json()
-    assert body["features"][0]["properties"]["joined"] == "Loop"
+    assert body["features"][0]["properties"]["pri_neigh"] == "Loop"
+    assert body["metadata"]["tag_column"] == "pri_neigh"
     assert "warnings" not in body["metadata"]
 
     wrong = client.post("/spatial_join", json={"points": points, "polygons": polygons, "name_property": "name"})
     assert wrong.status_code == 200
     body = wrong.get_json()
-    assert body["features"][0]["properties"]["joined"] == "polygon_0"
+    assert body["features"][0]["properties"]["name"] == "polygon_0"
     assert body["metadata"]["warnings"] and "pri_neigh" in body["metadata"]["warnings"][0]

@@ -271,11 +271,17 @@ export class TrillGenerator {
 
             // #262: the Spatial Join's chosen polygon property persists at
             // metadata.spatialJoin, beside the other per-node settings.
-            if(node.data.spatialJoin != undefined && typeof node.data.spatialJoin.nameProperty === "string" && node.data.spatialJoin.nameProperty){
-                if(trill_node.metadata == undefined)
-                    trill_node.metadata = {};
-
-                trill_node.metadata.spatialJoin = { nameProperty: node.data.spatialJoin.nameProperty };
+            if(node.data.spatialJoin != undefined){
+                const spatialJoin: any = {};
+                if(typeof node.data.spatialJoin.nameProperty === "string" && node.data.spatialJoin.nameProperty)
+                    spatialJoin.nameProperty = node.data.spatialJoin.nameProperty;
+                if(node.data.spatialJoin.output === "polygons")
+                    spatialJoin.output = "polygons";
+                if(Object.keys(spatialJoin).length > 0){
+                    if(trill_node.metadata == undefined)
+                        trill_node.metadata = {};
+                    trill_node.metadata.spatialJoin = spatialJoin;
+                }
             }
 
             // #276: Simple View's chosen image column persists at

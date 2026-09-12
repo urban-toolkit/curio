@@ -678,17 +678,22 @@ def spatial_join():
         {
           "points":        FeatureCollection (Point features),
           "polygons":      FeatureCollection (Polygon/MultiPolygon features),
-          "name_property": optional, defaults to "name". Which property on
+          "name_property": optional, defaults to "name". Which column on
                            each polygon to use as the tag (e.g. "pri_neigh"
                            for Chicago neighborhoods, "BoroName" for NYC).
+          "output":        optional, "points" (default) or "polygons".
         }
 
     Response:
         {
           "type": "FeatureCollection",
-          "features": [...]   # input points with a `joined` property (the polygon's
-                              # tag) and, when they carry a dominant class, the
-                              # `joined_*` per-polygon roll-ups
+          "features": [...]   # output "points" (default): the input points plus
+                              # the polygon's tag under the polygon column's own
+                              # name, a `<tag>_point_count` and the
+                              # `<tag>_dominant_*` roll-ups when the points carry
+                              # a dominant class. Output "polygons": the input
+                              # polygons, each with `point_count` (and the
+                              # dominant_* roll-ups when present).
           "metadata": { "aggregates": [...],   # per-polygon roll-up
                         "warnings": [...] }     # only when non-empty (#262)
         }
@@ -724,8 +729,11 @@ def spatial_join():
 
     warnings: list = []
     try:
-        from utk_curio.backend.app.common.spatial import enrich_points_with_polygons
-        enriched, aggregates = enrich_points_with_polygons(
+        from utk_curio.backend.app.common.spatial import (
+            enrich_points_with_polygons,
+            polygons_with_counts,
+        )
+        enriched, aggregates, tag_column = enrich_points_with_polygons(
             points=point_dicts,
             polygon_fc=polygons_fc,
             name_property=name_property,
@@ -739,6 +747,17 @@ def spatial_join():
         }), 503
     except Exception as e:
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+    output = body.get("output") or "points"
+    if output not in ("points", "polygons"):
+        return jsonify({"error": "output must be one of points, polygons"}), 400
+    if output == "polygons":
+        out_features = polygons_with_counts(polygons_fc, aggregates, tag_column, name_property)
+        metadata = {"name": "spatial_join_result", "aggregates": aggregates,
+                    "tag_column": tag_column, "output": output}
+        if warnings:
+            metadata["warnings"] = warnings
+        return jsonify({"type": "FeatureCollection", "features": out_features, "metadata": metadata})
 
     # Re-pack enriched points as Features so downstream consumers see the
     # same shape they sent in.
@@ -757,7 +776,8 @@ def spatial_join():
             "properties": p,
         })
 
-    metadata = {"name": "spatial_join_result", "aggregates": aggregates}
+    metadata = {"name": "spatial_join_result", "aggregates": aggregates,
+                "tag_column": tag_column, "output": output}
     if warnings:
         metadata["warnings"] = warnings
     return jsonify({

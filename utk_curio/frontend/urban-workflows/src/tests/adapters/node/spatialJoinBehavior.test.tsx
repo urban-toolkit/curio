@@ -143,7 +143,7 @@ describe('useSpatialJoinBehavior', () => {
     const { result } = renderHook(() => useSpatialJoinBehavior(data, makeNodeState()));
 
     const { container } = render(<>{result.current.contentComponent}</>);
-    const input = container.querySelector('input[aria-label="Tag each point with this polygon property"]') as HTMLInputElement;
+    const input = container.querySelector('input[aria-label="Tag each point with this polygon column"]') as HTMLInputElement;
     expect(input).not.toBeNull();
     expect(input.value).toBe('name');
 
@@ -162,7 +162,7 @@ describe('useSpatialJoinBehavior', () => {
     const { result } = renderHook(() => useSpatialJoinBehavior(data, makeNodeState()));
 
     const { container } = render(<>{result.current.contentComponent}</>);
-    const input = container.querySelector('input[aria-label="Tag each point with this polygon property"]') as HTMLInputElement;
+    const input = container.querySelector('input[aria-label="Tag each point with this polygon column"]') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.keyDown(input, { key: 'Enter', target: { value: '   ' } });
 
@@ -185,7 +185,7 @@ describe('useSpatialJoinBehavior', () => {
   test('a backend warning reaches the body, the output and a toast; the join still completes', async () => {
     const warning = "No polygon has a 'name' property, so tags fall back to polygon_<index>. Available properties: pri_neigh, sec_neigh.";
     mockFetch(joined(
-      [{ type: 'Feature', geometry: null, properties: { joined: 'polygon_0' } }],
+      [{ type: 'Feature', geometry: null, properties: { name: 'polygon_0' } }],
       [warning],
     ));
     const data = makeData();
@@ -258,6 +258,29 @@ describe('useSpatialJoinBehavior', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.points.features).toHaveLength(1);
     expect(body.polygons.features[0].properties.pri_neigh).toBe('Loop');
+  });
+
+  test('the polygon output is sent along and persisted like the property', async () => {
+    const fetchMock = mockFetch(joined([]));
+    const nodeState = makeNodeState();
+    const { result } = renderHook(() =>
+      useSpatialJoinBehavior(makeData({ spatialJoin: { nameProperty: 'zip', output: 'polygons' } }), nodeState),
+    );
+
+    await feedBoth(result);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.output).toBe('polygons');
+    expect(body.name_property).toBe('zip');
+
+    // Switching the control persists the choice on the node, beside the property.
+    const { container } = render(<>{result.current.contentComponent}</>);
+    const select = container.querySelector('select[aria-label="Output"]') as HTMLSelectElement;
+    expect(select.value).toBe('polygons');
+    fireEvent.change(select, { target: { value: 'points' } });
+    expect(mockUpdateDataNode).toHaveBeenCalledWith('sj-1', expect.objectContaining({
+      spatialJoin: expect.objectContaining({ nameProperty: 'zip', output: 'points' }),
+    }));
   });
 
   test('before any input the body says what to connect', () => {

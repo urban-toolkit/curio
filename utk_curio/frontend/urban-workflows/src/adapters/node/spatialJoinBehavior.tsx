@@ -19,9 +19,9 @@ import { backendUrl } from '../../utils/backendUrl';
  * `properties.name`, with the manifest telling the user to rename their field
  * upstream with a Data Transformation node - a workaround presented as the
  * design, while the backend had accepted `name_property` all along. The node
- * now has a small body with the one control: which polygon property carries
+ * now has a small body with the one control: which polygon column carries
  * the tag, persisted at `metadata.spatialJoin.nameProperty` so it survives a
- * save. The backend also says when no polygon carries the chosen property,
+ * save. The backend also says when no polygon carries the chosen column,
  * instead of silently tagging everything `polygon_<i>`.
  *
  * Mirrors Merge Flow's `dynamicHandles` + `setOutputCallbackOverride`
@@ -91,6 +91,13 @@ export function resolveNameProperty(data: any): string {
   return trimmed || DEFAULT_NAME_PROPERTY;
 }
 
+export type SpatialJoinOutput = 'points' | 'polygons';
+
+/** Which shape the node emits: the tagged points (default) or the polygons with counts. */
+export function resolveOutputMode(data: any): SpatialJoinOutput {
+  return data?.spatialJoin?.output === 'polygons' ? 'polygons' : 'points';
+}
+
 export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [slots, setSlots] = useState<[any | undefined, any | undefined]>([undefined, undefined]);
   const edges = useEdges();
@@ -98,9 +105,10 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { showToast } = useToastContext();
 
   const nameProperty = resolveNameProperty(data);
+  const outputMode = resolveOutputMode(data);
   // What the last join reported: how many points found a polygon, and the
   // backend's warnings (e.g. no polygon carries the chosen property).
-  const [lastResult, setLastResult] = useState<{ tagged: number; total: number; warnings: string[] } | null>(null);
+  const [lastResult, setLastResult] = useState<{ tagged: number; total: number; column: string; output: SpatialJoinOutput; warnings: string[] } | null>(null);
   // Draft of the property box; committed on blur / Enter.
   const [draft, setDraft] = useState<string>(nameProperty);
   useEffect(() => { setDraft(nameProperty); }, [nameProperty]);
@@ -112,6 +120,11 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     // Persisted on the node so TrillGenerator writes it (metadata.spatialJoin).
     updateDataNode(data.nodeId, { ...data, spatialJoin: { ...(data as any).spatialJoin, nameProperty: next } });
   }, [data, nameProperty, updateDataNode]);
+
+  const commitOutputMode = useCallback((value: SpatialJoinOutput) => {
+    if (value === outputMode) return;
+    updateDataNode(data.nodeId, { ...data, spatialJoin: { ...(data as any).spatialJoin, output: value } });
+  }, [data, outputMode, updateDataNode]);
 
   const pointsConnected = useMemo(
     () => edges.some(e => e.target === data.nodeId && e.targetHandle === 'in_points'),
@@ -190,7 +203,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     fetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ points: rawPoints, polygons: rawPolygons, name_property: nameProperty }),
+      body: JSON.stringify({ points: rawPoints, polygons: rawPolygons, name_property: nameProperty, output: outputMode }),
       signal: controller.signal,
     })
       .then(async r => {
@@ -202,9 +215,15 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
       })
       .then(fc => {
         const features: any[] = Array.isArray(fc?.features) ? fc.features : [];
-        const tagged = features.filter(f => f?.properties?.joined != null).length;
+        // The backend names the tag column after the polygon column, or
+        // `<column>_polygon` when the points already had one; it says which.
+        const column: string = typeof fc?.metadata?.tag_column === 'string' ? fc.metadata.tag_column : nameProperty;
+        const output: SpatialJoinOutput = fc?.metadata?.output === 'polygons' ? 'polygons' : 'points';
+        const tagged = output === 'polygons'
+          ? features.filter(f => (f?.properties?.point_count ?? 0) > 0).length
+          : features.filter(f => f?.properties?.[column] != null).length;
         const warnings: string[] = Array.isArray(fc?.metadata?.warnings) ? fc.metadata.warnings : [];
-        setLastResult({ tagged, total: features.length, warnings });
+        setLastResult({ tagged, total: features.length, column, output, warnings });
         data.outputCallback(data.nodeId, { data: fc, dataType: 'geodataframe' });
         // A warning is still a completed join - downstream gets data - but the
         // node says so where the user is looking, and once as a toast.
@@ -220,14 +239,16 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     // update (including our own updateDataNode), which would re-fire the join
     // with the same inputs. The property is a dep in its own right.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots, nameProperty]);
+  }, [slots, nameProperty, outputMode]);
 
   const polygonProps = useMemo(() => polygonPropertyNames(unwrap(slots[1])), [slots]);
   const datalistId = `spatial-join-props-${data.nodeId}`;
 
   const contentComponent = React.useMemo<React.ReactNode>(() => {
     const status = lastResult
-      ? `Tagged ${lastResult.tagged} of ${lastResult.total} points with \`${nameProperty}\`, in a new \`joined\` column.`
+      ? lastResult.output === 'polygons'
+        ? `${lastResult.tagged} of ${lastResult.total} polygons received points; each polygon now carries point_count.`
+        : `Tagged ${lastResult.tagged} of ${lastResult.total} points; the polygons' \`${nameProperty}\` is now the points' \`${lastResult.column}\` column.`
       : !slots[0] && !slots[1]
         ? 'Connect points (top) and polygons (bottom), then run the nodes feeding this one.'
         : !slots[0]
@@ -242,13 +263,13 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', fontSize: 12, lineHeight: 1.4 }}
       >
         <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <span>Tag each point with this polygon property</span>
+          <span>Tag each point with this polygon column</span>
           <input
             type="text"
             list={datalistId}
             value={draft}
             placeholder={DEFAULT_NAME_PROPERTY}
-            aria-label="Tag each point with this polygon property"
+            aria-label="Tag each point with this polygon column"
             onChange={e => setDraft(e.target.value)}
             onBlur={e => commitNameProperty(e.target.value)}
             onKeyDown={e => {
@@ -260,9 +281,25 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
             {polygonProps.map(p => <option key={p} value={p} />)}
           </datalist>
           <span style={{ opacity: 0.7, fontSize: 11 }}>
-            Every point gets a <code>joined</code> column holding this property of the
-            polygon it falls in. <code>{DEFAULT_NAME_PROPERTY}</code> by default; pick from the
-            polygons' own properties once they arrive.
+            <code>{DEFAULT_NAME_PROPERTY}</code> by default; the polygons' columns are
+            suggested once they arrive.
+          </span>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <span>Output</span>
+          <select
+            value={outputMode}
+            aria-label="Output"
+            onChange={e => commitOutputMode(e.target.value === 'polygons' ? 'polygons' : 'points')}
+            style={{ padding: '3px 6px', fontSize: 12 }}
+          >
+            <option value="points">Points, tagged with the polygon column</option>
+            <option value="polygons">Polygons, with the count of points inside</option>
+          </select>
+          <span style={{ opacity: 0.7, fontSize: 11 }}>
+            {outputMode === 'polygons'
+              ? <>Each polygon comes out with a <code>point_count</code>: draw it as a choropleth, or chart the counts.</>
+              : <>Each point comes out with that column of its polygon, under the same name, plus a <code>{'<column>_point_count'}</code>.</>}
           </span>
         </label>
         <span data-curio-spatial-join-status="true" style={{ opacity: 0.85 }}>{status}</span>
@@ -283,7 +320,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         ))}
       </div>
     );
-  }, [draft, datalistId, polygonProps, lastResult, nameProperty, slots, commitNameProperty]);
+  }, [draft, datalistId, polygonProps, lastResult, nameProperty, outputMode, slots, commitNameProperty, commitOutputMode]);
 
   // Two distinct input handles on the left edge: points (top), polygons (bottom).
   // Plus the single output handle on the right. We use `handlesOverride`

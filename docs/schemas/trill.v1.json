@@ -221,10 +221,11 @@
         },
         "spatialJoin": {
           "type": "object",
-          "description": "Settings of a Spatial Join node (#262). `nameProperty` is the polygon property used as the tag; absent means `name`, which is also what the backend assumes.",
+          "description": "Settings of a Spatial Join node (#262). `nameProperty` is the polygon column used as the tag; absent means `name`, which is also what the backend assumes. `output` picks what the node emits: the tagged points (absent, the default) or the polygons with the count of points inside each.",
           "additionalProperties": false,
           "properties": {
-            "nameProperty": { "type": "string", "minLength": 1 }
+            "nameProperty": { "type": "string", "minLength": 1 },
+            "output": { "type": "string", "enum": ["points", "polygons"] }
           }
         },
         "simpleVis": {

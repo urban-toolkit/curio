@@ -196,7 +196,7 @@ def resolve_size(node: dict, templates: dict[str, dict]) -> tuple[float, float]:
     ``useCode.ts`` reads ``width | nodeWidth | metadata.width |
     metadata.nodeWidth`` into ``data.nodeWidth``; ``UniversalNode.tsx`` then does
     ``data.nodeWidth ?? adapter.container.nodeWidth``; ``styles.tsx`` falls back
-    to 525x350. Today only ``curio.builtin/spatial-join`` (280x170) and
+    to 525x350. Today only ``curio.builtin/spatial-join`` (460x300) and
     ``curio.builtin/merge-flow`` (50x180) set a template size.
     """
     meta = node.get("metadata")

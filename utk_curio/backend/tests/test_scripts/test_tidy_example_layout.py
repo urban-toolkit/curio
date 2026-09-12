@@ -145,7 +145,7 @@ def test_every_committed_example_clears_the_gutter():
     check cannot pass by sharing a bug with ``resolve_size``.
     """
     overrides = {
-        "curio.builtin/spatial-join": (280, 170),
+        "curio.builtin/spatial-join": (460, 300),
         "curio.builtin/merge-flow": (50, 180),
     }
     import glob

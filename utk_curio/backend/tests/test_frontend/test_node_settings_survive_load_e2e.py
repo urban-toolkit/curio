@@ -51,7 +51,7 @@ def _spec() -> dict:
                     "in": "DEFAULT",
                     "out": "DEFAULT",
                     "goal": "",
-                    "metadata": {"keywords": [], "spatialJoin": {"nameProperty": "zip"}},
+                    "metadata": {"keywords": [], "spatialJoin": {"nameProperty": "zip", "output": "polygons"}},
                 }
             ],
             "edges": [],
@@ -80,7 +80,7 @@ def test_the_spatial_join_property_is_live_after_the_load(
     require_owner_view(page)
 
     control = node_locator(page, JOIN_ID).locator(
-        'input[aria-label="Tag each point with this polygon property"]'
+        'input[aria-label="Tag each point with this polygon column"]'
     )
     control.wait_for(state="visible", timeout=45000)
     assert control.input_value() == "zip", (
@@ -88,3 +88,8 @@ def test_the_spatial_join_property_is_live_after_the_load(
         f"{control.input_value()!r} although the spec persisted 'zip': the "
         "setting was dropped between loadTrill and the node factory"
     )
+
+    # The second setting rides in the same metadata object and must survive too.
+    output = node_locator(page, JOIN_ID).locator('select[aria-label="Output"]')
+    output.wait_for(state="visible", timeout=15000)
+    assert output.input_value() == "polygons", output.input_value()

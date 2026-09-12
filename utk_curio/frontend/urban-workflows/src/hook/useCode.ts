@@ -58,7 +58,7 @@ type CreateCodeNodeOptions = {
     // (metadata.simpleVis). Both were read off the spec in loadTrill and then
     // dropped here, because this factory builds node data from an explicit
     // list: the setting survived a save and never a load.
-    spatialJoin?: { nameProperty?: string };
+    spatialJoin?: { nameProperty?: string; output?: "points" | "polygons" };
     simpleVis?: { imageColumn?: string };
 };
 
