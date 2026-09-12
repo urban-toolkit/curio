@@ -19,7 +19,13 @@ export type NodeEmptyReason =
   /** Ran and produced a table with no rows in it. */
   | "no-rows"
   /** Ran and produced something this node cannot render as a table. */
-  | "not-tabular";
+  | "not-tabular"
+  /** The input arrived, but this node cannot chart that kind of payload. */
+  | "input-type-rejected"
+  /** A geoshape spec, but the data has no geometry column to draw. */
+  | "geometry-unresolved"
+  /** Several geometry columns and no way to tell which one is meant. */
+  | "geometry-ambiguous";
 
 export interface NodeEmptyCopy {
   /** The state, in the user's terms. */
@@ -48,6 +54,22 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
   "not-tabular": {
     title: "Nothing to display",
     hint: "This input is not tabular data.",
+  },
+  // The grammar states below are reported by a chart node rather than a table.
+  // They are persistent node-body copy on purpose: these used to be toasts,
+  // which decay after a few seconds and leave exactly the unexplained blank
+  // node #224 was filed about.
+  "input-type-rejected": {
+    title: "Nothing to display",
+    hint: "This chart cannot read that kind of input.",
+  },
+  "geometry-unresolved": {
+    title: "No geometry to draw",
+    hint: 'This spec draws "geoshape", but the data has no geometry column.',
+  },
+  "geometry-ambiguous": {
+    title: "Several geometry columns",
+    hint: 'Add "shape": {"field": "<name>", "type": "geojson"} to pick one.',
   },
 };
 

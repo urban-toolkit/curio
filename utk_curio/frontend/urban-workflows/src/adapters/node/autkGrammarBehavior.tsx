@@ -9,6 +9,7 @@ import { VisInteractionType, NodeType } from '../../constants';
 import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { backendUrl } from '../../utils/backendUrl';
+import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { runAndAlwaysSettle } from './autkRunSettlement';
 
 export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -1965,55 +1966,6 @@ async function resolveUpstreamAsGeoJson(raw: any): Promise<FeatureCollection | n
     return layers.length > 0 ? layers[0].fc : null;
 }
 
-// Determine the CRS of a FeatureCollection produced by Python/geopandas so
-// the correct coordinateFormat can be passed to autk-db's loadGeojson.
-//
-// Strategy (in order of reliability):
-//   1. Read the "crs" field that geopandas embeds in every to_json() output,
-//      e.g. {"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::3395"}}.
-//      This is the most reliable signal and handles any EPSG code, not just 3395.
-//   2. Fall back to inspecting coordinate magnitudes: anything outside the
-//      WGS84 bounding box (±180° lon / ±90° lat) is clearly projected.
-//   3. Default to EPSG:4326 (standards-compliant GeoJSON) when no signal found.
-function detectCoordinateFormat(fc: FeatureCollection): string {
-    // --- Strategy 1: embedded CRS field ---
-    const crsName: string | undefined = (fc as any)?.crs?.properties?.name;
-    if (crsName) {
-        const m = crsName.match(/EPSG:{1,2}(\d+)/i);
-        if (m) return `EPSG:${m[1]}`;
-    }
-
-    // --- Strategy 2: coordinate magnitude heuristic ---
-    const WGS84_LON_MAX = 180;
-    const WGS84_LAT_MAX = 90;
-    const SAMPLE = 5;
-
-    for (let i = 0; i < Math.min(fc.features.length, SAMPLE); i++) {
-        const geom = fc.features[i]?.geometry;
-        if (!geom || !('coordinates' in geom)) continue;
-
-        const coord = firstCoordinate((geom as any).coordinates);
-        if (!coord) continue;
-
-        const [x, y] = coord;
-        if (
-            typeof x === 'number' && typeof y === 'number' &&
-            isFinite(x) && isFinite(y) &&
-            (Math.abs(x) > WGS84_LON_MAX || Math.abs(y) > WGS84_LAT_MAX)
-        ) {
-            return 'EPSG:3395';
-        }
-    }
-
-    // --- Strategy 3: assume standards-compliant WGS84 ---
-    return 'EPSG:4326';
-}
-
-function firstCoordinate(coords: any): [number, number] | null {
-    if (!Array.isArray(coords) || coords.length === 0) return null;
-    if (typeof coords[0] === 'number') return coords as [number, number];
-    return firstCoordinate(coords[0]);
-}
 
 // Resolve relative URLs in data source specs to the Curio backend's /file/
 // route, which serves files by their path *relative to CURIO_LAUNCH_CWD* — the

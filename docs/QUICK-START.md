@@ -47,3 +47,8 @@ Hit **Run**. Curio handles the dataflow and `Vega-Lite` has access to the DataFr
 ![Final result](images/final_result.png?raw=true)
 
 Congratulations! You created your first data-flow using Curio :)
+
+If your Python node returns a **GeoDataFrame**, the same node draws it as a map:
+write `{"mark": "geoshape"}` and Curio wires the geometry column and picks a
+projection for you. See [the Vega-Lite node](USAGE.md#vega-lite-node) and the
+[worked example](examples/12-vega-lite-geodataframe-maps.md).

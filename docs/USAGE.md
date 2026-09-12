@@ -294,6 +294,67 @@ To open the drawer: in the **Tools panel** on the left edge of the canvas, find 
 
 For the full walkthrough, covering concepts, the Save-As flow, the per-package metadata editor, exporting and importing, versioning, and fork lineage, see [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
+## Vega-Lite node
+
+The `Vega-Lite` node takes the rows of an upstream `DataFrame` or `GeoDataFrame`
+and renders a spec against them. Columns are addressed by their bare pandas
+names: a column `pop` is `{"field": "pop"}`.
+
+### Drawing a GeoDataFrame
+
+Return a `GeoDataFrame` from a Python node and draw it with `mark: "geoshape"`.
+No conversion step is needed: no `shapely.geometry.mapping`, no manual x/y
+centroid columns, no flattening to a plain `DataFrame` first:
+
+```python
+import geopandas as gpd
+
+gdf = gpd.read_file(curio_dataset_path("data.urbanlab.chicago-boundary"))
+return gdf
+```
+
+```json
+{
+  "mark": "geoshape",
+  "encoding": { "color": { "field": "zip", "type": "nominal" } }
+}
+```
+
+Two things are filled in for you, and only when you have not written them
+yourself:
+
+- **`encoding.shape`** is wired to the frame's *active* geometry column.
+- **`projection`** is added and fitted to the data: `mercator` for lon/lat
+  coordinates, `{"type": "identity", "reflectY": true}` for a projected CRS
+  such as EPSG:3395. An explicit `projection` of your own is never replaced.
+
+### Several geometry columns
+
+A `GeoDataFrame` can hold more than one geometry column, and **every one keeps
+its own pandas name**. The active column is wired automatically; any other is
+named explicitly, because with several present there is no single right answer:
+
+```json
+{ "shape": { "field": "centroid", "type": "geojson" } }
+```
+
+A `geoshape` mark draws a `Point` as a small filled circle, so a centroid layer
+needs no special mark type. If a spec asks for `geoshape` and the node cannot
+tell which column to draw, it says so in the node body and lists the candidates
+rather than rendering a blank chart.
+
+Note the injected `mercator` differs from stock Vega-Lite, which would use
+`equalEarth` for a unit spec, and the choice makes unit and layer specs render
+identically, but add a projection if you paste a spec into a vanilla Vega
+editor. Interval brushing over a projection does not propagate downstream:
+Vega-Lite rewrites those selections to internal row ids, so no named columns
+reach the Data Pool. Point selection works normally.
+
+Geometry is attached only when the spec actually draws it, so a bar chart over
+a `GeoDataFrame` carries exactly the columns it always did.
+
+Worked example: [GeoDataFrame maps in Vega-Lite](examples/12-vega-lite-geodataframe-maps.md).
+
 ## Data Catalog
 
 Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twelve datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.

@@ -1,0 +1,288 @@
+{
+  "dataflow": {
+    "description": "Any coordinate system, any geometry type, drawn by the same spec.",
+    "nodes": [
+      {
+        "id": "d784097d-65c1-5141-aba9-3f81910da22a",
+        "type": "curio.builtin/data-loading",
+        "x": 60,
+        "y": 120,
+        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.urbanlab.chicago-boundary\")\ngdf = gpd.read_file(dataset_path)\n\nreturn gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "66e1b696-d618-5e64-bb8f-47a0654d0bdf",
+        "type": "curio.builtin/data-transformation",
+        "x": 760,
+        "y": 120,
+        "content": "gdf = arg\n\n# A bounding box per ZIP, as a second geometry column.\ngdf[\"bbox\"] = gdf.geometry.envelope\n\nreturn gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "6035c1d0-4b41-51b7-9f84-2063e2a8920d",
+        "type": "curio.builtin/data-transformation",
+        "x": 760,
+        "y": 450,
+        "content": "gdf = arg\n\nreturn gdf.to_crs(3395)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "6a198823-b749-5d31-8625-4b252b619956",
+        "type": "curio.builtin/data-transformation",
+        "x": 760,
+        "y": 780,
+        "content": "from shapely.geometry import (\n    GeometryCollection,\n    LineString,\n    MultiPolygon,\n    Point,\n    Polygon,\n)\n\ngdf = arg\nsquare = Polygon([(-87.8, 41.9), (-87.8, 42.0), (-87.7, 42.0), (-87.7, 41.9)])\n\nreturn gpd.GeoDataFrame(\n    {\"kind\": [\"multipolygon\", \"collection\", \"point\", \"with_z\", \"missing\", \"line\"]},\n    geometry=[\n        MultiPolygon([square, Polygon([(-87.6, 41.7), (-87.6, 41.8), (-87.5, 41.8)])]),\n        GeometryCollection([square, Point(-87.65, 41.85)]),\n        Point(-87.62, 41.88),\n        Point(-87.63, 41.89, 30.0),\n        None,\n        LineString([(-87.7, 41.8), (-87.6, 41.9)]),\n    ],\n    crs=4326,\n)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "724bff3b-a95b-54fa-9a76-009204107d9e",
+        "type": "curio.builtin/data-transformation",
+        "x": 760,
+        "y": 1110,
+        "content": "gdf = arg\n\nreturn gdf[gdf[\"zip\"] == \"00000\"]",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "422e17a1-d813-52eb-9785-cc10a2540873",
+        "type": "curio.builtin/data-transformation",
+        "x": 760,
+        "y": 1440,
+        "content": "gdf = arg\n\nreturn gdf.assign(geometry=None)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "d6229bc0-e6c3-511b-9d76-f891ade9a488",
+        "type": "curio.builtin/data-transformation",
+        "x": 760,
+        "y": 1770,
+        "content": "gdf = arg\n\n# A geographic CRS that is not the usual 4326.\nreturn gdf.to_crs(4269)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "2d3dd86e-3445-5cd1-9761-fd32547fcb2e",
+        "type": "curio.builtin/data-transformation",
+        "x": 760,
+        "y": 2100,
+        "content": "gdf = arg\n\nreturn gdf.set_crs(None, allow_override=True)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "2c8fe531-d3db-564a-81fb-e740e5540801",
+        "type": "curio.builtin/vis-vega",
+        "x": 1500,
+        "y": 120,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Bounding boxes, from a gdf.envelope column.\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"fill\": null,\n    \"stroke\": \"#7c3aed\"\n  },\n  \"encoding\": {\n    \"shape\": {\n      \"field\": \"bbox\",\n      \"type\": \"geojson\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "0f902168-382d-5220-a79d-2e763c143760",
+        "type": "curio.builtin/vis-vega",
+        "x": 1500,
+        "y": 450,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"The same map, in projected metres.\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"mark\": \"geoshape\"\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "4af8470b-88c7-5d07-b495-16c966c3ea0c",
+        "type": "curio.builtin/vis-vega",
+        "x": 1500,
+        "y": 780,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Every geometry type in one column.\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"mark\": \"geoshape\",\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"kind\",\n      \"type\": \"nominal\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "f5626141-f328-514e-be15-779e1cf43cbc",
+        "type": "curio.builtin/vis-vega",
+        "x": 1500,
+        "y": 1110,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"An empty frame.\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"mark\": \"geoshape\"\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e789669d-c845-5d49-a4ec-ae2212a535ad",
+        "type": "curio.builtin/vis-vega",
+        "x": 1500,
+        "y": 1440,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"An all-null geometry column.\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"mark\": \"geoshape\"\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "7eb29d31-6a50-5897-895b-8264695d5520",
+        "type": "curio.builtin/vis-vega",
+        "x": 1500,
+        "y": 1770,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"A geographic CRS that is not 4326.\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"mark\": \"geoshape\"\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9061efda-d316-536b-92d7-c7a5123086c2",
+        "type": "curio.builtin/vis-vega",
+        "x": 1500,
+        "y": 2100,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"A frame with no CRS declared.\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"mark\": \"geoshape\"\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-d784097d-65c1-5141-aba9-3f81910da22aout-66e1b696-d618-5e64-bb8f-47a0654d0bdfin",
+        "source": "d784097d-65c1-5141-aba9-3f81910da22a",
+        "target": "66e1b696-d618-5e64-bb8f-47a0654d0bdf"
+      },
+      {
+        "id": "reactflow__edge-d784097d-65c1-5141-aba9-3f81910da22aout-6035c1d0-4b41-51b7-9f84-2063e2a8920din",
+        "source": "d784097d-65c1-5141-aba9-3f81910da22a",
+        "target": "6035c1d0-4b41-51b7-9f84-2063e2a8920d"
+      },
+      {
+        "id": "reactflow__edge-d784097d-65c1-5141-aba9-3f81910da22aout-6a198823-b749-5d31-8625-4b252b619956in",
+        "source": "d784097d-65c1-5141-aba9-3f81910da22a",
+        "target": "6a198823-b749-5d31-8625-4b252b619956"
+      },
+      {
+        "id": "reactflow__edge-d784097d-65c1-5141-aba9-3f81910da22aout-724bff3b-a95b-54fa-9a76-009204107d9ein",
+        "source": "d784097d-65c1-5141-aba9-3f81910da22a",
+        "target": "724bff3b-a95b-54fa-9a76-009204107d9e"
+      },
+      {
+        "id": "reactflow__edge-d784097d-65c1-5141-aba9-3f81910da22aout-422e17a1-d813-52eb-9785-cc10a2540873in",
+        "source": "d784097d-65c1-5141-aba9-3f81910da22a",
+        "target": "422e17a1-d813-52eb-9785-cc10a2540873"
+      },
+      {
+        "id": "reactflow__edge-d784097d-65c1-5141-aba9-3f81910da22aout-d6229bc0-e6c3-511b-9d76-f891ade9a488in",
+        "source": "d784097d-65c1-5141-aba9-3f81910da22a",
+        "target": "d6229bc0-e6c3-511b-9d76-f891ade9a488"
+      },
+      {
+        "id": "reactflow__edge-d784097d-65c1-5141-aba9-3f81910da22aout-2d3dd86e-3445-5cd1-9761-fd32547fcb2ein",
+        "source": "d784097d-65c1-5141-aba9-3f81910da22a",
+        "target": "2d3dd86e-3445-5cd1-9761-fd32547fcb2e"
+      },
+      {
+        "id": "reactflow__edge-66e1b696-d618-5e64-bb8f-47a0654d0bdfout-2c8fe531-d3db-564a-81fb-e740e5540801in",
+        "source": "66e1b696-d618-5e64-bb8f-47a0654d0bdf",
+        "target": "2c8fe531-d3db-564a-81fb-e740e5540801"
+      },
+      {
+        "id": "reactflow__edge-6035c1d0-4b41-51b7-9f84-2063e2a8920dout-0f902168-382d-5220-a79d-2e763c143760in",
+        "source": "6035c1d0-4b41-51b7-9f84-2063e2a8920d",
+        "target": "0f902168-382d-5220-a79d-2e763c143760"
+      },
+      {
+        "id": "reactflow__edge-6a198823-b749-5d31-8625-4b252b619956out-4af8470b-88c7-5d07-b495-16c966c3ea0cin",
+        "source": "6a198823-b749-5d31-8625-4b252b619956",
+        "target": "4af8470b-88c7-5d07-b495-16c966c3ea0c"
+      },
+      {
+        "id": "reactflow__edge-724bff3b-a95b-54fa-9a76-009204107d9eout-f5626141-f328-514e-be15-779e1cf43cbcin",
+        "source": "724bff3b-a95b-54fa-9a76-009204107d9e",
+        "target": "f5626141-f328-514e-be15-779e1cf43cbc"
+      },
+      {
+        "id": "reactflow__edge-422e17a1-d813-52eb-9785-cc10a2540873out-e789669d-c845-5d49-a4ec-ae2212a535adin",
+        "source": "422e17a1-d813-52eb-9785-cc10a2540873",
+        "target": "e789669d-c845-5d49-a4ec-ae2212a535ad"
+      },
+      {
+        "id": "reactflow__edge-d6229bc0-e6c3-511b-9d76-f891ade9a488out-7eb29d31-6a50-5897-895b-8264695d5520in",
+        "source": "d6229bc0-e6c3-511b-9d76-f891ade9a488",
+        "target": "7eb29d31-6a50-5897-895b-8264695d5520"
+      },
+      {
+        "id": "reactflow__edge-2d3dd86e-3445-5cd1-9761-fd32547fcb2eout-9061efda-d316-536b-92d7-c7a5123086c2in",
+        "source": "2d3dd86e-3445-5cd1-9761-fd32547fcb2e",
+        "target": "9061efda-d316-536b-92d7-c7a5123086c2"
+      }
+    ],
+    "name": "Vega-Lite CRS and geometry types",
+    "task": "",
+    "timestamp": 1789200000000,
+    "provenance_id": "DefaultWorkflow",
+    "datasets": [
+      {
+        "datasetId": "data.urbanlab.chicago-boundary",
+        "dirName": "data.urbanlab.chicago-boundary@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-11T00:00:00Z"
+      }
+    ]
+  }
+}

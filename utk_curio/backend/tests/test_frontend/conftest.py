@@ -120,6 +120,10 @@ WORKFLOW_FILES = [
     # skip rather than a silent omission.
     "docs/examples/10-street-vision-cv-analysis.json",
     "docs/examples/11-autark-pbf-loading.json",
+    "docs/examples/12-vega-lite-geodataframe-maps.json",
+    "docs/examples/13-vega-lite-geometry-columns.json",
+    "docs/examples/14-vega-lite-crs-and-geometry-types.json",
+    "docs/examples/15-vega-lite-spec-forms-and-catalogs.json",
 ]
 
 

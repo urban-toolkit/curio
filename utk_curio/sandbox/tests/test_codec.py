@@ -269,3 +269,67 @@ class TestParsersReExports(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── shapely geometry in an ordinary cell ───────────────────────────────────
+
+def test_make_serializable_converts_a_shapely_geometry_to_geojson():
+    from shapely.geometry import Point
+
+    result = codec._make_serializable(Point(0.5, 1.5))
+
+    assert result == {"type": "Point", "coordinates": [0.5, 1.5]}
+
+
+def test_make_serializable_uses_lists_not_tuples_for_coordinates():
+    """shapely hands back tuples; JSON has no tuple, and callers compare
+    against lists. The conversion has to happen here, not at dump time."""
+    from shapely.geometry import Polygon
+
+    result = codec._make_serializable(
+        Polygon([(0, 0), (0, 1), (1, 1), (0, 0)])
+    )
+
+    assert result["type"] == "Polygon"
+    assert isinstance(result["coordinates"], list)
+    assert all(isinstance(ring, list) for ring in result["coordinates"])
+    assert result["coordinates"][0][0] == [0.0, 0.0]
+
+
+def test_make_serializable_handles_nested_geometry():
+    from shapely.geometry import Point
+
+    result = codec._make_serializable({"where": Point(1, 2), "n": 3})
+
+    assert result == {"where": {"type": "Point", "coordinates": [1.0, 2.0]}, "n": 3}
+
+
+def test_a_plain_dataframe_holding_shapely_survives_normalization():
+    """D2: a plain DataFrame carrying shapely objects.
+
+    `pd.DataFrame(gdf)` produces exactly this, and it used to emit the raw
+    shapely object and die at `jsonify`.
+    """
+    import pandas as pd
+    from shapely.geometry import Point
+
+    from utk_curio.sandbox.util.parsers import normalize_dataframe_for_json, parseOutput
+
+    df = pd.DataFrame({"name": ["A"], "where": [Point(1, 2)]})
+
+    normalized = normalize_dataframe_for_json(df)
+    assert normalized["where"].iloc[0] == {"type": "Point", "coordinates": [1.0, 2.0]}
+
+    out = parseOutput(df)
+    assert out["dataType"] == "dataframe"
+    assert out["data"]["where"][0]["type"] == "Point"
+
+
+def test_existing_containers_are_untouched_by_the_geometry_branch():
+    """The geometry branch sits ahead of the dict/list cases; ordinary
+    containers must reach them unchanged."""
+    import numpy as np
+
+    assert codec._make_serializable({"a": [1, 2]}) == {"a": [1, 2]}
+    assert codec._make_serializable([{"b": (1, 2)}]) == [{"b": [1, 2]}]
+    assert codec._make_serializable(np.array([1, 2])) == [1, 2]
