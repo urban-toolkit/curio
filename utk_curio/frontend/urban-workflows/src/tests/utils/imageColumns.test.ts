@@ -11,6 +11,7 @@ import {
   RECOGNIZED_COLUMNS,
   resolveImageColumns,
   resolveImageSource,
+  resolveImageSources,
 } from '../../utils/imageColumns';
 
 const longBase64 = 'iVBORw0KGgo' + 'A'.repeat(80);
@@ -109,6 +110,17 @@ describe('resolveImageColumns', () => {
   it('does not sniff an extensionless URL column', () => {
     const rows = [{ link: 'https://example.test/page?id=1' }];
     expect(resolveImageColumns(rows)).toEqual([]);
+  });
+
+  it('accepts a cell holding a list of images', () => {
+    // `parseOutput` serialises a DataFrame of numpy-array cells this way, one
+    // list per row; Simple View has always flattened it into several pictures.
+    const rows = [{ image_id: [0, 1], image_content: [longBase64, longBase64] }];
+    expect(resolveImageColumns(rows)).toEqual(['image_content']);
+    expect(resolveImageSources([longBase64, longBase64])).toHaveLength(2);
+    expect(resolveImageSources('https://example.test/a.png')).toHaveLength(1);
+    expect(resolveImageSources([])).toHaveLength(0);
+    expect(resolveImageSources(['not an image'])).toHaveLength(0);
   });
 
   it('tolerates a mostly-populated column and an empty frame', () => {

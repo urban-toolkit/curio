@@ -87,6 +87,27 @@ export function resolveImageSource(
   return null;
 }
 
+/**
+ * Every image in one cell.
+ *
+ * A cell usually holds one image, but `parseOutput` serialises a DataFrame
+ * whose cells are numpy arrays as a list per row (see
+ * `test_image_serialization.py`), and Simple View has always flattened that
+ * into several pictures. A card renders them together.
+ */
+export function resolveImageSources(
+  value: unknown,
+  opts: { allowBase64?: boolean; requireExtension?: boolean } = {},
+): ImageSource[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => resolveImageSource(item, opts))
+      .filter((s): s is ImageSource => s != null);
+  }
+  const single = resolveImageSource(value, opts);
+  return single ? [single] : [];
+}
+
 function columnHoldsImages(
   rows: readonly FrameRow[],
   column: string,
@@ -97,8 +118,9 @@ function columnHoldsImages(
   for (const row of rows) {
     const value = row?.[column];
     if (value == null || value === '') continue;
+    if (Array.isArray(value) && value.length === 0) continue;
     present += 1;
-    if (resolveImageSource(value, opts)) matched += 1;
+    if (resolveImageSources(value, opts).length > 0) matched += 1;
   }
   if (present === 0) return false;
   return matched / present >= MATCH_THRESHOLD;

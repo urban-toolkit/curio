@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import CSS from 'csstype';
-import { ImageSource, resolveImageSource } from '../../../utils/imageColumns';
+import { ImageSource, resolveImageSources } from '../../../utils/imageColumns';
 import { backendUrl } from '../../../utils/backendUrl';
 import { getToken } from '../../../utils/authApi';
 
@@ -69,9 +69,8 @@ const fieldStyle: CSS.Properties = {
  * send a header, so it would resolve to the shared guest and 404 for everyone
  * signed in. Fetch those with the token and hand the DOM an object URL.
  */
-function FrameImage({ value, alt }: { value: unknown; alt: string }) {
-  const source: ImageSource | null = resolveImageSource(value);
-  const authedPath = source?.kind === 'authed' ? source.path : null;
+function FrameImage({ source, alt }: { source: ImageSource; alt: string }) {
+  const authedPath = source.kind === 'authed' ? source.path : null;
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -102,7 +101,6 @@ function FrameImage({ value, alt }: { value: unknown; alt: string }) {
     };
   }, [authedPath]);
 
-  if (!source) return null;
   const src = source.kind === 'direct' ? source.src : objectUrl;
   if (!src) {
     // Still fetching, or the fetch failed. Hold the slot either way so the
@@ -145,9 +143,16 @@ export default function ImageCardGrid({
             onClick={() => onClickRow(index)}
           >
             <div style={imageRowStyle}>
-              {imageColumns.map((column) => (
-                <FrameImage key={column} value={row[column]} alt={`${column} ${index}`} />
-              ))}
+              {imageColumns.flatMap((column) =>
+                // A cell can hold several images; see resolveImageSources.
+                resolveImageSources(row[column]).map((source, i) => (
+                  <FrameImage
+                    key={`${column}-${i}`}
+                    source={source}
+                    alt={`${column} ${index}`}
+                  />
+                )),
+              )}
             </div>
             <div style={captionStyle}>
               {captionColumns(row).slice(0, 4).map((column) => (

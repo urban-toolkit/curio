@@ -2,9 +2,9 @@
   "sha256": {
     "README.md": "47aa9056d49161d12ef803c9ad29956219982c1a3cfbc170473e1a442b210035",
     "manifest.json": "f0b57064401ac63ac481aa59bd685333d0b11091f8732c2162235311eaf43d35",
-    "scripts/behaviors.js": "2adcc7ff6c3977cc61a14785f71da518a9410c4a3dfcae0f5519d50e00d47d0d",
-    "scripts/behaviors.js.map": "5ace8024cc9c2f70d3e111725f4796f2144b3359ab38826d72b46be6a8a02999",
-    "sources/apiAuth.ts": "8255fd67fd5c90de4e867c68dc757ebd21bf6668b21352191c6d47dffb146d35",
+    "scripts/behaviors.js": "7ec22b39294024bbb7aac0bd46b8856fd0a200723612ca87cbe89522ca9e6e8b",
+    "scripts/behaviors.js.map": "53f26b84d7668345cfd169f33c38f15e8e413ac10051a896c40688996b4bb89d",
+    "sources/apiAuth.ts": "85f8ee01ab62ff45a97d2109bca9fc414c5ee9af4e16dd30a7e212333b075794",
     "sources/hfCvInferenceBehavior.tsx": "50dbad99e30c46c4dcc5d34430cf82dac2cb84d7294a271f173e62db38fb73db",
     "sources/index.tsx": "e949343ecee877b2f2738f308077160916efe7ed537b84fe6a47c2679f5a8cb7",
     "sources/resultsToFeatureCollection.ts": "868992171a1ef1b41c0eaffe2cfe703b26e77d599278356c9a77a7f3e08b084d",

@@ -117,6 +117,18 @@ describe('Simple View image modes', () => {
     expect(imgs[0]).toHaveAttribute('src', `data:image/png;base64,${longBase64}`);
   });
 
+  it('flattens a row whose image cell holds a list', async () => {
+    // The numpy-array-cell shape parseOutput emits: one row, two pictures.
+    const input = {
+      dataType: 'dataframe',
+      data: { image_id: { 0: [0, 1] }, image_content: { 0: [longBase64, longBase64] } },
+    };
+    await act(async () => {
+      render(<Harness data={nodeData(input)} />);
+    });
+    expect(screen.getAllByRole('img')).toHaveLength(2);
+  });
+
   it('leaves a frame with no image column as a table', async () => {
     const input = geoFrame([{ name: 'Lincoln Park', shape_area: 4849 }]);
     await act(async () => {
