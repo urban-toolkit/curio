@@ -120,11 +120,10 @@ WORKFLOW_FILES = [
     # skip rather than a silent omission.
     "docs/examples/10-street-vision-cv-analysis.json",
     "docs/examples/11-autark-pbf-loading.json",
-    # The GeoDataFrame examples (12 to 15) are deliberately absent until their
-    # screenshot baselines are minted. Registering it here without them fails
-    # immediately under xdist, which never mints baselines by design -- and a
-    # baseline recorded from an unreviewed render just cements whatever it drew.
-    # Add the line together with the PNGs.
+    "docs/examples/12-vega-lite-geodataframe-maps.json",
+    "docs/examples/13-vega-lite-geometry-columns.json",
+    "docs/examples/14-vega-lite-crs-and-geometry-types.json",
+    "docs/examples/15-vega-lite-spec-forms-and-catalogs.json",
 ]
 
 

@@ -2610,7 +2610,9 @@ VEGA_CANVAS_PROBE_JS = """(containerId) => {
 }"""
 
 
-def assert_vega_canvas_rendered(page, node_id: str, *, timeout: float = 30000) -> None:
+def assert_vega_canvas_rendered(
+    page, node_id: str, *, timeout: float = 30000, expect_blank: bool = False
+) -> None:
     """Assert a VIS_VEGA node actually drew marks from its upstream data.
 
     Vega-Lite renders to a ``<canvas>`` (the renderer switched from SVG in
@@ -2623,6 +2625,11 @@ def assert_vega_canvas_rendered(page, node_id: str, *, timeout: float = 30000) -
     single pixel sample would race the paint. Poll until the probe reports drawn
     content, then take one final sample so a timeout still produces the detailed
     assertion message below rather than a bare Playwright timeout.
+
+    ``expect_blank`` is for the handful of views that legitimately draw nothing:
+    an empty frame, or a geometry column that is null in every row. There the
+    canvas still has to exist and be sized, but demanding marks would assert the
+    opposite of what the view is demonstrating.
     """
     container_id = f"vega{node_id}"
     node_el = node_locator(page, node_id)
@@ -2633,20 +2640,21 @@ def assert_vega_canvas_rendered(page, node_id: str, *, timeout: float = 30000) -
         f"#{container_id}"
     )
 
-    try:
-        page.wait_for_function(
-            "(containerId) => {"
-            f" const probe = {VEGA_CANVAS_PROBE_JS};"
-            "  const info = probe(containerId);"
-            "  return !!(info && info.width > 0"
-            "        && info.height > 0 && info.nonBlank);"
-            "}",
-            arg=container_id,
-            timeout=timeout,
-            polling=500,
-        )
-    except PlaywrightTimeoutError:
-        pass
+    if not expect_blank:
+        try:
+            page.wait_for_function(
+                "(containerId) => {"
+                f" const probe = {VEGA_CANVAS_PROBE_JS};"
+                "  const info = probe(containerId);"
+                "  return !!(info && info.width > 0"
+                "        && info.height > 0 && info.nonBlank);"
+                "}",
+                arg=container_id,
+                timeout=timeout,
+                polling=500,
+            )
+        except PlaywrightTimeoutError:
+            pass
 
     info = page.evaluate(VEGA_CANVAS_PROBE_JS, container_id)
     assert info is not None, (
@@ -2656,9 +2664,32 @@ def assert_vega_canvas_rendered(page, node_id: str, *, timeout: float = 30000) -
         f"Vega node {node_id}: canvas has zero backing size "
         f"({info['width']}x{info['height']})"
     )
-    assert info["nonBlank"], (
-        f"Vega node {node_id}: canvas rendered blank — no chart marks drawn "
-        f"from the upstream data"
+    if not expect_blank:
+        assert info["nonBlank"], (
+            f"Vega node {node_id}: canvas rendered blank, no chart marks drawn "
+            f"from the upstream data"
+        )
+
+
+def assert_vega_node_empty_state(page, node_id: str, reason: str, *, timeout: float = 30000) -> None:
+    """Assert a VIS_VEGA node explains why it has nothing to draw.
+
+    The counterpart to ``assert_vega_canvas_rendered``: some specs cannot be
+    drawn at all, and the node is supposed to say so in its body rather than
+    leave a blank rectangle behind (#224). ``useVega`` marks the container with
+    ``data-curio-node-empty="<reason>"``, so the assertion is on the reason
+    rather than merely on the presence of some text.
+    """
+    marker = page.locator(f'#vega{node_id}[data-curio-node-empty="{reason}"]')
+    marker.wait_for(state="attached", timeout=timeout)
+    assert marker.count() == 1, (
+        f"Vega node {node_id}: expected the node body to report "
+        f"{reason!r}, found nothing"
+    )
+    text = page.locator(f"#vega{node_id}").inner_text().strip()
+    assert text, (
+        f"Vega node {node_id}: reported {reason!r} but rendered no message for "
+        f"the user to read"
     )
 
 
