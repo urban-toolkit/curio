@@ -145,12 +145,11 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
   "projection": {"type": "mercator"},
   "layer": [
     {
-      "data": {"name": "table"},
       "transform": [{"filter": "datum.geometry != null"}],
       "mark": {"type": "geoshape", "stroke": "#888", "strokeWidth": 0.4},
       "encoding": {
         "color": {
-          "field": "properties.nbhd_dominant_class",
+          "field": "nbhd_dominant_class",
           "type": "nominal",
           "scale": {
             "domain": ["road","sidewalk","building","vegetation","sky","car"],
@@ -159,9 +158,9 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
           "legend": {"title": "Dominant class"}
         },
         "tooltip": [
-          {"field": "properties.neighborhood_name", "title": "neighborhood"},
-          {"field": "properties.nbhd_dominant_class", "title": "dominant"},
-          {"field": "properties.nbhd_dominant_pct",   "title": "avg %"}
+          {"field": "neighborhood_name", "title": "neighborhood"},
+          {"field": "nbhd_dominant_class", "title": "dominant"},
+          {"field": "nbhd_dominant_pct",   "title": "avg %"}
         ]
       }
     }
@@ -178,20 +177,19 @@ A second `Vega-Lite` wired off the same Spatial Join output:
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "width": 400,
   "height": {"step": 16},
-  "data": {"name": "table"},
   "transform": [
-    {"filter": "datum.properties.neighborhood_name != null"},
+    {"filter": "datum.neighborhood_name != null"},
     {
       "aggregate": [{"op": "count", "as": "image_count"}],
-      "groupby": ["properties.neighborhood_name", "properties.dominant_class"]
+      "groupby": ["neighborhood_name", "dominant_class"]
     }
   ],
   "mark": "bar",
   "encoding": {
-    "y": {"field": "properties.neighborhood_name", "type": "nominal", "sort": "-x", "title": null},
+    "y": {"field": "neighborhood_name", "type": "nominal", "sort": "-x", "title": null},
     "x": {"field": "image_count", "type": "quantitative", "title": "images"},
     "color": {
-      "field": "properties.dominant_class",
+      "field": "dominant_class",
       "type": "nominal",
       "scale": {
         "domain": ["road","sidewalk","building","vegetation","sky","car"],
