@@ -9,6 +9,7 @@
 import {
   NODE_EMPTY_COPY,
   hasIncomingEdge,
+  resolveGrammarEmptyReason,
   resolveNodeEmptyReason,
   type NodeEmptyReason,
 } from "../../utils/nodeEmptyState";
@@ -84,7 +85,7 @@ describe("hasIncomingEdge", () => {
 
 describe("the grammar states", () => {
   // Added for the Vega-Lite node, which rendered no empty state at all: when
-  // nothing compiled, its output div was simply blank — the exact #224
+  // nothing compiled, its output div was simply blank, the exact #224
   // complaint, still true of the most-used visualisation node.
   const GRAMMAR_REASONS: NodeEmptyReason[] = [
     "input-type-rejected",
@@ -119,5 +120,61 @@ describe("the grammar states", () => {
     expect(
       resolveNodeEmptyReason({ connected: true, hasInput: true, tabular: true, rowCount: 3 }),
     ).toBeNull();
+  });
+});
+
+describe("resolveGrammarEmptyReason", () => {
+  // A sibling of resolveNodeEmptyReason rather than an extension: a chart has
+  // no notion of rows or of being "tabular", and a table has none of a spec.
+  const inputs = (over: Partial<Parameters<typeof resolveGrammarEmptyReason>[0]> = {}) => ({
+    connected: true,
+    hasInput: true,
+    hasSpec: true,
+    hasRun: true,
+    ...over,
+  });
+
+  test("connectivity is asked first", () => {
+    expect(
+      resolveGrammarEmptyReason(inputs({ connected: false, hasInput: false, hasSpec: false })),
+    ).toBe("disconnected");
+  });
+
+  test("an edge with no output yet is upstream-not-run", () => {
+    // The state that makes the default-spec feature honest: an edge alone
+    // carries no schema, so there is nothing to fill from and saying so beats
+    // sitting blank.
+    expect(resolveGrammarEmptyReason(inputs({ hasInput: false }))).toBe("upstream-not-run");
+  });
+
+  test("an unreadable input outranks a missing spec", () => {
+    // No spec will fix a payload this node cannot read, so say the true thing.
+    expect(
+      resolveGrammarEmptyReason(
+        inputs({ hasSpec: false, inputProblem: "input-type-rejected" }),
+      ),
+    ).toBe("input-type-rejected");
+  });
+
+  test("an empty editor is no-spec", () => {
+    expect(resolveGrammarEmptyReason(inputs({ hasSpec: false }))).toBe("no-spec");
+  });
+
+  test("a spec that has not been compiled is not-run", () => {
+    expect(resolveGrammarEmptyReason(inputs({ hasRun: false }))).toBe("not-run");
+  });
+
+  test("a compile that drew nothing is rendered-empty", () => {
+    expect(resolveGrammarEmptyReason(inputs({ renderedEmpty: true }))).toBe("rendered-empty");
+  });
+
+  test("a node with a chart to show reports nothing", () => {
+    expect(resolveGrammarEmptyReason(inputs())).toBeNull();
+  });
+
+  test("the geometry reasons pass straight through as input problems", () => {
+    for (const problem of ["geometry-unresolved", "geometry-ambiguous"] as const) {
+      expect(resolveGrammarEmptyReason(inputs({ inputProblem: problem }))).toBe(problem);
+    }
   });
 });
