@@ -47,7 +47,7 @@ EXAMPLE_INVARIANTS = [
      {
          "curio.streetvision/street-view-fetcher": 1,
          "curio.streetvision/hf-cv-inference": 1,
-         "curio.streetvision/cv-gallery": 1,
+         "curio.builtin/vis-simple": 1,
          "curio.builtin/spatial-join": 1,
          "curio.builtin/vis-vega": 2,
      }, False),
