@@ -1,0 +1,248 @@
+name: E2E Autark repro
+
+# Runs only the Autark workflows of the e2e matrix, many times over, on the
+# same sharded stack and worker count as test-gpu, with failure diagnostics
+# and Playwright traces on (tests/test_frontend/diagnostics.py). For #248: the
+# full matrix fails an Autark workflow's test_node_execution about once in
+# twenty runs, too rarely to debug from; this makes it happen on demand and
+# keeps the evidence. Diagnostic only; manual dispatch.
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: How many times to run the Autark workflows
+        default: "10"
+      workflows:
+        description: Comma-separated workflow basenames (empty = every workflow with an autk-grammar node)
+        default: ""
+      trace:
+        description: Keep a Playwright trace of every failing test (1 or 0)
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-autark-repro
+  cancel-in-progress: false
+
+jobs:
+  repro:
+    runs-on: [self-hosted, linux, gpu, curio]
+    timeout-minutes: 240
+
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml:docker-compose.ci-shards.yml
+      CURIO_WEBGPU_BACKEND: hardware
+      CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
+      CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
+      CURIO_E2E_TRACE: ${{ inputs.trace }}
+      # Its own stack and ports, so it can never collide with a CI run: prod is
+      # 2000/5002/8080, curio-dev 2010/5012/8090, the CI stacks and the zygote
+      # repro 2020-2050 / 5022-5052 / 8100-8130.
+      CURIO_CONTAINER_NAME: curio-ci-e2e-repro
+      CURIO_PORT_2000: "2060"
+      CURIO_PORT_5002: "5062"
+      CURIO_PORT_8080: "8140"
+      CURIO_PORT_5003: "5063"
+      CURIO_PORT_2001: "2061"
+      CURIO_PORT_5004: "5064"
+      CURIO_PORT_2002: "2062"
+      CURIO_PORT_5005: "5065"
+      CURIO_PORT_2003: "2063"
+      CURIO_PORT_5006: "5066"
+      CURIO_PORT_2004: "2064"
+      CURIO_PORT_5007: "5067"
+      CURIO_PORT_2005: "2065"
+      CURIO_PORT_5008: "5068"
+      CURIO_PORT_2006: "2066"
+      CURIO_PORT_5009: "5069"
+      CURIO_PORT_2007: "2067"
+      CURIO_E2E_PARALLEL: "6"
+      BACKEND_URL: "http://localhost:5062"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5062"
+      CURIO_E2E_SANDBOX_PORT: "2060"
+      CURIO_E2E_FRONTEND_PORT: "8140"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2060"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      ITERATIONS: ${{ inputs.iterations }}
+      WORKFLOWS_INPUT: ${{ inputs.workflows }}
+
+    steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔨 Build the images
+        run: docker compose -p curio-ci-e2e-repro build --parallel
+
+      - name: ▶️ Start containers
+        run: docker compose -p curio-ci-e2e-repro up -d
+
+      - name: 🧪 Wait for services to become healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 300 bash -euo pipefail -c '
+            while true; do
+              cid="$(docker compose -p curio-ci-e2e-repro ps -a -q curio | head -n1 || true)"
+              if [[ -z "${cid}" ]]; then sleep 2; continue; fi
+              state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
+              health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
+              if [[ "${health}" == "healthy" ]]; then echo "healthy"; break; fi
+              if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then break; fi
+              if [[ "${state}" == "exited" ]]; then
+                echo "the stack exited during startup. Logs:"
+                docker compose -p curio-ci-e2e-repro logs --no-color --tail=200 curio || true
+                exit 1
+              fi
+              sleep 2
+            done
+          '
+
+      - name: 🔒 Assert the test stubs are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' -d '{}' \
+            "http://localhost:${CURIO_E2E_BACKEND_PORT}/api/testing/reset-db")
+          if [ "$code" != "200" ]; then
+            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (CURIO_TESTING)" >&2
+            exit 1
+          fi
+
+      - name: 🐍 Set up Python (for e2e)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 🔧 Give .curio/ permissions for host-side tests
+        run: |
+          docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c \
+            || mkdir -p .curio/playwright/expected
+
+      # Same shards as test-gpu: backend+sandbox pairs 1..N-1 inside the one
+      # container, one per xdist worker (see the step of the same name there).
+      - name: 🧩 Start the extra e2e shards inside the container
+        shell: bash
+        run: |
+          set -euo pipefail
+          for k in $(seq 1 $((CURIO_E2E_PARALLEL - 1))); do
+            docker compose -p curio-ci-e2e-repro exec -d -T curio sh -c '
+              umask 000
+              k="$1"
+              eval "$(env -u CURIO_E2E_BACKEND_PORT -u CURIO_E2E_SANDBOX_PORT \
+                          -u BACKEND_PORT -u SANDBOX_PORT \
+                          python -m utk_curio.backend.tests.shards "$k")"
+              mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
+              cp -r /app/datasets/. "$CURIO_CATALOG_ROOT/"
+              python curio.py start backend --auth --with-examples \
+                --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
+                --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
+                > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
+              python curio.py start sandbox \
+                --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
+                --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
+                > "$CURIO_STATE_DIR/launch-sandbox.out" 2>&1 &
+              wait
+            ' sh "$k"
+          done
+          for k in $(seq 1 $((CURIO_E2E_PARALLEL - 1))); do
+            for port in $((CURIO_E2E_BACKEND_PORT + k)) $((CURIO_E2E_SANDBOX_PORT + k)); do
+              timeout 240 bash -c "until curl -sf http://localhost:$port/live >/dev/null; do sleep 2; done" \
+                || { echo "::error::shard $k never answered on :$port" >&2; exit 1; }
+            done
+          done
+
+      - name: 🎯 Pick the Autark workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$WORKFLOWS_INPUT" ]; then
+            workflows="$WORKFLOWS_INPUT"
+          else
+            # Every workflow in the e2e matrix with an autk-grammar node.
+            workflows=$(python - <<'EOF'
+          import re
+          src = open("utk_curio/backend/tests/test_frontend/conftest.py").read()
+          files = re.findall(r'"(docs/examples/[^"]+\.json)"', src)
+          print(",".join(f.rsplit("/", 1)[-1] for f in files
+                         if "curio.builtin/autk-grammar" in open(f).read()))
+          EOF
+            )
+          fi
+          echo "REPRO_WORKFLOWS=$workflows" >> "$GITHUB_ENV"
+          echo "workflows: $workflows"
+
+      - name: 🔁 Run them ${{ inputs.iterations }} times
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p repro-logs
+          : > repro-summary.txt
+          for i in $(seq 1 "$ITERATIONS"); do
+            echo "::group::iteration $i of $ITERATIONS"
+            CURIO_E2E_TARGETS=tests/test_frontend/test_workflows.py \
+              bash scripts/test.sh --e2e-only --use-existing \
+                --parallel "$CURIO_E2E_PARALLEL" \
+                --workflows "$REPRO_WORKFLOWS" \
+                --allure-dir "$GITHUB_WORKSPACE/allure-results" \
+              > "repro-logs/iteration-$i.log" 2>&1
+            status=$?
+            tail -40 "repro-logs/iteration-$i.log"
+            echo "::endgroup::"
+            result=$(grep -E '^=+ .* in [0-9.]+s' "repro-logs/iteration-$i.log" | tail -1 | tr -d '=' | xargs)
+            echo "iteration $i: exit $status: ${result:-no pytest summary}" | tee -a repro-summary.txt
+            grep -E 'Z FAILED tests/|^FAILED tests/' "repro-logs/iteration-$i.log" \
+              | sed -E 's/.*FAILED (tests\/[^ ]+).*/  FAILED \1/' | sort -u | tee -a repro-summary.txt || true
+          done
+          {
+            echo "## Autark repro: $ITERATIONS iterations"
+            echo
+            echo "Workflows: \`$REPRO_WORKFLOWS\`"
+            echo
+            echo '```'
+            cat repro-summary.txt
+            echo '```'
+            echo
+            echo "Failures by test:"
+            echo
+            echo '```'
+            grep -E '^  FAILED ' repro-summary.txt | sort | uniq -c | sort -rn || echo "none"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📋 Capture stack logs
+        if: always()
+        run: |
+          docker compose -p curio-ci-e2e-repro logs --no-color --tail=8000 > container-logs.txt 2>&1 || true
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'cat .curio/messages.log 2>/dev/null; for f in .curio/shards/*/launch-*.out; do [ -f "$f" ] && { echo "=== $f ==="; cat "$f"; echo; }; done' \
+            > stack-logs.txt 2>&1 || true
+
+      - name: 📤 Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: e2e-autark-repro
+          path: |
+            repro-summary.txt
+            repro-logs/
+            e2e-failures/
+            allure-results/
+            container-logs.txt
+            stack-logs.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: 🧹 Tear down
+        if: always()
+        run: |
+          docker compose -p curio-ci-e2e-repro down -v --remove-orphans || true
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
