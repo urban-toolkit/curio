@@ -663,6 +663,50 @@ def test_the_zygote_holds_no_duckdb_handle(isolated, workspace):
     assert not any("duckdb" in target for target in targets), targets
 
 
+def _thread_names_of(pid):
+    task_dir = f"/proc/{pid}/task"
+    names = []
+    for thread_id in os.listdir(task_dir):
+        try:
+            with open(os.path.join(task_dir, thread_id, "comm")) as handle:
+                names.append(handle.read().strip())
+        except OSError:
+            continue
+    return names
+
+
+def test_the_zygote_is_single_threaded_once_it_has_forked(isolated):
+    """After its first fork, only the accept loop may be left running.
+
+    ``import duckdb`` opens a connection with a pool of threads, and children
+    forked with that pool alive crashed inside DuckDB, so the zygote closes it
+    before serving (``zygote._release_import_time_duckdb``). numpy's OpenBLAS
+    pool is still there when serving starts but tears itself down on the first
+    fork, hence one execution before counting.
+
+    pyarrow's jemalloc background thread ("jemalloc_bg_thd") is allowed: it is
+    fork-aware, and no child crashed in 1,200 repro executions with it alive.
+    Anything else left running is named in the failure.
+    """
+    from utk_curio.sandbox.isolation import lifecycle
+
+    assert run_isolated(isolated, "    return 1\n")["stderr"] == ""
+    names = _thread_names_of(lifecycle._process.pid)
+    others = [name for name in names if name != "jemalloc_bg_thd"]
+    assert len(others) == 1, f"the zygote has {len(names)} threads after forking: {names}"
+
+
+def test_node_code_can_still_use_duckdb(isolated, workspace):
+    """The zygote closed DuckDB's default connection; node code must not notice."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = run_isolated(
+        isolated, "    return duckdb.sql('select 42').fetchall()[0][0]\n"
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert load_from_duckdb(result["output"]["path"]) == 42
+
+
 def test_the_zygote_is_replaced_if_it_dies(isolated):
     from utk_curio.sandbox.isolation import lifecycle
 
