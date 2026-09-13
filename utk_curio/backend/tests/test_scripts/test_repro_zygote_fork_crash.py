@@ -1,4 +1,4 @@
-"""Does ``scripts/repro_zygote_first_fork.py`` draw the right conclusion?
+"""Does ``scripts/repro_zygote_fork_crash.py`` draw the right conclusion?
 
 The loop itself needs Linux and a CI image, so it is not run here. What can
 quietly mislead is the arithmetic and the verdict built on it, and those are
@@ -16,28 +16,23 @@ from utk_curio.backend.app.projects.seed import _repo_root
 from utk_curio.sandbox.isolation import zygote
 
 REPO_ROOT = str(_repo_root())
-SCRIPT = os.path.join(REPO_ROOT, "scripts", "repro_zygote_first_fork.py")
+SCRIPT = os.path.join(REPO_ROOT, "scripts", "repro_zygote_fork_crash.py")
 
 
 @pytest.fixture(scope="module")
 def repro():
-    spec = importlib.util.spec_from_file_location("repro_zygote_first_fork", SCRIPT)
+    spec = importlib.util.spec_from_file_location("repro_zygote_fork_crash", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def _variant(first_crashes, runs=300, later_crashes=0):
-    return {
-        "first_fork": {"crash": first_crashes, "ok": runs - first_crashes},
-        "later_forks": {"crash": later_crashes, "ok": runs - later_crashes},
-        "first_fork_runs": runs,
-        "later_fork_runs": runs,
-    }
+def _variant(crashes, runs=600):
+    return {"crashes": crashes, "runs": runs}
 
 
-def test_the_fisher_test_reproduces_the_ci_numbers(repro):
-    # 2 of 36 first forks crashed in CI, 0 of ~252 later ones.
+def test_the_fisher_test_reproduces_a_known_value(repro):
+    # 2 of 36 in one group against 0 of 252 in the other.
     assert repro.one_sided_fisher(2, 36, 0, 252) == pytest.approx(0.0152, abs=1e-4)
 
 
@@ -46,28 +41,39 @@ def test_no_crashes_is_no_evidence(repro):
 
 
 @pytest.mark.parametrize(
-    "baseline, warmup, label",
+    "baseline, released, label",
     [
-        (_variant(10), _variant(0), "SUPPORTED"),
+        (_variant(13), _variant(0), "SUPPORTED"),
         (_variant(2), _variant(0), "SUGGESTIVE"),
         (_variant(0), _variant(0), "NOT REPRODUCED"),
-        (_variant(9), _variant(3), "NOT ENOUGH"),
-        (_variant(9), _variant(0, later_crashes=1), "NOT ENOUGH"),
+        (_variant(13), _variant(1), "NOT ENOUGH"),
     ],
 )
-def test_the_verdict(repro, baseline, warmup, label):
-    assert repro.verdict({"baseline": baseline, "warmup": warmup})[0] == label
+def test_the_verdict(repro, baseline, released, label):
+    assert repro.verdict({"baseline": baseline, "released": released})[0] == label
 
 
 def test_one_variant_gives_no_verdict(repro):
-    assert repro.verdict({"warmup": _variant(0)})[0] == "INCOMPLETE"
+    assert repro.verdict({"released": _variant(0)})[0] == "INCOMPLETE"
 
 
-def test_the_baseline_really_disables_the_warmup_fork(repro):
-    """A rename would leave baseline identical to warmup, and the loop would
+def test_the_summary_counts_crashes_on_every_fork(repro):
+    records = [
+        {"variant": "baseline", "execs": [{"outcome": "crash"}, {"outcome": "ok"}]},
+        {"variant": "baseline", "execs": [{"outcome": "ok"}, {"outcome": "crash"}]},
+        {"variant": "released", "execs": [{"outcome": "ok"}, {"outcome": "ok"}]},
+    ]
+    summary = repro.summarize(records, ["baseline", "released"])
+    assert (summary["baseline"]["crashes"], summary["baseline"]["runs"]) == (2, 4)
+    assert summary["released"]["crashes"] == 0
+
+
+def test_the_baseline_really_skips_the_release(repro):
+    """A rename would leave baseline identical to released, and the loop would
     report "not reproduced" for the wrong reason."""
-    assert callable(zygote._settle_before_serving)
-    assert "zygote._settle_before_serving = lambda: None" in repro._BASELINE_ENTRY
+    assert callable(zygote._release_import_time_duckdb)
+    assert ("zygote._release_import_time_duckdb = lambda: None"
+            in repro._BASELINE_ENTRY)
 
 
 @pytest.mark.parametrize(

@@ -1,38 +1,40 @@
 #!/usr/bin/env python3
-"""How often does a fresh zygote's first child crash, with and without the warm-up fork?
+"""How often does a forked child crash in DuckDB, with and without the zygote releasing DuckDB?
 
-Background. ``test-gpu-isolated`` failed intermittently because the job's first
-isolated node died with signal 11 in DuckDB's ``close()``, inside
-``codec._write_dataframe_parquet``. It was always the zygote's first child;
-later children doing the same write never crashed. The zygote now forks once
-before serving (``zygote._settle_before_serving``) so that no real node is the
-first fork. This script checks whether that is what makes the crash go away.
+Background. Isolated execution intermittently failed with "This node was killed
+by signal 11": a child forked from the zygote died in DuckDB's ``close()``,
+inside ``codec._write_dataframe_parquet``. ``import duckdb`` opens a default
+connection with a pool of threads, the zygote imports duckdb while warming up,
+and DuckDB's state is not fork-safe (duckdb/duckdb-python#292). The zygote now
+closes that connection before serving (``zygote._release_import_time_duckdb``).
+This script measures whether that removes the crash.
 
 Each iteration starts a fresh zygote, runs the ``DataPool_Dataframe`` node the
-moment it is ready (the first fork, exactly as the e2e job does), runs it again
-(a later fork), and stops the zygote. Two variants, interleaved so both see the
-same load on the host:
+moment it is ready, runs it again, and stops the zygote. Two variants,
+interleaved so both see the same load on the host:
 
-    baseline   the zygote without the warm-up fork (the old behaviour)
-    warmup     the zygote as it ships now
+    baseline   the zygote without the release (DuckDB's threads stay alive)
+    released   the zygote as it ships now
 
 Limits, seccomp and the absence of an exec user match the isolated e2e job.
 Linux only. Run it inside the CI image, where the libraries are the ones that
 crashed:
 
-    python scripts/repro_zygote_first_fork.py --iterations 300
+    python scripts/repro_zygote_fork_crash.py --iterations 300
+
+It starts with a thread census: which of the zygote's imports start threads,
+and what the zygote is left with after the release.
 
 Reading the verdict:
 
-    SUPPORTED        baseline crashed on first forks, warmup never did, and
-                     the difference is unlikely to be chance
-    NOT REPRODUCED   neither variant crashed, so this loop did not recreate
-                     the CI conditions and shows nothing either way (try
-                     --load, or more iterations)
-    NOT ENOUGH       warmup crashed too, so the warm-up fork does not remove
-                     the cause
+    SUPPORTED        baseline crashed, released never did, and the difference
+                     is unlikely to be chance
+    NOT REPRODUCED   neither variant crashed, so this run shows nothing either
+                     way (try --load, or more iterations)
+    NOT ENOUGH       released crashed too, so the release does not remove the
+                     cause
 
-Exits 1 when the warmup variant crashes at all, so a CI job fails on the one
+Exits 1 when the released variant crashes at all, so a CI job fails on the one
 result that means the fix does not work.
 """
 
@@ -60,26 +62,28 @@ from utk_curio.sandbox.isolation import protocol, supervisor  # noqa: E402
 
 SIGSEGV = 11
 
-# The zygote as it was before the warm-up fork: the same entry point, with the
-# settle step replaced by a no-op before main() runs.
+# The zygote without the release: the same entry point, with the release
+# replaced by a no-op before main() runs.
 _BASELINE_ENTRY = (
     "import sys\n"
     "from utk_curio.sandbox.isolation import zygote\n"
-    "zygote._settle_before_serving = lambda: None\n"
+    "zygote._release_import_time_duckdb = lambda: None\n"
     "sys.exit(zygote.main(sys.argv[1:]))\n"
 )
 
 ZYGOTE_ARGS = {
     "baseline": ["-c", _BASELINE_ENTRY],
-    "warmup": ["-m", "utk_curio.sandbox.isolation.zygote"],
+    "released": ["-m", "utk_curio.sandbox.isolation.zygote"],
 }
 
-# The e2e job's only crash site was this node. "int" is the column shape of
-# test_isolation_linux.py::test_a_dataframe_survives_the_boundary, which never
-# crashed, for telling "first fork" apart from "first fork with a string column".
+# The e2e job's crash site was this node. "int" is the column shape of
+# test_isolation_linux.py::test_a_dataframe_survives_the_boundary.
 _INT_NODE = "import pandas as pd\n\nreturn pd.DataFrame({'a': [1, 2, 3]})\n"
 
-_SETTLE_LINE = re.compile(r"threads before the warm-up fork: (\d+) .*; after: (\d+)")
+_RELEASE_LINE = re.compile(r"released DuckDB's import-time connection: threads (\d+) .*-> (\d+)")
+
+# The libraries the zygote imports while warming up, one at a time for the census.
+CENSUS_MODULES = ("numpy", "pyarrow", "pandas", "duckdb", "geopandas", "shapely", "pyproj")
 
 READY_TIMEOUT_SECONDS = 180
 
@@ -97,6 +101,63 @@ def node_code(shape):
         body = next(node["content"] for node in flow["nodes"]
                     if node.get("type") == "curio.builtin/data-loading")
     return textwrap.indent(body, "    ")
+
+
+# ---------------------------------------------------------------------------
+# Thread census
+# ---------------------------------------------------------------------------
+
+_CENSUS_HELPER = textwrap.dedent("""
+    import collections, os, sys
+    def names():
+        try:
+            ids = os.listdir("/proc/self/task")
+        except OSError:
+            return None
+        out = []
+        for tid in ids:
+            try:
+                with open(f"/proc/self/task/{tid}/comm") as handle:
+                    out.append(handle.read().strip())
+            except OSError:
+                pass
+        return out
+    def describe(found):
+        if found is None:
+            return "n/a (no /proc)"
+        counts = collections.Counter(found)
+        return f"{len(found)} (" + ", ".join(f"{n} x{c}" for n, c in counts.most_common()) + ")"
+""")
+
+
+def thread_census(env):
+    """Threads started by each import, and what the warmed-up zygote keeps."""
+    lines = []
+    for module in CENSUS_MODULES:
+        code = _CENSUS_HELPER + f"import {module}\nprint(describe(names()))\n"
+        lines.append((f"import {module}", _run_census(code, env, lines=1)[0]))
+    code = _CENSUS_HELPER + textwrap.dedent("""
+        from utk_curio.sandbox.isolation import zygote
+        zygote.build_namespace_template()
+        print(describe(names()))
+        zygote._release_import_time_duckdb()
+        print(describe(names()))
+    """)
+    before, after = _run_census(code, env, lines=2)
+    lines.append(("zygote imports", before))
+    lines.append(("  after the release", after))
+    return lines
+
+
+def _run_census(code, env, *, lines):
+    """The last *lines* lines the census interpreter printed."""
+    result = subprocess.run([sys.executable, "-c", code], cwd=REPO_ROOT, env=env,
+                            capture_output=True, text=True, timeout=300)
+    output = result.stdout.strip().splitlines()
+    if result.returncode != 0 or len(output) < lines:
+        tail = (result.stderr.strip().splitlines() or ["no output"])[-1]
+        return [f"failed: {tail}"] * lines
+    return output[-lines:]
 
 
 # ---------------------------------------------------------------------------
@@ -211,10 +272,10 @@ def one_iteration(variant, index, workspace, env, args, code, limits):
     if os.path.exists(socket_path):
         os.remove(socket_path)
 
-    settle = _SETTLE_LINE.search(stderr_text)
-    if settle:
-        record["threads_before_warmup"] = int(settle.group(1))
-        record["threads_after_warmup"] = int(settle.group(2))
+    release = _RELEASE_LINE.search(stderr_text)
+    if release:
+        record["threads_before_release"] = int(release.group(1))
+        record["threads_after_release"] = int(release.group(2))
     if any(e["outcome"] == "crash" for e in record["execs"]):
         # The children's faulthandler tracebacks, for comparing with CI's.
         start = stderr_text.find("Fatal Python error")
@@ -228,7 +289,7 @@ def one_iteration(variant, index, workspace, env, args, code, limits):
 # ---------------------------------------------------------------------------
 
 # "auto" load: half the CPUs, but never more than this. The runner also hosts
-# production, and the e2e job it stands in for runs about six busy workers.
+# production, and the e2e job this stands in for runs about six busy workers.
 AUTO_LOAD_CAP = 8
 
 
@@ -271,8 +332,6 @@ def summarize(records, variants):
         later = [e["outcome"] for r in mine for e in r["execs"][1:]]
         ready = [r["threads_at_ready"] for r in mine
                  if r.get("threads_at_ready") is not None]
-        before = [r["threads_before_warmup"] for r in mine
-                  if "threads_before_warmup" in r]
         summary[variant] = {
             "zygotes": len(mine),
             "start_errors": sum(1 for r in mine if "start_error" in r),
@@ -280,8 +339,9 @@ def summarize(records, variants):
             "later_forks": {o: later.count(o) for o in sorted(set(later))},
             "first_fork_runs": len(first),
             "later_fork_runs": len(later),
+            "crashes": first.count("crash") + later.count("crash"),
+            "runs": len(first) + len(later),
             "threads_at_ready": _spread(ready),
-            "threads_before_warmup_fork": _spread(before),
         }
     return summary
 
@@ -294,58 +354,52 @@ def _spread(values):
 
 
 def verdict(summary):
-    base, warm = summary.get("baseline"), summary.get("warmup")
-    if not base or not warm:
+    base, released = summary.get("baseline"), summary.get("released")
+    if not base or not released:
         return "INCOMPLETE", "run both variants to get a verdict"
-    b = base["first_fork"].get("crash", 0)
-    w = warm["first_fork"].get("crash", 0)
-    later_crashes = (base["later_forks"].get("crash", 0)
-                     + warm["later_forks"].get("crash", 0))
-    note = (f" ({later_crashes} crash(es) on later forks too, so it is not only "
-            "about the first fork)" if later_crashes else "")
-    if w or warm["later_forks"].get("crash", 0):
+    b, r = base["crashes"], released["crashes"]
+    if r:
         return "NOT ENOUGH", (
-            f"the warmup variant still crashed: {w} of "
-            f"{warm['first_fork_runs']} first forks{note}"
+            f"the released variant still crashed: {r} of {released['runs']} "
+            f"executions (baseline {b} of {base['runs']})"
         )
     if b == 0:
         return "NOT REPRODUCED", (
-            f"neither variant crashed in {base['first_fork_runs']} first forks "
-            f"each{note}. This loop did not recreate the CI conditions; try "
-            "--load, or more iterations."
+            f"neither variant crashed in {base['runs']} executions each. This "
+            "run did not recreate the CI conditions; try --load, or more "
+            "iterations."
         )
-    p = one_sided_fisher(b, base["first_fork_runs"], w, warm["first_fork_runs"])
+    p = one_sided_fisher(b, base["runs"], r, released["runs"])
     if p < 0.05:
         return "SUPPORTED", (
-            f"baseline crashed on {b} of {base['first_fork_runs']} first forks, "
-            f"warmup on none (one-sided Fisher p = {p:.4f}){note}"
+            f"baseline crashed in {b} of {base['runs']} executions, released "
+            f"in none of {released['runs']} (one-sided Fisher p = {p:.4f})"
         )
     return "SUGGESTIVE", (
-        f"baseline crashed on {b} of {base['first_fork_runs']} first forks, "
-        f"warmup on none, but p = {p:.3f} could still be chance; run more "
-        f"iterations{note}"
+        f"baseline crashed in {b} of {base['runs']} executions, released in "
+        f"none, but p = {p:.3f} could still be chance; run more iterations"
     )
 
 
 def print_table(summary):
     header = (f"{'variant':<10}{'zygotes':>8}  {'threads@ready':<15}"
-              f"{'first-fork crashes':<22}{'later-fork crashes':<22}other")
+              f"{'crashes (1st fork)':<20}{'crashes (later)':<18}"
+              f"{'crashes (all)':<16}other")
     print(header)
     print("-" * len(header))
     for variant, s in summary.items():
         ready = s["threads_at_ready"]
         ready_text = (f"{ready['median']:g} ({ready['min']}-{ready['max']})"
                       if ready else "n/a")
-        first_n, later_n = s["first_fork_runs"], s["later_fork_runs"]
-        first_c = s["first_fork"].get("crash", 0)
-        later_c = s["later_forks"].get("crash", 0)
+        first = f"{s['first_fork'].get('crash', 0)} / {s['first_fork_runs']}"
+        later = f"{s['later_forks'].get('crash', 0)} / {s['later_fork_runs']}"
+        total = f"{s['crashes']} / {s['runs']}"
         other = {k: v for k, v in {**s["first_fork"], **s["later_forks"]}.items()
                  if k not in ("ok", "crash")}
         if s["start_errors"]:
             other["start-error"] = s["start_errors"]
-        print(f"{variant:<10}{s['zygotes']:>8}  {ready_text:<15}"
-              f"{f'{first_c} / {first_n}':<22}{f'{later_c} / {later_n}':<22}"
-              f"{other or '-'}")
+        print(f"{variant:<10}{s['zygotes']:>8}  {ready_text:<15}{first:<20}"
+              f"{later:<18}{total:<16}{other or '-'}")
 
 
 def library_versions():
@@ -367,14 +421,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--iterations", type=int, default=300,
                         help="fresh zygotes per variant (default 300)")
-    parser.add_argument("--variants", default="baseline,warmup",
-                        help="comma-separated, from: baseline, warmup")
+    parser.add_argument("--variants", default="baseline,released",
+                        help="comma-separated, from: baseline, released")
     parser.add_argument("--node", choices=("string", "int"), default="string",
                         help="DataFrame shape: the e2e node's string column "
                              "(default) or the unit test's int-only one")
     parser.add_argument("--execs-per-zygote", type=int, default=2,
-                        help="executions per zygote; the first is the first "
-                             "fork (default 2)")
+                        help="executions per zygote (default 2)")
     parser.add_argument("--load", default="0",
                         help="busy processes to run alongside: a number, or "
                              f"'auto' for half the CPUs up to {AUTO_LOAD_CAP} "
@@ -385,6 +438,8 @@ def main(argv=None):
                         default=supervisor.DEFAULT_WALL_TIMEOUT_SECONDS,
                         help="wall-clock limit per execution, also the CPU "
                              "limit, as in the sandbox (default 300)")
+    parser.add_argument("--no-census", action="store_true",
+                        help="skip the thread census at the start")
     parser.add_argument("--report", help="write the full JSON report here")
     args = parser.parse_args(argv)
 
@@ -397,6 +452,15 @@ def main(argv=None):
               "fails its confinement step and nothing here means anything",
               file=sys.stderr)
 
+    try:
+        cpus = len(os.sched_getaffinity(0))
+    except AttributeError:
+        cpus = os.cpu_count()
+    try:
+        args.load = resolve_load(args.load, cpus)
+    except ValueError as exc:
+        parser.error(f"--load: {exc}")
+
     limits = dict(supervisor.DEFAULT_LIMITS, memory_mb=args.memory_mb,
                   cpu_seconds=args.timeout)
     code = node_code(args.node)
@@ -408,18 +472,17 @@ def main(argv=None):
     )
     env["CURIO_SHARED_DATA"] = os.path.join(workspace, "data")
 
-    try:
-        cpus = len(os.sched_getaffinity(0))
-    except AttributeError:
-        cpus = os.cpu_count()
-    try:
-        args.load = resolve_load(args.load, cpus)
-    except ValueError as exc:
-        parser.error(f"--load: {exc}")
-    print(f"zygote first-fork repro: {args.iterations} iterations x "
+    print(f"zygote fork-crash repro: {args.iterations} iterations x "
           f"{len(variants)} variant(s), node={args.node}, "
           f"execs/zygote={args.execs_per_zygote}, load={args.load}, cpus={cpus}")
     print(f"libraries: {library_versions()}")
+
+    census = []
+    if not args.no_census:
+        census = thread_census(env)
+        print("thread census (a fresh interpreter per line):")
+        for label, result in census:
+            print(f"  {label:<22} {result}")
 
     load = start_load(args.load)
     records = []
@@ -461,6 +524,7 @@ def main(argv=None):
             "config": {**vars(args), "cpus": cpus,
                        "python": platform.python_version()},
             "libraries": library_versions(),
+            "thread_census": census,
             "summary": summary,
             "verdict": {"label": label, "detail": detail},
             "crash_logs": crash_logs[:5],
@@ -470,10 +534,8 @@ def main(argv=None):
             json.dump(report, handle, indent=2)
         print(f"\nreport written to {args.report}")
 
-    warm = summary.get("warmup")
-    warm_crashed = bool(warm) and (warm["first_fork"].get("crash", 0)
-                                   + warm["later_forks"].get("crash", 0)) > 0
-    return 1 if warm_crashed else 0
+    released = summary.get("released")
+    return 1 if released and released["crashes"] else 0
 
 
 if __name__ == "__main__":

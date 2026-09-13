@@ -1,18 +1,19 @@
-name: Zygote first-fork repro
+name: Zygote fork crash repro
 
-# Runs scripts/repro_zygote_first_fork.py inside the same container the
-# isolated e2e job uses, to measure how often a fresh zygote's first child
-# crashes with and without the warm-up fork (zygote._settle_before_serving).
+# Runs scripts/repro_zygote_fork_crash.py inside the same container the
+# isolated e2e job uses, to measure how often a forked child crashes in DuckDB
+# with and without the zygote closing DuckDB's import-time connection
+# (zygote._release_import_time_duckdb).
 #
 # Diagnostic only, and never part of normal CI. It runs on a manual dispatch,
 # or when a branch named repro/... is pushed. Dispatch needs this file on the
 # default branch first, so until then the way to run it is a push, and a branch
 # name ending in -load adds busy processes alongside:
 #
-#     git push origin HEAD:repro/zygote-first-fork        # no extra load
-#     git push origin HEAD:repro/zygote-first-fork-load   # --load auto
+#     git push origin HEAD:repro/zygote-fork-crash        # no extra load
+#     git push origin HEAD:repro/zygote-fork-crash-load   # --load auto
 #
-# It occupies the self-hosted runner for roughly 15-25 minutes at the default
+# It occupies the self-hosted runner for roughly 10-15 minutes at the default
 # 300 iterations.
 on:
   workflow_dispatch:
@@ -97,12 +98,12 @@ jobs:
             done
           '
 
-      - name: 🔁 Run the first-fork loop
+      - name: 🔁 Run the fork-crash loop
         shell: bash
         run: |
           set -euo pipefail
           docker compose -p curio-ci-repro exec -T curio \
-            python scripts/repro_zygote_first_fork.py \
+            python scripts/repro_zygote_fork_crash.py \
               --iterations "$ITERATIONS" --node "$NODE_SHAPE" --load "$LOAD" \
               --report /app/.curio/zygote-repro-report.json \
             | tee zygote-repro.txt
@@ -119,7 +120,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: zygote-first-fork-repro-load-${{ env.LOAD }}
+          name: zygote-fork-crash-repro-load-${{ env.LOAD }}
           path: |
             zygote-repro.txt
             zygote-repro-report.json
