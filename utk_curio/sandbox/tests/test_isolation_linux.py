@@ -697,11 +697,23 @@ def test_the_zygote_is_single_threaded_once_it_has_forked(isolated):
 
 
 def test_node_code_can_still_use_duckdb(isolated, workspace):
-    """The zygote closed DuckDB's default connection; node code must not notice."""
+    """The zygote closed DuckDB's default connection; node code must not notice.
+
+    Runs at the sandbox's default memory headroom, not the fixture's 256 MB. A
+    connection opened in the child starts one thread per core, and at 8 MB of
+    stack each that is about 0.5 GB of address space on a 64-core runner. At
+    256 MB it failed intermittently with DuckDB's "Out of Memory Error".
+    """
+    import copy
+
+    from utk_curio.sandbox.isolation import supervisor
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
+    config = copy.copy(isolated)
+    config.limits = dict(isolated.limits,
+                         memory_mb=supervisor.DEFAULT_LIMITS["memory_mb"])
     result = run_isolated(
-        isolated, "    return duckdb.sql('select 42').fetchall()[0][0]\n"
+        config, "    return duckdb.sql('select 42').fetchall()[0][0]\n"
     )
     assert result["stderr"] == "", result["stderr"]
     assert load_from_duckdb(result["output"]["path"]) == 42
