@@ -96,10 +96,14 @@ class ReleaseImportTimeDuckdbTest(unittest.TestCase):
         self.assertIn("threads 9 (python x9) -> 1 (python x1)", log)
         self.assertNotIn("warning", log)
 
-    def test_warns_about_a_surviving_jemalloc_thread(self):
-        log = self._release(_fake_duckdb(_FakeConnection()),
-                            names=(["python"] * 9, ["python", "jemalloc_bg_thd"]))
-        self.assertIn("jemalloc background thread is still running", log)
+    def test_a_leftover_allocator_thread_is_reported_not_warned(self):
+        """pyarrow's jemalloc thread survives the release, and is harmless."""
+        log = self._release(
+            _fake_duckdb(_FakeConnection()),
+            names=(["python"] * 9 + ["jemalloc_bg_thd"], ["python", "jemalloc_bg_thd"]),
+        )
+        self.assertIn("-> 2 (python x1, jemalloc_bg_thd x1)", log)
+        self.assertNotIn("warning", log)
 
     def test_is_silent_without_proc(self):
         self.assertEqual(self._release(_fake_duckdb(_FakeConnection())), "")

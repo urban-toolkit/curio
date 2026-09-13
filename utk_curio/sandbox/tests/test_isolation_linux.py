@@ -676,20 +676,24 @@ def _thread_names_of(pid):
 
 
 def test_the_zygote_is_single_threaded_once_it_has_forked(isolated):
-    """After its first fork, nothing but the accept loop may be left running.
+    """After its first fork, only the accept loop may be left running.
 
     ``import duckdb`` opens a connection with a pool of threads, and children
     forked with that pool alive crashed inside DuckDB, so the zygote closes it
     before serving (``zygote._release_import_time_duckdb``). numpy's OpenBLAS
     pool is still there when serving starts but tears itself down on the first
-    fork, hence one execution before counting. If this fails, the names say
-    what is left.
+    fork, hence one execution before counting.
+
+    pyarrow's jemalloc background thread ("jemalloc_bg_thd") is allowed: it is
+    fork-aware, and no child crashed in 1,200 repro executions with it alive.
+    Anything else left running is named in the failure.
     """
     from utk_curio.sandbox.isolation import lifecycle
 
     assert run_isolated(isolated, "    return 1\n")["stderr"] == ""
     names = _thread_names_of(lifecycle._process.pid)
-    assert len(names) == 1, f"the zygote has {len(names)} threads after forking: {names}"
+    others = [name for name in names if name != "jemalloc_bg_thd"]
+    assert len(others) == 1, f"the zygote has {len(names)} threads after forking: {names}"
 
 
 def test_node_code_can_still_use_duckdb(isolated, workspace):

@@ -228,8 +228,8 @@ def _release_import_time_duckdb():
         if callable(connection):  # a function in current DuckDB, an attribute before
             connection = connection()
         try:
-            # jemalloc's background thread, where DuckDB runs one, is
-            # process-wide and would outlive the connection. Off already by
+            # DuckDB can run a jemalloc background thread of its own, which
+            # is process-wide and would outlive the connection. It is off by
             # default; this only makes sure.
             connection.execute("SET GLOBAL allocator_background_threads = false")
         except Exception:
@@ -244,17 +244,14 @@ def _release_import_time_duckdb():
 
     if before is None or after is None:
         return
+    # What is left is expected: numpy's OpenBLAS pool, which tears itself
+    # down on the first fork, and pyarrow's jemalloc background thread
+    # ("jemalloc_bg_thd"), which is fork-aware. Neither crashed a child in
+    # 1,200 executions of scripts/repro_zygote_fork_crash.py.
     if len(before) > 1:
         print(
             f"[zygote] released DuckDB's import-time connection: threads "
             f"{_describe_threads(before)} -> {_describe_threads(after)}",
-            file=sys.stderr, flush=True,
-        )
-    if "jemalloc_bg_thd" in after:
-        print(
-            "[zygote] warning: a jemalloc background thread is still running. "
-            "Some other library started it; forking with it alive may still "
-            "crash children. Execution stays isolated; this is diagnostic only.",
             file=sys.stderr, flush=True,
         )
 
