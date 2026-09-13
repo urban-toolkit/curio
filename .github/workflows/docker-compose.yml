@@ -124,6 +124,9 @@ jobs:
       # autk-grammar data pools parse city-scale PBFs server-side; give the
       # data-table render a larger budget than the 30s default on this host.
       CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
+      # Screenshot, node states and browser log of every failed e2e test
+      # (tests/test_frontend/diagnostics.py), uploaded as e2e-failures.
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
       # Isolation from prod on the same host: distinct compose project
       # (-p curio-ci below) + remapped host ports so the CI stack never
       # collides with prod `curio` (2000/5002/8080) or `curio-dev`
@@ -427,6 +430,12 @@ jobs:
           docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
             'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null; echo; echo "=== per-session messages.log ==="; find .curio -name messages.log -exec sh -c "echo \"--- {} ---\"; cat {}" \; 2>/dev/null' \
             > "$GITHUB_WORKSPACE/curio-messages.txt" 2>&1 || true
+          # Shards 1..N-1 log to stdout, redirected to launch-*.out in their
+          # state dirs; without these, a failure on any worker but gw0 has no
+          # backend or sandbox log at all.
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'for f in .curio/shards/*/launch-*.out; do [ -f "$f" ] && { echo "=== $f ==="; cat "$f"; echo; }; done' \
+            > "$GITHUB_WORKSPACE/shard-logs.txt" 2>&1 || true
 
       - name: 📤 Upload sandbox logs
         if: always()
@@ -436,6 +445,16 @@ jobs:
           path: |
             container-logs.txt
             curio-messages.txt
+            shard-logs.txt
+          retention-days: 7
+
+      - name: 📤 Upload e2e failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: e2e-failures
+          path: e2e-failures/
+          if-no-files-found: ignore
           retention-days: 7
 
       - name: 🧹 Tear down containers
@@ -488,6 +507,7 @@ jobs:
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
       # Python nodes only; see the note above the job.
       ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
 
     steps:
       - name: 🧹 Reclaim root-owned workspace files (self-hosted)
@@ -631,6 +651,15 @@ jobs:
           path: |
             isolated-container-logs.txt
             isolated-messages.txt
+          retention-days: 7
+
+      - name: 📤 Upload e2e failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: isolated-e2e-failures
+          path: e2e-failures/
+          if-no-files-found: ignore
           retention-days: 7
 
       - name: 🧹 Tear down containers

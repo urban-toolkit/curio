@@ -14,6 +14,7 @@ try:  # POSIX only; the Windows branch of _terminate_process_tree never uses it.
 except ImportError:  # pragma: no cover - Windows
     SIGKILL = SIGINT
 from playwright.sync_api import Page
+from . import diagnostics
 from .utils import (
     FrontendPage,
     debug_log,
@@ -531,6 +532,9 @@ def workflow_page(browser):
     next to ``*_actual.png``).
     """
     context = browser.new_context(viewport=VIEWPORT)
+    # With CURIO_E2E_TRACE=1, record a trace; each test cuts a chunk from it,
+    # kept only when the test fails (see diagnostics.py).
+    diagnostics.start_tracing(context)
     page = context.new_page()
     page._curio_browser_log = []  # type: ignore[attr-defined]
 
@@ -562,6 +566,7 @@ def workflow_page(browser):
         "H3",
     )
     yield page
+    diagnostics.stop_tracing(context)
     page.close()
     context.close()
 

@@ -4,6 +4,7 @@ import os
 import pytest
 from playwright.sync_api import Browser, BrowserType
 
+from . import diagnostics
 from .utils import REPO_ROOT
 from .fixtures import _clean_db
 
@@ -231,3 +232,29 @@ def pytest_itemcollected(item):
         module = getattr(item, "module", None)
         if module is not None:
             item.add_marker(pytest.mark.xdist_group(module.__name__.rsplit(".", 1)[-1]))
+
+
+# ------------------------------------------------------------------ #
+# Failure diagnostics
+# ------------------------------------------------------------------ #
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    """Start the test's trace chunk, once its page exists (see diagnostics.py)."""
+    diagnostics.start_trace_chunk(item)
+    yield
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Record screenshot, node states and browser log of a failed test.
+
+    Here rather than in a fixture's teardown because the page is still open
+    at this point; a function-scoped ``page`` is already closed by the time an
+    autouse fixture tears down. A failed setup counts too: a class-scoped
+    ``workflow_page`` may be up even though ``loaded_workflow`` failed.
+    """
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" or (report.when == "setup" and report.failed):
+        diagnostics.finish(item, failed=report.failed)
