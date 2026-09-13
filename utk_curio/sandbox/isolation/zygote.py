@@ -21,9 +21,11 @@ Forking from the Flask process itself would be cheaper still, and wrong:
   that file descriptor, handing the child exactly the access the scratch
   directory exists to deny.
 
-This process is started before either of those is true, stays single-threaded
-for its whole life (hence the ``selectors`` loop rather than a thread per
-connection), and never opens DuckDB.
+This process is started before either of those is true, starts no threads of
+its own (hence the ``selectors`` loop rather than a thread per connection), and
+never opens DuckDB. What it imports is another matter: numpy's bundled OpenBLAS
+starts a thread pool at import time. That is why ``warm_up`` ends with a
+throwaway fork; see :func:`_settle_before_serving`.
 
 Wire protocol, newline-delimited JSON over AF_UNIX, one connection per
 execution:
@@ -41,6 +43,7 @@ concurrent executions work without any threads on this side.
 """
 
 import argparse
+import collections
 import errno
 import json
 import os
@@ -161,6 +164,107 @@ def _unavailable_under_isolation(name):
     return _stub
 
 
+def _thread_names():
+    """The name of every thread in this process, or None where /proc is absent.
+
+    Only Linux has ``/proc/self/task``. Everywhere else the answer is None
+    rather than a guess, and the callers skip what they would have reported.
+    """
+    task_dir = "/proc/self/task"
+    try:
+        thread_ids = os.listdir(task_dir)
+    except OSError:
+        return None
+    names = []
+    for thread_id in thread_ids:
+        try:
+            with open(os.path.join(task_dir, thread_id, "comm"),
+                      encoding="utf-8", errors="replace") as handle:
+                names.append(handle.read().strip() or "?")
+        except OSError:
+            # The thread exited between the listing and the read.
+            continue
+    return names
+
+
+def _describe_threads(names):
+    """``'17 (python3 x16, duckdb x1)'``: the count, then names by frequency."""
+    counts = collections.Counter(names)
+    listed = ", ".join(f"{name} x{count}" for name, count in counts.most_common())
+    return f"{len(names)} ({listed})"
+
+
+def _settle_before_serving():
+    """Fork once and discard the child, so no real node is the first fork.
+
+    The imports in :func:`build_namespace_template` leave this process
+    multi-threaded: numpy's OpenBLAS starts its pool at import, and tears it
+    down in a ``pthread_atfork`` handler. So the first fork is taken from a
+    different process state than every later one. It is also the only fork
+    that has been seen to crash. In CI the first child died with signal 11 in
+    DuckDB's ``close()`` inside ``codec._write_dataframe_parquet``, in about
+    one run in twenty. Later children doing the same write never did, and
+    neither did the in-process path.
+
+    Forking here moves that first fork to startup, where the child does
+    nothing but exit, so every real node forks from the state that has never
+    crashed. Node code is unaffected: children already rebuilt OpenBLAS's
+    pool on first use, and still do, with the same thread count as before.
+
+    The thread counts on either side are logged so a run can confirm what
+    changed. A warning, never a refusal: a zygote that failed to start would
+    send the sandbox back to in-process execution
+    (``sandbox/app/api.py::_isolated_runner``), which is far worse than a
+    fork from a busy process.
+    """
+    if not hasattr(os, "fork"):
+        return
+
+    before = _thread_names()
+    try:
+        pid = os.fork()
+    except OSError as exc:
+        print(f"[zygote] warm-up fork failed, serving without it: {exc}",
+              file=sys.stderr, flush=True)
+        return
+
+    if pid == 0:
+        # ---- child ----
+        # Nothing to do. os._exit so no atexit handler or buffered write
+        # inherited from this process runs twice.
+        os._exit(0)
+
+    try:
+        _pid, status = os.waitpid(pid, 0)
+    except ChildProcessError:
+        status = 0
+    after = _thread_names()
+
+    if os.WIFSIGNALED(status):
+        print(
+            f"[zygote] warning: the warm-up child died with signal "
+            f"{os.WTERMSIG(status)} before doing anything. A fork of this "
+            "process is not safe yet, so real nodes may crash the same way.",
+            file=sys.stderr, flush=True,
+        )
+
+    if before is None or after is None:
+        return
+    if len(before) > 1:
+        print(
+            f"[zygote] threads before the warm-up fork: "
+            f"{_describe_threads(before)}; after: {_describe_threads(after)}",
+            file=sys.stderr, flush=True,
+        )
+    if len(after) > 1:
+        print(
+            f"[zygote] warning: still {len(after)} threads after the warm-up "
+            "fork. A fork of a multi-threaded process can crash the child "
+            "(signal 11). Execution stays isolated; this is diagnostic only.",
+            file=sys.stderr, flush=True,
+        )
+
+
 class Zygote:
     """Accept-and-fork loop. Single-threaded on purpose."""
 
@@ -194,6 +298,8 @@ class Zygote:
 
     def warm_up(self):
         self.namespace_template = build_namespace_template()
+        # Before bind(), so the throwaway child inherits no listening socket.
+        _settle_before_serving()
 
     def serve_forever(self):
         import selectors

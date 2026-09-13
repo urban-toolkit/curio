@@ -663,6 +663,28 @@ def test_the_zygote_holds_no_duckdb_handle(isolated, workspace):
     assert not any("duckdb" in target for target in targets), targets
 
 
+def test_the_zygote_serves_from_a_single_thread(isolated):
+    """By the time requests arrive, nothing but the accept loop may be running.
+
+    Forking a multi-threaded process is what the warm-up fork exists to keep
+    away from real nodes (``zygote._settle_before_serving``). numpy's OpenBLAS
+    starts a pool at import and tears it down on fork, so after the warm-up the
+    zygote should be down to one thread. If this fails, something else the
+    zygote imports keeps a thread alive, and the names below say what.
+    """
+    from utk_curio.sandbox.isolation import lifecycle
+
+    task_dir = f"/proc/{lifecycle._process.pid}/task"
+    names = []
+    for thread_id in os.listdir(task_dir):
+        try:
+            with open(os.path.join(task_dir, thread_id, "comm")) as handle:
+                names.append(handle.read().strip())
+        except OSError:
+            continue
+    assert len(names) == 1, f"the zygote serves with {len(names)} threads: {names}"
+
+
 def test_the_zygote_is_replaced_if_it_dies(isolated):
     from utk_curio.sandbox.isolation import lifecycle
 
