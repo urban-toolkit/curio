@@ -663,18 +663,8 @@ def test_the_zygote_holds_no_duckdb_handle(isolated, workspace):
     assert not any("duckdb" in target for target in targets), targets
 
 
-def test_the_zygote_serves_from_a_single_thread(isolated):
-    """By the time requests arrive, nothing but the accept loop may be running.
-
-    Forking a multi-threaded process is what the warm-up fork exists to keep
-    away from real nodes (``zygote._settle_before_serving``). numpy's OpenBLAS
-    starts a pool at import and tears it down on fork, so after the warm-up the
-    zygote should be down to one thread. If this fails, something else the
-    zygote imports keeps a thread alive, and the names below say what.
-    """
-    from utk_curio.sandbox.isolation import lifecycle
-
-    task_dir = f"/proc/{lifecycle._process.pid}/task"
+def _thread_names_of(pid):
+    task_dir = f"/proc/{pid}/task"
     names = []
     for thread_id in os.listdir(task_dir):
         try:
@@ -682,7 +672,35 @@ def test_the_zygote_serves_from_a_single_thread(isolated):
                 names.append(handle.read().strip())
         except OSError:
             continue
-    assert len(names) == 1, f"the zygote serves with {len(names)} threads: {names}"
+    return names
+
+
+def test_the_zygote_is_single_threaded_once_it_has_forked(isolated):
+    """After its first fork, nothing but the accept loop may be left running.
+
+    ``import duckdb`` opens a connection with a pool of threads, and children
+    forked with that pool alive crashed inside DuckDB, so the zygote closes it
+    before serving (``zygote._release_import_time_duckdb``). numpy's OpenBLAS
+    pool is still there when serving starts but tears itself down on the first
+    fork, hence one execution before counting. If this fails, the names say
+    what is left.
+    """
+    from utk_curio.sandbox.isolation import lifecycle
+
+    assert run_isolated(isolated, "    return 1\n")["stderr"] == ""
+    names = _thread_names_of(lifecycle._process.pid)
+    assert len(names) == 1, f"the zygote has {len(names)} threads after forking: {names}"
+
+
+def test_node_code_can_still_use_duckdb(isolated, workspace):
+    """The zygote closed DuckDB's default connection; node code must not notice."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = run_isolated(
+        isolated, "    return duckdb.sql('select 42').fetchall()[0][0]\n"
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert load_from_duckdb(result["output"]["path"]) == 42
 
 
 def test_the_zygote_is_replaced_if_it_dies(isolated):

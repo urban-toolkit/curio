@@ -23,9 +23,11 @@ Forking from the Flask process itself would be cheaper still, and wrong:
 
 This process is started before either of those is true, starts no threads of
 its own (hence the ``selectors`` loop rather than a thread per connection), and
-never opens DuckDB. What it imports is another matter: numpy's bundled OpenBLAS
-starts a thread pool at import time. That is why ``warm_up`` ends with a
-throwaway fork; see :func:`_settle_before_serving`.
+never opens the DuckDB store. What it imports is another matter: ``import
+duckdb`` opens an in-memory default connection with a thread pool, and numpy's
+OpenBLAS starts one too. OpenBLAS tears its pool down before every fork;
+DuckDB does not, which is why ``warm_up`` closes that connection before the
+first fork. See :func:`_release_import_time_duckdb`.
 
 Wire protocol, newline-delimited JSON over AF_UNIX, one connection per
 execution:
@@ -194,73 +196,65 @@ def _describe_threads(names):
     return f"{len(names)} ({listed})"
 
 
-def _settle_before_serving():
-    """Fork once and discard the child, so no real node is the first fork.
+def _release_import_time_duckdb():
+    """Close the connection ``import duckdb`` opened, before anything forks.
 
-    The imports in :func:`build_namespace_template` leave this process
-    multi-threaded: numpy's OpenBLAS starts its pool at import, and tears it
-    down in a ``pthread_atfork`` handler. So the first fork is taken from a
-    different process state than every later one. It is also the only fork
-    that has been seen to crash. In CI the first child died with signal 11 in
-    DuckDB's ``close()`` inside ``codec._write_dataframe_parquet``, in about
-    one run in twenty. Later children doing the same write never did, and
-    neither did the in-process path.
+    ``import duckdb`` does more than load a library: it opens an in-memory
+    default connection, and with it a pool of one thread per core. DuckDB's
+    state is not fork-safe (duckdb/duckdb-python#292), and a child forked
+    from a process holding that pool died with signal 11 in DuckDB's
+    ``close()`` inside ``codec._write_dataframe_parquet`` in one or two
+    executions out of a hundred. The in-process path, which never forks,
+    never did.
 
-    Forking here moves that first fork to startup, where the child does
-    nothing but exit, so every real node forks from the state that has never
-    crashed. Node code is unaffected: children already rebuilt OpenBLAS's
-    pool on first use, and still do, with the same thread count as before.
+    Closing the connection joins those threads, so every child is forked from
+    a process with no DuckDB work in flight. Node code loses nothing: the
+    module-level API (``duckdb.sql`` and friends) opens a fresh default
+    connection on first use -- in the child, with its full thread pool --
+    and explicit ``duckdb.connect()`` calls were never affected.
 
-    The thread counts on either side are logged so a run can confirm what
-    changed. A warning, never a refusal: a zygote that failed to start would
-    send the sandbox back to in-process execution
-    (``sandbox/app/api.py::_isolated_runner``), which is far worse than a
-    fork from a busy process.
+    The thread counts on either side are logged so a run can see what
+    changed. Warnings only: a zygote that failed to start would send the
+    sandbox back to in-process execution (``sandbox/app/api.py::
+    _isolated_runner``), which is far worse than a fork from a busy process.
     """
-    if not hasattr(os, "fork"):
+    duckdb = sys.modules.get("duckdb")
+    if duckdb is None:
         return
 
     before = _thread_names()
     try:
-        pid = os.fork()
-    except OSError as exc:
-        print(f"[zygote] warm-up fork failed, serving without it: {exc}",
+        connection = duckdb.default_connection
+        if callable(connection):  # a function in current DuckDB, an attribute before
+            connection = connection()
+        try:
+            # jemalloc's background thread, where DuckDB runs one, is
+            # process-wide and would outlive the connection. Off already by
+            # default; this only makes sure.
+            connection.execute("SET GLOBAL allocator_background_threads = false")
+        except Exception:
+            pass
+        connection.close()
+    except Exception as exc:
+        print(f"[zygote] warning: could not close DuckDB's import-time "
+              f"connection, so children fork with its threads running: {exc}",
               file=sys.stderr, flush=True)
         return
-
-    if pid == 0:
-        # ---- child ----
-        # Nothing to do. os._exit so no atexit handler or buffered write
-        # inherited from this process runs twice.
-        os._exit(0)
-
-    try:
-        _pid, status = os.waitpid(pid, 0)
-    except ChildProcessError:
-        status = 0
     after = _thread_names()
-
-    if os.WIFSIGNALED(status):
-        print(
-            f"[zygote] warning: the warm-up child died with signal "
-            f"{os.WTERMSIG(status)} before doing anything. A fork of this "
-            "process is not safe yet, so real nodes may crash the same way.",
-            file=sys.stderr, flush=True,
-        )
 
     if before is None or after is None:
         return
     if len(before) > 1:
         print(
-            f"[zygote] threads before the warm-up fork: "
-            f"{_describe_threads(before)}; after: {_describe_threads(after)}",
+            f"[zygote] released DuckDB's import-time connection: threads "
+            f"{_describe_threads(before)} -> {_describe_threads(after)}",
             file=sys.stderr, flush=True,
         )
-    if len(after) > 1:
+    if "jemalloc_bg_thd" in after:
         print(
-            f"[zygote] warning: still {len(after)} threads after the warm-up "
-            "fork. A fork of a multi-threaded process can crash the child "
-            "(signal 11). Execution stays isolated; this is diagnostic only.",
+            "[zygote] warning: a jemalloc background thread is still running. "
+            "Some other library started it; forking with it alive may still "
+            "crash children. Execution stays isolated; this is diagnostic only.",
             file=sys.stderr, flush=True,
         )
 
@@ -298,8 +292,7 @@ class Zygote:
 
     def warm_up(self):
         self.namespace_template = build_namespace_template()
-        # Before bind(), so the throwaway child inherits no listening socket.
-        _settle_before_serving()
+        _release_import_time_duckdb()
 
     def serve_forever(self):
         import selectors
