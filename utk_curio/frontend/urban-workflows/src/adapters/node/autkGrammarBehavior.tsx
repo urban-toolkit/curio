@@ -388,8 +388,15 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 if (specDataSources.length > 0) {
                     // Backend-loaded data lives in DuckDB; pass the artifact
                     // reference downstream (matches main's AUTK_DB) so the next node
-                    // loads it straight from the DB. The fallback emits layers inline.
-                    const out = backendRef ?? backendLayers;
+                    // loads it straight from the DB. The in-browser fallback holds
+                    // bare layers, which a downstream Data Pool cannot read: it sat
+                    // on "No data yet" under this node's green Done (#248). So the
+                    // fallback hands over the same shape the compute-only branch
+                    // below does.
+                    const out = backendRef
+                        ?? (backendLayers
+                            ? (await toPoolOutput(backendLayers, data.jsInterpreter, data.nodeId)) ?? backendLayers
+                            : null);
                     if (data.outputCallback) data.outputCallback(data.nodeId, out);
                     // The backend path hands back an artifact ref, not the
                     // tables, so name what the spec asked autk-db to create -
@@ -440,21 +447,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                             return;
                         }
                     }
-                    // Build the pool-compatible wrapper and persist it to the
-                    // backend sandbox so downstream nodes see a `{path, dataType}`
-                    // ref — same shape `ia-data` emits, so the Data Pool's normal
-                    // fetch path handles it without a special case. Fall back to
-                    // inline emit only when no JS interpreter is available or the
-                    // persist call fails.
-                    const wrapper = layersToPoolWrapper(layers);
-                    let out: any = wrapper;
-                    if (wrapper && data.jsInterpreter) {
-                        try {
-                            out = await persistLayersToBackend(data.jsInterpreter, wrapper, data.nodeId);
-                        } catch (e) {
-                            console.warn('[autk-grammar] backend persist failed; emitting inline wrapper', e);
-                        }
-                    }
+                    const out = await toPoolOutput(layers, data.jsInterpreter, data.nodeId);
                     if (data.outputCallback) data.outputCallback(data.nodeId, out ?? layers);
                     summary = describeAutkRun(
                         'Computed',
@@ -1473,6 +1466,28 @@ function persistLayersToBackend(
     });
 }
 
+// Hand layers downstream in a shape the Data Pool can read: the pool-compatible
+// wrapper, persisted to the backend sandbox so downstream nodes see a
+// `{path, dataType}` ref — same shape `ia-data` emits, so the Data Pool's normal
+// fetch path handles it without a special case. Falls back to the inline
+// wrapper when no JS interpreter is available or the persist call fails, and
+// to null when there are no layers to wrap.
+async function toPoolOutput(
+    layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
+    jsInterpreter: JavaScriptInterpreter | undefined,
+    nodeId: string,
+): Promise<any> {
+    const wrapper = layersToPoolWrapper(layers);
+    if (wrapper && jsInterpreter) {
+        try {
+            return await persistLayersToBackend(jsInterpreter, wrapper, nodeId);
+        } catch (e) {
+            console.warn('[autk-grammar] backend persist failed; emitting inline wrapper', e);
+        }
+    }
+    return wrapper;
+}
+
 // Convert an autk-db-style layer array into a Curio Data Pool-compatible wrapper.
 // The pool's `processDataAsync` recognizes `dataType: 'geodataframe'` (single layer)
 // and `dataType: 'outputs'` (multi-layer envelope) — but not bare layer arrays. So
@@ -1481,7 +1496,7 @@ function persistLayersToBackend(
 // metadata at the wrapper level so downstream `resolveUpstreamLayers` can restore
 // the original layer identity (e.g. `dataRef: "table_osm_buildings"`).
 function layersToPoolWrapper(
-    layers: Array<{ name: string; type: string; geojson: FeatureCollection }>,
+    layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
 ): any {
     if (!Array.isArray(layers) || layers.length === 0) return null;
     if (layers.length === 1) {
