@@ -225,7 +225,7 @@ jobs:
         run: |
           docker compose -p curio-ci-e2e-repro logs --no-color --tail=8000 > container-logs.txt 2>&1 || true
           docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
-            'cat .curio/messages.log 2>/dev/null; for f in .curio/shards/*/launch-*.out; do [ -f "$f" ] && { echo "=== $f ==="; cat "$f"; echo; }; done' \
+            'cat .curio/messages.log 2>/dev/null; for f in .curio/shards/*/messages-*.log .curio/shards/*/launch-*.out; do [ -f "$f" ] && { echo "=== $f ==="; cat "$f"; echo; }; done' \
             > stack-logs.txt 2>&1 || true
 
       - name: 📤 Upload the evidence
