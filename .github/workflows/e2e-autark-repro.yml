@@ -183,7 +183,9 @@ jobs:
       - name: 🔁 Run them ${{ inputs.iterations }} times
         shell: bash
         run: |
-          set -uo pipefail
+          # GitHub runs `shell: bash` with -e; without +e the first failing
+          # iteration ends the loop, which is exactly the result being collected.
+          set +e -uo pipefail
           mkdir -p repro-logs
           : > repro-summary.txt
           for i in $(seq 1 "$ITERATIONS"); do
