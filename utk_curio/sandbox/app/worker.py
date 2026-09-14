@@ -630,6 +630,11 @@ def resolve_pkg_entry_url(specifier, root_node_modules):
 # run. It is intermittent: in one CI run 10 of 12 autk-grammar executions
 # finished normally and 2 died here, and it has been observed on main as well as
 # on this branch.
+#
+# The cause is an undici regression (nodejs/undici#5360), bundled with Node 24
+# from 24.17 on and fixed in undici 8.6. The project now runs Node 26, which
+# bundles undici 8, so this should no longer fire; the retry stays as a safety
+# net for a local install on an affected Node 24.
 _NODE_INTERNAL_STREAM_CRASH_MARKERS = ('assert(!this.paused)', 'undici')
 
 

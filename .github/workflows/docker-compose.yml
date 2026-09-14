@@ -430,11 +430,13 @@ jobs:
           docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
             'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null; echo; echo "=== per-session messages.log ==="; find .curio -name messages.log -exec sh -c "echo \"--- {} ---\"; cat {}" \; 2>/dev/null' \
             > "$GITHUB_WORKSPACE/curio-messages.txt" 2>&1 || true
-          # Shards 1..N-1 log to stdout, redirected to launch-*.out in their
-          # state dirs; without these, a failure on any worker but gw0 has no
-          # backend or sandbox log at all.
+          # Shards 1..N-1 start backend and sandbox separately, so they log to
+          # messages-backend.log / messages-sandbox.log in their own state dirs
+          # (main.py names the file after the server), which the messages.log
+          # search above never matches; launch-*.out is only the launcher banner.
+          # Without these, a failure on any worker but gw0 has no server log.
           docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
-            'for f in .curio/shards/*/launch-*.out; do [ -f "$f" ] && { echo "=== $f ==="; cat "$f"; echo; }; done' \
+            'for f in .curio/shards/*/messages-*.log .curio/shards/*/launch-*.out; do [ -f "$f" ] && { echo "=== $f ==="; cat "$f"; echo; }; done' \
             > "$GITHUB_WORKSPACE/shard-logs.txt" 2>&1 || true
 
       - name: 📤 Upload sandbox logs

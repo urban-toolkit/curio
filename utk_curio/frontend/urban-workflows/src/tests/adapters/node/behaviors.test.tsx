@@ -913,6 +913,96 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeFalsy();
     });
 
+    // The rest of #248. When the backend load fails (in CI: undici's
+    // assert(!this.paused) in the sandbox's Node) and the in-browser fallback
+    // succeeds, the node went green but handed downstream a bare layer array.
+    // A Data Pool cannot read that shape, so it sat on "No data yet" and
+    // test_node_execution timed out waiting for its table.
+    const FALLBACK_SPEC = JSON.stringify({
+      data: [{
+        type: 'osm',
+        pbfFileUrl: 'docs/examples/data/back_bay.osm.pbf',
+        outputTableName: 'table_osm',
+        autoLoadLayers: { layers: ['surface', 'roads'] },
+      }],
+      // no map / plot => data-only node
+    });
+    const isPersist = (code: string) => code.startsWith('const __wrapper = ');
+    const persistedWrapper = (code: string) =>
+      JSON.parse(code.slice('const __wrapper = '.length, code.lastIndexOf(';\nreturn')));
+
+    test('data-only node: an in-browser fallback hands the Data Pool a persisted wrapper, not bare layers (#248)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, code, _input, _inputTypes, cb) => cb(isPersist(code)
+          ? { stdout: [], stderr: '', output: { path: 'art-fallback', dataType: 'dict' } }
+          : { stdout: [], stderr: 'undici assert(!this.paused)', output: { path: '', dataType: 'str' } }),
+      );
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([
+        { name: 'table_osm_surface', type: 'surface' },
+        { name: 'table_osm_roads', type: 'roads' },
+      ]);
+
+      const setOutput = jest.fn();
+      const outputCallback = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+        { setOutput },
+      );
+      await act(async () => {
+        await result.current.applyGrammar!(FALLBACK_SPEC);
+      });
+
+      // Two backend load attempts, then the fallback's layers are persisted.
+      expect(interpretCode).toHaveBeenCalledTimes(3);
+      const persisted = persistedWrapper(interpretCode.mock.calls[2][1]);
+      expect(persisted.dataType).toBe('outputs');
+      expect(persisted.data.map((d: any) => d.layerName))
+        .toEqual(['table_osm_surface', 'table_osm_roads']);
+      // Downstream gets the artifact ref the Data Pool fetches, never the bare array.
+      expect(outputCallback).toHaveBeenCalledWith('node-1', { path: 'art-fallback', dataType: 'dict' });
+      expect(outputCallback.mock.calls.some((c: any[]) => Array.isArray(c[1]))).toBe(false);
+      expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeFalsy();
+
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
+    });
+
+    test('data-only node: if persisting the fallback fails too, the Data Pool still gets the wrapper inline (#248)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+      );
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([
+        { name: 'table_osm_surface', type: 'surface' },
+        { name: 'table_osm_roads', type: 'roads' },
+      ]);
+
+      const outputCallback = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+      );
+      await act(async () => {
+        await result.current.applyGrammar!(FALLBACK_SPEC);
+      });
+
+      expect(outputCallback).toHaveBeenCalledTimes(1);
+      const [, out] = outputCallback.mock.calls[0];
+      expect(Array.isArray(out)).toBe(false);
+      expect(out.dataType).toBe('outputs');
+      expect(out.data.map((d: any) => d.layerName)).toEqual(['table_osm_surface', 'table_osm_roads']);
+
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
+    });
+
     // The other side of the predicate: missing WITHOUT a recorded error is a
     // genuinely empty query area (autk-db creates a layer table even at zero
     // features), so it must warn rather than fail. This is what keeps the
