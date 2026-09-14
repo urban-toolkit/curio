@@ -6,9 +6,12 @@ FROM python:3.12-slim AS runtime_base
 ENV PYTHONUNBUFFERED=1 LOG_TO_STDOUT=true
 WORKDIR /app
 
+# Node 26, not 24: from 24.17 on, Node 24's bundled undici crashes the sandbox's
+# PBF downloads with assert(!this.paused) (nodejs/undici#5360, fixed in undici
+# 8.6; see utk_curio/sandbox/app/worker.py). Node 26 bundles undici 8.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl gdal-bin libsm6 libxext6 ffmpeg \
-    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_26.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -40,7 +43,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 # -----------------------------------------------------------------------------
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
-FROM node:24-bookworm-slim AS frontend_builder
+FROM node:26-bookworm-slim AS frontend_builder
 WORKDIR /src
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
 COPY packages/ /src/packages/

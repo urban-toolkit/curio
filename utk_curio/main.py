@@ -30,6 +30,11 @@ COLOR_FRONTEND = "\033[96m"  # Cyan
 COLOR_BACKEND = "\033[92m"   # Green
 COLOR_SANDBOX = "\033[93m"   # Yellow
 
+# The Node.js major the project targets: the frontend build, Jest, and the
+# sandbox's Node subprocess. Keep in step with the Dockerfile and
+# utk_curio/frontend/urban-workflows/package.json "engines".
+NODE_MAJOR = 26
+
 shutdown_flag = threading.Event()
 processes = []
 file_logger = None
@@ -307,12 +312,12 @@ def check_install_build(dir, force_rebuild=False):
                 shutil.rmtree(full_path)
     
     if shutil.which("npm") is None:
-        log_error("[Frontend] npm not found in PATH. Install Node.js 24 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=24'), and make sure 'npm' is available in your terminal, then retry.")
+        log_error(f"[Frontend] npm not found in PATH. Install Node.js {NODE_MAJOR} from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs={NODE_MAJOR}'), and make sure 'npm' is available in your terminal, then retry.")
         clean_shutdown()
         return
 
     if shutil.which("node") is None:
-        log_error("[Frontend] node not found in PATH. Install Node.js 24 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=24'), and make sure 'node' is available in your terminal, then retry.")
+        log_error(f"[Frontend] node not found in PATH. Install Node.js {NODE_MAJOR} from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs={NODE_MAJOR}'), and make sure 'node' is available in your terminal, then retry.")
         clean_shutdown()
         return
     try:
@@ -329,10 +334,10 @@ def check_install_build(dir, force_rebuild=False):
             node_major = int(node_version_raw[1:].split(".", 1)[0])
         except ValueError:
             pass
-    if node_major < 24:
+    if node_major < NODE_MAJOR:
         log_error(
-            f"[Frontend] Node.js {node_version_raw} detected; requires Node.js 24 or newer. "
-            f"Upgrade with 'conda install -c conda-forge nodejs=24' or from https://nodejs.org, then retry."
+            f"[Frontend] Node.js {node_version_raw} detected; requires Node.js {NODE_MAJOR} or newer. "
+            f"Upgrade with 'conda install -c conda-forge nodejs={NODE_MAJOR}' or from https://nodejs.org, then retry."
         )
         clean_shutdown()
         return

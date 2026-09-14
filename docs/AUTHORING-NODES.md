@@ -47,7 +47,7 @@ git clone https://github.com/urban-toolkit/curio.git
 cd curio
 
 pip install -r requirements.txt
-conda install -c conda-forge nodejs=24
+conda install -c conda-forge nodejs=26
 
 python curio.py start
 ```

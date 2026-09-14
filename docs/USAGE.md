@@ -172,7 +172,7 @@ To install all requirements, inside the root folder:
 
 ```console
 pip install -r requirements.txt
-conda install -c conda-forge nodejs=24
+conda install -c conda-forge nodejs=26
 ```
 
 You can now use `curio.py` to start everything:
