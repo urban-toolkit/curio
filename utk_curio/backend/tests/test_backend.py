@@ -357,9 +357,16 @@ class TestMissingModuleReporting(unittest.TestCase):
             return_value=MagicMock(is_guest=False),
         )
         cls._user_patch.start()
+        # Installs allowed, as a local launch sets them; the gate is #309's.
+        from utk_curio.backend import config
+        cls._install_patch = patch.object(
+            config, "CURIO_ALLOW_RUNTIME_INSTALL", True, create=True,
+        )
+        cls._install_patch.start()
 
     @classmethod
     def tearDownClass(cls):
+        cls._install_patch.stop()
         cls._user_patch.stop()
 
     def _auth_headers(self):
@@ -394,6 +401,22 @@ class TestMissingModuleReporting(unittest.TestCase):
         # The traceback is still reported in full: the notice is additional, not
         # a replacement for what the user was already shown.
         self.assertIn("ModuleNotFoundError", body["stderr"])
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_no_install_is_offered_where_installs_are_off(self, mock_session):
+        # An Install button the libraries route would refuse is a dead end
+        # (#309): name the library, and say why it cannot be installed here.
+        from utk_curio.backend import config
+        with patch.object(config, "CURIO_ALLOW_RUNTIME_INSTALL", False, create=True):
+            body = self._run(
+                mock_session,
+                stderr="ModuleNotFoundError: No module named 'sklearn'",
+                path="",
+            )
+        self.assertEqual(body["missingModule"]["distribution"], "scikit-learn")
+        self.assertFalse(body["missingModule"]["installable"])
+        self.assertEqual(body["missingModule"]["reason"], "install-disabled")
+        self.assertIn("--allow-runtime-install", body["missingModule"]["detail"])
 
     @patch("utk_curio.backend.app.api.routes._sandbox_session")
     def test_a_successful_run_reports_nothing_even_with_that_text_on_stderr(

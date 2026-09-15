@@ -53,3 +53,32 @@ def can_manage_shared_catalog(user) -> bool:
     account is behind the call.
     """
     return not is_shared_guest(user)
+
+
+def library_install_refusal(user) -> str | None:
+    """Why *user* may not install or remove a library, or ``None`` if they may.
+
+    A library install is not scoped to its caller: it pip-installs into the one
+    interpreter that runs every user's nodes, and an sdist runs ``setup.py`` on
+    the host as it does (#309). So it needs the operator's switch, and on an
+    instance with accounts it needs an account -- the shared guest is every
+    anonymous visitor at once. Without auth the one local user IS the shared
+    guest, so the guest rule applies only when auth is on.
+
+    Read at call time so tests (and a reloaded config) are honoured.
+    """
+    from utk_curio.backend import config
+
+    if not config.CURIO_ALLOW_RUNTIME_INSTALL:
+        return (
+            "Installing libraries is turned off on this instance: it changes the "
+            "Python environment every user's nodes run in. An operator can turn "
+            "it on by starting Curio with --allow-runtime-install."
+        )
+    if not config.CURIO_NO_AUTH and getattr(user, "is_guest", False):
+        return (
+            "Installing libraries is not available for guest users: it changes the "
+            "Python environment every user's nodes run in. Sign in with an account "
+            "to install one."
+        )
+    return None

@@ -37,6 +37,12 @@
 # Deliberately NOT docker-compose.deploy.yml: that overlay also passes
 # --no-allow-publish, which would disable the two catalog mutators that the
 # publish-catalog tests exercise. CI wants auth on and publish still allowed.
+#
+# --allow-runtime-install for the same reason. --auth makes the instance
+# "hosted", which turns runtime installs off by default (#309), and the library
+# e2e tests -- test_library_manager_e2e, test_missing_module_install_e2e,
+# test_library_install_integration -- are ABOUT installing. A deployment that
+# wants them off is docker-compose.deploy.yml's business, not CI's.
 services:
   curio:
     # Process-count cap for the isolation test suite.
@@ -78,5 +84,6 @@ services:
       - -c
       - >-
         umask 000 && exec python curio.py start all --auth --with-examples
+        --allow-runtime-install
         --backend-host 0.0.0.0 --backend-port 5002
         --sandbox-host 0.0.0.0 --sandbox-port 2000
