@@ -1002,6 +1002,14 @@ function missingLayerMessage(missing: string[], errors: string[]): string {
         + (errors.length > 0 ? ` (${errors.join('; ')})` : '');
 }
 
+// Message for a `join` source that failed. A join rewrites a table another
+// source created, so a failed one never leaves a table missing and the check
+// above cannot see it: Regression.json's join died with a Binder Error on every
+// run while its node reported Done (#319). Shared by both loaders.
+function joinFailureMessage(errors: string[]): string {
+    return `spatial join failed - ${errors.join('; ')}`;
+}
+
 // Compile a grammar `data` section into autk-db JavaScript to run in the backend
 // Node.js sandbox. The single top-level `import` is rewritten to `await import()`
 // by execute_js_code; the rest is the body of the async function the sandbox
@@ -1025,6 +1033,8 @@ const __sources = ${JSON.stringify(dataSources)};
 // place rather than being restated inside this emitted string.
 const __expectedTables = ${JSON.stringify(requestedLayerTables(dataSources))};
 const __loadErrors = [];
+// Mirrors joinFailureMessage() host-side; see the throw after the contract check.
+const __joinErrors = [];
 const db = new AutkDb();
 await db.init();
 for (const source of __sources) {
@@ -1046,12 +1056,16 @@ for (const source of __sources) {
     // spec order, so the join must come after the tables it references).
     // 2.1.2 option shapes: near: { distance } in workspace meters, groupBy
     // as an array of column specs.
-    else if (type === 'join' && typeof db.spatialQuery === 'function') await db.spatialQuery(rest);
+    else if (type === 'join') {
+      if (typeof db.spatialQuery !== 'function') throw new Error('this autk-db has no spatialQuery');
+      await db.spatialQuery(rest);
+    }
     else console.log('[autk-grammar] unsupported data source type "' + type + '" - skipped');
   } catch (e) {
     // Recorded, not discarded: this reason is the only account of WHY a layer is
     // missing, and the contract check below attaches it to the thrown error.
     __loadErrors.push(type + ': ' + ((e && e.message) || String(e)));
+    if (type === 'join') __joinErrors.push((e && e.message) || String(e));
     console.log('[autk-grammar] data load failed for source type "' + type + '": ' + (e && e.message));
   }
 }
@@ -1078,6 +1092,12 @@ if (__missing.length > 0) {
   }
   console.log('[autk-grammar] ' + __detail
     + ' - no load error recorded, treating as a genuinely empty query area');
+}
+if (__joinErrors.length > 0) {
+  // A join rewrites a table another source created, so the check above never
+  // sees one fail; without this a broken join ran silently and the node said
+  // Done (#319).
+  throw new Error('spatial join failed - ' + __joinErrors.join('; '));
 }
 const __epsg = String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\\d+)/)?.[1] ?? '3395';
 // Tag each layer with the CRS its coordinates are ACTUALLY in. autk-db 2.0.1
@@ -1323,6 +1343,7 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     // produced no usable layer at all — so a total failure reports WHY instead
     // of crashing later with an opaque "Cannot read properties of null".
     const loadErrors: string[] = [];
+    const joinErrors: string[] = [];
     for (const source of (spec?.data ?? [])) {
         const { type, ...rest } = source ?? {};
         // Old AutkSpatialDb.loadOsm dereferences autoLoadLayers.coordinateFormat
@@ -1338,13 +1359,17 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
             // In-grammar spatial join between already-loaded tables (sources
             // run in spec order, so the join must come after the tables it
             // references). Mirrors the sandbox emit in compileDataSpecToAutkDbJs.
-            else if (type === 'join' && typeof db.spatialQuery === 'function') await db.spatialQuery(rest);
+            else if (type === 'join') {
+                if (typeof db.spatialQuery !== 'function') throw new Error('this autk-db has no spatialQuery');
+                await db.spatialQuery(rest);
+            }
             else console.warn(`[autk-grammar] unsupported data source type "${type}" — skipped`);
         } catch (e) {
             // Record + skip a source that fails to load; others may still
             // produce layers. The recorded reason is surfaced below if the load
             // produced nothing at all.
             loadErrors.push(`${type}: ${(e as any)?.message ?? String(e)}`);
+            if (type === 'join') joinErrors.push((e as any)?.message || String(e));
             console.warn(`[autk-grammar] data-only load failed for source type "${type}"`, e);
         }
     }
@@ -1421,6 +1446,7 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
                 + `error recorded, treating as a genuinely empty query area`);
         }
     }
+    if (joinErrors.length > 0) throw new Error(joinFailureMessage(joinErrors));
     // A load that asked for sources but produced no usable layer AND hit errors
     // is a real failure (e.g. every PBF range fetch 404'd) — throw an ATTRIBUTED
     // error so the node reports the reason, instead of crashing later with an
