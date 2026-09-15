@@ -180,3 +180,19 @@ describe("MissingModuleNotice", () => {
     });
   });
 });
+
+describe("when installs are turned off (#309)", () => {
+  it("says why rather than offering a button the route would refuse", () => {
+    renderNotice({
+      installable: false,
+      reason: "install-disabled",
+      detail:
+        "Installing libraries is turned off on this instance: it changes the "
+        + "Python environment every user's nodes run in. An operator can turn "
+        + "it on by starting Curio with --allow-runtime-install.",
+    });
+    expect(screen.getByText(/scikit-learn is not installed/)).toBeInTheDocument();
+    expect(screen.getByText(/--allow-runtime-install/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Install/ })).toBeNull();
+  });
+});
