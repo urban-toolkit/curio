@@ -59,7 +59,7 @@ metric `EPSG:3395`).
   "pbfFileUrl": "docs/examples/data/niteroi.osm.pbf",
   "queryArea": { "geocodeArea": "Rio de Janeiro", "areas": ["Niterói"] },
   "outputTableName": "table_osm",
-  "autoLoadLayers": { "coordinateFormat": "EPSG:4326", "dropOsmTable": true, "layers": ["surface", "parks", "water", "roads"] }
+  "autoLoadLayers": { "coordinateFormat": "EPSG:4326", "layers": ["surface", "parks", "water", "roads"] }
 }]
 ```
 

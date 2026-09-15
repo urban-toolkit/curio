@@ -47,8 +47,7 @@ expects. The downstream compute and map nodes reference these layers by name (`t
   "queryArea": { "geocodeArea": "Boston", "areas": ["Back Bay"] },
   "outputTableName": "table_osm",
   "autoLoadLayers": {
-    "layers": ["surface", "parks", "water", "roads", "buildings"],
-    "dropOsmTable": true
+    "layers": ["surface", "parks", "water", "roads", "buildings"]
   }
 }]
 ```

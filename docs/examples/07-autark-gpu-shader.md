@@ -52,7 +52,7 @@ nodes reference these layers by name (`table_osm_roads`, `table_osm_buildings`),
   "pbfFileUrl": "docs/examples/data/chicago_loop.osm.pbf",
   "queryArea": { "geocodeArea": "Chicago", "areas": ["Loop"] },
   "outputTableName": "table_osm",
-  "autoLoadLayers": { "layers": ["surface", "parks", "water", "roads", "buildings"], "dropOsmTable": true }
+  "autoLoadLayers": { "layers": ["surface", "parks", "water", "roads", "buildings"] }
 }]
 ```
 
