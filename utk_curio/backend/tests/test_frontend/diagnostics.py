@@ -8,7 +8,8 @@ every test, and on failure this writes, per test, into
 ``$CURIO_E2E_FAILURE_DIR/<test id>/``:
 
 - ``screenshot.png``   the whole page at the moment of failure
-- ``nodes.txt``        every canvas node's id, ``data-curio-node-status`` and
+- ``nodes.txt``        every canvas node's id, ``data-curio-node-status``,
+                      its ``data-curio-node-error`` when it failed, and
                        visible text, which is what shows *which* node was
                        stuck and what it displayed
 - ``browser-log.txt``  console and pageerror events, when the page captured
@@ -44,6 +45,7 @@ _NODE_STATES_JS = """() => [...document.querySelectorAll('.react-flow__node')].m
         id: el.getAttribute('data-id'),
         type: [...el.classList].find(c => c.startsWith('react-flow__node-')) || '',
         status: status ? status.getAttribute('data-curio-node-status') : null,
+        error: status ? status.getAttribute('data-curio-node-error') : null,
         text: (el.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 800),
     };
 })"""
@@ -184,6 +186,10 @@ def format_nodes(nodes, *, url="", title=""):
     for node in nodes:
         lines.append(f"{node.get('id') or '?'}  status={node.get('status') or '-'}  "
                      f"{node.get('type') or ''}")
+        # An Autark node shows its failure nowhere on screen, so the attribute
+        # is the only account of it in this dump (#318).
+        if node.get("error"):
+            lines.append(f"    error: {node['error']}")
         lines.append(f"    {node.get('text') or '(no visible text)'}")
     return "\n".join(lines) + "\n"
 
