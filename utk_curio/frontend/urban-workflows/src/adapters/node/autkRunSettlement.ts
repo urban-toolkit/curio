@@ -31,6 +31,25 @@ export interface RunSettlement {
   onUnreported: () => void;
 }
 
+/**
+ * Something to show the user for *err*, never an empty string (#318).
+ *
+ * `err?.message ?? String(err)` looks equivalent and is not: `??` keeps an
+ * empty message, and empty messages happen — d3 (bundled in autk-map) throws
+ * bare `Error()`, duckdb-wasm rebuilds a worker error with whatever message
+ * crossed the boundary, and a DOMException can carry none. The node then shows
+ * "Error" with nothing beside it, and the e2e harness reports a failure with no
+ * detail, which is how #318 stayed unexplained for a month.
+ */
+export function describeError(err: unknown): string {
+  const message = (err as any)?.message;
+  if (typeof message === "string" && message.trim() !== "") return message;
+  const name = (err as any)?.name;
+  if (typeof name === "string" && name.trim() !== "") return `${name} (no message)`;
+  const text = String(err ?? "").trim();
+  return text !== "" ? text : "The run failed without saying why.";
+}
+
 export async function runAndAlwaysSettle(
   run: () => Promise<void>,
   handlers: RunSettlement,
@@ -40,7 +59,7 @@ export async function runAndAlwaysSettle(
   } catch (err: any) {
     // Swallowed on purpose: a rejection that escaped here would leave the node
     // in "exec" for ever, which is the bug. The message goes to the node.
-    handlers.onError(err?.message ?? String(err));
+    handlers.onError(describeError(err));
   } finally {
     if (!handlers.settled()) handlers.onUnreported();
   }
