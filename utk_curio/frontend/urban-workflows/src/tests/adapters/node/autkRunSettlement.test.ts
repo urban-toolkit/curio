@@ -68,3 +68,22 @@ describe("runAndAlwaysSettle (#271)", () => {
     expect(h.calls).toEqual(["error:just a string"]);
   });
 });
+
+describe("an error message is never empty (#318)", () => {
+  // A node in Error with no text tells the user nothing, and the e2e harness
+  // reports "execution failed with Error" with no detail. d3 (bundled in
+  // autk-map) throws bare `Error()`, and duckdb-wasm rebuilds worker errors
+  // with whatever message came across, which can be "".
+  it("names the error type when the message is empty", async () => {
+    const h = harness();
+    await runAndAlwaysSettle(async () => { throw new TypeError(""); }, h.handlers);
+    expect(h.calls).toEqual(["error:TypeError (no message)"]);
+  });
+
+  it("falls back to a sentence when there is nothing at all", async () => {
+    const h = harness();
+    // eslint-disable-next-line prefer-promise-reject-errors
+    await runAndAlwaysSettle(async () => { throw ""; }, h.handlers);
+    expect(h.calls).toEqual(["error:The run failed without saying why."]);
+  });
+});
