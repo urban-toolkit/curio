@@ -139,8 +139,9 @@ describe("useAgentCatalogDrawer", () => {
     // about the item, so it lives on /catalog/agents. These two were left over
     // from the UI 29a4e902 removed, and nothing but this test ever called them.
     const { result } = renderHook(() => useAgentCatalogDrawer(true, "p1"));
-    expect((result.current as Record<string, unknown>).publish).toBeUndefined();
-    expect((result.current as Record<string, unknown>).unpublish).toBeUndefined();
+    const api = result.current as unknown as Record<string, unknown>;
+    expect(api.publish).toBeUndefined();
+    expect(api.unpublish).toBeUndefined();
   });
 
   it("surfaces errors without throwing", async () => {
