@@ -62,7 +62,7 @@ These tests boot the **real** backend through `curio.py start`, so they must nev
   1. creates a clean workspace directory (temp by default, or `CURIO_TEST_WORKSPACE` if set),
   2. sets `CURIO_LAUNCH_CWD`, `DATABASE_URL` (→ `sqlite:///…/urban_workflow_test.db`), and `CURIO_TESTING=1` in `os.environ` so the subprocess inherits them,
   3. **wipes** any pre-existing `urban_workflow_test.db` and re-creates the schema via `flask db upgrade`.
-- A function-scoped autouse `e2e_clean_db` fixture truncates the mutable tables (`user`, `user_session`, `auth_attempt`, `project`, `exec_cache_entry`) between tests so hardcoded usernames like `e2etestuser`, `ownera`, `ownerb`, `prjtester` can be re-created fresh in every test.
+- A function-scoped autouse `e2e_clean_db` fixture truncates the mutable tables (`user`, `user_session`, `auth_attempt`, `project`, `exec_cache_entry`) between tests so hardcoded usernames like `e2etestuser`, `ownera`, `ownerb`, `prjtester` can be re-created fresh in every test, and deletes the per-user stores under `.curio/test/` that those freed ids would otherwise be handed (#308).
 
 In other words: **every pytest invocation starts against an empty database**, and tests are independent of each other - the same isolation Django's test runner aims to provide.
 
@@ -600,10 +600,19 @@ access to PyPI and skips (rather than fails) when the index is unreachable.
 
 ## Cleaning up after a test
 
-`/api/testing/reset-db` truncates SQL tables only, while `.curio/users/<id>/`
-persists - and `user.id` is a bare sqlite rowid alias, so ids recycle from 1.
-A test that installs a package, imports a dataset or adds a library therefore
-leaks into the *next* test's view of a "fresh" user unless it cleans up.
+`e2e_clean_db` truncates the mutable tables AND deletes `.curio/test/users/`
+plus `.curio/test/agents-catalog/` between tests, over
+`/api/testing/reset-db` when it is talking to a separately-started backend and
+on the files otherwise (#308). That matters because `user.id` is a bare sqlite
+rowid alias, so ids recycle from 1: a store left behind is handed to the next
+account a test creates. It did exactly that until #308 - the walkthrough
+baselines failed only in a full run, because one scene's imported agent was
+still in the "fresh" account of the scene after it.
+
+What that clean does NOT undo is anything a test leaves outside those trees:
+libraries pip-installed into the interpreter, the shared Data Catalog, files
+written under `.curio/data/`. A test that installs a package, imports a shared
+dataset or adds a library still has to clean up after itself.
 
 Use a **non-autouse** yield fixture and request it explicitly: the autouse
 `e2e_clean_db` finalizes *last*, so an explicitly-requested fixture still has a
