@@ -76,8 +76,8 @@ jest.mock('@urban-toolkit/autk-grammar', () => ({ AutkGrammar: jest.fn().mockImp
 // names are the only out-of-scope refs jest.mock's hoisted factory may capture.
 const mockAutkDbLoadOsm = jest.fn().mockResolvedValue(undefined);
 // Declared with a rest parameter so the forwarding wrapper below
-// (`(...a: any[]) => mockAutkDbGetLayerTables(...a)`) can spread into it.
-const mockAutkDbGetLayerTables = jest.fn(
+// (`(...a: any[]) => mockAutkDbLayerMetadata(...a)`) can spread into it.
+const mockAutkDbLayerMetadata = jest.fn(
   (..._a: unknown[]) => [] as Array<{ name: string; type?: string }>,
 );
 jest.mock('@urban-toolkit/autk-db', () => ({
@@ -87,7 +87,7 @@ jest.mock('@urban-toolkit/autk-db', () => ({
     loadGeojson: jest.fn().mockResolvedValue(undefined),
     loadCsv: jest.fn().mockResolvedValue(undefined),
     loadJson: jest.fn().mockResolvedValue(undefined),
-    getLayerTables: (...a: any[]) => mockAutkDbGetLayerTables(...a),
+    getLayersMetadata: (...a: any[]) => mockAutkDbLayerMetadata(...a),
     getLayer: jest.fn().mockResolvedValue({ type: 'FeatureCollection', features: [] }),
   })),
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
@@ -750,6 +750,92 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(injected.coordinateFormat).toBe('EPSG:4326');
     });
 
+    // The sandbox script is emitted as source and runs against whatever autk-db the
+    // sandbox has installed, so these run the emitted script itself against a stub
+    // shaped like autk-db 3: loadOsm rejects `dropOsmTable`, layer metadata comes
+    // from getLayersMetadata, and rows are renumbered on load, which is why the
+    // parts of a building have to carry their building_id.
+    async function runEmittedDataScript(spec: any, stub: any) {
+      let emitted = '';
+      const interpretCode = jest.fn(
+        (_unresolved: any, code: string, _input: any, _inputTypes: any, cb: any) => {
+          emitted = code;
+          cb({ stdout: [], stderr: '', output: { path: '', dataType: 'str' } });
+        },
+      );
+      const result = await callBehavior(useAutkGrammarBehavior, {
+        jsInterpreter: { interpretCode } as any,
+      });
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify(spec));
+      });
+      expect(emitted).not.toBe('');
+      const body = emitted.replace(/^import[^\n]*\n/, '');
+      const run = new Function('__autkDbMod', `return (async () => {${body}})();`);
+      return await run(stub);
+    }
+
+    test('sandbox script: no dropOsmTable, metadata from getLayersMetadata', async () => {
+      const loadOsm = jest.fn().mockResolvedValue(undefined);
+      const stub = {
+        AutkDb: class {
+          async init() {}
+          loadOsm = loadOsm;
+          getLayersMetadata() { return [{ name: 'table_osm_surface', type: 'surface' }]; }
+          async getLayer() {
+            return { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: {} }] };
+          }
+        },
+        DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
+      };
+
+      const layers = await runEmittedDataScript({
+        data: [{
+          type: 'osm',
+          pbfFileUrl: 'docs/examples/data/back_bay.osm.pbf',
+          outputTableName: 'table_osm',
+          // A spec saved before the upgrade still carries the dropped option.
+          autoLoadLayers: { layers: ['surface'], dropOsmTable: true },
+        }],
+      }, stub);
+
+      const passed = loadOsm.mock.calls[0][0];
+      expect(passed.autoLoadLayers).toEqual({ layers: ['surface'] });
+      expect(passed.autoLoadLayers.coordinateFormat).toBeUndefined();
+      expect(layers.map((l: any) => l.name)).toEqual(['table_osm_surface']);
+    });
+
+    test('sandbox script: exploded building parts keep their building_id', async () => {
+      const square = (x: number) => ({ type: 'Polygon', coordinates: [[[x, 0], [x + 1, 0], [x + 1, 1], [x, 1], [x, 0]]] });
+      const stub = {
+        AutkDb: class {
+          async init() {}
+          async loadOsm() {}
+          getLayersMetadata() { return [{ name: 'table_osm_buildings', type: 'buildings' }]; }
+          async getLayer() {
+            return {
+              type: 'FeatureCollection',
+              features: [{
+                type: 'Feature',
+                geometry: { type: 'GeometryCollection', geometries: [square(0), square(2)] },
+                properties: { building_id: 7, parts: [{ height: 3 }, { height: 9 }] },
+              }],
+            };
+          }
+        },
+        DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
+      };
+
+      const layers = await runEmittedDataScript({
+        data: [{ type: 'osm', pbfFileUrl: 'p.pbf', outputTableName: 'table_osm', autoLoadLayers: { layers: ['buildings'] } }],
+      }, stub);
+
+      const parts = layers[0].geojson.features;
+      expect(parts).toHaveLength(2);
+      expect(parts.map((f: any) => f.properties.building_id)).toEqual([7, 7]);
+      expect(parts.map((f: any) => f.properties.height)).toEqual([3, 9]);
+    });
+
     // Regression: the flaky 06-autark-what-if-shadow-study failure. The backend
     // data load occasionally returns no artifact; the node then fell back to an
     // in-browser AutkDb load whose PBF fetch 404'd, and autk-db crashed with
@@ -767,8 +853,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // and no tables result — loadSpecLayers must report this, not crash.
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockRejectedValue(new Error('HTTP error! Status: 404'));
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([]);
 
       const setOutput = jest.fn();
       const result = await callBehavior(
@@ -803,8 +889,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // Restore defaults so the persistent rejection can't leak to later tests.
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([]);
     });
 
     // Regression for #248. autk-db's loadOsm walks autoLoadLayers.layers in
@@ -823,8 +909,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // so `roads` is the one that goes missing.
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockRejectedValue(new Error('undici assert(!this.paused)'));
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([
         { name: 'table_osm_surface', type: 'surface' },
         { name: 'table_osm_parks', type: 'parks' },
         { name: 'table_osm_water', type: 'water' },
@@ -864,8 +950,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([]);
     });
 
     // The recovery half of #248: a short load is usually a transient in a
@@ -939,8 +1025,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       );
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([
         { name: 'table_osm_surface', type: 'surface' },
         { name: 'table_osm_roads', type: 'roads' },
       ]);
@@ -967,8 +1053,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(outputCallback.mock.calls.some((c: any[]) => Array.isArray(c[1]))).toBe(false);
       expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeFalsy();
 
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([]);
     });
 
     test('data-only node: if persisting the fallback fails too, the Data Pool still gets the wrapper inline (#248)', async () => {
@@ -978,8 +1064,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       );
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([
         { name: 'table_osm_surface', type: 'surface' },
         { name: 'table_osm_roads', type: 'roads' },
       ]);
@@ -999,8 +1085,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(out.dataType).toBe('outputs');
       expect(out.data.map((d: any) => d.layerName)).toEqual(['table_osm_surface', 'table_osm_roads']);
 
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([]);
     });
 
     // The other side of the predicate: missing WITHOUT a recorded error is a
@@ -1015,8 +1101,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // Load succeeded (nothing recorded), it just found nothing.
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([]);
 
       const setOutput = jest.fn();
       const result = await callBehavior(
@@ -1055,8 +1141,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // The load itself succeeded and created all four tables .
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([
         { name: 'table_osm_surface', type: 'surface' },
         { name: 'table_osm_parks', type: 'parks' },
         { name: 'table_osm_water', type: 'water' },
@@ -1070,7 +1156,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         loadGeojson: jest.fn().mockResolvedValue(undefined),
         loadCsv: jest.fn().mockResolvedValue(undefined),
         loadJson: jest.fn().mockResolvedValue(undefined),
-        getLayerTables: (...a: any[]) => mockAutkDbGetLayerTables(...a),
+        getLayersMetadata: (...a: any[]) => mockAutkDbLayerMetadata(...a),
         getLayer: jest.fn((name: string) => (
           name === 'table_osm_parks' || name === 'table_osm_water'
             ? Promise.reject(new TypeError("Cannot read properties of null (reading 'length')"))
@@ -1106,8 +1192,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(errCall![0].content).not.toContain('table_osm_surface');
       expect(errCall![0].content).not.toContain('table_osm_roads');
 
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbLayerMetadata.mockReset();
+      mockAutkDbLayerMetadata.mockReturnValue([]);
     });
 
     // The browser must not put a host or port in a URL the SANDBOX will fetch:
