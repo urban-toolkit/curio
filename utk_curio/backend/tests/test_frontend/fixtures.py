@@ -194,6 +194,21 @@ def _truncate_sqlite(db_path: str, tables: tuple) -> None:
         conn.close()
 
 
+def _clear_test_stores() -> None:
+    """Delete the per-user files the truncate above would otherwise orphan.
+
+    The same call ``/api/testing/reset-db`` makes; it refuses any root that is
+    not ``.curio/test/``. Best-effort: a store that cannot be removed must not
+    fail the test that was about to run, and the next boot rewrites it anyway.
+    """
+    try:
+        from utk_curio.backend.app.common.user_storage import clear_test_stores
+
+        clear_test_stores()
+    except Exception as exc:  # pragma: no cover - diagnostics only
+        print(f"[fixtures] could not clear test user stores: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Session-scoped fixtures – shared across all tests
 # ---------------------------------------------------------------------------
@@ -504,6 +519,12 @@ def _clean_db(request, test_db_paths) -> None:
         _reset_db_via_http(_e2e_backend_base_url())
     else:
         _truncate_sqlite(test_db_paths["sqla"], _SQLA_MUTABLE_TABLES)
+        # The same clear ``/api/testing/reset-db`` does above, and for the same
+        # reason: truncating ``user`` frees ids that SQLite reissues from 1, so
+        # a store left on disk is handed to the next account a test creates
+        # (#308). Done on the files rather than over HTTP because this fixture
+        # also runs before the stack is up.
+        _clear_test_stores()
 
 
 @pytest.fixture(scope="session")
