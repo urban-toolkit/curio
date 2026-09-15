@@ -15,9 +15,10 @@ import { useToastContext } from "../../../providers/ToastProvider";
  *   changes never blank previously loaded content.
  * - **Race guard**: a per-scope request sequence drops out-of-order
  *   responses, so rapid tab switching can never paint stale data.
- * - **All-scope refresh after actions**: install/uninstall/import/publish
- *   refresh every scope in parallel (and notify the AGENTS palette), so all
- *   tabs agree immediately.
+ * - **All-scope refresh after actions**: install/uninstall/import refresh every
+ *   scope in parallel (and notify the AGENTS palette), so all tabs agree
+ *   immediately. Publishing is not among them: it belongs to the account, so
+ *   it lives on /catalog/agents (#305) and this drawer never offered it.
  * - Errors keep the cached rows (banner over content, never instead of it).
  */
 
@@ -52,8 +53,6 @@ export interface AgentCatalogDrawerState {
    *  name the agent the way the card does (#198). */
   install: (card: AgentCard) => Promise<void>;
   uninstall: (card: AgentCard) => Promise<void>;
-  publish: (coord: string) => Promise<void>;
-  unpublish: (coord: string) => Promise<void>;
 }
 
 export function useAgentCatalogDrawer(
@@ -266,7 +265,5 @@ export function useAgentCatalogDrawer(
         },
         `Removed ${card.name} from this project.`,
       ),
-    publish: (coord) => run(coord, () => agentsApi.publish(coord)),
-    unpublish: (coord) => run(coord, () => agentsApi.unpublish(coord)),
   };
 }
