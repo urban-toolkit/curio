@@ -66,6 +66,34 @@ export interface AgentCatalogBrowseState {
 }
 
 
+/**
+ * The global catalog plus the account's own imports, one row per agent.
+ *
+ * Mirrors `useNodeCatalogBrowse.mergedRows`, with the winner reversed on the
+ * fields that decide what the drawer offers: `list_global_catalog` never passes
+ * `publishable`, so a catalog row reports false even for an agent this account
+ * authored and published. Letting the catalog win there is what left both
+ * Publish and Unpublish unreachable (#305, #294).
+ */
+export function mergeAgentRows(catalog: AgentCard[], imports: AgentCard[]): AgentCard[] {
+  const rows = new Map<string, AgentCard>();
+  for (const row of catalog ?? []) rows.set(row.dirName, row);
+  for (const row of imports ?? []) {
+    const existing = rows.get(row.dirName);
+    rows.set(row.dirName, existing
+      ? {
+        ...existing,
+        ...row,
+        // Published is a fact about the catalog; either source seeing it counts.
+        published: Boolean(existing.published || row.published),
+        publishable: Boolean(row.publishable || existing.publishable),
+        imported: true,
+      }
+      : row);
+  }
+  return Array.from(rows.values());
+}
+
 export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("new");
@@ -92,9 +120,21 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
     // No projectId: this page is account scope, so `installedInProject` is not
     // meaningful here and asking for it would only mark rows against whichever
     // dataflow happened to be open last.
-    const resp = await agentsApi.catalog();
-    setAgents(resp.items ?? resp.agents);
-    setFacets(resp.facets ?? null);
+    //
+    // Two calls, like `useNodeCatalogBrowse` (catalog + listInstalled): the
+    // catalog is built-ins union published definitions, so an agent the user
+    // authored and imported is in neither, and the page that owns the Publish
+    // pill could never show it (#305). The imports call is an addition, not a
+    // precondition - a failure there must not blank the roster.
+    const [catalog, imports] = await Promise.all([
+      agentsApi.catalog(),
+      agentsApi.listImports().catch((err) => {
+        console.warn("[agent-catalog] could not read this account's imports:", err);
+        return { agents: [] as AgentCard[] };
+      }),
+    ]);
+    setAgents(mergeAgentRows(catalog.items ?? catalog.agents, imports.agents ?? []));
+    setFacets(catalog.facets ?? null);
   }, []);
 
   useEffect(() => {
@@ -102,10 +142,7 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
     setLoading(true);
     void (async () => {
       try {
-        const resp = await agentsApi.catalog();
-        if (cancelled) return;
-        setAgents(resp.items ?? resp.agents);
-        setFacets(resp.facets ?? null);
+        await reload();
       } catch (err) {
         if (!cancelled) setActionError((err as Error)?.message ?? "Could not load the Agent Catalog.");
       } finally {
@@ -115,7 +152,7 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reload]);
 
   /**
    * Run one mutation, then refetch. The error banner sits OVER the rows rather
@@ -176,18 +213,17 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
   }, [agents, search, filter, categoryFilter, sort]);
 
   const categories = useMemo<[string, number][]>(() => {
-    if (facets) {
-      return Object.entries(facets.category).sort((a, b) => a[0].localeCompare(b[0]));
-    }
-    // Pre-facets fallback: count locally so the rail still renders if an older
-    // backend answers without them.
+    // Counted from the rows on screen, not from the response's facets: those
+    // are computed over the global catalog alone, so an agent this account
+    // authored would be listed under a category the rail did not count - or
+    // not offer at all, when nothing else shares its category (#305).
     const counts = new Map<string, number>();
     for (const agent of agents) {
       if (!agent.category) continue;
       counts.set(agent.category, (counts.get(agent.category) ?? 0) + 1);
     }
     return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [facets, agents]);
+  }, [agents]);
 
   // Resolve the tri-state: an explicit close stays closed, an explicit pick
   // wins, and "nothing chosen yet" falls back to the first visible row so the
