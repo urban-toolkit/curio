@@ -6,7 +6,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": -107.55986904696073,
         "y": 400,
-        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/niteroi.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Rio de Janeiro\",\n        \"areas\": [\n          \"Niterói\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\"\n        ],\n        \"dropOsmTable\": true\n      }\n    },\n    {\n      \"type\": \"join\",\n      \"tableRootName\": \"table_osm_roads\",\n      \"tableJoinName\": \"table_osm_surface\",\n      \"near\": {\n        \"distance\": 50\n      },\n      \"groupBy\": [\n        {\n          \"column\": \"osm_id\",\n          \"aggregateFn\": \"count\"\n        }\n      ]\n    }\n  ]\n}",
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/niteroi.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Rio de Janeiro\",\n        \"areas\": [\n          \"Niterói\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\"\n        ],\n        \"dropOsmTable\": true\n      }\n    },\n    {\n      \"type\": \"join\",\n      \"tableRootName\": \"table_osm_roads\",\n      \"tableJoinName\": \"table_osm_surface\",\n      \"near\": {\n        \"distance\": 50\n      },\n      \"groupBy\": [\n        {\n          \"column\": \"*\",\n          \"aggregateFn\": \"count\"\n        }\n      ]\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load Niteroi OSM road network (surface, parks, water, roads) from PBF and run a spatial join of roads against the surface layer.",
@@ -19,10 +19,10 @@
         "type": "curio.builtin/autk-grammar",
         "x": 500,
         "y": 400,
-        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"x\": \"lanes\"\n      },\n      \"outputColumnName\": \"lanes_norm\",\n      \"wglsFunction\": \"if (x <= 0.0) { return 1.0; } if (x > 8.0) { return 8.0; } return x;\"\n    }\n  ]\n}",
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"x\": \"lanes\"\n      },\n      \"outputColumnName\": \"lanes_norm\",\n      \"wglsFunction\": \"if (x <= 0.0) { return 1.0; } if (x > 8.0) { return 8.0; } return x;\"\n    },\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"n\": \"sjoin.count.table_osm_surface\"\n      },\n      \"outputColumnName\": \"surface_count\",\n      \"wglsFunction\": \"return n;\"\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Normalise lane count via GPU — clamp to the 1–8 range. Output lands on table_osm_roads as lanes_norm; surface/parks/water flow through untouched.",
+        "goal": "Normalise lane count via GPU — clamp to the 1–8 range — and carry the spatial join's surface count along. Output lands on table_osm_roads as lanes_norm and surface_count; surface/parks/water flow through untouched.",
         "metadata": {
           "keywords": []
         }
