@@ -359,10 +359,14 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # without it every E2E test errors in its autouse fixture on a bare 404.
   # It also puts the server on the test DB under .curio/test/, which is
   # where the suite already looks.
+  # --allow-runtime-install: --auth above makes this stack "hosted", which turns
+  # runtime installs off (#309), and several e2e tests are about installing a
+  # library. The refusal itself is unit-tested, not exercised here.
   set -m
   CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_TESTING=1 \
   CURIO_LAUNCH_CWD="$REPO_ROOT" \
     python "$REPO_ROOT/curio.py" start --auth --with-examples \
+      --allow-runtime-install \
       --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
       --frontend-port "$FRONTEND_PORT" &
   CURIO_PID=$!

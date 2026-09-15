@@ -586,8 +586,18 @@ default.
 
 `POST /install` (`pip install` into the sandbox's interpreter) is off unless
 `--allow-runtime-install` is passed. It defaults on for a local single-user
-launch and off once `--auth` / `--deploy` is in play. Nothing in Curio calls
-it; library installs go through the backend's `packages/pip_runner.py`.
+launch and off once `--auth` / `--deploy` is in play.
+
+The backend's Installed-libraries routes (`POST`/`DELETE
+/api/packages/libraries`, which run `packages/pip_runner.py`) answer to the
+same switch, because they reach the same interpreter: the backend and the
+sandbox are launched from one `sys.executable`, so a library installed by
+anyone is importable by everyone's nodes. On top of the switch, a guest is
+refused whenever auth is on — the shared guest is every anonymous visitor at
+once, and an sdist runs `setup.py` on the host as it installs. With the switch
+off, `GET /api/packages/libraries` reports `installAllowed: false` and its
+reason, so the modal hides Add/Remove and a failed node offers no Install
+button rather than one that 403s.
 
 ### Portable dataset paths
 

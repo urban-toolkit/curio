@@ -342,6 +342,10 @@ jobs:
           # under /app/.curio/shards/k, which the bind mount shares with the host
           # worker that will drive it. `umask 000` for the same reason the base
           # command has it: root-created files the host-side pytest must write.
+          # --allow-runtime-install for the same reason docker-compose.ci.yml
+          # passes it: --auth makes a shard "hosted", which turns runtime
+          # installs off (#309), and the library e2e tests are about installing.
+          # A worker landing on a shard would otherwise get a 403.
           for k in $(seq 1 $((CURIO_E2E_PARALLEL - 1))); do
             echo "==> starting shard $k"
             docker compose -p curio-ci exec -d -T curio sh -c '
@@ -353,10 +357,11 @@ jobs:
               mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
               cp -r /app/datasets/. "$CURIO_CATALOG_ROOT/"
               python curio.py start backend --auth --with-examples \
+                --allow-runtime-install \
                 --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
                 --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
                 > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
-              python curio.py start sandbox \
+              python curio.py start sandbox --allow-runtime-install \
                 --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
                 --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
                 > "$CURIO_STATE_DIR/launch-sandbox.out" 2>&1 &

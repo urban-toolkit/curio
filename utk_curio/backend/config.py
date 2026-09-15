@@ -49,6 +49,11 @@ CURIO_PROJECT_EXEC_CACHE = _env_flag("CURIO_PROJECT_EXEC_CACHE", False)
 CURIO_ALLOW_FACTORY_CATALOG_PUBLISH = _env_flag(
     "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", True
 )
+# Installing a library pip-installs into the interpreter that runs EVERY user's
+# nodes, so it answers to the same switch as the sandbox's own /install. The
+# launcher always sets it: on for a local launch, off under --auth/--deploy
+# unless --allow-runtime-install. Unset means off, as it does in the sandbox.
+CURIO_ALLOW_RUNTIME_INSTALL = _env_flag("CURIO_ALLOW_RUNTIME_INSTALL", False)
 # Default for catalog parquet + auto-install when the client omits saveOutputDataset.
 # OFF by default: saving a node's output to the Data Catalog is opt-in per node,
 # so a dataflow does not accumulate a Computed dataset for every node the user

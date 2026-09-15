@@ -38,6 +38,8 @@ export interface MissingModuleNotice {
     | "unsafe-name"
     | "installed-but-broken"
     | "installed-not-visible"
+    // The instance does not allow installs, or this caller may not ask for one.
+    | "install-disabled"
     | null;
   detail: string | null;
 }

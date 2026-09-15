@@ -290,6 +290,14 @@ def curio_servers(session_app, request):
     # flips the per-node toggle in the UI, because "the user turned it on" is the
     # scenario #180 reports.
     extra_args.append("--save-node-outputs")
+    # ``--auth`` above makes this instance "hosted", which turns runtime
+    # installs off by default (#309). Several tests here are ABOUT installing a
+    # library - test_library_manager_e2e, test_missing_module_install_e2e,
+    # test_library_install_integration - so the harness turns it back on
+    # explicitly. Stated here rather than inherited, so the tests that exercise
+    # the install path and the ones that exercise the refusal stay distinct:
+    # the refusal is unit-tested (test_library_install_gate.py).
+    extra_args.append("--allow-runtime-install")
     # The examples are what #200 was about, and the gap that let it through:
     # this harness launched with ``--auth`` but never ``--with-examples``, so
     # the one configuration where the gallery came up empty was the one

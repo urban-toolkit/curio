@@ -302,3 +302,49 @@ describe("LibraryManagerWindow - the JavaScript kind", () => {
     await waitFor(() => expect(mockAdd).toHaveBeenCalledWith("python", "numpy"));
   });
 });
+
+describe("LibraryManagerWindow - when installs are turned off (#309)", () => {
+  // A library install pip-installs into the interpreter every user's nodes
+  // run in, so an operator can turn it off and a guest is refused. The
+  // controls then have to go: a click could only ever produce a red row for
+  // an operation the dialog itself invited.
+  const offListing = () => ({
+    ...listing({ python: ["numpy"] }),
+    installAllowed: false,
+    installDisabledReason:
+      "Installing libraries is turned off on this instance: it changes the "
+      + "Python environment every user's nodes run in. An operator can turn it "
+      + "on by starting Curio with --allow-runtime-install.",
+  });
+
+  it("says why, instead of offering an Add that would fail", async () => {
+    mockList.mockResolvedValue(offListing());
+    open();
+    expect(await screen.findByText(/Installing libraries is turned off/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
+  });
+
+  it("offers no Remove either - it uninstalls from that same interpreter", async () => {
+    mockList.mockResolvedValue(offListing());
+    open();
+    expect(await screen.findByText("numpy")).toBeTruthy();
+    expect(screen.queryByTitle("Remove from your library list")).toBeNull();
+  });
+
+  it("still lists what is installed", async () => {
+    mockList.mockResolvedValue(offListing());
+    open();
+    expect(await screen.findByText("numpy")).toBeTruthy();
+  });
+
+  it("keeps both controls when installs are allowed", async () => {
+    mockList.mockResolvedValue({
+      ...listing({ python: ["numpy"] }),
+      installAllowed: true,
+      installDisabledReason: null,
+    });
+    open();
+    expect(await screen.findByTitle("Remove from your library list")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
+  });
+});

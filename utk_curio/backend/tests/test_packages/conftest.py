@@ -24,6 +24,15 @@ from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
+def _runtime_install_on(monkeypatch):
+    """Library installs allowed, as ``curio.py start`` sets them for a local
+    launch. ``test_library_install_gate.py`` turns them off where it means to."""
+    from utk_curio.backend import config
+
+    monkeypatch.setattr(config, "CURIO_ALLOW_RUNTIME_INSTALL", True, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _stub_pip_runner(monkeypatch):
     """Stub the per-package pip runner so service-level tests never shell
     out to the real pip. The UHVI fixture package's manifest declares real
