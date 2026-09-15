@@ -13,9 +13,10 @@ every test, and on failure this writes, per test, into
                        stuck and what it displayed
 - ``browser-log.txt``  console and pageerror events, when the page captured
                        them (``workflow_page`` does)
-- ``trace.zip``        a Playwright trace of the test, only with
-                       ``CURIO_E2E_TRACE=1``: recording costs time on every
-                       test, failing or not, so it is opt-in
+- ``trace.zip``        a Playwright trace of the test, with ``CURIO_E2E_TRACE``
+                       set. ``1`` records DOM snapshots and the action log,
+                       which is cheap enough to leave on in CI; ``full`` adds a
+                       screenshot per action, for the manual repro job
 
 Each file is also attached to the Allure report. Everything here is best
 effort: a diagnostic that fails must never replace the test's own failure.
@@ -50,7 +51,12 @@ _NODE_STATES_JS = """() => [...document.querySelectorAll('.react-flow__node')].m
 
 
 def tracing_enabled(environ=os.environ):
-    return environ.get(TRACE_ENV) == "1"
+    return (environ.get(TRACE_ENV) or "").strip().lower() in ("1", "full")
+
+
+def tracing_screenshots(environ=os.environ):
+    """Per-action screenshots: the expensive half of a trace, so ``full`` only."""
+    return (environ.get(TRACE_ENV) or "").strip().lower() == "full"
 
 
 def failure_dir(nodeid, environ=os.environ):
@@ -64,7 +70,7 @@ def start_tracing(context):
     if not tracing_enabled():
         return
     try:
-        context.tracing.start(screenshots=True, snapshots=True)
+        context.tracing.start(screenshots=tracing_screenshots(), snapshots=True)
         context._curio_tracing = True
     except Exception as exc:
         print(f"[e2e-diagnostics] could not start tracing: {exc}")
