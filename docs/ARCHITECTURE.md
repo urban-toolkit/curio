@@ -610,8 +610,8 @@ after the fork. Three things follow, and none of them is a mode bit:
   geopandas, shapely and duckdb are resident in the zygote before the fork;
   additions are what this serves. Per-user versions would need a zygote each.
 
-The tree is deliberately not under `.curio/users/<key>/` — that is 0700
-root-owned so a node cannot reach another user's datasets — and unlike the
+The tree is deliberately not under `.curio/users/<key>/`, which is 0700
+root-owned so a node cannot reach another user's datasets, and unlike the
 per-user work directory it is **not** owned by the execution account: it is an
 import path, so node code writing there could shadow a later import. The
 startup audit reports it if it ever becomes writable.

@@ -493,7 +493,7 @@ class TestQuarantineBreaker:
 
 class TestDependencyRouting:
     """``_dep_route`` is THE rule deciding where a package's python deps land,
-    and until now it had no direct test — only the launcher's manifest walk
+    and until now it had no direct test: only the launcher's manifest walk
     exercised it, and ``test_build_promotion.py`` patches it out entirely.
 
     The table is the contract. A package with no backend serves the warm

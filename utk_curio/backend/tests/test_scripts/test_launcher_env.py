@@ -88,7 +88,7 @@ def test_explicit_fork_is_exported_as_fork(linux_host):
 
 
 def test_fork_that_the_platform_cannot_give_is_exported_as_off(monkeypatch):
-    """A local launch degrades rather than breaking the developer's laptop —
+    """A local launch degrades rather than breaking the developer's laptop,
     and the exported value says so, instead of claiming an isolation that is
     not happening."""
     from utk_curio.sandbox.isolation import mode as isolation_mode
@@ -133,7 +133,7 @@ def test_a_hosted_instance_without_isolation_does_not(linux_host):
 
 def test_a_hosted_instance_with_isolation_does(linux_host):
     """The point of the change. An install under --isolation=fork lands in the
-    caller's own overlay, so the reason the default said no is gone — and this
+    caller's own overlay, so the reason the default said no is gone, and this
     is the configuration docker-compose.deploy.yml actually ships."""
     set_environment_variables(**BASE, deploy=True, isolation="fork")
 
