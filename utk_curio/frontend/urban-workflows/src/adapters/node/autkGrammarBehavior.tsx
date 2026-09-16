@@ -970,9 +970,9 @@ export function requestedLayerTables(dataSources: any[]): string[] {
         const { type, ...rest } = (source ?? {}) as any;
         if (type === 'osm') {
             // Per-layer tables only. `${outputTableName}` and
-            // `${outputTableName}_boundaries` are excluded deliberately:
-            // `autoLoadLayers.dropOsmTable` drops those once the layers have been
-            // split out, so expecting them would fail every spec that sets it.
+            // `${outputTableName}_boundaries` are excluded deliberately: autk-db
+            // drops or keeps those itself depending on the version, so expecting
+            // them would fail specs that load perfectly well.
             const layers = rest?.autoLoadLayers?.layers;
             if (rest?.outputTableName && Array.isArray(layers)) {
                 for (const layer of layers) names.push(`${rest.outputTableName}_${layer}`);
@@ -1015,11 +1015,11 @@ function compileDataSpecToAutkDbJs(dataSources: any[]): string {
 // version still exports AutkSpatialDb. Accept either so the backend sandbox
 // (which may be on the older shape) does not throw "AutkDb is not a constructor".
 const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;
-// Old AutkSpatialDb does NOT export DEFAULT_WORKSPACE_COORDINATE_FORMAT — fall
-// back to the hardcoded workspace CRS so the coordinateFormat injection below
-// still gets a real value when the destructure resolves to undefined.
-const DEFAULT_WORKSPACE_COORDINATE_FORMAT = __autkDbMod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
 if (typeof AutkDb !== 'function') throw new Error('@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');
+// The CRS the loaded layers come back in, used to tag them for the frontend below.
+const DEFAULT_WORKSPACE_COORDINATE_FORMAT = __autkDbMod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
+// Layer metadata: autk-db 3 renamed getLayerTables() to getLayersMetadata().
+const __layerTables = (db) => (db.getLayersMetadata ? db.getLayersMetadata() : (db.getLayerTables ? db.getLayerTables() : []));
 const __sources = ${JSON.stringify(dataSources)};
 // Computed host-side by requestedLayerTables so the naming rules live in ONE
 // place rather than being restated inside this emitted string.
@@ -1029,13 +1029,12 @@ const db = new AutkDb();
 await db.init();
 for (const source of __sources) {
   const { type, ...rest } = source ?? {};
-  // Old AutkSpatialDb (root-level v2.0.1 install) dereferences
-  // \`autoLoadLayers.coordinateFormat\` unconditionally — the spec must carry it
-  // or loadOsm fails silently inside our try/catch and getLayerTables()
-  // returns an empty list. Inject the workspace default when the spec omits it
-  // so both export-name shapes work.
-  if (type === 'osm' && rest.autoLoadLayers && !rest.autoLoadLayers.coordinateFormat) {
-    rest.autoLoadLayers = { ...rest.autoLoadLayers, coordinateFormat: DEFAULT_WORKSPACE_COORDINATE_FORMAT };
+  // autk-db 3 reads \`autoLoadLayers.coordinateFormat\` as the CRS of the SOURCE
+  // data and defaults it to EPSG:4326, which is what OSM carries. It also
+  // dropped \`dropOsmTable\`, so neither is passed on.
+  if (type === 'osm' && rest.autoLoadLayers) {
+    const { dropOsmTable, ...autoLoadLayers } = rest.autoLoadLayers;
+    rest.autoLoadLayers = autoLoadLayers;
   }
   try {
     if (type === 'osm') await db.loadOsm(rest);
@@ -1057,11 +1056,11 @@ for (const source of __sources) {
 }
 let __tables = [];
 try {
-  __tables = db.getLayerTables ? db.getLayerTables() : [];
+  __tables = __layerTables(db);
 } catch (e) {
   // A partially-loaded DB can throw here rather than return [] - treat it as
   // "no usable tables" and let the contract check report it.
-  __loadErrors.push('getLayerTables: ' + ((e && e.message) || String(e)));
+  __loadErrors.push('layer metadata: ' + ((e && e.message) || String(e)));
 }
 const __have = new Set(__tables.map((t) => t.name));
 const __missing = __expectedTables.filter((n) => !__have.has(n));
@@ -1132,9 +1131,11 @@ for (const t of __tables) {
     // its own height) is a loadOsm construct that loadGeojson cannot rebuild from a
     // grouped GeometryCollection. Explode each building back into one footprint
     // feature per part (carrying that part's height) so the downstream
-    // loadGeojson('buildings') re-clusters them by building_id and getLayer re-emits
+    // loadGeojson('buildings') re-groups them by building_id and getLayer re-emits
     // proper per-part GeometryCollections — letting autk-map extrude each part by its
-    // own height instead of collapsing the whole building into a single box.
+    // own height instead of collapsing the whole building into a single box. Each
+    // part carries its building_id: autk-db 3 numbers rows on load, so the id is the
+    // only way the parts of one building stay together.
     const __exploded = [];
     for (const f of geojson.features) {
       const geom = f && f.geometry;
@@ -1145,6 +1146,7 @@ for (const t of __tables) {
         const gg = g.type === 'GeometryCollection' ? __flattenToMultiPolygon(g) : g;
         if (!gg) return;
         const p = { ...(meta || {}) }; delete p.parts;
+        if (props.building_id != null) p.building_id = props.building_id;
         const h = __buildingHeight(p); if (h != null) p.height = h;
         __exploded.push({ type: 'Feature', geometry: gg, properties: p });
       };
@@ -1290,6 +1292,9 @@ function explodeBuildingParts(features: any[]): any[] {
             if (!gg) return;
             const p = { ...(meta ?? {}) };
             delete p.parts;
+            // autk-db 3 numbers rows on load, so the id is the only thing that keeps
+            // the parts of one building together through the reload.
+            if (props.building_id != null) p.building_id = props.building_id;
             const h = deriveBuildingHeight(p);
             if (h != null) p.height = h;
             out.push({ type: 'Feature', geometry: gg, properties: p });
@@ -1325,10 +1330,12 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     const loadErrors: string[] = [];
     for (const source of (spec?.data ?? [])) {
         const { type, ...rest } = source ?? {};
-        // Old AutkSpatialDb.loadOsm dereferences autoLoadLayers.coordinateFormat
-        // unconditionally — inject the default when the spec omits it.
-        if (type === 'osm' && rest.autoLoadLayers && !rest.autoLoadLayers.coordinateFormat) {
-            rest.autoLoadLayers = { ...rest.autoLoadLayers, coordinateFormat: DEFAULT_WORKSPACE_COORDINATE_FORMAT };
+        // autk-db 3 reads autoLoadLayers.coordinateFormat as the CRS of the SOURCE
+        // data and defaults it to EPSG:4326, which is what OSM carries. It also
+        // dropped dropOsmTable, so neither is passed on. Mirrors the sandbox emit.
+        if (type === 'osm' && rest.autoLoadLayers) {
+            const { dropOsmTable, ...autoLoadLayers } = rest.autoLoadLayers as Record<string, unknown>;
+            rest.autoLoadLayers = autoLoadLayers;
         }
         try {
             if (type === 'osm') await db.loadOsm(rest);
@@ -1358,12 +1365,14 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     // detectCoordinateFormat trusts it over the heuristic.
     let tables: Array<{ name: string; type?: string }> = [];
     try {
-        tables = (db.getLayerTables ? db.getLayerTables() : []) as Array<{ name: string; type?: string }>;
+        // autk-db 3 renamed getLayerTables() to getLayersMetadata().
+        tables = (db.getLayersMetadata ? db.getLayersMetadata()
+            : db.getLayerTables ? db.getLayerTables() : []) as Array<{ name: string; type?: string }>;
     } catch (e) {
         // A partially-loaded DB can throw here (rather than return []). Treat it
         // as "no usable tables" and let the empty-result guard below report it,
         // instead of letting an opaque TypeError escape the loader.
-        loadErrors.push(`getLayerTables: ${(e as any)?.message ?? String(e)}`);
+        loadErrors.push(`layer metadata: ${(e as any)?.message ?? String(e)}`);
     }
     const layers = await Promise.all(
         tables.map(async (t) => {

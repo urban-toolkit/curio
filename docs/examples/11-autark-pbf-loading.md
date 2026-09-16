@@ -46,7 +46,7 @@ The `data` block points `pbfFileUrl` at `docs/examples/data/lower_mnt.osm.pbf`, 
   "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf",
   "queryArea": { "geocodeArea": "New York", "areas": ["Battery Park City", "Financial District"] },
   "outputTableName": "table_osm",
-  "autoLoadLayers": { "layers": ["surface", "parks", "water", "roads", "buildings"], "dropOsmTable": true }
+  "autoLoadLayers": { "layers": ["surface", "parks", "water", "roads", "buildings"] }
 }]
 ```
 

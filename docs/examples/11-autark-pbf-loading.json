@@ -6,7 +6,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 0,
         "y": 0,
-        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/lower_mnt.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"New York\",\n        \"areas\": [\n          \"Battery Park City\",\n          \"Financial District\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\",\n          \"buildings\"\n        ],\n        \"dropOsmTable\": true\n      }\n    }\n  ]\n}",
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/lower_mnt.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"New York\",\n        \"areas\": [\n          \"Battery Park City\",\n          \"Financial District\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\",\n          \"buildings\"\n        ]\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load the Lower Manhattan OSM layer stack from a local PBF and emit it downstream.",

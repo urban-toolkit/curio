@@ -11,10 +11,10 @@ const DEFAULT_SPEC = JSON.stringify(
         pbfFileUrl: 'docs/examples/data/chicago_loop.osm.pbf',
         outputTableName: 'osm_surface',
         queryArea: { geocodeArea: 'Chicago', areas: ['Loop'] },
+        // coordinateFormat is omitted on purpose: autk-db reads it as the CRS of the
+        // source data and defaults to EPSG:4326, which is what the PBF carries.
         autoLoadLayers: {
-          coordinateFormat: 'EPSG:3395',
           layers: ['surface'],
-          dropOsmTable: true,
         },
       },
     ],
