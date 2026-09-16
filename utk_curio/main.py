@@ -873,6 +873,44 @@ def install_framework_requirements() -> None:
     )
 
 
+def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
+    """Provision one user's node libraries into their own tree (#332).
+
+    Best-effort per user, unlike the host install below, which exits non-zero.
+    One account's unsatisfiable manifest must not stop an instance booting for
+    everybody else - the failure belongs to whoever installed that package, and
+    they get a plain ImportError naming it the first time a node runs.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.resolver import merge_python_deps
+    from utk_curio.backend.app.packages.pip_runner import (
+        PipInstallError, install_python_deps_to_target,
+    )
+
+    merged, conflicts = merge_python_deps(entries)
+    for c in conflicts:
+        log_warning(
+            f"Dependency range conflict for {c.package} (user {user_key}): "
+            + ", ".join(f"{dn}={rng}" for dn, rng in c.ranges)
+        )
+    if not merged:
+        return
+    overlay = backend_runtime.user_node_overlay_dir(user_key)
+    overlay.mkdir(parents=True, exist_ok=True)
+    log_info(
+        f"[Setup] Installing node deps for user {user_key}: "
+        + ", ".join(sorted(merged)),
+        COLOR_BACKEND, 0,
+    )
+    try:
+        install_python_deps_to_target(
+            merged, str(overlay),
+            on_line=lambda line: log_info(f"[pip] {line}", COLOR_BACKEND, 2),
+        )
+    except PipInstallError as exc:
+        log_error(f"[Setup] Node dep install failed for user {user_key}: {exc}")
+
+
 def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     """Walk every installed package manifest — catalog source-of-truth at
     ``<repo>/packages/`` PLUS every user store under
@@ -909,6 +947,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
         install_python_deps,
     )
     from utk_curio.backend.app.packages.seed import example_dep_package_ids
+    from utk_curio.backend.app.packages import backend_runtime
     from utk_curio.backend.app.packages.backend_runtime import dep_destinations
     from utk_curio.backend.app.common.user_storage import users_base
 
@@ -966,13 +1005,22 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     # The glob is narrowed to the package-store layout for the same reason it is
     # walked at all: rglob would also match manifests nested inside a package's
     # own payload, which are not installed packages.
+    #
+    # #332: under --isolation=fork a node's libraries live in the calling
+    # user's own tree, so this walk stops being one merged host install and
+    # becomes one install per user. The dedupe below has to go with it: two
+    # users who both installed curio.weather each need rasterio, in two
+    # different directories, and ``seen`` would have given it to whichever of
+    # them the glob reached first.
+    per_user: dict[str, list[tuple[str, dict]]] = {}
+    scoped = backend_runtime.per_user_node_envs()
     if users.is_dir():
         for mf in sorted(users.glob("*/packages/*/manifest.json")):
             try:
                 m = load_packageage_manifest(mf.parent)
             except ManifestError:
                 continue
-            if m.dir_name in seen:
+            if not scoped and m.dir_name in seen:
                 continue
             seen.add(m.dir_name)
             destination, why = dep_destinations(m)
@@ -982,8 +1030,18 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
                     COLOR_BACKEND, 2,
                 )
                 continue
-            if m.python_deps:
+            if not m.python_deps:
+                continue
+            if scoped:
+                user_key = mf.parent.parent.parent.name
+                per_user.setdefault(user_key, []).append(
+                    (m.dir_name, dict(m.python_deps))
+                )
+            else:
                 per_pkg.append((m.dir_name, dict(m.python_deps)))
+
+    for user_key, entries in sorted(per_user.items()):
+        _install_user_node_deps_at_boot(user_key, entries)
 
     if not per_pkg:
         return
