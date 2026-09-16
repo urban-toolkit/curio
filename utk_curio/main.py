@@ -166,20 +166,44 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         )
         os.environ["CURIO_NO_PROJECT"] = "1" if no_project else "0"
 
-    # Follows the --allow-publish precedent: permissive for a local single-user
-    # install, locked down once the instance is multi-user. On a local launch
-    # the endpoint grants nothing the user's own shell does not already have;
-    # on a shared one it is an unrecorded 'pip install' into the interpreter
-    # that executes node code. An explicit flag wins over both defaults.
     hosted = os.environ["CURIO_NO_AUTH"] == "0"
-    if allow_runtime_install is None:
-        allow_runtime_install = not hosted
-    os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] = "1" if allow_runtime_install else "0"
 
     # Node-execution isolation (utk_curio/sandbox/isolation/). Opt-in: 'auto'
     # resolves to off, so nothing changes for an existing deployment until an
     # operator asks for it with --isolation=fork.
-    os.environ["CURIO_ISOLATION"] = isolation or "auto"
+    #
+    # RESOLVED here, not passed through. 'auto' is a request, not an answer,
+    # and it used to be decided inside the sandbox - which left every other
+    # reader holding a value that does not say what will actually happen.
+    # ``resolve_mode`` is pure and ``capabilities()` reads only sys.platform
+    # plus importable modules, so the launcher and the sandbox it spawns reach
+    # the same verdict. Deciding it once is also what lets the runtime-install
+    # default below ask whether node deps will be per-user. A hosted instance
+    # that asked for isolation it cannot have still raises, here rather than
+    # one process later.
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    isolation_resolved, isolation_reason = isolation_mode.resolve_mode(
+        isolation, hosted=hosted,
+    )
+    os.environ["CURIO_ISOLATION"] = isolation_resolved
+    if isolation_reason:
+        log_warning(isolation_reason)
+
+    # Follows the --allow-publish precedent: permissive for a local single-user
+    # install, locked down once the instance is multi-user. On a local launch
+    # the endpoint grants nothing the user's own shell does not already have.
+    #
+    # Isolation changes the second half of that. The rule was "off once shared"
+    # because an install went into the ONE interpreter every user's nodes run
+    # in; under --isolation=fork it lands in the caller's own overlay instead,
+    # so the blast radius the default was protecting against is gone. Without
+    # this, the deployment that can actually scope installs
+    # (docker-compose.deploy.yml passes --deploy --isolation fork) would be the
+    # one place they stay switched off. An explicit flag still wins.
+    if allow_runtime_install is None:
+        allow_runtime_install = (not hosted) or isolation_resolved == isolation_mode.FORK
+    os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] = "1" if allow_runtime_install else "0"
     if exec_user:
         os.environ["CURIO_EXEC_USER"] = str(exec_user)
     if exec_memory_mb:

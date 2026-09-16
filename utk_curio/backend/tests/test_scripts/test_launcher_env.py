@@ -41,10 +41,118 @@ def _isolate_env(monkeypatch, tmp_path):
         "CURIO_NO_PROJECT",
         "ENABLE_COLLAB",
         "BACKEND_URL",
+        "CURIO_ISOLATION",
+        "CURIO_ALLOW_RUNTIME_INSTALL",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path / "data"))
+
+
+@pytest.fixture
+def linux_host(monkeypatch):
+    """Make the launcher resolve isolation as a complete Linux host would.
+
+    ``resolve_mode`` is exercised for real; only the capability probe is
+    replaced, so these tests answer "what does the launcher decide", not "what
+    can this laptop do". Without it the whole fork half of the table is
+    unreachable from macOS and Windows, which is where Curio is developed.
+    """
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "linux", "fork": True, "rlimit": True,
+        "seccomp": True, "linux": True,
+    })
+
+
+# ── Isolation is resolved by the launcher, not passed through ───────────────
+
+
+def test_auto_is_exported_as_the_decision_it_resolves_to(linux_host):
+    """'auto' is a request. Every reader downstream needs the answer.
+
+    It used to be exported verbatim and decided later inside the sandbox, so
+    the backend and the launcher's own runtime-install default were both
+    holding a value that did not say what would actually happen.
+    """
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_explicit_fork_is_exported_as_fork(linux_host):
+    set_environment_variables(**BASE, isolation="fork")
+
+    assert os.environ["CURIO_ISOLATION"] == "fork"
+
+
+def test_fork_that_the_platform_cannot_give_is_exported_as_off(monkeypatch):
+    """A local launch degrades rather than breaking the developer's laptop —
+    and the exported value says so, instead of claiming an isolation that is
+    not happening."""
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "win32", "fork": False, "rlimit": False,
+        "seccomp": False, "linux": False,
+    })
+    set_environment_variables(**BASE, isolation="fork")
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_hosted_instance_that_cannot_isolate_refuses_at_launch(monkeypatch):
+    """Fail-closed, and now one process earlier: the launcher raises instead of
+    the sandbox refusing to start after everything else is already up."""
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "win32", "fork": False, "rlimit": False,
+        "seccomp": False, "linux": False,
+    })
+    with pytest.raises(isolation_mode.IsolationUnavailable):
+        set_environment_variables(**BASE, deploy=True, isolation="fork")
+
+
+# ── The runtime-install default follows the blast radius ────────────────────
+
+
+def test_a_local_launch_allows_installs(linux_host):
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] == "1"
+
+
+def test_a_hosted_instance_without_isolation_does_not(linux_host):
+    """The original rule, unchanged: one interpreter, every user's nodes."""
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] == "0"
+
+
+def test_a_hosted_instance_with_isolation_does(linux_host):
+    """The point of the change. An install under --isolation=fork lands in the
+    caller's own overlay, so the reason the default said no is gone — and this
+    is the configuration docker-compose.deploy.yml actually ships."""
+    set_environment_variables(**BASE, deploy=True, isolation="fork")
+
+    assert os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] == "1"
+
+
+@pytest.mark.parametrize("deploy, isolation", [
+    (True, "fork"), (True, None), (False, None),
+])
+def test_an_explicit_flag_still_wins_everywhere(linux_host, deploy, isolation):
+    set_environment_variables(
+        **BASE, deploy=deploy, isolation=isolation, allow_runtime_install=False,
+    )
+    assert os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] == "0"
+
+    set_environment_variables(
+        **BASE, deploy=deploy, isolation=isolation, allow_runtime_install=True,
+    )
+    assert os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] == "1"
 
 
 def test_auth_and_examples_together_is_the_combination_200_needed():
