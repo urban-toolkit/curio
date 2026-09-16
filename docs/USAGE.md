@@ -62,7 +62,7 @@ curio setup                  # install deps and exit
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
 | `--with-examples` | off | Seed the example projects from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
-| `--isolation auto\|fork\|off` | `auto` (resolves to off) | Run each node's Python in an isolated child process. Linux only. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only) |
+| `--isolation auto\|fork\|off` | `auto` (resolves to off) | Run each node's Python in an isolated child process. **Linux only** — elsewhere a local launch falls back to in-process with a warning, and a hosted one refuses to start. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only) |
 | `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` / `--exec-user` | 4096 / 300 / 2 / none | Limits for isolated execution. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
 | `--allow-runtime-install` / `--no-allow-runtime-install` | on locally, off with `--auth` / `--deploy` | Whether the sandbox's `POST /install` endpoint accepts `pip install` requests |
 
