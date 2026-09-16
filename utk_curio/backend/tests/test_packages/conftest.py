@@ -33,6 +33,14 @@ def _stub_pip_runner(monkeypatch):
 
     Individual tests in ``test_pip_runner.py`` patch ``subprocess.run``
     directly and don't hit this fixture's stubs.
+
+    Deliberately NOT stubbed: the ``--target`` installers. Nothing here reaches
+    them by accident - ``build_overlay`` is the only caller, and the tests that
+    exercise it patch that instead - while
+    ``test_backend_runtime.py::test_real_pip_target_overlay_end_to_end`` runs a
+    real ``pip --target`` against a local wheelhouse and would be gutted by a
+    blanket stub. Tests that turn isolation on, and so route node deps into a
+    per-user overlay, stub the installer themselves.
     """
     from utk_curio.backend.app.packages import pip_runner
     from utk_curio.backend.app.packages.pip_runner import InstallReport, UninstallReport
