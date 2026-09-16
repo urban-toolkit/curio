@@ -18,6 +18,7 @@ import zipfile
 from playwright.sync_api import expect
 
 from .utils import (
+    EXPORT_DOWNLOAD_TIMEOUT_MS,
     require_project_page,
     require_user_auth,
     stub_db_login,
@@ -62,7 +63,7 @@ def test_a_catalog_only_package_exports_from_view_details(app_frontend, current_
     _open_details(page, app_frontend.base_url, "/catalog/nodes", "Node Catalog", PACKAGE_NAME)
 
     dialog = page.get_by_role("dialog")
-    with page.expect_download(timeout=30000) as info:
+    with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as info:
         dialog.get_by_role("button", name="Export").click()
     download = info.value
 
@@ -81,7 +82,7 @@ def test_a_builtin_agent_exports_from_view_details(app_frontend, current_server,
     _open_details(page, app_frontend.base_url, "/catalog/agents", "Agent Catalog", AGENT_NAME)
 
     dialog = page.get_by_role("dialog")
-    with page.expect_download(timeout=30000) as info:
+    with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as info:
         dialog.get_by_role("button", name="Export").click()
     download = info.value
 

@@ -48,6 +48,7 @@ import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    EXPORT_DOWNLOAD_TIMEOUT_MS,
     accept_confirm_dialog,
     activate_header_icon,
     api_json,
@@ -353,7 +354,7 @@ def test_save_export_import_and_run_package_nodes(
     # ------------------------------------------------------------------
     # EXPORT: a real browser download, the only way to get the bytes
     # ------------------------------------------------------------------
-    with page.expect_download(timeout=60000) as download:
+    with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
         anchor.locator('button[title="Export package"]').click(force=True)
     archive = tmp_path / "roundtrip.curio.zip"
     download.value.save_as(archive)
