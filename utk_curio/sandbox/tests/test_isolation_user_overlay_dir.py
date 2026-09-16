@@ -156,3 +156,67 @@ def rt_subdir():
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheHardeningAuditAsksTheOppositeQuestion(unittest.TestCase):
+    """Every other sensitive path is a finding because the execution user can
+    READ it. This one has to be readable, or a user's nodes cannot import the
+    libraries they installed. The risk is the write."""
+
+    def _tree(self, tmp, user="7"):
+        store = os.path.join(tmp, "data")
+        path = supervisor.user_overlay_dir(store, user)
+        supervisor.prepare_user_overlay_dir(path)
+        return store, path
+
+    def test_a_tree_prepared_the_normal_way_is_clean(self):
+        import tempfile
+
+        from utk_curio.sandbox.isolation import hardening
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _ = self._tree(tmp)
+            self.assertEqual(
+                hardening.audit_node_overlays(store, uid=12345, gid=12345), [],
+            )
+
+    @posix_only
+    def test_a_world_writable_tree_is_reported(self):
+        import tempfile
+
+        from utk_curio.sandbox.isolation import hardening
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store, path = self._tree(tmp)
+            os.chmod(path, 0o777)
+            findings = hardening.audit_node_overlays(store, uid=12345, gid=12345)
+            self.assertEqual(len(findings), 1, findings)
+            self.assertIn("shadow", findings[0])
+
+    @posix_only
+    def test_a_tree_owned_by_the_execution_user_is_reported(self):
+        """Ownership is the subtler version: 0755 looks fine until you notice
+        the owner is the account node code runs as."""
+        import tempfile
+
+        from utk_curio.sandbox.isolation import hardening
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store, path = self._tree(tmp)
+            findings = hardening.audit_node_overlays(
+                store, uid=os.stat(path).st_uid, gid=None,
+            )
+            self.assertEqual(len(findings), 1, findings)
+
+    def test_no_overlays_at_all_is_not_a_finding(self):
+        import tempfile
+
+        from utk_curio.sandbox.isolation import hardening
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(
+                hardening.audit_node_overlays(
+                    os.path.join(tmp, "data"), uid=12345, gid=12345,
+                ),
+                [],
+            )
