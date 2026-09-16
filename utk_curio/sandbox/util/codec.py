@@ -256,8 +256,25 @@ def _object_column_needs_json_encoding(series):
         "decimal",
     }
 
+#: What one COPY of one frame is allowed to reserve (#334).
+#:
+#: DuckDB's defaults assume it owns the machine: ``threads`` follows the host's
+#: core count and ``memory_limit`` is ~80% of system RAM. Serialization runs
+#: inside the isolated child's RLIMIT_AS cap (the interpreter's footprint plus
+#: ``--exec-memory-mb``), so on a many-core host those defaults reserved enough
+#: address space that writing ``pd.DataFrame({'a': [1, 2, 3]})`` failed with
+#: "Failed to allocate block of 32768 bytes". Measured on 8 cores: 7040 KB of
+#: peak RSS per write by default, 496 KB with these settings.
+#:
+#: Not a ceiling on the frame: ``register`` is zero-copy and COPY streams row
+#: groups, so a 150 MB frame writes through a 256 MB limit in half a second.
+#: Insertion order is deliberately left alone - row order is part of a node's
+#: output, whatever DuckDB's own out-of-memory advice suggests.
+_WRITER_CONFIG = {"threads": 1, "memory_limit": "256MB"}
+
+
 def _write_dataframe_parquet(frame, parquet_path):
-    writer = duckdb.connect(database=":memory:")
+    writer = duckdb.connect(database=":memory:", config=dict(_WRITER_CONFIG))
     try:
         writer.register("curio_frame", frame)
         escaped_path = str(parquet_path).replace("'", "''")
