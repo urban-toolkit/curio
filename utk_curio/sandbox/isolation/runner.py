@@ -195,6 +195,10 @@ def execute_isolated(
     path's ``cwd``. Positional and third-from-last so this signature lines up
     with ``worker.execute_code``, which the caller picks between.
 
+    *user_key* also selects that user's node-library overlay (#332), which the
+    child puts on ``sys.path``: a library one user installed is importable by
+    their nodes and by nobody else's.
+
     *user_key* switches the child into that user's own work directory instead:
     persistent, writable, owned by the execution user, and the one place an
     isolated node may write. Isolated mode only -- in-process execution shares
@@ -205,11 +209,19 @@ def execute_isolated(
     from utk_curio.sandbox.util.parsers import _shared_data_dir
 
     work_dir = launch_dir
+    overlay_dir = None
     if user_key:
         work_dir = supervisor.prepare_user_work_dir(
             supervisor.user_work_dir(str(_shared_data_dir()), user_key),
             exec_uid=config.exec_uid,
             launch_dir=launch_dir,
+        )
+        # #332: the libraries this user installed. Prepared rather than merely
+        # located, so a user who has installed nothing still gets an empty
+        # directory instead of the child skipping a path that does not exist.
+        overlay_dir = supervisor.prepare_user_overlay_dir(
+            supervisor.user_overlay_dir(str(_shared_data_dir()), user_key),
+            exec_uid=config.exec_uid,
         )
 
     scratch_dir = None
@@ -240,6 +252,7 @@ def execute_isolated(
             scratch_dir=scratch_dir,
             input_spec=input_spec,
             work_dir=work_dir,
+            overlay_dir=overlay_dir,
             dataset_paths=staged_datasets,
             session_imports=_imports_for(session_id),
             limits=config.limits,
