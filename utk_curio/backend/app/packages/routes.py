@@ -1384,7 +1384,7 @@ def add_library_route():
     """
     from utk_curio.backend.app.packages import libraries as libs
     from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, PipSpecError, import_failures, install_python_deps,
+        PipInstallError, PipSpecError,
     )
 
     body = request.get_json(silent=True) or {}
@@ -1405,7 +1405,7 @@ def add_library_route():
     # pip_runner re-canonicalize the version spec.
     name, version = _split_lib_spec(spec)
     try:
-        report = install_python_deps({name: version})
+        report = packages_services.install_user_library(user_key, name, version)
     except PipSpecError as exc:
         # A malformed requirement is the caller's mistake, not pip's failure:
         # answer 400 rather than letting it read as an upstream 502.
@@ -1419,7 +1419,7 @@ def add_library_route():
     # case - reports a good version, so pip declines to do anything and this
     # route used to answer "Already installed" for a library that raises
     # ImportError the moment a node touches it. Say so instead.
-    import_error = import_failures([name]).get(name)
+    import_error = packages_services.user_library_import_failure(user_key, name)
     return jsonify({
         "standalone": libs.list_standalone(user_key),
         # ``skipped`` is non-empty when pip found the requirement already

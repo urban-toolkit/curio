@@ -262,6 +262,44 @@ def _overlay_import_failures(user_key: str, dir_name: str, deps):
     return _import_failures_or_silence(deps, overlay_dir=overlay)
 
 
+def install_user_library(user_key: str, name: str, version: str):
+    """Install one standalone library for *user_key*, wherever their nodes
+    import from.
+
+    The libraries dialog's half of the #332 split, and the same rule
+    :func:`provision_python_deps` follows: the calling user's own tree under
+    isolation, the shared interpreter without it. Raises what pip raises - the
+    route turns a bad requirement into a 400 and a failed install into a 502.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.pip_runner import (
+        install_python_deps, install_python_deps_to_target,
+    )
+
+    deps = {name: version}
+    if not backend_runtime.per_user_node_envs():
+        return install_python_deps(deps)
+    overlay = backend_runtime.user_node_overlay_dir(user_key)
+    overlay.mkdir(parents=True, exist_ok=True)
+    return install_python_deps_to_target(deps, str(overlay))
+
+
+def user_library_import_failure(user_key: str, name: str):
+    """Why *name* cannot be imported by *user_key*'s nodes, or None.
+
+    pip exiting 0 does not mean the library works, and asking the wrong
+    environment is its own way of being wrong: under isolation the host
+    interpreter has never heard of a library that installed perfectly well into
+    the user's tree, and reporting that as a broken install would be a
+    fabricated failure.
+    """
+    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+
+    if backend_runtime.per_user_node_envs():
+        return _node_overlay_import_failures(user_key, [name]).get(name)
+    return pip_runner.import_failures([name]).get(name)
+
+
 def _provision_user_node_deps(
     user_key: str, py_deps: dict, failures: dict,
 ) -> list[str]:

@@ -201,3 +201,69 @@ class TestTheProbeAsksTheRightInterpreter:
 
         assert seen and all(i == sys.executable for i in seen)
         assert rt.sandbox_interpreter() == "/nonexistent/python", "the pin is real"
+
+
+class TestTheLibrariesDialog:
+    """``POST /api/packages/libraries`` is how a user actually installs one, and
+    it does not go through ``provision_python_deps`` - it reaches pip itself. So
+    it needs the same routing, proved separately."""
+
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    def test_without_isolation_it_installs_into_the_shared_interpreter(
+        self, client, user_and_token, in_process, pip_calls, launch_tree,
+    ):
+        _, token = user_and_token
+        resp = client.post(
+            "/api/packages/libraries",
+            json={"kind": "python", "spec": "humanize"},
+            headers=self._auth(token),
+        )
+
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        assert [c[0] for c in pip_calls] == ["host"]
+
+    def test_with_isolation_it_installs_into_the_callers_own_tree(
+        self, client, user_and_token, isolated, pip_calls, launch_tree, monkeypatch,
+    ):
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(
+            pip_runner, "import_failures_in",
+            lambda deps, path, interpreter=None: {},
+        )
+        user, token = user_and_token
+        resp = client.post(
+            "/api/packages/libraries",
+            json={"kind": "python", "spec": "humanize"},
+            headers=self._auth(token),
+        )
+
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        assert [c[0] for c in pip_calls] == ["target"]
+        assert str(user.id) in pip_calls[0][2]
+
+    def test_the_import_probe_asks_the_environment_it_installed_into(
+        self, client, user_and_token, isolated, pip_calls, launch_tree, monkeypatch,
+    ):
+        """Asking the host about a library that went into the user's tree would
+        report a perfectly good install as broken."""
+        from utk_curio.backend.app.packages import pip_runner
+
+        monkeypatch.setattr(
+            pip_runner, "import_failures",
+            lambda deps: {d: "No module named it" for d in deps},
+        )
+        monkeypatch.setattr(
+            pip_runner, "import_failures_in",
+            lambda deps, path, interpreter=None: {},
+        )
+        _, token = user_and_token
+        resp = client.post(
+            "/api/packages/libraries",
+            json={"kind": "python", "spec": "humanize"},
+            headers=self._auth(token),
+        )
+
+        assert resp.get_json()["importError"] is None
