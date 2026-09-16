@@ -527,7 +527,7 @@ class TestImportFailuresIn:
         """
         seen: list[list[str]] = []
 
-        def _fake(names, search_path):
+        def _fake(names, search_path, interpreter=None):
             seen.append(list(names))
             if len(names) > 1:
                 return None                       # the batch "crashed"
@@ -544,7 +544,7 @@ class TestImportFailuresIn:
         calls: list[list[str]] = []
         monkeypatch.setattr(
             pip_runner, "_run_target_probe",
-            lambda names, path: calls.append(list(names)) or {},
+            lambda names, path, interpreter=None: calls.append(list(names)) or {},
         )
         assert pip_runner.import_failures_in(["a", "b"], str(tmp_path)) == {}
         assert calls == [["a", "b"]]
