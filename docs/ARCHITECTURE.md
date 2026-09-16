@@ -499,14 +499,14 @@ instead of in-process. `utk_curio/sandbox/isolation/`:
 | `hardening.py` | Filesystem permissions, and the startup audit that verifies them |
 
 **Linux, not POSIX, and what happens elsewhere.** Three of the primitives are
-POSIX — `os.fork`, `resource.setrlimit`, `os.killpg` — but confinement also
+POSIX (`os.fork`, `resource.setrlimit`, `os.killpg`), but confinement also
 calls `prctl(PR_SET_NO_NEW_PRIVS)` through `libc.so.6`, and hosting needs
 seccomp on top of that. macOS has neither, Windows has none of it. Curio is
 developed on both, so the rule is deliberately asymmetric:
 
 - **Local launch** (no `--auth` / `--deploy`): `--isolation=fork` off Linux
   degrades to the in-process path and logs one warning naming what is missing.
-  Your nodes run **unisolated** — that is the trade, because breaking a
+  Your nodes run **unisolated**. That is the trade, because breaking a
   developer's laptop to enforce a boundary that only matters on a shared
   instance would be the wrong one.
 - **Hosted launch**: the same request is fatal. The sandbox refuses to start
