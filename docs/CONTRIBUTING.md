@@ -243,7 +243,7 @@ npm test -- --watchAll=false
 
 Tests live under `src/tests/` and mirror the structure of `src/components/`. See [utk_curio/frontend/urban-workflows/src/tests/README.md](../utk_curio/frontend/urban-workflows/src/tests/README.md) for guidelines on writing and organizing tests.
 
-The project uses **Node 26**. Jest needs a Node that can `require()` an ES module (transitive dep `html-encoding-sniffer@6` does), and older Node fails every suite with `ERR_REQUIRE_ESM`. Install it into the `curio` conda env with `conda install -c conda-forge nodejs=26` and run `conda activate curio` before `npm test`, or use a system install of Node 26.
+The project uses **Node 26**. Jest needs a Node that can `require()` an ES module (transitive dep `html-encoding-sniffer@6` does), and older Node fails every suite with `ERR_REQUIRE_ESM`. Install it into the `curio` conda env with `conda install -c conda-forge nodejs=26` and run `conda activate curio` before `npm test`, or use a system install of Node 26 (`.nvmrc` and `.node-version` pin it for nvm/fnm/asdf). A checkout whose `node_modules` was installed under an older Node reinstalls itself on the next `curio.py start` -- the launcher stamps the installing major into `node_modules/.curio-node-major` and wipes the tree when it changes, so there is no folder to delete by hand.
 
 ### Frontend E2E Tests
 

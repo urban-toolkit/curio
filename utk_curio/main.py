@@ -31,9 +31,20 @@ COLOR_BACKEND = "\033[92m"   # Green
 COLOR_SANDBOX = "\033[93m"   # Yellow
 
 # The Node.js major the project targets: the frontend build, Jest, and the
-# sandbox's Node subprocess. Keep in step with the Dockerfile and
-# utk_curio/frontend/urban-workflows/package.json "engines".
+# sandbox's Node subprocess. Keep in step with the Dockerfile, .nvmrc,
+# .node-version and both package.json "engines" fields --
+# test_launcher_node_version.py fails when they drift.
 NODE_MAJOR = 26
+
+# Recorded inside node_modules by the Node major that installed it. A checkout
+# whose tree was installed by a different major is wiped and reinstalled once,
+# because ``npm install`` alone does not heal it: it never re-runs an
+# already-installed package's install script, so anything built from source
+# stays built for the old ABI, and webpack's filesystem cache
+# (node_modules/.cache, see the frontend's webpack.config.js) is not keyed on
+# the Node version either. A tree with no stamp predates this check -- e.g.
+# every checkout installed before the move to Node 26 -- and counts as stale.
+NODE_STAMP = ".curio-node-major"
 
 shutdown_flag = threading.Event()
 processes = []
@@ -410,6 +421,60 @@ def run_spa_static_server(directory: str, port: int) -> None:
     with ThreadingHTTPServer(("0.0.0.0", port), SpaStaticHandler) as httpd:
         httpd.serve_forever()
 
+def _read_node_version():
+    """``(raw, major)`` for the ``node`` on PATH; ``(None, 0)`` when unreadable."""
+    try:
+        raw = subprocess.check_output(
+            ["node", "--version"], text=True, shell=shell_required,
+        ).strip()
+    except Exception as e:
+        log_error(f"Could not determine Node.js version: {e}")
+        return None, 0
+    major = 0
+    if raw.startswith("v"):
+        try:
+            major = int(raw[1:].split(".", 1)[0])
+        except ValueError:
+            pass
+    return raw, major
+
+
+def _node_tree_is_stale(root, major):
+    """True when ``root``'s node_modules was installed by a different Node major.
+
+    See ``NODE_STAMP``. A missing tree is not stale -- there is nothing to wipe
+    and the install that follows is a fresh one.
+    """
+    node_modules = os.path.join(root, "node_modules")
+    if not os.path.isdir(node_modules):
+        return False
+    try:
+        with open(os.path.join(node_modules, NODE_STAMP), encoding="utf-8") as fh:
+            return fh.read().strip() != str(major)
+    except OSError:
+        return True
+
+
+def _write_node_stamp(root, major):
+    """Record the Node major that installed ``root``'s node_modules.
+
+    Called after a successful install only, so a failed one does not leave a
+    stamp claiming the tree is current.
+    """
+    node_modules = os.path.join(root, "node_modules")
+    try:
+        os.makedirs(node_modules, exist_ok=True)
+        with open(os.path.join(node_modules, NODE_STAMP), "w", encoding="utf-8") as fh:
+            fh.write(str(major))
+    except OSError as exc:
+        log_info(
+            f"Could not record the installing Node.js major ({exc}); "
+            f"the next start will reinstall node_modules.",
+            COLOR_FRONTEND,
+            0,
+        )
+
+
 def check_install_build(dir, force_rebuild=False):
     # Determine the absolute path whether it is provided as relative or absolute
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -421,13 +486,6 @@ def check_install_build(dir, force_rebuild=False):
     os.chdir(abs_dir)
     log_info(f"[Frontend] Current working directory for npm commands: {os.getcwd()}", COLOR_FRONTEND, 0)
     
-    if force_rebuild:
-        log_info(f"[Frontend] Force rebuilding in {dir}...", COLOR_FRONTEND)
-        for subdir in ("node_modules", "dist", "build"):
-            full_path = os.path.join(abs_dir, subdir)
-            if os.path.exists(full_path):
-                shutil.rmtree(full_path)
-    
     if shutil.which("npm") is None:
         log_error(f"[Frontend] npm not found in PATH. Install Node.js {NODE_MAJOR} from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs={NODE_MAJOR}'), and make sure 'npm' is available in your terminal, then retry.")
         clean_shutdown()
@@ -437,20 +495,10 @@ def check_install_build(dir, force_rebuild=False):
         log_error(f"[Frontend] node not found in PATH. Install Node.js {NODE_MAJOR} from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs={NODE_MAJOR}'), and make sure 'node' is available in your terminal, then retry.")
         clean_shutdown()
         return
-    try:
-        node_version_raw = subprocess.check_output(
-            ["node", "--version"], text=True, shell=shell_required,
-        ).strip()
-    except Exception as e:
-        log_error(f"[Frontend] Could not determine Node.js version: {e}")
+    node_version_raw, node_major = _read_node_version()
+    if node_version_raw is None:
         clean_shutdown()
         return
-    node_major = 0
-    if node_version_raw.startswith("v"):
-        try:
-            node_major = int(node_version_raw[1:].split(".", 1)[0])
-        except ValueError:
-            pass
     if node_major < NODE_MAJOR:
         log_error(
             f"[Frontend] Node.js {node_version_raw} detected; requires Node.js {NODE_MAJOR} or newer. "
@@ -458,6 +506,25 @@ def check_install_build(dir, force_rebuild=False):
         )
         clean_shutdown()
         return
+
+    # A tree installed by another Node major takes the same path as
+    # --force-rebuild (see NODE_STAMP). The build goes with it: the bundle was
+    # produced by the old toolchain, and the .curio-backend-url stamp alone
+    # would call it current and skip the rebuild.
+    if not force_rebuild and _node_tree_is_stale(abs_dir, node_major):
+        log_info(
+            f"[Frontend] node_modules was installed by a different Node.js major; "
+            f"rebuilding for Node.js {node_major}...",
+            COLOR_FRONTEND, 0,
+        )
+        force_rebuild = True
+
+    if force_rebuild:
+        log_info(f"[Frontend] Force rebuilding in {dir}...", COLOR_FRONTEND)
+        for subdir in ("node_modules", "dist", "build"):
+            full_path = os.path.join(abs_dir, subdir)
+            if os.path.exists(full_path):
+                shutil.rmtree(full_path)
 
     # Run npm install unconditionally. It's idempotent and fast (~1 s) when
     # the lockfile is already satisfied, and it self-heals when package.json
@@ -473,6 +540,8 @@ def check_install_build(dir, force_rebuild=False):
     except Exception as e:
         log_error(f"[Frontend] Failed to run 'npm install': {e}")
         clean_shutdown()
+    else:
+        _write_node_stamp(abs_dir, node_major)
 
     # Check if dist/build directory exists (depending on your setup)
     build_dir = "dist" if os.path.exists("dist") else "build"
@@ -841,6 +910,34 @@ def _ensure_root_node_modules(project_root: str) -> None:
             "until 'npm install' is run at the repo root."
         )
         return
+
+    # A warning, not a hard stop: this path also runs with CURIO_DEV=0 (a pip
+    # install), where an older Node still gives a working Curio minus the JS and
+    # Autark data nodes. The frontend's gate in check_install_build is the fatal
+    # one, and it only runs in dev mode.
+    node_version_raw, node_major = _read_node_version()
+    if node_version_raw is None:
+        # Unreadable version: leave the tree alone rather than wipe it on a guess.
+        pass
+    elif node_major < NODE_MAJOR:
+        log_warning(
+            f"[Sandbox] Node.js {node_version_raw} detected; the project targets "
+            f"Node.js {NODE_MAJOR}. Autark data nodes can die mid-download on "
+            f"Node 24 (the undici regression nodejs/undici#5360). Upgrade with "
+            f"'conda install -c conda-forge nodejs={NODE_MAJOR}' or from "
+            f"https://nodejs.org."
+        )
+    elif _node_tree_is_stale(project_root, node_major):
+        # Installed by another Node major: reinstall from scratch (see NODE_STAMP).
+        # The frontend equivalent is the --force-rebuild path in
+        # check_install_build; there is no build output to drop here.
+        log_info(
+            f"[Sandbox] Root node_modules was installed by a different Node.js "
+            f"major; reinstalling for Node.js {node_major}...",
+            COLOR_SANDBOX, 0,
+        )
+        shutil.rmtree(os.path.join(project_root, "node_modules"), ignore_errors=True)
+
     # Run npm install unconditionally (mirrors the frontend's check_install_build):
     # it's idempotent and fast when the lockfile is already satisfied, and it
     # self-heals when the root package.json bumps @urban-toolkit/autk-db. Gating
@@ -865,6 +962,9 @@ def _ensure_root_node_modules(project_root: str) -> None:
         )
     except Exception as e:
         log_error(f"[Sandbox] Failed to run root 'npm install': {e}")
+    else:
+        if node_major:
+            _write_node_stamp(project_root, node_major)
 
 
 def start_sandbox(host, port):
