@@ -428,7 +428,8 @@ print(json.dumps(out))
 """
 
 
-def import_failures_in(deps: Iterable[str], search_path: str) -> dict[str, str]:
+def import_failures_in(deps: Iterable[str], search_path: str,
+                       interpreter: Optional[str] = None) -> dict[str, str]:
     """``{distribution: reason}`` for deps that cannot be imported with
     *search_path* on ``sys.path`` — the OVERLAY's environment, not the host's.
 
@@ -446,7 +447,7 @@ def import_failures_in(deps: Iterable[str], search_path: str) -> dict[str, str]:
     names = sorted({d for d in deps})
     if not names or not search_path:
         return {}
-    verdicts = _run_target_probe(names, search_path)
+    verdicts = _run_target_probe(names, search_path, interpreter)
     if verdicts is not None:
         return verdicts
     # The batch gave no answer. Retry one at a time, exactly as the host probe
@@ -455,13 +456,14 @@ def import_failures_in(deps: Iterable[str], search_path: str) -> dict[str, str]:
     # OTHER dep's verdict into silence — which the caller reads as "all fine".
     failures: dict[str, str] = {}
     for name in names:
-        one = _run_target_probe([name], search_path)
+        one = _run_target_probe([name], search_path, interpreter)
         if one:
             failures.update(one)
     return failures
 
 
-def _run_target_probe(names, search_path) -> Optional[dict[str, str]]:
+def _run_target_probe(names, search_path,
+                      interpreter: Optional[str] = None) -> Optional[dict[str, str]]:
     """Verdicts for *names* from one overlay-aware subprocess, or None.
 
     None means "no answer", never "all fine" — same contract as
@@ -483,9 +485,18 @@ def _run_target_probe(names, search_path) -> Optional[dict[str, str]]:
     # until someone pins it, which is exactly when it would have been wrong.
     from utk_curio.backend.app.packages import backend_runtime
 
+    # Whoever imports the tree answers for it. A HANDLER overlay is read by a
+    # package-backend worker, which runs under ``sandbox_interpreter()`` and so
+    # follows CURIO_BACKEND_SANDBOX_PYTHON if an operator pinned one. A node
+    # overlay (#332) is read by the sandbox, which the launcher starts with
+    # this process's own interpreter - so that caller passes it explicitly
+    # rather than inheriting a pin meant for handlers, which would answer for
+    # an interpreter nothing imports the tree from.
+    interpreter = interpreter or backend_runtime.sandbox_interpreter()
+
     try:
         proc = subprocess.run(
-            [backend_runtime.sandbox_interpreter(), "-c", _TARGET_PROBE_SRC],
+            [interpreter, "-c", _TARGET_PROBE_SRC],
             input=payload,
             capture_output=True,
             text=True,

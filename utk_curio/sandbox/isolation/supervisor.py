@@ -197,6 +197,52 @@ def user_work_dir(shared_data_dir, user_key):
     )
 
 
+#: #332: the per-user node-library tree, sibling to SCRATCH_SUBDIR. The backend
+#: writes it; an isolated child reads it and nothing more. Spelled in
+#: ``packages.backend_runtime`` too - one of the two has to be the definition
+#: and the backend owns overlay paths, but the sandbox must not import the
+#: backend, so the pair is pinned by test instead.
+OVERLAY_SUBDIR = "exec-overlays"
+
+
+def user_overlay_dir(shared_data_dir, user_key):
+    """The node libraries this user installed, as an importable directory.
+
+    Beside the store for the same reason :func:`user_work_dir` is: under
+    ``.curio/users/<key>/`` it would be unreachable, because that tree is 0700
+    root-owned so a node cannot reach another user's datasets and projects
+    (``hardening.SENSITIVE_PATHS``).
+
+    The difference from the work directory is ownership. That one belongs to
+    the execution user because a node writes into it; this one must NOT, or
+    node code could plant a module into its own import path and shadow a later
+    import. The backend writes it as itself and the child only reads.
+    """
+    return os.path.join(
+        os.path.dirname(os.path.abspath(shared_data_dir)),
+        OVERLAY_SUBDIR, "users", str(user_key),
+    )
+
+
+def prepare_user_overlay_dir(path, *, exec_uid=None):
+    """Create the overlay directory readable by the child and writable only by
+    the backend.
+
+    0755, and deliberately NOT chowned to *exec_uid* - the asymmetry with
+    :func:`prepare_user_work_dir` is the point. ``exec_uid`` is accepted so the
+    caller does not have to know that, and so a future per-user-uid model has
+    somewhere to hook.
+    """
+    os.makedirs(path, exist_ok=True)
+    if sys.platform == "win32":
+        return path
+    try:
+        os.chmod(path, 0o755)
+    except OSError:
+        pass
+    return path
+
+
 def prepare_user_work_dir(path, *, exec_uid=None, launch_dir=None):
     """Create the user's work directory and make it usable by the child.
 

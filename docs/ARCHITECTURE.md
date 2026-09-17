@@ -585,9 +585,36 @@ default.
 > via `docker-compose.deploy.yml`.
 
 `POST /install` (`pip install` into the sandbox's interpreter) is off unless
-`--allow-runtime-install` is passed. It defaults on for a local single-user
-launch and off once `--auth` / `--deploy` is in play. Nothing in Curio calls
-it; library installs go through the backend's `packages/pip_runner.py`.
+`--allow-runtime-install` is passed. Nothing in Curio calls it; library
+installs go through the backend's `packages/pip_runner.py`.
+
+The flag defaults on for a local single-user launch, off once `--auth` /
+`--deploy` is in play, and **on again under `--isolation=fork`**. The rule it
+encodes is where an install lands, not whether the instance is shared: without
+isolation there is one interpreter behind every user's nodes, so an install is
+instance-wide; with it, the deps go to the caller's own tree.
+
+**Per-user node libraries.** Under `--isolation=fork`, a package's declared
+python deps and anything installed through the Installed-libraries dialog go to
+`.curio/exec-overlays/users/<key>/`, which the child prepends to `sys.path`
+after the fork. Three things follow, and none of them is a mode bit:
+
+- It needs the fork. The in-process worker is one process with one
+  `sys.modules`; whoever imports a library first makes it importable by
+  everybody, whatever the path says. So a local or Windows launch keeps the
+  shared interpreter, unchanged.
+- It scopes imports, not files. The execution account is still shared
+  (see above), so one user's node can read another's tree by path. What it
+  cannot do is have it on its own `sys.path`.
+- It cannot give two users different versions of the same library. pandas,
+  geopandas, shapely and duckdb are resident in the zygote before the fork;
+  additions are what this serves. Per-user versions would need a zygote each.
+
+The tree is deliberately not under `.curio/users/<key>/`, which is 0700
+root-owned so a node cannot reach another user's datasets, and unlike the
+per-user work directory it is **not** owned by the execution account: it is an
+import path, so node code writing there could shadow a later import. The
+startup audit reports it if it ever becomes writable.
 
 ### Portable dataset paths
 
